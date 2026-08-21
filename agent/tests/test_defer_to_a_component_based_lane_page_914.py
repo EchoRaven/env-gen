@@ -1,5 +1,12 @@
 r"""#914: the decision, implemented and switched OFF.
 
+★ SUPERSEDED BY #1020 (the flag now defaults ON). Everything below is #914's reasoning as it
+stood, kept visible per item 48 rather than rewritten: it is why the flag exists and what the
+off-path must still guarantee. What changed is only the DEFAULT — the alternation ranges came
+back disjoint at n=5 (off 507-1108 over r164-r166; on 81-207 over r169-r170), and the "one run
+with it on" that the last paragraph asks for has now happened four times. The off-path is
+reached by an explicit `ENVGEN_DEFER_TO_LANE_PAGE=0` and is still asserted byte-identical.
+
 `scaffold_pages_from_contract` clobbers a lane page unconditionally on content — `not _marked`
 means "the existing page is not MY output", and that alone is taken as permission (#910). Whether
 it SHOULD defer to a substantially richer, component-based lane page is a real question with
@@ -82,23 +89,38 @@ def _scaffold(existing: str, caplog=None):
 
 # --------------------------------------------------------------------------- the flag
 
-def test_the_flag_is_off_by_default(monkeypatch):
+def test_the_flag_is_ON_by_default_1020(monkeypatch):
+    """#1020 flipped this. #914 shipped OFF pending a decision; the alternation ranges are
+    disjoint at n=5 (off 507-1108 over r164-r166, on 81-207 over r169-r170), so deferring to a
+    component-importing lane page is now the default."""
     monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
-    assert fs._env_flag_914() is False
+    assert fs._env_flag_914() is True
 
 
 def test_the_flag_reads_the_usual_truthy_spellings(monkeypatch):
     for v in ("1", "true", "TRUE", "yes", "y", "on"):
         monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", v)
         assert fs._env_flag_914() is True, v
-    for v in ("0", "false", "no", "", "  "):
+    # #1020: only an EXPLICIT falsey spelling turns it off. Empty/whitespace is "unset", which
+    # now means the default (on) — the pre-#1020 test read those as off.
+    for v in ("0", "false", "FALSE", "no", "n", "off", "OFF"):
         monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", v)
         assert fs._env_flag_914() is False, v
+    for v in ("", "  "):
+        monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", v)
+        assert fs._env_flag_914() is True, v
+
+
+def test_an_unrecognised_value_lands_on_the_default(monkeypatch):
+    """#1020: the except/unknown path must land on the DEFAULT, not silently restore the old
+    behaviour — a typo must not quietly re-enable the clobbering path."""
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "yeah-ok")
+    assert fs._env_flag_914() is True
 
 
 def test_the_flag_is_read_per_call_not_at_import(monkeypatch):
     """A run must be startable either way without a reload, and a test must be able to flip it."""
-    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "0")
     assert fs._env_flag_914() is False
     monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "1")
     assert fs._env_flag_914() is True
@@ -106,9 +128,10 @@ def test_the_flag_is_read_per_call_not_at_import(monkeypatch):
 
 # --------------------------------------------------------------------------- behaviour
 
-def test_default_off_is_byte_identical_to_before(monkeypatch):
-    """★ The whole point of shipping it off: the projection still wins, exactly as today."""
-    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+def test_explicit_off_is_byte_identical_to_before(monkeypatch):
+    """★ #914's original guarantee, now reached by an EXPLICIT `0` rather than by the default:
+    with the flag off the projection still wins, exactly as it did pre-#914."""
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "0")
     out = _scaffold(_lane_page(imports_components=True))
     assert "lane 0" not in out, "with the flag off the projection must still replace the page"
 
@@ -143,7 +166,7 @@ def test_it_logs_even_when_off(caplog, monkeypatch):
     """★ The cheap half of the experiment: a run with the flag unset measures the exposure with
     byte-identical output. Driven through a real scaffold with a log sink — asserting the source
     string would pass against a line that cannot execute (#910's `logger` NameError)."""
-    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "0")
     _scaffold(_lane_page(imports_components=True), caplog=caplog)
     msgs = [r.getMessage() for r in caplog.records if "LANE PAGE WITH OWN COMPONENTS" in r.getMessage()]
     assert msgs, "off must still report what it would have kept"
@@ -158,7 +181,7 @@ def test_the_log_says_which_way_it_went(caplog, monkeypatch):
 
 
 def test_the_message_carries_both_sizes(caplog, monkeypatch):
-    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "0")
     _scaffold(_lane_page(imports_components=True), caplog=caplog)
     msg = next(r.getMessage() for r in caplog.records
                if "LANE PAGE WITH OWN COMPONENTS" in r.getMessage())
@@ -241,8 +264,12 @@ def _scaffold_at(root: Path, existing: str):
 def test_the_exposure_is_written_to_an_artifact(tmp_path, monkeypatch):
     """★ THE point of #946. #914 ships OFF precisely so an ordinary run measures the exposure for
     free — and the line went to a logger no run persists, so the measurement could not be taken.
-    `LANE PAGE WITH OWN COMPONENTS` appears in zero of r154's artifacts."""
-    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    `LANE PAGE WITH OWN COMPONENTS` appears in zero of r154's artifacts.
+
+    #1020: the flag now defaults ON, so the off-exposure case is reached by an explicit `0`.
+    The artifact must still record the counterfactual in BOTH directions — that is what made
+    the flip decidable, and it is what would make a future flip back decidable."""
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "0")
     _scaffold_at(tmp_path, _lane_page(imports_components=True, n=120))
     e = _exposure(tmp_path)
     assert "BrowseHomePage" in e, e

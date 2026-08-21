@@ -9520,15 +9520,30 @@ _STRUCT_KINDS_583 = ("<ul", "<li", "<table", "<h2", "<h3", "<form", "<video", "<
 def _env_flag_914() -> bool:
     """#914: is the projector allowed to defer to a component-based lane page?
 
-    OFF unless ``ENVGEN_DEFER_TO_LANE_PAGE`` is set to a truthy value. Read per call rather than
-    captured at import so a run can be started with it either way without a reload, and so a test
-    can flip it with `monkeypatch.setenv`. Never raises — a missing/odd env must mean OFF, not a
-    crash inside the page-writing loop."""
+    #1020: ON by default. #914 shipped this OFF pending a decision and logged its own
+    recommendation `set ENVGEN_DEFER_TO_LANE_PAGE=1 to keep the lane's` **595 times across
+    r164-r168**. The data it lacked now exists — total oscillation alternations per run, with
+    benign co-commits filtered out by `sweep_write_conflicts._oscillates()`:
+
+        flag off   r164 1108   r165 507   r166 839      range 507-1108
+        flag on    r169   81   r170 207   r171/r172 on  range  81-207
+
+    The ranges are DISJOINT at n=5. The magnitude is not settled (75% vs 90% depending on the
+    pairing, which is why no point estimate is quoted here), and displacement was tested and
+    rejected — the totals fall rather than move to files the flag does not cover.
+
+    Read per call rather than captured at import so a run can be started either way without a
+    reload, and so a test can flip it with `monkeypatch.setenv`. Never raises — but note the
+    except branch now lands on the DEFAULT rather than silently restoring the old behaviour,
+    because a crash in `os.environ` must not quietly re-enable the clobbering path.
+    """
     try:
-        return str(os.environ.get("ENVGEN_DEFER_TO_LANE_PAGE", "")).strip().lower() in {
-            "1", "true", "yes", "y", "on"}
+        _raw = str(os.environ.get("ENVGEN_DEFER_TO_LANE_PAGE", "")).strip().lower()
     except Exception:
-        return False
+        return True
+    if not _raw:
+        return True
+    return _raw not in {"0", "false", "no", "n", "off"}
 
 
 def _imports_own_components(src: str) -> bool:
