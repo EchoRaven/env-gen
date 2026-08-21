@@ -512,6 +512,20 @@ def parse_response(resp):
         tt = getattr(u, "total_tokens", None)
         usage = {"prompt_tokens": pt, "completion_tokens": ct,
                  "total_tokens": tt if tt is not None else pt + ct}
+        # #1026b: FORWARD THE CACHED-PREFIX COUNT. This dict was built with three fixed keys,
+        # so `prompt_tokens_details` was dropped at the transport and every run downstream
+        # read `cached_tokens=0` — which reads as "the prefix is not cached" when it actually
+        # means "nobody forwarded the number". That distinction decides whether ~33k tokens of
+        # static system prompt re-sent on ~4,155 calls (~65% of a run's prompt spend) is free
+        # or is the biggest wall-clock lever we have, so it must not be an artifact of this
+        # 8-line function. Omitted entirely when the provider does not report it, so the
+        # consumer can tell ABSENT from ZERO.
+        _d = getattr(u, "prompt_tokens_details", None)
+        _cached = getattr(_d, "cached_tokens", None) if _d is not None else None
+        if _cached is None and isinstance(_d, dict):
+            _cached = _d.get("cached_tokens")
+        if _cached is not None:
+            usage["prompt_tokens_details"] = {"cached_tokens": int(_cached)}
     return "".join(text), (tool_calls or None), _norm_finish(finish, bool(tool_calls)), usage
 
 

@@ -1665,12 +1665,26 @@ class OpenAIClient(BaseLLMClient):
         # Nothing here changes what is SENT. It only stops the answer being invisible: one run
         # now says whether the prefix is cached, and a 0 would make prompt-size work the
         # highest-leverage wall-clock fix available (r172 died on a 7200s cap).
-        cached_tokens = 0
+        # #1026b: ABSENT IS NOT ZERO. The first cut of this defaulted to 0, and r173 duly
+        # logged `cached_tokens=0` on every call — which reads as "the prefix is never
+        # cached" when the truth was that the metagen sidecar built a three-key usage dict
+        # and dropped `prompt_tokens_details` at the transport (fixed in #1026b). A measure
+        # that cannot say "I was not told" manufactures a finding out of its own blind spot,
+        # which is the same trap as an empty index reading as "all tables dead" (#1023b).
+        # `n/a` therefore means unreported; a number means measured.
+        cached_tokens: Any = "n/a"
         try:
-            _details = getattr(response.usage, "prompt_tokens_details", None) if response.usage else None
-            cached_tokens = int(getattr(_details, "cached_tokens", 0) or 0)
+            _u = response.usage
+            _details = getattr(_u, "prompt_tokens_details", None) if _u else None
+            if _details is None and isinstance(_u, dict):
+                _details = _u.get("prompt_tokens_details")
+            _c = getattr(_details, "cached_tokens", None) if _details is not None else None
+            if _c is None and isinstance(_details, dict):
+                _c = _details.get("cached_tokens")
+            if _c is not None:
+                cached_tokens = int(_c)
         except Exception:
-            cached_tokens = 0          # a provider without the field must never break a call
+            cached_tokens = "n/a"      # a provider without the field must never break a call
         has_tool_calls = bool(message.tool_calls)
         self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={choice.finish_reason}")
 

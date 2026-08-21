@@ -58,10 +58,21 @@ def test_cached_tokens_travels_in_the_usage_dict():
 
 def test_a_provider_without_the_field_cannot_break_a_call():
     """This is in the hot path of every LLM call. A provider that omits
-    `prompt_tokens_details` — or returns None — must degrade to 0, not raise."""
+    `prompt_tokens_details` — or returns None — must degrade, not raise."""
     b = _chat_completions_src()
     assert "except Exception:" in b
-    assert "cached_tokens = 0" in b
+    assert 'cached_tokens = "n/a"' in b
+
+
+def test_absent_is_reported_as_absent_not_as_zero_1026b():
+    """★ The correction. The first cut defaulted to 0, and r173 logged `cached_tokens=0` on
+    every call — which reads as "the prefix is never cached". The truth was that the metagen
+    sidecar built a three-key usage dict and dropped `prompt_tokens_details` at the transport.
+    A measure that cannot say "I was not told" manufactures a finding out of its own blind
+    spot — the same trap as an empty index reading as "all tables dead" (#1023b)."""
+    b = _chat_completions_src()
+    assert '"n/a"' in b, "unreported must be distinguishable from a measured zero"
+    assert "ABSENT IS NOT ZERO" in b
 
 
 def test_both_response_sites_now_report_it():
@@ -87,22 +98,29 @@ class _Usage:
 
 
 def _extract(usage):
-    """Mirror of the production expression, so the degradation cases are executed."""
+    """Mirror of the production expression, so the degradation cases are executed.
+    Returns "n/a" when the provider did not report — never a fabricated 0."""
     try:
         d = getattr(usage, "prompt_tokens_details", None) if usage else None
-        return int(getattr(d, "cached_tokens", 0) or 0)
+        if d is None and isinstance(usage, dict):
+            d = usage.get("prompt_tokens_details")
+        c = getattr(d, "cached_tokens", None) if d is not None else None
+        if c is None and isinstance(d, dict):
+            c = d.get("cached_tokens")
+        return int(c) if c is not None else "n/a"
     except Exception:
-        return 0
+        return "n/a"
 
 
 @pytest.mark.parametrize("usage,expected", [
     (_Usage(100, 10, 110, _Details(64)), 64),
-    (_Usage(100, 10, 110, _Details(0)), 0),
-    (_Usage(100, 10, 110, _Details(None)), 0),      # field present but null
-    (_Usage(100, 10, 110), 0),                      # provider omits the field entirely
-    (None, 0),                                      # no usage at all
+    (_Usage(100, 10, 110, _Details(0)), 0),          # a MEASURED zero stays 0
+    (_Usage(100, 10, 110, _Details(None)), "n/a"),   # field present but null -> unreported
+    (_Usage(100, 10, 110), "n/a"),                   # provider omits the field entirely
+    (None, "n/a"),                                   # no usage at all
+    ({"prompt_tokens_details": {"cached_tokens": 12}}, 12),   # dict-shaped (sidecar JSON)
 ])
-def test_extraction_degrades_to_zero_never_raises(usage, expected):
+def test_extraction_distinguishes_absent_from_zero(usage, expected):
     assert _extract(usage) == expected
 
 
