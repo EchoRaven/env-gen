@@ -1455,22 +1455,51 @@ class FrameworkValidation:
                 # backend lane landed its /auth/login fix). Post-FAST-CAP gated like the
                 # chain grace (below the cap there is no abort risk to spend budget on);
                 # churn-capped so an r3-style forever-thrash still aborts.
-                elif (_attempts >= FWVAL_FAST_CAP
-                      and _fwval_is_source_edit_progress(
-                          _app_sig, getattr(orch, "_fwval_app_sig", None),
-                          getattr(orch, "_fwval_source_churn", 0),
-                          _FWVAL_SOURCE_CHURN_CAP)):
-                    orch._fwval_source_churn = getattr(orch, "_fwval_source_churn", 0) + 1
+                # #1048: the `_attempts >= FWVAL_FAST_CAP` gate that used to open this branch
+                # made it UNREACHABLE, so #186 never protected anything.
+                #
+                # A lane editing app source triggers the checklist refresh, which does
+                # `orch._framework_validation_attempts = 0` (line ~563). So the very edit this
+                # grace exists to protect is what resets `_attempts` — and the gate then
+                # required `_attempts >= 6`. The two conditions cannot both hold. #1047's
+                # instrumentation measured it on r179, 2/2:
+                #
+                #     moved=True  -> attempts=0 -> post_cap=False -> skipped
+                #     moved=False -> attempts 1,2,3,4             -> correctly N/A
+                #
+                # and r178 confirms the cost: 0 fires across 22 validations spanning two source
+                # edits, then a STUCK-ABORT citing 404 evidence 15 minutes older than the fix,
+                # with `main.py` written ONE SECOND after the kill. tiktok-r2 (#186's own
+                # origin: aborted "~20s before the backend lane landed its /auth/login fix")
+                # was never fixed either.
+                #
+                # The gate came from review wyy421m0c — "below the cap there is NO abort risk,
+                # so the grace budget must not be spent during fast-retry". That intent is
+                # preserved exactly, and more cheaply: below the cap the stuck budget resets
+                # WITHOUT consuming churn (free, because there is nothing to protect against
+                # yet); at or above the cap it consumes churn as before, so the
+                # FWVAL_SOURCE_CHURN_CAP livelock bound is unchanged and a forever-thrashing
+                # lane still aborts.
+                elif _fwval_is_source_edit_progress(
+                        _app_sig, getattr(orch, "_fwval_app_sig", None),
+                        getattr(orch, "_fwval_source_churn", 0),
+                        _FWVAL_SOURCE_CHURN_CAP):
+                    _post_cap_1048 = _attempts >= FWVAL_FAST_CAP
+                    if _post_cap_1048:
+                        orch._fwval_source_churn = (
+                            getattr(orch, "_fwval_source_churn", 0) + 1)
                     orch._fwval_stuck_count = 0
                     orch._fwval_chain_sig = _chain_sig
                     orch._fwval_app_sig = _app_sig
                     orch._logger.warning(
                         "SOURCE-EDIT PROGRESS: failure set %s unchanged but the app "
                         "source signature moved — a lane is actively editing (churn "
-                        "%s/%s); resetting the stuck budget to let the fix land "
+                        "%s/%s, %s); resetting the stuck budget to let the fix land "
                         "(bounded).",
                         sorted(_fset) or "(none)",
-                        orch._fwval_source_churn, _FWVAL_SOURCE_CHURN_CAP)
+                        getattr(orch, "_fwval_source_churn", 0), _FWVAL_SOURCE_CHURN_CAP,
+                        "post-cap: churn spent" if _post_cap_1048
+                        else "pre-cap: free, no abort risk yet (#1048)")
                 else:
                     # Same failure set as last validation → no functional progress.
                     #
