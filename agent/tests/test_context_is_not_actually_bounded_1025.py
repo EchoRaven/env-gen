@@ -31,16 +31,20 @@ corrections, both from measuring rather than asserting:
      cheaply. Which is precisely why `_pressured` counts STRING content only: that is CORRECT,
      and the first draft cited the inflated figure as if it were spend.
 
-  2. On real tokens, prompt cost is nearly FLAT in conversation length, because
-     `_mask_old_observations` runs every step and does the work:
+  2. On real tokens, prompt cost is nearly FLAT in conversation length:
 
          msgs  24 -> median 40,296 prompt tokens   (1,644 tok/msg)
          msgs 149 -> median 42,710                 (  286 tok/msg)
          msgs 345 -> median 48,964                 (  141 tok/msg)
          msgs 712 -> median 62,385                 (   87 tok/msg)
 
-     A 30x increase in message count costs 1.55x more tokens. Masking bounds BYTES PER MESSAGE
-     (a 19x reduction); condensation bounds the COUNT, and the count is the cheap axis.
+     A 30x increase in message count costs 1.55x more tokens, so condensation rarely firing is
+     fine — the COUNT is the cheap axis.
+
+     ★ An earlier revision credited `_mask_old_observations` for that flatness. WRONG:
+     masking is gated on the SAME budget and returns early whenever string content fits it
+     (`if total <= budget: return messages`, budget 666,400 here), so on this model it never
+     runs. The flatness is the ~40k baseline dominating a history that stays small in tokens.
 
 So the honest conclusion is narrower than the alarm: the deleted sentence WAS false about the
 message count, and it does not matter much. r172's 210,779,817 prompt tokens over 4,155 calls

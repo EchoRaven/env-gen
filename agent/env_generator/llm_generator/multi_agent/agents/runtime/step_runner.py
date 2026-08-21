@@ -297,17 +297,24 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 #      blocks inflate chars and tokenize cheaply. Which is exactly why the
                 #      estimate below counts STRING content only: that choice is CORRECT.
                 #
-                #   2. On real tokens, prompt cost is nearly FLAT in conversation length,
-                #      because `_mask_old_observations` runs every step and does the work:
+                #   2. On real tokens, prompt cost is nearly FLAT in conversation length:
                 #
                 #          msgs  24 -> median 40,296 prompt tokens   (1,644 tok/msg)
                 #          msgs 149 -> median 42,710                 (  286 tok/msg)
                 #          msgs 345 -> median 48,964                 (  141 tok/msg)
                 #          msgs 712 -> median 62,385                 (   87 tok/msg)
                 #
-                #      A 30x increase in message count costs 1.55x more tokens. Masking bounds
-                #      BYTES PER MESSAGE (19x reduction); condensation bounds the COUNT, and
-                #      the count is the cheap axis. So condensation rarely firing is fine.
+                #      A 30x increase in message count costs 1.55x more tokens, so condensation
+                #      rarely firing is fine — the COUNT is the cheap axis.
+                #
+                #      ★ An earlier revision of this note credited `_mask_old_observations` for
+                #      that flatness. WRONG, and worth leaving corrected rather than quietly
+                #      dropped: masking is gated on the SAME budget and returns early whenever
+                #      string content fits it — `if total <= budget: return messages`, with
+                #      budget 666,400 here — so on this model it does not run at all. The
+                #      flatness is simply the ~40k baseline dominating a history that stays
+                #      small in tokens. Third correction to this paragraph; each came from
+                #      measuring the thing rather than reading the sentence next to it.
                 #
                 # The real driver of r172's 210,779,817 prompt tokens over 4,155 calls is the
                 # PER-CALL BASELINE — a real agent step starts around 40k tokens before any
