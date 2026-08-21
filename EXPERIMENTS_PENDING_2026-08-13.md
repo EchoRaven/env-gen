@@ -20273,3 +20273,42 @@ name-based grant check; now content_chars-as-cost). The pattern is sharper than
 `my-audit-heuristics-over-flag`: **before quoting a metric, check that it is denominated in the
 thing you are claiming.** Chars are not tokens; registration is not invocation; a name in a log
 is not a call.
+
+### 467. the per-call baseline, decomposed — and the one measurement that would settle it
+
+Following item 466's correction (cost is the per-call BASELINE, not history), decomposed it:
+
+    per-call prompt      flat ~41,000 tokens from 9 messages onward
+    tool schemas         207 descriptions total 19,301 chars ~ 4.8k tokens for ALL of them;
+                         only ~36 ship per request -> low single-digit k. NOT the driver.
+    system prompt        frontend_agent.j2   104,817 chars ~ 26k tokens
+                         orchestrator_agent   94,514
+                         backend_agent (v3)   91,628
+                         verifier_agent       74,606
+                         shared macro         28,779
+                         -> ~33k tokens of STATIC prefix, re-sent on all ~4,155 calls
+                         ~= 137M tokens ~= 65% of the run's 210,779,817
+
+★ The layout is cache-friendly by luck rather than design: the system message is first, and
+`_compose_system_prompt` appends its dynamic directive block at the END, so the static part is
+a stable prefix. Whether it is actually being cached decides whether that 137M is free or is
+the biggest wall-clock lever in the system — and **we have never measured it**: two
+`[LLM Response]` sites exist, the Responses one logs `cached_tokens`, and the
+chat-completions one (the path every run takes) never read `usage.prompt_tokens_details`.
+#1026 fixes the measurement only; nothing sent changes.
+
+**One run now answers it.** `cached_tokens=0` across the board would make prompt-size work the
+highest-value optimisation available; high hit rates retire the question entirely. Either way
+it stops being a guess — which is the whole difference between this and the two headline
+claims I had to retract today (items 465/466).
+
+Remaining, honestly ranked:
+
+    NEEDS A RUN     #1021 #1022 #1023* #1024 #1025 #1026 — none of the last five are
+                    run-verified; #1026's output is itself the next decision input
+    NEEDS EVIDENCE  #815 (which of two live causes), #956's real repair (row counts at gate
+                    time), business_chain regression (undiagnosed), port-3000 expectation
+    BLOCKED ON A    #638 re-check (needs a canonical-module rule; size cannot discriminate)
+    DECISION        the task_suite branch (audited by #1024; activate/delete is a call to make
+                    with the 45%-halt figure in hand)
+    UNSWEPT         orchestrator coordination, the projector/visual path, timing/races
