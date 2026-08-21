@@ -81,3 +81,36 @@ def test_the_message_carries_the_registration_count():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1023d: the coverage travels with the verdict ------------------------------------------
+
+def test_an_unexamined_audit_reports_measured_False():
+    """★ `is_clean` is `not flagged_tables`, so an audit that inspected NOTHING returns True and
+    reads identically to one that inspected everything. 145 of 147 runs are the former."""
+    rep = sa.audit_seed_data(_Hub({"titles": {"status": "implemented"},
+                                   "genres": {"status": "implemented"}}))
+    assert rep.is_clean is True, "the verdict is deliberately unchanged"
+    assert rep.examined == 0 and rep.candidates == 2
+    assert rep.measured is False, "a clean verdict from zero inspections must say so"
+    assert rep.to_dict()["measured"] is False
+
+
+def test_an_examined_audit_reports_measured_True():
+    rep = sa.audit_seed_data(_Hub({"titles": {"status": "defined",
+                                              "metadata": {"min_seed_rows": 0}}}))
+    assert rep.examined == 1 and rep.measured is True
+
+
+def test_no_tables_at_all_is_measured():
+    """Vacuously complete: nothing to inspect is not the same defect as refusing to inspect."""
+    rep = sa.audit_seed_data(_Hub({}))
+    assert rep.candidates == 0 and rep.measured is True
+
+
+def test_the_verdict_is_untouched_for_a_real_flag():
+    """#1023d must not have changed what gets flagged — only what is reported alongside it."""
+    rep = sa.audit_seed_data(_Hub({"titles": {"status": "defined"}}))
+    assert rep.is_clean is False
+    assert [f["table"] for f in rep.flagged_tables] == ["titles"]
+    assert rep.examined == 1 and rep.measured is True

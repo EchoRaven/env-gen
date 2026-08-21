@@ -73,10 +73,34 @@ def detect_placeholder_score(rows: List[dict]) -> float:
 @dataclass
 class SeedReport:
     flagged_tables: List[dict] = field(default_factory=list)
+    # #1023d: how many tables this audit actually LOOKED AT, and how many it could have.
+    # `is_clean` is `not flagged_tables`, so an audit that examined nothing returns True and
+    # is indistinguishable from one that examined everything and found nothing wrong. #956
+    # measured the gap: the loop only inspects tables still marked `defined`, and **145 of 147
+    # runs have no `defined` table at all** — so for essentially the whole project this has
+    # reported a clean verdict while inspecting zero tables.
+    #
+    # The VERDICT is deliberately unchanged. Making `is_clean` False when nothing was examined
+    # would flag 145 of 147 runs, and #956 showed why that is wrong on the merits too: r154's
+    # twelve tables would all read `missing_seed` while its live database held titles 60,
+    # title_genres 57, episodes 16, genres 10 and four more, every one above the minimum — the
+    # audit's notion of "seeded" is `list_seed_registrations()`, and the app seeds by SQL
+    # INSERT. False blockers wedge runs (#566j).
+    #
+    # So this only stops the unmeasured state being INVISIBLE, the same way #790 publishes the
+    # checks that could not run rather than letting them read as passes. The real repair counts
+    # rows at gate time, which needs a live database and stays open.
+    examined: int = 0
+    candidates: int = 0
 
     @property
     def is_clean(self) -> bool:
         return not self.flagged_tables
+
+    @property
+    def measured(self) -> bool:
+        """False when the audit inspected nothing — `is_clean` then carries no information."""
+        return self.examined > 0 or self.candidates == 0
 
     @property
     def all_flagged_paths(self) -> Set[str]:
@@ -86,6 +110,10 @@ class SeedReport:
         return {
             "flagged_tables": list(self.flagged_tables),
             "is_clean": self.is_clean,
+            # #1023d: a consumer reading is_clean must be able to see whether anything was read.
+            "examined": self.examined,
+            "candidates": self.candidates,
+            "measured": self.measured,
         }
 
 
@@ -213,7 +241,9 @@ def audit_seed_data(hub_registry) -> SeedReport:
             "nothing wrong. Widening it needs the seeded-ness test fixed first — %d seed "
             "registration(s) exist while the app seeds via SQL (#956).",
             len(tables), len(seed_regs))
-    return SeedReport(flagged_tables=flagged)
+    # #1023d: carry the coverage with the verdict, not only in a log line — a consumer reading
+    # `is_clean` must be able to tell "checked and fine" from "checked nothing".
+    return SeedReport(flagged_tables=flagged, examined=_examined_956, candidates=len(tables))
 
 
 # ---------------------------------------------------------------------------
