@@ -137,19 +137,26 @@ def build_mcp_tools(endpoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return tools
 
 
-def render_compose_hub(env: str, api_port: int, ui_port: int, pg_port: int, image_ns: str) -> str:
+def render_compose_hub(env: str, api_port: int, ui_port: int, pg_port: int, image_ns: str,
+                       tag: str = "clawfish") -> str:
     U = env.upper()
     return f'''version: "3.8"
 
-# {env} DTAP environment — prebuilt images from the hub, exactly as
-# dt_arena/envs/paypal/docker-compose-hub.yml does it.
+# {env} DTAP environment — every service is a PREBUILT image, mirroring
+# dt_arena/envs/salesforce_crm/docker-compose-hub.yaml.
+#
+# ALL THREE images come from the registry, including the database. tbr/images.py is explicit
+# that "the runtime VM has no network" and that deps are baked at build time, so a bare
+# `postgres:16` would be unpullable at run time — which is exactly why the enabled crm env
+# references `decodingtrustagent/salesforce-crm:mariadb` rather than a stock mariadb. The pg
+# image here bakes init/ in the same way.
 #
 # network_mode: host is deliberate. DTAP boots this inside a leased micro-VM and addresses
 # every service as 127.0.0.1:<port> (see dt_arena/envs/registry.yaml), so published-port
 # mappings are both unnecessary and wrong here.
 services:
   {env}-pg:
-    image: postgres:16
+    image: {image_ns}/{env}-pg:{tag}
     network_mode: host
     security_opt:
       - seccomp=unconfined
@@ -158,8 +165,6 @@ services:
       POSTGRES_USER: sandbox
       POSTGRES_PASSWORD: sandbox
     command: ["-p", "${{{U}_PG_PORT:-{pg_port}}}"]
-    volumes:
-      - ./init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p ${{{U}_PG_PORT:-{pg_port}}} -U sandbox -d {env}"]
       interval: 5s
@@ -167,7 +172,7 @@ services:
       retries: 30
 
   {env}-api:
-    image: {image_ns}/{env}:api-latest
+    image: {image_ns}/{env}-api:{tag}
     network_mode: host
     security_opt:
       - seccomp=unconfined
@@ -190,7 +195,7 @@ services:
     restart: unless-stopped
 
   {env}-ui:
-    image: {image_ns}/{env}:ui-latest
+    image: {image_ns}/{env}-ui:{tag}
     network_mode: host
     security_opt:
       - seccomp=unconfined
@@ -205,10 +210,12 @@ services:
 
 def render_compose_local(env: str, api_port: int, ui_port: int, pg_port: int) -> str:
     """Build-from-source variant, for iterating before the images are pushed."""
-    hub = render_compose_hub(env, api_port, ui_port, pg_port, "IMAGE_NS")
-    hub = hub.replace(f"    image: IMAGE_NS/{env}:api-latest\n",
+    hub = render_compose_hub(env, api_port, ui_port, pg_port, "IMAGE_NS", tag="local")
+    hub = hub.replace(f"    image: IMAGE_NS/{env}-pg:local\n",
+                      "    build:\n      context: ./pg\n")
+    hub = hub.replace(f"    image: IMAGE_NS/{env}-api:local\n",
                       "    build:\n      context: ./api\n")
-    hub = hub.replace(f"    image: IMAGE_NS/{env}:ui-latest\n",
+    hub = hub.replace(f"    image: IMAGE_NS/{env}-ui:local\n",
                       f"    build:\n      context: ./{env}_ui\n")
     return hub.replace("prebuilt images from the hub, exactly as",
                        "built from source (use -hub for the pushed images), mirroring")
@@ -327,7 +334,17 @@ def render_registry_snippet(env: str, api_port: int, ui_port: int) -> str:
 '''
 
 
-def render_build_push(env: str, image_ns: str) -> str:
+def render_pg_dockerfile(env: str) -> str:
+    """A pg image with init/ BAKED IN. The runtime VM has no network (tbr/images.py), so the
+    seed cannot be a bind-mounted volume resolved at boot and the base cannot be pulled then
+    either — the enabled crm env ships `salesforce-crm:mariadb` for exactly this reason."""
+    return f"""FROM postgres:16
+# Baked, not mounted: the runtime VM is offline, so the seed must be inside the image.
+COPY init/ /docker-entrypoint-initdb.d/
+"""
+
+
+def render_build_push(env: str, image_ns: str, tag: str = "clawfish") -> str:
     return f'''#!/bin/bash
 # Build + push the {env} images referenced by docker-compose-hub.yml.
 # RESYNC.md: heavy images are NOT vendored — they live in the registry and the compose file
@@ -335,20 +352,26 @@ def render_build_push(env: str, image_ns: str) -> str:
 set -euo pipefail
 cd "$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 
-NS="${{IMAGE_NS:-{image_ns}}}"
+NS="${{DTAP_REGISTRY:-{image_ns}}}"
+TAG="${{DTAP_TAG:-{tag}}}"
 
-podman build -t "$NS/{env}:api-latest" ./api
-podman build -t "$NS/{env}:ui-latest"  ./{env}_ui
+# The pg build context needs the seed next to its Dockerfile.
+rm -rf ./pg/init && mkdir -p ./pg && cp -r ./init ./pg/init
 
-podman push "$NS/{env}:api-latest"
-podman push "$NS/{env}:ui-latest"
+podman build -t "$NS/{env}-pg:$TAG"  ./pg
+podman build -t "$NS/{env}-api:$TAG" ./api
+podman build -t "$NS/{env}-ui:$TAG"  ./{env}_ui
 
-echo "pushed $NS/{env}:{{api,ui}}-latest"
+podman push --compression-format=zstd:chunked "$NS/{env}-pg:$TAG"
+podman push --compression-format=zstd:chunked "$NS/{env}-api:$TAG"
+podman push --compression-format=zstd:chunked "$NS/{env}-ui:$TAG"
+
+echo "pushed $NS/{env}-{{pg,api,ui}}:$TAG"
 '''
 
 
 def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_port: int,
-           mcp_port: int, image_ns: str) -> Dict[str, Any]:
+           mcp_port: int, image_ns: str, tag: str = "clawfish") -> Dict[str, Any]:
     envs = out / "dt_arena" / "envs" / env
     mcp = out / "dt_arena" / "mcp_server" / env
     envs.mkdir(parents=True, exist_ok=True)
@@ -360,11 +383,13 @@ def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_po
         "init": _copy_tree(run / "app" / "database" / "init", envs / "init"),
     }
     (envs / "docker-compose-hub.yml").write_text(
-        render_compose_hub(env, api_port, ui_port, pg_port, image_ns), encoding="utf-8")
+        render_compose_hub(env, api_port, ui_port, pg_port, image_ns, tag), encoding="utf-8")
     (envs / "docker-compose.yml").write_text(
         render_compose_local(env, api_port, ui_port, pg_port), encoding="utf-8")
+    (envs / "pg").mkdir(parents=True, exist_ok=True)
+    (envs / "pg" / "Dockerfile").write_text(render_pg_dockerfile(env), encoding="utf-8")
     bp = envs / "BUILD_AND_PUSH.sh"
-    bp.write_text(render_build_push(env, image_ns), encoding="utf-8")
+    bp.write_text(render_build_push(env, image_ns, tag), encoding="utf-8")
     bp.chmod(0o755)
 
     endpoints = _load_endpoints(run)
@@ -392,7 +417,8 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--ui-port", type=int, default=DEFAULT_UI_PORT)
     ap.add_argument("--pg-port", type=int, default=DEFAULT_PG_PORT)
     ap.add_argument("--mcp-port", type=int, default=8878)
-    ap.add_argument("--image-ns", default="decodingtrustagent")
+    ap.add_argument("--image-ns", default="vmvm-registry.fbinfra.net/zhaorun/dtap")
+    ap.add_argument("--tag", default="clawfish")
     a = ap.parse_args(argv)
 
     run = Path(a.run)
@@ -401,7 +427,8 @@ def main(argv: List[str]) -> int:
         return 2
     out = Path(a.out) if a.out else Path("dtap_export") / a.env_name
     res = export(run, a.env_name, out, api_port=a.api_port, ui_port=a.ui_port,
-                 pg_port=a.pg_port, mcp_port=a.mcp_port, image_ns=a.image_ns)
+                 pg_port=a.pg_port, mcp_port=a.mcp_port, image_ns=a.image_ns,
+                 tag=a.tag)
     print(json.dumps(res, indent=2))
     if not res["endpoints"]:
         print("WARNING: no registryhub_endpoints.json — 0 MCP tools generated. The env will "

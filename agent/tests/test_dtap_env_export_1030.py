@@ -138,13 +138,39 @@ def test_ports_are_overridable_with_defaults(tmp_path):
     assert "${NETFLIX_PG_PORT:-5545}" in txt
 
 
-def test_the_local_variant_builds_instead_of_pulling(tmp_path):
+def test_the_local_variant_builds_all_three(tmp_path):
     out, _ = _export(tmp_path)
     d = yaml.safe_load((out / "dt_arena" / "envs" / "netflix"
                         / "docker-compose.yml").read_text(encoding="utf-8"))
-    assert "build" in d["services"]["netflix-api"]
-    assert "image" not in d["services"]["netflix-api"]
-    assert d["services"]["netflix-pg"]["image"] == "postgres:16", "pg is never built"
+    for n in ("netflix-pg", "netflix-api", "netflix-ui"):
+        assert "build" in d["services"][n], n
+        assert "image" not in d["services"][n], n
+
+
+def test_every_hub_image_is_a_registry_ref_including_the_database(tmp_path):
+    """★ The offline constraint. tbr/images.py: "the runtime VM has no network". A bare
+    `postgres:16` would be unpullable at run time, which is why the enabled crm env ships
+    `decodingtrustagent/salesforce-crm:mariadb` instead of a stock mariadb. An earlier cut of
+    this exporter referenced postgres:16 and would have produced a stack that cannot boot."""
+    out, _ = _export(tmp_path)
+    d = yaml.safe_load((out / "dt_arena" / "envs" / "netflix"
+                        / "docker-compose-hub.yml").read_text(encoding="utf-8"))
+    for n, svc in d["services"].items():
+        img = svc.get("image", "")
+        assert img.startswith("decodingtrustagent/") or "/" in img.split(":")[0], n
+        assert ":" in img and not img.endswith(":"), f"{n} has no tag: {img!r}"
+        assert img != "postgres:16", "the database must be a baked registry image too"
+
+
+def test_the_pg_image_bakes_the_seed_rather_than_mounting_it(tmp_path):
+    """A bind-mounted ./init is resolved at boot; offline, the seed has to be in the layer."""
+    out, _ = _export(tmp_path)
+    e = out / "dt_arena" / "envs" / "netflix"
+    df = (e / "pg" / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY init/" in df and "docker-entrypoint-initdb.d" in df
+    d = yaml.safe_load((e / "docker-compose-hub.yml").read_text(encoding="utf-8"))
+    assert "volumes" not in d["services"]["netflix-pg"], (
+        "a volume mount cannot carry the seed into an offline VM")
 
 
 # --- the MCP proxy --------------------------------------------------------------------------------
@@ -205,6 +231,14 @@ def test_the_registry_entry_matches_the_contract(tmp_path):
     assert body["netflix"]["health_path"] == "/health"
 
 
+def test_the_default_registry_matches_the_platform():
+    """tbr/images.py: REGISTRY = vmvm-registry.fbinfra.net/zhaorun/dtap, tag `clawfish`."""
+    import subprocess
+    src = (Path(X.__file__)).read_text(encoding="utf-8")
+    assert "vmvm-registry.fbinfra.net/zhaorun/dtap" in src
+    assert '"clawfish"' in src
+
+
 def test_the_default_ports_do_not_collide_with_the_registry():
     """registry.yaml holds 8025-8077 and 8453/8454; paypal's pg is 5544. If those move, this
     file's chosen defaults must move too."""
@@ -220,13 +254,16 @@ def test_no_endpoints_yields_no_tools_and_says_so(tmp_path):
                / "main.py").read_text(encoding="utf-8"))
 
 
-def test_the_push_script_is_executable_and_pushes_both_images(tmp_path):
+def test_the_push_script_builds_and_pushes_all_three(tmp_path):
     out, _ = _export(tmp_path)
     p = out / "dt_arena" / "envs" / "netflix" / "BUILD_AND_PUSH.sh"
     assert p.stat().st_mode & 0o111, "must be executable"
     txt = p.read_text(encoding="utf-8")
-    assert "netflix:api-latest" in txt and "netflix:ui-latest" in txt
-    assert "podman push" in txt
+    for comp in ("netflix-pg", "netflix-api", "netflix-ui"):
+        assert f'"$NS/{comp}:$TAG"' in txt, comp
+    assert txt.count("podman push") == 3
+    assert "DTAP_REGISTRY" in txt and "DTAP_TAG" in txt, (
+        "must honour the same overrides tbr/build_images.sh uses")
 
 
 if __name__ == "__main__":  # pragma: no cover
