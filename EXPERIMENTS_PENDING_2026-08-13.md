@@ -20312,3 +20312,53 @@ Remaining, honestly ranked:
     DECISION        the task_suite branch (audited by #1024; activate/delete is a call to make
                     with the 45%-halt figure in hand)
     UNSWEPT         orchestrator coordination, the projector/visual path, timing/races
+
+### 468. what actually stops delivery — ranked from 173 runs, and it is not what I was fixing
+
+Two more scanners came back NEGATIVE, which is worth recording so nobody re-runs them:
+
+    ENVGEN_* flags       85 read in code, 45 never set in any script/doc. Filtered to boolean
+                         FEATURE toggles (the #1020 shape — a mechanism shipped off): every
+                         one of them defaults to "1". **That class has exactly one member and
+                         it is already fixed.**
+    abort thresholds     NO_DELIVER_ABORT_S=4500 (75min), ABORT_GRACE_MAX=3, wall clock 7200s
+                         — never tuned. Tempting to raise. **Do not**: of 10 measurable
+                         STUCK runs, 10 were FLAT (failing-check count unchanged) in the
+                         window before abort, 0 improving. The detector is firing on genuinely
+                         stalled runs. (Weak: only 4-5 samples per run, all near the end.)
+
+★★ **How runs actually end** (173 logs; 109 were killed by hand during development and carry
+no terminal line, so the denominator that matters is the 64 that reached one):
+
+    STUCK — gate not green   26   41%
+    main-exit only           17   27%
+    Delivery gate failed     13   20%
+    wall-clock budget         6    9%
+
+So STUCK dominates, not the wall clock — which retires the wall-clock framing I was carrying
+from r172 (r172 is 1 of 6).
+
+★★★ **What the gate was still failing AT ABORT** (20 STUCK runs with a final list):
+
+     7 runs (35%)  business_chain_failing
+     7 runs (35%)  validation_ui_evidence_failed
+     7 runs (35%)  unresolved_failed_tasks
+     6 runs (30%)  deliverability_ui_flow_failed
+     3 runs (15%)  verification_checklist_not_ready
+
+and **9 of 20 died with exactly ONE failing check** — one check from delivery, flat for 75
+minutes. Of those nine:
+
+     4x  business_chain_failing        (r114, r117, r135, r145)
+     1x  deliverability_ui_page_unwired / bare_authed_fetch / validation_ui_evidence_failed /
+         unresolved_failed_tasks / deliverability_ui_flow_failed
+
+**`business_chain_failing` is the single highest-value target in the system**: joint-top at
+abort and the SOLE blocker in 4 of the 9 near-misses. It is also exactly the item the handoff
+listed as "not diagnosed to root" (`restore_regressed_chains` reporting "was green then
+regressed with the contract unchanged", firing twice in r169 while still losing).
+
+★ Worth saying plainly: nothing I fixed today is on that list except indirectly
+(#1021/#1022 feed the UI-evidence and DB surfaces). I picked today's targets from the last
+run's symptoms; this ranking comes from 173 runs and points somewhere else. **Rank the corpus
+before picking the next fix, not the latest log.**
