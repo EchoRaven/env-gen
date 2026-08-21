@@ -243,8 +243,37 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 # step_pipeline/tooling._call_stage_llm did disrupt it — summarizing
                 # the backend's working state mid-endpoint → it lost track and looped
                 # on memory reads instead of finishing the code. That guard is removed;
-                # this every-step boundary condensation is the sole bound, and it
-                # keeps context ~28-100, far under the ~770 saturation.)
+                # this every-step boundary condensation is the sole bound.)
+                #
+                # #1025: THE SENTENCE THAT USED TO END THAT PARAGRAPH — "and it keeps context
+                # ~28-100, far under the ~770 saturation" — IS NOT TRUE ON THE MODEL WE RUN.
+                # Measured over r172 (4556 LLM requests, gpt-5-6-sol-genai-responses):
+                #
+                #     messages per request   median 139   p90 573   max 1274
+                #     over 100 messages      57% of requests
+                #     over 400 messages      21% of requests
+                #     "Condensing messages"  5 times in 4546 calls
+                #
+                # The reason is visible right below: `_pressured` is `_chars > _budget * 0.9`,
+                # and `resolve_ctx_working_chars("gpt-5-6-sol-genai-responses")` is 666,400 —
+                # so the gate opens at ~599,760 chars while the MEDIAN request is 149,739 and
+                # even the 400+-message bucket medians 283,179. The threshold sits ~4x above
+                # normal traffic, so on this model condensation effectively never runs.
+                #
+                # That is not a bug in F3/F4's guards, which were added for measured reasons
+                # (condense thrash + a "RESUME NOW" directive injected into coordinating lanes
+                # mid-kickoff). It is a CONFLATION of two different goals:
+                #     `_pressured` implements an OVERFLOW guard — "do not exceed the window"
+                #     the deleted sentence described a SIZE bound — "keep context small"
+                # Only the first is implemented, and the comment asserted the second.
+                #
+                # It is paid in wall clock, which is what ends runs: r172 spent 230,947,225
+                # prompt tokens against 1,030,351 completion tokens — 224:1 — across
+                # 3.34 billion content chars, and died on `Run budget exceeded (wall-clock
+                # 7214s exceeded cap 7200s)`. Adding a real size bound is a behaviour change
+                # with F3/F4's failure mode on the other side of it, so it is measured and
+                # recorded here rather than switched on blind; #1025 adds the per-run
+                # instrumentation that makes the threshold decidable from one run.
                 _model = getattr(getattr(self, "config", None), "model_name", None)
                 if step > 0:
                     messages = _mask_old_observations(messages, model=_model)
@@ -261,9 +290,14 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                         _phase_ok = getattr(self, "_active_phase", None) != "kickoff"
                         _cooldown_ok = (step - getattr(self, "_last_condense_step", -999)) >= 6
                         _pressured = True  # fail-safe: condense if we cannot size the budget
+                        # #1025: bound OUTSIDE the try so the decline log below can always read
+                        # them — inside, an early raise leaves the names unbound and the log
+                        # that explains the decline is the first thing to break.
+                        _budget = 0
+                        _chars = -1
                         try:
                             from utils.model_limits import resolve_ctx_working_chars
-                            _budget = resolve_ctx_working_chars(_model)
+                            _budget = resolve_ctx_working_chars(_model) or 0
                             if _budget:
                                 # Count only STRING content, accessed via getattr — messages are
                                 # Message OBJECTS here (mirrors _mask_old_observations so both layers
@@ -277,6 +311,24 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                                 _pressured = _chars > _budget * 0.9
                         except Exception:
                             _pressured = True
+                        # #1025: SAY WHY IT DID NOT CONDENSE. `should_condense_messages` said
+                        # yes and one of three gates said no — and which one is invisible, so
+                        # a run cannot tell "context is healthy" from "the threshold is 4x
+                        # above anything we ever send". Logged at INFO on the declined path
+                        # only (it is already inside `should_condense_messages`), so it costs
+                        # nothing on the common path and makes the headroom auditable.
+                        if not (_phase_ok and _cooldown_ok and _pressured):
+                            try:
+                                self._logger.info(
+                                    "[%s] #1025 condense DECLINED at step %s: msgs=%d chars=%d "
+                                    "budget=%d use=%s%% | phase_ok=%s cooldown_ok=%s "
+                                    "pressured=%s",
+                                    self.agent_id, step, len(messages), _chars, _budget,
+                                    (int(100 * _chars / _budget) if _budget > 0 and _chars >= 0
+                                     else "?"),
+                                    _phase_ok, _cooldown_ok, _pressured)
+                            except Exception:
+                                pass
                         if _phase_ok and _cooldown_ok and _pressured:
                             self._logger.info(f"[{self.agent_id}] Condensing messages (len={len(messages)})")
                             messages = await self.memory.condense_messages(messages)
