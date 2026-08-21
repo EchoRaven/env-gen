@@ -715,6 +715,7 @@ def scope_filter_incomplete(incomplete_tasks: List[Dict[str, Any]], scope_paths)
     return out
 
 from .. import delivery as _contract
+from .message_format import join_capped  # #1034
 
 
 def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
@@ -2543,7 +2544,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 for _r, _names in sorted(_by1009.items()):
                     logger.warning(
                         "#1009 incomplete_required_tasks — %d x %s: %s",
-                        len(_names), _r, "; ".join(_names[:6]))
+                        len(_names), _r, join_capped(_names, len(_names)))
             except Exception:
                 pass
         failed_checks.append("incomplete_required_tasks")

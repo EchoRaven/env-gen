@@ -21,6 +21,10 @@ from __future__ import annotations
 
 import re
 from typing import Any, List
+
+from .message_format import join_capped  # #1034
+
+
 def _write_py_995(path, text, *, what: str = ""):
     """#995 guard, imported defensively.
 
@@ -2011,7 +2015,7 @@ class HealPipeline:
                     if _hits:
                         orch._logger.warning(
                             "#1014 framework delivery is committing %d LANE-OWNED path(s): %s",
-                            len(_hits), "; ".join(_hits[:10]))
+                            len(_hits), join_capped(_hits, len(_hits), cap=10))
             except Exception:
                 pass
             rc, out, err = _run_git(
