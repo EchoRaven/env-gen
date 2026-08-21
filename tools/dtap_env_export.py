@@ -118,6 +118,47 @@ def sanitize_init_sql(sql: str) -> Tuple[str, List[str]]:
     return _MARKER_ALTER_RE.sub(_fix, sql), notes
 
 
+# The env names the GENERATED app reads. Verified against r173/r174:
+#   backend  main.py     environ.get("API_PORT", "8081")
+#   backend  database.py getenv("DATABASE_URL")
+#   frontend start.sh + nginx.conf.template   ${UI_PORT}, ${API_URL}
+# The compose sets these DERIVED from its own ${<ENV>_*} knobs. If the scaffolder ever renames
+# one, the container silently falls back to its built-in default and the healthcheck probes a
+# port nothing is listening on — a dead port reads as a task failure, not as a broken env
+# (harness_env.py). So the contract is CHECKED at export rather than trusted.
+_APP_ENV_CONTRACT = {
+    "api": ("API_PORT", "DATABASE_URL"),
+    "ui": ("UI_PORT", "API_URL"),
+}
+
+
+def check_app_env_contract(run: Path) -> List[str]:
+    """Return a warning per env name the exported compose sets that the app never reads."""
+    warn: List[str] = []
+    probes = {
+        "api": (run / "app" / "backend", _APP_ENV_CONTRACT["api"]),
+        "ui": (run / "app" / "frontend", _APP_ENV_CONTRACT["ui"]),
+    }
+    for role, (d, names) in probes.items():
+        if not d.is_dir():
+            continue
+        blob = ""
+        for f in d.rglob("*"):
+            if f.is_file() and f.suffix in (".py", ".sh", ".template", ".conf", ".js", ".jsx"):
+                if any(part in _SKIP_DIRS for part in f.relative_to(d).parts):
+                    continue
+                try:
+                    blob += f.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    pass
+        for n in names:
+            if n not in blob:
+                warn.append(f"{role}: the app never references {n} — the compose sets it, so "
+                            f"the container will use its built-in default and the healthcheck "
+                            f"may probe a dead port")
+    return warn
+
+
 def _load_endpoints(run: Path) -> List[Dict[str, Any]]:
     f = run / "shared" / "hubs" / "registryhub_endpoints.json"
     try:
@@ -217,13 +258,21 @@ services:
       {env}-pg:
         condition: service_healthy
     environment:
+      # The ${{{U}_*}} names are the compose-level KNOBS. The two below are what the
+      # generated app actually reads (`main.py`: environ.get("API_PORT", "8081");
+      # `database.py`: getenv("DATABASE_URL")), so they are DERIVED from the knobs rather
+      # than assumed equal to them. Setting only the namespaced form left the api bound to
+      # its own default 8081 while the healthcheck and registry.yaml both pointed at
+      # {api_port} — `harness_env.py` names that exact failure: "a mismatch points the judge
+      # at a dead port ... a silent reward-0 indistinguishable from a real task failure".
+      API_PORT: ${{{U}_API_PORT:-{api_port}}}
+      DATABASE_URL: postgresql://sandbox:sandbox@127.0.0.1:${{{U}_PG_PORT:-{pg_port}}}/{env}
       {U}_PG_HOST: 127.0.0.1
       {U}_PG_PORT: ${{{U}_PG_PORT:-{pg_port}}}
       {U}_PG_DB: {env}
       {U}_PG_USER: sandbox
       {U}_PG_PASSWORD: sandbox
       {U}_API_PORT: ${{{U}_API_PORT:-{api_port}}}
-      DATABASE_URL: postgresql://sandbox:sandbox@127.0.0.1:${{{U}_PG_PORT:-{pg_port}}}/{env}
     healthcheck:
       test: ["CMD-SHELL", "python -c \\"import urllib.request,sys,os; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('{U}_API_PORT','{api_port}')+'/health', timeout=2); sys.exit(0)\\" || exit 1"]
       interval: 3s
@@ -239,6 +288,10 @@ services:
     depends_on:
       - {env}-api
     environment:
+      # What the generated frontend reads (`start.sh` / `nginx.conf.template`: ${{UI_PORT}},
+      # ${{API_URL}}), derived from the same knobs.
+      UI_PORT: ${{{U}_UI_PORT:-{ui_port}}}
+      API_URL: http://127.0.0.1:${{{U}_API_PORT:-{api_port}}}
       {U}_API_PORT: ${{{U}_API_PORT:-{api_port}}}
       {U}_UI_PORT: ${{{U}_UI_PORT:-{ui_port}}}
     restart: unless-stopped
@@ -449,7 +502,8 @@ def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_po
         render_registry_snippet(env, api_port, ui_port), encoding="utf-8")
 
     return {"env": env, "files": counts, "tools": len(tools),
-            "endpoints": len(endpoints), "out": str(out), "sql_repairs": sql_notes}
+            "endpoints": len(endpoints), "out": str(out), "sql_repairs": sql_notes,
+            "env_contract_warnings": check_app_env_contract(run)}
 
 
 def main(argv: List[str]) -> int:
