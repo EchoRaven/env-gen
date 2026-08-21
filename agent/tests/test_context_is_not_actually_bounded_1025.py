@@ -23,13 +23,32 @@ lane mid-kickoff. It is a CONFLATION: `_pressured` implements *do not exceed the
 the deleted sentence described *keep context small*. Only the first is implemented, and the
 comment asserted the second, so nothing ever compared the claim to a run.
 
-What it costs is wall clock, which is what actually ends runs. r172: **230,947,225 prompt
-tokens against 1,030,351 completion tokens — 224:1** — over 3.34 billion content chars, ending
-on `Run budget exceeded (wall-clock 7214s exceeded cap 7200s) without delivery`.
+★ THE COST CONSEQUENCE IS SMALL, and this ticket's first draft said the opposite. Two
+corrections, both from measuring rather than asserting:
 
-Adding a real size bound is a behaviour change with F3/F4's failure mode on the other side, so
-#1025 does not change the trigger. It removes the false claim and logs the DECLINED path with
-the numbers, so one run makes the threshold decidable instead of invisible.
+  1. `content_chars` is NOT a cost proxy. A 6,334,649-char request billed 51,212 prompt tokens
+     (~124 chars/token against ~4 for text) — base64 image blocks inflate chars and tokenize
+     cheaply. Which is precisely why `_pressured` counts STRING content only: that is CORRECT,
+     and the first draft cited the inflated figure as if it were spend.
+
+  2. On real tokens, prompt cost is nearly FLAT in conversation length, because
+     `_mask_old_observations` runs every step and does the work:
+
+         msgs  24 -> median 40,296 prompt tokens   (1,644 tok/msg)
+         msgs 149 -> median 42,710                 (  286 tok/msg)
+         msgs 345 -> median 48,964                 (  141 tok/msg)
+         msgs 712 -> median 62,385                 (   87 tok/msg)
+
+     A 30x increase in message count costs 1.55x more tokens. Masking bounds BYTES PER MESSAGE
+     (a 19x reduction); condensation bounds the COUNT, and the count is the cheap axis.
+
+So the honest conclusion is narrower than the alarm: the deleted sentence WAS false about the
+message count, and it does not matter much. r172's 210,779,817 prompt tokens over 4,155 calls
+are dominated by the PER-CALL BASELINE — a real agent step starts around 40k tokens before any
+history — which is a system-prompt/tool-surface question, not a condensation one.
+
+The trigger is therefore left exactly as it is. #1025 removes the false claim, records what
+replaces it, and logs the DECLINED path so one run answers the question with data.
 """
 import inspect
 import re
@@ -53,8 +72,28 @@ def test_the_untrue_sentence_is_removed():
 def test_the_measurement_replaces_it():
     s = _src()
     assert "#1025" in s
-    for fact in ("median 139", "p90 573", "max 1274", "666,400", "224:1"):
+    for fact in ("median 139", "p90 573", "max 1274", "666,400"):
         assert fact in s, f"the record must carry {fact!r}"
+
+
+def test_the_cost_correction_travels_with_the_claim():
+    """★ The first draft cited 3.34 billion content chars and 224:1 as if they were spend, and
+    they are not — base64 inflates chars ~30x against tokens. The corrected numbers, and the
+    reason `_pressured` counting strings only is RIGHT, must stay attached; otherwise the next
+    reader re-runs the same wrong alarm."""
+    s = _src()
+    assert "IS NOT A COST PROXY" in s
+    assert "51,212 prompt tokens" in s
+    for fact in ("40,296", "62,385", "1.55x"):
+        assert fact in s, f"the flat-cost measurement must carry {fact!r}"
+
+
+def test_the_real_driver_is_named():
+    """If the wall-clock lever is the per-call baseline, the note must say so — otherwise the
+    next optimisation goes at condensation, which the measurement says is not where it is."""
+    s = _src()
+    assert "PER-CALL BASELINE" in s
+    assert "40k tokens" in s
 
 
 def test_the_conflation_is_named():

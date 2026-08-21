@@ -267,13 +267,36 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 #     the deleted sentence described a SIZE bound — "keep context small"
                 # Only the first is implemented, and the comment asserted the second.
                 #
-                # It is paid in wall clock, which is what ends runs: r172 spent 230,947,225
-                # prompt tokens against 1,030,351 completion tokens — 224:1 — across
-                # 3.34 billion content chars, and died on `Run budget exceeded (wall-clock
-                # 7214s exceeded cap 7200s)`. Adding a real size bound is a behaviour change
-                # with F3/F4's failure mode on the other side of it, so it is measured and
-                # recorded here rather than switched on blind; #1025 adds the per-run
-                # instrumentation that makes the threshold decidable from one run.
+                # ★ BUT THE COST CONSEQUENCE IS SMALL, and the first draft of this note got
+                # that wrong. Two corrections, both from measuring instead of asserting:
+                #
+                #   1. `content_chars` IS NOT A COST PROXY. A 6,334,649-char request billed
+                #      51,212 prompt tokens (~124 chars/token vs ~4 for text) — base64 image
+                #      blocks inflate chars and tokenize cheaply. Which is exactly why the
+                #      estimate below counts STRING content only: that choice is CORRECT.
+                #
+                #   2. On real tokens, prompt cost is nearly FLAT in conversation length,
+                #      because `_mask_old_observations` runs every step and does the work:
+                #
+                #          msgs  24 -> median 40,296 prompt tokens   (1,644 tok/msg)
+                #          msgs 149 -> median 42,710                 (  286 tok/msg)
+                #          msgs 345 -> median 48,964                 (  141 tok/msg)
+                #          msgs 712 -> median 62,385                 (   87 tok/msg)
+                #
+                #      A 30x increase in message count costs 1.55x more tokens. Masking bounds
+                #      BYTES PER MESSAGE (19x reduction); condensation bounds the COUNT, and
+                #      the count is the cheap axis. So condensation rarely firing is fine.
+                #
+                # The real driver of r172's 210,779,817 prompt tokens over 4,155 calls is the
+                # PER-CALL BASELINE — a real agent step starts around 40k tokens before any
+                # history — not history growth. That is a system-prompt/tool-surface question,
+                # not a condensation one, and it is where the wall-clock leverage actually is.
+                #
+                # So the trigger is left EXACTLY as it is: changing it has F3/F4's failure mode
+                # on one side and, per the measurement above, almost nothing to win on the
+                # other. What #1025 adds is the decline log below, so the next run answers
+                # "is context healthy or is the threshold unreachable" from data rather than
+                # from a sentence nobody checked for two sessions.
                 _model = getattr(getattr(self, "config", None), "model_name", None)
                 if step > 0:
                     messages = _mask_old_observations(messages, model=_model)
