@@ -20362,3 +20362,39 @@ regressed with the contract unchanged", firing twice in r169 while still losing)
 (#1021/#1022 feed the UI-evidence and DB surfaces). I picked today's targets from the last
 run's symptoms; this ranking comes from 173 runs and points somewhere else. **Rank the corpus
 before picking the next fix, not the latest log.**
+
+### 469. the scanner the user's eye beat me to: sibling code where one branch has a guard
+
+The user pointed at two lines in `step_runner` and said "there is a bug here". There was — and
+none of my six scanners would have found it, because they all look for a property of ONE site
+(empty / never-called / never-fired / discarded). This defect is only visible as an
+ASYMMETRY BETWEEN SIBLINGS: `hub_pulse` dedups its per-step block and documents why;
+`runtime_team_status`, the very next stage, same shape, had no dedup and no tracker anywhere.
+
+Turned it into a scanner — every `messages.append(Message.user(...))` in the tree, guarded or
+not — and it immediately found a bigger one:
+
+    step_runner   8 append sites: hub_pulse GUARDED, the other 7 not
+    #1027         runtime_team_status — real, but LATENT (builder returns None unless the
+                  agent owns a spawned runtime; `launch_agent_team` invoked in 0 of 298 logs)
+    #1028         step_reminder_prompt — real and ACTIVE in every run: 488 chars / ~122
+                  tokens, byte-identical, from execution_pipeline_defaults so EVERY agent
+                  gets it, `ttl_steps` appears 0 times so it never expires, appended once
+                  per step
+
+★ #1028 needed a DIFFERENT fix from #1027, and noticing that mattered: the reminder exists to
+be read "before doing anything in this step", so hub_pulse-style dedup would defeat it after
+step 1. Move-to-end keeps one copy, always last — which is what the builder's docstring
+already claims it does.
+
+★★ **Third correction to the #1025 paragraph, and the most embarrassing.** I wrote that
+`_mask_old_observations` was doing the work of keeping cost flat. It does not run: it is gated
+on the SAME budget as the condenser and returns early when content fits (666,400 here). So
+with masking inert AND no dedup, nothing at all was reclaiming #1028's 122 tokens/step. The
+flat-cost CONCLUSION survives (it is the 40k baseline dominating); only my attribution was
+wrong, twice.
+
+Running tally of my own errors today: `max()` aggregation, name-based grant check,
+chars-as-tokens, masking-as-explanation (x2), fixed-width source windows (x2). Every one was
+the INSTRUMENT or the ATTRIBUTION, never the underlying system. The rule that keeps holding:
+**measure the thing you are about to claim, in the unit you are about to claim it in.**
