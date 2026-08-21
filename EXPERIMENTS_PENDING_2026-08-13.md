@@ -20232,3 +20232,44 @@ its count was quoted; two of the six returned a WRONG first answer (max() aggreg
 validation step. Real defects found across all six: #1021, #1022(x3), #1023b, #1023d, #1024,
 #1025 — and the single highest-value one is the context measurement above, which no artifact
 sweep would ever have surfaced because nothing in 172 runs records it.
+
+### 466. correcting item 465: the abbreviation mechanism works, and I measured the wrong unit
+
+Item 465 called the context growth "the largest finding of the whole review". **That framing was
+wrong and I am retracting it.** The error was the unit.
+
+    content_chars is NOT cost.  One r172 request: 6,334,649 chars -> 51,212 prompt tokens.
+    ~124 chars/token against ~4 for text — base64 image blocks inflate chars and tokenize
+    cheaply. 540 requests (12%) "exceed the budget" in chars; in tokens they do not.
+
+★ That also flips a sub-finding into its opposite: `_pressured` counting **STRING content only**
+is CORRECT, not a gap. Its comment says it skips list content to avoid being inflated by base64,
+and that is exactly the trap I fell into one layer up.
+
+Re-measured on prompt_tokens, pairing each request with its response (n=4155):
+
+    msgs  24 -> median 40,296 prompt tokens   1,644 tok/msg
+    msgs 149 -> median 42,710                   286
+    msgs 345 -> median 48,964                   141
+    msgs 712 -> median 62,385                    87
+
+**A 30x increase in message count costs 1.55x more tokens.** `_mask_old_observations` runs every
+step and cuts per-message cost 19x. So the two mechanisms split the work:
+
+    masking       bounds BYTES PER MESSAGE      runs every step, works
+    condensation  bounds the MESSAGE COUNT      fires 5 times in 4546 — and the count is the
+                                                CHEAP axis, so that is fine
+
+What survives from #1025: the sentence "keeps context ~28-100" is still false (median 139, max
+1274), and removing it is right. What does not survive: the claim that this drives wall clock.
+
+**The real driver is the PER-CALL BASELINE.** A real agent step starts near 40k prompt tokens
+before any history; 4,155 calls x ~40k ≈ 79% of the run's 210,779,817 prompt tokens. That is a
+system-prompt / tool-surface question. Lowering the condensation threshold would buy ~nothing
+and re-open F3/F4's failure mode, so the trigger was left untouched.
+
+★★ Third time today that the instrument, not the system, was the defect (max() aggregation;
+name-based grant check; now content_chars-as-cost). The pattern is sharper than
+`my-audit-heuristics-over-flag`: **before quoting a metric, check that it is denominated in the
+thing you are claiming.** Chars are not tokens; registration is not invocation; a name in a log
+is not a call.
