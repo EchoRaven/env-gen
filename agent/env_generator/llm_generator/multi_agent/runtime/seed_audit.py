@@ -165,6 +165,19 @@ def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, in
         # #563's trap: callers hold `app_root` (<project>/app) as often as the project root,
         # and a compose file looked for in the wrong one reads as "no database" — a silent
         # downgrade to the dead path. Accept either, plus the compose dir itself.
+        #
+        # #1044 (r176, live): every LANE gets a git worktree under `<project>/worktrees/<lane>/`
+        # and each one carries its own `docker/docker-compose.yml`, so the search above happily
+        # matched `worktrees/orchestrator/docker/docker-compose.yml` — a real file whose compose
+        # project has NO containers. Only one stack runs, launched from the canonical
+        # `<project>/docker/`. The symptom was not an error: it was
+        # `#1039 ... DID NOT RUN (no database container resolved from .../worktrees/orchestrator/
+        # docker/docker-compose.yml)`, i.e. the audit silently reverting to the dead path on a
+        # run whose database was up and healthy. Hoist out of a worktree FIRST so the canonical
+        # tree always wins.
+        _parts = proj.parts
+        if "worktrees" in _parts:
+            proj = _P(*_parts[:_parts.index("worktrees")])
         compose = None
         for cand in (proj / "docker" / "docker-compose.yml",
                      proj.parent / "docker" / "docker-compose.yml",
