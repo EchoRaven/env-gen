@@ -1143,6 +1143,40 @@ class RemediationDispatcher:
                 "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
                 "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
                 "flow has a passing validation:ui_flow record."),
+            "validation_ui_evidence_failed": (
+                # #1040 — #280's defect, exactly, one check to the left, five months later.
+                #
+                # This is the MOST COMMON live blocker (7 of the last 10 declining runs) and it
+                # was in neither `_GATE_OWNER` nor `_COVERED_ELSEWHERE`, so every gate tick took
+                # the `if not spec: uncovered.append(name); continue` path: 26 runs logged
+                # "NO remediation owner" for it and NOTHING was ever dispatched.
+                #
+                # ★ The reason it went unnoticed for so long is that a fix for it already
+                # EXISTS and is unreachable: #982 added a `if name == "validation_ui_evidence_
+                # failed":` branch below that builds the named-pages remediation via
+                # `_ui_evidence_failed_pages`/`_ui_evidence_failed_extra`. That branch sits
+                # AFTER the owner lookup, so the check `continue`s past it every time. Both
+                # helpers work; nothing could call them. Adding this row activates #982.
+                #
+                # r174 is the whole chain in one run: 6 flows failed at 23:51, the gate could
+                # not NAME them (#1032, fixed), no owner existed to dispatch to (this), and in
+                # the following 80 minutes exactly one UI record was written — none of the six.
+                # r175 shows the first half repaired: "#1017 ... 8 record(s), 8 named page(s):
+                # detail_to_play; genre_navigation; ..." and then, still, "NO remediation owner".
+                #
+                # Owner is `verifier` for the same reason both siblings are: it owns the walk
+                # that WRITES validation:ui_flow records, so it is the only lane that can make a
+                # failing record flip. It bug_creates for whoever owns the underlying defect.
+                "verifier", "Re-verify the failing UI evidence records (blocks delivery)",
+                "one or more validation:ui_flow records are FAILING, so the UI evidence gate "
+                "cannot pass. These are RECORDS, not necessarily live defects: a record stays "
+                "failing until a walk overwrites it, so a flow fixed after the record was "
+                "written still blocks. For each named page/flow below: re-run the walk "
+                "(run_validation) so the record is rewritten from the CURRENT app. If it still "
+                "fails, read the recorded reason + console_errors, bug_create for the owning "
+                "lane (a JS/render crash or dead control is FRONTEND; a 4xx/5xx from the API is "
+                "BACKEND), then re-run once fixed. Do NOT close the gate item by editing the "
+                "record — only a fresh walk counts."),
             "deliverability_ui_flow_failed": (
                 # #280 (r63, live): the delivered app's FYP feed ui_flow FAILED — the SPA
                 # crashed post-login with "(void 0) is not a function" — and the gate logged
@@ -1203,12 +1237,17 @@ class RemediationDispatcher:
             # each in-list duplicate as a separate re-decline — firing 3 duplicate P0 tasks
             # (dup #1/#4/#7) and waking the lane 10× for one trivial fix. Collapse duplicates
             # so each DISTINCT check is handled once per gate-tick (order-preserving).
+            _owned_1040 = 0          # checks that HAVE a remediation owner this tick
+            _elsewhere_1040: List[str] = []
             for name in dict.fromkeys(str(r) for r in failed_checks):
                 spec = _GATE_OWNER.get(name)
                 if not spec:
                     if name not in _COVERED_ELSEWHERE:
                         uncovered.append(name)
+                    else:
+                        _elsewhere_1040.append(name)
                     continue
+                _owned_1040 += 1
                 if guard.get(name) == milestone:
                     # already dispatched this milestone — but re-fire a PERSISTING blocker
                     # every _GATECHECK_REFIRE declines so a wake that didn't land gets
@@ -1469,6 +1508,33 @@ class RemediationDispatcher:
                 orch._logger.warning(
                     "Delivery declined on gate check(s) with NO remediation owner "
                     "(needs a fix at source or an owner mapping): %s", _uncov)
+            # #1040 WEDGE DETECTOR: an unowned check is survivable while some OTHER failing
+            # check still has an owner — that one gets dispatched and the run moves. When
+            # EVERY failing check is unowned, nothing is dispatched at all and the decline
+            # cannot clear by any action the framework will take. The run then declines every
+            # tick until the wall clock, which is not a stall to diagnose but a dead end.
+            #
+            # r174 is exactly this and it is why it burned 80 minutes: its terminal set was
+            # ['unresolved_failed_tasks', 'validation_ui_evidence_failed'] and BOTH were
+            # unowned. Nothing said so — the line above reports the unowned names, and reads
+            # as informational, without the one fact that makes it terminal.
+            if _uncov and not _owned_1040:
+                _n = getattr(orch, "_gatecheck_wedged_ticks_1040", 0) + 1
+                orch._gatecheck_wedged_ticks_1040 = _n
+                if _n == 1 or _n % 5 == 0:
+                    orch._logger.error(
+                        "#1040 DELIVERY IS WEDGED: all %d failing gate check(s) are UNOWNED, so "
+                        "NOTHING was dispatched and this decline cannot clear by itself "
+                        "(%d consecutive tick(s)). Unowned: %s.%s This needs an owner in "
+                        "_GATE_OWNER, an entry in _COVERED_ELSEWHERE with a reason, or a fix at "
+                        "the check's source — the run will otherwise decline until the wall "
+                        "clock.",
+                        len(_uncov), _n, join_capped(_uncov, len(_uncov)),
+                        (" Covered elsewhere (not dispatched here): "
+                         + join_capped(_elsewhere_1040, len(_elsewhere_1040)) + ".")
+                        if _elsewhere_1040 else "")
+            else:
+                orch._gatecheck_wedged_ticks_1040 = 0
         except Exception as exc:
             orch._logger.error("gate-level check dispatch failed: %s", exc)
 
