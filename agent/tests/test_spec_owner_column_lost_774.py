@@ -144,5 +144,32 @@ def test_the_id_substring_trap_is_recorded():
     assert "same over-loose matching #765 refuses one module over" in d
 
 
+# --- #1023c: the finding has to reach an agent ---------------------------------------------------------
+
+def test_the_finding_travels_with_the_verdict_1023c():
+    """It was a LOG LINE ONLY, so nothing consumed it and no agent could act. Published in the
+    gate result for the same reason #790 publishes its errored checks."""
+    src = inspect.getsource(dg.validate_delivery_gate)
+    assert '"spec_owner_columns_lost_774": _lost774' in src
+
+
+def test_it_is_initialised_before_the_try_1023c():
+    """The publication must not depend on the detector or the logging succeeding — otherwise a
+    raise inside the try leaves the name unbound and takes the whole gate down."""
+    src = inspect.getsource(dg.validate_delivery_gate)
+    init = src.index("_lost774: List[Dict[str, str]] = []")
+    assert init < src.index("_lost774 = _spec_owner_columns_lost_774(")
+    assert init < src.index('"spec_owner_columns_lost_774"')
+
+
+def test_it_still_does_not_block_1023c():
+    """Published, not enforced: 8 of 111 runs carry one and a false blocker costs a run
+    (#566j). Making it visible is the change; making it fatal is not."""
+    src = inspect.getsource(dg.validate_delivery_gate)
+    i = src.index("#774")
+    blk = src[i:src.index("_bugs743 = unresolved_bug_tasks_743", i)]
+    assert "failed_checks" not in blk
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

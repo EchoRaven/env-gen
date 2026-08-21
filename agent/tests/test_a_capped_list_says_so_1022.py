@@ -53,36 +53,40 @@ def _join_calls():
             if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_join_capped_1022"]
 
 
-def test_both_gate_lines_use_the_capped_join():
-    assert len(_join_calls()) == 2, "expected the FAILED list and the open-P0 list"
+def test_every_bug_list_gate_line_uses_the_capped_join():
+    """The FAILED list, the open-P0 list, and #1023's stale-P0 list."""
+    assert len(_join_calls()) == 3, "a gate line printing a bug list without the capped join"
 
 
 def test_the_count_and_the_list_come_from_the_same_number():
     """The defect was that they did not: the printed count was uncapped and the list was
-    `[:4]`. Each call must be capped by the very expression its message prints."""
+    `[:4]`. Each call must be capped by an expression the caller actually reports."""
     # ast.unparse normalises string quotes, so compare against its own spelling.
     totals = {ast.unparse(c.args[1]) for c in _join_calls()}
-    assert totals == {"_bugs743['failed_count']", "_bugs743['open_p0_bug_count']"}, totals
+    assert totals == {"_bugs743['failed_count']", "_bugs743['open_p0_bug_count']",
+                      "_bugs743['stale_open_p0_count']"}, totals
 
 
 def test_each_warning_prints_the_count_it_capped_by():
-    """Stronger: inside each `logger.warning(...)`, the count argument and the argument that
-    bounded the list are the SAME expression."""
+    """Stronger: within each `logger.warning(...)`, the number that bounded the list is one the
+    message itself prints. #1023's line prints TWO counts (stale of total), so 'the argument
+    immediately before' is too strict — the requirement is that the cap is not a number the
+    reader never sees."""
     tree = ast.parse(inspect.getsource(dg))
     checked = 0
     for call in ast.walk(tree):
         if not isinstance(call, ast.Call):
             continue
-        idx = [k for k, a in enumerate(call.args)
-               if isinstance(a, ast.Call)
-               and getattr(a.func, "id", None) == "_join_capped_1022"]
-        for k in idx:
-            assert k >= 1, "the joined list must follow the count it belongs to"
-            assert ast.unparse(call.args[k - 1]) == ast.unparse(call.args[k].args[1]), (
-                f"{ast.unparse(call.args[k - 1])} is printed against a list capped by "
-                f"{ast.unparse(call.args[k].args[1])}")
+        for k, a in enumerate(call.args):
+            if not (isinstance(a, ast.Call)
+                    and getattr(a.func, "id", None) == "_join_capped_1022"):
+                continue
+            cap = ast.unparse(a.args[1])
+            printed = {ast.unparse(x) for j, x in enumerate(call.args) if j != k}
+            assert cap in printed, (
+                f"the list is capped by {cap}, which this message never prints")
             checked += 1
-    assert checked == 2, f"expected 2 gate lines, checked {checked}"
+    assert checked == 3, f"expected 3 gate lines, checked {checked}"
 
 
 def test_no_bare_slice_remains_on_those_lists():

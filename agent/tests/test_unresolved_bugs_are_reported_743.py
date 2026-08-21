@@ -137,8 +137,10 @@ def _gate_src() -> str:
 
 
 def test_the_gate_calls_it_and_publishes_it():
+    # #1023 added `output_dir` so the collector can judge staleness from the tree; assert the
+    # call and its hubs argument without pinning the full argument list.
     g = _gate_src()
-    assert "_bugs743 = unresolved_bug_tasks_743(hubs)" in g
+    assert "_bugs743 = unresolved_bug_tasks_743(hubs" in g
     assert '"unresolved_bugs": _bugs743' in g
 
 

@@ -482,6 +482,81 @@ def _norm_gate_path(p: Any) -> str:
     return s.rstrip("/") or "/"
 
 
+def _bug_reference_time_1023(task) -> float:
+    """When this bug's EVIDENCE was taken: the latest of claim/triage/creation. Never raises."""
+    best = 0.0
+    try:
+        meta = task.get("metadata") or {}
+        for v in (task.get("claimed_at"), task.get("created_at"), task.get("updated_at")):
+            if isinstance(v, (int, float)):
+                best = max(best, float(v))
+        for h in (meta.get("triage_history") or []):
+            if isinstance(h, dict) and isinstance(h.get("at"), (int, float)):
+                best = max(best, float(h["at"]))
+    except Exception:
+        return 0.0
+    return best
+
+
+def _stale_open_p0_evidence_1023(task, output_dir) -> str:
+    """#1023: has this open P0's evidence been overtaken by the code, WITHOUT closing anything?
+
+    r172 carried four open P0s at 16:12 and three of them were no longer true — measured
+    against the live system, not the ledger:
+
+        "PostgreSQL container exits during clean Docker startup"     docker_database_1 Up (healthy)
+        "Docker validation cannot start because frontend container   docker_frontend_1 Up
+         is missing"
+        "Clean database initialization fails on my_list.profile_id   the DDL on disk was already
+         foreign-key type mismatch"                                  consistent
+        "Canonical runtime port 3000 serves backend 404"             STILL TRUE under curl
+
+    Nothing retires a bug when its condition stops holding, so the open-P0 count rises
+    automatically (the verifier files per symptom) and falls only when somebody happens to
+    close one. That sawtooth is what makes the gate unreadable across ticks.
+
+    ★ This deliberately does NOT close, cancel, or age anything out. A task-lifecycle timeout
+    would passively cancel work that is merely slow, which is the opposite of the problem — the
+    stale ones here are FAST-moving symptoms whose cause got fixed, and the slow ones are
+    exactly what must survive. So this returns EVIDENCE for the assignee to act on, and the
+    decision to close stays with the agent that owns the bug.
+
+    The signal is conservative: every file the bug itself named as affected has been modified
+    since the bug's evidence was taken. That means the code it points at is not the code it was
+    diagnosed against — grounds to re-verify, never proof of a fix.
+    """
+    # This module has no module-level `Path` (only per-function `from pathlib import Path as
+    # _P`). Importing it here rather than relying on a global: a NameError would be swallowed
+    # by the except below and this check would silently answer "never stale" forever.
+    from pathlib import Path as _P
+    try:
+        meta = task.get("metadata") or {}
+        arts = meta.get("bug_artifacts") or {}
+        files = [str(f).strip() for f in (arts.get("affected_files") or []) if str(f).strip()]
+        if not files:
+            return ""                     # nothing named -> nothing to compare; stay quiet
+        ref = _bug_reference_time_1023(task)
+        if ref <= 0:
+            return ""                     # no timestamp -> cannot judge
+        root = _P(str(output_dir))
+        touched = []
+        for rel in files:
+            p = root / rel
+            if not p.exists():
+                return ""                 # a named file we cannot see -> do not guess
+            try:
+                mtime = p.stat().st_mtime
+            except OSError:
+                return ""
+            if mtime <= ref:
+                return ""                 # at least one file is unchanged -> evidence stands
+            touched.append(f"{rel} (+{int((mtime - ref) / 60)}m)")
+        return "every affected file changed since the evidence was taken: " + "; ".join(
+            touched[:3]) + ("" if len(touched) <= 3 else f"; +{len(touched) - 3} more")
+    except Exception:
+        return ""
+
+
 def _join_capped_1022(items, total, cap: int = 4) -> str:
     """Join at most ``cap`` items and SAY when the rest were dropped.
 
@@ -500,7 +575,7 @@ def _join_capped_1022(items, total, cap: int = 4) -> str:
     return f"{text} (+{hidden} more not shown)" if hidden > 0 else text
 
 
-def unresolved_bug_tasks_743(hubs) -> Dict[str, Any]:
+def unresolved_bug_tasks_743(hubs, output_dir=None) -> Dict[str, Any]:
     """#743: bug tasks are excluded from the structural gate, delegated to a gate that isn't.
 
     `incomplete_required_tasks` deliberately counts only structural kickoff kinds, and says why:
@@ -555,10 +630,17 @@ def unresolved_bug_tasks_743(hubs) -> Dict[str, Any]:
                            "kind": meta.get("kind")})
         elif (meta.get("kind") == "bug" and meta.get("severity") == "P0"
                 and status in {"pending", "in_progress"}):
+            # #1023: attach staleness EVIDENCE, never a verdict — see
+            # `_stale_open_p0_evidence_1023`. The owning agent decides whether to close.
+            _stale = (_stale_open_p0_evidence_1023(t, output_dir)
+                      if output_dir is not None else "")
             open_p0.append({"id": t.get("id"), "title": str(t.get("title") or "")[:120],
-                            "status": status, "assignee": t.get("assignee")})
+                            "status": status, "assignee": t.get("assignee"),
+                            "stale_evidence": _stale})
+    _stale_p0 = [b for b in open_p0 if b.get("stale_evidence")]
     return {"failed": failed[:10], "failed_count": len(failed),
-            "open_p0_bugs": open_p0[:10], "open_p0_bug_count": len(open_p0)}
+            "open_p0_bugs": open_p0[:10], "open_p0_bug_count": len(open_p0),
+            "stale_open_p0": _stale_p0[:10], "stale_open_p0_count": len(_stale_p0)}
 
 
 def scope_filter_incomplete(incomplete_tasks: List[Dict[str, Any]], scope_paths) -> List[Dict[str, Any]]:
@@ -2210,8 +2292,11 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # 8 of 111 corpus runs, every one `profile_id` on the per-profile private tables, which is
     # the single privacy rule those specs state. Whether it should BLOCK is a decision of the
     # same class as #750/#751/#752 and is recorded rather than taken here.
+    # #1023c: initialise OUTSIDE the try so the finding can travel with the verdict below even
+    # if the detector raises — the publication must not depend on the logging succeeding.
+    _lost774: List[Dict[str, str]] = []
     try:
-        _lost774 = _spec_owner_columns_lost_774(hubs)
+        _lost774 = _spec_owner_columns_lost_774(hubs) or []
         if _lost774:
             logger.warning(
                 "#774 the SPEC names an owner column this contract does not carry: %s. The DDL, "
@@ -2256,7 +2341,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "(#807). Reported, not enforced.", "; ".join(_nokind844))
     except Exception:
         pass
-    _bugs743 = unresolved_bug_tasks_743(hubs)
+    _bugs743 = unresolved_bug_tasks_743(hubs, output_dir)
     if logger and _bugs743.get("failed_count"):
         logger.warning(
             "#743 %d task(s) are in status FAILED at the delivery cut and nothing reads them: "
@@ -2278,6 +2363,21 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             _bugs743["open_p0_bug_count"],
             _join_capped_1022([str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])],
                               _bugs743["open_p0_bug_count"]))
+    # #1023: of those, the ones whose own evidence the code has since overtaken. Reported to
+    # the ASSIGNEE as grounds to re-verify — deliberately not closed, cancelled, or aged out
+    # here (a lifecycle timeout would cancel slow work, and the stale ones are the fast ones).
+    if logger and _bugs743.get("stale_open_p0_count"):
+        logger.warning(
+            "#1023 %d of %d open P0 BUG task(s) may already be resolved — %s. r172 carried four "
+            "open P0s and three no longer reproduced (postgres was Up, the frontend container "
+            "existed, the DDL was consistent) while one did, so the count tracked the ledger and "
+            "not the app. NOT closed automatically: the owning agent must re-verify and either "
+            "close it or restate why it still holds.",
+            _bugs743["stale_open_p0_count"], _bugs743["open_p0_bug_count"],
+            _join_capped_1022(
+                [f"[{b.get('assignee') or '-'}] {b.get('title')} — {b.get('stale_evidence')}"
+                 for b in _bugs743.get("stale_open_p0", [])],
+                _bugs743["stale_open_p0_count"]))
     # #751 (user-approved) — A TASK EXPLICITLY MARKED FAILED BLOCKS THE CUT.
     #
     # #743 measured both candidates and only this one is a gate rather than a halt:
@@ -2409,6 +2509,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "checks_errored_790": check_errors_790(),
         "incomplete_required_tasks": incomplete_tasks,
         "unresolved_bugs": _bugs743,     # #743: reported, never enforced
+        # #1023c: #774's finding reached a LOG LINE ONLY, so no agent ever saw it and nothing
+        # could act on it. Published here for the same reason #790 publishes its errored
+        # checks — it travels with the verdict instead of living in a line nobody reads at the
+        # cut. Still absent from `failed_checks`: it does not block (8 of 111 corpus runs
+        # carry one, and a false blocker costs a run — #566j), it just becomes visible work.
+        # This is the whole of the requirement→contract comparison the framework does: DDL,
+        # contract and handlers agreeing with each other is what every other check confirms.
+        "spec_owner_columns_lost_774": _lost774,
         "noncanonical_response_keys": noncanonical_response_keys,
         "business_chain": business_chain_block,
         "completeness": completeness_results,  # #557 reported (not-yet-blocking)
