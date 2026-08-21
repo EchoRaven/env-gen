@@ -81,6 +81,43 @@ def _copy_tree(src: Path, dst: Path) -> int:
     return n
 
 
+_MARKER_ALTER_RE = re.compile(
+    r'^(\s*ALTER\s+TABLE\s+("?[\w.]+"?)\s+ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+'
+    r'"__\s*(unique|primary[\s_]*key)\s*__"\s*)(\([^;]*\))\s*;\s*$',
+    re.IGNORECASE | re.MULTILINE)
+
+
+def sanitize_init_sql(sql: str) -> Tuple[str, List[str]]:
+    """Repair DDL that postgres will refuse, returning (sql, notes).
+
+    THE EXPORTER IS THE LAST GATE. A DTAP task cold-boots a fresh VM, so
+    /docker-entrypoint-initdb.d runs every single time — unlike our own runs, where postgres
+    executes it ONLY on an empty data dir and a line appended after first boot is never
+    reached. r173 wrote
+
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "__unique__" (email, tenant_id);
+
+    at 21:28 into a database that came up at 20:09, so its own run never executed it and
+    reported nothing. Exported and cold-booted, initdb aborts at character 59 and every
+    service behind the database is unreachable.
+
+    #1031 fixes the producer. This repairs artifacts already on disk, and preserves the
+    intent — `ADD CONSTRAINT ... UNIQUE (...)` is what the contract asked for — rather than
+    dropping the constraint.
+    """
+    notes: List[str] = []
+
+    def _fix(m: "re.Match[str]") -> str:
+        table = m.group(2).strip('"')
+        kw = re.sub(r"[\s_]+", " ", m.group(3).strip().upper())
+        cols = m.group(4)
+        name = f"{table}__{kw.lower().replace(' ', '_')}__export"
+        notes.append(f"repaired constraint marker on {table}: ADD COLUMN -> ADD CONSTRAINT {kw}")
+        return f'ALTER TABLE "{table}" ADD CONSTRAINT "{name}" {kw} {cols};'
+
+    return _MARKER_ALTER_RE.sub(_fix, sql), notes
+
+
 def _load_endpoints(run: Path) -> List[Dict[str, Any]]:
     f = run / "shared" / "hubs" / "registryhub_endpoints.json"
     try:
@@ -382,6 +419,14 @@ def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_po
         "ui": _copy_tree(run / "app" / "frontend", envs / f"{env}_ui"),
         "init": _copy_tree(run / "app" / "database" / "init", envs / "init"),
     }
+    # #1031: repair DDL an offline cold boot would refuse, and SAY what was repaired.
+    sql_notes: List[str] = []
+    for f in sorted((envs / "init").glob("*.sql")):
+        orig = f.read_text(encoding="utf-8", errors="ignore")
+        fixed, notes = sanitize_init_sql(orig)
+        if notes:
+            f.write_text(fixed, encoding="utf-8")
+            sql_notes.extend(f"{f.name}: {n}" for n in notes)
     (envs / "docker-compose-hub.yml").write_text(
         render_compose_hub(env, api_port, ui_port, pg_port, image_ns, tag), encoding="utf-8")
     (envs / "docker-compose.yml").write_text(
@@ -404,7 +449,7 @@ def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_po
         render_registry_snippet(env, api_port, ui_port), encoding="utf-8")
 
     return {"env": env, "files": counts, "tools": len(tools),
-            "endpoints": len(endpoints), "out": str(out)}
+            "endpoints": len(endpoints), "out": str(out), "sql_repairs": sql_notes}
 
 
 def main(argv: List[str]) -> int:

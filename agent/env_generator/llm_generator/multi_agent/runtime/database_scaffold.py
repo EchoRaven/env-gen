@@ -726,6 +726,26 @@ _CONSTRAINT_PSEUDO_TYPES = {"constraint", "table_constraint", "table constraint"
 _CONSTRAINT_NAME_RE = re.compile(
     r"^\s*(unique|primary\s*key|foreign\s*key|check)\s*\((.*)\)\s*$", re.IGNORECASE
 )
+# #1031: the DUNDER-MARKER spelling of the same thing — `{"name": "__unique__",
+# "type": "(email, tenant_id)"}` — where the keyword is a marker NAME and the column list
+# lives in the TYPE. `_CONSTRAINT_NAME_RE` only matches the keyword-in-the-name form, so this
+# one was not recognised as a constraint and went down the ordinary column path, emitting
+#
+#     ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "__unique__" (email, tenant_id);
+#
+# which postgres refuses at character 59 — initdb aborts, the database never starts, and every
+# service behind it is unreachable. #997's class exactly ("a token that means something to a
+# contract author and nothing to postgres"), and its fifth member after #969/#988/#989 and
+# #1022's FK-type mismatch. #997 predicted the list was not complete; it was right twice.
+#
+# Found by exporting a run as a DTAP env (#1030), NOT by a run: postgres executes
+# /docker-entrypoint-initdb.d/* only on an EMPTY data dir, and r173 wrote this line at 21:28
+# into a database that had come up at 20:09 — so its own run never executed it. A DTAP task
+# cold-boots a fresh VM every time and would hit it every time.
+_CONSTRAINT_MARKER_RE = re.compile(
+    r"^\s*__\s*(unique|primary[\s_]*key|foreign[\s_]*key|check|index)\s*__\s*$", re.IGNORECASE
+)
+_MARKER_COLUMN_LIST_RE = re.compile(r"^\s*\((.+)\)\s*$", re.DOTALL)
 
 
 def _is_constraint_pseudo_column(col: Any) -> bool:
@@ -736,6 +756,8 @@ def _is_constraint_pseudo_column(col: Any) -> bool:
         return True
     cname = str(col.get("name") or "").strip()
     if cname.lower().startswith("constraint "):
+        return True
+    if _CONSTRAINT_MARKER_RE.match(cname):      # #1031: `__unique__` & friends
         return True
     return bool(_CONSTRAINT_NAME_RE.match(cname))
 
@@ -748,10 +770,21 @@ def _render_table_constraint(col: Dict[str, Any]) -> Optional[str]:
     for FOREIGN KEY / CHECK / anything unparseable."""
     raw = str(col.get("name") or "").strip()
     m = _CONSTRAINT_NAME_RE.match(raw)
-    if not m:
-        return None
-    kw = re.sub(r"\s+", " ", m.group(1).strip().upper())  # UNIQUE / PRIMARY KEY / ...
-    cols = [c.strip().strip('"').strip("`").strip() for c in m.group(2).split(",")]
+    if m:
+        kw_raw, cols_raw = m.group(1), m.group(2)
+    else:
+        # #1031: the marker spelling — keyword in the NAME, column list in the TYPE. RENDER it
+        # rather than drop it: the contract asked for a real UNIQUE and we can honour it
+        # exactly, where the keyword-in-name branch above would have.
+        mm = _CONSTRAINT_MARKER_RE.match(raw)
+        if not mm:
+            return None
+        lst = _MARKER_COLUMN_LIST_RE.match(str(col.get("type") or ""))
+        if not lst:
+            return None
+        kw_raw, cols_raw = mm.group(1), lst.group(1)
+    kw = re.sub(r"[\s_]+", " ", kw_raw.strip().upper())  # UNIQUE / PRIMARY KEY / ...
+    cols = [c.strip().strip('"').strip("`").strip() for c in cols_raw.split(",")]
     cols = [c for c in cols if c]
     if not cols or kw not in ("UNIQUE", "PRIMARY KEY"):
         return None
@@ -1170,6 +1203,12 @@ _DDL_FORBIDDEN_997 = (
     (re.compile(r'"\s*\w+"\s+[a-z]+\s*\?', re.I), "an optional marker `?` (see #988)"),
     (re.compile(r'"\s*\w+"\s+[a-z]+\s+nullable\b', re.I), "a bare `nullable` (see #969)"),
     (re.compile(r"\bdefault_[a-z]+\b", re.I), "an underscore default (see #989)"),
+    # #1031: a constraint MARKER left in a column position, e.g.
+    #   ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "__unique__" (email, tenant_id);
+    # Matched on the emitted SQL rather than on the producer, so it catches the shape no
+    # matter which writer emits it — `_spine_extra_column_alters` was only the one that did.
+    (re.compile(r'"__\s*(?:unique|primary[\s_]*key|foreign[\s_]*key|check|index)\s*__"', re.I),
+     "a constraint marker used as a column name (see #1031)"),
 )
 
 
