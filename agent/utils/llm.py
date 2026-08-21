@@ -1651,15 +1651,36 @@ class OpenAIClient(BaseLLMClient):
         # Log response summary
         prompt_tokens = response.usage.prompt_tokens if response.usage else 0
         completion_tokens = response.usage.completion_tokens if response.usage else 0
+        # #1026: REPORT CACHED PREFIX TOKENS ON THIS PATH TOO.
+        #
+        # The Responses path already logs `cached_tokens` (see the other [LLM Response] site);
+        # this chat-completions path — the one every netflix run actually takes — did not read
+        # `usage.prompt_tokens_details` at all, so the single largest cost axis in a run was
+        # unmeasurable. r172: 210,779,817 prompt tokens over 4,155 calls against 1,030,351
+        # completion tokens, with the per-call prompt flat at ~41k from 9 messages onward
+        # (frontend_agent.j2 alone is 104,817 chars ≈ 26k tokens, plus a 28,779-char shared
+        # macro). That static prefix is re-sent every call, and whether the provider is
+        # serving it from cache decides whether ~137M of those tokens are real work or free.
+        #
+        # Nothing here changes what is SENT. It only stops the answer being invisible: one run
+        # now says whether the prefix is cached, and a 0 would make prompt-size work the
+        # highest-leverage wall-clock fix available (r172 died on a 7200s cap).
+        cached_tokens = 0
+        try:
+            _details = getattr(response.usage, "prompt_tokens_details", None) if response.usage else None
+            cached_tokens = int(getattr(_details, "cached_tokens", 0) or 0)
+        except Exception:
+            cached_tokens = 0          # a provider without the field must never break a call
         has_tool_calls = bool(message.tool_calls)
-        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={choice.finish_reason}")
-        
+        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={choice.finish_reason}")
+
         return LLMResponse(
             content=message.content or "",
             model=response.model,
             finish_reason=choice.finish_reason,
             usage={
                 "prompt_tokens": response.usage.prompt_tokens,
+                "cached_tokens": cached_tokens,      # #1026
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
             },
