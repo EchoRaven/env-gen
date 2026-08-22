@@ -27,6 +27,12 @@ def _load_chain_executor():
     vr = types.ModuleType("ce_pkg.validation_runner")
     vr._http = lambda *a, **k: {"status": 0}
     vr._form_retry_warranted = lambda *a, **k: False
+    # #1052: chain_executor imports the REAL predicate from validation_runner (one definition,
+    # shared with #1051). This harness hand-stubs every module the source reaches, so a new
+    # import must be added here too — same seam the #1034 helper hit.
+    from env_generator.llm_generator.multi_agent.runtime.validation_runner import (
+        _route_ran_despite_404_1051 as _rr1051)
+    vr._route_ran_despite_404_1051 = _rr1051
     sys.modules["ce_pkg.validation_runner"] = vr
     src = (_RUNTIME / "chain_executor.py").read_text(encoding="utf-8")
     mod = types.ModuleType("ce_pkg.chain_executor")

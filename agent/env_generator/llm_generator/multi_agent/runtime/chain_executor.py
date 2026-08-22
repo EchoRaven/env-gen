@@ -40,7 +40,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from .validation_runner import _http, _form_retry_warranted
+from .validation_runner import (
+    _form_retry_warranted,
+    _http,
+    # #1052: ONE definition of "this 404 body proves the route ran", shared with
+    # #1051's endpoint check — two copies would become two concepts.
+    _route_ran_despite_404_1051,
+)
 
 try:
     from .control_plane import CONTROL_SURFACE_ENDPOINTS as _CONTROL_SURFACE
@@ -3145,12 +3151,39 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             if isinstance(step.get("save"), Mapping):
                 unsatisfied.update(str(k) for k in step["save"].keys()
                                    if str(k) not in variables)
+    # #1052: a chain 404 whose BODY proves the route RAN. Same distinction #1051 taught
+    # `business_endpoints_implemented`, carried into the chain's own failure text so the two
+    # readers cannot disagree about the same response.
+    #
+    # r178/r179/r180 all died with `business_chain_failing` on a 404, and in every one the
+    # route existed TWICE in the delivered source (r180: POST /api/titles/{id}/rating at
+    # main.py:1305 AND custom_routes.py:292). The generated backend maps a foreign-key
+    # violation onto 404 with its own marker, so "referenced resource not found" means the
+    # handler executed and rejected the id — a DATA defect (the chain's captured id does not
+    # resolve), not a routing one. Read as "route missing" it sends the backend lane to
+    # implement an endpoint it already wrote.
+    #
+    # Reports only; changes no verdict. The step still failed and business_chain still blocks.
+    def _route_ran_note_1052(s):
+        try:
+            if int(s.get("status") or 0) != 404:
+                return ""
+            body = str(s.get("note") or "")
+            if not _route_ran_despite_404_1051(body):
+                return ""
+            return (" ⚠ the route RAN: this 404 is the backend's referenced-row marker, not a "
+                    "missing route — the id this step sent does not resolve. Fix the CHAIN's "
+                    "captured id or the seed, not the endpoint (#1052).")
+        except Exception:
+            return ""
+
     # #188: broken lines carry the authored expectation — "GET x → 200 ({body})"
     # with a hidden expect [401] read as nonsense in 225x of triage lines.
     def _fmt(s):
         return (f"{s['method']} {s['path']} → {s['status']} "
                 + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
                    else f"({s['note']})")
+                + _route_ran_note_1052(s)
                 + _projected_owner_note(projected, s.get("method"), s.get("path")))
     broken = [_fmt(s) for s in recorded if s["kind"] == "broken"]
     # #272: framework-projected defects are reported SEPARATELY so the gate can surface them
