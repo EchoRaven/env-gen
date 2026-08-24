@@ -5,6 +5,7 @@ All public methods raise GitOpsError on non-zero exit codes.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,14 @@ class MergeResult:
     message: str = ""
 
 
+# #1075: generous by default — ordinary git here is sub-second; this is a
+# ceiling on a HANG, not a performance budget.
+try:
+    _GIT_TIMEOUT_1075 = max(1, int(os.environ.get("ENVGEN_GIT_TIMEOUT") or 120))
+except (TypeError, ValueError):
+    _GIT_TIMEOUT_1075 = 120
+
+
 class GitOps:
     """Subprocess wrapper for git operations on a single repository."""
 
@@ -38,12 +47,38 @@ class GitOps:
 
     def _run(self, *args: str, check: bool = True, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
         cmd = [GIT, *args]
-        result = subprocess.run(
-            cmd,
-            cwd=str(cwd or self.repo_root),
-            capture_output=True,
-            text=True,
-        )
+        # #1075: BOUND IT, and never wait on stdin.
+        #
+        # This is the wrapper every CodeHub git operation goes through — commit,
+        # merge, stash, branch, worktree — and it had no timeout, so a git that
+        # blocks blocked forever with no log line and no ceiling. 52 of this
+        # package's 54 subprocess call sites already pass one; this was the
+        # exception. Two ways it blocks: an operation waiting on an `index.lock`
+        # left by a crashed process (the git pain here is documented — "could not
+        # write index" 187 times, feeding #623's conflict storm), and one that
+        # wants credentials. GIT_TERMINAL_PROMPT was set nowhere in the package, so
+        # git waited on stdin that never arrives.
+        #
+        # The timeout surfaces as GitOpsError — the type every caller already
+        # handles. A hang has to become a legible failure, not a new exception
+        # nobody catches.
+        _env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(cwd or self.repo_root),
+                capture_output=True,
+                text=True,
+                timeout=_GIT_TIMEOUT_1075,
+                env=_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitOpsError(
+                f"git {' '.join(args)} timed out after {_GIT_TIMEOUT_1075}s in "
+                f"{cwd or self.repo_root} — a held index.lock or a credential "
+                f"prompt will do this. Raise ENVGEN_GIT_TIMEOUT if the repo is "
+                f"genuinely this slow."
+            ) from exc
         if check and result.returncode != 0:
             raise GitOpsError(
                 f"git {' '.join(args)} failed (exit {result.returncode}):\n"
