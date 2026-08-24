@@ -527,7 +527,21 @@ class RemediationDispatcher:
         loop the same way visual-fidelity and GATE-C1 do: ONE P0 task + urgent
         wake to the FRONTEND lane per milestone, with a concrete instruction to
         wire the router. Framework still authors no UI content — it only routes
-        the failure back to the owner. Best-effort: never raises into the loop."""
+        the failure back to the owner. Best-effort: never raises into the loop.
+
+        ★ #1063 (measured, not a defect): this dispatch has never been exercised.
+        Across the 201 kept run logs the "FRONTEND-NAVIGABLE remediation dispatched"
+        line appears 0 times — NOT because the guard is wrong. validation_runner's
+        `_add("frontend_navigable", ok, detail)` produces exactly this name with
+        status "fail", so the lookup below matches by construction. It is that the
+        check almost always PASSES, and in the four runs where it failed, docker_up
+        had already failed and validation never reached this feedback loop. The path
+        is live and untested in production — worth knowing before relying on it.
+
+        The blank-shell condition that DOES reach a lane in practice takes a
+        different route: `dispatch_unwired_ui_pages` reads the delivery gate's
+        BLOCKER list, sees `deliverability_ui_page_unwired` (320 occurrences), and
+        files "Make the declared pages deliverable" — 195 times across 48 logs."""
         orch = self._orch
         try:
             check = next(
