@@ -2721,13 +2721,24 @@ class GoogleClient(BaseLLMClient):
                                          for c in (contents or []))
                         except Exception:
                             _parts = -1
+                        # The tool count travels with it: the standing hypothesis is
+                        # that these storms track the TOOL SURFACE (the orchestrator has
+                        # both the largest — up to 48 offered per step — and the most
+                        # storms), and the offered set is the one thing the logs never
+                        # recorded, so the correlation could never be checked.
+                        try:
+                            _ntools = sum(
+                                len(getattr(t, "function_declarations", None) or [])
+                                for t in (google_tools or []))
+                        except Exception:
+                            _ntools = -1
                         self._logger.warning(
                             "[LLM] #1062 MALFORMED re-roll %s: the image prune found NOTHING "
-                            "to drop (%s content item(s), %s part(s), 0 inline images). "
-                            "#187's rung is inert on this payload — it targets multimodal "
-                            "context and this call is text-only. Only the temperature rung "
-                            "is doing anything here. Logged once per process.",
-                            _retry_state["malformed"], len(contents or []), _parts)
+                            "to drop (%s content item(s), %s part(s), 0 inline images; "
+                            "%s tool(s) offered). #187's rung is inert on this payload — it "
+                            "targets multimodal context and this call is text-only. Only the "
+                            "temperature rung is doing anything here. Logged once per process.",
+                            _retry_state["malformed"], len(contents or []), _parts, _ntools)
                 return contents
 
             def _do_call():

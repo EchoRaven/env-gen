@@ -75,6 +75,11 @@ class TheNoOpIsAudibleAndBounded(unittest.TestCase):
         self.assertIn("#1062", window)
         # and it must not spam a storm
         self.assertIn('["said"] = True', window)
+        # the offered-tool count travels with it: the standing hypothesis is that
+        # the storms track the TOOL SURFACE, and that set is the one thing the run
+        # logs never recorded, so the correlation could never be checked.
+        self.assertIn("function_declarations", window)
+        self.assertIn("tool(s) offered", window)
 
     def test_it_does_not_change_the_retry_decision(self):
         """The note is additive: the un-pruned contents are still returned."""
