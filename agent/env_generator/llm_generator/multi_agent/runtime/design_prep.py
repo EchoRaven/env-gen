@@ -22,7 +22,7 @@ _LOG_813 = logging.getLogger(__name__)
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Mapping, Dict, List, Optional
 from .message_format import join_capped  # #1034
 
 _IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
@@ -591,6 +591,42 @@ async def _chat_ladder_inner(client, msgs, *, max_tokens: int) -> Optional[Dict]
         return None
 
 
+def _asset_manifest_1073(assets, budget: int = 3000) -> str:
+    """The REAL ASSET MANIFEST string for the per-screen enrichment prompt.
+
+    #1073: this was `json.dumps([...])[:3000]`, which slices the SERIALISED string
+    and therefore cuts mid-object. On a real corpus doc (70 assets, 4146 chars) the
+    tail read `..."icons/photo_camera_24.svg"}, {"id": "pin` and `json.loads` threw
+    — the model was told "REAL ASSET MANIFEST (map ids onto components)" and handed
+    something that does not parse, ending in half an id. Asset mapping is what #343
+    and #507 are both about, so a broken manifest is not a cosmetic problem.
+
+    The budget stays a BUDGET, not a count: the corpus median is 144 assets and 150
+    of 152 design docs carry more than 24, so capping by entry count would throw
+    away most of what the analyst is supposed to map. Fill to the budget on ELEMENT
+    boundaries instead, and DECLARE the tail — a silent cap reads as "these are all
+    the assets there are", which is the one thing it must not say.
+    """
+    try:
+        rows = [{"id": a.get("id"), "file": a.get("file")}
+                for a in (assets or []) if isinstance(a, Mapping)]
+    except Exception:
+        rows = []
+    out = json.dumps(rows)
+    if len(out) <= budget:
+        return out
+    kept: list = []
+    for r in rows:
+        trial = kept + [r, {"__omitted__": len(rows) - len(kept) - 1}]
+        if len(json.dumps(trial)) > budget:
+            break
+        kept.append(r)
+    dropped = len(rows) - len(kept)
+    if dropped:
+        kept = kept + [{"__omitted__": dropped}]
+    return json.dumps(kept)
+
+
 async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
                        docs_text: str, max_ref_images: int, max_asset_images: int) -> Optional[Dict]:
     """FIX #94: enrich PER SCREEN. Three live runs + a controlled offline replay proved the
@@ -604,8 +640,7 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
 
     client = getattr(llm, "_client", None) or llm
     ref_by_name = {Path(r).name: r for r in (resolved.get("references") or [])}
-    manifest = json.dumps([{"id": a.get("id"), "file": a.get("file")}
-                           for a in (skeleton.get("assets") or [])])[:3000]
+    manifest = _asset_manifest_1073(skeleton.get("assets"))
 
     enriched_screens: List[Dict] = []
     scales: Dict = {}
