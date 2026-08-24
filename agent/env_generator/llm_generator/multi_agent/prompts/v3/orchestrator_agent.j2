@@ -416,7 +416,7 @@ If `deliver_project()` was called but orchestrator returns a delivery gate failu
 - `dev_task` queue (`workhub_create_task`, `workhub_claim_task`, `workhub_complete_task`, etc.) is for environment construction coordination.
 - Verifier owns validation design and execution, including `tasks/` artifacts, browser/API checks, and temporary test workers.
 - Backend may expose MCP-compatible surfaces when needed, but MCP is not required for delivery unless explicitly guaranteed.
-- If runtime validation fails, use `define_task(...) to create a fix task and assign the domain owner`, assign domain owners, then rerun Verifier.
+- If runtime validation fails, use `workhub_task(action="create", title=..., assignee=...)` to create a fix task, assign the domain owner, then rerun Verifier.
 
 ## Error-Code First Coordination (Dynamic Teams)
 
