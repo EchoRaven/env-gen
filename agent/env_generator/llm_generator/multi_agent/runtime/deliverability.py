@@ -14,6 +14,9 @@ from pathlib import Path
 from .message_format import join_capped  # #1034
 
 _LOG_700 = logging.getLogger(__name__)
+
+# #1067: one-shot latch so a per-tick failure cannot flood the log.
+_DUPE_REPORT_FAILED_1067 = {"said": False}
 # #760: groups already announced this process. See the call site for why a module-level set is
 # the right shape here and why item 78's dual-import bound (<=2 announcements) is acceptable.
 _SAID_700: set = set()
@@ -395,8 +398,21 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
                 "is a fidelity defect the visual gate cannot see.",
                 len(_g.get("routes") or []), ", ".join(_g.get("routes") or []),
                 ", ".join(_g.get("endpoints") or []), ", ".join(_g.get("components") or []))
-    except Exception:
-        pass
+    except Exception as _dupe_exc_1067:
+        # #1067: say it. This block's own preamble is "a finding that is computed and
+        # unobservable is worth no more than one that was never computed", and it goes to
+        # the trouble of re-fetching pages rather than reuse a name bound inside another
+        # try/except-pass — because that would "skip the report silently — the exact
+        # failure mode this fix is about". Then it ended in a bare `pass`, so 173 lines of
+        # duplicate-route reporting could vanish per gate tick with nothing recorded.
+        # Once per process, with the exception type; the verdict is unchanged.
+        if not _DUPE_REPORT_FAILED_1067["said"]:
+            _DUPE_REPORT_FAILED_1067["said"] = True
+            _LOG_700.warning(
+                "#1067 duplicate-route report SKIPPED: %s: %s. The gate verdict below is "
+                "unaffected, but this run has no duplicate-route findings because the "
+                "reporter raised, not because there are none. Logged once per process.",
+                type(_dupe_exc_1067).__name__, str(_dupe_exc_1067)[:200])
     try:
         return ui_page_delivery_blockers(Path(app_root) / "frontend" / "src", workhub)
     except Exception:
