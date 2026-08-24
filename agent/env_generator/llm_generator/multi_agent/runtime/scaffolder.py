@@ -782,9 +782,13 @@ volumes:
                     orch._logger.debug("#225 design-screen page seeding skipped: %s", _exc)
             if not ui_pages:
                 return
-            from .frontend_scaffold import scaffold_pages_from_contract
+            from .frontend_scaffold import (drop_component_page_twins_1087,
+                                             scaffold_pages_from_contract)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
+            # #1087: a name registered as a ui_COMPONENT is a component — do not project a
+            # page stub for its blank-route page twin (see the helper for the measurement).
+            ui_pages = drop_component_page_twins_1087(ui_pages, registryhub)
             rep = scaffold_pages_from_contract(fe, ui_pages)
             if rep.get("scaffolded") or rep.get("app_wired"):
                 orch._logger.info(

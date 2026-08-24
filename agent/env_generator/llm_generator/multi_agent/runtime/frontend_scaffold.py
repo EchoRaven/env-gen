@@ -9777,6 +9777,44 @@ def _count_overwrite_939(frontend_dir: Any, comp: str, replaced: str = "") -> in
         return 0
 
 
+def drop_component_page_twins_1087(ui_pages, registryhub):
+    """Drop the blank-route ui_page records that are ALSO registered as ui_components.
+
+    gmrun4's stores: all 14 ui_components are present in the ui_pages store too, each with
+    `component=''` and `route=''`. This projector iterates `list_ui_pages()`, derives
+    `CategoryChips` from the name `category_chips`, and writes an 8-line page stub into
+    `src/pages/CategoryChips.jsx` while the REAL `src/components/CategoryChips.jsx` sits next
+    to it. Nothing imports the stub, so the coverage audit reports a dead artifact and asks
+    the lane to remove or wire it — and removing it is futile, because the next cycle writes
+    it again. #201's wall, on the frontend side.
+
+    Measured over 166 hub stores: of 1051 ui_page records, 243 (23.1%) share a name with a
+    ui_component; 235 of those have a blank route (the orphan-producing shape) and 8 carry a
+    real ``/`` route and are genuine pages. 178 of the 249 framework-projected orphan files
+    left in the corpus are exactly this.
+
+    Keys on the more specific declaration — a name registered as a component IS a component —
+    and only for a blank route, so the 8 routed twins stay. A route-less record that is NOT
+    also a component is untouched: #905/#906 measured 643 of those to be real pages whose
+    route was simply never recorded. Best-effort: any fault returns the input unchanged,
+    because this sits in the path that gives the app its pages."""
+    try:
+        comps = set((registryhub.list_ui_components() or {}).keys())
+    except Exception:
+        return ui_pages
+    if not comps:
+        return ui_pages
+    out = []
+    for pg in (ui_pages or []):
+        if isinstance(pg, dict):
+            name = str(pg.get("name") or "").strip()
+            route = str(pg.get("route") or "").strip()
+            if name in comps and not route.startswith("/"):
+                continue
+        out.append(pg)
+    return out
+
+
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
     """Project one page-component STUB per registered ui_page + wire React-Router
     routes in App.jsx — the frontend analogue of the deterministic backend
