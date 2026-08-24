@@ -810,6 +810,32 @@ async def reauthor_missing_database_sql(orch: Any) -> bool:
         return False
 
 
+def _authored_chain_content_1054(chains: Any) -> dict:
+    """Each chain's AUTHORED steps — what an agent can re-author — and nothing else.
+
+    #1054: the regression guard used to compare the whole chains store against the
+    last-passing snapshot to answer "did an agent re-author these?". But
+    ``chain_executor.run_chains`` writes ``status`` / ``last_result`` /
+    ``last_run_at`` back onto the SAME records after every validation, and
+    ``last_run_at`` is a wall clock, so the raw compare differs after ANY run.
+
+    That inverted the guard's stated safety property ("if the app genuinely broke,
+    current == snapshot so the restore is skipped — never masks a real defect"):
+    once the chains have run, current never equals snapshot again, so a REAL
+    backend regression was read as re-authoring, business_chain was dropped from
+    the failure set (nobody dispatched to fix it), the attempt ladder was reset,
+    and #327's restore budget was spent — on every real regression, r169 included.
+
+    Same rule ``_fwval_chain_signature`` already documents: steps in, execution
+    metadata out."""
+    out = {}
+    for name, c in dict(chains or {}).items():
+        if str(name).startswith("_"):
+            continue
+        out[str(name)] = c.get("steps") if isinstance(c, Mapping) else None
+    return out
+
+
 def restore_regressed_chains(orch: Any, fset):
     """REGRESSION GUARD (restore-on-regression): if business_chain passed before
     (high-water) and is now failing AND the contract (endpoint id set) is
@@ -830,7 +856,10 @@ def restore_regressed_chains(orch: Any, fset):
             return fset
         cur_eps = set((rh.get_endpoints() or {}).keys())
         snap_eps = getattr(orch, "_chains_snapshot_endpoints", cur_eps)
-        if cur_eps == snap_eps and dict(rh._verification_chains.value() or {}) != snap:
+        # #1054: compare AUTHORED content only — a chain that merely RAN is not a
+        # chain an agent re-authored.
+        if cur_eps == snap_eps and (_authored_chain_content_1054(rh._verification_chains.value())
+                                    != _authored_chain_content_1054(snap)):
             # #327: POISONED-SNAPSHOT ESCAPE. The old guard assumed the last-passing snapshot
             # is idempotently green ("restore it and it passes again"). But a chain that went
             # green ONCE via a transient/non-deterministic recovery (or a seed that has since
