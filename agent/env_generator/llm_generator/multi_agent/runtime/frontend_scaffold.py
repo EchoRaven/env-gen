@@ -9252,6 +9252,72 @@ def _reexport_shim_638(target: Any) -> Optional[str]:
         return None
 
 
+def _is_reexport_shim_1053(body: str, stem: str) -> bool:
+    """True when `body` is a re-export of a same-stem sibling rather than an implementation."""
+    try:
+        return bool(re.search(r"export\s+\*\s+from\s+['\"]\./" + re.escape(stem) + r"\.", body or ""))
+    except Exception:
+        return False
+
+
+def _reexport_late_sibling_1053(target: Any) -> Optional[Tuple[Any, str]]:
+    """#1053 — the sibling that appears AFTER #638 already ran.
+
+    #638 answers "does this filename exist" exactly once, in the gap-fill's MISSING branch, so
+    a same-stem sibling written later is never seen. r171, timestamped: the framework writes
+    `services/api.js` (3303 B, DEFINES window.NetflixAPI) at 11:36:06 with no sibling present;
+    the frontend writes `services/api.jsx` (1457 B, does NOT define it) 6m43s later; App.jsx
+    imports the `.jsx`. window.NetflixAPI is then undefined (76 occurrences), nine UI flows
+    cannot run (45), and the UI-evidence gates never clear — nine runs, zero deliveries.
+
+    Returns ``(sibling_path, shim_text)`` for the sibling to convert, or None.
+
+    The DIRECTION is the reverse of #638's and deliberately so. #638 runs when the baseline is
+    absent, so it makes the baseline the shim. Here the baseline already exists and is the
+    module defining the global, and #638's own constraint is that it must keep resolving:
+    "Skipping the write is NOT safe — projected code imports `../services/api.js` by exact
+    name". So the LATE sibling becomes the re-export.
+
+    Either file already being a shim disqualifies the pair — converting then would make each
+    re-export the other.
+    """
+    try:
+        p = Path(str(target))
+        if p.suffix not in _SHIM_EXT_638:
+            return None
+        try:
+            base_body = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return None
+        if not base_body.strip():
+            return None                       # nothing to re-export TO
+        if _is_reexport_shim_1053(base_body, p.stem):
+            return None                       # #638 already ran the other way — cycle guard
+        for ext in _SHIM_EXT_638:
+            if ext == p.suffix:
+                continue
+            sib = p.with_suffix(ext)
+            try:
+                sib_body = sib.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if not sib_body.strip():
+                continue
+            if _is_reexport_shim_1053(sib_body, p.stem):
+                continue                      # already converted — idempotent
+            spec = "./" + p.name
+            lines = [f"// #1053: {sib.name} was written after the {p.name} baseline, leaving two",
+                     f"// implementations of `{p.stem}`. {p.name} is the one projected code imports",
+                     f"// by exact name (#638), so it stays the module and this re-exports it.",
+                     f"export * from '{spec}';"]
+            if re.search(r"export\s+default\b", base_body):
+                lines.append(f"export {{ default }} from '{spec}';")
+            return sib, "\n".join(lines) + "\n"
+        return None
+    except Exception:
+        return None
+
+
 def repair_default_import_of_named_export_632(src_dir: Any) -> List[str]:
     """#632 — `import listTitles from './api'` when `./api` default-exports a BAG.
 
@@ -11633,6 +11699,23 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
             p = frontend_dir / rel
             try:
                 if p.exists() and p.read_text(encoding="utf-8", errors="ignore").strip():
+                    # #1053: #638 answers "does this filename exist" ONCE, here, so a
+                    # same-stem sibling written LATER is never seen and the collision it
+                    # fixes re-forms. r171: api.js at 11:36:06 (defines window.NetflixAPI),
+                    # api.jsx at 11:42:49 (does not), App.jsx imports the .jsx -> the global
+                    # is undefined, nine UI flows cannot run, the gates never clear.
+                    # Re-check on every pass; the LATE sibling becomes the re-export so the
+                    # baseline keeps resolving for projected imports (#638's constraint).
+                    try:
+                        _late = _reexport_late_sibling_1053(p)
+                        if _late is not None:
+                            _sib, _text = _late
+                            _sib.write_text(_text, encoding="utf-8")
+                            written.append(
+                                str(_sib.relative_to(frontend_dir))
+                                + " (late sibling -> re-export of " + p.name + ")")
+                    except Exception:
+                        pass
                     continue
             except Exception:
                 pass
