@@ -1620,11 +1620,41 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     # Inject the registered resource names so the custom-route override filter can tell a
     # nested child-RESOURCE route (projector-handled → projected wins) from a nested ACTION
     # verb (lane custom wins). Names + singular/plural variants to match a path segment.
+    # #1059: a resource whose PROJECTED read cannot express its privacy boundary must not be
+    # handed the route here either. #77 already excludes MULTI-PRINCIPAL tables (a DM with
+    # sender_id AND recipient_id: the single-owner projected read 404s the recipient) from
+    # _owner_scoped_resources — but the two GET branches of the override filter accept
+    # membership in EITHER set, and every table lands in this one unconditionally, so the
+    # carve-out was bypassed and the projected read won anyway. Rendered proof for a `dms`
+    # table flagged owner_scoped_reads:
+    #
+    #     obj = db.get(Dm, id)
+    #     if getattr(obj, "sender_id", None) != _fw_owner_val(type(obj), "sender_id", user):
+    #         raise HTTPException(status_code=404, detail="not found")
+    #
+    # — one FK, so the RECIPIENT 404s on their own message. Generalises past DMs to any
+    # two-party row (buyer+seller, host+guest, from_user+to_user).
+    #
+    # Excluded only when the projected read WOULD be owner-scoped (the table is in
+    # scoped_read_tables). A multi-principal table nobody scopes has no OR boundary to get
+    # wrong, so it stays and keeps #528's schema-safe projected read.
+    _multi_principal_1059: set = set()
+    for _t in scoped_read_tables:
+        _tm = meta.get(_t) or meta.get(str(_t).lower()) or {}
+        _fks = _tm.get("fks") or {}
+        _cols = _tm.get("cols") or []
+        _p = {c for c, tgt in _fks.items() if str(tgt).lower() == "users"}
+        _p |= {c for c in _cols if str(c).lower() in _TARGET_FK_NAMES}
+        if len(_p) > 1:
+            _n = str(_t).strip().lower()
+            if _n:
+                _multi_principal_1059 |= {_n, _n + "s", _n.rstrip("s")}
     _nested_resources: set = set()
     for _t in (tables or {}):
         _n = str(_t).strip().lower()
-        if _n:
+        if _n and _n not in _multi_principal_1059:
             _nested_resources |= {_n, _n + "s", _n.rstrip("s")}
+    _nested_resources -= _multi_principal_1059
     # #77: resources whose PROJECTED read is guaranteed correctly owner-scoped — the framework
     # flagged them private-to-read (scoped_read_tables) AND their model has a SINGLE, unambiguous
     # user principal. A table with a SECOND user-principal column (a DM's recipient_id/to_user_id
