@@ -2028,7 +2028,18 @@ async def capture_route_screenshots(
                         if sum(1 for _ in _hist.iterdir()) < 500:
                             import shutil as _sh
                             from datetime import datetime as _dt
-                            _stamp = _dt.now().strftime("%H%M%S")
+                            # #1061: MICROSECONDS, not seconds. #141b exists because
+                            # "every judge round overwrote these files" and run-64 M2's
+                            # 0.00<->0.40 oscillation could not be root-caused — but a
+                            # second-resolution stamp reproduces exactly that whenever two
+                            # captures of the same screen land in the same second: the
+                            # copyfile below silently overwrites the earlier round. Judge
+                            # rounds are usually minutes apart, so it bites the fast paths
+                            # (a remediation re-capture, the theme-variant pass), which are
+                            # the ones whose history you most want. Nothing parses this
+                            # name — the only reader globs `*<screen>.png` — and the
+                            # microsecond field keeps it chronologically sortable.
+                            _stamp = _dt.now().strftime("%H%M%S%f")
                             _sh.copyfile(dest,
                                          _hist / f"{_stamp}_{screen['name']}.png")
                     except Exception:
