@@ -70,7 +70,10 @@ def test_a_clean_allocation_still_returns_a_bare_number(tmp_path):
     # neighbour within 50 below it.
     _nums = []
     for _p in pathlib.Path(__file__).resolve().parent.glob("*_[0-9]*.py"):
-        _m = re.search(r"_(\d{3,5})\.py$", _p.name)
+        # BOTH conventions — see the note in test_ticket_allocator_826: 463 files
+        # carry the number as a suffix, 106 as a prefix.
+        _m = (re.search(r"_(\d{3,5})\.py$", _p.name)
+              or re.match(r"test_(\d{3,5})_", _p.name))
         if _m:
             _nums.append(int(_m.group(1)))
     _nums.sort()

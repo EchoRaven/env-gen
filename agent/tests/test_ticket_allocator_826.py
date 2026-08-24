@@ -44,7 +44,13 @@ def _highest_existing_ticket() -> int:
     import re as _re
     nums = []
     for _p in (pathlib.Path(__file__).resolve().parent).glob("*_[0-9]*.py"):
-        _m = _re.search(r"_(\d{3,5})\.py$", _p.name)
+        # BOTH conventions: 463 files carry the number as a SUFFIX
+        # (test_foo_1053.py) and 106 as a PREFIX (test_1064_foo.py). Matching only
+        # the suffix made this scanner blind to a sixth of the numbered corpus, so
+        # a run of prefix-named tickets could sit above the reported "highest" and
+        # a correct allocation read as implausible.
+        _m = (_re.search(r"_(\d{3,5})\.py$", _p.name)
+              or _re.match(r"test_(\d{3,5})_", _p.name))
         if _m:
             nums.append(int(_m.group(1)))
     if not nums:

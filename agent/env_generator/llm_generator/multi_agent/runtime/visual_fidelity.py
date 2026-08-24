@@ -1793,6 +1793,33 @@ async def _ensure_profile_selected(page, ctx, token: Optional[str]) -> bool:
     return ok
 
 
+async def _screenshot_with_retry_1065(page, dest) -> None:
+    """`page.screenshot`, retried ONCE on a transient failure.
+
+    #1065: a single unretried `Page.screenshot` protocol error loses the whole
+    screen, and #769's own handler spells out what that costs: "No screenshot, so
+    this screen scores 0.00 downstream — that zero is about the capture, not the
+    page." A transient CDP error therefore prices a page that may be perfect at
+    zero against the visual gate.
+
+    One retry after a short settle. If the second attempt also fails the original
+    exception propagates, so #769 records the deviation exactly as before and a
+    genuinely broken page is unaffected — this only rescues the transient case.
+    """
+    try:
+        await page.screenshot(path=str(dest))
+        return
+    except Exception as _first:
+        try:
+            await page.wait_for_timeout(400)
+        except Exception:
+            pass
+        try:
+            await page.screenshot(path=str(dest))
+        except Exception:
+            raise _first
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -2016,7 +2043,7 @@ async def capture_route_screenshots(
                         except Exception:
                             pass  # keep the plain-route shot
                     dest = out_dir / f"{screen['name']}.png"
-                    await page.screenshot(path=str(dest))
+                    await _screenshot_with_retry_1065(page, dest)
                     shots[screen["name"]] = str(dest)
                     # #141b: keep a per-round copy — run-64 M2's 0.00↔0.40
                     # score oscillation could not be root-caused because every
