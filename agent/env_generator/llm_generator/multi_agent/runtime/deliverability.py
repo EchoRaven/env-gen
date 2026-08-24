@@ -17,6 +17,7 @@ _LOG_700 = logging.getLogger(__name__)
 
 # #1067: one-shot latch so a per-tick failure cannot flood the log.
 _DUPE_REPORT_FAILED_1067 = {"said": False}
+_SEED_REPAIR_FAILED_1068 = {"said": False}
 # #760: groups already announced this process. See the call site for why a module-level set is
 # the right shape here and why item 78's dual-import bound (<=2 announcements) is acceptable.
 _SAID_700: set = set()
@@ -872,8 +873,22 @@ def compute_deliverability(hub_registry, app_root,
                             _seed_path.parent.mkdir(parents=True, exist_ok=True)
                             _seed_path.write_text(
                                 _json.dumps(_head, indent=2) + "\n", encoding="utf-8")
-                        except Exception:
-                            pass
+                        except Exception as _repair_exc_1068:
+                            # #1068: the VERDICT above is already decided from HEAD — the tree
+                            # the delivery snapshot ships — so a failed repair does not change
+                            # it. What it does change is the WORKING TREE the local docker
+                            # build reads: the gate says the seed is present while the file on
+                            # disk is still the empty placeholder. That divergence used to
+                            # leave no trace at all. Once per process; verdict untouched.
+                            if not _SEED_REPAIR_FAILED_1068["said"]:
+                                _SEED_REPAIR_FAILED_1068["said"] = True
+                                _LOG_700.warning(
+                                    "#1068 seed working-tree repair FAILED (%s: %s). The gate "
+                                    "reads the seed from integration HEAD and is unaffected, "
+                                    "but %s still holds the empty placeholder — a build that "
+                                    "reads the working tree ships no seed. Logged once.",
+                                    type(_repair_exc_1068).__name__,
+                                    str(_repair_exc_1068)[:160], _seed_path)
             except Exception:
                 pass
         # F2: the framework-owned seed_dataset.json (design-prep REAL data the loader

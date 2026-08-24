@@ -75,6 +75,46 @@ class TheHandlerRecordsInsteadOfPassing(unittest.TestCase):
         self.assertIn('_DUPE_REPORT_FAILED_1067["said"]', h)
 
 
+class TheSeedRepairDivergenceIsAudible(unittest.TestCase):
+    """#1068 — the sibling swallow, one screen down.
+
+    When the working-tree seed is empty, the gate restores it from integration
+    HEAD — "the tree the delivery SNAPSHOT/docker image actually ships" — and then
+    tries to repair the working tree too, "so the docker build ships the seed".
+    That repair ended in a bare pass.
+
+    The VERDICT is decided from HEAD, so a failed repair does not change it. What
+    it changes is the file a build reading the working tree gets: the gate says
+    the seed is present while the placeholder is still on disk. That divergence
+    left no trace.
+    """
+
+    def test_the_latch_exists(self):
+        latch = getattr(d, "_SEED_REPAIR_FAILED_1068", None)
+        self.assertIsInstance(latch, dict)
+        self.assertIn("said", latch)
+
+    def _handler_src(self) -> str:
+        src = inspect.getsource(d)
+        i = src.index("except Exception as _repair_exc_1068:")
+        j = src.find("\n            except Exception:", i)
+        return src[i:j if j != -1 else len(src)]
+
+    def test_it_is_not_a_bare_pass_and_names_the_path(self):
+        h = self._handler_src()
+        self.assertNotIn("\n                            pass", h)
+        self.assertIn("_seed_path", h)
+        self.assertIn("type(_repair_exc_1068).__name__", h)
+
+    def test_it_says_the_verdict_is_unaffected(self):
+        h = self._handler_src()
+        self.assertIn("unaffected", h)
+
+    def test_it_is_latched(self):
+        h = self._handler_src()
+        self.assertIn('_SEED_REPAIR_FAILED_1068["said"]', h)
+
+
 class TheRuleItRestores(unittest.TestCase):
 
     def test_the_preamble_still_states_the_rule(self):
