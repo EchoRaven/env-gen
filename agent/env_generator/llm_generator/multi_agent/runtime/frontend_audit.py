@@ -491,6 +491,31 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     all_src = "\n".join(_src_cache.values())
 
     app_jsx = _src_cache.get(str(frontend_src / "App.jsx")) or ""
+
+    # #1077 — A QUERY/FRAGMENT ROUTE WHOSE BASE PATH IS WIRED IS A **STATE** OF THAT PAGE.
+    # That is not a new rule: it is #913's, decided by the PROJECTOR
+    # (`frontend_scaffold.scaffold_pages_from_contract`), which for this exact shape adds NO
+    # route for the record and releases its component — *"the query is a STATE of the base
+    # page, so when that path is already claimed, this record adds no route"*. The auditor
+    # then failed the same record for having no route, up to three ways at once (canonical
+    # page path + never-match + not-wired), none of them fixable by writing code — only by
+    # re-registering. #913's own comment asks for the opposite: *"One rule, one producer."*
+    #
+    # Corpus: 9 records in 9 DISTINCT runs (r35/r52/r54/r55/r74/r79/r86/r87/r89), always the
+    # same shape — a comments panel registered at `/?comments=1` while `/` is the feed. On
+    # those runs' delivered frontends it is the single largest reason a page audits
+    # unimplemented (7 of 37), i.e. `deliverability_ui_page_unwired` on a working app.
+    #
+    # A state is audited with the COMPONENT semantics this function already implements: its
+    # home is `src/components/`, it owns no route, and the page-composes-page rule does not
+    # apply to it. The route check is not simply dropped — it is replaced by the reachability
+    # question an overlay actually has: somebody must MOUNT it (below).
+    _state_of_base_1077 = False
+    if route and ("?" in route or "#" in route):
+        _base_1077 = route.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+        _state_of_base_1077 = _route_is_wired(_base_1077, app_jsx)
+    _as_component_1077 = bool(page.get("_is_component")) or _state_of_base_1077
+
     comp_file_text = None
     if component:
         # CANONICAL LAYOUT (user decision 2026-06-11): declared structure maps
@@ -501,6 +526,17 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         kind_dir = "components" if page.get("_is_component") else "pages"
         canonical = frontend_src / kind_dir / f"{component}.jsx"
         comp_file_text = _src_cache.get(str(canonical))
+        if comp_file_text is None and _state_of_base_1077:
+            # #1077: the canonical-layout rule splits on ROUTE ownership ("a page's root
+            # component lives in src/pages/, a reusable component in src/components/"), and a
+            # state owns no route — so the rule does not pick a side for it. The corpus has it
+            # BOTH ways: r74/r54 author `CommentsPanelPage.jsx`/`FYPFeedPage.jsx` under pages/,
+            # while a panel-shaped state belongs under components/. Both are canonical here;
+            # neither is drift. (Reporting drift for the second spelling is a regression I
+            # measured on the 67-run corpus before this line existed: 6 new findings, none of
+            # them a defect in the app.)
+            comp_file_text = _src_cache.get(
+                str(frontend_src / "components" / f"{component}.jsx"))
         if comp_file_text is None:
             for fname, text in _src_cache.items():
                 if Path(fname).stem == component:
@@ -525,7 +561,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
             # navigable page can never flip defined→implemented (component↔filename
             # mismatch froze run #3's 5 real pages at ``defined`` → the navigable
             # gate reported a blank shell). Domain-agnostic: no app specifics.
-            elem = _route_element(app_jsx, route) if not page.get("_is_component") else None
+            elem = _route_element(app_jsx, route) if not _as_component_1077 else None
             if elem and _component_resolves(elem, frontend_src, _src_cache, all_src):
                 # bind comp_file_text to the element's OWN file when it has one
                 # (so dead-controls / page-import still check real source); an
@@ -543,7 +579,19 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
             else:
                 missing.append(f"component `{component}` not found — expected "
                                f"at src/{kind_dir}/{component}.jsx")
-    if route:
+    if route and _state_of_base_1077:
+        # #1077 — the state owns no route, so "is it wired" is the wrong question. The right
+        # one is whether anybody MOUNTS it: an overlay nothing renders is exactly as dead as
+        # an unwired page, and the projector's release of the component (`seen_components.
+        # discard`) means no other check will notice. `<Component` anywhere in src, because a
+        # state is mounted by its parent page, not by the router.
+        if component and not re.search(r"<\s*" + re.escape(component) + r"[\s/>]", all_src):
+            missing.append(
+                f"state `{component}` (registered at `{route}` — a state of `{_base_1077}`, "
+                f"which IS wired) is never mounted: no `<{component}>` anywhere in src. "
+                f"Render it from the `{_base_1077}` page behind the control that opens it, "
+                f"or drop the record.")
+    elif route:
         # PROPOSAL #18: normalized SET match (param-name-agnostic, trailing-param
         # fallback) instead of byte-substring — the frontend twin of the backend's
         # _norm_route. Clears cosmetic route drift (`/watch/:id`≡`/watch`,
@@ -677,7 +725,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     # MODEL RULE (user design): pages compose COMPONENTS; page→page is
     # NAVIGATION (a route/link), never composition. A page importing another
     # page means shared UI that belongs in src/components/.
-    if comp_file_text and not page.get("_is_component"):
+    if comp_file_text and not _as_component_1077:
         for _imp in re.findall(r"import\s+(\w+)\s+from\s+['\"][^'\"]*pages/(\w+)['\"]",
                                comp_file_text):
             missing.append(
@@ -694,7 +742,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     # declared one, HAS its own file, and itself makes no api call nor composes an
     # api-calling child → the user sees a static mock. Empty-apis pages (legit static) and
     # API-calling wired elements never flag. Domain-agnostic; no app specifics.
-    if route and apis and not page.get("_is_component"):
+    if route and apis and not _as_component_1077:
         _elem = _route_element(app_jsx, route)
         if _elem and _elem != component:
             _wired_text = None
