@@ -30,6 +30,12 @@ _ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
 
 
 def _git(repo, *args):
+    # git < 2.28 has no `init -b <branch>` (this box ships 2.25). `symbolic-ref`
+    # sets the initial branch on an empty repo and works on every version.
+    if args and args[0] == "init" and "-b" in args:
+        _i = args.index("-b"); _br = args[_i + 1]
+        _git(repo, *[a for j, a in enumerate(args) if j not in (_i, _i + 1)])
+        return _git(repo, "symbolic-ref", "HEAD", "refs/heads/" + _br)
     r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
                        env={**os.environ, **_ENV})
     assert r.returncode == 0, f"git {' '.join(args)}: {r.stderr}"
