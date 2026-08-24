@@ -748,6 +748,10 @@ def _prune_stale_images_for_reroll(contents, keep_last, make_text_part):
         return contents, 0
 
 
+# #1062: one-shot latch so the inert-prune note cannot spam a storm.
+_MALFORMED_PRUNE_NOOP_1062 = {"said": False}
+
+
 def _malformed_extra_retries() -> int:
     """FIX #187: extra attempts granted ONLY to MALFORMED_FUNCTION_CALL streaks
     (a cheap transient generation failure — the temperature ladder + image-prune
@@ -2699,6 +2703,31 @@ class GoogleClient(BaseLLMClient):
                             f"[LLM] MALFORMED re-roll {_retry_state['malformed']}: "
                             f"pruned {_n} stale inline image(s) from the retry payload")
                         return _pruned
+                    # #1062: SAY THAT IT DID NOT FIRE, ONCE. Across 201 kept logs this
+                    # prune fired 0 times against 12,487 re-rolls at depth >= 2, and
+                    # nothing recorded why — an unwatched grace is indistinguishable from
+                    # an absent one (#1047's rule). The reason is that #187's premise
+                    # ("storms correlate with huge MULTIMODAL contexts") does not describe
+                    # where the storms are: they concentrate in the TEXT-ONLY lanes —
+                    # orchestrator 6544, verifier 3240, frontend 3239, backend 2184 — which
+                    # carry no inline images to drop. The temperature rung still applies;
+                    # this one cannot. Log the payload shape so the next run can say what
+                    # a rung that COULD help would have to key on, instead of leaving the
+                    # question to another manual log read.
+                    elif not _MALFORMED_PRUNE_NOOP_1062["said"]:
+                        _MALFORMED_PRUNE_NOOP_1062["said"] = True
+                        try:
+                            _parts = sum(len(getattr(c, "parts", None) or [])
+                                         for c in (contents or []))
+                        except Exception:
+                            _parts = -1
+                        self._logger.warning(
+                            "[LLM] #1062 MALFORMED re-roll %s: the image prune found NOTHING "
+                            "to drop (%s content item(s), %s part(s), 0 inline images). "
+                            "#187's rung is inert on this payload — it targets multimodal "
+                            "context and this call is text-only. Only the temperature rung "
+                            "is doing anything here. Logged once per process.",
+                            _retry_state["malformed"], len(contents or []), _parts)
                 return contents
 
             def _do_call():
