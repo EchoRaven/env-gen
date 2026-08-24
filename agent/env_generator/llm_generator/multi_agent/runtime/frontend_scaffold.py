@@ -8098,8 +8098,19 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                     return _spec_auth_545
         _auth_app = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").replace(
             "Login", "").replace("Signup", "").replace("Sign Up", "").strip() or "Sign in"
-        _auth_dark = _is_dark_hex(str(((design or {}).get("design_system") or {})
-                                      .get("palette", {}).get("bg") or "#ffffff"))
+        # #1058: read the palette the way everything else on this page does.
+        # This site reached only INTO `design["design_system"]["palette"]`, so a
+        # design passed in the flat shape (`{"palette": ..., "theme": ...}`) fell
+        # through to "#ffffff" -> dark=False -> the brand wordmark rendered
+        # `text-zinc-900`. Every other class on the page comes from
+        # `_auth_page_classes(design)` two lines below, which goes through
+        # `_palette_of` and handles BOTH shapes — so the page came out dark with a
+        # near-black wordmark on it: invisible, and #424 added that header
+        # precisely because the judge scored login 0.15 for not having one.
+        _auth_pal_1058 = _palette_of(design) or {}
+        _auth_dark = _is_dark_hex(str(_auth_pal_1058.get("bg")
+                                      or _auth_pal_1058.get("background")
+                                      or "#ffffff"))
         _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
                      .replace("__IS_REGISTER__",
                               "true" if _is_register_mode(name, page) else "false")
