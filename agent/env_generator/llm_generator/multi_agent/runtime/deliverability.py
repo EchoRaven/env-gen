@@ -166,7 +166,47 @@ def _coverage_summary(hub_registry, app_root) -> Dict[str, Any]:
             "empty_mcp_servers": len(report.empty_mcp_servers),
             "pages_without_files": len(report.pages_without_files),
         },
+        # #1086: the NAMES, kind-prefixed. #1042 restored the kinds here for the same reason
+        # — the breakdown "was already computed one function up; only the sum was ever
+        # printed" — and stopped one step short. The remediation for this blocker is owned by
+        # BACKEND and ends "those are FRONTEND: bug_create for frontend WITH THE NAMES", but
+        # the lane only ever receives the blocker string, and `coverage_audit_check` (the
+        # tool that would answer the question) is orchestrator-only: gate_registry.py:388,
+        # "coverage_tools bundle restricts callers to orchestrator". So the owner was told to
+        # relay names it had no way to obtain.
+        "dead_names": _dead_artifact_names_1086(report),
     }
+
+
+def _dead_artifact_names_1086(report, cap: int = 20) -> List[str]:
+    """``kind:name`` for each dead artifact, bounded. Kind-prefixed so the routing sentence
+    in the remediation ("endpoints/tables/mcp_tools are yours … files are FRONTEND") can be
+    acted on without a second lookup. Never raises — this feeds a gate."""
+    out: List[str] = []
+    try:
+        for kind, items in (("endpoints", report.dead_endpoints),
+                            ("tables", report.dead_tables),
+                            ("files", report.dead_files),
+                            ("mcp_tools", report.dead_mcp_tools),
+                            ("empty_mcp_servers", report.empty_mcp_servers),
+                            ("pages_without_files", report.pages_without_files)):
+            for item in (items or []):
+                if len(out) >= cap:
+                    return out
+                if isinstance(item, dict):
+                    name = (item.get("path") or item.get("id") or item.get("name")
+                            or item.get("tool") or "")
+                    if not name:
+                        method, path = item.get("method"), item.get("route")
+                        name = f"{method} {path}".strip() if (method or path) else str(item)
+                else:
+                    name = str(item)
+                name = str(name).strip()
+                if name:
+                    out.append(f"{kind}:{name}")
+    except Exception:
+        return out
+    return out
 
 
 def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
@@ -705,9 +745,13 @@ def compute_deliverability(hub_registry, app_root,
         # `files`/`pages_without_files` are frontend, and the reader was told neither. The
         # breakdown is already computed one function up; only the sum was ever printed.
         _kinds = ", ".join(f"{k}={v}" for k, v in sorted(dead.items()) if v)
+        # #1086: and the NAMES — see _dead_artifact_names_1086. Capped by the same helper
+        # `_flow_coverage_summary` uses, which declares the remainder.
+        _names = coverage.get("dead_names") or []
         blockers.append(
             f"{total} dead artifact(s) (Cutover 19 gate)"
-            + (f" — {_kinds}" if _kinds else ""))
+            + (f" — {_kinds}" if _kinds else "")
+            + (f": {join_capped(_names, len(_names), cap=10, sep=', ')}" if _names else ""))
 
     # ui_page HARD wiring gate (B1, 2026-06-12). A declared ui_page whose route
     # isn't wired in App.jsx, or whose component file is absent, ships a page
