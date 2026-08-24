@@ -352,6 +352,19 @@ def _flow_key(name: str) -> str:
     stable so compound suffixes (``_page_ui``, ``_screen_ui``, ``_ui_page``) all
     collapse to the same bare journey key."""
     n = str(name or "").strip().lower()
+    # #1078: a HYPHEN is an identifier SEPARATOR, not prose — fold it before the #1049
+    # truncation below, which would otherwise cut `view-profile` down to `view`. Measured on
+    # the 67-run corpus (371 ui_flow records, 182 names): 12 are kebab-case, and tiktok-r51
+    # collapses six journeys onto one key (`view-activity`/`-explore`/`-for-you-feed`/`-live`/
+    # `-messages`/`-profile`) plus three onto another (`interact-*`). `compute_flow_coverage`
+    # then folds records PASSED-WINS — correct for two spellings of ONE journey (r26), the
+    # opposite of correct across six different ones: a single passing record marks them all
+    # covered and a real failure vanishes, which is precisely what #357 exists to prevent.
+    #
+    # Strictly separating: this can only make keys MORE distinct, never merge two journeys.
+    # #1049 is untouched because prose is separated by SPACES, which still truncate
+    # (`Browse For-You feed logged out` -> `browse`).
+    n = n.replace("-", "_")
     # #1049: drop a PROSE tail before folding suffixes. `codehub_record_check` takes a free-text
     # `name`, and the verifier writes SENTENCES into it — netflix r179's store, verbatim:
     #
