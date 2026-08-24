@@ -42,11 +42,27 @@ def _highest_existing_ticket() -> int:
     it the day #1000 lands.
     """
     import re as _re
-    top = 0
+    nums = []
     for _p in (pathlib.Path(__file__).resolve().parent).glob("*_[0-9]*.py"):
         _m = _re.search(r"_(\d{3,5})\.py$", _p.name)
         if _m:
-            top = max(top, int(_m.group(1)))
+            nums.append(int(_m.group(1)))
+    if not nums:
+        return 0
+    # A trailing number is not always a ticket. `test_kickoff_roadmap_validator_
+    # adversarial_5000.py` counts CASES, and taking it as the highest ticket put the
+    # bound at 5000 — so a correct allocation of 1060 read as "implausible" and this
+    # guard failed on a filename rather than on a parser blowout, which is the only
+    # thing it exists to catch.
+    #
+    # The ticket sequence is dense; an outlier is not. Take the highest number that
+    # has a neighbour within 50 below it, which no gap in a real sequence exceeds and
+    # no isolated round number can fake.
+    nums.sort()
+    top = nums[0]
+    for _a, _b in zip(nums, nums[1:]):
+        if _b - _a <= 50:
+            top = _b
     return top
 _ROOT = _TOOL.parent.parent
 

@@ -62,11 +62,22 @@ def test_a_clean_allocation_still_returns_a_bare_number(tmp_path):
     # ticket set — 1001 today. The old `< 1000` was a literal ceiling chosen when tickets sat
     # in the 800s; it went stale the day #1000 landed and failed a correct allocation. The
     # guard's purpose (the sibling test records v1 answering 4022) survives and never expires.
-    _top = 0
+    # A trailing number is not always a ticket: `test_kickoff_roadmap_validator_
+    # adversarial_5000.py` counts CASES, and max() over the filenames put the bound at
+    # 5000 — so a correct allocation read as implausible and this guard failed on a
+    # filename rather than on the parser blowout it exists to catch. The ticket
+    # sequence is dense and an outlier is not: take the highest number with a
+    # neighbour within 50 below it.
+    _nums = []
     for _p in pathlib.Path(__file__).resolve().parent.glob("*_[0-9]*.py"):
         _m = re.search(r"_(\d{3,5})\.py$", _p.name)
         if _m:
-            _top = max(_top, int(_m.group(1)))
+            _nums.append(int(_m.group(1)))
+    _nums.sort()
+    _top = _nums[0] if _nums else 0
+    for _a, _b in zip(_nums, _nums[1:]):
+        if _b - _a <= 50:
+            _top = _b
     assert _top > 0, "no numbered tests found; this guard would be vacuous"
     assert _top < int(p.stdout) <= _top + 10, f"{p.stdout} (highest={_top})"
 
@@ -101,7 +112,16 @@ def test_a_nearby_number_is_still_accepted(tmp_path):
     near = int(_run(tmp_path, [846]).stdout) + 40      # inside _GAP_847, above every real claim
     p = _run(tmp_path, [846, near])
     assert int(p.stdout) == near + 1, (p.stdout, p.stderr)
-    assert "IGNORING" not in p.stderr
+    # The assertion is that THIS claim is not ignored. A bare "IGNORING" not in
+    # stderr also fails on an unrelated outlier the repo really carries —
+    # `test_kickoff_roadmap_validator_adversarial_5000.py`, whose trailing number
+    # counts CASES — which ticket.sh correctly drops ("#5000, 3900 higher, and the
+    # largest real gap in this namespace is 38"). That is the guard working, not a
+    # defect in the allocation under test. `near` also appears in the notice as the
+    # REFERENCE POINT ("claims above #1100"), so only the list after "Claimed at:"
+    # answers whether THIS claim was dropped.
+    _ignored = p.stderr.split("Claimed at:", 1)[-1] if "Claimed at:" in p.stderr else ""
+    assert str(near) not in _ignored, p.stderr
 
 
 def test_two_stacked_outliers_are_both_dropped(tmp_path):
