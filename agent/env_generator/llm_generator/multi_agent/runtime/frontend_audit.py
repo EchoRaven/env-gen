@@ -230,6 +230,22 @@ def _tag_span(app_jsx: str, pidx: int) -> str:
     return app_jsx[start:start + 400]
 
 
+def _app_import_module_1082(app_jsx: str, ident: str) -> str:
+    """The MODULE STEM App.jsx imports ``ident`` from, or "" — the app's own answer to
+    "which file is this component?".
+
+    `_route_element` answers a different question (which IDENTIFIER a route renders) and
+    cannot see this divergence, because the import is what aliases the two: run67 writes
+    ``import DirectMessagesPage from './pages/DirectMessages'``, so the element name matches
+    the declaration and only the path differs."""
+    m = re.search(r"import\s+" + re.escape(str(ident or "")) +
+                  r"\s+from\s+['\"]([^'\"]+)['\"]", str(app_jsx or ""))
+    if not m:
+        return ""
+    stem = m.group(1).rstrip("/").split("/")[-1]
+    return stem[:-4] if stem.endswith(".jsx") else stem
+
+
 def _route_element(app_jsx: str, route: str) -> Optional[str]:
     """The PAGE component identifier wired to ``route`` in App.jsx, or None.
 
@@ -537,6 +553,31 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
             # them a defect in the app.)
             comp_file_text = _src_cache.get(
                 str(frontend_src / "components" / f"{component}.jsx"))
+        if comp_file_text is not None and _is_generic_fallback_page(comp_file_text):
+            # #1082 — THE CANONICAL PATH IS A CONVENTION; THE IMPORT IS THE AUTHORITY.
+            # run67 (*** 3 MILESTONES VALIDATED ***) ships DirectMessagesPage.jsx (the
+            # framework's own 55-line generic projection, imported by nobody) beside the
+            # lane's real DirectMessages.jsx, and App.jsx binds the SECOND under the FIRST's
+            # name: `import DirectMessagesPage from './pages/DirectMessages'`. Resolving the
+            # declaration by convention grades the orphan and tells the lane to "author the
+            # REAL page" for a page that has one — 3 false blockers there, feeding
+            # `deliverability_frontend_fallback_page` (1253 across 201 run logs, the #3
+            # blocker). This is FIX #146's principle ("the app is the authority on where its
+            # screens live") applied to the one input it never read.
+            #
+            # Narrow on purpose, this being a delivery-BLOCKING path: followed only when the
+            # canonical file is the framework's OWN fallback, and only onto a target that is
+            # not itself one. A lane page at the canonical path is never second-guessed, and
+            # a missing target falls through unchanged. Measured: 3 of 448 resolvable
+            # declarations drift this way.
+            _mod_1082 = _app_import_module_1082(app_jsx, component)
+            if _mod_1082 and _mod_1082 != component:
+                for _cand_1082 in (frontend_src / "pages" / f"{_mod_1082}.jsx",
+                                   frontend_src / "components" / f"{_mod_1082}.jsx"):
+                    _txt_1082 = _src_cache.get(str(_cand_1082))
+                    if _txt_1082 is not None and not _is_generic_fallback_page(_txt_1082):
+                        comp_file_text = _txt_1082
+                        break
         if comp_file_text is None:
             for fname, text in _src_cache.items():
                 if Path(fname).stem == component:
