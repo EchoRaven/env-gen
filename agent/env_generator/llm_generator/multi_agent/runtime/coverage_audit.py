@@ -197,8 +197,22 @@ def _is_test_file(path_str: str) -> bool:
     return any(p in path_str for p in _TEST_PATTERNS)
 
 
+# #1085: a `<tool>.config.<ext>` file is DISCOVERED BY NAME by its toolchain — nothing
+# imports it, so the consumer graph can never see it and it reads "dead" forever. That policy
+# is already in _ENTRY_POINT_BASENAMES (vite/next/tailwind configs); the list just never grew,
+# and postcss.config.js — the inseparable sibling of the exempt tailwind.config.js in the same
+# setup — is flagged in 67 of 83 generated apps, eslint.config.js in 61. That is 128 of the
+# 798 findings left after #1084, all false: deleting either file, which is what "dead
+# artifact" asks for, breaks the build. Structural rather than two more names, so the next
+# tool's config is covered before anyone hits it.
+_TOOL_CONFIG_SUFFIXES_1085 = (".config.js", ".config.cjs", ".config.mjs", ".config.ts")
+
+
 def _is_entry_point(path: Path) -> bool:
-    return path.name.lower() in _ENTRY_POINT_BASENAMES
+    name = path.name.lower()
+    if name.endswith(_TOOL_CONFIG_SUFFIXES_1085):
+        return True
+    return name in _ENTRY_POINT_BASENAMES
 
 
 def _collect_source_files(app_root: Path) -> List[Path]:
