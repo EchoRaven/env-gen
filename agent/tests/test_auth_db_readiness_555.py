@@ -119,6 +119,28 @@ def test_wait_backend_ready_byte_identical_for_dbless_app(tmp_path, monkeypatch)
 
 
 # ═══════════════════════════ (B) oauth_store → 503, not 500 ═══════════════════════════
+@pytest.fixture(autouse=True)
+def _restore_real_psycopg():
+    """Put the real psycopg back after each test.
+
+    `_install_fake_psycopg` replaces sys.modules["psycopg"] (+ .rows) for the rest
+    of the session. Any later test that reaches a real DB driver then dies inside
+    SQLAlchemy with `module 'psycopg' has no attribute 'paramstyle'` — a failure
+    that names neither this file nor the test that triggered it. Same class as the
+    sqlalchemy stub in test_temporal_alias_columns, which was measurably breaking
+    test_temporal_synonym and test_text_pk_uuid_default.
+    """
+    _saved = {k: sys.modules.get(k) for k in ("psycopg", "psycopg.rows")}
+    try:
+        yield
+    finally:
+        for _k, _v in _saved.items():
+            if _v is None:
+                sys.modules.pop(_k, None)
+            else:
+                sys.modules[_k] = _v
+
+
 def _install_fake_psycopg(connect):
     pg = types.ModuleType("psycopg")
 
