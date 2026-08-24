@@ -1144,8 +1144,8 @@ profiles:
       # owning-lane questions before idling — no abandon-on-empty.
       - kind: lane_wind_down
     # FIX #9: the debugger had NO action allowlist, so without a scoped surface its
-    # MANDATED triage tools (bug_escalate / bug_update_state / codehub_list_prs /
-    # codehub_get_diff) were orphan-class — the per-round ranker could drop them and
+    # MANDATED triage tools (bug_escalate / bug_update_state / codehub_get_diff)
+    # were orphan-class — the per-round ranker could drop them and
     # the debugger could wake on a bug with no way to act on it. This allowlist pins
     # the debugger's real triage toolset for the action stage (intersected with its
     # bundled/granted tools, so an extra name is a no-op; only an omission hurts).
@@ -1159,7 +1159,14 @@ profiles:
         - bug_escalate
         - bug_update_state
         - bug_create
-        - codehub_list_prs
+        # #1056: codehub_list_prs removed. #9 pinned it here; #695 later stopped
+        # surfacing it (commit-only mode cannot open a PR, so it can only ever
+        # return an empty list — codehub_pull_requests is at _meta.version 1,
+        # created and never written, in 146 of 146 runs). The entry outlived the
+        # grant, and `validate_stage_allowlist_alignment` has reported it as the
+        # only DEAD finding on every run since — r174's included. A validator
+        # whose output is never empty is one nobody reads. Revive it only with
+        # the other three PR names, as #695 says.
         - codehub_get_diff
         - codehub_get_file_content
         - registryhub_list_endpoints
