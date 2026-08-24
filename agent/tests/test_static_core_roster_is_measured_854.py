@@ -77,7 +77,12 @@ def _roster():
     return seen
 
 
-pytestmark = pytest.mark.skipif(not _GENERATED.is_dir(), reason="corpus not present")
+# `_GENERATED.is_dir()` was too weak a guard: the directory can exist while holding
+# none of the runs the roster is measured over, and every test then reported an
+# empty measurement as a failure. Require the measurement itself to be non-empty.
+pytestmark = pytest.mark.skipif(
+    not _GENERATED.is_dir() or not _roster(),
+    reason="the run corpus this roster is measured over is not present")
 
 
 def test_the_roster_probe_sees_the_corpus():

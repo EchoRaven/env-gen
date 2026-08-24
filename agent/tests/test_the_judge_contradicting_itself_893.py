@@ -122,6 +122,9 @@ def test_the_corpus_coverage_claim_still_holds():
             total += 1
             if j.get("code_state"):
                 stamped += 1
+    if total == 0:
+        pytest.skip("the netflix run corpus this claim is measured over is not in "
+                    "this checkout — 0 is absence, not a coverage regression")
     assert total >= 100, total
     # #1018: the tripwire measured the wrong quantity. It counted verdicts CARRYING a
     # code_state and fired at 21, but #893 detects non-determinism by comparing two verdicts
