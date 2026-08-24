@@ -379,6 +379,28 @@ def _handler_routes(fn: Any) -> Set[Tuple[str, str]]:
     return routes
 
 
+def _constant_row_1083(node: Any) -> bool:
+    """Every value in ``node`` is a literal — no name, call, f-string or comprehension.
+
+    #173's mock-row rule keyed on "a list element is a dict", and its own docstring's example
+    of what that means is ``[{"id": "dep_1", "line": "A"}]`` — all constants. It never
+    checked. gmrun7 (`2of3-forcedeliver`) returns a directions row whose every field is
+    computed from the query params (``round(dist, 2)``, ``int(dist * 10)``, an f-string), and
+    a computed endpoint cannot take the remedy the blocker gives it ("query the real seeded
+    table"). Measured over the 83 generated backends: of the returns carrying a dict literal
+    inside a list, 87 have a dynamic value and 5 are entirely constant — the premise is wrong
+    far more often than right, so require what the docstring always described."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(_constant_row_1083(e) for e in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(_constant_row_1083(v) for v in node.values)
+    if isinstance(node, ast.UnaryOp):
+        return _constant_row_1083(node.operand)
+    return False
+
+
 def _placeholder_collection_literal(node: Any) -> bool:
     """True iff ``node`` is a HARDCODED collection with no real data behind it:
       • an empty list ``[]`` (the classic stub), or
@@ -391,7 +413,11 @@ def _placeholder_collection_literal(node: Any) -> bool:
     if isinstance(node, ast.List):
         if len(node.elts) == 0:
             return True  # empty stub
-        return any(isinstance(e, ast.Dict) for e in node.elts)  # hardcoded mock rows
+        if not any(isinstance(e, ast.Dict) for e in node.elts):
+            return False
+        # #1083: hardcoded mock rows means CONSTANT rows. A row computed from the request
+        # (gmrun7's directions) is a real answer, not a fixture — see _constant_row_1083.
+        return all(_constant_row_1083(e) for e in node.elts)
     if isinstance(node, ast.Dict):
         saw_collection = False
         for k, v in zip(node.keys, node.values):
