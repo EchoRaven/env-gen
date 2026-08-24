@@ -134,10 +134,12 @@ class MemoryBank:
     # Agent model name (optional). When provided, the in-context digest/notebook
     # char budgets are sized as a fraction of resolve_ctx_working_chars(model)
     # instead of the fixed floors — a 1M-context model gets a much larger digest.
-    # TODO(memory-sizing): current MemoryBank() call sites (base.py /
-    # agent_interaction_tools.py) do not yet pass `model`; thread the agent's
-    # config.model_name through there so the budgets auto-size on big-window models.
-    # Until then this stays None and we fall back to the env-override / floor path.
+    # #1070: both call sites now pass it. agent_interaction_tools.py always did;
+    # base.py passed `getattr(self.config, "model_name", None)`, and AgentConfig has
+    # no `model_name` — the name is on `config.llm` — so the default fired every
+    # time and every agent ran on the floors (9.2x smaller digest, 10.2x notebook).
+    # `_memory_model_name_1070` in base.py reads config.llm.model_name, then the LLM
+    # client's own config. None here still means "use the env-override / floor path".
     model: Optional[str] = None
     _files: Dict[str, MemoryFile] = field(default_factory=dict)
     _logger: logging.Logger = field(default_factory=lambda: logging.getLogger("memory_bank"))

@@ -104,6 +104,42 @@ def _auto_stage_in_mini_loop(agent, file_path: str, *, action: str) -> None:
             pass
 
 
+def _memory_model_name_1070(config, llm) -> Optional[str]:
+    """The model name MemoryBank needs to size the in-context digest/notebook.
+
+    #1070: this used to be `getattr(self.config, "model_name", None)` inline, and
+    `self.config` is an `AgentConfig` — which has no `model_name`. Its fields are
+    agent_id / agent_name / agent_type / description / version / llm / execution /
+    ...; the name lives one level down on `config.llm` (`LLMConfig.model_name`),
+    which is where this file's own logging already reads it from. So the getattr
+    default fired every time, MemoryBank was always told `None`, and every agent
+    ran on the FLOORS instead of the model-sized budget:
+
+        digest    intended 147,000 chars   actual 16,000    9.2x smaller
+        notebook  intended  61,250 chars   actual  6,000   10.2x smaller
+
+    (on the model these runs use; floors are 16000/6000, fractions 0.06/0.025.)
+
+    Two sources, in order: the agent's own config, then the LLM client's config —
+    the same pair the rest of the file treats as equivalent. Never raises: this
+    runs inside __init__ and a throw here takes the agent down. A blank name is
+    None, so MemoryBank keeps its floor rather than trying to size on "".
+    """
+    for holder, path in ((config, ("llm", "model_name")),
+                         (llm, ("config", "model_name"))):
+        try:
+            cur = holder
+            for attr in path:
+                cur = getattr(cur, attr, None)
+                if cur is None:
+                    break
+            if isinstance(cur, str) and cur.strip():
+                return cur.strip()
+        except Exception:
+            continue
+    return None
+
+
 class EnvGenAgent(
     AgentMessaging,
     AgentSync,
@@ -1811,7 +1847,8 @@ class EnvGenAgent(
         self.memory_bank = MemoryBank(
             root_dir=workspace_root,
             memory_dir=canonical_memory_dir,
-            model=getattr(self.config, "model_name", None),
+            model=_memory_model_name_1070(getattr(self, "config", None),
+                                          getattr(self, "llm", None)),
         )
         self.memory_bank.initialize(project_info or {})
         
