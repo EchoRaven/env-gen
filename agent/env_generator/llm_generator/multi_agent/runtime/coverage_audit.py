@@ -326,13 +326,47 @@ def _normalize_py_import(source_file: Path, module: str, level: int,
 
 
 def _scan_py_imports(text: str) -> List[tuple]:
-    """Return list of (level, module, imported_names) tuples from a Python file.
+    # #1081's ratchet caught this docstring the moment it was written: it quotes the regex
+    # character class, so it has to be RAW.
+    r"""Return list of (level, module, imported_names) tuples from a Python file.
 
     - `from .foo import bar, baz` -> (1, 'foo', ['bar', 'baz'])
     - `from foo.bar import baz`   -> (0, 'foo.bar', ['baz'])
     - `import foo` / `import foo.bar` -> (0, 'foo', [])  /  (0, 'foo.bar', [])
     - `import foo, bar` -> two tuples.
-    """
+
+    #1084: PARSED, not matched. `_PY_IMPORT_RE`'s name class is `[\w\.,\s\*]+` and `\s`
+    matches NEWLINES, so one `from x import a, b, c` runs on through every import line after
+    it. In the backend main.py every generated app ships, the opening
+    `from fastapi import Depends, FastAPI, HTTPException, Query` swallowed
+    `from database import ...`, `from auth_dependency import ...` and `import models` into
+    its own name list — so those three were never seen as imports and `scan_dead_files`
+    called them DEAD, modules the app cannot start without. (A parenthesised multi-line
+    import fails the other way: the class excludes `(`, so the names come back empty.)
+
+    Measured over the 83 generated backends: parsing removes 212 of 1010 dead-file findings,
+    and every path it removes was false in 100% of the runs it appeared in —
+    oauth_routes.py 83/83, auth_dependency.py 58, database.py 53, jwt_manager.py 17. It
+    removes nothing true: schemas.py (66 runs) stays flagged and is genuinely imported by
+    nobody. Feeds `deliverability_dead_artifacts`, 660 occurrences across 201 run logs.
+
+    The regex stays as the fallback for a file that does not parse — a half-written module
+    mid-run is exactly when this audit runs."""
+    try:
+        import ast as _ast
+        tree = _ast.parse(text)
+    except Exception:
+        pass                      # unparseable → regex fallback below
+    else:
+        parsed: List[tuple] = []
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.Import):
+                for alias in node.names:
+                    parsed.append((0, alias.name, []))
+            elif isinstance(node, _ast.ImportFrom):
+                parsed.append((node.level or 0, node.module or "",
+                               [a.name for a in node.names]))
+        return parsed
     out: List[tuple] = []
     for m in _PY_IMPORT_RE.finditer(text):
         dots, mod_from, names_str, mod_imp1, mod_imp2 = (
