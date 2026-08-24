@@ -24,6 +24,20 @@ from typing import Any, Dict, List, Optional
 _DEFERRABLE_KICKOFF_ATTENDEES = frozenset({"verifier"})
 
 
+# The code-writing impl lanes (verifier validates later; orchestrator coordinates;
+# knowledge is an observer).
+_IMPL_LANES_1076 = ("backend", "frontend")
+
+
+def _impl_dispatch_targets_1076(agents) -> list:
+    """Which lanes the implementation-phase dispatch wakes. See the #1076 note at
+    the call site: unconditional by design, in the orchestrator's own order."""
+    try:
+        return [lane for lane in (agents or []) if lane in _IMPL_LANES_1076]
+    except Exception:
+        return []
+
+
 class KickoffDriver:
     """Drives the kickoff meeting to completion + finalize/author/dispatch.
     Stateless; reads the orchestrator's collaborators live via the back-ref."""
@@ -780,20 +794,23 @@ class KickoffDriver:
             task_iter = tasks.values() if isinstance(tasks, dict) else tasks
         except Exception:
             task_iter = []
-        assignees = set()
-        for t in task_iter:
-            if not isinstance(t, dict):
-                continue
-            a = str(t.get("owner") or t.get("assignee") or "").strip().lower()
-            if a:
-                assignees.add(a)
-        # The code-writing impl lanes (verifier validates later; orchestrator
-        # coordinates; knowledge is an observer).
-        impl_lanes = {"backend", "frontend"}
-        targets = [
-            lane for lane in self._orch._agents
-            if lane in impl_lanes and (lane in assignees or True)
-        ]
+        # #1076: WAKE EVERY IMPL LANE, DELIBERATELY — and say so instead of
+        # encoding it as a check that cannot fail. This read
+        #
+        #     if lane in impl_lanes and (lane in assignees or True)
+        #
+        # where `X or True` is always True, so `lane in assignees` never mattered
+        # and the twelve lines above it — walk the task tree, read each task's
+        # owner/assignee, lowercase, collect — existed only to be ignored. Nothing
+        # else in this function read that set.
+        #
+        # The behaviour was right. This function exists BECAUSE lanes must be woken
+        # at the kickoff->implementation boundary: otherwise they "burn their idle
+        # budget on empty kickoff-reply finishes and get LaneIdleCircuitBreaker-
+        # halted before they ever implement" (smoke #3, 2026-06-05). Filtering on
+        # current assignment would risk waking nobody when the tree has not been
+        # read yet, which is presumably why the `or True` went in.
+        targets = _impl_dispatch_targets_1076(self._orch._agents)
 
         dispatched: List[str] = []
         for lane_id in targets:
