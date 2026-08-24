@@ -2169,6 +2169,7 @@ def _seed_infer_fk(col: str, known_tables) -> Optional[str]:
 
 
 def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Dict[str, int],
+               *, fk_ordinal: int = 0,
                pk_name: Optional[str] = None, pk_type: Optional[str] = None,
                pk_types: Optional[Dict[str, str]] = None):
     """A realistic, deterministic value for one column of seed row ``i`` — or
@@ -2181,7 +2182,16 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
         if fk_table == "tenants":
             return "default"
         m = max(1, int(counts.get(fk_table, 1)))
-        idx = i % m
+        # #1069: OFFSET BY THE COLUMN, not just the row. This used to be `i % m`, so
+        # two FK columns pointing at the SAME parent got the same parent in every row
+        # — every seeded follow was a self-follow and every seeded DM a note to self
+        # (6 of 6 rows, both shapes). A DM inbox then renders empty for everyone but
+        # the sender, against a gate whose bar is "domain-REALISTIC populated
+        # screens", and #1059's recipient-404 could not be surfaced by any seeded row
+        # because no row ever had a recipient who was not the sender.
+        # `fk_ordinal` is the column's position among this table's FK columns
+        # targeting this parent, so ordinal 0 (every single-FK table) is unchanged.
+        idx = (i + int(fk_ordinal or 0)) % m
         _ppk = _seed_pk_value(fk_table, idx, (pk_types or {}).get(fk_table))
         return _ppk if _ppk is not None else idx + 1  # text/uuid parent key, else SERIAL 1..N
     if pk_name is not None and col == pk_name:
@@ -2314,12 +2324,24 @@ def _build_seed_rows(tables: Dict[str, Any]):
         cols = [c for c in (meta[t].get("cols") or []) if c]
         fks = meta[t].get("fks") or {}
         _pk_name, _pk_type = meta[t].get("pk"), meta[t].get("pk_type")
+        # #1069: position of each FK column among this table's FK columns pointing at
+        # the SAME parent, so two-party rows (follower/followee, sender/recipient) walk
+        # DIFFERENT parents. Column order is the contract's, so this is deterministic.
+        _fk_ordinals: Dict[str, int] = {}
+        _seen_parents: Dict[str, int] = {}
+        for _c in cols:
+            _pt = fks.get(_c) or _seed_infer_fk(_c, known_tables)
+            if not _pt:
+                continue
+            _fk_ordinals[_c] = _seen_parents.get(_pt, 0)
+            _seen_parents[_pt] = _fk_ordinals[_c] + 1
         rows: List[Dict[str, Any]] = []
         for i in range(counts.get(t, 6)):
             row: Dict[str, Any] = {}
             for c in cols:
                 _fk = fks.get(c) or _seed_infer_fk(c, known_tables)
                 v = _seed_cell(c, t, i, _fk, counts,
+                               fk_ordinal=_fk_ordinals.get(c, 0),
                                pk_name=_pk_name, pk_type=_pk_type, pk_types=pk_types)
                 if v is _SEED_OMIT and c in (meta[t].get("required") or ()):
                     # #599: `_seed_cell` omits a column it has no naming rule for, and the
