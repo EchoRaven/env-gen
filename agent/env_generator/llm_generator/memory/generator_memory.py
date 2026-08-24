@@ -254,11 +254,30 @@ class MessageImportanceScorer:
         return "unknown"
     
     def _get_content(self, msg) -> str:
-        if hasattr(msg, 'content'):
-            return msg.content or ""
+        """Get content from message — always a str. See the #1064 note on the
+        copy in ConversationCondenser: a multimodal content LIST reaching
+        `re.finditer` killed the task on 68% of runs."""
+        if hasattr(msg, "content"):
+            raw = msg.content
         elif isinstance(msg, dict):
-            return msg.get("content", "")
-        return str(msg)
+            raw = msg.get("content")
+        else:
+            return str(msg)
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, (list, tuple)):
+            parts = []
+            for block in raw:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "\n".join(parts)
+        return str(raw)
 
 
 # ==================== Smart Message Compressor ====================
@@ -705,11 +724,30 @@ class SmartMessageCompressor:
         return "unknown"
     
     def _get_content(self, msg) -> str:
-        if hasattr(msg, 'content'):
-            return msg.content or ""
+        """Get content from message — always a str. See the #1064 note on the
+        copy in ConversationCondenser: a multimodal content LIST reaching
+        `re.finditer` killed the task on 68% of runs."""
+        if hasattr(msg, "content"):
+            raw = msg.content
         elif isinstance(msg, dict):
-            return msg.get("content", "")
-        return str(msg)
+            raw = msg.get("content")
+        else:
+            return str(msg)
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, (list, tuple)):
+            parts = []
+            for block in raw:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "\n".join(parts)
+        return str(raw)
     
     @property
     def summary(self) -> str:
@@ -909,12 +947,43 @@ class ConversationCondenser:
         return "unknown"
     
     def _get_content(self, msg) -> str:
-        """Get content from message (works with both dict and Message objects)."""
-        if hasattr(msg, 'content'):
-            return msg.content or ""
+        """Get content from message (works with both dict and Message objects).
+
+        #1064: this is annotated ``-> str`` and every caller treats it as one —
+        two run a regex straight over the result — but it used to hand back
+        ``msg["content"]`` verbatim, and for a MULTIMODAL message that is the
+        content-block LIST (``[{"type": "text", ...}, {"type": "image_url", ...}]``).
+        `re.finditer` then raised "expected string or bytes-like object, got
+        'list'", the task handler in messaging.py caught it and logged "Task
+        failed", and the agent abandoned the whole task: 490 times across 136 of
+        the 201 kept run logs, always one line after "Condensing messages".
+
+        Flatten to the text parts and drop the rest — every consumer here scans
+        prose (file paths, decisions, "NEXT to implement" markers), so an image
+        block carries nothing they can use. An explicit ``None`` becomes ``""``
+        for the same reason: the dict branch used to return it unchanged.
+        """
+        if hasattr(msg, "content"):
+            raw = msg.content
         elif isinstance(msg, dict):
-            return msg.get("content", "")
-        return str(msg)
+            raw = msg.get("content")
+        else:
+            return str(msg)
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, (list, tuple)):
+            parts = []
+            for block in raw:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "\n".join(parts)
+        return str(raw)
     
     def _find_safe_cutoff(self, other_msgs: List, target_keep: int) -> int:
         """Find a safe cut-off point that doesn't break assistant+tool message pairs.
