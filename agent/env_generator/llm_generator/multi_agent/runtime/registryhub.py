@@ -1449,10 +1449,30 @@ class RegistryHub:
 
     @staticmethod
     def _ui_snake(name: str) -> str:
-        """PascalCase component name → snake page id (round 38 case-dup fix)."""
+        """PascalCase component name → snake page id (round 38 case-dup fix).
+
+        #1079: ACRONYM-SAFE. The rule used to be `(?<!^)(?=[A-Z])` — split before EVERY
+        capital — which turns `FYPFeedPage` into `f_y_p_feed_page` and `DMInboxPage` into
+        `d_m_inbox_page`. Every other camel→snake site in the package already uses the safe
+        form (completeness_audit.py, control_exercise.py, frontend_audit.py); this one, which
+        mints the PAGE ID, was the exception.
+
+        Two consequences, both measured on the 67-run corpus:
+          * The dedup this function IS defeated — r81/r89/r90 each carry `fyp_feed` AND
+            `f_y_p_feed` as separate ui_page records, two records for one page.
+          * The id is the requirement key `flow_coverage` demands a `validation:ui_flow`
+            record for, and `f_y_p_feed` is the single largest requirement with no matching
+            record across 45 runs (11×) — the verifier writes `fyp_feed`, which can never
+            meet it. On a TikTok clone that is the For-You feed: the app's main screen,
+            reported as an untested critical flow.
+
+        Two boundaries, the standard pair: lower/digit→Upper (`FeedPage`→`Feed_Page`) and
+        Upper→Upper+lower, which ends an acronym run (`FYPFeed`→`FYP_Feed`). An all-caps name
+        matches neither and stays one word (`FAQ`→`faq`)."""
         import re as _re
         if _re.search(r"[A-Z]", str(name or "")):
-            snake = _re.sub(r"(?<!^)(?=[A-Z])", "_", str(name)).lower()
+            snake = _re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", str(name))
+            snake = _re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", snake).lower()
             snake = _re.sub(r"_+", "_", snake).strip("_")
             if snake:
                 return snake
