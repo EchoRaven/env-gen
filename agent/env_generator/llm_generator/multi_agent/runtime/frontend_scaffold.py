@@ -116,7 +116,8 @@ def _unescape_template_expr_newlines(src: str) -> str:
 
 
 def _unescape_delimiter_backticks(src: str) -> str:
-    """Un-escape template-literal delimiter backticks. The OPEN/CLOSE regexes are used as a
+    # #1081: RAW docstring — this one is ABOUT the `\`` sequence, so it names it a dozen times.
+    r"""Un-escape template-literal delimiter backticks. The OPEN/CLOSE regexes are used as a
     per-LINE malformation DETECTOR: a line carrying a ``\``` in a delimiter position — right
     after a structural token (``{ ( [ = , : ? => && || ?? return``) or right before a
     structural close (``) } ] ; ,``) — is the lane's escaped-delimiter bug, so every
@@ -475,7 +476,10 @@ def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
 
 
 def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
-    """Un-escape template-literal delimiter backticks, escaped newlines, AND escaped JSX
+    # #1081: RAW docstring. `\`` is not an escape — Python warns today and a future version
+    # makes it a SyntaxError; and its neighbour `\"` IS one, so the second shape used to
+    # render as a bare `"`, showing the UNescaped form this function exists to find.
+    r"""Un-escape template-literal delimiter backticks, escaped newlines, AND escaped JSX
     attribute quotes across the frontend source so an LLM-emitted ``className={\`...\`}`` /
     ``className=\"...\"`` can't break the esbuild/Vite build (and thus wedge the api_smoke
     docker_up gate). Deterministic + best-effort: only touches a file that actually contains
