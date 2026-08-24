@@ -1978,12 +1978,28 @@ def _target_exists_with_content_1013(target) -> bool:
         return False
 
 
+def _label_words_1080(name) -> str:
+    """PascalCase → space-separated WORDS for a human-visible label, acronyms kept whole.
+
+    Eight sites used to inline a lookahead that split before EVERY capital
+    (``(?<!^)(?=[A-Z])``), so `FYPFeedPage` rendered as `F Y P Feed`. r81's framework-projected
+    `src/pages/FYPFeed.jsx` ships two headings reading exactly that. Same defect as #1079 one
+    layer out: there it mangled the page ID, here the words the user reads.
+
+    Two boundaries, the standard pair: lower/digit→Upper (`FeedPage`), and Upper→Upper+lower,
+    which ends an acronym run (`FYPFeed` → `FYP Feed`). An all-caps name matches neither and
+    stays one word (`FAQ`). One helper, not eight copies — eight copies is how they drifted
+    from the acronym-safe form the rest of the package already uses."""
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(name or ""))
+    return re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
+
+
 def _stub_page_component(name: str) -> str:
     """A minimal default-exported React component (JSX automatic runtime — no
     React import needed, matching the lane's pages). Used for build-integrity
     stubs of UNDECLARED local imports; carries NO flagged placeholder marker so a
     declared page never trips the stub-detector on it."""
-    label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    label = _label_words_1080(name).replace("Page", "").strip() or name
     return (
         f"export default function {name}() {{\n"
         f"  return (\n"
@@ -3320,7 +3336,7 @@ def _auth_page_src_540(name, page, screen, design, pal, surf):
                     "emailmobile": False}
         else:
             return None
-    _app = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").replace(
+    _app = _label_words_1080(name).replace("Page", "").replace(
         "Login", "").replace("Signup", "").replace("Sign Up", "").strip() or "Sign in"
     dark = _is_dark_hex(str((pal or {}).get("bg") or "#ffffff"))
     is_reg = _is_register_mode(name, page)
@@ -5976,7 +5992,7 @@ def wire_owned_list_shell_535(frontend_dir) -> Dict[str, object]:
             pass
         wired: List[str] = []
         for pg in sorted(pages_dir.glob("*.jsx")):
-            _spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", pg.stem)
+            _spaced = _label_words_1080(pg.stem)
             if not _OWNED_LIST_NAME_535.search(_spaced):
                 continue
             try:
@@ -5988,7 +6004,7 @@ def wire_owned_list_shell_535(frontend_dir) -> Dict[str, object]:
             m = re.search(r"fetch\(\s*['\"]([^'\"]+)['\"]", cur)  # keep OWN endpoint
             if not m or "${" in m.group(1):
                 continue
-            label = (re.sub(r"(?<!^)(?=[A-Z])", " ", pg.stem)
+            label = (_label_words_1080(pg.stem)
                      .replace("Page", "").strip() or pg.stem)
             pg.write_text(
                 _owned_list_shell_src_535(pg.stem, nav_name, grid_name,
@@ -6501,7 +6517,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         except Exception:
             theme = "light"
     text = "#f5f5f5" if theme == "dark" else "#18181b"
-    label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    label = _label_words_1080(name).replace("Page", "").strip() or name
     # #460: a design-matched AUTH/login page must render the REAL auth form (brand
     # header + centered login/register card via _AUTH_PAGE_TEMPLATE), NOT the generic
     # app-shell (nav + bands). login otherwise shipped as an app-shell page (r40 login
@@ -6520,7 +6536,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         _spec_auth = _auth_page_src_540(name, page, screen, design, pal, _surf526)
         if _spec_auth is not None:
             return _spec_auth
-        _auth_app = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").replace(
+        _auth_app = _label_words_1080(name).replace("Page", "").replace(
             "Login", "").replace("Signup", "").replace("Sign Up", "").strip() or "Sign in"
         _auth_dark = _is_dark_hex(str(pal.get("bg") or "#ffffff"))
         _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
@@ -8096,7 +8112,7 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                     _spec_auth_545 = None
                 if _spec_auth_545 is not None:
                     return _spec_auth_545
-        _auth_app = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").replace(
+        _auth_app = _label_words_1080(name).replace("Page", "").replace(
             "Login", "").replace("Signup", "").replace("Sign Up", "").strip() or "Sign in"
         # #1058: read the palette the way everything else on this page does.
         # This site reached only INTO `design["design_system"]["palette"]`, so a
@@ -8134,7 +8150,7 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
     # page the lane never authors (netflix r66 wedge) still ships a real, usable page.
     if _is_profiles_page(name, page):
         return _profiles_page_src(name, page, nav_routes, design or {})
-    label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    label = _label_words_1080(name).replace("Page", "").strip() or name
     if _is_landing_page(name, page):
         # #434: a MEASURED, theme-aware marketing landing (dark bg + brand-accent
         # CTA + email-capture form when the design has one), not the generic
