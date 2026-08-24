@@ -21,7 +21,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
 # #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
-from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
+
+
+def _rt936(*args, **kwargs):
+    """The container binary, resolved on first CALL — see #1055 in
+    ``tools/docker_tools.py`` for the full diagnosis.
+
+    Short version: this module is loaded as ``tools.<name>`` (its sibling
+    imports use the short form), so a MODULE-LEVEL absolute
+    ``env_generator.llm_generator...`` import builds a second copy of the
+    package tree whose initialisation re-enters this module mid-execution.
+    ``container_runtime`` imports only stdlib, so deferring the lookup to call
+    time removes the cycle and leaves every call site unchanged.
+    """
+    try:
+        from multi_agent.runtime.container_runtime import runtime_bin
+    except ImportError:  # pragma: no cover - depends on the caller's sys.path
+        from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin
+    return runtime_bin(*args, **kwargs)
+
 
 
 @dataclass

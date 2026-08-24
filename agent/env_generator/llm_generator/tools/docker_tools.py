@@ -23,7 +23,40 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
 # #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
-from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
+
+
+def _rt936(*args, **kwargs):
+    """The container binary ("docker"/"podman"), resolved on first CALL.
+
+    #1055: this used to be a module-level
+    ``from env_generator.llm_generator.multi_agent.runtime.container_runtime
+    import runtime_bin``. Every other import in this file uses the short form
+    (``utils.tool``, ``workspace``) because that is how the module is loaded —
+    as ``tools.docker_tools``. Under that regime the absolute path builds a
+    SECOND copy of the whole package tree, and initialising it re-enters this
+    module while it is still on line 26, so ``DockerRestartTool`` (defined
+    below) does not exist yet:
+
+        ImportError: cannot import name 'DockerRestartTool' from partially
+        initialized module 'tools.docker_tools'
+
+    Production imports the absolute form and was fine; the SUITE uses the short
+    form and could not import the orchestrator at all — eleven test files,
+    including the tool-allowlist, grant-guard, commit-gate, deliver-trigger and
+    plateau-escape suites. Same dual-identity class as #638/#1053, one level up:
+    there a FILE had two module names, here a PACKAGE does.
+
+    ``container_runtime`` imports only stdlib, so deferring the lookup removes
+    the cycle outright. Short form first (this file's regime, and it keeps
+    ``runtime_bin``'s own state single-copy), absolute as the fallback for the
+    runtime's import style.
+    """
+    try:
+        from multi_agent.runtime.container_runtime import runtime_bin
+    except ImportError:  # pragma: no cover - depends on the caller's sys.path
+        from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin
+    return runtime_bin(*args, **kwargs)
+
 
 # Import environment cache for avoiding repeated failures
 try:
