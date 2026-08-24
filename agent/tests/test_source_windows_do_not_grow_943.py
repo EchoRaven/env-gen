@@ -25,7 +25,12 @@ import pathlib
 import pytest
 
 
-_CEILING = 59
+# 59 -> 57: the 18 windows in test_login_failure_attribution_612,
+# test_ladder_substitution_attribution_592 and test_record_vs_live_fidelity_618 are now
+# anchored on landmarks. Two of them are `not in <block>` checks, which a byte window
+# cannot express at all — widen it and the next sibling statement walks in — so those
+# use an indentation-aware block boundary.
+_CEILING = 57
 
 _TESTS = pathlib.Path(__file__).resolve().parent
 

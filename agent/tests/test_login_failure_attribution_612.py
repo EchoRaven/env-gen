@@ -37,26 +37,39 @@ def src():
     return inspect.getsource(r)
 
 
+def _after(text: str, i: int, until: str = "\ndef ") -> str:
+    """From an anchor to the next semantic landmark (end of text if absent).
+
+    A window sized in BYTES breaks whenever a comment above it grows — the ratchet
+    in test_source_windows_do_not_grow_943 exists because that had already happened
+    more than once. Anchor + landmark keeps checking the same code however the
+    module moves.
+    """
+    j = text.find(until, i)
+    return text[i:j if j != -1 else len(text)]
+
+
+
 # --- the claim is no longer unconditional ------------------------------------------------
 
 def test_the_unconditional_not_wired_claim_is_gone(src):
     i = src.index("#612")
-    window = src[i:i + 3000]
+    window = _after(src, i)
     assert 'else f"login did nothing' not in window
     # it survives ONLY inside the branch that has evidence for it
     j = window.index("submit sent NO /auth request")
-    assert "not wired to the API" in window[j:j + 200]
+    assert "not wired to the API" in window[j:]
 
 
 def test_the_no_request_branch_is_the_only_one_that_says_not_wired(src):
     i = src.index("#612")
-    window = src[i:i + 3000]
+    window = _after(src, i)
     assert window.count("not wired to the API") == 2      # the branch + the comment's quote
 
 
 def test_a_4xx_is_reported_as_credentials_not_wiring(src):
     i = src.index("the form IS wired but /auth returned")
-    assert "NOT a wiring bug" in src[i:i + 220]
+    assert "NOT a wiring bug" in _after(src, i, "\n\n")
 
 
 def test_a_2xx_without_a_token_is_reported_as_shape(src):
@@ -74,19 +87,19 @@ def test_the_statuses_are_captured_from_the_page(src):
 def test_the_listener_is_removed_after_the_drive(src):
     """It must not keep collecting through the rest of the walk."""
     i = src.index("_drive_auth_form(page, creds)")
-    assert 'remove_listener("response", _on_auth_resp)' in src[i:i + 300]
+    assert 'remove_listener("response", _on_auth_resp)' in _after(src, i, "\n\n")
 
 
 def test_a_listener_failure_cannot_break_the_walk(src):
     i = src.index("def _on_auth_resp")
-    assert "except Exception:" in src[i:i + 300]
+    assert "except Exception:" in _after(src, i, "\n\n")
 
 
 # --- the #504 corroboration --------------------------------------------------------------------
 
 def test_the_direct_api_login_is_folded_in_as_a_fourth_signal(src):
     i = src.index('report["api_login_ok"] = bool(token) or (')
-    window = src[i:i + 1200]
+    window = _after(src, i)
     assert "#612" in window
     assert "neither a backend" in window and "nor a credential fault" in window
 
@@ -99,7 +112,7 @@ def test_the_corroboration_only_fires_when_the_form_drive_FAILED(src):
 
 def test_the_corroboration_cannot_raise(src):
     i = src.index("nor a credential fault")
-    assert "except Exception:" in src[i:i + 300]
+    assert "except Exception:" in _after(src, i, "\n\n")
 
 
 # --- the evidence is recorded --------------------------------------------------------------------

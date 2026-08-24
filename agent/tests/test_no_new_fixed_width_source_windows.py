@@ -38,15 +38,17 @@ _BASELINE = {
     "test_declared_405_is_timing_614.py": 2,
     "test_durable_inbox_read_preview_604.py": 2,
     "test_incomplete_player_chrome_blocks_589.py": 2,
-    "test_ladder_substitution_attribution_592.py": 3,
-    "test_login_failure_attribution_612.py": 3,
     "test_mid_interaction_reference_frame_595.py": 1,
-    "test_record_vs_live_fidelity_618.py": 3,
     "test_remediation_feedback_619.py": 2,
     "test_stale_route_component_597.py": 1,
     "test_unsatisfiable_chain_rejected_at_registration_586.py": 1,
     "test_user_content_relation_read_scope_598.py": 1,
 }
+# ★ Lowered again: test_login_failure_attribution_612,
+# test_ladder_substitution_attribution_592 and test_record_vs_live_fidelity_618 have no
+# byte windows left — 18 of them are now anchored on landmarks, and the two `not in
+# <block>` checks among them use an indentation-aware boundary, which is the thing a
+# byte window could never express.
 # ★ Lowered 2026-08-18 alongside the prose-match fix above. Four entries
 # (test_in_batch_read_dedupe_609, test_mcp_not_built_is_timing_616,
 #  test_primary_dataless_needs_a_fetch_573, test_terminal_task_ack_605) were counted only because

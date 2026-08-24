@@ -27,6 +27,32 @@ from env_generator.llm_generator.multi_agent.runtime import chain_executor as ce
 def src():
     return inspect.getsource(ce.execute_chain)
 
+def _after(text: str, i: int, until: str = "\n\n") -> str:
+    """From an anchor to the next semantic landmark (end of text if absent).
+
+    A window sized in BYTES breaks whenever a comment above it grows; the ratchet in
+    test_source_windows_do_not_grow_943 exists because that had already happened.
+    """
+    j = text.find(until, i)
+    return text[i:j if j != -1 else len(text)]
+
+
+def _block(text: str, i: int) -> str:
+    """From the anchor's line to the end of its suite — the first later non-blank
+    line indented no deeper than the anchor. This is what a `not in <block>` check
+    actually means, and it is exactly what a byte window cannot express: widen it
+    and the next sibling statement walks in.
+    """
+    ls = text.rfind("\n", 0, i) + 1
+    rest = text[ls:]
+    base = len(rest) - len(rest.lstrip())
+    out = []
+    for k, line in enumerate(rest.splitlines(keepends=True)):
+        if k and line.strip() and (len(line) - len(line.lstrip())) <= base:
+            break
+        out.append(line)
+    return "".join(out)
+
 
 def test_the_authored_vars_are_read_from_the_STEP_not_the_substituted_request(src):
     """`_unres_vars` is computed after substitution, so a filled var is invisible there —
@@ -37,7 +63,7 @@ def test_the_authored_vars_are_read_from_the_STEP_not_the_substituted_request(sr
 
 def test_it_reports_only_vars_that_were_filled_AND_trace_to_a_failed_save(src):
     i = src.index("_ladder_filled = sorted(")
-    window = src[i:i + 200]
+    window = _after(src, i)
     assert "_authored_vars - _unres_vars" in window      # filled, not still-literal
     assert "save_failed_by_var.get(v)" in window         # and the save actually failed
 
@@ -47,19 +73,19 @@ def test_a_var_a_later_step_really_captured_is_not_annotated(src):
     LATER step capturing the same var successfully. The ladder writes only into the outgoing
     request, never into `variables` — so presence there proves a real capture."""
     i = src.index("_ladder_filled = sorted(")
-    assert "v not in variables" in src[i:i + 200]
+    assert "v not in variables" in _after(src, i)
 
 
 def test_a_var_that_is_still_literal_stays_with_188(src):
     """Subtracting `_unres_vars` keeps the two messages from doubling up."""
     i = src.index("_ladder_filled = sorted(")
-    assert "_authored_vars - _unres_vars" in src[i:i + 200]
+    assert "_authored_vars - _unres_vars" in _after(src, i)
     assert 'note = "unresolved " + "; ".join(_hints)' in src
 
 
 def test_the_note_names_the_upstream_step_and_redirects_the_reader(src):
     i = src.index("if _ladder_filled:")
-    window = src[i:i + 700]
+    window = _after(src, i)
     assert "SUBSTITUTED" in window
     assert "save_failed_by_var[_v]" in window            # the step that failed to capture
     assert "UNRELATED id" in window
@@ -73,7 +99,7 @@ def test_the_substitution_is_machine_readable_in_the_record(src):
 def test_it_annotates_rather_than_reclassifies(src):
     """Guard the deliberate choice: `kind` must not be touched by this path (#587)."""
     i = src.index("if _ladder_filled:")
-    window = src[i:i + 700]
+    window = _block(src, i)
     assert "kind" not in window, window
 
 
