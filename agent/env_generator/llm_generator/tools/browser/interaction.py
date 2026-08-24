@@ -257,7 +257,14 @@ Features:
                             f"document.querySelector('{final_selector}')?.scrollIntoView({{behavior: 'smooth', block: 'center'}})"
                         )
                         await asyncio.sleep(0.3)
-                    except:
+                    # #1074: `except Exception`, NOT a bare `except`. This is the only
+                    # bare handler in the package that wraps an `await`, and
+                    # CancelledError is a BaseException — so cancelling this tool mid
+                    # scroll (a step timeout, a lane torn down) was CAUGHT here and
+                    # dropped. A cancellation is delivered once; swallowing it loses it,
+                    # and the step then runs on to the click as if nothing had happened.
+                    # The scroll itself stays best-effort, which is all it was ever for.
+                    except Exception:
                         pass
         
         # All retries failed - provide helpful error message
