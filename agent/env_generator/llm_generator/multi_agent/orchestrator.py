@@ -423,6 +423,46 @@ def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
     return sig_now != sig_at_latch
 
 
+def _milestone_endpoint_scope_1071(current_milestone, *, is_final: bool,
+                                   enabled: bool) -> Optional[Dict[str, Any]]:
+    """The endpoint scope for an INTERMEDIATE milestone's structural-task gate.
+
+    §4 (env-gated, default-off): scope the gate to THIS milestone's declared
+    endpoints so it isn't blocked on later-milestone surface. `None` means
+    full-app, which is the byte-identical default.
+
+    #1071: extracted from `_validate_delivery_gate` so it can be exercised. The
+    flag is enabled 0 times across the 201 kept run logs and no test named it, so
+    the decision had never executed anywhere — and a path that has never run is
+    indistinguishable from one that does not work (#1048, #1062). The rules it
+    encodes, now pinned: off by default; never on the FINAL milestone, which owns
+    the whole app; verb-prefixed paths win over the bare `/api` fallback; and an
+    empty parse falls back to full-app rather than gating on an empty set.
+    """
+    if not enabled or is_final:
+        return None
+    try:
+        _ms = current_milestone if isinstance(current_milestone, dict) else {}
+        _slice = str((_ms or {}).get("description_slice") or "")
+        _paths = re.findall(r"(?:GET|POST|PUT|PATCH|DELETE)\s+(/\S+)", _slice) \
+            or re.findall(r"(/api/[A-Za-z0-9_./{}:-]+)", _slice)
+        # #1071: `\S+` swallows the punctuation a milestone description is written
+        # with. "GET /api/b, POST /api/a" yielded ['/api/b,', '/api/a,'] — paths that
+        # match no endpoint, with `/api/b,` and `/api/b` counting as two. Scoping a
+        # gate to phantom endpoints is worse than not scoping it, and this only ever
+        # showed up because the flag had never been exercised. The bare-/api branch
+        # below already excludes these characters; this trims the verb branch to the
+        # same shape.
+        # NOT `}` — it terminates a path param (`/api/videos/{id}`).
+        _paths = [p.rstrip(".,;:)!?\"'") for p in _paths]
+        _paths = [p for p in _paths if len(p) > 1]
+        if _paths:
+            return {"endpoint_paths": sorted(set(_paths))}
+    except Exception:
+        pass
+    return None
+
+
 def _visual_release_decision(deferred_since, attempts: int, total_judgments: int,
                              now: float, *, attempt_cap: int = 3,
                              escape_s: float = VISUAL_DEFERRAL_ESCAPE_S,
@@ -4253,15 +4293,11 @@ class Orchestrator:
         # gate to THIS milestone's declared endpoints so it isn't blocked on later-milestone
         # surface. Default-off ⇒ milestone_scope=None ⇒ full-app gate (byte-identical). Empty
         # parsed scope also falls back to full-app (never gates on an empty set).
-        _scope = None
-        if (os.environ.get("ENVGEN_MILESTONE_SCOPED_GATE", "0").lower() in ("1", "true", "yes", "on")
-                and not getattr(self, "_is_final_milestone", True)):
-            _ms = getattr(self, "_current_milestone", None) or {}
-            _slice = str(_ms.get("description_slice") or "")
-            _paths = re.findall(r"(?:GET|POST|PUT|PATCH|DELETE)\s+(/\S+)", _slice) \
-                or re.findall(r"(/api/[A-Za-z0-9_./{}:-]+)", _slice)
-            if _paths:
-                _scope = {"endpoint_paths": sorted(set(_paths))}
+        _scope = _milestone_endpoint_scope_1071(
+            getattr(self, "_current_milestone", None),
+            is_final=bool(getattr(self, "_is_final_milestone", True)),
+            enabled=os.environ.get("ENVGEN_MILESTONE_SCOPED_GATE", "0").lower()
+            in ("1", "true", "yes", "on"))
         _gate793 = validate_delivery_gate(
             self.output_dir, self.hubs,
             getattr(self, "_session_start_ts", 0.0),
