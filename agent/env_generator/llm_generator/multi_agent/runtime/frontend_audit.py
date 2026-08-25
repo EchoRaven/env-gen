@@ -1082,6 +1082,49 @@ def routed_fallback_page_blockers(frontend_src: Any) -> List[str]:
     return blockers
 
 
+# #1090 — REGISTER WHAT YOU MANDATE. `agents_config.yaml` gates the frontend lane's finish on
+# `app/frontend/src/components/TenantPicker.jsx` existing ("mandatory auth/tenancy UI"),
+# `backend_skeleton` mounts `GET /api/v1/tenants` for it BY NAME ("the login template's
+# TenantPicker calls it on MOUNT"), and the prompt has LoginPage embed `<TenantPicker/>`.
+# Three places mandate it and none checks the outcome: across the delivered corpus 63 apps
+# carry the file and 39 (62%) never mount it, so the backend provisions an endpoint for a
+# picker the app does not show. #1089 added the check that catches exactly this, but it is
+# registry-driven and TenantPicker is registered in 0 of 63 runs — so with a record present,
+# an existing SOFT finding does the work and nothing new can wedge a run.
+#
+# ONLY the picker, not the LoginPage in the same YAML group: the two are mandated as FILES but
+# differ in KIND. LoginPage is a routed page (every `/login` in the corpus renders one), and
+# registering a page as a component is the mis-declaration #1087 had to undo.
+_MANDATED_UI_COMPONENTS_1090 = ("TenantPicker",)
+
+
+def register_mandated_ui_components_1090(output_dir, registryhub) -> List[str]:
+    """Register each mandated component whose file exists and that nothing has registered yet.
+
+    Returns the names newly registered. Never raises and never overwrites an existing record —
+    a lane that registered it with its own component name keeps that."""
+    if registryhub is None:
+        return []
+    out: List[str] = []
+    try:
+        src = Path(output_dir) / "app" / "frontend" / "src"
+        existing = set((registryhub.list_ui_components() or {}).keys())
+        for comp in _MANDATED_UI_COMPONENTS_1090:
+            if not any((src / "components" / f"{comp}{ext}").exists()
+                       for ext in (".jsx", ".tsx")):
+                continue
+            name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", comp).lower()
+            if name in existing:
+                continue
+            registryhub.register_ui_component(
+                name=name, component=comp, agent="orchestrator",
+                mandated_by="agents_config.required_files#1090")
+            out.append(name)
+    except Exception:
+        return out
+    return out
+
+
 def audit_ui_component(frontend_src: Path, comp: Mapping[str, Any],
                        *, _src_cache: Optional[Dict[str, str]] = None,
                        ) -> Tuple[bool, List[str]]:

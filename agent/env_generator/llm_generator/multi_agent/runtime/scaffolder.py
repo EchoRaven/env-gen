@@ -411,6 +411,16 @@ volumes:
         # frontend code and flip defined→implemented (cascades impl.page.*
         # completion) — the frontend's analog of the table flip above.
         try:
+            # #1090: register the components the framework MANDATES but nobody declares, so
+            # the audit on the next line can see them (see the helper for the measurement).
+            from .frontend_audit import register_mandated_ui_components_1090
+            _newc = register_mandated_ui_components_1090(
+                orch.output_dir, getattr(orch.hubs, "registryhub", None))
+            if _newc:
+                orch._logger.info("#1090 registered mandated ui_component(s): %s", _newc)
+        except Exception:
+            pass
+        try:
             from .frontend_audit import sync_ui_page_statuses
             _pa = sync_ui_page_statuses(orch.output_dir, orch.hubs.workhub,
                                         registryhub=getattr(orch.hubs, "registryhub", None))
