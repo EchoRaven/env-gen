@@ -208,6 +208,44 @@ def _is_test_file(path_str: str) -> bool:
 _TOOL_CONFIG_SUFFIXES_1085 = (".config.js", ".config.cjs", ".config.mjs", ".config.ts")
 
 
+_FRAMEWORK_OWNED_RE_1088 = re.compile(
+    r"framework[- ](?:generated|projected|managed)|edits are overwritten", re.I)
+# #1088: across the 554 corpus files carrying a framework marker, the marker starts at
+# offset 3 — both the MEDIAN and the p95, i.e. line one, every time that matters. 100
+# bytes already covers 546/554 (98.6%) and 400 covers 548 (98.9%); the 6 beyond 400 sit
+# as deep as offset 2049, which is a mention in the BODY and precisely what a header
+# test must not match. 400 keeps a margin for a licence line above the marker without
+# reaching body prose.
+_FRAMEWORK_HEADER_CHARS_1088 = 400
+
+
+def _is_framework_owned_1088(path: Path) -> bool:
+    """The file's HEADER declares the framework wrote it — so it is not the lane's dead code.
+
+    `backend/schemas.py` is written by backend_skeleton on every scaffold (`w()` is an
+    unconditional write_text) and says so in its own first line: *"Framework-generated
+    placeholder. The projected handlers return plain dicts; Pydantic response models are not
+    required for the standard-CRUD skeleton."* Nothing imports it — exactly as the docstring
+    says — so it was reported dead in 66 of 83 generated apps, the largest entry left after
+    #1084/#1085, and the remediation told the lane to "remove or wire" it. Removing is futile
+    (the next scaffold writes it back) and wiring a module the framework calls unnecessary is
+    make-work: #201's wall, for a file the framework creates and declares. Projected frontend
+    stubs state it outright — `// framework-generated page … edits are overwritten`.
+
+    Cannot hide lane work: of the 315 corpus dead files whose header declares this, 311 are
+    ≤10 lines (untouched stubs), 3 are projected pages, and exactly one exceeds 60 lines —
+    r81's reference-structured FYPFeed.jsx, also framework-written.
+
+    HEADER only. A lane file that mentions the phrase further down is not exempt; #222's
+    lesson about markers cuts both ways, and liveness stays the import graph's answer for
+    everything the lane owns."""
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            return bool(_FRAMEWORK_OWNED_RE_1088.search(fh.read(_FRAMEWORK_HEADER_CHARS_1088)))
+    except OSError:
+        return False
+
+
 def _is_entry_point(path: Path) -> bool:
     name = path.name.lower()
     if name.endswith(_TOOL_CONFIG_SUFFIXES_1085):
@@ -463,6 +501,8 @@ def scan_dead_files(app_root: Path) -> List[dict]:
             continue  # tests are never flagged dead
         if _is_entry_point(src):
             continue
+        if _is_framework_owned_1088(src):
+            continue   # #1088: the framework wrote it and rewrites it — not the lane's to remove
         if abs_str in imported:
             continue
         out.append({"path": rel_str})
