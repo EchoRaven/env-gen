@@ -3194,7 +3194,24 @@ _USER_USER_VERBS = {
 
 
 def _pk_type_of(table: Mapping[str, Any]) -> str:
-    for c in ((table or {}).get("schema") or {}).get("columns", []):
+    """The declared type of ``table``'s primary key, ``"text"`` when it has none.
+
+    #1095: this hand-rolled `table["schema"]["columns"]` and so saw NOTHING in the FLATTENED
+    `{"columns": [...]}` shape — returning its `"text"` default for every table, including
+    `integer + primary_key=True`. `_columns_of` is the shape-tolerant accessor that exists for
+    exactly this and is already imported and used twice in this module; this was the one place
+    that did not use it.
+
+    What it cost, found by probing 20 real contracts against a live postgres: the FK columns
+    `interaction_tables_to_provision` (#196) derives from the parent were all typed `text`, so
+    `render_models`' FK reconciliation flipped the REFERENCED pk to match —
+    run51's `posts.id` went `Integer` -> `Column(Text, default=uuid)` — while `route_projector`
+    typed the `{id}` path param from the CONTRACT (`serial primary key` -> `int`). Every by-id
+    read and write of that resource then issued `WHERE posts.id = $1::INTEGER` against a TEXT
+    column: `operator does not exist: text = integer`, HTTP 500, on the app's central resource.
+    (`users.id` was mistyped identically but survives — the spine pins users/tenants PK
+    categories, so the reconciler skips them.)"""
+    for c in _columns_of(table or {}):
         if isinstance(c, dict) and (c.get("primary_key") or c.get("pk")):
             return str(c.get("type") or "text")
     return "text"
