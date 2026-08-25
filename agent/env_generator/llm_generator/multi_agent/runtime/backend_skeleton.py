@@ -1623,7 +1623,8 @@ if __name__ == "__main__":
 def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, Any]) -> str:
     """Render the full ``main.py``: fixed skeleton + auth-enforcement middleware + ALL
     business handlers projected from the contract (static routes before param routes)."""
-    from .route_projector import (_generate_handler, _norm_path, _resource_model, _truthy,
+    from .route_projector import (_generate_handler, _norm_path, _resource_model,
+                                 resolve_endpoint_auth, _truthy,
                                   _owner_fk, _TARGET_FK_NAMES)
     from .backend_scaffold import _AUTH_MIDDLEWARE, _INTEGRITY_HANDLER
 
@@ -1654,13 +1655,17 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
             continue
         seen.add((method, _norm_path(path)))
         emeta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
-        # #1098: `.get(key, default)` does NOT apply the default to a key that is PRESENT and
-        # None — r58's shape, which `resolve_endpoint_auth` calls out and this emitter still
-        # carried. None means UNSTATED here, and unstated stays closed.
-        _stated_1098 = ep.get("auth_required")
-        if _stated_1098 is None and isinstance(emeta, Mapping):
-            _stated_1098 = emeta.get("auth_required")
-        auth = True if _stated_1098 is None else bool(_stated_1098)
+        # #1099: the SAME auth rule as the other emitter. `resolve_endpoint_auth` handles the
+        # present-but-None key correctly (r58's shape, which `bool(ep.get(k, default))` reads
+        # as False) and defaults an UNSTATED endpoint by SHAPE — auth for a write or a
+        # self/personalised read, open for a public catalog read. This emitter defaulted every
+        # unstated endpoint to auth instead, so 38 of the corpus's 73 unstated business reads
+        # (52%, 16 runs) came out authed here and anonymous there: GET /api/videos,
+        # /api/users, /api/comments, /api/sounds/{id}. Whether a catalog needs a token then
+        # depended on WHICH emitter filled the route, and the anonymous ui_flow walk 401s in
+        # one case and not the other. Safe to align only because #1098 added `or _owner_scoped`
+        # below: a private resource still forces an actor whatever the contract omits.
+        auth = bool(resolve_endpoint_auth(method, path, ep, emeta))
         # Pass the declared response_key through so single-item endpoints get {item}
         # (not the collection {items,total}); mirrors route_projector.project_missing_routes.
         _eschema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}

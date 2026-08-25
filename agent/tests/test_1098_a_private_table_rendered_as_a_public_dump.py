@@ -101,10 +101,17 @@ class APresentButNoneKeyDefaultsClosed(unittest.TestCase):
     """r58's shape: `.get(key, default)` does not apply the default to a PRESENT None."""
 
     def test_none_is_treated_as_unstated_not_as_false(self):
-        eps = [{"method": "GET", "path": "/api/titles", "auth_required": None}]
-        sig, _ = _handler(render_skeleton_main(eps, _MY_LIST), "/api/titles")
+        """On a PRIVATE resource the difference is observable and safety-relevant.
+
+        (#1099 moved the unstated default from "always auth" to "by shape", so a public
+        catalog is the wrong place to observe this now — an unstated catalog read is
+        legitimately anonymous either way. What must never happen is None being read as an
+        explicit False, which would drop both the actor and the owner filter.)"""
+        eps = [{"method": "GET", "path": "/api/my-list", "auth_required": None}]
+        sig, body = _handler(render_skeleton_main(eps, _MY_LIST), "/api/my-list")
         self.assertIn("get_current_user", sig,
-                      "auth_required=None projected the endpoint wide open")
+                      "auth_required=None projected a private resource wide open")
+        self.assertIn("_fw_owner_val(", body)
 
 
 class TheOrdinaryCasesAreUnchanged(unittest.TestCase):
@@ -115,10 +122,19 @@ class TheOrdinaryCasesAreUnchanged(unittest.TestCase):
         self.assertNotIn("get_current_user", sig)
         self.assertNotIn("_fw_owner_val(", body)
 
-    def test_an_unstated_read_still_defaults_to_auth(self):
-        eps = [{"method": "GET", "path": "/api/titles"}]
-        sig, _ = _handler(render_skeleton_main(eps, _MY_LIST), "/api/titles")
-        self.assertIn("get_current_user", sig)
+    def test_an_unstated_read_defaults_by_shape(self):
+        """#1099 replaced this emitter's blanket default-True with `resolve_endpoint_auth`,
+        which is r58's rule: a write or a self/personalised read needs an actor, a public
+        catalog read does not. This test used to pin the blanket default; that contract was
+        changed deliberately, so it now pins the rule that replaced it."""
+        catalog, _ = _handler(render_skeleton_main(
+            [{"method": "GET", "path": "/api/titles"}], _MY_LIST), "/api/titles")
+        self.assertNotIn("get_current_user", catalog, "a public catalog read forced an actor")
+        write, _ = _handler(render_skeleton_main(
+            [{"method": "GET", "path": "/api/titles"}], _MY_LIST), "/api/titles")
+        selfread, _ = _handler(render_skeleton_main(
+            [{"method": "GET", "path": "/api/me"}], _MY_LIST), "/api/me")
+        self.assertIn("get_current_user", selfread, "a self read went anonymous")
 
 
 if __name__ == "__main__":
