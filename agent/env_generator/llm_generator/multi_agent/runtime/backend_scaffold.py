@@ -833,6 +833,40 @@ def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, obj
         return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def _string_columns_1104(models_src: str) -> Dict[str, set]:
+    """``{tablename: {column names whose type is textual}}`` from models.py.
+
+    #106 only asks models.py whether a table's PK is an integer. The reverse
+    direction needs finer evidence — whether the COLUMN a path param is named
+    after holds text — so that ``/api/users/{username}`` can be judged on
+    ``users.username`` rather than on ``users.id``.
+    """
+    import ast as _ast
+    import re as _re2
+    _TEXTUAL = ("String", "Text", "Unicode", "VARCHAR", "CHAR", "UUID")
+    out: Dict[str, set] = {}
+    try:
+        tree = _ast.parse(models_src)
+    except Exception:
+        return out
+    for node in tree.body:
+        if not isinstance(node, _ast.ClassDef):
+            continue
+        tname, cols = None, set()
+        for st in node.body:
+            seg = _ast.get_source_segment(models_src, st) or ""
+            m = _re2.search(r"__tablename__\s*=\s*['\"]([^'\"]+)", seg)
+            if m:
+                tname = m.group(1).lower()
+            if (isinstance(st, _ast.Assign) and "Column(" in seg
+                    and st.targets and isinstance(st.targets[0], _ast.Name)
+                    and any(_re2.search(r"\b%s\b" % t, seg) for t in _TEXTUAL)):
+                cols.add(st.targets[0].id)
+        if tname and cols:
+            out[tname] = cols
+    return out
+
+
 def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
     """FIX #106 (instagram run-23, live): the lane annotated a by-id path param as ``str``
     while the column is an INTEGER PK → SQLAlchemy compared ``posts.id = '20'::VARCHAR`` →
@@ -865,8 +899,12 @@ def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
                     pk_int = True
             if tname and pk_int:
                 int_pk_tables.add(tname)
-        if not int_pk_tables:
-            return {"fixed": 0, "reason": "no integer-PK tables"}
+        # #1104: NOT an early return any more. The reverse flip below is judged on
+        # textual columns and the projected signature, neither of which needs an
+        # integer PK anywhere in the schema — bailing here would skip it entirely.
+        _string_cols = _string_columns_1104(mp.read_text(encoding="utf-8"))
+        if not int_pk_tables and not _string_cols:
+            return {"fixed": 0, "reason": "no typed columns"}
 
         src = cr.read_text(encoding="utf-8")
         tree = ast.parse(src)
@@ -882,13 +920,15 @@ def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
         # and this heuristic can only corrupt it; where it is NOT projected,
         # this stays the only signal and still applies (the run-23 wedge).
         _projected_routes: set = set()
+        _projected_param_types: Dict[tuple, Dict[str, str]] = {}
         try:
             _mn = be / "main.py"
             if _mn.exists():
-                _projected_routes = set(
-                    _route_param_annotations(_mn.read_text(encoding="utf-8")).keys())
+                _projected_param_types = _route_param_annotations(
+                    _mn.read_text(encoding="utf-8"))
+                _projected_routes = set(_projected_param_types.keys())
         except Exception:
-            _projected_routes = set()
+            _projected_routes, _projected_param_types = set(), {}
         fixed = 0
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -906,23 +946,68 @@ def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
                     break
             if not path:
                 continue
-            if _verb and (_verb, path) in _projected_routes:
-                continue  # #338: #119 owns this route's annotations
             segs = [s for s in path.strip("/").split("/") if s and s != "api"]
             params = [s[1:-1] for s in segs if s.startswith("{") and s.endswith("}")]
             if not params:
                 continue
-            # resource = segment before the FIRST param; must be an integer-PK table
+            # resource = segment before the FIRST param
             try:
                 first_param_idx = next(i for i, s in enumerate(segs) if s.startswith("{"))
             except StopIteration:
                 continue
             res = segs[first_param_idx - 1].lower() if first_param_idx >= 1 else ""
+            # #1104: the REVERSE flip, which #106 never handled. A param annotated
+            # `int` whose column holds TEXT 422s on every real value — r74 and r50
+            # both ship `username: int` on /api/users/{username}, so the profile page
+            # cannot load for any user. #338's own comment names this exact shape as
+            # the thing its deferral was added to stop the framework from CAUSING;
+            # the corpus still carries 21 of them across 7 runs (3 delivered) because
+            # a lane writes it unprompted too. Judged on evidence, never on the name:
+            # the projected signature where main.py projects the route (#338's own
+            # authority — and the lane's handler is the one that SERVES when it
+            # survives the override filter, so deferring here would ship the 422),
+            # otherwise the column's own type.
+            for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                if not (arg.arg in params and isinstance(arg.annotation, ast.Name)
+                        and arg.annotation.id == "int"):
+                    continue
+                want_str = False
+                if _verb and (_verb, path) in _projected_routes:
+                    want_str = _projected_param_types.get(
+                        (_verb, path), {}).get(arg.arg) == "str"
+                else:
+                    for _cand in (res, res.rstrip("s"), res + "s", res.replace("-", "_")):
+                        if arg.arg in _string_cols.get(_cand, set()):
+                            want_str = True
+                            break
+                if not want_str:
+                    continue
+                ln = arg.annotation.lineno - 1
+                c0, c1 = arg.annotation.col_offset, arg.annotation.end_col_offset
+                line = lines[ln]
+                if line[c0:c1] == "int":
+                    lines[ln] = line[:c0] + "str" + line[c1:]
+                    fixed += 1
+            if _verb and (_verb, path) in _projected_routes:
+                continue  # #338: #119 owns this route's STR->INT direction
+            # the forward flip below additionally requires an integer-PK resource
             if res not in int_pk_tables:
                 continue
             for arg in list(node.args.args) + list(node.args.kwonlyargs):
                 if (arg.arg in params and isinstance(arg.annotation, ast.Name)
                         and arg.annotation.id == "str"):
+                    # #1104: never flip a NATURAL KEY. The forward rule asks only
+                    # whether the resource's PK is an integer, which is exactly the
+                    # guess #338 documents as false for /api/users/{username}: it
+                    # reads `users`, sees users.id is an integer, and 422s every real
+                    # username. Asking whether the PARAM's own column holds text
+                    # settles it directly — and without this the two directions
+                    # oscillate, the reverse pass rewriting to str and this one
+                    # rewriting straight back (caught by the idempotence test).
+                    if any(arg.arg in _string_cols.get(_c, set())
+                           for _c in (res, res.rstrip("s"), res + "s",
+                                      res.replace("-", "_"))):
+                        continue
                     ln = arg.annotation.lineno - 1
                     c0, c1 = arg.annotation.col_offset, arg.annotation.end_col_offset
                     line = lines[ln]
