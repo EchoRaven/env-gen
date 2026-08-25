@@ -1626,7 +1626,33 @@ class OpenAIClient(BaseLLMClient):
         if tools:
             effective_tools, omitted_tool_names = self._prepare_tools_for_openai(tools)
             request_params["tools"] = effective_tools
-        
+
+        # #1092 — TRANSLATE the two cross-provider dialects rather than forwarding them.
+        # `design_prep._chat_ladder_inner` is a deliberate forced-function -> JSON-mode ->
+        # plain-text ladder, and its first two rungs speak Anthropic and Gemini:
+        #     tool_choice={"type": "tool", "name": ...}     response_mime_type="application/json"
+        # Against the OpenAI-compatible gateway the tiktok/netflix corpus runs on, r95 logged
+        # `400 Invalid tool_choice parameter` x15 and
+        # `TypeError: ... unexpected keyword argument 'response_mime_type'` x15 in its first
+        # twelve minutes — each retried three times before the ladder degraded, on multimodal
+        # design payloads of 1.9-7.9 MB: 33.1 MB sent that could not have worked. (Retrying the
+        # TypeError is worse than useless: it is deterministic.)
+        #
+        # Both have exact OpenAI equivalents, so translating is strictly better than degrading
+        # — the rung then does what it was written to do. Google's path is untouched (it
+        # honours response_mime_type natively, which is #88's contract), a value already in
+        # OpenAI shape passes through, and an explicit response_format from the caller wins.
+        _tc_1092 = kwargs.get("tool_choice")
+        if isinstance(_tc_1092, dict) and _tc_1092.get("type") == "tool" and _tc_1092.get("name"):
+            kwargs = dict(kwargs)
+            kwargs["tool_choice"] = {"type": "function",
+                                     "function": {"name": _tc_1092["name"]}}
+        if "response_mime_type" in kwargs:
+            kwargs = dict(kwargs)
+            _mime_1092 = str(kwargs.pop("response_mime_type") or "").strip().lower()
+            if _mime_1092 == "application/json" and "response_format" not in kwargs:
+                kwargs["response_format"] = {"type": "json_object"}
+
         request_params.update(kwargs)
         
         start_time = datetime.now()
