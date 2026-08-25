@@ -3380,8 +3380,20 @@ def _pk_type_of(table: Mapping[str, Any]) -> str:
 
 
 def _table_has_fk_to(table: Mapping[str, Any], target: str) -> bool:
-    for c in ((table or {}).get("schema") or {}).get("columns", []):
-        if isinstance(c, dict) and str(c.get("references") or "").split(".")[0] == target:
+    """#1106: completes #1095 two functions later, on the same two counts.
+
+    The hand-rolled `schema.columns` misses a FLATTENED table record, which
+    `_columns_of` exists to tolerate, and `c.get("references")` misses the two other
+    FK spellings this file's own `_fk_target` accepts — an explicit `fk` field and an
+    inline `REFERENCES` inside the type. A miss here is not inert: this decides
+    whether an interaction join table ALREADY EXISTS (#196), so a false answer
+    provisions a duplicate of a table the contract already declared.
+
+    Neither shape occurs in the corpus today (0 of 865 table records are flattened,
+    0 of 856 FK columns are inline), so this changes nothing that is running; it
+    stops the two accessors that exist for these shapes from being bypassed here."""
+    for c in (_columns_of(table or {}) or []):
+        if isinstance(c, dict) and str(_fk_target(c) or "").split(".")[0] == target:
             return True
     return False
 
@@ -3503,8 +3515,12 @@ def interaction_tables_to_provision(
             existing = tbl_lower.get(tname)
             # skip if a real self-referential join already exists (2 user FKs)
             if isinstance(existing, dict):
-                _ufks = sum(1 for c in (existing.get("schema") or {}).get("columns", [])
-                            if str(c.get("references") or "").split(".")[0] == "users")
+                # #1106: same two accessors as _table_has_fk_to above — a flattened
+                # record or an inline FK read as "no user FKs here" and re-provisioned
+                # a self-referential join the contract already had.
+                _ufks = sum(1 for c in (_columns_of(existing) or [])
+                            if isinstance(c, dict)
+                            and str(_fk_target(c) or "").split(".")[0] == "users")
                 if _ufks >= 2:
                     continue
             out.append({
