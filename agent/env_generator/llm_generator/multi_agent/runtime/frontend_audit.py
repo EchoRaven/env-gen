@@ -1092,7 +1092,54 @@ def audit_ui_component(frontend_src: Path, comp: Mapping[str, Any],
                  "route": "",  # components have no route
                  "_is_component": True,
                  "apis_used": comp.get("apis_used") or []}
-    return audit_ui_page(frontend_src, page_like, _src_cache=_src_cache)
+    ok, missing = audit_ui_page(frontend_src, page_like, _src_cache=_src_cache)
+
+    # #1089 — AND SOMETHING HAS TO RENDER IT. The three checks above are file presence, apis
+    # referenced, and no dead controls in its own file: a component whose file exists and
+    # whose apis are called from a service module flipped to `implemented` while no page ever
+    # mounted it. Measured over the 67 delivered frontends, 144 of the 1003 registered
+    # components whose file EXISTS are never rendered — no `<Name>` anywhere in src (LoginForm
+    # 8 runs, SignupForm 7, FooterLinks 6, MessagesDock/SideNavigation/PostDetailModal/TopBar
+    # 4 each). Dead UI, which is the one thing the standing rule about UI forbids outright.
+    #
+    # SOFT on purpose. This verdict flips a component between `implemented` and `defined` and
+    # does not reach the delivery gate (`components_implemented` appears nowhere in
+    # delivery_gate / deliverability), and the wording stays clear of _HARD_MISS_MARKERS so it
+    # cannot become a blocker by accident. The point is to stop telling the lane a component
+    # is finished when nothing shows it — not to wedge a run on it.
+    _name_1089 = str(comp.get("component") or "").strip()
+    if _name_1089 and not _component_is_rendered_1089(_name_1089, frontend_src, _src_cache):
+        missing = list(missing) + [
+            f"component `{_name_1089}` is never rendered — no `<{_name_1089}>` anywhere in "
+            f"src. A component nothing mounts is dead UI: render it from the page that owns "
+            f"it, or drop the declaration."]
+        ok = False
+    return ok, missing
+
+
+def _component_is_rendered_1089(name: str, frontend_src: Path,
+                                src_cache: Optional[Dict[str, str]] = None) -> bool:
+    """Is ``name`` mounted anywhere in the tree — JSX or ``createElement``?
+
+    Its own file counts: a self-recursive component (a comment tree, a nested menu) renders
+    itself and is otherwise indistinguishable here, and false-flagging one costs more than
+    the vanishing case of a component that only ever renders itself."""
+    try:
+        if src_cache:
+            text = "\n".join(src_cache.values())
+        else:
+            parts = []
+            for f in list(frontend_src.rglob("*.jsx")) + list(frontend_src.rglob("*.js")):
+                try:
+                    parts.append(f.read_text(encoding="utf-8", errors="ignore"))
+                except OSError:
+                    continue
+            text = "\n".join(parts)
+        esc = re.escape(name)
+        return bool(re.search(r"<\s*" + esc + r"[\s/>]", text)
+                    or re.search(r"createElement\s*\(\s*" + esc + r"\b", text))
+    except Exception:
+        return True    # never fail a component because the probe could not look
 
 
 def _registered_paths(registryhub: Any) -> Optional[set]:
