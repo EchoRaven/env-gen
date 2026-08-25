@@ -85,13 +85,13 @@ def seed_src(tmp_path_factory):
 
 
 def test_the_loader_creates_the_tenant(seed_src):
-    assert "def _ensure_default_tenant(db):" in seed_src
+    assert "def _ensure_default_tenant(db, data=None):" in seed_src  # #1111 signature
     ast.parse(seed_src)
 
 
 def test_it_runs_before_the_first_insert(seed_src):
     """★ `users` is first in `_ORDER`; a tenant created afterwards is too late."""
-    call = seed_src.index("_ensure_default_tenant(db)\n        for t in _ORDER:")
+    call = seed_src.index("_ensure_default_tenant(db, data)\n        for t in _ORDER:")
     assert call > 0, "the call must sit immediately before the insert loop"
 
 
@@ -107,12 +107,17 @@ def test_the_spine_still_declares_the_constraint_this_fixes(seed_src, tmp_path):
 
 # ── the helper's own behaviour, against a fake session ───────────────────────
 def _load_helper(seed_src, models_mod, dbg):
-    """exec just `_ensure_default_tenant` with the names it closes over."""
+    """exec the tenant guard with the names it closes over.
+
+    #1111 split it in two — `_ensure_default_tenant` now walks the tenants a seed's
+    users refer to and delegates each one to `_ensure_one_tenant` — so both have to
+    come across, and the entry point takes the loaded seed data as a second argument.
+    That is a deliberate contract change; this fixture pinned the old one."""
     tree = ast.parse(seed_src)
-    fn = next(n for n in tree.body
-              if isinstance(n, ast.FunctionDef) and n.name == "_ensure_default_tenant")
+    want = {"_ensure_default_tenant", "_ensure_one_tenant"}
+    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in want]
     ns = {"models": models_mod, "_seed_dbg": dbg}
-    exec(compile(ast.Module(body=[fn], type_ignores=[]), "seed_data.py", "exec"), ns)
+    exec(compile(ast.Module(body=fns, type_ignores=[]), "seed_data.py", "exec"), ns)
     return ns["_ensure_default_tenant"]
 
 
