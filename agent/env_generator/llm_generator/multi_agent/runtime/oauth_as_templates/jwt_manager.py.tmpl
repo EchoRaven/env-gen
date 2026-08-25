@@ -28,6 +28,14 @@ KEY_ID = "app-oauth-key-1"
 # Default data directory for the persisted private key. The host wires this via
 # ``JWT_DATA_DIR`` (compose env); the fallback matches the container layout.
 DEFAULT_JWT_DATA_DIR = os.getenv("JWT_DATA_DIR", "/var/lib/app-auth")
+# #1101: defaults for the `create_access_token` alias below, which has no request to
+# derive an issuer from. Deliberately the SAME literals/env var oauth_routes.py uses,
+# so a token minted through the alias is indistinguishable from one the AS mints.
+# Nothing verifies `aud` (every decode site passes verify_aud=False) or `iss`, so these
+# only have to be present and consistent.
+DEFAULT_ISSUER = os.getenv("OAUTH_ISSUER", "app-oauth")
+DEFAULT_AUDIENCE = os.getenv("OAUTH_DEFAULT_AUDIENCE", "app-api")
+DEFAULT_SCOPE = "app.read app.write"
 
 
 def _b64url_uint(n: int) -> str:
@@ -141,6 +149,62 @@ class JWTManager:
         return jwt.decode(
             token, self.public_pem, algorithms=[ALGORITHM],
             options={"verify_aud": False},
+        )
+
+    def create_access_token(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        expires_delta: Any = None,
+        *,
+        subject: Any = None,
+        issuer: Optional[str] = None,
+        audience: Optional[str] = None,
+        scope: Optional[str] = None,
+        extra_claims: Optional[Dict[str, Any]] = None,
+        ttl_seconds: Optional[int] = None,
+    ) -> str:
+        """Mint an access token from the shape every FastAPI tutorial teaches.
+
+        ``sign_access_token`` is keyword-only and requires issuer/audience/scope, but
+        the name a lane reaches for is ``create_access_token(data={"sub": ...})`` —
+        the signature in FastAPI's own security docs. instagram-run67 called exactly
+        that from ``GET /api/v1/get_token`` and shipped it in a DELIVERED milestone:
+        ``AttributeError`` → 500 on every request.
+
+        This is the same remedy the verify side already carries three aliases for,
+        applied to the mint side, and it delegates to ``sign_access_token`` so the
+        token is signed with the SAME key, algorithm and claim set the AS issues —
+        an alias that minted a token this app's own ``get_current_user`` rejected
+        would be worse than the AttributeError it replaces.
+        """
+        claims: Dict[str, Any] = dict(data or {})
+        claims.update(extra_claims or {})
+        # the tutorial puts the subject INSIDE data; accept the explicit kwarg too,
+        # and the two other keys a lane uses for it. Whichever one carries it is
+        # removed from the claims so it is not also emitted as a duplicate.
+        sub = subject
+        for key in ("sub", "subject", "user_id", "id"):
+            if sub is None and claims.get(key) is not None:
+                sub = claims.pop(key)
+            elif key in claims and str(claims.get(key)) == str(sub):
+                claims.pop(key)
+        if sub is None:
+            raise ValueError(
+                "create_access_token: no subject — pass subject=<user id> or "
+                'data={"sub": <user id>}. A token with no `sub` identifies nobody '
+                "and every auth dependency in this app reads that claim.")
+        ttl = ttl_seconds
+        if ttl is None and expires_delta is not None:
+            # timedelta (the tutorial) or a plain number of seconds
+            secs = getattr(expires_delta, "total_seconds", None)
+            ttl = int(secs()) if callable(secs) else int(expires_delta)
+        return self.sign_access_token(
+            subject=str(sub),
+            issuer=issuer or DEFAULT_ISSUER,
+            audience=audience or DEFAULT_AUDIENCE,
+            scope=scope or DEFAULT_SCOPE,
+            extra_claims=claims or None,
+            **({"ttl_seconds": int(ttl)} if ttl else {}),
         )
 
     # Aliases lanes invent for the same verify-and-decode operation.
