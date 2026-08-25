@@ -10,10 +10,27 @@ Nothing creates that tenant. The only writer of a ``tenants`` row is
 So every seeded user row dies on ``users_tenant_id_fkey``, is dropped by #218's per-row
 savepoint, and the app comes up with no demo users at all.
 
-Measured by booting all 84 delivered backends against a real Postgres and counting rows
-WITHOUT registering: of the 59 runs whose ``seed_data.json`` carries users, **58 end
-with zero users**, and in all 58 ``tenants`` is zero too. The single run that worked had
-a tenants row from elsewhere. 29 of the 58 have a delivered milestone.
+★ SCOPE — corrected after measuring the SHIPPED topology, which this ticket's first
+write-up did not.
+
+The 58-of-59 figure below was taken with the app initialising its own schema via
+``Base.metadata.create_all`` against a bare database. That is a real code path — main.py
+calls it on every boot — but it is not how the app ships: all 84 generated
+``docker-compose.yml`` mount ``app/database/init`` into postgres, and that DDL contains
+
+    INSERT INTO tenants (id, name) VALUES ('default', 'Default Tenant') ON CONFLICT ...
+
+so the tenant exists before the seed runs. Brought up under compose, instagram-run77
+gives ``tenants=1 users=5 posts=4`` — with this fix and without it, identically.
+
+The failure needs BOTH an absent init DDL and users in seed_data.json. 19 runs have an
+empty ``app/database/init``; none of those 19 seeds any users, and none is delivered.
+The intersection is empty, so **no corpus run exhibits this**.
+
+What stands: on the create_all path the seed backfills ``tenant_id='default'`` against a
+tenants table nothing has populated, every user row dies on users_tenant_id_fkey, and
+#218's per-row savepoint drops them silently — measured, 58 of 59. The guard below is
+kept for that path and is a measured no-op when the tenant already exists.
 
 What that costs:
 
@@ -24,8 +41,9 @@ What that costs:
     its ``GET /api/posts`` — ``FROM posts p JOIN users u ON p.user_id = u.id`` — answers
     ``{"items": []}``. A delivered app with a permanently empty feed.
 
-Verified on that run's own contract and lane code with this fix in place: users 0 → 5,
-tenants 0 → 1, and the feed returns its 4 posts.
+Verified on that run's own contract and lane code on the create_all path: users 0 → 5,
+tenants 0 → 1, and the feed returns its 4 posts. Verified again under compose with the
+init DDL mounted: unchanged at users=5, which is what a correct no-op looks like.
 
 ★ It has to run BEFORE the first insert, not merely somewhere in the loader: `users` is
 first in `_ORDER` and everything after it FKs to `users`.
