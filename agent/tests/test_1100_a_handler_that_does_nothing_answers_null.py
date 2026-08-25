@@ -12,8 +12,15 @@ tiktok-r50 shipped exactly that. ``custom_routes.py`` carried three of them —
         pass
 
 — and that run's own ``services/api.js`` does
-``const data = await fetchApi('/auth/signup', …); return data.item``. A delivered
-app in which no account can be created, and the gate said nothing.
+``const data = await fetchApi('/auth/signup', …); return data.item``: an app in which
+no account can be created, and the gate said nothing.
+
+★ r50 itself never shipped — its run is ``status=failed`` with M1 still ``active``, so
+those stubs were work in progress that failed for other reasons. That is a correction
+to this ticket's first write-up, which called it a delivered app. It does not soften
+the finding: the check that exists to refuse a stub does not look at this verb, so
+nothing would have stopped them at the delivery gate either. Verified: run
+``stub_handler_blockers`` over r50's backend before this fix and it returns zero.
 
 ★ Two things nearly made this check wrong, and both are asserted below.
 

@@ -766,9 +766,9 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
         return (
             f"backend handler `{name}` ({rec['file']}) serving {_routes} has an EMPTY "
             "BODY — it does no work and returns nothing, so the route answers `null` and "
-            "any caller reading a field off the response throws (tiktok-r50 shipped this "
-            "on POST /auth/signup: its own UI does `data.item` on the reply, so no account "
-            "could be created). Implement the handler. If the endpoint genuinely returns "
+            "any caller reading a field off the response throws (tiktok-r50 wrote this "
+            "on POST /auth/signup while its own UI does `data.item` on the reply, so no "
+            "account could be created). Implement the handler. If the endpoint genuinely returns "
             "no content, say so on the route — `status_code=204` — instead of leaving the "
             "body empty.")
 
