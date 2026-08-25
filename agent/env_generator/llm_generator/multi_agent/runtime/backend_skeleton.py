@@ -1467,11 +1467,36 @@ try:
     for _custom_router in _routers:
         # Keep only the custom routes that legitimately override (or add) — drop the
         # ones duplicating a standard-CRUD endpoint so the safe projected handler serves.
-        _custom_router.routes = [
-            _r for _r in list(getattr(_custom_router, "routes", []))
-            if _custom_route_overrides_projected(
-                next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
-        ]
+        _kept_cr, _dropped_cr = [], []
+        for _r in list(getattr(_custom_router, "routes", [])):
+            _m_cr = next(iter(getattr(_r, "methods", []) or ["GET"]))
+            _p_cr = getattr(_r, "path", "")
+            (_kept_cr if _custom_route_overrides_projected(_m_cr, _p_cr)
+             else _dropped_cr).append((_r, _m_cr, _p_cr))
+        _custom_router.routes = [_t[0] for _t in _kept_cr]
+        # #1102: SAY SO. This filter drops 98 legitimate lane routes across 57 of the
+        # 65 corpus backends — measured by booting each app and diffing its declared
+        # custom routes against its live route table — and said nothing, so the lane
+        # sees a handler it wrote simply not run. Fourteen runs answered that by
+        # reaching into sys.modules["main"] to patch the route table, and tiktok-r58
+        # shipped a DELIVERED milestone whose /health, /docs and /api/videos are all
+        # 404 because its patch did `app.routes.clear(); app.routes.extend(kept)` on
+        # a list that IS `kept`. The ImportError branch below already learned this
+        # lesson for its own case ("invisible for hours"); the same applies here.
+        if _dropped_cr:
+            import logging as _cr_log
+            # WARNING, not info: uvicorn leaves the root logger at WARNING, so an
+            # info() on a non-uvicorn logger is swallowed — verified by booting a
+            # rendered app and finding no line at all. A notice nobody sees is the
+            # silence this fix exists to end.
+            _cr_log.getLogger("custom_routes").warning(
+                "custom_routes: %d route(s) NOT registered because they duplicate "
+                "standard CRUD — the framework's projected handler serves them, and it "
+                "is schema-safe by construction. This is expected; do NOT patch the "
+                "app's route table to force them in. To own one of these paths, change "
+                "its SHAPE in the contract (an action segment such as "
+                "/x/{id}/publish overrides; a bare collection or item-by-id does not): %s",
+                len(_dropped_cr), [f"{_t[1]} {_t[2]}" for _t in _dropped_cr])
         app.include_router(_custom_router)
 except ImportError as _custom_imp:
     # ONLY "custom_routes does not exist" is benign. A NESTED broken import (the lane's
