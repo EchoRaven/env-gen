@@ -573,6 +573,70 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
     return out
 
 
+# ── #1100: a handler that does NOTHING, on ANY verb ───────────────────────────
+# `stub_handler_blockers` examines GET only (`r[0] == "GET"`), because its subject
+# is a page that renders no real data. A handler whose ENTIRE body is `pass` has a
+# different and verb-independent failure: FastAPI serializes the implicit None, the
+# route answers `null`, and any caller that reads a field off the response throws.
+# tiktok-r50 shipped `def auth_signup_stub(): pass` on POST /auth/signup, whose own
+# frontend does `const data = await fetchApi('/auth/signup', …); return data.item` —
+# a delivered app in which no account can be created. The three stubs there are the
+# only genuine ones in the corpus (65 backends, 2873 route handlers), and all three
+# sit on /auth/*, which `lifecycle.is_business` removes from every other check on the
+# grounds that the framework owns that prefix — but the AS template owns exactly six
+# paths, and signup is not one of them. Two exclusions overlapping leaves the code
+# nobody looks at.
+_NO_CONTENT_STATUS_1100 = frozenset({204, 205, 304})
+
+
+def _declares_no_content_1100(fn: Any) -> bool:
+    """True iff a route decorator declares a status that CARRIES no body.
+
+    ``@router.post("/auth/logout", status_code=204)`` + ``return None`` is the
+    correct way to write a no-content endpoint, not a stub — four of the seven
+    empty-bodied handlers in the corpus are exactly this and must never be flagged.
+    """
+    for dec in getattr(fn, "decorator_list", []) or []:
+        if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)):
+            continue
+        for kw in dec.keywords or []:
+            if (kw.arg == "status_code" and isinstance(kw.value, ast.Constant)
+                    and kw.value.value in _NO_CONTENT_STATUS_1100):
+                return True
+    return False
+
+
+def _is_empty_body_1100(fn: Any) -> bool:
+    """True iff the function body is a single no-op, ignoring its docstring.
+
+    `pass`, `...`, a bare `return`, `return None`, and `raise NotImplementedError`
+    are the shapes an LLM writes when it means "not written yet". Nothing else is
+    accepted, so this cannot fire on a handler that does any work at all.
+    """
+    body = [b for b in getattr(fn, "body", []) or []
+            if not (isinstance(b, ast.Expr) and isinstance(b.value, ast.Constant)
+                    and isinstance(b.value.value, str))]
+    if len(body) != 1:
+        return False
+    stmt = body[0]
+    if isinstance(stmt, ast.Pass):
+        return True
+    if (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
+            and stmt.value.value is Ellipsis):
+        return True
+    if isinstance(stmt, ast.Return) and (
+            stmt.value is None
+            or (isinstance(stmt.value, ast.Constant) and stmt.value.value is None)):
+        return True
+    if isinstance(stmt, ast.Raise):
+        exc = stmt.exc
+        name = getattr(getattr(exc, "func", exc), "id", None) \
+            or getattr(getattr(exc, "func", exc), "attr", None)
+        if name == "NotImplementedError":
+            return True
+    return False
+
+
 def stub_handler_blockers(backend_dir: Any) -> List[str]:
     """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route whose SERVED
     handler does NO DB read and returns only a hardcoded EMPTY-or-MOCK collection.
@@ -595,6 +659,10 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
         return []
     # 1) collect every GET route handler with its verdicts
     handlers: List[Dict[str, Any]] = []
+    # #1100: every route handler on ANY verb, for the empty-body check. Collected in
+    # the same walk (one parse) and BEFORE the GET filter below, which would otherwise
+    # drop the POST/PUT/DELETE handlers this check exists to see.
+    all_handlers_1100: List[Dict[str, Any]] = []
     for py in sorted(root.rglob("*.py")):
         if "__pycache__" in py.parts:
             continue
@@ -605,7 +673,17 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            get_routes = {r for r in _handler_routes(node) if r[0] == "GET"}
+            _routes_1100 = _handler_routes(node)
+            if _routes_1100:
+                all_handlers_1100.append({
+                    "name": node.name,
+                    "file": py.name,
+                    "projected": node.name.startswith("_projected_"),
+                    "empty": _is_empty_body_1100(node),
+                    "no_content": _declares_no_content_1100(node),
+                    "routes": _routes_1100,
+                })
+            get_routes = {r for r in _routes_1100 if r[0] == "GET"}
             if not get_routes:
                 continue
             handlers.append({
@@ -660,6 +738,40 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
                                 "routes": set()})
                 rec["routes"] |= {f"{m} {p}" for m, p in h["routes"]}
 
+    # #1100: a route whose every SERVED handler does nothing. Grouped over ALL
+    # handlers on the route (not just the empty ones) so a real implementation
+    # shadows a stub: tiktok-r50's `pass` on POST /auth/login sits behind the AS
+    # template's real login, which main.py includes FIRST and which therefore
+    # serves the route — flagging it would be a false positive. Its /auth/signup
+    # and /auth/logout stubs have no such shadow and are the true finding.
+    empty_flagged_1100: Dict[str, Dict[str, Any]] = {}
+    by_any_route_1100: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for h in all_handlers_1100:
+        for r in h["routes"]:
+            by_any_route_1100[r].append(h)
+    for _route, hs in by_any_route_1100.items():
+        non_projected = [h for h in hs if not h["projected"]]
+        served = non_projected or hs
+        # `no_content` is not "empty" — a 204 handler returning None is CORRECT, and
+        # one such handler on the route means the route is answered properly.
+        if not (served and all(h["empty"] and not h["no_content"] for h in served)):
+            continue
+        for h in served:
+            rec = empty_flagged_1100.setdefault(
+                h["name"], {"file": h["file"], "routes": set()})
+            rec["routes"] |= {f"{m} {p}" for m, p in h["routes"]}
+
+    def _msg_empty_1100(name: str, rec: Dict[str, Any]) -> str:
+        _routes = ", ".join(sorted(rec["routes"]))
+        return (
+            f"backend handler `{name}` ({rec['file']}) serving {_routes} has an EMPTY "
+            "BODY — it does no work and returns nothing, so the route answers `null` and "
+            "any caller reading a field off the response throws (tiktok-r50 shipped this "
+            "on POST /auth/signup: its own UI does `data.item` on the reply, so no account "
+            "could be created). Implement the handler. If the endpoint genuinely returns "
+            "no content, say so on the route — `status_code=204` — instead of leaving the "
+            "body empty.")
+
     def _msg(name: str, rec: Dict[str, Any]) -> str:
         _routes = ", ".join(sorted(rec["routes"])) or "a GET route"
         if rec["projected"]:
@@ -685,7 +797,9 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
             "this for transit departures). Query the real seeded table(s) and return the "
             "rows. Do NOT return a hardcoded empty/mock collection.")
 
-    return [_msg(name, rec) for name, rec in sorted(flagged.items())]
+    return ([_msg(name, rec) for name, rec in sorted(flagged.items())]
+            + [_msg_empty_1100(name, rec)
+               for name, rec in sorted(empty_flagged_1100.items())])
 
 
 def unreachable_but_mounted(backend_dir: Path, unreachable: Iterable[str]) -> List[str]:
