@@ -1777,6 +1777,37 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     # exemption is the EXTERNAL central IdP (/idp) used by the google-idp env
     # variant — it is a foreign service, never an endpoint of THIS env.
     frontend_calls = _contract.extract_frontend_calls(output_dir / "app/frontend")
+    # #1107: this check answers "no unregistered calls" identically whether the
+    # frontend makes none or the extractor could not READ them. `extract_frontend_calls`
+    # recognises `request(...)` and `fetch(...)` only; a lane that names its helper
+    # `apiFetch`, `fetchWithAuth`, or exports `api.get(...)` yields ZERO matches. Six
+    # corpus frontends (four with a delivered milestone) return nothing here while
+    # making 12-24 real calls, and across the corpus the extractor sees 727 of 949.
+    # Broadening the enumeration is NOT the fix — this gate hard-blocks, its own
+    # comments record a false block wedging r65, and a wider net immediately flags
+    # React-Router page paths (/login) and the AS's /api-prefixed mounts. What it must
+    # not do is report "clean" without having looked, so say so instead.
+    if not frontend_calls:
+        try:
+            _fe_src = output_dir / "app/frontend" / "src"
+            _api_lits = 0
+            for _f in _fe_src.rglob("*"):
+                if _f.suffix not in (".js", ".jsx", ".ts", ".tsx") or "node_modules" in _f.parts:
+                    continue
+                _api_lits += len(re.findall(r"""['"`](/(?:api|auth|oauth)/[^'"`\s]+)""",
+                                            _f.read_text(encoding="utf-8", errors="ignore")))
+                if _api_lits >= 3:
+                    break
+            if _api_lits >= 3:
+                warnings.append(
+                    "Frontend consumer check saw NO api calls but the frontend source "
+                    "contains API paths — its extractor recognises `request(...)` and "
+                    "`fetch(...)` only, so a differently-named helper is invisible to it. "
+                    "This check passed WITHOUT reading the call surface; verify the "
+                    "frontend's paths against the contract by hand, or route its calls "
+                    "through the generated `request()` wrapper.")
+        except Exception:
+            pass
     _EXTERNAL = ("/idp",)
     # Match on PATH (param-agnostic), METHOD-tolerant. A static scan can't
     # reliably tell a fetch's method from a React-Router route path (a `/auth/
