@@ -1654,7 +1654,13 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
             continue
         seen.add((method, _norm_path(path)))
         emeta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
-        auth = bool(ep.get("auth_required", emeta.get("auth_required", True)))
+        # #1098: `.get(key, default)` does NOT apply the default to a key that is PRESENT and
+        # None — r58's shape, which `resolve_endpoint_auth` calls out and this emitter still
+        # carried. None means UNSTATED here, and unstated stays closed.
+        _stated_1098 = ep.get("auth_required")
+        if _stated_1098 is None and isinstance(emeta, Mapping):
+            _stated_1098 = emeta.get("auth_required")
+        auth = True if _stated_1098 is None else bool(_stated_1098)
         # Pass the declared response_key through so single-item endpoints get {item}
         # (not the collection {items,total}); mirrors route_projector.project_missing_routes.
         _eschema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
@@ -1681,6 +1687,14 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
                 _owner_scoped = True
         except Exception:
             pass
+        # #1098 — #271's guarantee, without which #633's flag means nothing. `_generate_handler`
+        # gates the owner filter on AUTH (`owner_fk = _owner_fk(meta) if auth else None`), so a
+        # resource that is private BY CONSTRUCTION must force an actor whatever the contract
+        # forgot — otherwise it renders with no actor AND no filter, which is #633's own
+        # documented leak ("returns user_id, title_id, progress_seconds for EVERY user,
+        # unauthenticated"). route_projector has carried this as `resolve_endpoint_auth(...) or
+        # _owner_scoped` all along; this emitter did not.
+        auth = auth or _owner_scoped
         block = _generate_handler(method, path, auth, meta, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)
         (param_blocks if "{" in path else static_blocks).append(block)
 
