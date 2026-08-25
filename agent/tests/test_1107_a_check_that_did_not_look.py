@@ -7,10 +7,15 @@ and it builds that list from `extract_frontend_calls`, whose regex recognises
 set produces an empty violation list, which reads exactly like a frontend that is
 correct.
 
-Measured over the corpus: the extractor sees 727 of 949 real API calls, and for **six
-frontends — four of them with a delivered milestone — it returns nothing at all** while
-they make 12 to 24 calls each. Those runs shipped with the consumer gate reporting
-success without having read a single call.
+Measured over the corpus: the extractor reads 727 of 949 real API calls, and for **19
+frontends — SIXTEEN with a delivered milestone — it reads fewer than half the API paths
+their own source spells out** (0 of 10, 1 of 8, 2 of 10 …).
+
+instagram-run70 is the shape: 2 paths read out of 10, and BOTH of the calls that 404 at
+runtime — ``GET /api/posts/{id}/comments`` and ``GET /api/users/{id}/posts`` — are among
+the 8 it never saw, so the gate reported no violations at all. A first draft of this
+ticket warned only when the extractor found ZERO, which run70 (finding 2) walked
+straight past; reading 2 of 10 is no less blind.
 
 ★ Widening the enumeration is NOT the fix, and the attempt is instructive: this gate
 HARD-BLOCKS, its own comments record a false block wedging r65's delivery, and a wider
@@ -18,9 +23,11 @@ net immediately flags React-Router page paths (`/login`) and the AS's `/api`-pre
 mounts as "unregistered". Eleven such new flags appeared across five runs, several of
 them false. Turning a silent miss into a wrongly-wedged run is a worse trade.
 
-What the gate must not do is claim it looked. So when it finds no calls at all in a
-frontend whose source does contain API paths, it says so — as a warning, leaving
-enforcement exactly where it was.
+What the gate must not do is claim it looked. So when it reads fewer than half the API
+paths the source spells out, it says so — as a warning, leaving enforcement exactly where
+it was. The threshold is stable rather than tuned: the corpus is bimodal (an extractor
+either reads almost every path — 5/6, 8/8, 9/11 — or almost none), and 34% and 50% select
+the same 19 runs.
 """
 import json
 import sys
@@ -38,7 +45,7 @@ for _p in (ROOT, LLM):
 from multi_agent.runtime.delivery_gate import validate_contract_alignment  # noqa: E402
 from multi_agent.delivery.contract_extract import extract_frontend_calls  # noqa: E402
 
-_MARK = "saw NO api calls"
+_MARK = "read only"
 
 # a helper the extractor does not recognise — the corpus shape
 _INVISIBLE = """
@@ -92,6 +99,24 @@ def test_the_premise_the_extractor_really_is_blind_here():
 
 def test_it_says_so_when_it_read_nothing(tmp_path):
     out = _run(tmp_path, _INVISIBLE)
+    assert any(_MARK in w for w in out.get("warnings") or []), out
+
+
+_PARTIAL = """
+export async function apiFetch(path, opts) { return (await fetch(path, opts)).json(); }
+export const login = () => request('/api/auth/login');
+export const getVideos = () => apiFetch('/api/videos');
+export const getUser = (id) => apiFetch(`/api/users/${id}`);
+export const getFeed = () => apiFetch('/api/feed/for-you');
+export const getSounds = () => apiFetch('/api/sounds');
+export const getSaves = () => apiFetch('/api/saves');
+"""
+
+
+def test_partial_blindness_counts_too(tmp_path):
+    """★ run70's shape: it DID read something, and still missed both dead calls.
+    The first draft warned only on zero and let this through."""
+    out = _run(tmp_path, _PARTIAL)
     assert any(_MARK in w for w in out.get("warnings") or []), out
 
 

@@ -1780,34 +1780,46 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     # #1107: this check answers "no unregistered calls" identically whether the
     # frontend makes none or the extractor could not READ them. `extract_frontend_calls`
     # recognises `request(...)` and `fetch(...)` only; a lane that names its helper
-    # `apiFetch`, `fetchWithAuth`, or exports `api.get(...)` yields ZERO matches. Six
-    # corpus frontends (four with a delivered milestone) return nothing here while
-    # making 12-24 real calls, and across the corpus the extractor sees 727 of 949.
+    # `apiFetch`, `fetchWithAuth`, or exports `api.get(...)` is invisible to it. Across
+    # the corpus it reads 727 of 949 real calls, and for 19 frontends — SIXTEEN with a
+    # delivered milestone — it reads fewer than half the API paths their own source
+    # spells out (0 of 10, 1 of 8, 2 of 10 …). instagram-run70 is the shape: 2 paths
+    # read out of 10, and BOTH of the calls that 404 at runtime
+    # (GET /api/posts/{id}/comments, GET /api/users/{id}/posts) are among the 8 it
+    # never saw, so this gate reported no violations at all.
+    #
     # Broadening the enumeration is NOT the fix — this gate hard-blocks, its own
     # comments record a false block wedging r65, and a wider net immediately flags
-    # React-Router page paths (/login) and the AS's /api-prefixed mounts. What it must
-    # not do is report "clean" without having looked, so say so instead.
-    if not frontend_calls:
-        try:
-            _fe_src = output_dir / "app/frontend" / "src"
-            _api_lits = 0
-            for _f in _fe_src.rglob("*"):
-                if _f.suffix not in (".js", ".jsx", ".ts", ".tsx") or "node_modules" in _f.parts:
-                    continue
-                _api_lits += len(re.findall(r"""['"`](/(?:api|auth|oauth)/[^'"`\s]+)""",
-                                            _f.read_text(encoding="utf-8", errors="ignore")))
-                if _api_lits >= 3:
-                    break
-            if _api_lits >= 3:
-                warnings.append(
-                    "Frontend consumer check saw NO api calls but the frontend source "
-                    "contains API paths — its extractor recognises `request(...)` and "
-                    "`fetch(...)` only, so a differently-named helper is invisible to it. "
-                    "This check passed WITHOUT reading the call surface; verify the "
-                    "frontend's paths against the contract by hand, or route its calls "
-                    "through the generated `request()` wrapper.")
-        except Exception:
-            pass
+    # React-Router page paths (/login) and the AS's /api-prefixed mounts; I measured 11
+    # such new flags across 5 runs, several false. What it must not do is report "clean"
+    # without having looked, so say so instead.
+    #
+    # The threshold is stable rather than tuned: the corpus is bimodal — an extractor
+    # either reads almost every path (5/6, 8/8, 9/11) or almost none — and 34% and 50%
+    # select the SAME 19 runs.
+    try:
+        _fe_src = output_dir / "app/frontend" / "src"
+        _lits = set()
+        for _f in _fe_src.rglob("*"):
+            if _f.suffix not in (".js", ".jsx", ".ts", ".tsx") or "node_modules" in _f.parts:
+                continue
+            for _m in re.findall(r"""['"`](/(?:api|auth|oauth)/[^'"`\s${]*)""",
+                                 _f.read_text(encoding="utf-8", errors="ignore")):
+                _lits.add(_m.rstrip("/").split("?", 1)[0])
+        _seen_paths = {(c.split(" ", 1)[-1]).rstrip("/").split("?", 1)[0]
+                       for c in frontend_calls}
+        if len(_lits) >= 3 and len(_seen_paths) * 2 < len(_lits):
+            warnings.append(
+                f"Frontend consumer check read only {len(_seen_paths)} of the "
+                f"{len(_lits)} API paths this frontend's source spells out — its "
+                "extractor recognises `request(...)` and `fetch(...)` only, so a "
+                "differently-named helper (apiFetch / fetchWithAuth / api.get) is "
+                "invisible to it. Any unregistered call among the ones it could not "
+                "see passed unchecked. Route the frontend's calls through the "
+                "generated `request()` wrapper, or verify its paths against the "
+                "contract by hand.")
+    except Exception:
+        pass
     _EXTERNAL = ("/idp",)
     # Match on PATH (param-agnostic), METHOD-tolerant. A static scan can't
     # reliably tell a fetch's method from a React-Router route path (a `/auth/
