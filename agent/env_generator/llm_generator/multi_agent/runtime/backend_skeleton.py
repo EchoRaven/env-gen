@@ -1560,7 +1560,21 @@ try:
             if _fn is not None:
                 _methods = [m for m in (getattr(_canon_r, "methods", None) or ("POST",))
                             if m != "HEAD"]
-                app.add_api_route(_pref + _syn, _fn, methods=_methods or ["POST"])
+                # #1103: response_model=None, ALWAYS. Without it FastAPI infers the
+                # response model from `_fn`'s return annotation — and every AS handler
+                # is `-> JSONResponse` under `from __future__ import annotations`, i.e.
+                # a STRING. When that string does not resolve here, pydantic gets
+                # ForwardRef('JSONResponse') and cannot build it. Registration itself
+                # succeeds — the ForwardRef is simply stored — so nothing complains until
+                # the schema is built, and then GET /openapi.json 500s. tiktok-r92 shipped
+                # a DELIVERED milestone doing exactly that on four routes, and the same
+                # input reproduces on the FastAPI this repo runs today (0.121/pydantic
+                # 2.12): a dead /openapi.json and /docs, and no MCP or client generation.
+                # A Response subclass is never a response model, so pinning it to None
+                # is what the annotation means anyway, and it makes the alias immune to
+                # how any FastAPI version happens to resolve annotations.
+                app.add_api_route(_pref + _syn, _fn, methods=_methods or ["POST"],
+                                  response_model=None)
     # TENANTS-LIST FILL-IN (outlook run-37, live): the login template's TenantPicker calls
     # GET /api/v1/tenants on MOUNT (pre-auth; /api/v1/* is public infra in the middleware) —
     # but the projector excludes the control surface and the lane rarely writes it → 404 on
