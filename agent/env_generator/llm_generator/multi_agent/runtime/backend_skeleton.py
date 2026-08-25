@@ -1662,6 +1662,25 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
                            or emeta.get("response_key") or "").strip()
         _rm = _resource_model(path, meta)
         _owner_scoped = bool(_rm and str(_rm[0]).lower() in scoped_read_tables)
+        # #1097 — ONE RULE, ONE PRODUCER. `route_projector` already decides this for the
+        # routes IT projects, with two documented steps this emitter never applied:
+        #   #320: an EXPLICIT `auth_required: false` is the lane's deliberate "this read is
+        #         public" declaration (r88/r89's public-feed wedge) → drop the owner filter;
+        #   #633: …but a structurally-private resource is private whatever the contract says
+        #         (4 of 45 delivered backends shipped an UNAUTHENTICATED GET /api/search over
+        #         `continue_watching`) → force it back on.
+        # Applying only one half, or a path-shape heuristic of this module's own, is how the
+        # two emitters drift — #1096 is what that costs.
+        _explicit_public_1097 = (ep.get("auth_required") is False) or (
+            isinstance(emeta, Mapping) and emeta.get("auth_required") is False)
+        if _explicit_public_1097 and _owner_scoped:
+            _owner_scoped = False
+        try:
+            from .route_projector import _structurally_private_resource_633 as _priv633
+            if _priv633(method, path, meta):
+                _owner_scoped = True
+        except Exception:
+            pass
         block = _generate_handler(method, path, auth, meta, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)
         (param_blocks if "{" in path else static_blocks).append(block)
 
