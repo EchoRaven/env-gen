@@ -125,6 +125,50 @@ def _class_name(table: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts) or "Model"
 
 
+def _class_names_1096(tables: Any) -> Dict[str, str]:
+    """``{table: ClassName}`` with collisions resolved — two tables may never share a class.
+
+    #1096: `_class_name` singularises a trailing plural, so a contract carrying BOTH `messages`
+    and `message` (tiktok-r35 carries three such pairs) emitted `class Message(Base)` twice.
+    Python keeps the SECOND, so every handler projected against `messages` — the table marked
+    `owner_scoped_reads`, whose read filters on `Message.user_id` — resolved to the class
+    WITHOUT `user_id` and 500'd:
+
+        AttributeError: type object 'Message' has no attribute 'user_id'
+
+    The models.py compiled and the collision was reported nowhere; it surfaced only at request
+    time, on three resources at once (Message/Notification/LiveStream).
+
+    Both emitters must agree: `render_models` writes the `class` lines and `_models_meta` hands
+    `route_projector` the `cls` it generates handlers against. They called `_class_name`
+    independently and collapsed identically, which is exactly why nothing caught it — so the
+    mapping is computed ONCE from the whole table set and shared.
+
+    The singular table keeps the singular name (`message` -> `Message`) and the plural one
+    takes its plural CamelCase (`messages` -> `Messages`): stable, readable, and derived from
+    the contract rather than from an ordinal. A numeric suffix is the last resort."""
+    out: Dict[str, str] = {}
+    used: Dict[str, str] = {}
+    for table in sorted({str(t) for t in (tables or {})}):
+        name = _class_name(table)
+        if name not in used:
+            out[table] = name
+            used[name] = table
+            continue
+        parts = [p for p in re.sub(r"[^A-Za-z0-9]+", "_", table).strip("_").split("_") if p]
+        alt = "".join(p[:1].upper() + p[1:] for p in parts) or (name + "Table")
+        if alt not in used:
+            out[table] = alt
+            used[alt] = table
+            continue
+        i = 2
+        while f"{name}{i}" in used:
+            i += 1
+        out[table] = f"{name}{i}"
+        used[out[table]] = table
+    return out
+
+
 def _sa_type(raw: str) -> str:
     t = (raw or "").strip().lower()
     t = re.sub(r"\(.*?\)", "", t)          # varchar(255) → varchar
@@ -406,6 +450,9 @@ def render_models(tables: Dict[str, Any]) -> str:
     for name, table in (tables or {}).items():
         if isinstance(table, dict):
             by_name[str(name).lower()] = _columns_of(table)
+    # #1096: ONE mapping for the whole table set, shared by both emitters — see
+    # _class_names_1096. Includes the spine names, which are emitted here too.
+    _cls_map_1096 = _class_names_1096(set(by_name) | {"tenants", "users"})
     # PROPOSAL #3 (L1): make FK column types agree with the PK they reference BEFORE
     # rendering the ORM, so the models — and the DDL introspected from them — never
     # carry an unbootable integer→text FK (run #16 channels.id).
@@ -428,7 +475,7 @@ def render_models(tables: Dict[str, Any]) -> str:
         lines = [c for c in (_render_column(col) for col in real) if c]
         lines += _temporal_synonym_lines(real)   # #61: _at↔_time drift aliases
         body = "\n".join(lines) or "    pass"
-        blocks.append(f'class {_class_name(table)}(Base):\n'
+        blocks.append(f'class {_cls_map_1096.get(table) or _class_name(table)}(Base):\n'
                       f'    __tablename__ = "{table}"\n{body}')
 
     emit("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
@@ -584,6 +631,9 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     for name, table in (tables or {}).items():
         if isinstance(table, dict):
             by_name[str(name).lower()] = _columns_of(table)
+    # #1096: ONE mapping for the whole table set, shared by both emitters — see
+    # _class_names_1096. Includes the spine names, which are emitted here too.
+    _cls_map_1096 = _class_names_1096(set(by_name) | {"tenants", "users"})
     meta: Dict[str, Dict[str, Any]] = {}
 
     def add(table: str, cols: List[Dict[str, Any]]) -> None:
@@ -627,7 +677,8 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             types.setdefault("id", "Integer")   # synthesized SERIAL id
         if pk_name is None:
             pk_name = "id"  # synthesized SERIAL id
-        meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks,
+        meta[table] = {"cls": _cls_map_1096.get(table) or _class_name(table),
+                       "cols": names, "fks": fks,
                        "pk": pk_name, "pk_type": pk_type, "types": types,
                        "unique": uniq, "required": required}
 
