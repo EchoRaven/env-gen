@@ -134,8 +134,11 @@ def test_the_row_uses_the_columns_the_model_has(seed_src):
 def test_it_still_runs_before_the_first_insert(seed_src):
     """#1105's ordering requirement: users are first in _ORDER and cannot land
     without their tenant."""
-    i = seed_src.index("_ensure_default_tenant(db, data)\n        for t in _ORDER:")
-    assert i > 0
+    # ORDER, not adjacency: #1112 put `_pk_remap = {}` between the two, and pinning
+    # them as neighbours failed on a change that kept the guarantee intact.
+    guard = seed_src.index("_ensure_default_tenant(db, data)")
+    loop = seed_src.index("for t in _ORDER:", guard)
+    assert guard < loop, "the tenant guard must run before the insert loop"
 
 
 def test_a_missing_tenant_model_is_not_an_error(seed_src):

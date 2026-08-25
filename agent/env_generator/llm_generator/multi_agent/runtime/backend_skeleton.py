@@ -2396,6 +2396,23 @@ def _seed_topo_order(meta: Dict[str, Dict[str, Any]]) -> List[str]:
         for _col, ref in (meta[t].get("fks") or {}).items():
             if ref in deps and ref != t:
                 deps[t].add(ref)
+        # #1112: a contract that never writes `references` leaves `fks` empty, and the
+        # order then comes out alphabetical — `comments` before `posts` in instagram-run50.
+        # With no declared FK there is no constraint, so the inserts still succeed; what
+        # they produce is a child row pointing at a parent id that does not exist yet, and
+        # after #1110 hands an unparseable parent PK to the sequence the child's value is
+        # stale for certain. INFER the edge from the `<name>_id` convention this file
+        # already relies on elsewhere (#807's orphan scan reads `_fk[:-3]` the same way).
+        # Ordering only — nothing here changes a schema or a constraint.
+        for _col in (meta[t].get("cols") or []):     # `cols`, a list of NAMES
+            _cn = str(_col if isinstance(_col, str) else (_col or {}).get("name") or "")
+            if not _cn.endswith("_id"):
+                continue
+            _stem = _cn[:-3]
+            for _cand in (_stem, _stem + "s", _stem.rstrip("s")):
+                if _cand in deps and _cand != t:
+                    deps[t].add(_cand)
+                    break
     order, placed = [], set()
     while len(placed) < len(names):
         ready = [t for t in names if t not in placed and deps[t] <= placed]
@@ -3275,6 +3292,13 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "        # #1105: BEFORE the first insert — users cannot land without their\n"
         "        # tenant, and every table after users FKs to users.\n"
         "        _ensure_default_tenant(db, data)\n"
+        "        # #1112: seed id -> the id the DATABASE actually assigned. #1110 drops an\n"
+        "        # unparseable PK so the sequence can assign one, which leaves every child\n"
+        "        # row pointing at the seed's original value: instagram-run50's posts all\n"
+        "        # die on posts_user_id_fkey after its users finally land. _ORDER is\n"
+        "        # parent-first (topo, now including the `<name>_id` inference), so the\n"
+        "        # parent's mapping exists by the time its children are built.\n"
+        "        _pk_remap = {}\n"
         "        for t in _ORDER:\n"
         "            cls = getattr(models, _CLASS.get(t, ''), None)\n"
         "            if cls is None:\n"
@@ -3335,6 +3359,18 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                for _ic in _IMAGE_COL.get(t, []):\n"
         "                    if not row.get(_ic):\n"
         "                        row[_ic] = 'https://picsum.photos/seed/' + t + str(i) + '/400/400'\n"
+        "                # #1112: point this row's FKs at the ids the parents really got.\n"
+        "                for _fkc in [c for c in list(row) if str(c).endswith('_id')]:\n"
+        "                    _fv = row.get(_fkc)\n"
+        "                    if _fv is None:\n"
+        "                        continue\n"
+        "                    _stem = str(_fkc)[:-3]\n"
+        "                    for _cand in (_stem, _stem + 's', _stem.rstrip('s')):\n"
+        "                        _m = _pk_remap.get(_cand)\n"
+        "                        if _m and _fv in _m:\n"
+        "                            row[_fkc] = _m[_fv]\n"
+        "                            break\n"
+        "                _orig_pk = row.get(_pk_name)\n"
         "                _obj = cls(**_coerce_nested_for_string_cols(\n"
         "                    cls, {k: v for k, v in row.items()\n"
         "                          if hasattr(cls, k) and v is not None}))\n"
@@ -3351,6 +3387,13 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                            db.flush()\n"
         "                    else:\n"
         "                        db.add(_obj)\n"
+        "                    # #1112: record it ONLY when the database chose a different id;\n"
+        "                    # a row that kept its explicit PK needs no remap and must not\n"
+        "                    # add a self-mapping.\n"
+        "                    _got_pk = getattr(_obj, _pk_name, None)\n"
+        "                    if _orig_pk is not None and _got_pk is not None \\\n"
+        "                            and _got_pk != _orig_pk:\n"
+        "                        _pk_remap.setdefault(t, {})[_orig_pk] = _got_pk\n"
         "                except Exception as _e:\n"
         "                    _seed_dbg('seed_row_drop %s[%d]' % (t, i), _e)\n"
         "                    pass\n"
