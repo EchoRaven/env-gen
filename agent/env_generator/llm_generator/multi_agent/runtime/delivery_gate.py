@@ -211,6 +211,7 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
         import re as _re
         from pathlib import Path as _P
         from .frontend_audit import _route_tokens_728 as _tok
+        from .design_prep import spec_screen_has_reference_image_1091 as _has_ref_img_1091
         root = _P(output_dir)
         spec_f = root / "design" / "reference_spec.json"
         refs = root / "design" / "references"
@@ -233,7 +234,10 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
             if not isinstance(sc, dict):
                 continue
             name = str(sc.get("name") or "")
-            if not name or name in imgs:
+            # #1091: `name in imgs` is exact equality between two vocabularies for the same
+            # screens — `explore` is photographed as `explore_grid.png` and IS covered. 80% of
+            # the imageless set this starts from was that mismatch.
+            if not name or _has_ref_img_1091(name, imgs):
                 continue                       # the visual gate covers this one
             want = _tok(name) | _tok(sc.get("route_hint"))
             if want and not (want & have):

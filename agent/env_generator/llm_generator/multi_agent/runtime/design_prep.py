@@ -29,6 +29,37 @@ _IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 _DOC_EXTS = (".md", ".markdown", ".txt", ".rst", ".html", ".htm", ".pdf")
 
 
+def spec_screen_has_reference_image_1091(name: str, image_stems) -> bool:
+    """Does some reference image cover the spec screen ``name``?
+
+    #822 and #823 both answered this with ``name in image_stems`` — exact equality between two
+    vocabularies that name the same screens differently. r95, live: the spec declares
+    ``explore`` / ``activity`` / ``fyp_feed`` while the images are ``explore_grid.png`` /
+    ``notifications_activity.png`` / ``fyp_feed_logged_out.png``, and a screen's entry in
+    ``design_system.json`` is keyed by the image STEM — so those screens ARE captured, scored
+    and blocked on, under the filename's fuller name. The warning said the opposite.
+
+    Measured over the 76 corpus runs carrying both a spec and a reference dir: of the 576
+    screens reported imageless, 461 (80%) have an image whose stem contains the screen name as
+    a contiguous run of underscore tokens; only 115 truly have none (signup 33, fyp_comments
+    20, upload 15).
+
+    Token-contiguous rather than substring, because `search` must not be satisfied by
+    `research_page` and `list` must not be satisfied by `playlist_grid`. Order matters too:
+    `feed_fyp` is not `fyp_feed_x`."""
+    want = [t for t in str(name or "").lower().split("_") if t]
+    if not want:
+        return False
+    for stem in (image_stems or ()):
+        have = [t for t in str(stem or "").lower().split("_") if t]
+        if len(have) < len(want):
+            continue
+        for i in range(len(have) - len(want) + 1):
+            if have[i:i + len(want)] == want:
+                return True
+    return False
+
+
 def _list_files(folder: Path, exts) -> List[str]:
     if not folder.is_dir():
         return []
@@ -263,7 +294,11 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
         _want822 = {str(x.get("name")) for x in (_spec822.get("screens") or [])
                     if isinstance(x, dict) and x.get("name")}
         _have822 = {str(x.get("name")) for x in screens if isinstance(x, dict)}
-        _missing822 = sorted(_want822 - _have822)
+        # #1091: a screen whose image carries a QUALIFIER (`explore` -> `explore_grid.png`) is
+        # captured under that fuller name — 80% of what this used to report. Only name the
+        # screens no image covers at all.
+        _missing822 = sorted(n for n in (_want822 - _have822)
+                             if not spec_screen_has_reference_image_1091(n, _have822))
         if _missing822:
             _LOG_813.warning(
                 "design-prep: the reference SPEC declares %d screen(s) with no reference image, "
