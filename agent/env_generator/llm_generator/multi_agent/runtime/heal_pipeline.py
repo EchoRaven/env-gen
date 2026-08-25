@@ -1564,6 +1564,21 @@ class HealPipeline:
                     "Frontend api.js reconciled: aliased=%s stubbed=%s",
                     rep.get("aliased"), rep.get("stubbed"),
                 )
+            # #1108: the scaffolded login page stores the token under 'access_token';
+            # a lane api.js that namespaces its own key reads null, sends no
+            # Authorization header, and every authenticated request 401s — the user
+            # logs in and the app stays on the login wall. Driven in a real browser,
+            # tiktok-r54 went from 2053 chars of rendered text and 17 401s to 14668
+            # and 0. Runs AFTER the api.js repairs above so it sees the final key.
+            try:
+                from .frontend_scaffold import repair_token_key_mismatch_1108
+                _tk = repair_token_key_mismatch_1108(fe)
+                if _tk.get("added"):
+                    orch._logger.warning(
+                        "Frontend token key reconciled — the login page now also stores "
+                        "the key api.js reads: %s", _tk.get("added"))
+            except Exception as _tke:
+                orch._logger.debug("token key repair skipped: %s", _tke)
             # INVERSE of the above: a component DEFAULT-imports api (`import api from
             # '../services/api'`) but api.js has only NAMED exports → Rollup "default is not
             # exported by api.js" → build FAIL → no delivery (outlook M2 2026-06-29). Add a

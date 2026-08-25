@@ -1635,6 +1635,90 @@ _ABS_LOCAL_ORIGIN_RE = re.compile(
     r"""(['"`])https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?![\w.\-:])""")
 
 
+def repair_token_key_mismatch_1108(frontend_dir) -> Dict[str, object]:
+    """Store the session token under every key the app actually READS.
+
+    The scaffolded login page writes ``localStorage.setItem('access_token', token)``.
+    A lane-authored ``services/api.js`` routinely namespaces its own key —
+    ``const TOKEN_KEY = 'tiktok_token'`` — and reads THAT. Nothing writes it, so
+    ``getToken()`` returns null, no Authorization header is attached, and every
+    authenticated request 401s: the user logs in and the app behaves as though they
+    had not. Driving eight corpus frontends in a real browser after a successful UI
+    login produced 18 and 17 such 401s in r54 and r67 alone.
+
+    Eight of the 67 frontends that both read and write a token carry a read-only key
+    (tiktok_token / tt_access_token / tk_token / tiktok_web_r87_token …). Writing the
+    extra keys is additive — no existing key stops being written, and a localStorage
+    entry nothing reads is inert — so this cannot break a frontend that was correct.
+
+    Deterministic, idempotent, best-effort; never raises."""
+    import re as _re
+    result: Dict[str, object] = {"added": []}
+    try:
+        fe = Path(frontend_dir)
+        src = fe / "src" if (fe / "src").is_dir() else fe
+        if not src.is_dir():
+            return result
+        _tokenish = _re.compile(r"token|jwt|auth", _re.I)
+        _set = _re.compile(r"localStorage\.setItem\(\s*['\"]([\w.\-]+)['\"]")
+        _get = _re.compile(r"localStorage\.getItem\(\s*(?:['\"]([\w.\-]+)['\"]|([A-Z_][A-Z0-9_]*))")
+        _const = _re.compile(r"(?:const|let|var)\s+([A-Z_][A-Z0-9_]*)\s*=\s*['\"]([\w.\-]+)['\"]")
+        files = [p for p in src.rglob("*")
+                 if p.suffix in (".js", ".jsx", ".ts", ".tsx") and "node_modules" not in p.parts]
+        consts: Dict[str, str] = {}
+        writes, reads = set(), set()
+        texts = {}
+        for p in files:
+            try:
+                t = p.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            texts[p] = t
+            consts.update(dict(_const.findall(t)))
+        for p, t in texts.items():
+            writes.update(k for k in _set.findall(t) if _tokenish.search(k))
+            for lit, name in _get.findall(t):
+                k = lit or consts.get(name) or ""
+                if k and _tokenish.search(k):
+                    reads.add(k)
+        missing = sorted(reads - writes)
+        if not missing or not writes:
+            return result
+        # append the missing keys wherever the token is already stored, so the value
+        # written is whatever that site already decided to write
+        pat = _re.compile(r"localStorage\.setItem\(\s*['\"]([\w.\-]+)['\"]\s*,\s*([^;)]+)\)\s*;")
+        for p, t in texts.items():
+            out_lines, changed = [], False
+            for line in t.splitlines(keepends=True):
+                out_lines.append(line)
+                m = pat.search(line)
+                if not m or not _tokenish.search(m.group(1)):
+                    continue
+                if any(("setItem('%s'" % k) in t or ('setItem("%s"' % k) in t for k in missing):
+                    pass
+                # GUARD the appended write. The site being copied is typically inside
+                # `if (token) { ... }`; appending after the closing brace stores an
+                # undefined value when the login failed, and localStorage stringifies
+                # it — getToken() then returns the truthy string "undefined" and the
+                # app believes it holds a session. Caught by testing the repair on
+                # r54's real login page, not by reading it.
+                _val = m.group(2).strip()
+                add = "".join(" if (%s) localStorage.setItem('%s', %s);" % (_val, k, _val)
+                              for k in missing
+                              if ("setItem('%s'" % k) not in t and ('setItem("%s"' % k) not in t)
+                if not add:
+                    continue
+                nl = "\n" if out_lines[-1].endswith("\n") else ""
+                out_lines[-1] = out_lines[-1].rstrip("\n") + add + nl
+                changed = True
+            if changed:
+                p.write_text("".join(out_lines), encoding="utf-8")
+                result["added"].append({"file": p.name, "keys": missing})
+    except Exception:
+        return result
+    return result
+
+
 def normalize_frontend_api_base(frontend_dir) -> Dict[str, object]:
     """Rewrite hardcoded absolute localhost / 127.0.0.1 / 0.0.0.0 origins in the
     frontend source to same-origin RELATIVE URLs, so browser requests flow through
