@@ -47,9 +47,14 @@ def _prose() -> str:
 # --- the cause travels with the failure ---------------------------------------------------------
 
 def test_the_event_carries_the_stderr_not_just_the_label():
+    """#1119 changed the EXPRESSION (a blind prefix became an extracted cause), not the
+    guarantee. Assert the property this test exists for — a bounded, stderr-derived cause
+    rides along with the label — rather than one spelling of it."""
     b = _block()
     assert '"reason": "compose_up_failed"' in b, "the original label must survive"
-    assert '"compose_stderr": _stderr748[:500]' in b
+    assert '"compose_stderr":' in b, "the cause stopped riding in the payload"
+    assert "up_result.stderr" in b, "the cause is no longer derived from compose's stderr"
+    assert "[:500]" in b, "the payload cause lost its bound"
     assert '"returncode": up_result.returncode' in b
 
 
@@ -73,9 +78,15 @@ def test_an_empty_stderr_still_says_something_useful():
 
 
 def test_the_store_write_is_unchanged():
+    """Shape, not spelling: the same field is still written on the same status, bounded.
+
+    #1119 changed WHAT that field holds — the extracted causal line instead of the first
+    500 characters, which for a compose failure are the deprecation warning and progress
+    noise. See test_1119 for the behaviour that change is pinned by."""
     b = _block()
     assert 'self.update_run_status(run_id, "aborted", agent="runhub",' in b
-    assert "compose_stderr=_stderr748[:500]" in b
+    assert "compose_stderr=" in b, "the store write lost its cause field"
+    assert "[:500]" in b, "the stored cause lost its bound"
 
 
 def test_the_payload_and_the_record_agree_on_the_truncation():

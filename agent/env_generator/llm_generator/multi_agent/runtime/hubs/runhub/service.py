@@ -66,6 +66,23 @@ def _resolve_compose_file(generated_dir: str) -> Optional[str]:
     return None
 
 
+def _salient_stderr_1119(stderr: str) -> str:
+    """The causal line(s) of a compose failure, chosen from the WHOLE stderr.
+
+    Delegates to framework_validation._salient_error, imported lazily: runhub is
+    imported during orchestrator construction and must not pull the validation
+    package in at module scope. Falls back to the raw text on any failure, which
+    is exactly the pre-#1119 behaviour, so this can only ever add information.
+    """
+    if not stderr:
+        return ""
+    try:
+        from ...framework_validation import _salient_error
+        return _salient_error(stderr, cap=500) or stderr
+    except Exception:
+        return stderr
+
+
 class RunHub:
     def __init__(self, hub_dir: Path, eventhub: Any = None):
         self.hub_dir = Path(hub_dir)
@@ -277,18 +294,34 @@ class RunHub:
                 # the party that has to act on it. Log it and put it in the event; the store
                 # write is unchanged.
                 _stderr748 = (up_result.stderr or "").strip()
+                # #1119: EXTRACT, THEN TRUNCATE. #748 rightly captured the stderr and then
+                # kept a blind PREFIX of it -- the same mistake _salient_error was written
+                # to replace ("NOT a blind 60-char prefix, which lands on the meaningless
+                # 'Sending build context' banner and hides the real cause").
+                #
+                # docker compose puts its deprecation warning FIRST, then network/volume/
+                # container progress, then the error. Measured on a real failure captured
+                # live: 861 bytes of stderr with `OCI runtime` at 690, `seccomp` at 790 and
+                # `errno 524` at 842 -- the ENTIRE cause past the 500-char cap. All 17
+                # compose-up failures of that run therefore reported the cause as
+                # `the attribute version is obsolete`, a warning that is not an error at all.
+                #
+                # The corpus cannot show the improvement: 0 of its 407 stored compose_stderr
+                # records contain `OCI runtime`, because the truncation below is what threw
+                # it away before anything could read it.
+                _cause1119 = _salient_stderr_1119(_stderr748)
                 self.update_run_status(run_id, "aborted", agent="runhub",
-                                        compose_stderr=_stderr748[:500])
+                                        compose_stderr=_cause1119[:500])
                 _logger.warning(
                     "compose up FAILED for run %s (rc=%s) — the app never booted, so every "
                     "check after this is measuring nothing. Cause: %s",
                     run_id, up_result.returncode,
-                    _stderr748[:400] or "(compose produced no stderr — check the compose file "
+                    _cause1119[:400] or "(compose produced no stderr — check the compose file "
                                         "exists and the daemon is reachable)")
                 self._emit("run_completed", run_id,
                            {"reason": "compose_up_failed",
                             # #748: the payload carries the cause, not just the label.
-                            "compose_stderr": _stderr748[:500],
+                            "compose_stderr": _cause1119[:500],
                             "returncode": up_result.returncode},
                             priority="high")
                 return self.get_run(run_id)

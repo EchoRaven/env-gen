@@ -222,6 +222,17 @@ _ERR_MARKERS = (
     "npm err", "syntaxerror", "modulenotfound", "traceback", "exit code", "exited with",
     "no space left", "cannot find", "not found", "permission denied", "denied", "unhealthy",
     "fatal:",
+    # #1119b: the container-runtime shape. "OCI runtime create failed: ... error loading
+    # seccomp filter into kernel" matches NONE of the markers above -- `error:` wants the
+    # colon, and this says `create failed`. Without it the extractor falls through to the
+    # tail, which for a compose failure is "Container ... Creating" progress noise with the
+    # causal line buried at its far end. Also catches the `OCI runtime exec failed` that a
+    # broken HEALTHCHECK produces. Measured: 0 of the 407 stored compose_stderr records in
+    # the corpus contain this string -- not because it is rare, but because it lives past
+    # the 500-char storage cap that #1119 below removes, so the corpus cannot show its
+    # value. On a full stderr captured live it turns a 500-char noise window into the one
+    # causal line.
+    "oci runtime",
 )
 
 
