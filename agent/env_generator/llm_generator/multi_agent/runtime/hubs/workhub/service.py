@@ -71,6 +71,46 @@ def _transition_payload_679(task):
         return task
 
 
+def _coerce_milestone_index_1120(value, what: str):
+    """Normalise an LLM-authored ``milestone_index`` before validating it.
+
+    Agents write ``milestone_index="1"``. Measured over the 85-run corpus: 518 calls
+    failed this validator across 35 runs -- 41% of all runs -- and 505 of them passed a
+    numeric STRING ('1' x403, '2' x69, '0' x33, one '"1"' still carrying its quotes).
+    They arrive through kickoff_declare_predicate (385) and
+    workhub_add_meeting_decision (118), which both funnel here, so the hub boundary is
+    the single place that sees all of them.
+
+    Same class as #335, which `drop_unaccepted_kwargs` states directly: an LLM-authored
+    argument list meeting a strict boundary unnormalised; and the same answer as #338
+    and #1104, which coerce str<->int for projected parameters rather than rejecting.
+
+    Coercion is deliberately narrow -- a decimal string, optionally wrapped in the
+    quotes the model sometimes leaves on. Everything the validator rejected before is
+    still rejected: bools (which are ints in Python), negatives, floats, and any string
+    that is not a plain integer. Returns the value unchanged when it cannot be coerced,
+    so the caller's own ValueError still fires with its original message.
+    """
+    if isinstance(value, bool) or not isinstance(value, str):
+        return value
+    text = value.strip().strip('"').strip("'").strip()
+    if not text:
+        return value
+    sign = ""
+    if text[0] in "+-":
+        sign, text = text[0], text[1:]
+    # str.isdigit() is True for '\u0663' (ARABIC-INDIC THREE) and int() happily reads it
+    # as 3. A milestone index arrives from a model writing JSON; accepting a non-ASCII
+    # numeral would be inventing a number the caller did not type. Caught by this
+    # ticket's own test, not by reading the code.
+    if not (text.isascii() and text.isdigit()):
+        return value
+    try:
+        return int(sign + text)
+    except (ValueError, TypeError):     # pragma: no cover - isdigit already guards
+        return value
+
+
 class WorkHub:
     """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments.
 
@@ -1356,6 +1396,9 @@ class WorkHub:
         if not decision or not isinstance(decision, dict):
             raise ValueError("add_meeting_decision requires non-empty dict decision")
         if milestone_index is not None:
+            # #1120: normalise before judging -- agents write milestone_index="1".
+            milestone_index = _coerce_milestone_index_1120(
+                milestone_index, "add_meeting_decision")
             if (
                 not isinstance(milestone_index, int)
                 or isinstance(milestone_index, bool)
@@ -1446,6 +1489,9 @@ class WorkHub:
         if not isinstance(produced_artifacts, list):
             raise ValueError("close_meeting requires list produced_artifacts")
         if milestone_index is not None:
+            # #1120: normalise before judging -- agents write milestone_index="1".
+            milestone_index = _coerce_milestone_index_1120(
+                milestone_index, "close_meeting")
             if (
                 not isinstance(milestone_index, int)
                 or isinstance(milestone_index, bool)
