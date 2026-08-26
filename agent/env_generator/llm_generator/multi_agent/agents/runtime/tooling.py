@@ -188,6 +188,49 @@ def missing_args_message_634(tool_name: str, missing: list, tool: Any) -> str:
             + "\n".join(lines))
 
 
+def dropped_args_message_1116(tool_name: str, dropped: list, tool: Any) -> str:
+    """Tell the CALLER which arguments were thrown away, and what the tool does accept.
+
+    #360 strips arguments the signature cannot take so one bad key does not lose the whole
+    call, and says so in a WARNING — which reaches a log file and no agent. The caller gets a
+    normal-looking result and proceeds believing its argument took effect.
+
+    Measured over the 85-run corpus: 52418 introspectable tool calls, 60 of them carrying an
+    argument the tool does not declare, spread over 25 runs. The single most-dropped key is
+    `uses` on registryhub_register_endpoint (17 here, 34 in #360's own count) — agents trying
+    to declare which tables an endpoint reads. That endpoint tool has no such parameter, the
+    key is discarded, and separately #1023b reports that registryhub_register_table_consumer
+    — the tool that WOULD record it — was called in 0 of 172 runs. The agents were asking;
+    nothing answered.
+
+    The cost is not always a silent omission. In the smoke-notes run the orchestrator called
+    deliver_project with a bypass flag the tool does not declare, had it dropped, and then
+    reported "Delivery gate refuses <that flag> (final milestone, cannot bypass into failed
+    post-loop)" — a diagnosis of a refusal that never happened — and escalated it to the
+    debugger. (The literal name is deliberately not written here: it was once a fabricated
+    parameter, declared but read nowhere, and test_360's guard scans this package for it.)
+
+    Same answer as #634, mirrored: quote back the tool's own published schema."""
+    props = {}
+    try:
+        props = ((getattr(tool, "PARAMETERS", None) or {}).get("properties") or {})
+    except Exception:
+        props = {}
+    lines = []
+    for name in sorted(props):
+        spec = props.get(name) or {}
+        kind = str(spec.get("type") or "").strip()
+        desc = str(spec.get("description") or "").strip()
+        detail = " — ".join(x for x in (kind, desc) if x)
+        lines.append(f"  {name}{': ' + detail if detail else ''}")
+    body = ("\n".join(lines) if lines
+            else "  (this tool publishes no parameter schema)")
+    return (f"[framework] {tool_name}: ignored argument(s) {', '.join(dropped)} — not declared "
+            f"by this tool, so the call ran WITHOUT them and their effect did not happen. If "
+            f"you needed that effect, it belongs to a different tool. This tool accepts:\n"
+            + body)
+
+
 def _effective_write_identity(agent: Any) -> Optional[str]:
     """The identity a role-write gate must be evaluated against.
 
@@ -1137,6 +1180,19 @@ class AgentTooling:
                     result = await exec_fn(**tool_args)
                 else:
                     result = await asyncio.to_thread(exec_fn, **tool_args)
+
+                # #1116: the WARNING above goes to a log no agent reads. Put the same fact in
+                # the result text the caller actually gets, so it learns its argument was
+                # ignored instead of assuming it landed.
+                if _dropped_args:
+                    try:
+                        _notices = getattr(result, "notices", None)
+                        if isinstance(_notices, list):
+                            _notices.append(dropped_args_message_1116(
+                                tool_name, _dropped_args,
+                                self._tool_instances.get(tool_name)))
+                    except Exception:
+                        pass
 
                 if getattr(result, "success", False) and self._execution_mode == "team":
                     if tool_name in {"terminate_agent_team", "parallel_execute", "finish"}:

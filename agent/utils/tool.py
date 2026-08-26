@@ -47,6 +47,11 @@ class ToolResult:
     error_message: Optional[str] = None
     execution_time: float = 0.0
     metadata: dict = field(default_factory=dict)
+    # #1116: framework-level notices about the CALL ITSELF, rendered into the text the
+    # agent reads. `data` belongs to the tool and its consumers parse its shape, so a
+    # notice must not be smuggled in there. Appended last so no positional construction
+    # of ToolResult changes meaning.
+    notices: list = field(default_factory=list)
     
     @classmethod
     def ok(cls, data: Any = None, **metadata) -> "ToolResult":
@@ -75,19 +80,28 @@ class ToolResult:
     # unaffected because they are already under it.
     _FAILED_DATA_CHARS_674 = 8000
 
+    def _with_notices_1116(self, text: str) -> str:
+        """Append framework notices so the CALLER sees them, not only a log reader."""
+        try:
+            extra = [str(n).strip() for n in (self.notices or []) if str(n).strip()]
+        except Exception:
+            return text
+        return text + "\n" + "\n".join(extra) if extra else text
+
     def __str__(self) -> str:
         if self.success:
-            return str(self.data) if self.data is not None else "OK"
+            body = str(self.data) if self.data is not None else "OK"
+            return self._with_notices_1116(body)
         base = f"Error: {self.error_message}"
         if self.data is None:
-            return base
+            return self._with_notices_1116(base)
         detail = str(self.data)
         if not detail or detail in ("{}", "[]", "None"):
-            return base
+            return self._with_notices_1116(base)
         if len(detail) > self._FAILED_DATA_CHARS_674:
             detail = (detail[:self._FAILED_DATA_CHARS_674]
                       + f"\n… [truncated — {len(detail)} chars total]")
-        return f"{base}\n{detail}"
+        return self._with_notices_1116(f"{base}\n{detail}")
 
 
 def create_tool_param(
