@@ -1124,6 +1124,52 @@ class ConversationCondenser:
 
 # ==================== Enhanced Generator Memory ====================
 
+_API_KEYWORDS_1117 = ("api", "endpoint", "schema")
+_API_EXCERPT_CHARS_1117 = 300
+
+
+def _api_excerpt_1117(content):
+    """The 300 characters AROUND the keyword that admitted this message, or None.
+
+    The admission test ran on the WHOLE message while the stored text was its first
+    300 characters, so the API fact that justified keeping it was routinely truncated
+    away and what persisted was whatever coordination preamble the message opened with.
+
+    Measured over the corpus's own stores: 3607 knowledge entries across 66 runs, every
+    one of them written by this branch (nothing else reaches the persisted store), and
+    883 of them -- 24% -- contain none of the keywords they were admitted for. Those
+    are entries like "## Validation Summary -- DELIVERY BLOCKED", "task_1cd12ef789
+    CLOSED" and "Fixed: seed data now loads": transient task chatter filed as durable
+    tech_context, then handed back to agents by get_relevant_knowledge as fact.
+
+    This does not change WHICH messages are admitted -- only that what gets stored
+    carries the reason it was stored. Returns None when no keyword is present.
+    """
+    if not isinstance(content, str) or not content:
+        return None
+    low = content.lower()
+    hits = [low.find(k) for k in _API_KEYWORDS_1117]
+    hits = [h for h in hits if h >= 0]
+    if not hits:
+        return None
+    i = min(hits)
+    if len(content) <= _API_EXCERPT_CHARS_1117:
+        return content
+    # Centre the window on the match, then snap the start to whitespace so the excerpt
+    # does not begin mid-token. The snap may not run past the match itself.
+    start = max(0, i - _API_EXCERPT_CHARS_1117 // 3)
+    end = min(len(content), start + _API_EXCERPT_CHARS_1117)
+    start = max(0, end - _API_EXCERPT_CHARS_1117)
+    if start > 0:
+        sp = content.find(" ", start, min(start + 40, i))
+        if sp != -1:
+            start = sp + 1
+    excerpt = content[start:end].strip()
+    prefix = "\u2026" if start > 0 else ""
+    suffix = "\u2026" if end < len(content) else ""
+    return prefix + excerpt + suffix
+
+
 class GeneratorMemory(AgentMemory):
     """
     Enhanced memory system for code generation agents.
@@ -1674,9 +1720,10 @@ class GeneratorMemory(AgentMemory):
             content = tool_args.get("content", "")
             msg_type = tool_args.get("msg_type", "")
             # Save API-related info shared between agents
-            if "api" in content.lower() or "endpoint" in content.lower() or "schema" in content.lower():
+            _excerpt = _api_excerpt_1117(content)
+            if _excerpt is not None:
                 self._record_auto_knowledge_if_new(
-                    content=f"Shared info ({msg_type or 'update'}): {content[:300]}",
+                    content=f"Shared info ({msg_type or 'update'}): {_excerpt}",
                     category="tech_context",
                     importance=0.6,
                 )

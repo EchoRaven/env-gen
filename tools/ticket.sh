@@ -91,7 +91,15 @@ _claimed() {   # every number claimed, one per line
     awk 'FNR==1{f=0} /^```/{f=!f; next} !f && /^## [0-9]/' EXPERIMENTS_PENDING_*.md 2>/dev/null || true
     git log --format=%s 2>/dev/null || true
     cat "$_TICKETS" 2>/dev/null || true
-    ls agent/tests 2>/dev/null | sed -n 's/^test_.*_\([0-9]\{3,4\}\)\.py$/#\1/p' || true
+    # #1118: this matched ONLY test_<name>_<NNNN>.py. The repo uses both orders —
+    # 463 files put the number last, 156 put it first (test_1117_the_reason...py) —
+    # so 156 of its own regression tests were invisible here. That matters exactly
+    # when the other sources cannot help: a ticket whose test exists but whose commit
+    # has not landed yet is claimed by nothing else, and the tool re-issues it. It
+    # did: with test_1117_*.py on disk and uncommitted, this printed 1117.
+    ls agent/tests 2>/dev/null | sed -n \
+        -e 's/^test_.*_\([0-9]\{3,4\}\)\.py$/#\1/p' \
+        -e 's/^test_\([0-9]\{3,4\}\)_.*\.py$/#\1/p' || true
     { git diff 2>/dev/null; git diff --cached 2>/dev/null;
       git ls-files --others --exclude-standard 2>/dev/null | xargs -r grep -h '#[0-9]' 2>/dev/null
     } | grep -o '#[0-9]\{3,4\}[:)]' || true
@@ -128,12 +136,20 @@ mapfile -t _all < <(_claimed)
 [ "${#_all[@]}" -gt 0 ] || _all=(0)
 _i=0
 while [ "$_i" -lt $(( ${#_all[@]} - 1 )) ]; do
-  _gap=$(( ${_all[$((_i + 1))]} - ${_all[$_i]} ))
+  _gap=$(( 10#${_all[$((_i + 1))]} - 10#${_all[$_i]} ))
   [ "$_gap" -gt "$_GAP_847" ] && break
   _i=$(( _i + 1 ))
 done
 highest="${_all[$_i]}"
 [ -n "$highest" ] || highest=0
+# #1118b: force base 10. Bash reads a leading-zero literal as OCTAL, so a claim like
+# 0902 aborts the arithmetic below with "value too great for base", `next` is then
+# unbound, and the script prints NOTHING on stdout while exiting 0 — a caller doing
+# `n=$(tools/ticket.sh)` gets an empty ticket number and no error. No claim in this
+# repo currently has a leading zero (0 of them, across filenames, commit subjects and
+# the ledger), so this is unreachable today; it is one token, and the failure it
+# prevents is silent.
+highest=$(( 10#$highest ))
 
 if [ "$_i" -lt $(( ${#_all[@]} - 1 )) ]; then
   {
