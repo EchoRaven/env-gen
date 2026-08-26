@@ -1192,10 +1192,92 @@ class WorkHubGetDocumentTool(HubTool):
     DESCRIPTION = "Get a WorkHub coordination document (kickoff/meeting/retro/project) by id, optionally including its blocks."
     PARAMETERS = {"type": "object", "properties": {"document_id": {"type": "string"}, "with_blocks": {"type": "boolean"}}, "required": ["document_id"]}
 
+    # ------------------------------------------------------------------ #1121
+    _NAME_CANDIDATES_1121 = 12
+
+    def _resolve_document_by_name_1121(self, wanted):
+        """(id, error_message). ``id`` is set only when EXACTLY one document answers.
+
+        Matches a document whose ``kind`` or ``title`` equals ``wanted`` exactly,
+        case-insensitively. Never fuzzy: a near-miss returns the candidate list rather
+        than a guess, because handing back the wrong meeting reads as success.
+        """
+        base = "Document not found: %s" % wanted
+        try:
+            docs = self._hubs.workhub.list_documents() or []
+        except Exception:
+            return None, base
+        try:
+            key = str(wanted or "").strip().lower()
+            matches = [
+                d for d in docs
+                if isinstance(d, dict)
+                and key
+                and (str(d.get("kind") or "").strip().lower() == key
+                     or str(d.get("title") or "").strip().lower() == key)
+            ]
+        except Exception:
+            return None, base
+        if len(matches) == 1:
+            return matches[0].get("id"), base
+
+        def _line(d):
+            bits = [str(d.get("id"))]
+            for field in ("kind", "title"):
+                v = str(d.get(field) or "").strip()
+                if v and v != str(d.get("id")):
+                    bits.append(v)
+            mi = (d.get("metadata") or {}).get("milestone_index")
+            if mi is not None:
+                bits.append("milestone %s" % mi)
+            return "  " + " | ".join(bits)
+
+        if len(matches) > 1:
+            shown = matches[:self._NAME_CANDIDATES_1121]
+            more = ("\n  … and %d more" % (len(matches) - len(shown))
+                    if len(matches) > len(shown) else "")
+            return None, (
+                base + " — that is a NAME and %d documents answer to it, so it cannot "
+                "identify one. Address the document by id:\n" % len(matches)
+                + "\n".join(_line(d) for d in shown) + more)
+        if not docs:
+            return None, base + " — this run has no coordination documents yet."
+        shown = docs[:self._NAME_CANDIDATES_1121]
+        more = ("\n  … and %d more" % (len(docs) - len(shown))
+                if len(docs) > len(shown) else "")
+        return None, (
+            base + " — documents are addressed by id, not by name or task id. "
+            "This run has:\n" + "\n".join(_line(d) for d in shown if isinstance(d, dict))
+            + more)
+
     async def _run(self, document_id: str, with_blocks: bool = True) -> ToolResult:
         document = self._hubs.workhub.get_document(document_id, with_blocks=with_blocks)
         if document is None:
-            return ToolResult(success=False, error_message=f"Document not found: {document_id}")
+            # #1121: agents address this by NAME. Measured over the 85-run corpus: 235
+            # failures across 31 runs (36%), all on this tool, and the id handed over is
+            # a friendly name far more often than a typo -- 'kickoff' x81, plus
+            # 'project', 'ui_pages', 'remediation_seed_data' and a tail of task_* ids
+            # passed to a DOCUMENT lookup.
+            #
+            # Resolving the name blindly would be a guess: a kickoff document is unique
+            # in only 36 of 85 runs (2 in 12 runs, 3 in 3, 4 in 17, absent in 17), while
+            # `project` is unique in all 85. So resolve ONLY when exactly one document
+            # answers to the name, and otherwise hand back the ids that do exist -- the
+            # same answer #634/#1116 give for a bad argument: quote back what is real so
+            # the next call is right.
+            _hit, _msg = self._resolve_document_by_name_1121(document_id)
+            if _hit is not None:
+                _doc = self._hubs.workhub.get_document(_hit, with_blocks=with_blocks)
+                if _doc is not None:
+                    _r = ToolResult(data=_doc)
+                    _r.notices.append(
+                        "[framework] workhub_get_document: %r is a name, not an id; it "
+                        "resolved to the one document that answers to it, %r. Address "
+                        "documents by id -- the name is not guaranteed unique (a kickoff "
+                        "document is unique in fewer than half of runs)."
+                        % (document_id, _hit))
+                    return _r
+            return ToolResult(success=False, error_message=_msg)
         return ToolResult(data=document)
 
 
