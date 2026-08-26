@@ -150,3 +150,86 @@ def test_it_is_wired_into_the_heal_pipeline():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_a_trailing_comment_does_not_swallow_the_repair(tmp_path):
+    """The copied line may end in `// ...`.
+
+    Appending the extra write to that same line puts it inside the comment: the
+    repair reports success and writes code the parser never sees. 1 of the 286
+    token setItem lines in the corpus carries exactly this shape
+    (tiktok-web-r56 api.js: ``setItem('token', t); // legacy key kept ...``).
+    """
+    from env_generator.llm_generator.multi_agent.runtime.frontend_scaffold import (
+        repair_token_key_mismatch_1108,
+    )
+
+    src = tmp_path / "src"
+    (src / "services").mkdir(parents=True)
+    (src / "pages").mkdir()
+    (src / "pages" / "Login.jsx").write_text(
+        "export function onLogin(token) {\n"
+        "  localStorage.setItem('access_token', token); // legacy key kept for older paths\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (src / "services" / "api.js").write_text(
+        "const TOKEN_KEY = 'tiktok_token';\n"
+        "export const getToken = () => localStorage.getItem(TOKEN_KEY);\n",
+        encoding="utf-8",
+    )
+
+    out = repair_token_key_mismatch_1108(tmp_path)
+    assert out["added"], "the read-only key was not repaired at all"
+
+    text = (src / "pages" / "Login.jsx").read_text(encoding="utf-8")
+    assert "tiktok_token" in text
+
+    # the write must NOT sit behind the `//` on the original line
+    for line in text.splitlines():
+        if "tiktok_token" not in line:
+            continue
+        before = line.split("tiktok_token")[0]
+        assert "//" not in before, (
+            "the appended write landed inside a line comment — inert code, "
+            "reported as a successful repair: %r" % line
+        )
+        break
+    else:  # pragma: no cover - the assert above already failed
+        raise AssertionError("no line carries the repaired key")
+
+    # and it is still guarded, so a failed login cannot store the string "undefined"
+    assert "if (token) localStorage.setItem('tiktok_token', token);" in text
+
+
+def test_repairing_twice_changes_nothing_the_second_time(tmp_path):
+    """heal re-runs its repairs; a non-idempotent one would stack duplicates."""
+    from env_generator.llm_generator.multi_agent.runtime.frontend_scaffold import (
+        repair_token_key_mismatch_1108,
+    )
+
+    src = tmp_path / "src"
+    (src / "services").mkdir(parents=True)
+    (src / "pages").mkdir()
+    (src / "pages" / "Login.jsx").write_text(
+        "export function onLogin(token) {\n"
+        "  if (token) {\n"
+        "    localStorage.setItem('access_token', token);\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (src / "services" / "api.js").write_text(
+        "const TOKEN_KEY = 'tk_token';\n"
+        "export const getToken = () => localStorage.getItem(TOKEN_KEY);\n",
+        encoding="utf-8",
+    )
+
+    repair_token_key_mismatch_1108(tmp_path)
+    once = (src / "pages" / "Login.jsx").read_text(encoding="utf-8")
+    assert once.count("setItem('tk_token'") == 1
+
+    out2 = repair_token_key_mismatch_1108(tmp_path)
+    twice = (src / "pages" / "Login.jsx").read_text(encoding="utf-8")
+    assert twice == once, "second repair pass rewrote the file"
+    assert not out2["added"], "second pass claimed to add a key that was already there"

@@ -73,3 +73,13 @@ project-excludes = [
     "**/node_modules/**",
     "**/__pycache__/**",
 ]
+
+[tool.pytest.ini_options]
+# `multi_agent/bundled_tests/` holds test files that are SHIPPED INTO a generated
+# env and run there against its live stack (see the module docstrings:
+# `ZOOM_API_URL=http://localhost:8033 python3 tests/oauth/test_zoom.py`). Collected
+# here they can only ever raise ConnectionRefusedError — 60 red herrings that hide
+# real failures in a bare `pytest` run. Excluding them changes nothing where they
+# actually run: a generated env executes them from its own root and never reads
+# this file, so a down service still fails the contract there, as it must.
+norecursedirs = ["agent/env_generator/llm_generator/multi_agent/bundled_tests"]

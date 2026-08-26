@@ -590,6 +590,38 @@ def contradicted_tool_claims_1033(tasks, granted_tool_names) -> List[Dict[str, s
     return out
 
 
+def _content_moved_since_1114(root, rel, ref):
+    """#1114: did the BYTES of ``rel`` change after ``ref``? True / False / None (unknown).
+
+    mtime is not evidence of change here. The framework re-projects every file it owns on
+    EVERY tick — deterministically, from the registered contract — so main.py, the
+    Dockerfile, reset.sh, database.py, models.py and the compose file are rewritten with
+    byte-identical content and a fresh mtime several times a minute. (67 of the 68 corpus
+    Dockerfiles are byte-identical to each other; nothing about them is per-tick.)
+
+    Measured live on smoke-notes: 17 commits in the tree, and `git log -- app/backend/
+    Dockerfile` names exactly ONE of them (reset.sh: two), with the worktree clean against
+    HEAD — yet the mtime advanced every tick, so #1023 reported the seccomp P0 as "may
+    already be resolved" at +0m, +2m, +3m, +4m while `docker build` kept failing rc=1 one
+    second later, and the report grew from 1-of-2 to 2-of-3 open P0s.
+
+    git answers the real question: it records a commit for a path only when that path's
+    content differs, and the framework commits its projection every tick. Returns None when
+    git cannot answer (no repo, error, timeout) so the caller can keep its old behaviour
+    rather than silently losing a true signal."""
+    import subprocess as _sp
+    from datetime import datetime as _dt
+    try:
+        _since = _dt.fromtimestamp(float(ref)).isoformat()
+        r = _sp.run(["git", "-C", str(root), "log", "--since", _since, "--format=%H", "--", str(rel)],
+                    capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return None
+        return bool((r.stdout or "").strip())
+    except Exception:
+        return None
+
+
 def _bug_reference_time_1023(task) -> float:
     """When this bug's EVIDENCE was taken: the latest of claim/triage/creation. Never raises."""
     best = 0.0
@@ -630,7 +662,8 @@ def _stale_open_p0_evidence_1023(task, output_dir) -> str:
     decision to close stays with the agent that owns the bug.
 
     The signal is conservative: every file the bug itself named as affected has been modified
-    since the bug's evidence was taken. That means the code it points at is not the code it was
+    IN CONTENT (see `_content_moved_since_1114` — not merely re-touched by the framework's
+    own projection) since the bug's evidence was taken. That means the code it points at is not the code it was
     diagnosed against — grounds to re-verify, never proof of a fix.
     """
     # This module has no module-level `Path` (only per-function `from pathlib import Path as
@@ -658,6 +691,12 @@ def _stale_open_p0_evidence_1023(task, output_dir) -> str:
                 return ""
             if mtime <= ref:
                 return ""                 # at least one file is unchanged -> evidence stands
+            # #1114: mtime moved, but did the CONTENT? The framework rewrites the files it
+            # owns with identical bytes every tick, which used to read as "the code has moved
+            # on" for a bug that had not moved at all. A `False` here is proof the file is
+            # byte-for-byte what it was diagnosed against, so the evidence still stands.
+            if _content_moved_since_1114(root, rel, ref) is False:
+                return ""
             touched.append(f"{rel} (+{int((mtime - ref) / 60)}m)")
         return "every affected file changed since the evidence was taken: " + "; ".join(
             touched[:3]) + ("" if len(touched) <= 3 else f"; +{len(touched) - 3} more")

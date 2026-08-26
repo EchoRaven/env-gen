@@ -1651,6 +1651,9 @@ def repair_token_key_mismatch_1108(frontend_dir) -> Dict[str, object]:
     extra keys is additive — no existing key stops being written, and a localStorage
     entry nothing reads is inert — so this cannot break a frontend that was correct.
 
+    The extra write is emitted on a line of its own, so a trailing `//` comment on
+    the copied line cannot silently comment it out.
+
     Deterministic, idempotent, best-effort; never raises."""
     import re as _re
     result: Dict[str, object] = {"added": []}
@@ -1694,8 +1697,6 @@ def repair_token_key_mismatch_1108(frontend_dir) -> Dict[str, object]:
                 m = pat.search(line)
                 if not m or not _tokenish.search(m.group(1)):
                     continue
-                if any(("setItem('%s'" % k) in t or ('setItem("%s"' % k) in t for k in missing):
-                    pass
                 # GUARD the appended write. The site being copied is typically inside
                 # `if (token) { ... }`; appending after the closing brace stores an
                 # undefined value when the login failed, and localStorage stringifies
@@ -1703,13 +1704,28 @@ def repair_token_key_mismatch_1108(frontend_dir) -> Dict[str, object]:
                 # app believes it holds a session. Caught by testing the repair on
                 # r54's real login page, not by reading it.
                 _val = m.group(2).strip()
-                add = "".join(" if (%s) localStorage.setItem('%s', %s);" % (_val, k, _val)
-                              for k in missing
-                              if ("setItem('%s'" % k) not in t and ('setItem("%s"' % k) not in t)
+                add = " ".join("if (%s) localStorage.setItem('%s', %s);" % (_val, k, _val)
+                               for k in missing
+                               if ("setItem('%s'" % k) not in t and ('setItem("%s"' % k) not in t)
                 if not add:
                     continue
-                nl = "\n" if out_lines[-1].endswith("\n") else ""
-                out_lines[-1] = out_lines[-1].rstrip("\n") + add + nl
+                # Emit on a line of ITS OWN rather than appending to the matched line.
+                # A trailing `// comment` on that line swallows everything appended
+                # after it, so the repair would report `added` while having written
+                # dead code — silent, and indistinguishable from success. 1 of the 286
+                # token setItem lines in the corpus carries such a comment. Its own
+                # line is also immune to a CRLF terminator. Appending after the line
+                # (rather than before) keeps the statement in the same block, so `_val`
+                # stays in scope; the only shape that would break that is a binding
+                # opened and closed on the matched line itself (`t => setItem(..., t);`),
+                # which occurs 0 times in the corpus.
+                _eol = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+                _indent = line[:len(line) - len(line.lstrip())]
+                if not _eol:
+                    # last line of the file carried no terminator; give it one so the
+                    # inserted statement really does start a new line
+                    out_lines[-1] = out_lines[-1] + "\n"
+                out_lines.append(_indent + add + _eol)
                 changed = True
             if changed:
                 p.write_text("".join(out_lines), encoding="utf-8")
