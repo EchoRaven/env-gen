@@ -404,6 +404,11 @@ def _fwval_is_source_edit_progress(app_sig, prev_app_sig, source_churn, cap) -> 
 # complied). See maybe_refresh_stale_build_checklist for the settle-then-record rule.
 _CHECKLIST_REFRESH_FLAT_CAP = 3
 _CHECKLIST_REFRESH_HARD_CAP = 10
+# #1115: how many BYTE-IDENTICAL validation failures before the settle-refresh below
+# stops treating source churn as a reason to re-run. Source moving is not evidence the
+# OUTCOME will move (same principle as #1114's mtime-vs-content). Three identical
+# failures is three chances for the churn to change something; it changed nothing.
+_IDENTICAL_FAILURE_STREAK_CAP_1115 = 3
 
 # #511: build/validation checks that a gate-passing api_smoke run PROVES succeeded — a passing
 # api_smoke means docker-compose up built every service (backend+frontend+db) and the endpoints
@@ -482,6 +487,29 @@ def _record_build_truth_from_passing_run(orch: Any) -> int:
 
 
 
+def _note_failure_detail_1115(orch: Any, failed) -> int:
+    """#1115: how many times in a row this validation has failed IDENTICALLY.
+
+    The failure SET tracked below carries only check IDs — `docker_up` dying on a
+    host kernel error and `docker_up` dying on a missing npm package are the same
+    set. The DETAIL separates "the outcome has not moved at all" from "the build got
+    further", which is what the settle-refresh in maybe_refresh_stale_build_checklist
+    needs in order to tell real convergence from churn that changes nothing.
+
+    Returns the streak (0 = the failure just changed). Never raises."""
+    try:
+        sig = repr(failed)
+        if sig == getattr(orch, "_fwval_failure_detail_sig", None):
+            streak = int(getattr(orch, "_fwval_identical_failure_streak", 0) or 0) + 1
+        else:
+            orch._fwval_failure_detail_sig = sig
+            streak = 0
+        orch._fwval_identical_failure_streak = streak
+        return streak
+    except Exception:
+        return 0
+
+
 def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
     """FIX #120 (run-38 STUCK, 2026-07-09) + #492 (netflix r64, 2026-08-04): a
     transient run_validation failure (mid visual-window rebuild churn) stamped all
@@ -552,8 +580,22 @@ def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
         except Exception:
             cur_sig = None
         _flat = used < _CHECKLIST_REFRESH_FLAT_CAP
+        # #1115: source churn only earns a re-run while the OUTCOME is still moving.
+        # smoke-notes: the frontend lane edited JSX on nearly every tick, so cur_sig
+        # changed and this granted its full 10 refreshes — each zeroing
+        # `_framework_validation_attempts` below, which in turn kept `_post_cap_1048`
+        # False so SOURCE-EDIT PROGRESS reset the stuck count for FREE (churn stayed
+        # 0/8 across ~60 validations). The two graces reset each other and neither
+        # bound ever bit: 58 of 60 docker builds failed rc=1 in ONE second with a
+        # byte-identical host-kernel seccomp error, before any app source is even
+        # COPYed into the image. A JSX edit cannot change that, and did not, 58 times.
+        # A CHANGED detail (the build got further, a different check broke) resets the
+        # streak and restores this branch immediately.
+        _dead_1115 = (getattr(orch, "_fwval_identical_failure_streak", 0)
+                      >= _IDENTICAL_FAILURE_STREAK_CAP_1115)
         _settle = (
             used < _CHECKLIST_REFRESH_HARD_CAP
+            and not _dead_1115
             and cur_sig is not None
             and cur_sig != getattr(orch, "_checklist_refresh_last_sig", None))
         if not (_flat or _settle):
@@ -1423,6 +1465,13 @@ class FrameworkValidation:
                     orch._framework_validation_attempts, str(_summ)[:200],
                     _failed or "(no checks returned)",
                 )
+                # #1115: track whether the failure is byte-identical to last time. The
+                # failure SET (below) only carries check IDs — `docker_up` failing on a
+                # host kernel error and `docker_up` failing on a missing npm package are
+                # the same set. The DETAIL separates "the outcome has not moved at all"
+                # from "the build got further", which is what the settle-refresh in
+                # maybe_refresh_stale_build_checklist needs to know.
+                _note_failure_detail_1115(orch, _failed)
                 # RESILIENCE (stuck-loop breaker): track the FAILURE SET (the set of
                 # failing check ids) across validations. A CHANGED failure set is
                 # genuine lane-driven progress (a check now passes, or a new one
