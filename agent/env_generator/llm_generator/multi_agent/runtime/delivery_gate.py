@@ -778,6 +778,25 @@ def unresolved_bug_tasks_743(hubs, output_dir=None, granted_tool_names=None) -> 
             failed.append({"id": t.get("id"), "title": str(t.get("title") or "")[:120],
                            "severity": meta.get("severity"),
                            "assignee": t.get("assignee"),
+                           # #1128: the same omission #1041 fixed one field to the left, one
+                           # level deeper. #1041 added `assignee` so a failed task could be
+                           # routed to SOMEBODY; it did not add what decides whether that
+                           # somebody may actually act. WorkHub grants the two escapes the
+                           # re-wake prescribes to different agents: `complete_task` to the
+                           # CLAIMER, `cancel_task` to the CREATOR (or the orchestrator). With
+                           # neither field collected, the dispatcher could only guess, and it
+                           # guessed `assignee` every time.
+                           #
+                           # Corpus: of 33 failed tasks carrying an assignee, 6 (18%, across 3
+                           # runs -- tiktok-web-r74, tiktok-web-r92, netflix-local-r1) name an
+                           # assignee who is neither claimer nor creator. Every one is an
+                           # `orchestrator`-created task that was never claimed, so BOTH
+                           # prescribed escapes are refused for the agent being told to take
+                           # them: "Only claimer can complete task" and "cancel denied: task
+                           # was created by 'orchestrator'". The message even opens with "task(s)
+                           # you marked FAILED" -- these were marked failed by the orchestrator.
+                           "claimed_by": t.get("claimed_by"),
+                           "created_by": t.get("created_by"),
                            "reason": str(t.get("fail_reason") or "")[:200],
                            "kind": meta.get("kind")})
         elif (meta.get("kind") == "bug" and meta.get("severity") == "P0"

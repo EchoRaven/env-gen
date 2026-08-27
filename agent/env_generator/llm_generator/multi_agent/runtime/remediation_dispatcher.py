@@ -44,6 +44,35 @@ _BE_BUILD_RE = re.compile(
     re.IGNORECASE)
 
 
+def failed_task_owner_1128(task: Any) -> str:
+    """Which agent can actually RESOLVE this failed task -- #1128.
+
+    The `unresolved_failed_tasks` re-wake prescribes exactly two escapes, and WorkHub grants
+    them to different agents:
+
+        complete_task -> `claimed_by == agent`
+        cancel_task   -> creator, or the orchestrator (unconditionally)
+
+    Routing on `assignee` alone sends the instruction to an agent both guards refuse. Returns
+    the agent to address. An older ledger record carrying neither `claimed_by` nor
+    `created_by` cannot be judged, so it keeps the pre-#1128 behaviour (the assignee).
+    """
+    t = task if isinstance(task, dict) else {}
+    assignee = str(t.get("assignee") or "").strip()
+    claimed_by = str(t.get("claimed_by") or "").strip()
+    created_by = str(t.get("created_by") or "").strip()
+    if claimed_by in ("None", "null"):
+        claimed_by = ""
+    if created_by in ("None", "null"):
+        created_by = ""
+    knowable = bool(claimed_by or created_by)
+    can_complete = bool(assignee) and assignee == claimed_by
+    can_cancel = bool(assignee) and (assignee == created_by or assignee == "orchestrator")
+    if assignee and (not knowable or can_complete or can_cancel):
+        return assignee
+    return created_by or "orchestrator"
+
+
 def docker_up_owner(detail: Any) -> str:
     """'frontend'/'backend' when the build-failure tail names exactly one
     side's toolchain; 'verifier' (the diagnose-first route) otherwise."""
@@ -1709,11 +1738,26 @@ class RemediationDispatcher:
                         # identically. r179 re-woke the debugger 10x for one such task.
                         _fwown = {str(c.get("id")): c
                                   for c in (_b743.get("framework_owned_failed") or [])}
+                        # #1128: ROUTE BY AUTHORITY, NOT BY LABEL. The message below
+                        # prescribes exactly two escapes -- COMPLETE it or CANCEL it -- and
+                        # WorkHub grants them to different agents: complete_task requires
+                        # `claimed_by == agent`, cancel_task requires creator-or-orchestrator.
+                        # An assignee who is neither is being told to do two things the
+                        # authorization guards will both refuse, and 18% of the corpus's
+                        # failed-with-assignee tasks are exactly that (see the collector).
+                        # Those go to the orchestrator, which created them and -- since #1127
+                        # made `failed` cancellable -- can now actually clear them.
                         _by_assignee = {}
                         for _t in (_b743.get("failed") or []):
-                            _a = str((_t or {}).get("assignee") or "").strip()
-                            if _a:
-                                _by_assignee.setdefault(_a, []).append(_t)
+                            _t = _t or {}
+                            _a = str(_t.get("assignee") or "").strip()
+                            _owner = failed_task_owner_1128(_t)
+                            if _owner != _a:
+                                # Nobody else can move it: the assignee is neither claimer nor
+                                # creator, so both prescribed escapes would be refused.
+                                _t = dict(_t)
+                                _t["_powerless_assignee_1128"] = _a or "<unassigned>"
+                            _by_assignee.setdefault(_owner, []).append(_t)
                         for _a, _ts in _by_assignee.items():
                             _lines = []
                             for _t in _ts[:6]:
@@ -1734,6 +1778,17 @@ class RemediationDispatcher:
                                         "underlying defect is the framework's to fix, and "
                                         "cancelling is what unblocks the cut."
                                         % _fwown[_tid].get("marker"))
+                                if _t.get("_powerless_assignee_1128"):
+                                    # #1128: it is not this agent's own abandoned work.
+                                    _note += (
+                                        " ⚠ ROUTED TO YOU (#1128): this task is assigned to "
+                                        "`%s`, but it was never claimed, so that agent can "
+                                        "neither complete it (not the claimer) nor cancel it "
+                                        "(not the creator) — both guards refuse. You created "
+                                        "it, so YOU are the only agent who can resolve it: "
+                                        "cancel it if it no longer holds, or re-create it as a "
+                                        "fresh pending task someone can claim."
+                                        % _t.get("_powerless_assignee_1128"))
                                 _lines.append("%s: %s%s" % (_tid, _why[:300], _note))
                             _wmsg = _create_message(
                                 source_agent_id="orchestrator", target_agent_id=_a,

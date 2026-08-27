@@ -476,7 +476,49 @@ class WorkHub:
         task = self.stores.tasks.get(task_id)
         if not task:
             return {"error": f"Task not found: {task_id}"}
-        if task.get("status") in {"completed", "failed", "cancelled"}:
+        # #1127: FAILED IS NOT A RESOLUTION -- IT WAS A DEAD END WITH NO EXIT.
+        #
+        # `unresolved_failed_tasks` blocks the delivery cut on any task left in `failed`
+        # (delivery_gate.py, "if _bugs743.get('failed_count')"), and that check's own comment
+        # tells the lane how to clear it:
+        #
+        #     "Clearing it is cheap and in the lane's hands: complete the task, or cancel it
+        #      if it was wrong. That is the same escape any structural blocker already has."
+        #
+        # #1041 built a whole re-wake path on the strength of that sentence. Neither escape
+        # existed. All three doors out of `failed` were shut:
+        #
+        #     cancel_task  -> this very line: "Cannot cancel task in terminal state: failed"
+        #     complete_task-> "Only claimer can complete task" (claimed_by is None)
+        #     claim_task   -> "Task is not pending"  (so it can never be re-claimed either)
+        #
+        # `fail_task` does NOT clear `claimed_by`, so a task that was CLAIMED and then failed
+        # keeps one exit -- its claimer may still complete it. The task that was failed
+        # WITHOUT ever being claimed has none at all, and is an unconditional, unremediable
+        # delivery blocker for the rest of the run.
+        #
+        # Measured over the corpus (68 runs carrying a workhub task ledger): 11 runs (16%) end
+        # with a failed task, and 4 of them (5%) hold 7 tasks in exactly that zero-exit shape.
+        # The live case is netflix-local-r1, aborted after ~147 minutes on one task --
+        # `P0 backend: fix custom_routes release_year undefined column 500s`, claimed_by None,
+        # created_by orchestrator -- whose own fail_reason says the defect no longer holds
+        # ("Resolved as stale/terminal validation blocker rather than active backend defect").
+        # 153 of its 173 tasks completed. The orchestrator's last moves were
+        # cancel -> fail -> rewrite the reason, over and over: it was spinning against a door
+        # that does not open, and the run mentions that one task id 495 times.
+        #
+        # Allowing failed -> cancelled cannot reopen the false-COMPLETION hole that #1050 and
+        # the "complete denied: impl task" guard exist to close: `cancelled` is not
+        # `completed`, it asserts no evidence and no code truth, and NO delivery check treats
+        # it as a blocker (`cancelled` appears in delivery_gate.py only inside two census
+        # comments). It is the honest record of "attempted, did not work, and we have decided
+        # it should not be done".
+        #
+        # `completed` and `cancelled` stay refused -- those are already resolved, neither
+        # blocks the cut, and re-cancelling them would only rewrite history. The authorization
+        # guard below is untouched: still creator-or-orchestrator only, still reason-required,
+        # so the 2026-06-10 bulk-cancel case stays closed.
+        if task.get("status") in {"completed", "cancelled"}:
             return {"error": f"Cannot cancel task in terminal state: {task.get('status')}"}
         # AUTHORIZATION (2026-06-10): only the task's creator or the
         # orchestrator may CANCEL. Live instagram run: backend bulk-cancelled

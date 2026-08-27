@@ -73,6 +73,54 @@ _TOKEN_JS = "() => localStorage.getItem('access_token') || localStorage.getItem(
 # A URL still on an auth route means the flow did not get the user into the app.
 _AUTH_ROUTE_SEGS = ("/login", "/signup", "/signin", "/register")
 
+# #1126: is a way to LOG IN still on screen? Cheap corroboration for the landing check
+# below -- no extra navigation, read off the page already in front of us.
+_LOGIN_AFFORDANCE_JS = """() => {
+  const vis = (el) => {
+    try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
+    catch (e) { return false; }
+  };
+  try {
+    for (const el of document.querySelectorAll('input[type=password]')) {
+      if (vis(el)) return true;
+    }
+    const want = /^(sign ?in|log ?in|sign ?up)$/i;
+    for (const el of document.querySelectorAll('a,button,[role=button]')) {
+      if (vis(el) && want.test((el.textContent || '').trim())) return true;
+    }
+  } catch (e) { return false; }
+  return false;
+}"""
+
+
+def _landed_in_the_app_1126(path: str, entry_path: str, login_affordance: bool) -> bool:
+    """#1126: did the login take the user INTO the app, or merely off the login page?
+
+    The step is named "auth flow stores a token + navigates into the app" and the check
+    behind it was `navigated = not any(seg in path for seg in _AUTH_ROUTE_SEGS)` -- it asks
+    only whether the URL stopped being an auth route. Landing on the site root satisfies
+    that, and for a product whose root is a logged-OUT marketing page it is the failure it
+    was meant to catch: netflix-local-r1 shipped `LoginPage.jsx` doing
+    `window.location.href = '/'` against `App.jsx` routing `/` to `<LandingPage />`, so a
+    correct credential round trip -- token stored, /auth/login 200 -- dropped the user back
+    on the signed-out page with `Sign In` still in the header. The walk passed it. It was
+    found by a HUMAN opening the app, which is precisely what this walk exists to avoid.
+
+    Conservative by construction: a false "auth broken" is worse than a missed one here
+    (#504 and r81 both record a working app being re-wired because this harness cried wolf),
+    so it takes TWO signals, not one. A login affordance still on screen is not enough --
+    a closing modal, a footer link, an onboarding CTA could all show one. It must ALSO be
+    true that we did not really go anywhere: the destination is the site root, or the very
+    page we entered from. An app that lands a signed-in user on `/` and renders their feed
+    there has no login affordance left, and passes.
+    """
+    dest = (path or "/").rstrip("/") or "/"
+    entry = (entry_path or "").rstrip("/") or "/"
+    if not login_affordance:
+        return True
+    return not (dest == "/" or dest == entry)
+
+
 
 def _api_register(api_base: str, creds: Mapping[str, str]) -> bool:
     """Best-effort: ensure the test-user account EXISTS via the backend auth API so the
@@ -563,9 +611,22 @@ async def run_browser_test_user(
                     url = page.url
                     path = url.split("?", 1)[0]
                     navigated = not any(seg in path for seg in _AUTH_ROUTE_SEGS)
-                    ok_auth = bool(token) and navigated
+                    # #1126: "navigated" only means the URL stopped being an auth route.
+                    # Best-effort: a probe that throws must not fail a working login.
+                    try:
+                        _affordance = bool(await page.evaluate(_LOGIN_AFFORDANCE_JS))
+                    except Exception:
+                        _affordance = False
+                    landed = _landed_in_the_app_1126(path, "/login", _affordance)
+                    ok_auth = bool(token) and navigated and landed
                     if ok_auth:
                         _auth_note = ""
+                    elif token and navigated and not landed:
+                        # #1126: credentials were fine -- the POST-LOGIN DESTINATION is wrong.
+                        _auth_note = (
+                            f"login SUCCEEDED (token stored) but landed on {path!r}, which "
+                            "still shows a way to sign in — the user is back on the signed-out "
+                            "page. Redirect to a route that requires auth, not to '/'.")
                     elif not _auth_status:
                         _auth_note = (f"submit sent NO /auth request (token={bool(token)} "
                                       f"url={url}) — the form is not wired to the API")

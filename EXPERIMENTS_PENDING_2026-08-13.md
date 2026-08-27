@@ -20493,3 +20493,119 @@ cannot be used to refute a claim about it.
 
 Both of r174's are now diagnosed to root and fixed. Neither was an app defect: one was a false
 claim nobody could check, the other a remediation that could not name what to re-check.
+
+## 1126 — the walk checks that login WORKS, never where it LANDS  ★ FIXED 2026-08-27
+
+SHIPPED: `_landed_in_the_app_1126` in `test_user_runner.py`, wired into `ok_auth`.
+Deliberately takes TWO signals, not one (#504 and r81 both record a working app being
+re-wired because this harness cried wolf): a login affordance still visible on the
+post-login page AND a destination that is the site root or the entry route. An app
+that lands a signed-in user on `/` and renders their feed there has no affordance
+left, and still passes. Verified against the real artifact: netflix's `LandingPage`
+renders a visible `Sign In`, so the predicate fires on the actual defect.
+Test: `tests/test_1126_where_the_login_actually_landed.py` (8 cases).
+
+Found by the user clicking through the netflix-local-r1 artifact by hand, not by any
+automated check — mine included.
+
+Observed: `POST /auth/login` → 200, token written to localStorage, browser navigates.
+All three succeed. But `LoginPage.jsx:27` sends the user to `/`, and `App.jsx:281` maps
+`/` to `<LandingPage/>` — the UNAUTHENTICATED marketing page, "Ready to watch? Enter
+your email to create or restart your membership", with a Sign In button still in the
+header. The real post-login home is `/browse`, behind `<Protected>`. So a successful
+login returns the user to the signed-out front door.
+
+Why nothing caught it: `test_user_runner` drives the login form only to answer "is the
+form wired" — `_drive_auth_form` returns a token and sets `auth_ok`. Every page is then
+reached by `_safe_goto(base_url + route)`, i.e. navigated to DIRECTLY. The destination
+the login flow itself produces is never read, so no assertion can fail on it. The
+harness already has `login_wall` (a page stuck behind auth); this is its mirror — landed
+outside auth — and it has no check at all. #612's own note in that file names the pair
+"no token, no navigation": navigation is observed and never asserted.
+
+Cheap to close: `_drive_auth_form` already leaves `page.url` in hand. After a successful
+form drive, assert the landing URL is not the unauthenticated entry route, and report the
+observation (not a guess at the cause — #612's lesson) when it is.
+
+Do NOT infer the fix is "always redirect to /browse": the right destination is app-shaped
+(a profile picker, a browse page, a dashboard). The check is "did login leave the user
+somewhere that requires auth", not a hardcoded path.
+
+## 1127 — `failed` was a terminal state with no exit  ★ FIXED 2026-08-27
+
+`unresolved_failed_tasks` blocks the delivery cut on any task left in `failed`, and the
+check's own comment tells the lane how to clear it: *"complete the task, or cancel it if it
+was wrong. That is the same escape any structural blocker already has."* #1041 built a whole
+re-wake path on the strength of that sentence. **Neither escape existed.** All three doors
+out of `failed` were shut:
+
+    cancel_task   -> "Cannot cancel task in terminal state: failed"   (force=True does NOT
+                     bypass it -- the state check sits above the force logic, so not even
+                     the framework's own circuit breaker could clear one)
+    complete_task -> "Only claimer can complete task"   (claimed_by is None)
+    claim_task    -> "Task is not pending"              (never re-claimable)
+
+`fail_task` does not clear `claimed_by`, so a task that was CLAIMED and then failed keeps one
+exit. A task failed WITHOUT ever being claimed has none, and is an unconditional,
+unremediable delivery blocker for the rest of the run.
+
+Measured, 68 runs carrying a workhub task ledger: 11 (16%) end holding a failed task, and
+4 of them (5%) hold 7 tasks in exactly that zero-exit shape — tiktok-web-r74, tiktok-web-r90,
+tiktok-web-r92, netflix-local-r1.
+
+The live case is decisive. netflix-local-r1 ran 147 minutes, completed 153 of its 173 tasks,
+and its delivery gate was evaluated 112 times. `unresolved_failed_tasks` failed 102 of those,
+and was the **ONLY** failing check in 40 of them, including the last three. The one task:
+`P0 backend: fix custom_routes release_year undefined column 500s`, created_by orchestrator,
+claimed_by None, whose own fail_reason says the defect no longer holds. The orchestrator's
+last moves were cancel -> fail -> rewrite the reason, over and over; the run names that one
+task id 495 times. It was one un-cancellable status away from delivering.
+
+FIX: `cancel_task` now accepts `failed`. `completed`/`cancelled` stay refused (already
+resolved, neither blocks the cut, re-cancelling only rewrites history). Cannot reopen the
+false-COMPLETION hole #1050 guards: `cancelled` is not `completed`, asserts no evidence and
+no code truth, and no delivery check treats it as a blocker (`cancelled` appears in
+delivery_gate.py only inside two census comments). The authorization guard is untouched.
+Test: `tests/test_1127_the_door_the_gate_promised.py` (5 cases, incl. the gate's
+failed_count going 1 -> 0).
+
+## 1128 — the re-wake was addressed to an agent both guards refuse  ★ FIXED 2026-08-27
+
+Sibling of #1127, found by asking "now that the door opens, can anyone reach it?".
+
+The `unresolved_failed_tasks` re-wake prescribes two escapes — COMPLETE it or CANCEL it —
+and WorkHub grants them to *different* agents: `complete_task` to the CLAIMER, `cancel_task`
+to the CREATOR (or the orchestrator). The dispatcher routed on `assignee`, which is neither
+for a task that was never claimed. The message even opens with "task(s) **you** marked
+FAILED" — in every corpus instance the orchestrator marked it failed, not the assignee.
+
+It could not have done better: the collector carried `assignee` (added by #1041 so the task
+could be routed to somebody) but neither `claimed_by` nor `created_by`, so the authority
+question was unanswerable at the point the decision is made. Exactly the shape #1041 itself
+described — "the data needed to route it was dropped at the point of collection".
+
+Measured: of 33 failed tasks in the corpus, all 33 carry an assignee, and 6 (18%, across
+tiktok-web-r74 / tiktok-web-r92 / netflix-local-r1) name an assignee who is neither claimer
+nor creator. Every one is an orchestrator-created task nobody ever claimed, so BOTH
+prescribed escapes are refused for the agent being told to take them.
+
+FIX: collector carries `claimed_by`/`created_by`; new pure `failed_task_owner_1128()` routes
+to an agent that can actually act, and the message says why it landed on them. A record
+carrying neither field (an older ledger) is unjudgeable and keeps the pre-#1128 behaviour.
+Test: `tests/test_1128_told_the_agent_who_cannot_act.py` (7 cases, incl. an end-to-end one:
+the agent the OLD code addressed is refused both escapes, the agent #1128 addresses performs
+the cancel, and the gate's blocker clears).
+
+## Method note — corpus frequency ranks HISTORY, not the present
+
+A spin measurement (identical call + identical error >= 3x in one agent log) over 965 agent
+logs found 1033 of 11698 failed tool calls (8%) spinning, and ranked
+`Request failed: <urlopen error [Errno 111] Connection refused>` first at 415 — against only
+15 for the informative variant that names the address. It looked like 96% of that path was
+unfixed. `_request_failure_reason_677` landed 2026-08-13: every run through 2026-07-29 shows
+only the bare form (1000), and both runs after the fix show only the enriched form (23). The
+top finding was zero. Same for `Document not found: kickoff` (81), `No such file or
+directory: 'docker'` (43) and `HTTP Error: 422` (100) — all absent from post-fix runs.
+
+Frequency measures how LONG a defect lived, not whether it is alive. Time-slice every corpus
+ranking (`git log -S` for the fix date, run-dir mtime for the split) before believing it.
