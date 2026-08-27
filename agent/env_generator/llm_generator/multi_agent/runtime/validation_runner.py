@@ -136,8 +136,41 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
     # failure that later self-heals vanishes silently. Bounded so a noisy build cannot
     # flood the log.
     if cp.returncode != 0:
-        _tail = ((cp.stderr or "") + ("\n" + (cp.stdout or "") if not (cp.stderr or "").strip() else ""))
-        _tail = _tail.strip()[-600:]
+        # #1129: #972 got the transcript EMITTED; it still does not carry the error.
+        # Two independent losses, both in the two lines this replaces:
+        #
+        #   1. stdout was appended ONLY when stderr was blank. It never is: compose v2
+        #      writes its progress ("Service frontend  Building") and the classic builder
+        #      writes "The command '/bin/sh -c npm run build' returned a non-zero code: 1"
+        #      to STDERR, while the compile error itself -- the Vite/rollup/tsc diagnostic
+        #      naming the file and the symbol -- goes to STDOUT. So the one stream that
+        #      held the answer was discarded in full, every time.
+        #   2. what survived was then sliced to the LAST 600 chars, which for a build is
+        #      the epilogue banner. Same truncate-before-extract shape as #1119, and
+        #      `_salient_error` was written for exactly this case: its own docstring cites
+        #      a frontend "'LoginPage' has already been declared" sitting at the TOP of a
+        #      long transcript. It scans every line for error markers and falls back to
+        #      the tail when none match, so it is never empty.
+        #
+        # Measured over the two runs on the current code (24 build-failure reports, all
+        # from netflix-local-r1 and smoke-notes): 24 of 24 carried no error line at all --
+        # only "returned a non-zero code: 1". The cost is not merely a thin log. In
+        # netflix-local-r1 the frontend build failed at 13:29 (builds recovered at 13:36,
+        # and the stack cycled hard afterwards -- 80 compose `up`, 102 `down`), and every
+        # one of the visual judge's three remaining attempts found nothing serving on
+        # :8080: "capture unavailable -- 0 of 13 screen(s) photographed" at 13:44, 14:10
+        # and 15:03. Its verdict stayed frozen at the 13:21 score for the last 1h42m of the
+        # run. Whether those probes lost a race with a down window or the frontend was
+        # genuinely broken is exactly what the deleted transcript would have said.
+        _streams = [t for t in ((cp.stdout or ""), (cp.stderr or "")) if t.strip()]
+        _full = "\n".join(_streams).strip()
+        try:
+            from .framework_validation import _salient_error as _se_1129
+            _tail = _se_1129(_full, cap=900) or _full[-600:]
+        except Exception:
+            # best-effort: an extractor that raises must not silence the report it exists
+            # to enrich.
+            _tail = _full[-600:]
         _LOG.warning("compose spawn: %s %s FAILED rc=%s — transcript tail:\n%s",
                      _bin, _verb, cp.returncode, _tail or "(the command produced no output)")
     return cp

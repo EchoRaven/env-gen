@@ -143,6 +143,29 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
                 "`docker` for EVERY run, so names collide across runs); disambiguated to %s by "
                 "config_files label %s.", rt, service, len(ids), matched[0][:12], want)
             return matched[0]
+        # #1130: ZERO candidates and TWO-OR-MORE are opposite problems with opposite
+        # remedies, and #962 gave them one message written for the second. "matched N
+        # containers and the label could not single one out ... Stop the stale stack, or
+        # give the run its own compose project name" tells a reader to DISAMBIGUATE. When
+        # `matched` is empty there is nothing to disambiguate: every running container with
+        # that name belongs to some OTHER run, and this run's own container is simply not
+        # up. Stopping a stale stack changes nothing; starting this one is the whole fix.
+        #
+        # Measured across both runs built by the current code: 97 of 97 of these were the
+        # zero case (netflix-local-r1 66, smoke-notes 31) — the ambiguous case the wording
+        # was written for has not occurred once. It is not cosmetic: this returns "" and
+        # `seed_audit` then reports `#1039 live seed row-count DID NOT RUN (no database
+        # container resolved)`, so the seed audit was blind for entire runs while the log
+        # blamed a name collision.
+        if not matched:
+            log.error(
+                "#962/#1130 `%s ps --filter name=%s` found %d running container(s) with that "
+                "name and NONE of them belongs to this run (no config_files label matches %s). "
+                "This run's `%s` container is NOT RUNNING — the other %d belong to other runs "
+                "and are irrelevant. Returning NO id rather than guessing. Start this run's "
+                "stack (compose up) before probing it; stopping the other stacks would not "
+                "help.", rt, service, len(ids), want, service, len(ids))
+            return ""
         log.error(
             "#962 `%s ps --filter name=%s` matched %d containers and the config_files label could "
             "not single one out (%d candidates for %s). Returning NO id rather than guessing — a "

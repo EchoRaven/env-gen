@@ -20609,3 +20609,62 @@ directory: 'docker'` (43) and `HTTP Error: 422` (100) — all absent from post-f
 
 Frequency measures how LONG a defect lived, not whether it is alive. Time-slice every corpus
 ranking (`git log -S` for the fix date, run-dir mtime for the split) before believing it.
+
+## 1129 — the build failure whose reason was deleted before it was written down  ★ FIXED 2026-08-27
+
+#972 made a failing `docker compose` spawn EMIT its transcript. It still did not carry the
+reason, for two independent losses in the same two lines:
+
+    _tail = stderr + ("\n" + stdout if stderr is blank else "")   # stderr is NEVER blank
+    _tail = _tail.strip()[-600:]                                  # ...so slice the epilogue
+
+compose v2 writes progress ("Service frontend  Building") to STDERR, and the classic builder
+writes "The command '/bin/sh -c npm run build' returned a non-zero code: 1" there too. The
+compile diagnostic that names the file and the symbol — `[vite:esbuild] Transform failed`,
+rollup, tsc — goes to STDOUT, which was appended only when stderr was empty. So the one
+stream holding the answer was discarded in full, every time; what survived was then sliced to
+its last 600 characters, which for a build is the closing banner. Same truncate-before-extract
+shape as #1119, and `_salient_error` already exists for exactly this: its own docstring cites
+a frontend "'LoginPage' has already been declared" sitting at the TOP of a long transcript.
+
+Measured on the two runs built by the current code — 24 build-failure reports, all from
+netflix-local-r1 and smoke-notes: **24 of 24 carried no error line at all.**
+
+The cost is not a thin log. netflix-local-r1's frontend build failed at 13:29; builds recovered
+at 13:36 and the stack cycled hard afterwards (80 compose `up`, 102 `down`). Every one of the
+visual judge's three remaining attempts nonetheless found nothing serving on :8080 — "capture
+unavailable — 0 of 13 screen(s) photographed" at 13:44, 14:10, 15:03 — and its verdict stayed
+frozen at the 13:21 score for the last 1h42m of the run. Whether those probes lost a race with
+a down window or the frontend was genuinely broken is exactly what the deleted transcript
+would have said. (An earlier draft of this note asserted the stack was never brought up again;
+that was a bad grep — it matched only `up -d`, and the run spawns plain `up`.)
+
+FIX: use BOTH streams, run `_salient_error` over the whole transcript, fall back to the tail.
+Test: `tests/test_1129_the_build_error_that_was_never_written_down.py` (5 cases, including the
+premise test that recomputes the old formula on the same input and shows it loses the error).
+
+## 1130 — "could not single one out" described a case that never happened  ★ FIXED 2026-08-27
+
+`container_id` resolves N containers matching a service NAME down to the one whose
+`config_files` label is this run's compose file. #962 correctly made it refuse to guess, and
+gave both failure outcomes ONE message: *"matched N containers and the config_files label
+could not single one out (M candidates for <file>) … Stop the stale stack, or give the run its
+own compose project name."*
+
+Right for M >= 2. Wrong for M == 0, where there is nothing to disambiguate: every running
+container with that name belongs to some OTHER run and this run's own container is simply not
+up. Stopping a stale stack changes nothing; starting this one is the whole fix.
+
+Measured across both runs on the current code: **97 of 97 were the M == 0 case**
+(netflix-local-r1 66, smoke-notes 31). The ambiguous case the wording was written for has not
+occurred once. Live host state that produces it: five `*-database-1` containers from unrelated
+projects (rydr, paymo, seed3val, mm4val, igpreview) and none from the run.
+
+Not cosmetic — it returns "", and `seed_audit` then logs `#1039 live seed row-count DID NOT
+RUN (no database container resolved)`. The seed audit was blind for entire runs while the log
+blamed a name collision. smoke-notes SUCCEEDED carrying 31 of these.
+
+FIX: split the branch; M == 0 now says this run's container is not running and that the others
+are irrelevant. The M >= 2 wording is untouched.
+Test: `tests/test_1130_none_of_them_is_yours.py` (4 cases; the ambiguous and single-match
+paths are pinned so the #962 behaviour cannot drift).
