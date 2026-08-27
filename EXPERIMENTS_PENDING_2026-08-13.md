@@ -20707,3 +20707,38 @@ Method note: all three were found by sweeping the two runs built by the CURRENT 
 (netflix-local-r1, smoke-notes) for the highest-frequency warnings, then reading the code that
 emits each. Ranking the whole corpus by frequency put a defect fixed on 2026-08-13 in first
 place — see the method note above.
+
+## 1131 — "Loading…" was shipped to the screen as those nine characters  ★ FIXED 2026-08-27
+
+`frontend_scaffold.py` emits JSX. Six of its templates wrote the loading label as JSX TEXT:
+
+    <p className="mt-6 text-sm opacity-50">Loading…</p>
+
+A `\uXXXX` escape is decoded by JavaScript inside a STRING LITERAL. As JSX text it is not a
+string literal — it is character data, and React renders it verbatim. Every generated app that
+reached a loading state displayed the literal `Loading…` to the user.
+
+Not inferred — read off the delivered artifacts and photographed: 9 generated `.jsx` files
+across netflix-local-r1 (built by the current code), tiktok-web-r81 and tiktok-web-r35 carry
+it, and the visual-fidelity capture of netflix's `/games` page has it on screen, under the
+`Games` heading. That page scored **0.03** against its reference — the lowest of the ten
+judged screens — and this is part of what the camera saw. A scan of every generated `.jsx`
+found no other literal `\uXXXX` in JSX text: this escape is the whole population.
+
+A SEVENTH site is CORRECT and is deliberately untouched:
+
+    <p className="text-lg">{loading ? 'Loading…' : 'Titles you…'}</p>
+
+there the escape sits inside a single-quoted JS string, which JS decodes to a real ellipsis.
+The rule is about POSITION, not about the escape. Found while checking the first patch: an
+assertion that expected 2 sites reported 6, and a looser grep had shown 3 — the exact-match
+assertion is what stopped a partial fix from shipping.
+
+FIX: the six JSX-text sites emit the character `…` (the file already contains `…—–“”→▶` and
+many other non-ASCII characters, so this is consistent with the surrounding code). The
+JS-string site is unchanged.
+Test: `tests/test_1131_the_ellipsis_the_user_could_read.py` — encodes the POSITION rule as a
+general invariant (blank out quoted JS strings, then look for `\uXXXX` in JSX character data)
+rather than pinning six line numbers, so a new template cannot reintroduce it. Includes a
+detector test on the original broken line and one on the correct JS-string line, because a
+detector that cannot fail on the real defect pins nothing.

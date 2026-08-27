@@ -7427,7 +7427,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             "              </div>\n"
             "            ))}\n"
             "          </div>\n"
-            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading\\u2026</p> : null}\n"
+            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading…</p> : null}\n"
             "        </section>\n")
     elif rep_cards and not _force_media:
         _xs = set()
@@ -7464,7 +7464,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             "              </div>\n"
             "            ))}\n"
             "          </div>\n"
-            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading\\u2026</p> : null}\n"
+            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading…</p> : null}\n"
             "        </section>\n")
     elif media_comp is not None:
         try:
@@ -7489,7 +7489,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 "            : (_imgOf(cur)\n"
                 "              ? <img src={_imgOf(cur)} alt={_titleOf(cur)} className=\"absolute inset-0 h-full w-full object-cover\" />\n"
                 "              : <div className=\"px-8 text-center text-lg font-medium opacity-80\">{_titleOf(cur)}</div>))\n"
-                "            : (_refImg(0) ? <img src={_refImg(0)} alt=\"\" className=\"absolute inset-0 h-full w-full object-cover\" /> : (error ? <p className=\"text-sm opacity-70\">{error}</p> : <p className=\"text-sm opacity-50\">Loading\\u2026</p>))}\n")
+                "            : (_refImg(0) ? <img src={_refImg(0)} alt=\"\" className=\"absolute inset-0 h-full w-full object-cover\" /> : (error ? <p className=\"text-sm opacity-70\">{error}</p> : <p className=\"text-sm opacity-50\">Loading…</p>))}\n")
         else:
             _media_body = (
                 "          {cur ? (_videoOf(cur)\n"
@@ -7504,7 +7504,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 # section → the judge saw 'empty black'. Fall back to a full-bleed staged
                 # backdrop (a paused-frame look) so the surface renders as a real media
                 # player, not a blank screen.
-                "            : (_refImg(0) ? <img src={_refImg(0)} alt=\"\" className=\"absolute inset-0 h-full w-full object-cover\" /> : (error ? <p className=\"text-sm opacity-70\">{error}</p> : <p className=\"text-sm opacity-50\">Loading\\u2026</p>))}\n")
+                "            : (_refImg(0) ? <img src={_refImg(0)} alt=\"\" className=\"absolute inset-0 h-full w-full object-cover\" /> : (error ? <p className=\"text-sm opacity-70\">{error}</p> : <p className=\"text-sm opacity-50\">Loading…</p>))}\n")
         # #544: player top chrome uses REAL sized icons (chevron-left Back, flag
         # Report) instead of the tiny ambiguous glyphs; non-player media keeps the
         # glyph chrome (byte-identical). aria-labels preserved for both.
@@ -7599,7 +7599,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             + _heading_row_858(label, control_jsx)
           + "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
             + body +
-            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading\\u2026</p> : null}\n"
+            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading…</p> : null}\n"
             "        </section>\n")
 
     # #429: a DETAIL / OVERLAY screen (e.g. title_detail, rate_dialog) — the
@@ -7695,7 +7695,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             # genres live in a JOIN table and the detail payload carries no genre field at all, so
             # this block still renders nothing. See EXPERIMENTS_PENDING item 109.
             "          {_genresOf(cur).length ? <div className=\"mt-4 flex flex-wrap gap-2\">{_genresOf(cur).map((g, gi) => <span key={gi} className=\"rounded-full border px-3 py-0.5 text-xs\" style={{ borderColor: 'rgba(255,255,255,0.3)' }}>{g}</span>)}</div> : null}\n"
-            "          {rows.length === 0 && !error ? <p className=\"text-sm opacity-50\">Loading\\u2026</p> : null}\n"
+            "          {rows.length === 0 && !error ? <p className=\"text-sm opacity-50\">Loading…</p> : null}\n"
             "        </div>\n"
             # #448: detail/overlay screens whose design has an Episodes component
             # (title_detail, title_episodes) get a data-driven episode list — their
