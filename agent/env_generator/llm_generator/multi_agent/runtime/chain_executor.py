@@ -3404,11 +3404,43 @@ def run_chains(base: str, project_dir: Any,
     if _unmounted952:
         _LOGC952 = __import__("logging").getLogger(__name__)
         for _u in _unmounted952[:5]:
+            # #1132: REPORT THE EVIDENCE, NAME THE CAUSES -- do not assert one.
+            #
+            # This comparison is source-vs-LIVE and that is all it is: the source declares the
+            # route, the served openapi does not have it. "This is not 'not built yet' -- find
+            # the include_router that was never added" asserts a cause the comparison cannot
+            # see, and sends the lane after one of three possibilities:
+            #
+            #   1. genuinely never mounted (the case #952 was written for, r154);
+            #   2. mounted and then DROPPED by main.py's own custom-routes duplicate filter,
+            #      which logs its refusal to `logging.getLogger("custom_routes")` -- INSIDE the
+            #      container, where neither a lane nor the generation log ever sees it. #1102
+            #      measured 98 legitimate lane routes dropped across 57 runs and its own note
+            #      is that the drop was "invisible for hours";
+            #   3. the running container PREDATES the handler. Nothing here measures build
+            #      currency, and "not built yet" is exactly what that looks like.
+            #
+            # netflix-local-r1 is why: 112 of these over 1h38m, all for ONE handler
+            # (DELETE /api/v1/tenants/{tenant_id}, 63x + 49x for two ids). That handler entered
+            # custom_routes.py at 13:29:13, a build succeeded at 13:36:22, and the first warning
+            # landed at 13:36:36 -- fourteen seconds later, with the stack cycling hard
+            # throughout (80 compose `up`, 102 `down`). main.py declares no tenants DELETE, so
+            # the duplicate filter had no reason to drop it, and which of (1)(2)(3) it was is
+            # not resolvable from the record. What is certain is that a lane was told 112 times
+            # to look for a missing include_router -- the fix for only one of the three.
+            #
+            # Same lesson as #1114 (a fresh mtime is not a changed file) and #1023 (attach
+            # evidence, never a verdict).
             _LOGC952.warning(
                 "#952 DECLARED BUT UNMOUNTED: a chain calls %s %s and %s declares it as %s, but "
-                "the running app serves no such route. This is not 'not built yet' — the handler "
-                "exists and cannot be reached; find the include_router that was never added. The "
-                "chain survives (correctly, #927), so nothing else says this.",
+                "the running app serves no such route. The chain survives (correctly, #927), so "
+                "nothing else says this. THREE causes look identical from here and their fixes "
+                "differ (#1132): (1) the router was never included — add the include_router; "
+                "(2) main.py's custom-routes duplicate filter DROPPED it, and it logs that "
+                "refusal to the `custom_routes` logger INSIDE the container — read the backend "
+                "container log first; (3) the running container predates this handler — rebuild "
+                "AND recreate the stack, then re-check. Nothing here measures build currency, so "
+                "(3) cannot be ruled out from this line.",
                 _u["method"], _u["path"], _u["declared_in"], _u["declared_as"])
     return {"source": "verifier", "chains": results, "broken": broken,
             "framework_defects": framework_defects, "total_steps": total,

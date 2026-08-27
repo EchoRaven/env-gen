@@ -20742,3 +20742,38 @@ general invariant (blank out quoted JS strings, then look for `\uXXXX` in JSX ch
 rather than pinning six line numbers, so a new template cannot reintroduce it. Includes a
 detector test on the original broken line and one on the correct JS-string line, because a
 detector that cannot fail on the real defect pins nothing.
+
+## 1132 — one of three fixes, asserted as the only one  ★ FIXED 2026-08-27
+
+`_declared_but_unmounted_952` compares BACKEND SOURCE against the LIVE openapi, and that
+comparison establishes exactly one thing: the source declares a route, the running app does
+not serve it. #952 then asserted a cause — *"This is not 'not built yet' — the handler exists
+and cannot be reached; find the include_router that was never added."* Three situations are
+indistinguishable from where it stands, and their fixes differ:
+
+1. **never mounted** — the r154 case #952 was written for. Fix: add the `include_router`.
+2. **dropped by main.py's own custom-routes duplicate filter** — which logs its refusal to
+   `logging.getLogger("custom_routes")`, i.e. INSIDE the container, where neither a lane nor
+   the generation log ever sees it. #1102 measured 98 legitimate lane routes dropped across 57
+   runs and its own note is that the drop was *"invisible for hours"*. Fix: read the backend
+   container log.
+3. **the running container predates the handler** — nothing in the function measures build
+   currency, and "not built yet" is precisely what that looks like. Fix: rebuild AND recreate.
+
+netflix-local-r1: **112 of these over 1h38m, all for ONE handler** —
+`DELETE /api/v1/tenants/{tenant_id}`, 63x and 49x for two ids. Timeline from the run's own git
+history and log: the handler entered `custom_routes.py` at **13:29:13**, a build succeeded at
+**13:36:22**, and the first warning landed at **13:36:36** — fourteen seconds later — with the
+stack cycling hard throughout (80 compose `up`, 102 `down`). `main.py` declares no tenants
+DELETE, so the duplicate filter had no reason to drop it; which of (1)(2)(3) it actually was is
+NOT resolvable from the record. What is certain is that a lane was told 112 times to apply the
+fix for (1).
+
+FIX: the report stands (the finding is real and #927's chain-survives behaviour is untouched);
+the message now names all three causes, says where cause (2)'s evidence is hiding, and states
+plainly that it does not measure build currency so (3) cannot be ruled out from that line.
+Same lesson as #1114 (a fresh mtime is not a changed file) and #1023 (attach evidence, never a
+verdict).
+Test: `tests/test_1132_three_causes_that_look_identical.py` (6 cases — two of them build a
+real project tree and assert the DETECTION is unchanged, because a wording fix must not
+quietly weaken the finding).
