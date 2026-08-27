@@ -336,6 +336,9 @@ class RunHub:
                                         "attempts": hc_result.attempts,
                                         "elapsed_s": hc_result.elapsed_s,
                                         "last_error": hc_result.last_error,
+                                        # #1124: the address, so a refusal can be told
+                                        # apart from probing the wrong port.
+                                        "url": getattr(hc_result, "url", "") or "",
                                     })
             if not hc_result.healthy:
                 self._emit("run_completed", run_id, {"reason": "healthcheck_failed"},

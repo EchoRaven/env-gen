@@ -45,6 +45,19 @@ class HealthcheckResult:
     attempts: int = 0
     elapsed_s: float = 0.0
     last_error: str = ""
+    # #1124: WHERE it probed. "Connection refused" without an address is half a
+    # diagnosis -- refused on which port? The probe holds the url the whole time and
+    # dropped it at the moment of capture, exactly as #1000 (four lines below) describes
+    # for the 405 `Allow:` header.
+    #
+    # Live cost, measured on the gpt-5.5 run this was found in: 8 runs, 5 aborted, every
+    # one "healthy=False, attempts=31, [Errno 111] Connection refused" and no address.
+    # The run also had THREE different candidate ports in play at once -- the run's own
+    # API=3000, the test-user squad's api=3011, and the container-internal 8081 -- so
+    # the record could not distinguish "the app never came up" from "we probed the wrong
+    # port", which are opposite defects with opposite fixes. Reconstructing it from a
+    # log-line count coincidence took six tool calls and was still not conclusive.
+    url: str = ""
 
 
 def _default_runner(args: List[str], cwd: Optional[str] = None, timeout: float = 120.0) -> ComposeResult:
@@ -139,14 +152,14 @@ class HealthcheckProbe:
                 if isinstance(code, int) and 200 <= code < 400:
                     return HealthcheckResult(
                         healthy=True, status_code=code, attempts=attempts,
-                        elapsed_s=self._clock() - start)
+                        elapsed_s=self._clock() - start, url=self.url)
             except Exception as e:
                 last_error = str(e)
             elapsed = self._clock() - start
             if elapsed >= self.timeout_s:
                 return HealthcheckResult(
                     healthy=False, status_code=last_status, attempts=attempts,
-                    elapsed_s=elapsed, last_error=last_error)
+                    elapsed_s=elapsed, last_error=last_error, url=self.url)
             self._sleep(self.poll_interval_s)
 
 
