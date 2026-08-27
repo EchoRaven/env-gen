@@ -20668,3 +20668,42 @@ FIX: split the branch; M == 0 now says this run's container is not running and t
 are irrelevant. The M >= 2 wording is untouched.
 Test: `tests/test_1130_none_of_them_is_yours.py` (4 cases; the ambiguous and single-match
 paths are pinned so the #962 behaviour cannot drift).
+
+## Observation — three validation terms that have NEVER once fired in the whole corpus
+
+Not defects, and deliberately not switched on here: each is already reported honestly by the
+code that owns it, with its own corpus measurement in the message. Recorded together because
+the pattern only shows up when you line them up — the pipeline carries validation surface that
+looks present and has never carried information.
+
+1. `registryhub_register_table_consumer` — **0 calls in 172 of 172 runs**. `coverage_audit`
+   therefore cannot tell "dead table" from "never registered" and reports NO dead tables
+   rather than all of them (#1023b). Fired 522 times across the two current-era runs. The
+   tool is not un-granted: it is in `tool_bundles.py` (twice), `hub_tool_surface.py` and
+   `agents_config.yaml`. Nothing instructs any agent to call it, and nothing derives
+   consumers deterministically from the projected routes — which is what "by construction"
+   would suggest, and is also what would risk false "dead table" verdicts blocking good runs.
+
+2. Tables with status `'defined'` — the ONLY status `seed_audit` inspects. Corpus: **1729
+   implemented vs 16 defined; 145 of 147 runs have none.** Its second path (count live rows)
+   needs a resolvable database container, and that is the #1130 case — 97 of 97 zero-candidate
+   resolutions across the two current-era runs. Both paths closed: the seed audit examined 0
+   tables and counted 0 live rows in BOTH runs (201 "EXAMINED 0" warnings, 102 "row-count DID
+   NOT RUN"). smoke-notes SUCCEEDED and delivered with this audit never once having run — the
+   artifact was independently verified by hand and was fine, but the check that was supposed
+   to prove it never executed. #1023d already prevents the dangerous half: `to_dict` carries
+   `examined`/`candidates`/`measured` so a consumer reading `is_clean` can see nothing was
+   read.
+
+3. `tasks/tasks.yaml` — **0 of 172 runs have ever had one**, so the validation matrix is
+   always skipped and `api_smoke_pass`/`ui_smoke_pass` carry the whole term.
+
+Each is a decision, not a bug: making 1 or 2 live means introducing a verdict that can block
+delivery, which is exactly the class of change this file records for a decision rather than
+switching on (see the `unresolved_failed_tasks` note at #743, and #1023's "evidence, never a
+verdict"). Worth deciding deliberately rather than continuing to carry three inert terms.
+
+Method note: all three were found by sweeping the two runs built by the CURRENT code
+(netflix-local-r1, smoke-notes) for the highest-frequency warnings, then reading the code that
+emits each. Ranking the whole corpus by frequency put a defect fixed on 2026-08-13 in first
+place — see the method note above.
