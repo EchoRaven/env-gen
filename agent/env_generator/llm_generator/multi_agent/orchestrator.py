@@ -2466,6 +2466,41 @@ class Orchestrator:
                                     coordination_tick_dispatch_timeout_s)
                                 continue
                     if orchestrator_lane._project_delivered_event.is_set():
+                        # #1125: MARK THE MILESTONE THAT JUST DELIVERED. The only writer of
+                        # the "delivered" status was the loop head, which marks every
+                        # PREVIOUS milestone when the NEXT one starts -- so the last
+                        # milestone of every run, and the only milestone of a
+                        # single-milestone run, could never be marked at all.
+                        #
+                        # Measured over the corpus: 69 runs carry a milestones.json and 68
+                        # of them (99%) end with their final milestone NOT marked delivered
+                        # -- 48 still "pending", 20 still "active", 1 delivered. A
+                        # four-milestone success reads ['delivered','delivered',
+                        # 'delivered','active']: the shape falls straight out of the
+                        # mark-the-previous rule.
+                        #
+                        # It is not cosmetic. deliverability.py judges on
+                        # `status != "delivered"`, and any reader of the ledger -- including
+                        # a later analysis asking "which runs delivered?" -- gets the wrong
+                        # answer for the milestone that actually shipped the product. This
+                        # run is the live case: Status: SUCCESS, main() returned 0, the
+                        # artifact builds/boots/authenticates/serves seeded data, and its
+                        # one milestone still says "pending".
+                        #
+                        # Idempotent because it always writes the SAME value; note that
+                        # mark_status does NOT consult _FROZEN_STATUSES (that set guards
+                        # structural edits -- update/remove/re-scope -- and the seed
+                        # merge), so this must not rely on the store to refuse a
+                        # downgrade. It never writes anything but "delivered", and the
+                        # loop head only ever marks a DIFFERENT index active. Best-effort:
+                        # the ledger must never be able to fail the run it is recording.
+                        try:
+                            self.hubs.milestones.mark_status(
+                                _m_idx, "delivered", agent="orchestrator")
+                        except Exception as _ms_err:
+                            self._logger.warning(
+                                "Milestone %s delivered but the ledger was not updated: %s",
+                                _m_idx, _ms_err)
                         self._write_run_budget(caps, loop_start, time.time() - loop_start, tick_count, "delivered")
                     # PROPOSAL #5 — a STUCK abort raises its OWN root-surfacing message
                     # (NOT the budget message, which would misleadingly tell the dev to raise
