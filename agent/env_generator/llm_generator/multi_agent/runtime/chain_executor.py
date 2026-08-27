@@ -640,12 +640,34 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             errors.append(f"step[{i}] is not an object")
             continue
         st = dict(st)
-        if not st.get("path") and st.get("endpoint"):
+        # #1122: the split was gated on `not st.get("path")`, so a step that gave BOTH
+        # the registered endpoint AND a concrete path never had its METHOD derived and
+        # was rejected for "lacks method+path" with the method sitting in plain sight:
+        #
+        #     {"endpoint": "POST /api/users/{}/follow",
+        #      "path": "/api/users/${user_b_id}/follow", "auth": "token_a"}
+        #
+        # That is the MORE precise authoring, not a mistake -- `endpoint` names the
+        # contract entry as RegistryHub holds it (and as #742 requires elsewhere:
+        # '<METHOD> <path>'), `path` is the concrete URL with its substitutions. The
+        # framework punished the agent for using its own canonical format.
+        #
+        # Replaying the 94 rejected registrations in the corpus through this function:
+        # 284 steps are genuinely rejected and 272 of them -- 96%, across 26 runs -- are
+        # this and nothing else. The other 12 supply neither endpoint nor path and are
+        # still refused.
+        #
+        # Deriving the method never overrides one the step states (setdefault), and the
+        # path is still taken from the endpoint ONLY when the step did not give one, so
+        # a concrete path with its ${var} substitutions always wins over the contract
+        # entry's `{}` placeholders.
+        if st.get("endpoint"):
             parts = str(st["endpoint"]).strip().split(None, 1)
             if len(parts) == 2:
                 st.setdefault("method", parts[0])
-                st["path"] = parts[1]
-            elif parts and parts[0].startswith("/"):
+                if not st.get("path"):
+                    st["path"] = parts[1]
+            elif parts and parts[0].startswith("/") and not st.get("path"):
                 st["path"] = parts[0]
         if not st.get("body") and isinstance(st.get("payload"), Mapping):
             st["body"] = st["payload"]
