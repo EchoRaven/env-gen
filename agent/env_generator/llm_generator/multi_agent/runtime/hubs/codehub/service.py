@@ -1288,17 +1288,55 @@ class CodeHub:
         return self.git.show(commit_hash, path)
 
     def get_file_content(self, pr_id: str, path: str) -> dict:
-        """Return file content from the PR head commit."""
+        """Return file content from the PR head commit, or from a plain git ref.
+
+        #1123: this tool could not succeed. It demands a PR id, and the framework runs
+        commit-only -- every one of the 85 corpus runs has an EMPTY pull_requests store
+        (the single key in each is `_meta`), which `tool_bundles` already states outright:
+        "impossible in commit-only mode". Measured across the corpus: 83 calls in 31 runs
+        (36%), and ZERO succeeded. 76 of the 80 recorded rejections passed 'main', the
+        rest 'agent/verifier' and 'agent/backend' -- branch names, every one, which is
+        the only thing there is to name when no PR exists.
+
+        A branch is exactly what `git show <ref>:<path>` takes, and the PR path below
+        already goes through it with a commit sha. So a ref that resolves is served: the
+        agents were asking a well-formed question the tool refused to hear.
+
+        The PR path is unchanged and still tried first, so a real PR id keeps resolving
+        to its head commit rather than to a branch that happens to share its name.
+        """
         pr = self.stores.pull_requests.get(pr_id)
-        if not pr:
-            return {"error": f"PR not found: {pr_id}"}
-        head = pr.get("head")
-        if not head:
-            return {"error": "PR has no head commit recorded"}
+        if pr:
+            head = pr.get("head")
+            if not head:
+                return {"error": "PR has no head commit recorded"}
+            try:
+                return {"content": self.git.show(head, path), "commit": head}
+            except Exception as exc:
+                return {"error": str(exc)}
         try:
-            return {"content": self.git.show(head, path), "commit": head}
-        except Exception as exc:
-            return {"error": str(exc)}
+            content = self.git.show(pr_id, path)
+        except Exception:
+            content = None
+        if content is not None:
+            return {"content": content, "commit": pr_id, "resolved_as": "ref"}
+        return {"error": self._no_such_pr_or_ref_1123(pr_id, path)}
+
+    def _no_such_pr_or_ref_1123(self, pr_id: str, path: str) -> str:
+        """Say which of the two lookups failed, and name what would work instead."""
+        try:
+            prs = [p for p in (self.stores.pull_requests.value() or {}).values()
+                   if isinstance(p, dict) and p.get("id")]
+        except Exception:
+            prs = []
+        if prs:
+            ids = ", ".join(str(p.get("id")) for p in prs[:8])
+            return (f"PR not found: {pr_id} — and it is not a git ref this repo can "
+                    f"resolve either. Open PRs: {ids}.")
+        return (f"PR not found: {pr_id} — this run has NO pull requests at all "
+                "(commit-only mode), so no pr_id can ever resolve. It was tried as a "
+                "git ref too and did not resolve; check the branch name, or read the "
+                "working tree with read(file_path=...).")
 
     def list_prs(
         self,
