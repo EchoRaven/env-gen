@@ -3426,6 +3426,56 @@ class Orchestrator:
         from .runtime.heal_pipeline import HealPipeline
         HealPipeline(self).commit_framework_delivery()
 
+    def _credit_framework_deferral_1133(self, deferred_s, source: str) -> None:
+        """#1133: give back the time the FRAMEWORK spent deferring delivery.
+
+        `_fwdeliver_first_decline_ts` is stamped at the first gate decline and never reset,
+        by design (see the CONVERGENCE backstop below: an oscillating run must not be able
+        to keep resetting it). But the clock it starts is read as LANE non-convergence --
+        the abort says "the lanes are active but not converging on a clean gate" -- and the
+        framework's own delivery deferrals run on the same clock. They are not lane time.
+
+        netflix-local-r2 is the case. Its delivery gate went FULLY GREEN five times
+        (17:34:02, 18:21:04, 18:31:28, 18:40:06, 18:49:20) and the run was still aborted at
+        18:53:18 for "has not gone green in 79min". The single `deliver_project` call of the
+        whole run (18:32:49, right after a green gate) came back "deferred by the hard final
+        VISUAL fidelity gate: frontend is still inside the bounded remediation window". That
+        window ran 3964s -- 66 minutes, 88% of the 4500s budget -- and the tick it released
+        (18:46:25) the test-user squad deferred delivery once more. The abort fired seven
+        minutes later. The lanes had converged; the framework was waiting on itself.
+
+        So a run whose visual gate defers is aborted for non-convergence almost regardless
+        of what the lanes do, and the abort message names the wrong culprit.
+
+        CAPPED at one full budget in total, deliberately: a deferral that never ends must
+        not convert a 75-minute fail-fast into a 6-hour wall-clock grind -- that backstop is
+        the reason this clock exists. Credit is granted ONCE per release, at the release
+        site, mirroring #228's `_fwdeliver_first_decline_ts += _grace`.
+        """
+        try:
+            _d = float(deferred_s or 0.0)
+        except Exception:
+            return
+        if _d <= 0.0 or not getattr(self, "_fwdeliver_first_decline_ts", 0.0):
+            return
+        _used = float(getattr(self, "_fwdeliver_deferral_credit_1133", 0.0))
+        _room = float(FWVAL_NO_DELIVER_ABORT_S) - _used
+        if _room <= 0.0:
+            self._logger.warning(
+                "#1133 deferral credit CAP reached (%ds already credited) — not crediting "
+                "%s's %ds; the fail-fast backstop stays armed.",
+                int(_used), source, int(_d))
+            return
+        _grant = min(_d, _room)
+        self._fwdeliver_deferral_credit_1133 = _used + _grant
+        self._fwdeliver_first_decline_ts += _grant
+        self._logger.warning(
+            "#1133 crediting %ds of %s deferral back to the no-convergence clock "
+            "(total credited %ds of %ds allowed) — that time was the FRAMEWORK waiting, "
+            "not the lanes failing to converge.",
+            int(_grant), source, int(self._fwdeliver_deferral_credit_1133),
+            int(FWVAL_NO_DELIVER_ABORT_S))
+
     async def _maybe_framework_deliver(self) -> None:
         """Deterministically DELIVER when the delivery gate is fully clear.
 
@@ -3649,12 +3699,21 @@ class Orchestrator:
                             self._fwdeliver_grace_count, sorted(_cur_failed_set),
                             int(_grace))
                     else:
+                        # #1133: say what is actually measured. "has not gone green"
+                        # was false in netflix-local-r2 — that gate went FULLY green five
+                        # times and the run was still aborted with this sentence. What the
+                        # clock measures is that DELIVERY never succeeded, which is a
+                        # different claim, and the deferral credit below says how much of
+                        # the window the framework itself spent deferring.
+                        _cred1133 = int(getattr(self, "_fwdeliver_deferral_credit_1133", 0.0))
                         self._fwval_abort_reason = (
-                            f"delivery gate has not gone green in "
-                            f"{int((_now2 - self._fwdeliver_first_decline_ts)/60)}min since the "
-                            f"contract built (now failing {_failed}) — the lanes are active but "
-                            "not converging on a clean gate; failing fast instead of livelocking "
-                            "to wall-clock.")
+                            f"delivery never SUCCEEDED in "
+                            f"{int((_now2 - self._fwdeliver_first_decline_ts)/60)}min of lane time "
+                            f"since the contract built (now failing {_failed}"
+                            + (f"; {_cred1133}s of framework deferral already credited back "
+                               "under #1133" if _cred1133 else "")
+                            + ") — the lanes are active but not converging on a clean gate; "
+                            "failing fast instead of livelocking to wall-clock.")
                         self._logger.error("DELIVERY-GATE NO-CONVERGENCE ABORT: %s", self._fwval_abort_reason)
                 # PROPOSAL #49 (user): route each lane-owned gate-level failed_check back
                 # to its owner for repair (guarded per-milestone) — and log any uncovered
@@ -3816,6 +3875,8 @@ class Orchestrator:
                         "— delivering with the framework fallback for: %s",
                         int(_now - self._pages_gate_deferred_since),
                         getattr(self, "_pages_gate_attempts", 0), ", ".join(_unbuilt))
+                    # #1133: that wait was the framework's, not the lanes' — give it back.
+                    self._credit_framework_deferral_1133(_now - self._pages_gate_deferred_since, "page-build")
             # VISUAL-FIDELITY BLOCKING (2026-06-11, user goal: UI must be
             # near-indistinguishable from the references). Releases used to cut
             # the moment the functional gate cleared, so the lane NEVER paused
@@ -3889,6 +3950,8 @@ class Orchestrator:
                         _fra["avg_stable_rounds"],
                         int(_now - self._vf_gate.deferred_since),
                         self._vf_gate.total_judgments)
+                    # #1133: that wait was the framework's, not the lanes' — give it back.
+                    self._credit_framework_deferral_1133(_now - self._vf_gate.deferred_since, "visual (fast-release)")
                 else:
                     # FIX #102 (run-20, live): the escape often fires SECONDS after the lane
                     # lands its fix — run-20's release verdict came from a 23:45 capture of
@@ -3917,6 +3980,8 @@ class Orchestrator:
                             self._vf_gate.total_judgments,
                             (" / PLATEAU %s no-improvement rounds — #138 early escape"
                              % _plat) if _plat >= VISUAL_PLATEAU_ROUNDS else "")
+                        # #1133: that wait was the framework's, not the lanes' — give it back.
+                        self._credit_framework_deferral_1133(_now - self._vf_gate.deferred_since, "visual (escape)")
             # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
             # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
             # booted it; the visual gate just shot it), so spawn the three modality

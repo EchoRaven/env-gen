@@ -20777,3 +20777,65 @@ verdict).
 Test: `tests/test_1132_three_causes_that_look_identical.py` (6 cases — two of them build a
 real project tree and assert the DETECTION is unchanged, because a wording fix must not
 quietly weaken the finding).
+
+## 1133 — the no-convergence abort billed the LANES for time the FRAMEWORK spent waiting  ★ FIXED 2026-08-27
+
+**netflix-local-r2 was killed four minutes after its delivery gate went fully green.**
+
+`_fwdeliver_first_decline_ts` is stamped at the first gate decline and deliberately never
+reset (an oscillating run must not be able to keep resetting it — that is the whole point of
+the CONVERGENCE backstop). But the clock it starts is read as LANE non-convergence, and the
+abort says so: *"the lanes are active but not converging on a clean gate"*. The framework's
+OWN delivery deferrals run on that same clock.
+
+The r2 record, end to end:
+
+    17:34:02  delivery gate FULLY GREEN  (1st of 5)
+    18:32:49  the run's ONLY deliver_project call, right after a green gate → returned
+              "deferred by the hard final VISUAL fidelity gate: frontend is still inside
+               the bounded remediation window for capture_webpage/zoom_compare"
+    18:46:25  "Visual fidelity deferral RELEASED (escape after 3964s deferred)"
+    18:46:25  "TEST-USER SQUAD launched in BACKGROUND — deferring this delivery tick"
+    18:49:20  delivery gate FULLY GREEN  (5th)
+    18:53:18  FAIL-FAST: "delivery gate has not gone green in 79min"
+
+Two things are wrong there. **3964s is 66 minutes — 88% of the 4500s (75min) budget — spent
+inside the framework's own visual remediation window**, charged to the lanes. And the abort
+sentence is simply false: that gate went fully green five times (17:34:02, 18:21:04,
+18:31:28, 18:40:06, 18:49:20). Any run whose visual gate defers is aborted for
+"non-convergence" almost regardless of what the lanes do.
+
+FIX: `_credit_framework_deferral_1133()` advances the deadline by the deferral's own length,
+granted ONCE at each release site (page-build, visual fast-release, visual escape) — the same
+`_fwdeliver_first_decline_ts += _grace` shape #228 already uses. **CAPPED at one full budget
+in total**, deliberately: a deferral that never ends must not convert a 75-minute fail-fast
+into a 6-hour wall-clock grind, which is the reason the clock exists at all. Past the cap it
+logs the refusal and the backstop stays armed. The abort message now says what it actually
+measures ("delivery never SUCCEEDED in Nmin of lane time") and reports how much deferral was
+credited.
+
+Test: `tests/test_1133_the_clock_that_charged_the_lanes_for_framework_waiting.py` (10 cases).
+Half of them are on the CAP rather than the credit — the failure mode this fix could
+introduce (livelock to wall-clock) is worse than the one it removes, so it is pinned harder:
+accumulation, single-oversized clamp, refusal logging, no-credit-before-the-clock-starts, and
+junk spans. Two more assert it is actually WIRED (a helper nobody calls credits nothing) and
+that the false "has not gone green" sentence is gone.
+
+### What r2 also showed (not defects — checked and cleared)
+- Visual fidelity **improved from 0.2144 (r1) to 0.54 / 0.5564-live** against a 0.65 bar,
+  judged 3 times on real captures with rising scores. r1's 0.21 was measured on a build whose
+  `seed_data.json` was still the empty `{}` stub; r2's is on real data.
+- #1127/#1128 verified LIVE: four tasks went `failed → cancelled`, one of them the
+  `claimed_by=None` shape that locked r1 for 147 minutes — cleared in 87 seconds.
+  `unresolved_failed_tasks` went from "102 of 112 evaluations, never cleared" (r1) to
+  "13 of 45, repeatedly cleared" (r2).
+- The chain that finally blocked the gate (`continue-watching_page`) is MIS-AUTHORED, not a
+  product defect: its step 6 posts a `profile_id` belonging to a different user and the app
+  correctly answers `{"detail":"profile_id does not belong to the caller"}`. Two sibling
+  chains over the same endpoints pass. Routing (verifier), the task body (carries the broken
+  step AND the app's own reason, #798) and the app were all correct.
+- `PUT /api/profiles/{}` was rejected 45 times in r2 and 34 in r1 — it looks like a contract
+  gap, but the design input has no profile-editing anywhere (the only reference asset is an
+  `account_menu.jpg` dropdown). The verifier is inventing coverage; the framework's refusal is
+  right. Auto-forwarding those rejections to the backend "to register the endpoint" would add
+  product surface nobody asked for, on the say-so of a hallucinating lane.
