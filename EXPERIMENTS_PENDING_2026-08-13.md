@@ -20997,3 +20997,42 @@ probe (does `POST /auth/register` mint a token) with no browser and no destinati
 predicate correctly does not apply there. Two browser-side checks exist; both now carry it.
 Test: `tests/test_1126b_the_second_copy_of_the_login_check.py` (7 cases, incl. one asserting
 the predicate is not re-defined here).
+
+## 1137 — the FRAMEWORK wrote the bad redirect that three runs shipped  ★ FIXED 2026-08-27
+
+`window.location.href = '/'` in `LoginPage.jsx` was never a lane bug. Both auth templates in
+`frontend_scaffold.py` emit those exact bytes:
+
+    const token = d.access_token || d.token || (d.item && (...));
+    if (token) { localStorage.setItem('access_token', token); }
+    window.location.href = '/';          ← _AUTH_PAGE_TEMPLATE and _AUTH_SPEC_TEMPLATE_540
+
+netflix r1, r2 and r3 shipped them identically at `LoginPage.jsx:26-27`, byte-for-byte this
+template. For a product whose `/` is a signed-OUT marketing page — which this same scaffold
+routes for media apps — a correct login (token minted, token stored) returns the user to the
+front door with `Sign In` still in the header.
+
+The cost was the delivery gate. r3's `validation_ui_evidence_failed` blocked **91 of 96**
+evaluations and was the ONLY failing check in its last three, with the walk reporting
+"/genres returned 200 but rendered login", "/trending returned 200 but rendered login",
+"Profiles flow attempted after signup, then /profiles loaded the login page". The pages were
+fine; the session never got anywhere. A lane even claimed mid-run that "auth flow now …
+redirects to /profiles" while the delivered file still said `'/'` — it could not win, because
+the next projection re-emitted the template.
+
+FIX: `__AUTHDEST__`, filled by `_post_auth_dest_1137(nav_routes)` — the first real nav route,
+skipping `/` and any auth route. Same rule `_profiles_page_src` already uses for its own
+post-choice hop, so it is not a new convention. Falls back to `/` — exactly today's behaviour —
+when there are no nav routes, so it is never worse than what it replaces. `nav_routes` was
+already reaching two of the three emitters; the third needed one parameter threaded from their
+common ancestor `_project_page_component`.
+
+★ The third fill site was initially MISSED: the two `_AUTH_PAGE_TEMPLATE` call sites differ
+slightly, so a single `str.replace` patched only one, and an unfilled placeholder would have
+shipped `location.href = '__AUTHDEST__'` — a hard break. Caught by counting occurrences
+(2 template uses + 3 fills = 5) rather than trusting the edit. The test pins that arithmetic.
+
+Together with #1126 (the walk asks where login LANDED) and #1126b (the second copy of that
+check), this closes the loop: the framework stops emitting the defect, and both walks would
+catch it if it returned.
+Test: `tests/test_1137_the_framework_wrote_the_bad_redirect.py` (8 cases).

@@ -2521,7 +2521,7 @@ export default function __COMP__() {
       if (!r.ok) { setError((d && (d.detail || d.error)) || ('Error ' + r.status)); return; }
       const token = d.access_token || d.token || (d.item && (d.item.access_token || d.item.token));
       if (token) { localStorage.setItem('access_token', token); }
-      window.location.href = '/';
+      window.location.href = '__AUTHDEST__';
     } catch (err) { setError(String(err)); }
   };
   return (
@@ -3294,7 +3294,7 @@ export default function __COMP__() {
       if (!r.ok) { setError((d && (d.detail || d.error)) || ('Error ' + r.status)); return; }
       const token = d.access_token || d.token || (d.item && (d.item.access_token || d.item.token));
       if (token) { localStorage.setItem('access_token', token); }
-      window.location.href = '/';
+      window.location.href = '__AUTHDEST__';
     } catch (err) { setError(String(err)); }
   };
   return (
@@ -3420,7 +3420,36 @@ def _is_login_route_546(name, page) -> bool:
             or "login" in n or "signin" in n or "login" in comp or "signin" in comp)
 
 
-def _auth_page_src_540(name, page, screen, design, pal, surf):
+def _post_auth_dest_1137(nav_routes) -> str:
+    """#1137: where a successful login should LAND.
+
+    Both auth templates hardcoded `window.location.href = '/'`. For a product whose `/` is a
+    signed-OUT marketing page — which this same scaffold routes for media apps — that returns
+    the user to the front door the moment they log in. It is not a lane bug: the bytes are
+    emitted here, and netflix r1, r2 and r3 shipped them identically
+    (`LoginPage.jsx:26-27`, byte-for-byte this template).
+
+    The cost was the delivery gate. r3's `validation_ui_evidence_failed` blocked 91 of 96
+    evaluations and was the only failing check in its last three, with the walk reporting
+    "/genres returned 200 but rendered login" — the pages were fine; the session never got
+    anywhere. #1126/#1126b make the walk SEE it; this stops emitting it.
+
+    Same rule the profiles page already uses for its own post-choice hop (`_profiles_page_src`:
+    first nav route): the first real nav destination is by construction a route the app wants a
+    signed-in user on. Falls back to `/` — exactly today's behaviour — when there are no nav
+    routes to choose from, so this is never worse than what it replaces.
+    """
+    try:
+        for _l, r in (nav_routes or []):
+            r = str(r or "").strip()
+            if r and r != "/" and not r.startswith(("/login", "/signup", "/signin", "/register")):
+                return r
+    except Exception:
+        pass
+    return "/"
+
+
+def _auth_page_src_540(name, page, screen, design, pal, surf, nav_routes=None):
     """#540: a SPEC-DRIVEN auth page (heading/subheading/button copy + a single
     email-or-mobile step when the spec declares one + help/reCAPTCHA + a measured
     surface + NEUTRAL footer links), or None when the spec has no signal (caller
@@ -3466,6 +3495,7 @@ def _auth_page_src_540(name, page, screen, design, pal, surf):
     _footer_cls = "text-white/50" if dark else "text-black/50"
     _subtxt_cls = "text-white/70" if dark else "text-black/60"
     src = (_AUTH_SPEC_TEMPLATE_540
+           .replace("__AUTHDEST__", _post_auth_dest_1137(nav_routes))
            .replace("__COMP__", name)
            .replace("__IS_REGISTER__", "true" if is_reg else "false")
            .replace("__SINGLE__", "true" if spec["single"] else "false")
@@ -6637,13 +6667,16 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         # spec-driven auth page; otherwise (no spec signal) fall through to the base
         # template — byte-identical for a spec-less auth screen.
         _surf526 = _screen_surface_bg(design, screen, pal)
-        _spec_auth = _auth_page_src_540(name, page, screen, design, pal, _surf526)
+        _spec_auth = _auth_page_src_540(name, page, screen, design, pal, _surf526,
+                                        nav_routes=nav_routes)
         if _spec_auth is not None:
             return _spec_auth
         _auth_app = _label_words_1080(name).replace("Page", "").replace(
             "Login", "").replace("Signup", "").replace("Sign Up", "").strip() or "Sign in"
         _auth_dark = _is_dark_hex(str(pal.get("bg") or "#ffffff"))
-        _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
+        _auth_src = (_AUTH_PAGE_TEMPLATE
+                     .replace("__AUTHDEST__", _post_auth_dest_1137(nav_routes))
+                     .replace("__COMP__", name)
                      .replace("__IS_REGISTER__",
                               "true" if _is_register_mode(name, page) else "false")
                      .replace("__BRAND_HEADER__",
@@ -8211,7 +8244,8 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                 try:
                     _spec_auth_545 = _auth_page_src_540(
                         name, page, _ascreen_545, design, _pal_545,
-                        _screen_surface_bg(design, _ascreen_545, _pal_545))
+                        _screen_surface_bg(design, _ascreen_545, _pal_545),
+                        nav_routes=nav_routes)
                 except Exception:
                     _spec_auth_545 = None
                 if _spec_auth_545 is not None:
@@ -8231,7 +8265,9 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
         _auth_dark = _is_dark_hex(str(_auth_pal_1058.get("bg")
                                       or _auth_pal_1058.get("background")
                                       or "#ffffff"))
-        _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
+        _auth_src = (_AUTH_PAGE_TEMPLATE
+                     .replace("__AUTHDEST__", _post_auth_dest_1137(nav_routes))
+                     .replace("__COMP__", name)
                      .replace("__IS_REGISTER__",
                               "true" if _is_register_mode(name, page) else "false")
                      # #424: brand wordmark header (reference shows it top-left)
