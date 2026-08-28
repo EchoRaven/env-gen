@@ -2795,6 +2795,13 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "missing_dirs": missing_dirs,
         "invalid_json": invalid_json,
         "failed_checks": failed_checks,
+        # #1138: how DEEP the ui-evidence failure is, not just that it exists. #228's
+        # convergence grace asks whether the failing CHECK SET shrank, and a run held only by
+        # `validation_ui_evidence_failed` has a set of size one that can never shrink — so the
+        # grace never fires while the evidence inside it converges. netflix-local-r7 aborted
+        # with 24 passing UI records and ONE failing flow, having come down 7 → 2 → 1 across
+        # the session's runs. The count is already computed here; it just never left.
+        "ui_evidence_failed_records": int(_breadth739.get("failed_records") or 0),
         # #983: {check_token: [the blocker prose it was derived from, …]} so a remediation
         # can name the instance for checks that have no bespoke branch.
         "blocker_prose": deliverability_blocker_prose,

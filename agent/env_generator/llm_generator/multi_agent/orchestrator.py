@@ -3426,6 +3426,50 @@ class Orchestrator:
         from .runtime.heal_pipeline import HealPipeline
         HealPipeline(self).commit_framework_delivery()
 
+    def _ui_depth_shrank_1138(self, gate) -> bool:
+        """#1138: did the ui-evidence hold get SHALLOWER since the last tick?
+
+        #228's convergence grace asks whether the failing CHECK SET shrank. A run held only by
+        `validation_ui_evidence_failed` has a set of size one, which can never shrink, so the
+        grace never fires while the evidence inside it converges.
+
+        netflix-local-r7 is that run: 98 of its 99 gate evaluations were that check alone, and
+        it was aborted holding 24 passing UI records and ONE failing flow. Across this
+        session's runs the failing count came down 7 (r3) -> 2 (r4) -> 1 (r5, r6, r7), and r5
+        DELIVERED from exactly this position once the lanes fixed its last one.
+
+        Fewer failing flows than last tick is precisely the "visible convergence, not
+        livelock" #228 asks for. This only feeds that existing grace, which keeps every one of
+        its own bounds — small failing set, recent shrink, a capped number of extensions — so
+        it cannot by itself postpone an abort indefinitely.
+        """
+        # ABSENCE IS NOT ZERO. A gate result without the field says "unknown", and reading
+        # it as 0 manufactures a shrink out of nothing — `prev=5, missing -> 0` would buy a
+        # grace extension on no evidence at all. Same rule as #1114 (a fresh mtime is not a
+        # changed file) and #1023 (evidence, never a verdict). Caught by this fix's own test.
+        try:
+            if not isinstance(gate, dict) or "ui_evidence_failed_records" not in gate:
+                return False
+            cur = int(gate["ui_evidence_failed_records"])
+        except Exception:
+            return False
+        prev = getattr(self, "_fwdeliver_prev_ui_failed_1138", None)
+        self._fwdeliver_prev_ui_failed_1138 = cur
+        if prev is None:
+            return False            # first observation: nothing to compare against
+        try:
+            shrank = 0 <= cur < int(prev)
+        except Exception:
+            return False
+        if shrank:
+            try:
+                self._logger.info(
+                    "#1138 ui-evidence failing flows %s -> %s — counting that as convergence "
+                    "for the no-deliver grace.", prev, cur)
+            except Exception:
+                pass
+        return shrank
+
     def _live_deferral_credit_1133c(self, now: float) -> float:
         """#1133c: seconds an UNRELEASED framework deferral has already consumed.
 
@@ -3711,6 +3755,18 @@ class Orchestrator:
                 _prev_failed_set = getattr(self, "_fwdeliver_prev_failed", None)
                 if (_prev_failed_set and _cur_failed_set
                         and _cur_failed_set < _prev_failed_set):
+                    self._fwdeliver_last_shrink_ts = _now2
+                # #1138: a failing set of size ONE cannot shrink, and that is the shape a
+                # UI-evidence hold takes — netflix-local-r7 spent 98 of its 99 gate
+                # evaluations on `validation_ui_evidence_failed` alone, so #228's grace never
+                # fired even though the evidence inside it was converging (24 passing records
+                # and ONE failing flow at the abort; across this session's runs the failing
+                # count came down 7 -> 2 -> 1, and r5 delivered from exactly this position
+                # after the lanes fixed its last one). Depth counts as progress: fewer failing
+                # flows than last tick IS the "visible convergence, not livelock" #228 asks
+                # for. It only feeds the EXISTING grace, which keeps all of its own bounds
+                # (small failing set, recent shrink, bounded number of extensions).
+                if self._ui_depth_shrank_1138(gate):
                     self._fwdeliver_last_shrink_ts = _now2
                 if _cur_failed_set:
                     self._fwdeliver_prev_failed = _cur_failed_set

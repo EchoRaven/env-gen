@@ -21135,3 +21135,37 @@ Shares #1133's ONE-BUDGET cap: released credits plus the live one can never exce
 budget, so a deferral that never ends still cannot turn a 75-minute fail-fast into a
 wall-clock grind. Half the ten tests are on that cap and on the no-double-count rule.
 Test: `tests/test_1133c_the_deferral_that_never_released.py` (10 cases).
+
+## netflix-local-r7 — default budget again, and the shape it died in
+
+    05:47:09 → 08:04:51 (137 min); #1133 released-credit 0 times (#1133c credited ~8 min live)
+    99 gate evaluations, 0 fully green
+    98/99 blocked on validation_ui_evidence_failed ALONE
+    final evidence: 24 passing UI records, 1 FAILED (open_title_detail_and_play)
+    08:04 ABORT "delivery never SUCCEEDED in 83min of lane time"; milestone pending
+
+The UI evidence has been converging run over run — failing flows 7 (r3) → 2 (r4) → 1 (r5, r6,
+r7) — and r5 DELIVERED from exactly this position once its last flow was fixed. r7 was aborted
+one flow short, holding 24 passing records.
+
+## 1138 — a failing set of size ONE cannot shrink, so the grace never fired  ★ FIXED 2026-08-28
+
+`convergence_grace` (#228) grants extra time when the failing set is small and RECENTLY SHRANK
+— "visible convergence, not livelock". The orchestrator records a shrink only when the failing
+CHECK SET is a strict subset of the previous tick's. A run held by
+`validation_ui_evidence_failed` alone has a set of size one; it can never be a strict subset of
+itself, so no shrink is ever recorded and no grace is ever granted — however much the evidence
+INSIDE that check converges. r7 spent 98 of 99 evaluations in exactly that state.
+
+FIX: the gate now exports `ui_evidence_failed_records` (already computed, it just never left),
+and `_ui_depth_shrank_1138` treats a DECREASE in it as the shrink signal. It only feeds the
+existing grace, which keeps every one of its own bounds — small failing set, recent shrink,
+capped number of extensions — so it cannot postpone an abort on its own.
+
+★ Its own test caught a real bug in the first implementation: a gate result MISSING the field
+was read as 0, so `prev=5 → missing` manufactured a shrink and would have bought grace on no
+evidence. Absence is not zero — the same rule as #1114 (a fresh mtime is not a changed file)
+and #1023 (evidence, never a verdict). Now a missing field returns False and does not move the
+baseline.
+Test: `tests/test_1138_a_set_of_one_cannot_shrink.py` (13 cases; 4 of them assert #228's own
+bounds are untouched).
