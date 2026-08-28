@@ -293,10 +293,37 @@ def _service_host_port(compose_file: Path, cwd: Path, service: str) -> Optional[
         cid = _compose(compose_file, "ps", "-q", service, cwd=cwd, timeout=30).stdout.strip()
         cid = cid.splitlines()[0].strip() if cid else ""
         if not cid:
-            _r = subprocess.run(
-                [_rt936(), "ps", "-q", "--filter", f"name={service}"],
-                capture_output=True, text=True, timeout=30).stdout.strip().splitlines()
-            cid = _r[0].strip() if _r else ""
+            # #1136: the name-filter fallback used to take the FIRST container matching
+            # `name=<service>` ANYWHERE on the host, with no check that it is ours, and then
+            # report ITS published port as this app's address. `compose ps -q` returns empty
+            # whenever this run's stack is down, so the fallback runs often — and on a host
+            # with other sandboxes it resolves a stranger.
+            #
+            # It did. Replaying `gather_squad_inputs` against netflix-local-r2's own artifact
+            # returns api_base=http://localhost:3011 and ui_base=http://localhost:8096 —
+            # while that run's compose declares 3000:8081 and 8080:3000. :3011 is the
+            # rydr/Uber sandbox (`/openapi.json` → {"info":{"title":"uber"}}) and :8096 is
+            # another project's frontend. So the FRAMEWORK, not a hallucinating agent, is what
+            # pointed r2's test-user squad at someone else's product; it filed all six of its
+            # API steps as this app's 404s (api_passed=0, verdict PARTIAL) while this run's own
+            # chains were getting 201/200 on the same paths. In all three runs on the current
+            # code the app's real port is the LEAST-probed one.
+            #
+            # #962 fixed exactly this shape for `container_id()` — match the
+            # `com.docker.compose.project.config_files` label, and return nothing rather than
+            # guess ("a probe that answers about another run's container reports confidently
+            # about the wrong app"). That guard never reached this second, older lookup. Reuse
+            # the guarded resolver instead of keeping a second copy: #665's lesson is that the
+            # copy drifts from the original, and this is that drift, three tickets later.
+            #
+            # Returning "" here is not a loss: the deterministic `_declared_host_port_from_
+            # compose` fallback below reads the run's OWN compose file, which is the right
+            # answer and cannot belong to anyone else.
+            try:
+                from .container_runtime import container_id as _cid1136
+                cid = _cid1136(compose_file, service) or ""
+            except Exception:
+                cid = ""
         if cid:
             ports = subprocess.run([_rt936(), "port", cid], capture_output=True, text=True, timeout=30).stdout
             # 0.0.0.0:P / 127.0.0.1:P / [::]:P / :::P (unbracketed IPv6)

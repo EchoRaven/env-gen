@@ -2305,6 +2305,14 @@ def foreign_target_notice_1134(url: str) -> str:
     other half: something answered, and it was not ours. A liveness probe cannot tell them
     apart.
 
+    ★ WHERE THOSE PORTS CAME FROM (#1136, found by replaying this fix's own allowlist against
+    a real artifact): NOT from agents guessing. `_service_host_port`'s name-filter fallback
+    took the first container named `backend` ANYWHERE on the host and reported its published
+    port, so `gather_squad_inputs` on netflix-local-r2 returned api_base=:3011 and
+    ui_base=:8096 — the framework itself handed everyone the Uber sandbox. #1136 fixes that
+    source; this notice remains the backstop for probes the resolver never chose, and its
+    allowlist is only correct BECAUSE #1136 makes the resolution correct.
+
     Deliberately a NOTICE, not a refusal. The allowlist is best-effort -- it is populated
     where the framework resolves the app's published ports, and a path it does not cover
     would turn a refusal into a false block, which this codebase has paid for repeatedly

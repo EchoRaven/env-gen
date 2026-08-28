@@ -20915,3 +20915,49 @@ Test: `tests/test_1135_the_chain_next_door_already_passes.py` (11 cases). It rec
 registry and asserts the run-ending chain is told about its sibling; the rest pin the silence
 (no sibling, self is never a sibling, a FAILING chain over the same endpoint is not evidence)
 and the canonicaliser.
+
+## 1136 — the port resolver read ANOTHER PROJECT'S container and called it this app's address  ★ FIXED 2026-08-27
+
+Found by replaying #1134's own allowlist against a real artifact — the fix I had just shipped
+whitelisted the WRONG ports, which is how the real source came out.
+
+`_service_host_port` asks `compose ps -q <service>` first. That returns EMPTY whenever this
+run's stack is down — which is often — and the fallback took the FIRST container matching
+`ps -q --filter name=<service>` **anywhere on the host**, with no check that it belongs to
+this run, then reported ITS published port as this app's address.
+
+Replaying `gather_squad_inputs` against netflix-local-r2's own artifact:
+
+    before #1136:  api_base = http://localhost:3011      ui_base = http://localhost:8096
+    after  #1136:  api_base = http://localhost:3000      ui_base = http://localhost:8080
+    r2's compose:  "3000:8081"  "8080:3000"
+
+`:3011` is the rydr/Uber sandbox on this machine (`/openapi.json` → `{"info":{"title":"uber"}}`)
+and `:8096` is another project's frontend. **So the FRAMEWORK — not a hallucinating agent — is
+what pointed r2's test-user squad at a different product.** That squad filed all six of its API
+steps as this app's 404 "missing endpoints" (`api_passed=0`, verdict PARTIAL) while this run's
+own chains were getting 201/200 on the same paths. It also explains the pattern behind #1134:
+in all three runs on the current code the app's REAL port is the least-probed one — everyone
+was told the wrong address.
+
+#962 fixed exactly this shape for `container_id()` (match the compose `config_files` label,
+return nothing rather than guess: *"a probe that answers about another run's container reports
+confidently about the wrong app"*). The guard never reached this second, older lookup — the
+drift #665 warns about, three tickets later.
+
+FIX: reuse the guarded `container_runtime.container_id()` instead of keeping a second,
+unguarded copy. Returning "" is not a loss: the deterministic
+`_declared_host_port_from_compose` fallback reads the run's OWN compose file, which is right by
+construction and cannot belong to anyone else. Verified on r2's artifact (table above), where
+#1130's message now prints the truth — *"found 3 running container(s) with that name and NONE
+of them belongs to this run … this run's `backend` container is NOT RUNNING"*.
+
+Three of today's fixes compose here: #1130 says what is actually wrong → #1136 stops the
+unowned lookup → #1134's allowlist becomes correct (3000,8080), flagging :3011 and staying
+silent on :3000.
+Test: `tests/test_1136_the_port_belonged_to_another_project.py` (5 cases, including one that
+feeds the resolver a stranger publishing :3011 and asserts it is never returned, and two that
+keep a legitimately-running OWN container working).
+
+★ #1134's docstring carried the wrong attribution until this was found (it implied the agents
+chose those ports) and has been corrected in place with a pointer here.
