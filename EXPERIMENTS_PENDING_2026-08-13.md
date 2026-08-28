@@ -21679,3 +21679,36 @@ constructs a NEW Workspace to model another agent, still passes unchanged.
 Guards that caught me this session, all after I believed the change was correct: #943 fixed
 source windows (six times), #558's contract dict, #1120's non-ASCII digits, #613's isolation
 contract, and the no-`get_event_loop`-in-tests ratchet. They are more reliable than my review.
+
+## 1141b — the batching policy reached one lane out of six  ★ FIXED 2026-08-28
+
+r10's full run moved batching 1.34 → 1.40 tools/turn, against r7's pre-existing 1.41 — i.e.
+#1141 did essentially nothing, while a 30-minute window had shown 2.38 and I reported it as
+working. Root cause, found by asking whether the model ever SAW the instruction:
+
+    13 agent prompts, 11 of them override `action` with lane-specific text
+    carrying the new policy: 2 (both frontend files)
+
+#1141 put the policy in the OVERRIDE DEFAULT —
+`step_contract_overrides.get('action', <policy>)` — so any lane that overrides `action`
+replaced it wholesale. backend, verifier, orchestrator and debugger never saw it. The
+30-minute window looked good because frontend dominates early.
+
+FIX: the shared macro APPENDS the policy after whatever the lane's override says, so both
+paths carry it:
+
+    no override:   "Execute the step. Issue INDEPENDENT tool calls together in ONE step…"
+    with override: "Register endpoints and write custom_routes. Issue INDEPENDENT tool calls…"
+
+The two frontend inline copies are removed — the new invariant is ONE owner
+(`agent_definition_v3.j2`) reaching every lane, pinned as
+`assertEqual([f.name for f in rendered], ["agent_definition_v3.j2"])`.
+
+★ My earlier test asserted ">= 3 templates reference the policy" and now FAILS — correctly:
+it encoded the broken design (three files each holding it as an override default). Updated
+rather than worked around.
+
+★ The pattern this session keeps producing: #1141's isolated checks all passed — the policy
+function returned the right text, the macro rendered it, a bare Jinja environment still
+produced the fallback — and five of six lanes never received it. Local correctness does not
+imply delivery; only the full run measured it.

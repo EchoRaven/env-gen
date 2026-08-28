@@ -86,10 +86,15 @@ class ThePromptsNoLongerHardcodeIt(unittest.TestCase):
                 hits.append(f.name)
         self.assertEqual(hits, [], f"still hardcoded in: {hits}")
 
-    def test_the_three_step_contracts_render_the_policy(self):
+    def test_exactly_one_template_owns_the_policy(self):
+        """#1141b: one owner, appended by the shared macro, so every lane gets it.
+
+        The first shape put the policy in three files as the OVERRIDE DEFAULT, which meant
+        the 11 prompts that override `action` never saw it — one lane out of six.
+        """
         rendered = [f for f in PROMPTS.rglob("*.j2")
                     if "tool_batch_policy" in f.read_text(encoding="utf-8", errors="replace")]
-        self.assertGreaterEqual(len(rendered), 3, [f.name for f in rendered])
+        self.assertEqual([f.name for f in rendered], ["agent_definition_v3.j2"])
 
     def test_every_use_carries_a_fallback(self):
         """A bare Environment (tests/vision_tools build their own) leaves the global
@@ -114,3 +119,36 @@ class ThePromptsNoLongerHardcodeIt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnOverrideMustNotSwallowThePolicy(unittest.TestCase):
+    """#1141b: 11 of 13 agent prompts override `action` with lane-specific text.
+
+    While the policy was the override's DEFAULT, only the two frontend files ever saw it —
+    backend, verifier, orchestrator and debugger replaced it wholesale. That is why r10's
+    full-run batching moved 1.34 -> 1.40 while a 30-minute window had looked like 2.38: the
+    instruction reached one lane out of six.
+    """
+
+    def _render(self, overrides):
+        from jinja2 import Environment, FileSystemLoader
+        env = Environment(loader=FileSystemLoader(str(PROMPTS)),
+                          trim_blocks=True, lstrip_blocks=True)
+        return env.from_string(
+            "{% import 'agents/shared/agent_definition_v3.j2' as d %}"
+            "{{ d.agent_prompt_v3(id='x', name='X', mandate='m',"
+            " step_contract_overrides=OV) }}".replace("OV", repr(overrides))).render()
+
+    def test_a_lane_override_still_carries_the_batching_rule(self):
+        out = self._render({"action": "Register endpoints and write custom_routes."})
+        assert "Register endpoints" in out
+        self.assertIn("INDEPENDENT tool calls together in ONE step", out)
+
+    def test_no_override_still_carries_it(self):
+        self.assertIn("INDEPENDENT tool calls together in ONE step", self._render({}))
+
+    def test_the_frontend_files_no_longer_duplicate_it(self):
+        for f in ("v3/frontend_agent.j2", "v4/frontend_agent.j2"):
+            t = (PROMPTS / f).read_text(encoding="utf-8")
+            self.assertNotIn("tool_batch_policy", t,
+                             f"{f}: the macro appends it now; an inline copy would double up")
