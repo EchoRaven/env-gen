@@ -3948,6 +3948,17 @@ class Orchestrator:
                         gate.get("failed_checks"))
                 except Exception as _gc_exc:
                     self._logger.error("gate-level check dispatch failed: %s", _gc_exc)
+                # #1148: the same tick, for a finding that is NOT a failed check. #1139
+                # detects a filter no seeded row can satisfy and leaves it in the gate result,
+                # where nothing reads it — #1041's shape. netflix-local-r8 DELIVERED with one
+                # (`/api/titles/top10` filtering `top10_rank IS NOT NULL`, never seeded), so it
+                # has to reach the backend even when every check is green. A task, not a check:
+                # #1139 reports rather than blocks and that stays true.
+                try:
+                    from .runtime.remediation_dispatcher import RemediationDispatcher
+                    await RemediationDispatcher(self).dispatch_never_matching_filters_1148()
+                except Exception as _nmf_exc:
+                    self._logger.error("#1148 dispatch failed: %s", _nmf_exc)
                 # FEEDBACK LOOP (2026-06-13): an unwired-ui-pages block (declared
                 # pages whose routes aren't in App.jsx) HARD-blocks delivery but,
                 # unlike GATE-C1 / frontend_navigable / visual, routed NOWHERE —

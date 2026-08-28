@@ -21588,3 +21588,40 @@ with an explicit inverse edit (back up the file, restore the old `items` read, r
 Rule for the rest of this work: `git stash push -- <path>` is silent when the path has no
 uncommitted change, and a following `pop` then reaches for whatever stash does exist. Prefer an
 explicit inverse edit, or check `git stash list` length before and after.
+
+## 1148 — the finding nobody read  ★ FIXED 2026-08-28
+
+#1139 detects a filter no seeded row can satisfy and writes it into the gate result under
+`never_matching_filters`. Grep finds the producer and the key **and nothing else** — no
+consumer exists. #1041's shape: the evidence is there, the party who can act on it is never
+told, and netflix-local-r8 DELIVERED release 1.0.0 carrying one
+(`/api/titles/top10` filters `top10_rank IS NOT NULL`; `models.py` declares the column; no seed
+row sets it — measured live on one token: trending 24 rows, search 24, top10 **0**).
+
+FIX: a P0 to the backend on the same delivery tick, and — the part that matters for r8 — it
+runs even when EVERY gate check is green, which is exactly r8's state. Still a task, not a
+check: #1139 chose evidence over verdict and that stays true; a new blocking check cannot be
+validated without a run. The predicate is narrow enough to carry a P0 — not "the response was
+empty" (`/api/my-list` is legitimately empty for a fresh user and filters by `user_id`, so it
+is never reported) but "no seeded row could satisfy this filter". Verified against three
+delivered artifacts: r8 → top10_rank, r5 → nothing, smoke-notes → nothing.
+
+★ Three faults in this one change, none found by re-reading it:
+
+1. The task body used `r.get('table')/('where')/('file')`. The rows carry **`column` and
+   `detail`, nothing else** — caught by CALLING #1139 against r8's artifact before wiring, the
+   fourth field-name miss of this lineage (#1029, #1128, #1147) and the first caught in advance.
+2. The method used `self.orch`; `RemediationDispatcher` stores `self._orch`. The AttributeError
+   was swallowed by the method's own `except`, so the dispatch silently did nothing — the exact
+   failure mode it exists to fix. Only the test running against r8's REAL artifact exposed it;
+   synthetic fixtures would have passed a no-op.
+3. The log line then still said `r.get('table')` (fixed in the body, missed here) AND printed
+   `len(rows)` beside a silently truncated `rows[:4]`. Caught by
+   `test_counts_and_lists_agree_1034`; now uses `join_capped`, which declares the remainder.
+
+### Guard tally for this session
+    #943  fixed source windows in tests ............ 6 catches
+    #1034 count beside a silent truncation ........ 1
+    #558  shared kwargs contract ................... 1
+    own tests (int("١٢")==12, absent-as-zero, self.orch) ... 3
+Each one was a silent-failure bug, not a style point.

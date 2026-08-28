@@ -1138,6 +1138,86 @@ class RemediationDispatcher:
         except Exception as exc:
             orch._logger.error("page-build dispatch failed: %s", exc)
 
+    async def dispatch_never_matching_filters_1148(self) -> None:
+        """#1148: tell the backend about a filter no seeded row can satisfy.
+
+        #1139 detects it and stops there — the finding is placed in the gate result
+        (`never_matching_filters`) and NOTHING reads that key. It is #1041's shape exactly:
+        the evidence exists, the party who can act on it is never told.
+
+        netflix-local-r8 DELIVERED release 1.0.0 carrying one: `/api/titles/top10` filters
+        `WHERE t.top10_rank IS NOT NULL`, `models.py` declares the column, and no seed row ever
+        sets it — so 1 of its 24 business endpoints can never return data. Measured live on one
+        token: trending 24 rows, search 24 rows, top10 **0**.
+
+        A TASK, not a gate check. #1139 deliberately reports rather than blocks, and that stays
+        true: a task is worked, a check is a wall, and a new wall cannot be validated without a
+        run. The predicate is narrow enough to carry a P0 — it is not "the response was empty"
+        (`/api/my-list` is legitimately empty for a fresh user and filters by `user_id`, so it
+        is never reported); it is a filter no seeded row could satisfy, which nothing ships on
+        purpose. Verified against three delivered artifacts: r8 → top10_rank, r5 → nothing,
+        smoke-notes → nothing.
+        """
+        try:
+            orch = self._orch
+            out_dir = getattr(orch, "output_dir", None)
+            if not out_dir:
+                return
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_nmf1148_dispatched", None) == milestone:
+                return
+            from .delivery_gate import never_matching_filters_1139 as _nmf
+            rows = _nmf(out_dir) or []
+            if not rows:
+                return
+            _lines = []
+            for r in rows[:8]:
+                if not isinstance(r, dict):
+                    continue
+                # Field names verified by CALLING never_matching_filters_1139 against a
+                # real artifact rather than assumed: the rows carry `column` and `detail`,
+                # nothing else. Guessing `table`/`where`/`file` here would have rendered a
+                # line of question marks — the fourth field-name miss of this session's
+                # lineage (#1029, #1128, #1147), and the first one caught before shipping.
+                _col = str(r.get("column") or "?")
+                _why = str(r.get("detail") or "").strip()
+                _lines.append(f"- `{_col}`: {_why}" if _why else f"- `{_col}`")
+            if not _lines:
+                return
+            orch.hubs.workhub.create_task(
+                title="Seed a column the queries filter on (endpoint returns nothing)",
+                description=(
+                    "A query filters on a column that NO seeded row populates, so the "
+                    "endpoint behind it can never return data — the SQL is correct, the "
+                    "route is mounted, and the result is permanently empty:\n"
+                    + "\n".join(_lines) + "\n\n"
+                    "Fix ONE of these, whichever is true: (a) seed the column for the rows "
+                    "that should qualify (usually the right answer — a top-N/featured flag "
+                    "needs values), or (b) drop the filter if every row qualifies, or (c) "
+                    "delete the endpoint if the product does not have that surface. Do NOT "
+                    "leave it as is: netflix-local-r8 shipped release 1.0.0 with exactly this "
+                    "and 1 of its 24 business endpoints served an empty list forever."),
+                assignee="backend",
+                agent="orchestrator",
+                priority="P0",
+            )
+            orch._nmf1148_dispatched = milestone
+            # #1034: a printed count may not sit beside a silently truncated list, and the
+            # rows carry `column`, not `table` — the same field the task body above uses. Both
+            # were wrong on this line and both were caught by the repo's own guards rather
+            # than by review.
+            orch._logger.warning(
+                "#1148 filed a P0: %d column(s) are filtered on but never seeded — %s",
+                len(rows),
+                join_capped(
+                    [str(r.get("column")) for r in rows if isinstance(r, dict)],
+                    len(rows), sep=", "))
+        except Exception as _exc:
+            try:
+                self._orch._logger.debug("#1148 dispatch skipped: %s", _exc)
+            except Exception:
+                pass
+
     async def dispatch_gate_level_checks(self, failed_checks) -> None:
         """PROPOSAL #49 (user: a gate-detected problem must route back to the OWNING
         lane for repair, not silently dead-end). The DELIVERY-GATE-level failed_checks
