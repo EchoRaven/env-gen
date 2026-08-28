@@ -21368,3 +21368,62 @@ Ranked levers (headroom measured, none applied yet):
      219 tool failures, 66 invented-port probes, 80 failed edit/apply_patch.
   D. cost and quality may be the SAME lever — the low-call runs are the ones that delivered.
      Directly testable with the netflix input as an A/B.
+
+## 1141 / 1142 / 1143 — the edit path, from the tool side  ★ FIXED 2026-08-28
+
+Asked directly: what can be optimised at the TOOL level for patch/edit? Measured first.
+
+### The failure census (102 `edit` failures over eight netflix runs)
+
+    46 (45.1%)  "no part of the anchor is present"          stale read / wrong file
+    41 (40.2%)  "FIRST line is at line N, diverges after"    partially stale
+    13 (12.7%)  "found N matches of old_string"              anchor not unique
+     2 ( 2.0%)  whitespace-only difference
+
+★ The first instinct — auto-normalise whitespace and retry — would have saved TWO. The data
+killed it. 100 of the 102 are MATCHING failures, not editing failures.
+
+Wider context (360 edit/apply_patch/write failures, all runs): patch-hunk mismatch 90,
+old_string not found 89, FRAMEWORK-OWNED write denied 70, file changed since last read 30,
+path not found 16, refuse-overwrite 13. Most-failed files: custom_routes.py 31,
+docker-compose.yml 23, api.js 10 — the compose count is r9's invented-port thrash seen from
+the other side: the lane tried to edit host mappings, was denied, and started guessing ports.
+
+### 1143 — `read` hands out line numbers and `edit` could not take them
+
+`read` returns `f"{idx}:{line}"`, so the caller already holds exact coordinates and could only
+spend them by retyping the text as an anchor. `edit` now takes `start_line`/`end_line`
+(1-based, inclusive) as an ALTERNATIVE to `old_string`. Line mode cannot mismatch.
+
+The one thing it can do is act on STALE coordinates — which is exactly what
+`_check_stale_write_guard` already refuses (prior read required, content must not have moved).
+The safety property is one the tool already enforces, not a new one to get right. Guards:
+the two modes cannot be combined, a range past EOF says to re-read, a backwards range and
+non-integer coordinates are refused, and a replacement without a trailing newline does not
+glue the following line on. Anchor mode is untouched.
+
+### 1142 — "Re-read from there" cost a whole turn
+
+`_anchor_miss_reason_676` already localised the divergence and then sent the caller away to
+read the file: fail, read, retry — three round trips of 54-65K tokens for one edit. The lines
+are in hand where the message is built, so it now returns them ("WHAT IS ACTUALLY AT LINE N"),
+bounded by the anchor's own length and capped. The other two branches keep their wording.
+
+### 1141 — "Prefer one tool call per step" is now a hyperparameter
+
+Measured: 85.9% of turns issue exactly one tool call, mean 1.32, FLAT across every run
+(r3 1.34, r5 1.41, r8 1.43, r9 1.34) — a ceiling set by the instruction, not the work. The
+rationale ("the smallest unit of work that produces a hub-observable change") is real for a
+WRITE and empty for a READ, and ~48% of every run's calls are reads.
+
+`ENVGEN_MAX_TOOLS_PER_STEP`: unset/0 = unlimited (the new default), N = at most N per step.
+Removed from three prompts; the write-side hub-observability rule is preserved in the rendered
+policy. ★ Its own test caught `int("١٢") == 12` — a non-ASCII numeral would have silently set
+a cap nobody typed, the same trap #1120 fixed for `str.isdigit()`. ASCII digits only.
+
+### Not done, recorded
+70 FRAMEWORK-OWNED write denials remain. The message is already right (it names
+`custom_routes.py` as the place to author), but the caller spends a whole turn composing a
+patch before hearing it. The fix is to make ownership visible at READ time, which changes what
+`read`/`glob` return — a wider blast radius than these three, so it is recorded rather than
+taken unilaterally.

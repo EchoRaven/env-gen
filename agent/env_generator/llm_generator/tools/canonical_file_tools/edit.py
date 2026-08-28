@@ -46,9 +46,25 @@ def _anchor_miss_reason_676(content: str, anchor: str, path) -> str:
         first = next((l for l in lines if l.strip()), "")
         if first and first in content:
             n = content[:content.index(first)].count("\n") + 1
+            # #1142: SHOW WHAT IS ACTUALLY THERE. "Re-read from there" costs the caller a
+            # whole turn: fail, read, retry — three round trips for one edit, each re-sending
+            # 54-65K tokens of context. Measured over the eight netflix runs, 179 of 360
+            # edit/patch failures are this class ("old_string not found" 89, "patch hunk"
+            # 90), so the re-read alone is ~179 turns that carry no new decision.
+            #
+            # The lines are already in hand here. Handing them back turns the cycle into
+            # fail-then-fix. Same move as #1116 (say what was dropped) and #1129 (say what
+            # the build actually printed): give the caller what its next action needs.
+            #
+            # Bounded on purpose — the anchor's own length, capped — so a huge anchor cannot
+            # turn one error into a wall of text.
+            _actual = content.splitlines()[n - 1: n - 1 + min(len(lines), 12)]
+            _shown = "\n".join(_actual)
+            if len(_shown) > 1200:
+                _shown = _shown[:1200] + "\n… (truncated)"
             return (base + where + f" — its FIRST line is at line {n}, but the block diverges "
-                    "after that. Re-read from there and anchor on the text that is actually "
-                    "in the file.")
+                    "after that. WHAT IS ACTUALLY AT LINE "
+                    f"{n} (copy from here, indentation included):\n{_shown}")
         if first.strip() and first.strip() in content:
             return (base + where + " — its first line appears only with different surrounding "
                     "whitespace. Re-read and copy the exact text.")
@@ -91,8 +107,10 @@ If `old_string` is empty and the file does not exist, a new file is created.
                     "old_string": {"type": "string", "description": "Exact text to replace"},
                     "new_string": {"type": "string", "description": "Replacement text"},
                     "replace_all": {"type": "boolean", "description": "Replace all occurrences (default false)"},
+                    "start_line": {"type": "integer", "description": "1-based first line to replace (use the numbers `read` returned). Alternative to old_string; cannot be combined with it."},
+                    "end_line": {"type": "integer", "description": "1-based last line to replace, inclusive. Defaults to start_line."},
                 },
-                "required": ["file_path", "old_string", "new_string"],
+                "required": ["file_path", "new_string"],
             },
         )
 
@@ -105,11 +123,35 @@ If `old_string` is empty and the file does not exist, a new file is created.
         old_string: Optional[str] = None,
         new_string: Optional[str] = None,
         replace_all: bool = False,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
     ) -> ToolResult:
         fp = str(file_path).strip() if file_path is not None else ""
         if not fp:
             return ToolResult(success=False, error_message="edit: missing file_path")
-        if old_string is None or new_string is None:
+        # #1143: LINE MODE — edit by the coordinates `read` already handed out.
+        #
+        # `read` returns numbered lines (`f"{idx}:{line}"`), so the caller HAS exact
+        # coordinates and could only spend them by retyping the text as an anchor. Anchor
+        # matching is the failure: over the eight netflix runs, 102 edit failures split
+        # 46 "no part of the anchor is present", 41 "first line matches, block diverges",
+        # 13 "found N matches", and only 2 whitespace-only. Every one of those 100 is a
+        # matching failure, not an editing failure, and each costs a fail-read-retry cycle
+        # re-sending 54-65K tokens.
+        #
+        # Line mode cannot mismatch. What it CAN do is act on stale coordinates, and that is
+        # exactly what `_check_stale_write_guard` below already refuses — it requires a prior
+        # read and rejects a file whose content moved since. So the safety property is the one
+        # the tool already enforces, not a new one to get right.
+        _line_mode = start_line is not None or end_line is not None
+        if _line_mode and old_string is not None:
+            return ToolResult(success=False, error_message=(
+                "edit: pass EITHER old_string (text anchor) OR start_line/end_line "
+                "(coordinates from `read`), not both."))
+        if _line_mode:
+            if new_string is None:
+                return ToolResult(success=False, error_message="edit: new_string is required")
+        elif old_string is None or new_string is None:
             return ToolResult(success=False, error_message="edit: old_string and new_string are required")
         resolved, err = _resolve_workspace_path(
             self.workspace,
@@ -150,6 +192,28 @@ If `old_string` is empty and the file does not exist, a new file is created.
                 )
             updated_content = new_string
             replacements = 1 if new_string else 0
+        elif _line_mode:
+            _lines = current_content.splitlines(keepends=True)
+            try:
+                _s = int(start_line) if start_line is not None else 1
+                _e = int(end_line) if end_line is not None else _s
+            except Exception:
+                return ToolResult(success=False, error_message=(
+                    "edit: start_line/end_line must be integers (1-based, inclusive)"))
+            if _s < 1 or _e < _s:
+                return ToolResult(success=False, error_message=(
+                    f"edit: bad line range {_s}..{_e} — 1-based and inclusive, "
+                    "so start_line >= 1 and end_line >= start_line."))
+            if _s > len(_lines):
+                return ToolResult(success=False, error_message=(
+                    f"edit: start_line {_s} is past the end of the file "
+                    f"({len(_lines)} line(s)). Re-read to get current coordinates."))
+            _e = min(_e, len(_lines))
+            _repl = new_string
+            if _repl and not _repl.endswith("\n") and _e < len(_lines):
+                _repl += "\n"        # keep the following line on its own line
+            updated_content = "".join(_lines[:_s - 1]) + _repl + "".join(_lines[_e:])
+            replacements = 1
         else:
             matches = current_content.count(old_string)
             if matches == 0:

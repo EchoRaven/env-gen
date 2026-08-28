@@ -140,6 +140,36 @@ def _memory_model_name_1070(config, llm) -> Optional[str]:
     return None
 
 
+def _max_tools_per_step_1141() -> int:
+    """#1141: max tool calls one agent step may issue. 0 = unlimited (the default)."""
+    import os as _os
+    raw = str(_os.environ.get("ENVGEN_MAX_TOOLS_PER_STEP", "") or "").strip()
+    # ASCII digits only. `int("١٢")` is 12 in Python, so a non-ASCII numeral would silently
+    # set a cap nobody typed — the same trap #1120 fixed for `str.isdigit()`. Caught here by
+    # this fix's own test.
+    if not raw or not (raw.lstrip("-").isascii() and raw.lstrip("-").isdigit()):
+        return 0
+    try:
+        n = int(raw)
+    except Exception:
+        return 0
+    return n if n > 0 else 0
+
+
+def _tool_batch_policy_1141() -> str:
+    """The sentence the step contract renders for the batching rule."""
+    n = _max_tools_per_step_1141()
+    independent = (
+        "Issue INDEPENDENT tool calls together in ONE step — reads especially "
+        "(list/get/grep/read), which change no hub state and are the bulk of every step. "
+        "Keep a MUTATING call the smallest unit that produces one hub-observable change, and "
+        "do not batch a write behind a read whose result it depends on."
+    )
+    if n <= 0:
+        return independent + " There is no cap on how many calls one step may issue."
+    return independent + f" At most {n} tool call(s) per step."
+
+
 class EnvGenAgent(
     AgentMessaging,
     AgentSync,
@@ -648,6 +678,25 @@ class EnvGenAgent(
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        # #1141: HOW MANY TOOL CALLS A STEP MAY ISSUE IS A HYPERPARAMETER, NOT A CONSTANT.
+        #
+        # Every agent prompt carried "Prefer one tool call per step". Measured over eight
+        # netflix runs: 85.9% of turns issue exactly one call, mean 1.32, and the mean is FLAT
+        # across every run (r3 1.34, r5 1.41, r8 1.43, r9 1.34) — a ceiling set by the
+        # instruction, not by the work. Each turn re-sends 54-65K tokens of context at 6.3s
+        # mean latency, so r9 spent 8185 calls / 14.3 hours of LLM time on 3714 tool calls.
+        #
+        # The stated rationale — "the smallest unit of work that produces a hub-observable
+        # change" — is real for a MUTATING call and empty for a read: a read produces no hub
+        # change at all, and ~48% of every run's calls are reads (r9: workhub_list_tasks 619,
+        # workhub_task 540, registry reads 299).
+        #
+        # So the ceiling becomes configurable and the default stops forbidding what a capable
+        # model can do safely. ENVGEN_MAX_TOOLS_PER_STEP: 0/unset = UNLIMITED (batch whatever
+        # is independent), N = at most N per step. The hub-observability rule survives as a
+        # rule about WRITES, which is where it was always doing the work.
+        self._jinja_env.globals["max_tools_per_step"] = _max_tools_per_step_1141()
+        self._jinja_env.globals["tool_batch_policy"] = _tool_batch_policy_1141()
         
         # Task completion event for external coordination
         self._task_complete_event = asyncio.Event()
