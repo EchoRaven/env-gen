@@ -20882,3 +20882,36 @@ repeatedly (#504, r81). Absent or empty allowlist means "unknown", and unknown n
 Test: `tests/test_1134_the_answer_came_from_someone_elses_app.py` (9 cases; four of them are
 on the fail-open behaviour, one drives the real `TestAPITool.execute` to prove the notice
 reaches the caller).
+
+## 1135 — the chain next door already passes that endpoint, and the task never said so  ★ FIXED 2026-08-27
+
+#798 made the `business_chain_failing` task NAME the broken step instead of saying "read the
+broken step". That leaves the verifier with one fact — "my step got a 4xx" — which reads
+equally as *the app is broken* and *my inputs are wrong*. The registry holds the discriminator
+and nothing surfaced it.
+
+netflix-local-r2 had 3 failing chains and **2 of them had PASSING siblings on the exact
+endpoint their broken step failed on**:
+
+    continue-watching_page   broke on POST /api/continue-watching
+        → continue_watching_page_basic PASSES on it
+    titles_page              broke on POST /api/titles/1/rating
+        → rating_profile_state_transition, ..._v2, api_business_chain_no_path_vars_v4 PASS
+    platform_oauth_health_reset  broke on POST /oauth/register  → no sibling (correctly silent)
+
+`continue-watching_page` is the chain that ended the run. Its broken step posted a
+`profile_id` belonging to a different user and the app answered
+`{"detail":"profile_id does not belong to the caller"}` — correct tenant isolation, a
+mis-authored chain. Three sibling chains passing the same endpoints is exactly the evidence
+that says so, and the verifier held the blocker for 79 minutes without it.
+
+FIX: `_chain_broken_detail_798` now appends, per broken step, the passing chains that
+exercised the same endpoint — "N ALREADY PASS on this same endpoint — the endpoint works, so
+compare THEIR step inputs against yours before touching the backend". Endpoints are
+canonicalised the way the endpoint registry already spells them (`/api/titles/{}/rating`), so
+a sibling that exercised a different row still matches. Purely additive to a task body: no
+verdict changes, no gate changes.
+Test: `tests/test_1135_the_chain_next_door_already_passes.py` (11 cases). It reconstructs r2's
+registry and asserts the run-ending chain is told about its sibling; the rest pin the silence
+(no sibling, self is never a sibling, a FAILING chain over the same endpoint is not evidence)
+and the canonicaliser.

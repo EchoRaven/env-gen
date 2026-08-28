@@ -178,6 +178,43 @@ def _red_checklist_checks_799(orch) -> List[str]:
         return []
 
 
+def _canon_endpoint_1135(method, path) -> str:
+    """`POST /api/titles/1/rating` and `POST /api/titles/2/rating` are one endpoint.
+
+    Id-looking segments collapse to `{}` — the same shape the endpoint registry already uses
+    (`DELETE /api/v1/tenants/{}`), so a sibling that exercised a different row still matches.
+    """
+    import re as _re
+    m = str(method or "?").strip().upper()
+    p = str(path or "?").split("?", 1)[0].rstrip("/") or "/"
+    segs = []
+    for seg in p.split("/"):
+        if seg.isdigit() or (seg.startswith("{") and seg.endswith("}")) or len(seg) >= 24:
+            segs.append("{}")
+        else:
+            segs.append(seg)
+    return "%s %s" % (m, "/".join(segs) or "/")
+
+
+def _passing_endpoint_index_1135(chains) -> dict:
+    """canonical endpoint -> the PASSING chains whose steps exercised it successfully."""
+    idx: dict = {}
+    try:
+        for name, rec in (chains.items() if isinstance(chains, dict) else []):
+            if name == "_meta" or not isinstance(rec, dict):
+                continue
+            if str(rec.get("status") or "") != "passing":
+                continue
+            for st in ((rec.get("last_result") or {}).get("steps") or []):
+                if not isinstance(st, Mapping) or st.get("ok") is not True:
+                    continue
+                idx.setdefault(
+                    _canon_endpoint_1135(st.get("method"), st.get("path")), set()).add(name)
+    except Exception:
+        return {}
+    return idx
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -195,6 +232,17 @@ def _chain_broken_detail_798(orch) -> List[str]:
     """
     try:
         chains = orch.hubs.registryhub.get_verification_chains() or {}
+        # #1135: which PASSING chains already exercise the same endpoint? The registry holds
+        # this and the task never said it. netflix-local-r2 had 3 failing chains and 2 of them
+        # had passing siblings on the exact endpoint their broken step failed on --
+        # `continue-watching_page` broke on `POST /api/continue-watching` while
+        # `continue_watching_page_basic` passed on it, and `titles_page` broke on
+        # `POST /api/titles/1/rating` with THREE passing chains over it. That comparison is
+        # the difference between "the app is broken" and "my step's inputs are wrong", and it
+        # decided r2: the app answered `{"detail":"profile_id does not belong to the caller"}`
+        # -- correct tenant isolation -- to a step that posted another user's profile_id. The
+        # verifier held that blocker for 79 minutes and the run aborted on it.
+        _pass_idx = _passing_endpoint_index_1135(chains)
         out: List[str] = []
         for name, rec in (chains.items() if isinstance(chains, dict) else []):
             if name == "_meta" or not isinstance(rec, dict):
@@ -206,13 +254,22 @@ def _chain_broken_detail_798(orch) -> List[str]:
                 got = st.get("status")
                 exp = st.get("expect")
                 note = str(st.get("note") or "").strip()
+                _sib = [c for c in _pass_idx.get(
+                    _canon_endpoint_1135(st.get("method"), st.get("path")), ()) if c != name]
+                _sib_txt = ""
+                if _sib:
+                    _sib_txt = (
+                        " ⚠ #1135: %s ALREADY PASS on this same endpoint (%s) — the endpoint "
+                        "works, so compare THEIR step inputs against yours before touching the "
+                        "backend." % (", ".join(sorted(_sib)[:3]),
+                                      _canon_endpoint_1135(st.get("method"), st.get("path"))))
                 out.append(
-                    "%s -> step %r: %s %s returned %s, expected %s%s" % (
+                    "%s -> step %r: %s %s returned %s, expected %s%s%s" % (
                         name, str(st.get("action") or "?"),
                         str(st.get("method") or "?"), str(st.get("path") or "?"),
                         got if got is not None else "no response",
                         exp if exp else "a 2xx",
-                        (" — " + note[:160]) if note else ""))
+                        (" — " + note[:160]) if note else "", _sib_txt))
             if not (lr.get("steps") or []):
                 for b in (lr.get("broken") or []):
                     out.append("%s -> broken: %s" % (name, str(b)[:200]))
