@@ -3439,11 +3439,28 @@ def _post_auth_dest_1137(nav_routes) -> str:
     signed-in user on. Falls back to `/` — exactly today's behaviour — when there are no nav
     routes to choose from, so this is never worse than what it replaces.
     """
+    # #1137b: skip the FRAMEWORK'S OWN platform surfaces too, not just the auth pages.
+    # netflix-local-r5 delivered with `window.location.href = '/tenants'` — correct by the
+    # #1137 rule (a route that requires auth, not the signed-out root) and wrong as a product
+    # landing. Its route order is /login, /signup, /tenants, /profiles, /, /browse …: the
+    # tenant picker exists because the FRAMEWORK supports multi-tenancy, not because the
+    # product has anything there. Skipping that category makes r5 choose `/profiles`, which
+    # for this product is also what the real thing does after sign-in. Generic, not
+    # Netflix-shaped: these are infra surfaces in any generated app.
+    _PLATFORM = ("/tenants", "/tenant", "/admin", "/oauth", "/health", "/debug", "/_")
+    _AUTH = ("/login", "/signup", "/signin", "/register", "/logout", "/forgot")
     try:
+        _first_any = ""
         for _l, r in (nav_routes or []):
             r = str(r or "").strip()
-            if r and r != "/" and not r.startswith(("/login", "/signup", "/signin", "/register")):
+            if not r or r == "/" or r.startswith(_AUTH):
+                continue
+            if not _first_any:
+                _first_any = r          # fallback: better a platform page than the front door
+            if not r.startswith(_PLATFORM):
                 return r
+        if _first_any:
+            return _first_any
     except Exception:
         pass
     return "/"

@@ -21036,3 +21036,56 @@ Together with #1126 (the walk asks where login LANDED) and #1126b (the second co
 check), this closes the loop: the framework stops emitting the defect, and both walks would
 catch it if it returned.
 Test: `tests/test_1137_the_framework_wrote_the_bad_redirect.py` (8 cases).
+
+## ★ netflix-local-r5 DELIVERED — the first one, and what actually made it possible
+
+    codehub_releases.json:  id=1.0.0  tag=1.0.0  source=integration  branch=release-v1.0.0
+                            notes="Final delivery: delivery gate fully clear"
+    milestones.json:        ms_0be6e8e1 → delivered
+    process:                rc=0, no ABORT / STUCK / FAIL-FAST anywhere in the log
+    git:                    release-v1.0.0 exists
+
+RUNTIME-VERIFIED, not taken from the ledger. Rebuilt `--no-cache` (npm install really ran),
+brought up on remapped ports (the host's `docker-database-1` from another run already holds
+:5433 — the "compose project is `docker` for EVERY run" collision #962 describes):
+
+    backend / database / frontend   all running
+    OpenAPI 33 routes (24 business)
+    register → 783-char token
+    /api/titles           200, 40 items   ['Disclosure Day','The Odyssey','Backrooms']
+    /api/titles/trending  200, 20 items   ['Spooky in Love','Overdo','Project Hail Mary']
+    /api/profiles         200,  1 item    ['Main Profile']
+    frontend GET /        200
+
+### #1133 is what made it deliver, and the arithmetic says so
+
+The run logged: *"#1133 crediting 4830s of visual (escape) deferral back to the
+no-convergence clock (total credited 4830s of 9000s allowed)"*.
+
+    first gate decline    01:41:02
+    run end               03:20:02
+    wall since decline    99.0 min
+    credited (framework)  80.5 min   ← 81% of the window was the framework waiting
+    EFFECTIVE LANE TIME   18.5 min   ← against a DEFAULT budget of 75 min
+
+**r5 would have delivered under the default configuration too** — the 150-minute override this
+run was given was not what made the difference. Without #1133 those 80.5 minutes are billed to
+the lanes and the run dies exactly as r2 did (r2's deferral was 66 min against the same 75-min
+budget). This is the fix landing in a live run, with the number in the log.
+
+Recorded as arithmetic from ONE run, not a demonstration. The demonstration is a run on the
+default budget — that is the next experiment.
+
+## 1137b — `/tenants` satisfies #1137's rule and is still the wrong place to land  ★ FIXED
+
+r5 delivered with `window.location.href = '/tenants'`. Correct by #1137 (a route that requires
+auth, not the signed-out root) and wrong as a product landing. r5's route order is
+`/login, /signup, /tenants, /profiles, /, /browse, …` and the tenant picker is there because
+the FRAMEWORK supports multi-tenancy, not because the product has anything on it.
+
+FIX: skip platform surfaces (`/tenants`, `/admin`, `/oauth`, `/health`, `/debug`, `/_*`) as
+well as auth routes. r5's own route order then yields `/profiles` — which for this product is
+also what the real thing does after sign-in. Generic, not Netflix-shaped. The ordering of the
+fallbacks is deliberate: a platform page is still preferred over `/`, because the front door is
+the defect #1137 exists to prevent.
+Test: `tests/test_1137b_the_tenant_picker_is_not_the_product.py` (7 cases).
