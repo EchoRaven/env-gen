@@ -1466,6 +1466,25 @@ class Orchestrator:
                 # from this run's context, and agents with docker/ write scope may
                 # adjust host mappings if validation discovers conflicts.
                 await self._generate_docker()
+                # #1134b: publish THIS RUN'S ports the moment they exist.
+                #
+                # #1134 attaches a "you are probing someone else's app" notice, and its
+                # allowlist was populated only by `gather_squad_inputs` — which runs when the
+                # test-user squad runs, i.e. late, and not at all if the squad never runs. So
+                # for most of a run the allowlist is empty and the notice cannot fire.
+                #
+                # netflix-local-r9 is the cost. Its compose was written ONCE at 10:24 and never
+                # edited (verified in the run's own git history), declaring 3000:8081 and
+                # 8080:3000. The agents nonetheless probed :49160 and :58081 — ephemeral ports
+                # they invented — 66 times, MORE than the 11 probes that reached the real
+                # backend on :3000. `#1134 WRONG TARGET` fired 0 times and
+                # ENVGEN_RUN_HTTP_PORTS was never mentioned in the log.
+                #
+                # The ports are known here: `_generate_docker` has just allocated them. Agents
+                # with docker/ write scope may legitimately adjust host mappings later, which
+                # is why `gather_squad_inputs` keeps refreshing this — a stale allowlist only
+                # weakens a NOTICE and can never block, so the failure mode is benign.
+                self._publish_run_ports_1134b()
 
                 # Emit the STATIC backend build infra (uv Dockerfile + pyproject +
                 # reset.sh) upfront too — contract-independent, so it can land now.
@@ -3529,6 +3548,37 @@ class Orchestrator:
             except Exception:
                 pass
         return shrank
+
+    def _publish_run_ports_1134b(self) -> None:
+        """Set ENVGEN_RUN_HTTP_PORTS from this run's own compose. Best-effort, never raises.
+
+        See the call site for why this cannot wait for the test-user squad. Reads the
+        DECLARED host ports (the left side of every `"host:container"` mapping) — the run's
+        own file, which by construction cannot describe anyone else's stack.
+        """
+        try:
+            import os as _os
+            import re as _re
+            cf = Path(self.output_dir) / "docker" / "docker-compose.yml"
+            if not cf.is_file():
+                return
+            text = cf.read_text(encoding="utf-8", errors="replace")
+            ports = []
+            for m in _re.finditer(r'["\']?(\d{2,5}):(\d{2,5})["\']?', text):
+                host = m.group(1)
+                if host not in ports:
+                    ports.append(host)
+            if not ports:
+                return
+            _os.environ["ENVGEN_RUN_HTTP_PORTS"] = ",".join(ports)
+            self._logger.info(
+                "#1134b run ports published for the wrong-target notice: %s",
+                ",".join(ports))
+        except Exception as _exc:
+            try:
+                self._logger.debug("#1134b could not publish run ports: %s", _exc)
+            except Exception:
+                pass
 
     def _live_deferral_credit_1133c(self, now: float) -> float:
         """#1133c: seconds an UNRELEASED framework deferral has already consumed.

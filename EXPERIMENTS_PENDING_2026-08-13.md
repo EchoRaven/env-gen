@@ -21304,3 +21304,67 @@ Delivery and visual quality are DECOUPLED in the other direction too: the best v
 the session (r6, 0.7411, the only `passed=True`) never delivered, while r8 (0.4412) did. #1140
 addresses the half where a poor app ships early; the half where a good app is killed by the
 lane clock is #1133/#1133c/#1138's line, and r6 died on that clock.
+
+## 1134b — the wrong-target allowlist arrived too late to ever fire  ★ FIXED 2026-08-28
+
+#1134 attaches a "you are probing someone else's app" notice to `test_api`. Its allowlist was
+populated ONLY by `gather_squad_inputs` — which runs when the test-user squad runs: late, and
+not at all if the squad never runs. An empty allowlist reads as "unknown", and unknown never
+warns, so for most of a run the notice cannot fire.
+
+netflix-local-r9 is the cost. Its compose was written ONCE at 10:24 and never edited (checked
+in the run's own git history): `5433:5433`, `3000:8081`, `8080:3000`. The agents nonetheless
+probed **:49160 (34x) and :58081 (32x)** — ephemeral ports they invented — against **11**
+probes that reached the real backend on :3000. `#1134 WRONG TARGET` fired **0** times and
+`ENVGEN_RUN_HTTP_PORTS` never appears in the log. The `title_detail` UI flow that helped end
+the run failed as `ERR_CONNECTION_REFUSED at http://localhost:49160/title/1`.
+
+FIX: `_publish_run_ports_1134b()` runs immediately after `_generate_docker()`, where the ports
+have just been allocated. Verified by replay against r9's real artifact: allowlist becomes
+`5433,3000,8080`; :49160 and :58081 are flagged; :8080 and :3000 stay silent.
+
+Agents with `docker/` write scope may legitimately adjust host mappings later, which is why
+`gather_squad_inputs` keeps refreshing it — a stale allowlist only weakens a NOTICE and can
+never block, so the failure mode is benign.
+
+## Efficiency census — why a run takes this many rounds (measured, 2026-08-28)
+
+Asked directly, answered from the eight netflix logs rather than from impression.
+
+    run   wall   LLM calls  tool calls  fail%   prompt tok   cached   completion
+    r3    162m      8253       4682     5.7%     446.9M      93.3%      2.13M     no delivery
+    r9    144m      8185       3714     5.9%     501.1M      92.9%      2.02M     no delivery
+    r5    140m      5766       3187     4.6%     355.4M      94.9%      1.56M     DELIVERED
+    r8    101m      3314       1853     3.8%     214.5M      93.6%      0.90M     DELIVERED
+
+★ More calls correlate with WORSE outcomes, not better. The two deliveries used the fewest.
+
+Where the rounds go:
+  * **85.9% of turns issue exactly ONE tool call** (mean 1.32; r3 1.34, r5 1.41, r8 1.43, r9
+    1.34 — flat across every run, so this is not a ceiling being hit).
+  * Each turn re-sends 54–65K tokens of context at 93–95% cache hit, 6.3s mean latency. r9:
+    8185 x 6.3s = 14.3 HOURS of LLM time, compressed into 144 min by ~6 concurrent lanes.
+  * **~48% of tool calls are read-only** state gathering (r9: workhub_list_tasks 619,
+    workhub_task 540, registryhub reads 299).
+  * Failing runs do not do different work — they do 2-3x MORE of it. r9 made **1255 mutating
+    calls against r8's 404** and still did not deliver.
+  * Back-to-back identical calls are only 0.9%, so this is not naive repetition.
+
+The serial loop is INSTRUCTED, not a limitation:
+    agent_definition_v3.j2:269  "Execute the smallest unit of work that produces a
+                                 hub-observable change. Prefer one tool call per step."
+    frontend_agent.j2:95        "PREFER one tool call per step, but a tightly-coupled batch
+                                 (api.js + one page + lint together) is acceptable."
+
+The stated rationale — one hub-observable change per step — is real and worth keeping for
+MUTATING calls. It does not apply to reads: a read produces no hub change, so batching
+independent reads costs the rationale nothing while ~48% of all calls are in range.
+
+Ranked levers (headroom measured, none applied yet):
+  A. batching 1.32 → ~3 cuts turns ~2.3x; entirely unexploited.
+  B. push instead of poll — the same ~48% of calls; EventHub already pushes and agents still
+     poll workhub_list_tasks 619 times in one run.
+  C. the thrash classes (#1129 lost build errors, #1134/#1134b/#1136 wrong addresses): r9 had
+     219 tool failures, 66 invented-port probes, 80 failed edit/apply_patch.
+  D. cost and quality may be the SAME lever — the low-call runs are the ones that delivered.
+     Directly testable with the netflix input as an A/B.
