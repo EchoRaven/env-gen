@@ -20961,3 +20961,39 @@ keep a legitimately-running OWN container working).
 
 ★ #1134's docstring carried the wrong attribution until this was found (it implied the agents
 chose those ports) and has been corrected in place with a pointer here.
+
+## 1126b — the post-login check had a SECOND copy, and #1126 only reached the first  ★ FIXED 2026-08-27
+
+Found by asking why #1126 fired ZERO times in netflix-local-r3 — a run that ships the exact
+defect #1126 was written for.
+
+r3's `LoginPage.jsx:27` stores `access_token` and then does `window.location.href = '/'`, and
+`App.jsx:58` routes `/` to `<LandingPage/>` — the signed-out page, with a visible `Sign In` in
+its header (verified in the artifact). That is the third run in a row to ship it (r1, r2, r3),
+and a lane even claimed mid-run that "auth flow now … redirects to /profiles" while the
+delivered file still said `'/'`.
+
+#1126 lives in `test_user_runner`. The flow whose record reaches `test_user_reports/*.json` as
+`ui_flows` runs in `test_user_validation`, and its check was weaker still:
+
+    moved = not page.url.rstrip("/").endswith(route)
+    ok = bool(token) or moved        # OR — a stored token passes, wherever it landed
+
+So it recorded `{flow: signup, ok: True, token_stored: True, navigated: True}` and
+`ui_flows.passed = True` for a login that returns the user to the signed-out page — while the
+run's OWN ui_flow checks were failing with *"/genres returned 200 but rendered login"*, and
+`validation_ui_evidence_failed` blocked 91 of r3's 96 gate evaluations and was the only failing
+check in its last three.
+
+FIX: the same landing predicate, IMPORTED rather than restated —
+`_landed_in_the_app_1126` + `_LOGIN_AFFORDANCE_JS` from `test_user_runner`. A third copy is how
+this happened (#665). The `or` is deliberately untouched: the guard only WITHDRAWS a claim of
+success that the landing contradicts, and it keeps #1126's two-signal conservatism (a login
+affordance still on screen AND a destination that is the root or the entry route). A probe
+that throws leaves the flow passing.
+
+Checked for further copies: `validation_runner.py:1067`'s `auth_register_login` is a pure API
+probe (does `POST /auth/register` mint a token) with no browser and no destination, so the
+predicate correctly does not apply there. Two browser-side checks exist; both now carry it.
+Test: `tests/test_1126b_the_second_copy_of_the_login_check.py` (7 cases, incl. one asserting
+the predicate is not re-defined here).

@@ -594,6 +594,45 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         if token or moved:
                             break
                     ok = bool(token) or moved
+                    # #1126b: THE SECOND COPY of the post-login check. #1126 taught
+                    # `test_user_runner` to ask where the login LANDED, not just that it left
+                    # the auth route — and this copy never got it. It is weaker still: `or`,
+                    # not `and`, so a stored token alone passes the flow no matter where the
+                    # user ends up.
+                    #
+                    # netflix-local-r3 is the proof. Its LoginPage stores `access_token` and
+                    # then does `window.location.href = '/'`, and App.jsx routes `/` to
+                    # <LandingPage/> — the signed-OUT page, `Sign In` still in its header. This
+                    # function recorded `{flow: signup, ok: True, token_stored: True,
+                    # navigated: True}` and `ui_flows.passed = True`, while the walk's own
+                    # ui_flow checks were failing with "/genres returned 200 but rendered
+                    # login". Three runs in a row shipped that redirect (r1, r2, r3) and #1126
+                    # fired zero times in r3 because the flow that runs here is not the one it
+                    # was applied to. #665's lesson, again: the copy drifts from the original.
+                    #
+                    # Reuses `_landed_in_the_app_1126` rather than restating the rule — a THIRD
+                    # copy is how this happened. Same two-signal conservatism: a login
+                    # affordance still on screen AND a destination that is the site root or the
+                    # page we came from. The `or` above is deliberately untouched; this only
+                    # withdraws a claim of success that the landing contradicts.
+                    if ok:
+                        try:
+                            from .test_user_runner import (
+                                _landed_in_the_app_1126 as _landed1126,
+                                _LOGIN_AFFORDANCE_JS as _AFF1126)
+                            _aff = bool(await page.evaluate(_AFF1126))
+                            _dest = page.url.split("?", 1)[0]
+                            from urllib.parse import urlparse as _up1126
+                            _dpath = _up1126(_dest).path or "/"
+                            if not _landed1126(_dpath, route, _aff):
+                                ok = False
+                                _note = (
+                                    f"login SUCCEEDED (token={bool(token)}) but landed on "
+                                    f"{_dpath!r}, which still shows a way to sign in — the user "
+                                    "is back on the signed-out page. Redirect to a route that "
+                                    "requires auth, not to '/'. (#1126b)")
+                        except Exception:
+                            pass  # best-effort: a probe that throws must not fail a good login
                     if ok:
                         _note = ""
                     elif not _auth_resps:
