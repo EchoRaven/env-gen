@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # #1145: same threshold read.py uses for identical re-delivery.
 _IDENTICAL_SKILL_ELIDE_AT_1145 = 3
 
+# #1147: module-level so it survives between tool calls — (workspace_scope, skill) -> (fp, n).
+_SKILL_FP_1147: dict = {}
+
 # Lazy import to avoid circular dependencies
 _knowledge_store = None
 
@@ -488,13 +491,32 @@ Use this when you want to:
     def __init__(self, workspace: Workspace):
         super().__init__(name=self.NAME, category=ToolCategory.KNOWLEDGE)
         self.workspace = workspace
-        # #1145: per-INSTANCE (hence per-agent), exactly as read.py's #613 fingerprint map.
-        # A class attribute would let one lane's re-fetches elide another lane's FIRST one.
-        self._skill_fingerprints_1145: dict = {}
+        # #1147: MODULE-level, keyed by workspace — NOT per instance.
+        #
+        # #1145 put this on the instance, copying read.py's #613. netflix-local-r10 proved
+        # both are dead: `release-readiness` was fetched 76 times with a byte-identical
+        # payload (one distinct response length across all 76), so the fingerprint matched
+        # every time and the elision fired ZERO times — as did read's, in r9 AND r10. Tool
+        # instances do not survive between calls here, so per-instance memory is empty on
+        # arrival and any optimisation built on it silently does nothing.
+        #
+        # `file_tools._file_read_state` is module-level and DOES work (its "File changed
+        # since last read" guard fired 30 times in r9), which is the shape that survives.
+        # Keyed by the workspace's code_root so two lanes in different worktrees cannot
+        # elide each other's first delivery — the isolation #1145 wanted and got wrong.
+        # #1147: the discriminator must be per-AGENT *and* survive the call. #613 used the
+        # tool instance and got only the first half — instances are rebuilt between calls, so
+        # its map was always empty and the elision fired 0 times in r9 AND r10. A path-keyed
+        # global gets only the second half, which #613 explicitly rejected: "agents share a
+        # process". The WORKSPACE object is both — each agent holds one for its lifetime
+        # (`self._routed_workspace`) and the tool pool is rebuilt around it, so its identity
+        # outlives the instances while still separating lanes.
+        self._skill_scope_1147 = str(id(workspace)) + "|" + str(getattr(workspace, "code_root", "") or "")
 
     def forget_deliveries_1145(self) -> None:
         """#1145b: after a context condense the caller may no longer hold the instructions."""
-        self._skill_fingerprints_1145.clear()
+        for k in [k for k in _SKILL_FP_1147 if k[0] == self._skill_scope_1147]:
+            _SKILL_FP_1147.pop(k, None)
 
     @property
     def tool_definition(self) -> dict:
@@ -535,9 +557,9 @@ Use this when you want to:
             try:
                 _key = str(skill.name or name)
                 _fp = (len(_instr or ""), hash(_instr or ""))
-                _prev, _seen = self._skill_fingerprints_1145.get(_key, (None, 0))
+                _prev, _seen = _SKILL_FP_1147.get((self._skill_scope_1147, _key), (None, 0))
                 _seen = _seen + 1 if _prev == _fp else 1
-                self._skill_fingerprints_1145[_key] = (_fp, _seen)
+                _SKILL_FP_1147[(self._skill_scope_1147, _key)] = (_fp, _seen)
                 if _seen >= _IDENTICAL_SKILL_ELIDE_AT_1145 and not force:
                     _instr = (
                         f"[unchanged — this skill's instructions were already delivered to you "

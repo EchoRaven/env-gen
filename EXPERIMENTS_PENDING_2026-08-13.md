@@ -21625,3 +21625,57 @@ delivered artifacts: r8 → top10_rank, r5 → nothing, smoke-notes → nothing.
     #558  shared kwargs contract ................... 1
     own tests (int("١٢")==12, absent-as-zero, self.orch) ... 3
 Each one was a silent-failure bug, not a style point.
+
+## netflix-local-r10 — all 30 fixes together, and what it actually proved
+
+Aborted at 76min of lane time, milestone pending, no release. 165 tasks completed + 42
+cancelled (more work than any prior run), 109 gate evaluations, **0 fully green**, held to the
+end by ONE flow: `login_to_browse`, failing as *"unauthenticated GET /api/titles 401 after
+login"* — an app-level auth-wiring defect, not the redirect (#1137 picked `/browse`, which for
+this product is the right landing).
+
+### Measured, full-run — and one earlier claim retracted
+
+    metric        r7      r8(delivered)   r9      r10(all fixes)
+    turns        4279        2191        6168        4312
+    tools/turn    1.41        1.43        1.34        1.40
+    LLM calls    5375        3314        8185        6084
+    get_skill     165          99         163         177
+    edit fails     39          16          80          24
+
+★ RETRACTED: a 30-minute-window comparison had shown r10 batching 2.38 tools/turn against r9's
+1.58 and I reported it as #1141 working. Over the FULL run it is 1.40 against 1.34 — and r7 was
+already 1.41. The window comparison was a phase artifact; the runs were not at the same stage.
+
+Confirmed working: edit failures 80 → 24 (#1142/#1143). #1146 — knowledge categories are now
+`{tech_context: 82, issue: 8, bug_fix: 2, warning: 1}` with four distinct importances, and the
+`bug_fix: 2` proves the doubly-broken path is alive. #1138 fired 3x and bought #228's
+convergence grace, which had essentially never fired before.
+
+## 1147 — per-instance tool state is empty on arrival; two elisions never once fired
+
+`get_skill` was called 177 times in r10 and the elision fired ZERO times. The orchestrator
+fetched `release-readiness` 76 times and all 76 responses had the SAME length — a
+byte-identical payload, so the fingerprint matched every time. The same code fires correctly
+when one instance is reused, which is how it was tested and why it looked finished.
+
+**Tool instances do not survive between calls here.** So #1145 was dead on arrival — and so
+was `read`'s #613 elision, which it was modelled on: 0 firings in r9 AND r10, since the day it
+was written. `file_tools._file_read_state` is module-level and works (its "File changed since
+last read" guard fired 30 times in r9): that is the shape that survives.
+
+★ The fix needed a discriminator that is BOTH per-agent and call-surviving:
+
+    instance  → isolated ✓  survives ✗   (#613 — never fired)
+    path-keyed global → isolated ✗  survives ✓   (#613 rejected this explicitly:
+                        "The reason a path-keyed global could not be used: agents share a
+                         process." Its test caught the first attempt at exactly this.)
+    workspace OBJECT identity → isolated ✓  survives ✓
+
+Each agent holds one workspace for its lifetime and the tool pool is rebuilt around it, so its
+identity outlives the instances while still separating lanes — and #613's own test, which
+constructs a NEW Workspace to model another agent, still passes unchanged.
+
+Guards that caught me this session, all after I believed the change was correct: #943 fixed
+source windows (six times), #558's contract dict, #1120's non-ASCII digits, #613's isolation
+contract, and the no-`get_event_loop`-in-tests ratchet. They are more reliable than my review.

@@ -12,6 +12,9 @@ from .shared import (
 # delivery on, send a marker carrying an explicit force= escape instead.
 _IDENTICAL_READ_ELIDE_AT = 3
 
+# #1147: module-level so it outlives the tool instance — (workspace_scope, path) -> (fp, n).
+_READ_FP_1147: dict = {}
+
 
 class ReadTool(BaseTool):
     """Canonical file read tool."""
@@ -32,8 +35,22 @@ Parameters:
         if workspace is None:
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
         self.workspace = workspace
-        # #613: per-INSTANCE (hence per-agent) fingerprint of the last whole-file delivery
-        self._read_fingerprints: dict = {}
+        # #1147: #613 wanted per-AGENT memory and used per-INSTANCE state to get it. Tool
+        # instances do not survive between calls here, so the map was empty on arrival and
+        # the elision has never once fired — 0 times in netflix-local-r9 AND r10, while r10
+        # re-delivered a byte-identical `release-readiness` 76 times through the same-shaped
+        # code in get_skill. Module-level, scoped by the workspace's code_root: it survives
+        # the call, and two lanes in different worktrees still cannot elide each other's
+        # first delivery. (`file_tools._file_read_state` is module-level and works — its
+        # "File changed since last read" guard fired 30 times in r9.)
+        # #1147: the discriminator must be per-AGENT *and* survive the call. #613 used the
+        # tool instance and got only the first half — instances are rebuilt between calls, so
+        # its map was always empty and the elision fired 0 times in r9 AND r10. A path-keyed
+        # global gets only the second half, which #613 explicitly rejected: "agents share a
+        # process". The WORKSPACE object is both — each agent holds one for its lifetime
+        # (`self._routed_workspace`) and the tool pool is rebuilt around it, so its identity
+        # outlives the instances while still separating lanes.
+        self._read_scope_1147 = str(id(workspace)) + "|" + str(getattr(workspace, "code_root", "") or "")
 
     def forget_deliveries_1145(self) -> None:
         """#1145b: the caller no longer holds what we delivered — start counting again.
@@ -45,7 +62,8 @@ Parameters:
         genuinely does not have, and it costs an extra turn to discover that and pass
         force=true.
         """
-        self._read_fingerprints.clear()
+        for _k in [_k for _k in _READ_FP_1147 if _k[0] == self._read_scope_1147]:
+            _READ_FP_1147.pop(_k, None)
 
     @property
     def tool_definition(self):
@@ -147,9 +165,9 @@ Parameters:
         if full_read and not force:
             key = str(resolved)
             fp = (len(body), hash(body))
-            prev_fp, seen = self._read_fingerprints.get(key, (None, 0))
+            prev_fp, seen = _READ_FP_1147.get((self._read_scope_1147, key), (None, 0))
             seen = seen + 1 if prev_fp == fp else 1
-            self._read_fingerprints[key] = (fp, seen)
+            _READ_FP_1147[(self._read_scope_1147, key)] = (fp, seen)
             if seen >= _IDENTICAL_READ_ELIDE_AT:
                 body = (f"[unchanged since your last read — identical content already "
                         f"delivered to you {seen - 1}x ({len(body)} chars, {total_lines} "
