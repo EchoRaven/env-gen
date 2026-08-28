@@ -397,6 +397,97 @@ def reset_said_845() -> None:
     later one."""
     _SAID_845.clear()
 
+def never_matching_filters_1139(project_dir: Any) -> List[Dict[str, str]]:
+    """#1139: route filters that CANNOT match a single seeded row.
+
+    netflix-local-r8 delivered release 1.0.0, boots, authenticates and serves 24 real rows on
+    /api/titles/trending and /api/search — and `/api/titles/top10` returns an empty collection
+    forever:
+
+        custom_routes.py:125   SELECT ... FROM titles t WHERE t.top10_rank IS NOT NULL ...
+        models.py:62           top10_rank = Column(Text)
+        effective seed         no row carries a top10_rank value
+
+    The SQL is correct and the route is mounted; the column it filters on is never populated,
+    so 1 of 24 business endpoints can never return data. Measured live, on one token:
+    trending 24 rows, search 24 rows, top10 0 rows.
+
+    This is DELIBERATELY NOT "the response was empty". `/api/my-list` is empty for a freshly
+    registered user and is not a defect — it filters by `user_id`, so it is not reported here.
+    What is reported is a filter that no seeded row could ever satisfy, which no product ships
+    on purpose. That narrowness is what makes it safe to state as fact.
+
+    EVIDENCE, NOT A VERDICT (#1023): returned in the gate result and logged, never added to
+    `failed_checks`. A new blocking check cannot be validated without a full run, and this
+    codebase has paid for false blocks repeatedly (#504, r81).
+    """
+    import json as _json
+    import re as _re
+    from pathlib import Path as _P1139   # `Path` is not module-level here; neighbours do the same
+    try:
+        root = _P1139(str(project_dir)) if project_dir else None
+        be = (root / "app" / "backend") if root else None
+        if be is None or not be.is_dir():
+            return []
+        src = ""
+        for f in sorted(be.glob("*.py")):
+            try:
+                src += f.read_text(encoding="utf-8", errors="replace") + "\n"
+            except Exception:
+                continue
+        if not src:
+            return []
+        cols = set()
+        for m in _re.finditer(r"[A-Za-z_][\w]*\.([\w]+)\s+IS\s+NOT\s+NULL", src, _re.I):
+            cols.add(m.group(1))
+        for m in _re.finditer(r"\.([\w]+)\s*\.\s*(?:isnot|is_not)\(\s*None\s*\)", src):
+            cols.add(m.group(1))
+        if not cols:
+            return []
+        # effective seed: the lane's file, with the framework dataset winning per table
+        rows_by_table: Dict[str, Any] = {}
+        for name in ("seed_data.json", "seed_dataset.json"):
+            p = be / name
+            if not p.is_file():
+                continue
+            try:
+                d = _json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            for t, rows in (d.items() if isinstance(d, dict) else []):
+                if isinstance(rows, list):
+                    rows_by_table[t] = rows
+        if not rows_by_table:
+            return []            # nothing to judge against — say nothing
+        out: List[Dict[str, str]] = []
+        for col in sorted(cols):
+            seen_anywhere = False
+            populated = False
+            for t, rows in rows_by_table.items():
+                for r in rows:
+                    if not isinstance(r, dict) or col not in r:
+                        continue
+                    seen_anywhere = True
+                    if r.get(col) not in (None, ""):
+                        populated = True
+                        break
+                if populated:
+                    break
+            if not populated:
+                out.append({
+                    "column": col,
+                    "detail": ("a route filters `%s IS NOT NULL` and %s — the filter cannot "
+                               "match a single seeded row, so that endpoint returns an empty "
+                               "collection forever" % (
+                                   col,
+                                   "no seeded row carries that column at all" if not seen_anywhere
+                                   else "every seeded row leaves it empty")),
+                })
+        return out[:5]
+    except Exception:
+        return []
+
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -2802,6 +2893,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # with 24 passing UI records and ONE failing flow, having come down 7 → 2 → 1 across
         # the session's runs. The count is already computed here; it just never left.
         "ui_evidence_failed_records": int(_breadth739.get("failed_records") or 0),
+        # #1139: filters that can never match a seeded row. Evidence for the orchestrator,
+        # which reads this result every tick and can file the fix; never a failed_check.
+        "never_matching_filters": never_matching_filters_1139(output_dir),
         # #983: {check_token: [the blocker prose it was derived from, …]} so a remediation
         # can name the instance for checks that have no bespoke branch.
         "blocker_prose": deliverability_blocker_prose,

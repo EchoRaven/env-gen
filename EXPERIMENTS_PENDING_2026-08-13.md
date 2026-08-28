@@ -21209,3 +21209,39 @@ false-block class this codebase has paid for repeatedly (#504, r81), so this is 
 decision rather than enforced — the same call #743 and #1023 made. The honest statement of
 where the pipeline stands: it delivers on the default budget and the artifact runs, with one
 endpoint empty because a column no seed populates.
+
+## 1139 — a filter that can never match a seeded row  ★ FIXED 2026-08-28
+
+r8's shipped defect, detected. `/api/titles/top10` filters `WHERE t.top10_rank IS NOT NULL`,
+the column exists in `models.py`, and no seeded row carries a value — so 1 of 24 business
+endpoints returns an empty collection forever. Measured live on one token: trending 24 rows,
+search 24 rows, top10 0 rows.
+
+`never_matching_filters_1139(project_dir)` scans the backend for `X.col IS NOT NULL` (and the
+ORM `.isnot(None)` form), reads the effective seed (lane file + framework dataset), and reports
+columns no row populates. Verified on three DELIVERED artifacts:
+
+    netflix-local-r8  → top10_rank       (the real defect)
+    netflix-local-r5  → nothing
+    smoke-notes       → nothing
+
+DELIBERATELY NOT "the response was empty". `/api/my-list` is empty for a freshly registered
+user and is not a defect — it filters by `user_id`, so it is never reported. An earlier note in
+this file rejected this fix on the my-list false-positive; that objection was aimed at the
+wrong predicate. What is reported is a filter no seeded row could satisfy, which nothing ships
+on purpose.
+
+EVIDENCE, NOT A VERDICT (#1023): returned in the gate result and logged, never appended to
+`failed_checks`. The orchestrator reads that result every tick and holds the tools to file the
+fix; a new blocking check could not be validated here without a full run, and this codebase has
+paid for false blocks repeatedly (#504, r81).
+
+★ Two self-inflicted faults, both caught by the machinery rather than by judgement:
+  1. The first implementation used a bare `Path`, which is NOT module-level in delivery_gate.py
+     (neighbours import it locally as `_P`). The NameError was swallowed by the function's own
+     `except` and it returned [] — looking exactly like "no defect found". Only running it
+     against r8's real artifact exposed it. This is the class `_swallowed_790` exists for.
+  2. The test used `src[i-2000:i+2000]`, which `test_source_windows_do_not_grow_943` forbids —
+     the fifth time that ratchet has caught this session's lineage. Replaced with an exact
+     extraction of every name the gate appends to `failed_checks`.
+Test: `tests/test_1139_a_filter_that_can_never_match.py` (7 cases; 3 pin the silence).
