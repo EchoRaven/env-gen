@@ -21169,3 +21169,43 @@ and #1023 (evidence, never a verdict). Now a missing field returns False and doe
 baseline.
 Test: `tests/test_1138_a_set_of_one_cannot_shrink.py` (13 cases; 4 of them assert #228's own
 bounds are untouched).
+
+## ★ netflix-local-r8 DELIVERED ON THE DEFAULT BUDGET — and the one defect it shipped
+
+    08:17:08 → 09:58:26 (101 min), FWVAL_NO_DELIVER_ABORT_S at its DEFAULT 4500s
+    09:52:48  "#1133 crediting 1395s of visual (escape) deferral … of 4500s allowed"
+    09:58:12  "FINAL DELIVERY: gate clear → cut release v1.0.0"
+    milestones: delivered   releases: ['1.0.0']   branch release-v1.0.0 exists
+    #1137b verified in the artifact: LoginPage → '/profiles' (not '/tenants', not '/')
+    #1138 fired 0 times — this run converged without needing the depth-shrink grace
+
+RUNTIME-VERIFIED (rebuilt --no-cache, brought up on remapped ports):
+
+    backend / database / frontend running; OpenAPI 33 routes (24 business)
+    register → 783-char token
+    /api/titles/trending  200, 24 items  ['Agent Kim Reactivated','Avengers: Doomsday','Backrooms']
+    /api/search           200, 24 items
+    frontend GET /        200
+
+### The defect it shipped: `/api/titles/top10` serves an empty collection, by construction
+
+    custom_routes.py:125   SELECT … FROM titles t WHERE t.top10_rank IS NOT NULL …
+    models.py:62           top10_rank = Column(Text)
+    seed_data.json         titles: 0 rows        (the titles come from seed_dataset.json)
+    rows carrying top10_rank: 0
+
+The query is correct, the route is mounted, and nothing ever populates the column it filters
+on — so 1 of the 24 business endpoints can never return data. Measured live: trending and
+search both served 24 rows on the same token while top10 served 0.
+
+This is precisely the class the SEED AUDIT exists for, and that audit is structurally inert
+(both paths closed — see the "three validation terms that have never fired" note above).
+
+### Deliberately NOT switched on
+
+A runtime "business GET returned an empty collection" gate would catch it and would also fire
+on `/api/my-list` for a freshly registered user, which is legitimately empty. That is the
+false-block class this codebase has paid for repeatedly (#504, r81), so this is recorded for a
+decision rather than enforced — the same call #743 and #1023 made. The honest statement of
+where the pipeline stands: it delivers on the default budget and the artifact runs, with one
+endpoint empty because a column no seed populates.
