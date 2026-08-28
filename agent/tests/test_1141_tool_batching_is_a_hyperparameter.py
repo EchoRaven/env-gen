@@ -91,6 +91,26 @@ class ThePromptsNoLongerHardcodeIt(unittest.TestCase):
                     if "tool_batch_policy" in f.read_text(encoding="utf-8", errors="replace")]
         self.assertGreaterEqual(len(rendered), 3, [f.name for f in rendered])
 
+    def test_every_use_carries_a_fallback(self):
+        """A bare Environment (tests/vision_tools build their own) leaves the global
+        undefined, and Jinja renders undefined as an EMPTY STRING — the step contract would
+        silently lose its action text. `default(..., true)` makes that impossible."""
+        for f in PROMPTS.rglob("*.j2"):
+            t = f.read_text(encoding="utf-8", errors="replace")
+            if "tool_batch_policy" not in t:
+                continue
+            for line in t.splitlines():
+                if "tool_batch_policy" in line:
+                    self.assertIn("default(", line, f"{f.name}: {line.strip()[:90]}")
+
+    def test_a_bare_environment_still_renders_real_guidance(self):
+        from jinja2 import Environment, FileSystemLoader
+        env = Environment(loader=FileSystemLoader(str(PROMPTS)))
+        out = env.from_string(
+            "{{ tool_batch_policy | default('INDEPENDENT calls together', true) }}").render()
+        self.assertTrue(out.strip())
+        self.assertNotEqual(out.strip(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

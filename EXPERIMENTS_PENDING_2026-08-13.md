@@ -21427,3 +21427,54 @@ a cap nobody typed, the same trap #1120 fixed for `str.isdigit()`. ASCII digits 
 patch before hearing it. The fix is to make ownership visible at READ time, which changes what
 `read`/`glob` return — a wider blast radius than these three, so it is recorded rather than
 taken unilaterally.
+
+## 1144 / 1145 — the two remaining waste classes, and what the memory census found
+
+### 1144 — ownership was known at read time and only said at write time
+70 of 360 edit/write failures are the FRAMEWORK-OWNED denial (docker-compose.yml alone is 23 —
+the same lane churn that then hunted for ports by hand, #1134b). The message is already right;
+it arrives after the caller has read the file, composed a patch and spent a turn. `read` now
+carries the ownership as a NOTICE (#1116) taken from the ONE map the write guard and the
+conflict resolver already share, so a second copy cannot drift (#665). Reading a framework file
+stays legitimate and unblocked; a workspace without that map, or one whose map raises, is
+silent.
+
+### 1145 — a skill is static, so stop re-delivering it
+netflix-local-r9: **163 `get_skill` calls covering EIGHT distinct skills**. The orchestrator
+fetched `release-readiness` 56x and `verification-before-completion` 35x; the backend fetched
+`api-contract-guard` 22x. 155 of 163 were re-deliveries of text the caller already held, each a
+full turn at 54-65K tokens. Reuses `read`'s existing mechanism (same threshold, same
+`force=true` escape) rather than inventing a rule.
+
+★ 1145b — the correctness condition, raised as a question and confirmed in the code: this
+framework CONDENSES message history (`_maybe_condense_messages_in_place`; every run logs #1025),
+so "you already have this" can become FALSE. Both delivery caches are re-armed at the one place
+that knows the history was truncated. **`read`'s cache has had this gap since #613** and is
+fixed with it — an elision that outlives the content it counted is a withheld answer, and the
+caller needs an extra turn to discover it.
+
+### Memory census (r9, measured — not a redesign)
+
+    query_knowledge      99 calls, 0 empty results, but 89 of 99 return exactly ONE row
+    top query            "systematic-debugging skill triage" 39x (+ 23 near-duplicates)
+                         → 62 of 99 queries are the same lookup
+    knowledge entries    110, ALL category=tech_context, ALL importance=0.6
+    content shape        every entry is "Shared info (update|warning|issue): …"
+    persistence          per-run (`generated/<run>/.memory/*.knowledge.jsonl`, mode="session")
+    entries vs outcome   r8 (DELIVERED) 41 · r6 67 · r7 92 · r9 110 · r4 148 · r3 (failed) 177
+
+So the store is an auto-captured log of inter-agent broadcasts, not curated knowledge; its two
+ranking fields carry a single value each, so retrieval is text-similarity only; volume
+correlates INVERSELY with success, i.e. it is largely a by-product of thrash; and 62 knowledge
+queries + 155 redundant skill fetches ≈ 217 turns per run spent re-acquiring static content.
+
+RECORDED, NOT CHANGED — cross-run persistence is the obvious ask and the wrong first move:
+nine-tenths of the current entries are run-specific endpoint names, ports and task ids, so
+carrying them into a fresh contract would poison it. The prerequisite is being able to tell an
+environment invariant from this run's output — which is exactly what the two dead fields were
+supposed to do. Fix the fields first; only then is cross-run storage a question worth asking.
+
+★ Sixth #943 catch of this session lineage: the #1145 test used `src[i:i+1400]`. The ratchet
+has a hard ceiling and each miss costs a 6m40s suite run to discover. Written to session memory
+as a standing rule: anchor on a landmark (`src.index(<next stable string>, i)`), never a byte
+count.

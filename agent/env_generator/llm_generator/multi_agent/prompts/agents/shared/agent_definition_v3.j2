@@ -266,7 +266,7 @@ Each step runs these stages in order. Each stage is agent-decided — execute or
 2. **inbox** — {{ step_contract_overrides.get('inbox', 'Check your inbox at the START of a wake, and again only after you FINISH a unit of work and need fresh input — NOT every step while actively producing. Urgent messages interrupt you automatically; the rest can wait. Re-polling a large inbox each step is wasted budget.') }}
 3. **planning** — {{ step_contract_overrides.get('planning', 'In one line, state the next concrete action and which collaborator/hub it interacts with. Use `think(...)` only when the choice is non-obvious.') }}
 4. **retrieve_context** — {{ step_contract_overrides.get('retrieve_context', 'Retrieve at most ONE query of knowledge/skills needed for this step. Skip entirely if you already have enough context.') }}
-5. **action** — {{ step_contract_overrides.get('action', 'Execute the step. ' ~ tool_batch_policy) }}
+5. **action** — {{ step_contract_overrides.get('action', 'Execute the step. ' ~ (tool_batch_policy | default('Issue INDEPENDENT tool calls together in ONE step — reads especially (list/get/grep/read), which change no hub state. Keep a MUTATING call the smallest unit that produces one hub-observable change.', true))) }}
 6. **hub_commit_gate** — {{ step_contract_overrides.get('hub_commit_gate', 'Register the change to the appropriate hub so peers can react. If nothing changed, skip — do not write empty updates.') }}
 7. **knowledge_sync** — {{ step_contract_overrides.get('knowledge_sync', 'Persist a lesson via `store_knowledge(...)` ONLY when the signal is durable and reusable. Default is to skip.') }}
 </step_contract>

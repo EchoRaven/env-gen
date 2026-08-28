@@ -35,6 +35,18 @@ Parameters:
         # #613: per-INSTANCE (hence per-agent) fingerprint of the last whole-file delivery
         self._read_fingerprints: dict = {}
 
+    def forget_deliveries_1145(self) -> None:
+        """#1145b: the caller no longer holds what we delivered — start counting again.
+
+        The elision above says "identical content already delivered to you Nx". After a
+        CONTEXT CONDENSE that sentence is false: the framework drops earlier messages
+        (`_maybe_condense_messages_in_place`, #1025 logs it every run), so the content this
+        counter is protecting may be gone. Eliding then withholds something the caller
+        genuinely does not have, and it costs an extra turn to discover that and pass
+        force=true.
+        """
+        self._read_fingerprints.clear()
+
     @property
     def tool_definition(self):
         return create_tool_param(
@@ -143,6 +155,33 @@ Parameters:
                         f"delivered to you {seen - 1}x ({len(body)} chars, {total_lines} "
                         f"lines). Nothing has written to this file since. If you no longer "
                         f"have it, call read(file_path=..., force=true).]")
+        # #1144: SAY WHO OWNS THE FILE, AT READ TIME.
+        #
+        # Writing a framework-owned file is refused with a message that is already correct —
+        # it names custom_routes.py / src/pages/*.jsx as the place to author. The cost is
+        # WHEN it arrives: the caller has already read the file, composed a patch and spent a
+        # turn before hearing it. Measured over the eight netflix runs, 70 of 360
+        # edit/apply_patch/write failures are this denial, and docker-compose.yml alone is 23
+        # of them — the same lane churn that then went hunting for ports by hand (#1134b).
+        #
+        # Ownership is knowable the moment the file is read, and this asks the ONE map the
+        # write guard and the conflict resolver already share (`is_framework_owned`), so a
+        # second copy cannot drift from it (#665).
+        #
+        # A NOTICE (#1116), not a refusal: reading a framework-owned file is legitimate and
+        # frequent — you read main.py to see what the projection produced. Nothing is blocked.
+        _notices_1144 = []
+        try:
+            _isfw = getattr(self.workspace, "is_framework_owned", None)
+            if callable(_isfw) and _isfw(resolved):
+                _notices_1144.append(
+                    "⚠ FRAMEWORK-OWNED (#1144): this file is regenerated from the registered "
+                    "contract (tables/endpoints/pages) and any edit you make here is discarded "
+                    "at the next projection. Read it freely; author changes in "
+                    "custom_routes.py (backend) or src/pages/*.jsx + App.jsx (frontend), or "
+                    "change the CONTRACT if the projection itself is wrong.")
+        except Exception:
+            _notices_1144 = []
         return ToolResult(
             success=True,
             data={
@@ -151,6 +190,8 @@ Parameters:
                 "offset": start_line,
                 "limit": effective_limit,
                 "content": body,
+                "framework_owned": bool(_notices_1144),
             },
+            notices=_notices_1144,
         )
 

@@ -18,6 +18,9 @@ from multi_agent.skill_loader import get_skill, list_skill_summaries, upsert_ski
 
 logger = logging.getLogger(__name__)
 
+# #1145: same threshold read.py uses for identical re-delivery.
+_IDENTICAL_SKILL_ELIDE_AT_1145 = 3
+
 # Lazy import to avoid circular dependencies
 _knowledge_store = None
 
@@ -485,6 +488,13 @@ Use this when you want to:
     def __init__(self, workspace: Workspace):
         super().__init__(name=self.NAME, category=ToolCategory.KNOWLEDGE)
         self.workspace = workspace
+        # #1145: per-INSTANCE (hence per-agent), exactly as read.py's #613 fingerprint map.
+        # A class attribute would let one lane's re-fetches elide another lane's FIRST one.
+        self._skill_fingerprints_1145: dict = {}
+
+    def forget_deliveries_1145(self) -> None:
+        """#1145b: after a context condense the caller may no longer hold the instructions."""
+        self._skill_fingerprints_1145.clear()
 
     @property
     def tool_definition(self) -> dict:
@@ -500,7 +510,7 @@ Use this when you want to:
             required=["name"],
         )
 
-    async def execute(self, name: str, **kwargs) -> ToolResult:
+    async def execute(self, name: str, force: bool = False, **kwargs) -> ToolResult:
         try:
             skill = get_skill(self.workspace.code_root, name)
             if not skill:
@@ -508,6 +518,34 @@ Use this when you want to:
                     "found": False,
                     "message": f"Skill not found: {name}",
                 })
+            # #1145: A SKILL IS STATIC — STOP RE-DELIVERING IT.
+            #
+            # Measured in netflix-local-r9: 163 get_skill calls covering EIGHT distinct
+            # skills. The orchestrator fetched `release-readiness` 56 times and
+            # `verification-before-completion` 35; the backend fetched `api-contract-guard`
+            # 22. 155 of the 163 were re-fetches of text the caller already had, and each one
+            # costs a full turn re-sending 54-65K tokens of context — the same order as the
+            # 179 edit-anchor failures.
+            #
+            # `read` already solved exactly this (`_IDENTICAL_READ_ELIDE_AT`, "identical
+            # content already delivered to you Nx … call read(force=true)"). Same mechanism,
+            # same escape hatch, same threshold, so the two tools behave alike rather than
+            # each inventing a rule.
+            _instr = skill.instructions
+            try:
+                _key = str(skill.name or name)
+                _fp = (len(_instr or ""), hash(_instr or ""))
+                _prev, _seen = self._skill_fingerprints_1145.get(_key, (None, 0))
+                _seen = _seen + 1 if _prev == _fp else 1
+                self._skill_fingerprints_1145[_key] = (_fp, _seen)
+                if _seen >= _IDENTICAL_SKILL_ELIDE_AT_1145 and not force:
+                    _instr = (
+                        f"[unchanged — this skill's instructions were already delivered to you "
+                        f"{_seen - 1}x ({len(skill.instructions or '')} chars). A skill is "
+                        f"static; nothing has changed. Re-read what you already have, or call "
+                        f"get_skill(name='{_key}', force=true) if you no longer hold it.]")
+            except Exception:
+                _instr = skill.instructions
             return ToolResult.ok({
                 "found": True,
                 "skill": {
@@ -515,7 +553,7 @@ Use this when you want to:
                     "summary": skill.description,
                     "path": skill.file_path,
                     "source": skill.source,
-                    "instructions": skill.instructions,
+                    "instructions": _instr,
                 },
             })
         except Exception as e:

@@ -376,9 +376,24 @@ class AgentStepToolingMixin:
                 # Replace contents in place to preserve the shared reference.
                 messages[:] = condensed
             if len(messages) < before:
+                # #1145b: history just got shorter, so "you already have this" may now be
+                # FALSE. read() and get_skill() elide identical re-deliveries by counting
+                # what they handed this agent; a condense can drop exactly those messages.
+                # Reset the counters here — the one place that knows the caller's history
+                # was truncated — so the next fetch delivers in full.
+                _forgot = 0
+                try:
+                    for _t in (self._tools.get_all() or []):
+                        _f = getattr(_t, "forget_deliveries_1145", None)
+                        if callable(_f):
+                            _f()
+                            _forgot += 1
+                except Exception:
+                    pass
                 self._logger.info(
                     f"[{self.agent_id}] [{self._active_stage}] condensed messages "
                     f"in-place: {before} -> {len(messages)}"
+                    + (f"; re-armed {_forgot} delivery cache(s) (#1145b)" if _forgot else "")
                 )
         except Exception as exc:
             # Condensation is best-effort; never block the LLM call on it.
