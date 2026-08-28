@@ -118,9 +118,10 @@ class ItIsActuallyWiredIn(unittest.TestCase):
     def test_every_deferral_release_site_credits(self):
         src = (ROOT / "env_generator" / "llm_generator" / "multi_agent"
                / "orchestrator.py").read_text(encoding="utf-8")
-        self.assertEqual(src.count("_credit_framework_deferral_1133"), 4,
-                         "expected 1 definition + 3 release sites")
-        for label in ("page-build", "visual (fast-release)", "visual (escape)"):
+        self.assertEqual(src.count("_credit_framework_deferral_1133"), 5,
+                         "expected 1 definition + 4 release sites (#1133b added the squad)")
+        for label in ("page-build", "visual (fast-release)", "visual (escape)",
+                      "test-user squad"):
             self.assertIn(f'_credit_framework_deferral_1133(_now - ', src)
             self.assertIn(f'"{label}")', src)
 

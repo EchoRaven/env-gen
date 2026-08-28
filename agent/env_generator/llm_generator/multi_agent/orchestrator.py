@@ -4079,6 +4079,12 @@ class Orchestrator:
                         "delivering with possibly-open test-user defects.",
                         int(_now - self._tu_squad_deferred_since),
                         getattr(self, "_tu_squad_attempts", 0))
+                    # #1133b: the FOURTH deferral source. #1133 credited page-build and both
+                    # visual releases; the squad gate defers delivery on the same clock (up to
+                    # squad_release_decision's 900s / 3 attempts) and was still billing the
+                    # lanes for it. Same call, same cap.
+                    self._credit_framework_deferral_1133(
+                        _now - self._tu_squad_deferred_since, "test-user squad")
             # DETERMINISTIC BROWSER TEST-USER GATE (2026-06-30): a reliable, objective
             # complement to the LLM squad above. Drive a real browser through the RUNNING app
             # (booted by api_smoke) and HOLD the release when the app is objectively UNUSABLE:
