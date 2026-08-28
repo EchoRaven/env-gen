@@ -21555,3 +21555,36 @@ a fresh contract remains the wrong move.
 Test: `tests/test_1146_the_two_fields_that_held_one_value.py` (10 cases). One pins that the
 OLD short text was below the floor, so the quality gate cannot silently swallow the category
 again if someone shortens it.
+
+## 1147 — regression cover for the `stages` fix, and a verification method that failed silently
+
+The `plan` classifier read `tool_args.get("items", [])` while the tool sends `stages`
+(reasoning_tools.py declares action / plan_name / plan_description / **stages**, and every
+recorded call is `plan(action, plan_name, plan_description, stages)`). Always `[]`, so
+`action == "create" and items` never held and the `plan` category was never written — measured:
+`plan` called 13 times across 5 of 8 runs, ZERO `plan` rows.
+
+★ The implementation was ALREADY in HEAD, from the compacted earlier part of this session
+(75c4ff32, whose test file covers msg_type ranking and the lint transition but has **zero**
+`stages` assertions). What this adds is the missing regression cover: 9 cases, including
+`test_dict_stages_do_not_raise_on_join` — stages are dicts, so the original
+`"; ".join(items[:5])` would have RAISED had the key ever been right.
+
+### The verification method that reported the opposite of the truth
+
+The standing check is `git stash push -- <file>` → run the test → `git stash pop`. Here it
+produced "9 passed" and the message "The stash entry is kept in case you need it again", which
+reads exactly like *the test does not pin the fix*. The truth was the reverse:
+
+    git stash push -- <file>   → the change was already COMMITTED, so nothing was stashed
+    pytest                     → the fix was still in place, so of course it passed
+    git stash pop              → popped an UNRELATED old stash (from branch `pipeline-loop`),
+                                 hit a conflict, and kept it
+
+Acting on that reading would have meant "strengthening" a test that was already correct. Redone
+with an explicit inverse edit (back up the file, restore the old `items` read, run, restore):
+**5 failed**, so the cover is real.
+
+Rule for the rest of this work: `git stash push -- <path>` is silent when the path has no
+uncommitted change, and a following `pop` then reaches for whatever stash does exist. Prefer an
+explicit inverse edit, or check `git stash list` length before and after.
