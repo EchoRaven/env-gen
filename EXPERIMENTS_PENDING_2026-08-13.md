@@ -21089,3 +21089,49 @@ also what the real thing does after sign-in. Generic, not Netflix-shaped. The or
 fallbacks is deliberate: a platform page is still preferred over `/`, because the front door is
 the defect #1137 exists to prevent.
 Test: `tests/test_1137b_the_tenant_picker_is_not_the_product.py` (7 cases).
+
+## netflix-local-r6 — the default-budget test, and it FAILED (usefully)
+
+r5 delivered on a widened budget, and the arithmetic said the default would have sufficed
+(18.5 min of effective lane time against 75). r6 was that experiment, on the DEFAULT
+`FWVAL_NO_DELIVER_ABORT_S = 4500`. **It did not deliver**, and the reason is precise:
+
+    03:35:40 → 05:34:41   (119 min)
+    #1133 credited          0 times   ← no deferral ever RELEASED
+    visual judged 5x        04:42 → 05:09, scores climbing
+                            (browse_by_languages 0.56→0.58, games 0.42→0.62), never ≥ 0.65
+    gate FULLY GREEN        13 of 47 evaluations
+    deliver_project         called twice
+    05:31  ABORT            "delivery never SUCCEEDED in 75min of lane time"
+    milestone               pending
+
+So the lanes reached a fully-green gate thirteen times and the run was still killed for
+"non-convergence". The blocker was a visual deferral that never released, and #1133 credits
+only at the RELEASE site — so an in-flight deferral is billed to the lanes in full.
+
+### The structural mismatch, quantified
+
+    VISUAL_DEFERRAL_ESCAPE_S = 3600   # "max wall-clock a milestone may defer on visuals"
+    FWVAL_NO_DELIVER_ABORT_S = 4500   # the no-convergence abort
+
+The framework permits the visual gate to consume **80% of the entire abort budget**, leaving
+15 minutes of headroom for the lanes, the builds and the chains. r5's actual deferral was
+4830s — LONGER than the 3600s escape, because the escape is only evaluated between rounds and
+a long round overshoots. r5 survived because that deferral released and #1133 credited it;
+r6 was aborted before its deferral ever released.
+
+## 1133c — credit the deferral that has not released yet  ★ FIXED 2026-08-28
+
+`_live_deferral_credit_1133c(now)` returns the seconds an UNRELEASED visual deferral has
+already consumed, subtracted at the abort check in addition to #1133's released credits.
+
+Only the VISUAL gate is read: it is the one deferral clock that also carries a `released`
+latch, so "still deferring" is knowable. `_pages_gate_deferred_since` and
+`_tu_squad_deferred_since` are never cleared on release (they reset per milestone), so testing
+them for None would credit time that already ended — the same class of wrong answer #1130 and
+#1114 were about.
+
+Shares #1133's ONE-BUDGET cap: released credits plus the live one can never exceed a single
+budget, so a deferral that never ends still cannot turn a 75-minute fail-fast into a
+wall-clock grind. Half the ten tests are on that cap and on the no-double-count rule.
+Test: `tests/test_1133c_the_deferral_that_never_released.py` (10 cases).

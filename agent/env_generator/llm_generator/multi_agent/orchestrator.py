@@ -3426,6 +3426,43 @@ class Orchestrator:
         from .runtime.heal_pipeline import HealPipeline
         HealPipeline(self).commit_framework_delivery()
 
+    def _live_deferral_credit_1133c(self, now: float) -> float:
+        """#1133c: seconds an UNRELEASED framework deferral has already consumed.
+
+        #1133 credits a deferral when it RELEASES. One that has not released yet is blocking
+        delivery right now and is billed to the lanes the whole time — and the no-convergence
+        abort can fire BEFORE the visual gate's own escape, so the credit never happens.
+
+        netflix-local-r6 is that run. It judged visual fidelity five times (04:42 → 05:09,
+        scores climbing: browse_by_languages 0.56→0.58, games 0.42→0.62), never reached the
+        0.65 bar, so it never released and #1133 credited 0 — while its delivery gate was
+        FULLY GREEN in 13 of 47 evaluations and `deliver_project` was called twice. Aborted at
+        05:31 for "delivery never SUCCEEDED in 75min of lane time". In r5 the same deferral
+        escaped at 4830s, was credited, and the run delivered.
+
+        Only the VISUAL gate is read: it is the one deferral clock that also carries a
+        `released` latch, so "still deferring" is knowable. `_pages_gate_deferred_since` and
+        `_tu_squad_deferred_since` are never cleared on release (they reset per milestone), so
+        testing them for None would credit time that already ended.
+
+        Shares #1133's one-budget cap — the total of released credits plus this live one can
+        never exceed a single budget, so a deferral that never ends cannot turn a 75-minute
+        fail-fast into a wall-clock grind.
+        """
+        try:
+            gate = getattr(self, "_vf_gate", None)
+            since = getattr(gate, "deferred_since", None)
+            if not since or getattr(gate, "released", False):
+                return 0.0
+            live = float(now) - float(since)
+            if live <= 0.0:
+                return 0.0
+            room = (float(FWVAL_NO_DELIVER_ABORT_S)
+                    - float(getattr(self, "_fwdeliver_deferral_credit_1133", 0.0)))
+            return max(0.0, min(live, room))
+        except Exception:
+            return 0.0
+
     def _credit_framework_deferral_1133(self, deferred_s, source: str) -> None:
         """#1133: give back the time the FRAMEWORK spent deferring delivery.
 
@@ -3677,7 +3714,27 @@ class Orchestrator:
                     self._fwdeliver_last_shrink_ts = _now2
                 if _cur_failed_set:
                     self._fwdeliver_prev_failed = _cur_failed_set
-                if ((_now2 - self._fwdeliver_first_decline_ts) > FWVAL_NO_DELIVER_ABORT_S
+                # #1133c: #1133 credits a deferral when it RELEASES. A deferral that has
+                # not released yet is blocking delivery RIGHT NOW and is billed to the lanes
+                # the whole time — and the no-convergence abort can fire BEFORE the visual
+                # gate's own escape does, so the credit never happens at all.
+                #
+                # netflix-local-r6 is that run. It judged visual fidelity five times
+                # (04:42 → 05:09, scores climbing: browse_by_languages 0.56→0.58,
+                # games 0.42→0.62) and never reached the 0.65 bar, so it never released and
+                # #1133 credited 0. Meanwhile its delivery gate was FULLY GREEN in 13 of 47
+                # evaluations and `deliver_project` was called twice — the lanes had done
+                # their part. It was aborted at 05:31 for "delivery never SUCCEEDED in 75min
+                # of lane time". Compare r5, where the same deferral DID escape at 4830s, got
+                # credited, and the run delivered.
+                #
+                # Only the visual gate is read here: it is the one deferral clock that also
+                # carries a `released` latch, so "still deferring" is knowable. The page-build
+                # and squad anchors are never cleared on release (they reset per milestone),
+                # so `is not None` on those would credit time that already ended — the same
+                # class of wrong answer this file has paid for before.
+                _live1133c = self._live_deferral_credit_1133c(_now2)
+                if ((_now2 - self._fwdeliver_first_decline_ts - _live1133c) > FWVAL_NO_DELIVER_ABORT_S
                         and not getattr(self, "_fwval_abort_reason", None)):
                     # #228 (r20: the verifier cleared the LAST gate 36s after the
                     # abort fired): a small, recently-shrinking failing set gets a
