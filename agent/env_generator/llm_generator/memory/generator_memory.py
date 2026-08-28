@@ -1662,7 +1662,28 @@ class GeneratorMemory(AgentMemory):
         # === Auto-save Plan updates ===
         if tool_name == "plan":
             action = tool_args.get("action", "create")
-            items = tool_args.get("items", [])
+            # #1147: THE KEY THE TOOL ACTUALLY SENDS IS `stages`, NOT `items`.
+            #
+            # `plan`'s schema (reasoning_tools.py) declares action / plan_name /
+            # plan_description / **stages**, and every recorded call in the corpus is
+            # `plan(action, plan_name, plan_description, stages)`. This branch read
+            # `tool_args.get("items", [])`, which is therefore ALWAYS [] — so `action ==
+            # "create" and items` never held and the `plan` category was never written.
+            #
+            # Third field-name miss of this session's lineage after #1029 ("#1017 READ THE
+            # COUNT AND TRIED TO ITERATE IT") and #1128's collector: the reader and the
+            # producer disagree about a name and the result is silence, not an error.
+            #
+            # Measured: `plan` was called 13 times across 5 of 8 netflix runs and produced
+            # ZERO `plan` rows; all 110 of r9's knowledge rows are tech_context/0.6.
+            #
+            # Stages are dicts ({id, name, …}), not strings — `"; ".join(items[:5])` would
+            # have raised on them, so the summary is built from their names.
+            _stages = tool_args.get("stages") or tool_args.get("items") or []
+            items = [
+                (st.get("name") or st.get("id") or "?") if isinstance(st, dict) else str(st)
+                for st in _stages
+            ] if isinstance(_stages, (list, tuple)) else []
             if action == "create" and items:
                 # Save complete plan to working memory
                 plan_summary = f"Plan created with {len(items)} items: " + "; ".join(items[:5])

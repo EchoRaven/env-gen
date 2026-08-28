@@ -21513,3 +21513,45 @@ actually use (r9's top calls: read 1237, lint 650, workhub_list_tasks 619, check
 workhub_task 540, grep 470) or delete them. Not taken here: picking new trigger tools changes
 what gets stored, and the census says the store's problem is that it captures too much of the
 wrong thing, not too little — so the next move should be decided against that, not bolted on.
+
+## 1146 — two fields that held one value each, hiding three dead paths  ★ FIXED 2026-08-28
+
+The memory census said `category` and `importance` carry no signal. Chasing why found three
+unreachable categories, each broken for a DIFFERENT reason.
+
+    plan     (0.8)  the `plan` tool is called 0 times in a run
+    decision (0.7)  the `think` tool is called 0 times
+    bug_fix  (0.7)  TWO independent faults, stacked
+    tech_context     the only live path — send_message 287 + broadcast 100 in r9
+
+`bug_fix`, in detail:
+  1. the branch read `_lint_results` AFTER `record_lint` had overwritten it (tooling.py calls
+     record_lint at :633, record_tool_call at :647). The comment said "was failing, now
+     passes"; the code meant "is failing RIGHT NOW" — it announced a fix while the file was
+     still broken and stored nothing when one was genuinely fixed.
+  2. its text, `"Fixed lint errors in <path>"`, is ~47 chars / 7 tokens against this class's
+     OWN 80-char / 8-token floor (`_passes_auto_knowledge_quality`), so anything that did fire
+     was discarded before storage.
+
+That is why r9 has ZERO bug_fix rows against 650 lint calls and 13 failures.
+
+★ Fault 1 had already been half-fixed earlier in this session — the transition is now read
+before the overwrite — while the text was left short, so the path STILL could not produce a
+row. A half-fixed unreachable path is indistinguishable from an unfixed one.
+
+The live branch already held the answer: `msg_type` is the sender's own classification and was
+written into the TEXT and dropped from the fields. It now sets both:
+
+    blocker → issue 0.90 · issue → issue 0.85 · decision → decision 0.80
+    warning → warning 0.75 · question → question 0.50 · anything else → tech_context 0.6
+
+Unknown types keep the previous pair, so nothing regresses.
+
+This is also the prerequisite for the cross-run question recorded earlier: an environment
+invariant cannot be told from this run's output while every row looks identical. It is now
+possible to ask; it is still not answered, and carrying run-specific endpoints and ports into
+a fresh contract remains the wrong move.
+
+Test: `tests/test_1146_the_two_fields_that_held_one_value.py` (10 cases). One pins that the
+OLD short text was below the floor, so the quality gate cannot silently swallow the category
+again if someone shortens it.
