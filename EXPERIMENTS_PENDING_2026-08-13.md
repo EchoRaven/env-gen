@@ -21245,3 +21245,62 @@ paid for false blocks repeatedly (#504, r81).
      the fifth time that ratchet has caught this session's lineage. Replaced with an exact
      extraction of every name the gate appends to `failed_checks`.
 Test: `tests/test_1139_a_filter_that_can_never_match.py` (7 cases; 3 pin the silence).
+
+## 1140 — no EARLY escape may ship an app where not one screen reached the bar  ★ FIXED 2026-08-28
+
+User question that started it: "did r5 and r8 meet the visual requirement, and why could they
+deliver?" Neither did. Both shipped below the 0.65 bar through the bounded-deferral escape.
+
+`_visual_release_decision`'s escapes answer *"have we waited long enough"*. #750 drew the line
+this extends — *"an escape answers 'have we waited long enough', and no amount of waiting makes
+a blank page a delivery"*. Waiting-is-futile and good-enough-to-ship are different questions,
+and every escape except the wall-clock was answering the first while deciding the second.
+
+**r8's exact path**: `VISUAL_PLATEAU_HARD_ROUNDS = 8`, and #519 gave the hard plateau NO time
+floor on purpose (a churning lane resets the attempt cap, so plateau_rounds is the only
+churn-robust signal). r8 hit 9 no-improvement rounds and released at **1395s** with
+blocking_average **0.4412** and **0 of 11 screens** at the bar — then delivered v1.0.0.
+
+### The floor is a predicate, not a number — the data drew the line
+
+    run  blocking_avg  passed  screens>=bar   escape taken
+    r6      0.7411      True      11/12       (never escaped)   ← the bar IS reachable
+    r3      0.6982     False       8/12       soft plateau @1941s
+    r4      0.658      False       7/11       (never escaped)
+    r5      0.6067     False       5/11       wall-clock @4830s   → delivered
+    r7      0.579      False       3/11       (never escaped)
+    r2      0.54       False       3/11       wall-clock @3964s
+    r8      0.4412     False       0/11       HARD plateau @1395s → delivered
+    r9      0.437      False       0/11       (never escaped)
+    r1      0.2144     False       0/10       (never escaped)
+
+"Not one screen reached the bar" separates the bottom three exactly, with nothing to
+calibrate. An average floor would have needed a magic number; this does not.
+
+FIX: the WALL-CLOCK escape stays unconditional — PIPE-C3's "the deferral ALWAYS terminates"
+and #519's "delivery still ALWAYS eventually fires" both rest on it, and a floor that could
+block it would reintroduce the deadlock they exist to prevent. Every escape below it (hard
+plateau, soft plateau, attempt cap, judgment cap, idle) now requires `any_screen_at_bar`.
+Below the floor the run keeps deferring and the wall-clock releases it anyway — later, with
+#1133/#1133c crediting that wait back so the lane clock is not charged for it.
+
+Applied to the sample it changes exactly ONE run: r8's early exit at 1395s. r2, r3 and r5 are
+untouched.
+
+UNKNOWN IS NEVER A FLOOR: no `screens` (nothing judged yet), an advisory-only exam, a
+malformed record or any fault returns True. It can only tighten a state it can actually see —
+#1114's rule. Default True, so a caller that omits it is byte-identical (#558's discipline).
+
+★ Two guards in this repo caught me while building it: `test_visual_avg_fast_release_558`
+pins `_visual_fast_release_args`'s return dict key-for-key, so adding the floor to that shared
+kwargs channel failed until the contract assertion was extended (the same way #750 extended it
+for `app_dead`) — the right outcome, because both call sites splat that dict and a floor that
+reached only one would make the defer-check and the deliver block disagree.
+Test: `tests/test_1140_no_early_escape_below_the_bar.py` (14 cases; 5 pin "unknown never
+floors", 3 reproduce r8/r5/r2/r3's exact escape shapes).
+
+### Still open, recorded not fixed
+Delivery and visual quality are DECOUPLED in the other direction too: the best visual run of
+the session (r6, 0.7411, the only `passed=True`) never delivered, while r8 (0.4412) did. #1140
+addresses the half where a poor app ships early; the half where a good app is killed by the
+lane clock is #1133/#1133c/#1138's line, and r6 died on that clock.

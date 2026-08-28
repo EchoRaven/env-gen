@@ -162,9 +162,12 @@ def test_args_helper_extracts_avg_min_rounds_and_coverage():
     args = _visual_fast_release_args(g)
     # #750 added `app_dead` to this dict, so both call sites get the veto for free by
     # splatting it. Exact-equality is kept deliberately — it is what caught the addition.
+    # #1140 added `any_screen_at_bar` the same way #750 added `app_dead`: this dict is the
+    # shared kwargs channel and both call sites splat it, so a new floor must arrive here or
+    # the defer-check and the deliver block would disagree.
     assert args == {"blocking_average": 0.7258, "avg_min": 0.65,
                     "avg_stable_rounds": 2, "coverage_ok": True,
-                    "app_dead": False}, args
+                    "app_dead": False, "any_screen_at_bar": True}, args
 
 
 def test_args_helper_coverage_ok_requires_a_blocking_screen():
@@ -179,7 +182,9 @@ def test_args_helper_safe_when_no_last_result():
     assert _visual_fast_release_args(g) == {
         "blocking_average": None, "avg_min": None,
         "avg_stable_rounds": 0, "coverage_ok": False,
-        "app_dead": False}      # #750: a fresh gate has never seen a blackout
+        "app_dead": False,      # #750: a fresh gate has never seen a blackout
+        # #1140: no last_result => nothing judged => unknown, and unknown never floors.
+        "any_screen_at_bar": True}
 
 
 def test_end_to_end_gate_state_fast_releases():

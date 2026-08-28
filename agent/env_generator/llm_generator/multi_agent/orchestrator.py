@@ -478,7 +478,8 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
                              avg_release_rounds: int = VISUAL_AVG_RELEASE_ROUNDS,
                              avg_release: bool = VISUAL_AVG_RELEASE,
                              coverage_ok: bool = False,
-                             app_dead: bool = False) -> str:
+                             app_dead: bool = False,
+                             any_screen_at_bar: bool = True) -> str:
     """Decide the visual-blocked delivery path. Returns:
       * ``"defer"``       — keep blocking the release; the lane should iterate.
       * ``"release"``     — escape: deliver anyway (recorded below-threshold).
@@ -564,8 +565,20 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
             and blocking_average >= avg_min
             and avg_stable_rounds >= avg_release_rounds):
         return "fast_release"
+    # #1140: the WALL-CLOCK escape is the terminator and stays unconditional — PIPE-C3's
+    # "the deferral ALWAYS terminates" and #519's "delivery still ALWAYS eventually fires"
+    # both rest on it, and a quality floor that could block it would reintroduce the deadlock
+    # those exist to prevent.
     if deferred_since is not None and (now - deferred_since) > escape_s:
         return "release"
+    # #1140: every escape BELOW this line answers "waiting will not help" — a claim about
+    # progress, not about whether the result is fit to ship. r8 took #519's hard plateau at
+    # 1395s and shipped with ZERO screens at the bar. They now require that at least one
+    # blocking screen reached it; below that floor the run keeps deferring until the
+    # wall-clock above releases it anyway. Default True, so a caller that does not pass it
+    # gets byte-identical behaviour (#558's additive discipline).
+    if not any_screen_at_bar:
+        return "defer"
     if total_judgments >= total_cap:
         return "release"
     if attempts >= attempt_cap:
@@ -601,6 +614,49 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     return "defer"
 
 
+def _any_blocking_screen_at_bar_1140(res) -> bool:
+    """#1140: did ANY blocking screen reach the bar in this judgement?
+
+    The escapes in `_visual_release_decision` answer "have we waited long enough". #750 drew
+    the line this extends: *"an escape answers 'have we waited long enough', and no amount of
+    waiting makes a blank page a delivery"* — waiting-is-futile and good-enough-to-ship are
+    different questions, and every escape but the wall-clock was answering the first while
+    deciding the second.
+
+    Measured over the nine netflix runs that carry a visual verdict:
+
+        run  blocking_avg  passed  screens>=bar     escape taken
+        r6      0.7411      True      11/12         (never escaped)
+        r3      0.6982     False       8/12         soft plateau @1941s
+        r4      0.658      False       7/11         (never escaped)
+        r5      0.6067     False       5/11         wall-clock @4830s
+        r7      0.579      False       3/11         (never escaped)
+        r2      0.54       False       3/11         wall-clock @3964s
+        r8      0.4412     False       0/11         HARD plateau @1395s  ← shipped
+        r9      0.437      False       0/11         (never escaped)
+        r1      0.2144     False       0/10         (never escaped)
+
+    "Not one screen reached the bar" separates the bottom three exactly, with no threshold to
+    calibrate — which is why the floor is this and not a number. r8 is the case: 9
+    no-improvement rounds tripped #519's HARD plateau, which by design has no time floor, and
+    it shipped at 1395s with zero screens at the bar. r6 proves the bar is reachable (11 of 12
+    screens, passed=True) — it simply never delivered, for reasons on the lane clock.
+
+    Unknown is never a floor: no `screens` at all (no judgement yet), a malformed record, or
+    any fault returns True, so this can only ever tighten a state it can actually see.
+    """
+    try:
+        screens = (res or {}).get("screens") or []
+        if not screens:
+            return True                      # nothing judged yet — not evidence of anything
+        blocking = [s for s in screens if isinstance(s, dict) and not s.get("advisory")]
+        if not blocking:
+            return True                      # advisory-only exam — same as unknown
+        return any(s.get("passed") is True for s in blocking)
+    except Exception:
+        return True
+
+
 def _visual_fast_release_args(gate) -> dict:
     """FIX #558: the AVG fast-release inputs extracted from a VisualFidelityGate's LAST judged
     result — the gating ``blocking_average`` (#542), the min bar (``min_similarity`` = the
@@ -626,6 +682,10 @@ def _visual_fast_release_args(gate) -> dict:
         "coverage_ok": _blocking_judged >= 1,
         # #750: carried through both call sites, which already splat this dict.
         "app_dead": bool(getattr(gate, "app_dead_750", False)),
+        # #1140: the quality floor for the EARLY escapes. Same dict for the same reason —
+        # the defer-check and the deliver block must agree or deliver_project is blocked
+        # while the deliver block cuts the release.
+        "any_screen_at_bar": _any_blocking_screen_at_bar_1140(res),
     }
 
 
