@@ -1699,15 +1699,9 @@ class GeneratorMemory(AgentMemory):
                 )
         
         # === Extract from error fixes ===
-        if tool_name == "lint":
-            path = tool_args.get("path", "")
-            if path in self._lint_results and not self._lint_results.get(path, True):
-                # Was failing, now passes - record the fix
-                self._record_auto_knowledge_if_new(
-                    content=f"Fixed lint errors in {path}",
-                    category="bug_fix",
-                    importance=0.7,
-                )
+        # #1146: the lint branch that used to live here was unsatisfiable (see record_lint).
+        # The transition it wanted is detected where both values are visible, so nothing is
+        # checked here any more — an unreachable branch reads as coverage that does not exist.
         
         # === Extract from write (file creation / overwrite) ===
         if tool_name == "write":
@@ -1722,10 +1716,34 @@ class GeneratorMemory(AgentMemory):
             # Save API-related info shared between agents
             _excerpt = _api_excerpt_1117(content)
             if _excerpt is not None:
+                # #1146: THE SIGNAL WAS IN HAND AND THROWN AWAY.
+                #
+                # netflix-local-r9: all 110 knowledge rows carry category="tech_context" AND
+                # importance=0.6 — one value each, so the two fields a retriever ranks on
+                # hold no information and query_knowledge falls back to text similarity
+                # (89 of 99 queries return exactly one row). The other categories are
+                # unreachable for three different reasons: `plan` and `think` are tools no
+                # agent calls (0 times in r9), and bug_fix's own text sat below the quality
+                # floor (fixed in #1146b above).
+                #
+                # This branch is the only live one — send_message 287 + broadcast 100 in r9 —
+                # and `msg_type`, the sender's OWN classification, was written into the text
+                # and dropped from the fields. Using it costs nothing, and it is the
+                # prerequisite for ever asking whether knowledge should outlive a run: an
+                # environment invariant cannot be told from this run's output while every row
+                # looks identical.
+                _mt1146 = str(msg_type or "update").strip().lower()
+                _cat1146, _imp1146 = {
+                    "blocker": ("issue", 0.9),
+                    "issue": ("issue", 0.85),
+                    "decision": ("decision", 0.8),
+                    "warning": ("warning", 0.75),
+                    "question": ("question", 0.5),
+                }.get(_mt1146, ("tech_context", 0.6))
                 self._record_auto_knowledge_if_new(
                     content=f"Shared info ({msg_type or 'update'}): {_excerpt}",
-                    category="tech_context",
-                    importance=0.6,
+                    category=_cat1146,
+                    importance=_imp1146,
                 )
     
     def get_tool_stats(self) -> Dict[str, Any]:
@@ -1967,7 +1985,34 @@ class GeneratorMemory(AgentMemory):
         """Record a lint operation."""
         normalized = self._normalize_path(path)
         self._files_linted.add(normalized)
+        # #1146: the failing -> passing TRANSITION is the knowledge, and only this method can
+        # see it. The extractor's branch (`_maybe_extract_knowledge`, tool_name == "lint") was
+        # written for it and cannot fire: the pipeline calls record_lint (tooling.py:633)
+        # BEFORE record_tool_call (:647), so by the time the extractor looks, this dict already
+        # holds the CURRENT result; and the extractor returns early unless the call SUCCEEDED,
+        # i.e. unless that value is True. `not True` — unsatisfiable, in every input.
+        #
+        # Measured: netflix-local-r9 ran lint 650 times with 13 failures and stored ZERO
+        # bug_fix entries. All 110 of its knowledge rows are category=tech_context,
+        # importance=0.6, because the send_message path is the only one that can fire — `plan`
+        # and `think` were called 0 times by any agent, so their branches are dead too.
+        _prev_1146 = self._lint_results.get(normalized)
         self._lint_results[normalized] = passed
+        if passed and _prev_1146 is False:
+            self._record_auto_knowledge_if_new(
+                # #1146b: the transition is detected correctly now, and the ENTRY still
+                # could not exist: "Fixed lint errors in <path>" is ~47 chars / 7 tokens
+                # against this class's own 80-char / 8-token floor
+                # (_passes_auto_knowledge_quality), so every one was discarded before it
+                # was stored. A category whose only possible text is below the bar is
+                # unreachable by construction — which is why r9 has zero bug_fix rows
+                # despite 650 lint calls and 13 failures. Say what a later reader needs.
+                content=(f"Lint now PASSES for {normalized} after this lane edited it; the "
+                         f"previous run of the same check on this path failed. Treat a later "
+                         f"failure here as NEW, not as the same unfixed problem."),
+                category="bug_fix",
+                importance=0.7,
+            )
         
         if not passed:
             self.remember(

@@ -21478,3 +21478,38 @@ supposed to do. Fix the fields first; only then is cross-run storage a question 
 has a hard ceiling and each miss costs a 6m40s suite run to discover. Written to session memory
 as a standing rule: anchor on a landmark (`src.index(<next stable string>, i)`), never a byte
 count.
+
+## 1146 — the lint-fix branch was unsatisfiable, which is why one whole category was empty  ★ FIXED 2026-08-28
+
+The memory census found all 110 of r9's knowledge rows carrying `category=tech_context,
+importance=0.6`. This is the first concrete cause, and it is provable rather than probable.
+
+`_maybe_extract_knowledge` carried a branch labelled *"Was failing, now passes - record the
+fix"*. It cannot fire, for any input:
+
+    tooling.py:633   record_lint(path, result.success)       ← dict set to the CURRENT result
+    tooling.py:647   record_tool_call(…) → _maybe_extract_knowledge(…)
+                                            ↑ returns early unless success is True
+    branch test      not self._lint_results.get(path, True)  ← that value was just set to True
+
+`success` must be True to reach the branch, and the dict was just assigned that same True.
+Measured: r9 ran `lint` **650 times with 13 failures and stored ZERO bug_fix entries**.
+
+The other two classifiers are dead for a different reason: `plan` and `think` were called **0
+times** by any agent in r9, so their branches never run either. Four classification paths,
+three unreachable, and `send_message` is the only one left — which is exactly the single
+category the census saw.
+
+FIX: the failing→passing TRANSITION is only visible inside `record_lint`, which holds the old
+value and the new one, so the detection moves there. The unreachable branch is deleted rather
+than left in place — a branch that cannot execute reads as coverage that does not exist.
+Test: `tests/test_1146_the_lint_fix_that_could_never_be_recorded.py` (9 cases: the transition
+fires once, a first pass is not a fix, passing twice records once, still-failing and a
+regression record nothing, paths do not bleed, and the dead branch is gone).
+
+### Still open on the memory field question
+`plan` / `think` remain dead classifiers. The choice is to re-point them at tools agents
+actually use (r9's top calls: read 1237, lint 650, workhub_list_tasks 619, check_inbox 571,
+workhub_task 540, grep 470) or delete them. Not taken here: picking new trigger tools changes
+what gets stored, and the census says the store's problem is that it captures too much of the
+wrong thing, not too little — so the next move should be decided against that, not bolted on.
