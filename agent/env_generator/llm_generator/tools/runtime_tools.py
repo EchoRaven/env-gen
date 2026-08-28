@@ -2274,6 +2274,68 @@ Examples:
         )
 
 
+_RUN_PORTS_ENV_1134 = "ENVGEN_RUN_HTTP_PORTS"
+
+
+def foreign_target_notice_1134(url: str) -> str:
+    """#1134: is this probe aimed at THIS run's app, or at some other service on the host?
+
+    `test_api` accepts any URL and reports whatever answers. On a machine running more than
+    one sandbox that is not a theoretical problem: an answer from a DIFFERENT product is
+    indistinguishable, in the result, from an answer about this one -- and it is recorded as
+    evidence about this one.
+
+    Measured on the three runs built by the current code, comparing the port each run's OWN
+    compose publishes against the ports its agents actually probed:
+
+        run                compose backend   probes to it   most-probed other ports
+        netflix-local-r1   8081              17             8080(286) 5173(45) 3000(42)
+        netflix-local-r2   3000              10             8080(64) 8000(38) 3011(22)
+        smoke-notes        3000               9             8080(45) 3011(31) 8096(7)
+
+    In every run the app's real port is the LEAST used. :3011 answered 22 probes in r2 and 31
+    in smoke-notes -- it is the rydr/Uber sandbox on this host, and `curl :3011/openapi.json`
+    returns `{"info":{"title":"uber"}}`. r2's test-user squad drove it and filed all six of
+    its API steps as 404 "missing endpoints" (api_passed=0, verdict PARTIAL) while the run's
+    OWN chains were getting 201/200 on the same paths minutes earlier. That report is a
+    delivery-gate input. :8000 (38 probes in r2) is the port in this tool's own DESCRIPTION
+    examples; :8096 is another project's frontend.
+
+    #625 already guards the squad against driving a target that is not LISTENING. This is the
+    other half: something answered, and it was not ours. A liveness probe cannot tell them
+    apart.
+
+    Deliberately a NOTICE, not a refusal. The allowlist is best-effort -- it is populated
+    where the framework resolves the app's published ports, and a path it does not cover
+    would turn a refusal into a false block, which this codebase has paid for repeatedly
+    (#504, r81). An empty/absent allowlist means "unknown", and unknown must never block.
+    """
+    import os as _os
+    try:
+        raw = (_os.environ.get(_RUN_PORTS_ENV_1134) or "").strip()
+        if not raw:
+            return ""
+        allowed = {p.strip() for p in raw.split(",") if p.strip()}
+        if not allowed:
+            return ""
+        from urllib.parse import urlparse
+        u = urlparse(str(url or ""))
+        host = (u.hostname or "").lower()
+        if host not in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+            return ""            # not a local sandbox address — nothing to say
+        port = str(u.port or ("443" if u.scheme == "https" else "80"))
+        if port in allowed:
+            return ""
+        return (
+            "#1134 WRONG TARGET: this run's app publishes %s on localhost, and you probed "
+            ":%s. Whatever answered is a DIFFERENT service on this host, so its response says "
+            "nothing about this product — do not file it as a defect. Re-probe against %s."
+            % (", ".join(":" + p for p in sorted(allowed)), port,
+               ", ".join("localhost:" + p for p in sorted(allowed))))
+    except Exception:
+        return ""
+
+
 # ===== Test API Tool =====
 
 class TestAPITool(BaseTool):
@@ -2337,6 +2399,25 @@ To test them, get a token first, then pass it as a header:
         )
     
     def execute(
+        self,
+        method: str,
+        url: str,
+        body: Optional[str] = None,
+        headers: Optional[dict] = None,
+        expect=None,
+    ) -> ToolResult:
+        # #1134: the probe runs either way; the CALLER is told when it was not our app.
+        result = self._execute_1134(
+            method, url, body=body, headers=headers, expect=expect)
+        _fn = foreign_target_notice_1134(url)
+        if _fn:
+            try:
+                result.notices.append(_fn)
+            except Exception:
+                pass
+        return result
+
+    def _execute_1134(
         self,
         method: str,
         url: str,

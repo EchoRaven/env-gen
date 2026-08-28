@@ -20839,3 +20839,46 @@ that the false "has not gone green" sentence is gone.
   `account_menu.jpg` dropdown). The verifier is inventing coverage; the framework's refusal is
   right. Auto-forwarding those rejections to the backend "to register the endpoint" would add
   product surface nobody asked for, on the say-so of a hallucinating lane.
+
+## 1134 — the answer came from someone else's app, and was filed against this one  ★ FIXED 2026-08-27
+
+`test_api` accepts any URL and reports whatever answers. On a host running more than one
+sandbox that is not theoretical. Measured over the three runs built by the current code —
+each run's OWN compose backend port against the ports its agents actually probed:
+
+    run                compose backend   probes to it   most-probed other ports
+    netflix-local-r1   8081              17             8080(286) 5173(45) 3000(42)
+    netflix-local-r2   3000              10             8080(64)  8000(38) 3011(22)
+    smoke-notes        3000               9             8080(45)  3011(31) 8096(7)
+
+**In every run the app's real port is the least-probed one.** `:3011` is the rydr/Uber
+sandbox on this machine — `curl :3011/openapi.json` returns `{"info":{"title":"uber"}}` — and
+netflix-local-r2's test-user squad drove it 22 times and filed **all six** of its API steps as
+this product's 404 "missing endpoints" (`api_passed=0`, `api_missing=6`, verdict PARTIAL)
+while the run's own verification chains were getting 201/200 on the very same paths minutes
+earlier (`continue_watching_page_basic`: `POST /api/continue-watching → 201`). The squad report
+is a delivery-gate input. `:8000` (38 probes in r2) is the port in this tool's own DESCRIPTION
+examples; `:8096` is another project's frontend.
+
+The framework does resolve the right port — `gather_squad_inputs` reads it from the run's
+compose via `_backend_host_port` and the compose never changed (written 16:45:45, ports
+`3000:8081`/`8080:3000`). Nothing CONSTRAINS what the agents then probe, and nothing records
+the target's identity in the finding, so a foreign answer is indistinguishable from a real one.
+
+#625 already guards the squad against a target that is not LISTENING ("never drive a target
+that isn't listening" — 47 connectivity-shaped bugs across 40 runs). This is the other half:
+something answered, and it was not ours. A liveness probe cannot tell them apart.
+
+FIX: `gather_squad_inputs` publishes the run's own published ports to `ENVGEN_RUN_HTTP_PORTS`
+(process-global on purpose — every lane agent runs in this process and the ports are a
+property of the run). `test_api` became a thin wrapper that attaches
+`foreign_target_notice_1134()` to the result, naming the port probed, the ports that ARE ours,
+and instructing that the response says nothing about this product.
+
+Deliberately a NOTICE, not a refusal, and it rides on `ToolResult.notices` (#1116) so the
+CALLER sees it rather than only a log reader. The allowlist is best-effort; a resolution path
+it does not cover would turn a refusal into a false block, which this codebase has paid for
+repeatedly (#504, r81). Absent or empty allowlist means "unknown", and unknown never blocks.
+Test: `tests/test_1134_the_answer_came_from_someone_elses_app.py` (9 cases; four of them are
+on the fail-open behaviour, one drives the real `TestAPITool.execute` to prove the notice
+reaches the caller).

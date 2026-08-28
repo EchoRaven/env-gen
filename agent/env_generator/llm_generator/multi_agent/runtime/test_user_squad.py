@@ -609,6 +609,23 @@ def gather_squad_inputs(orch: Any) -> Dict[str, Any]:
                   or _service_host_port(compose, compose.parent, "ui"))
             out["api_base"] = f"http://localhost:{be}" if be else None
             out["ui_base"] = f"http://localhost:{fe}" if fe else None
+            # #1134: publish the run's OWN ports so `test_api` can tell a probe of this app
+            # apart from a probe of some other sandbox on the same host. Measured: in all
+            # three runs on the current code the app's real port is the LEAST-probed one,
+            # and :3011 (the rydr/Uber sandbox here) answered 22 probes in netflix-local-r2
+            # and 31 in smoke-notes. r2's squad filed all six of ITS 404s as this product's
+            # missing endpoints while this run's own chains were getting 201/200 on the same
+            # paths. Process-global on purpose: every lane agent runs in this process, and
+            # the ports are a property of the run, not of a caller.
+            try:
+                import os as _os1134
+                _known = {str(x) for x in (be, fe) if x}
+                _prev = (_os1134.environ.get("ENVGEN_RUN_HTTP_PORTS") or "").split(",")
+                _known.update(x.strip() for x in _prev if x.strip())
+                if _known:
+                    _os1134.environ["ENVGEN_RUN_HTTP_PORTS"] = ",".join(sorted(_known))
+            except Exception:
+                pass
     except Exception:
         pass
     try:
