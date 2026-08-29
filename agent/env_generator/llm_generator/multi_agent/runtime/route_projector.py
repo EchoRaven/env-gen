@@ -1061,6 +1061,49 @@ _PROJECTOR_GUARD = (
 )
 
 
+# #1155: a projected collection whose LAST literal segment names a column on its OWN table
+# is a RANKED VIEW of that table, not a copy of it.
+#
+# netflix-local-r13 delivered `/api/titles/top10` as `db.query(Title).limit(100).all()` —
+# all 60 titles, `top10_rank` SELECTED into every row and never read. The spec declares that
+# column for exactly this endpoint. Runtime-verified on the delivered stack: /api/titles,
+# /api/titles/trending and /api/titles/top10 all answered 60 rows, identically.
+#
+# It also made one of the framework's own detectors unreachable: remediation_dispatcher's
+# "N column(s) are filtered on but never seeded" P0 can only see a column something FILTERS
+# on, and nothing did — so `top10_rank` being NULL in all 60 rows was never filed either.
+# Projecting the filter puts that column back inside the detector's reach.
+#
+# Deliberately narrow — this projects code a lane cannot change, so it must not guess:
+#   * only a LITERAL last segment, and only when it maps to a real column;
+#   * the resource segment itself never counts (`/api/titles` is not ranked by `titles`);
+#   * `/api/titles/trending` has no `trending*` column, so it is left exactly as it was;
+#   * a trailing integer in the segment is the row cap (`top10` -> 10), else the usual 100.
+_RANK_SUFFIXES_1155 = ("", "_rank", "_order", "_position", "_score", "_count")
+_DESC_SUFFIXES_1155 = ("_score", "_count")
+
+
+def _ranked_collection_1155(path: str, cols, table: str = ""):
+    """(column, limit, descending) when the path names a ranking column, else None."""
+    try:
+        lits = [s for s, is_p in _segments(path) if not is_p]
+        if len(lits) < 2:
+            return None
+        seg = str(lits[-1] or "").strip().lower().replace("-", "_")
+        if not seg or seg == str(table or "").strip().lower():
+            return None
+        colset = {str(c).lower(): str(c) for c in (cols or [])}
+        for suf in _RANK_SUFFIXES_1155:
+            col = colset.get(seg + suf)
+            if col:
+                m = re.search(r"(\d+)$", seg)
+                lim = int(m.group(1)) if m and 0 < int(m.group(1)) <= 100 else 100
+                return col, lim, suf in _DESC_SUFFIXES_1155
+        return None
+    except Exception:
+        return None
+
+
 def _serialize_expr(var: str, cols: List[str]) -> str:
     """Build a dict literal serialising an ORM instance's columns (ISO datetimes)."""
     if not cols:
@@ -1452,10 +1495,19 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
             ]
         else:
-            body_lines = [
-                f"    rows = db.query({cls}).limit(100).all()",
-                f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
-            ]
+            _rank1155 = _ranked_collection_1155(path, cols, table)
+            if _rank1155:
+                _rcol, _rlim, _rdesc = _rank1155
+                _ord = f'getattr({cls}, "{_rcol}")' + ('.desc()' if _rdesc else '')
+                body_lines = [
+                    f'    rows = db.query({cls}).filter(getattr({cls}, "{_rcol}").isnot(None)).order_by({_ord}).limit({_rlim}).all()',
+                    f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
+                ]
+            else:
+                body_lines = [
+                    f"    rows = db.query({cls}).limit(100).all()",
+                    f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
+                ]
     elif cls and m in ("POST", "PUT", "PATCH"):
         # DB mutations are wrapped: a relational create the projector can't fully
         # wire (e.g. a missing NOT-NULL FK) must not 500 — roll back + answer.
