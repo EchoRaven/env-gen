@@ -777,6 +777,24 @@ def _fw_owner_val(cls, col, user):
             _tgt_table = _fk.column.table
             _tgt_col = _fk.column.name
             break
+        # #1160: the same missing-ForeignKey blindness #1158 fixed on the VALIDATION
+        # side, here on the AUTO-FILL side. render_models emits plain Column(Integer),
+        # so this loop finds nothing, the sub-entity branch below is skipped, and the
+        # function falls back to the caller's USER id — which is then written into a
+        # PROFILE column. Measured on r13's delivered stack: user id 15 owned profile
+        # id 19, and POSTing {"title_id": 5} with no profile_id stored
+        # {"profile_id": 15}. Every my_list / ratings / continue_watching row points at
+        # a profile that does not exist, and per-profile scoping is meaningless — the
+        # reads only agree because they filter on the same wrong value.
+        if _tgt_table is None and str(col).endswith("_id"):
+            _stem = str(col)[:-3]
+            for _m in Base.registry.mappers:
+                _t = getattr(_m, "local_table", None)
+                _tn = getattr(_t, "name", None)
+                if _tn and _tn in (_stem, _stem + "s", _stem + "es"):
+                    _tgt_table = _t
+                    _tgt_col = "id"
+                    break
         if _tgt_table is not None and _tgt_table.name != cls.__table__.name:
             _USER_TABLES = ("users", "user", "accounts", "account")
             for _tc in _tgt_table.columns:            # is T a per-user sub-entity?
@@ -786,6 +804,13 @@ def _fw_owner_val(cls, col, user):
                         break
                 if _sub_ufk:
                     break
+            if _sub_ufk is None:
+                # #1160: and T's own user column is a bare Column(Integer) too.
+                for _tc in _tgt_table.columns:
+                    _cn = str(getattr(_tc, "name", "") or "")
+                    if _cn in ("user_id", "account_id", "owner_id", "owner_user_id"):
+                        _sub_ufk = _cn
+                        break
             if _sub_ufk is not None:
                 for _m in Base.registry.mappers:
                     _t = getattr(_m, "local_table", None)
@@ -1011,9 +1036,28 @@ def _fw_owns(cls, col, fk_val, user):
                 break
         if _Sub is None:
             return True
+        # #1160c: COERCE THE SUPPLIED VALUE TO THE TARGET COLUMN'S TYPE BEFORE QUERYING.
+        # A client-supplied FK can arrive as a JSON string rather than a number, and
+        # a JSON string, and binding "23" against an INTEGER pk makes postgres raise
+        # `operator does not exist: integer = character varying` — LINE 3: WHERE
+        # profiles.id = $1::VARCHAR. This function's except returns True (fail-open, so a
+        # framework bug never blocks a legitimate write), so the type error did not 500:
+        # it silently ACCEPTED every id, including another user's. Caught on r13's live
+        # stack while probing the owner path, before it could ship.
+        _fkv = fk_val
+        try:
+            _pt = getattr(_Sub, _tgt_col).type.python_type
+            if _pt is int and not isinstance(_fkv, int):
+                _fkv = int(_fkv)
+            elif _pt is str and not isinstance(_fkv, str):
+                _fkv = str(_fkv)
+        except (TypeError, ValueError):
+            return False   # a value that cannot BE the column's type owns nothing
+        except Exception:
+            pass
         with SessionLocal() as _s:
             _row = (_s.query(_Sub)
-                      .filter(getattr(_Sub, _tgt_col) == fk_val)
+                      .filter(getattr(_Sub, _tgt_col) == _fkv)
                       .filter(getattr(_Sub, _sub_ufk) == _uid).first())
             return _row is not None
     except Exception as _e:
@@ -1306,6 +1350,7 @@ except Exception:
 app = FastAPI(title="app")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
+
 
 # Framework OAuth2 AS — /oauth/*, /.well-known/*, /auth/register, /auth/login.
 try:
