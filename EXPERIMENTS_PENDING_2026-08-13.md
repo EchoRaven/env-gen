@@ -21712,3 +21712,47 @@ rather than worked around.
 function returned the right text, the macro rendered it, a bare Jinja environment still
 produced the fallback — and five of six lanes never received it. Local correctness does not
 imply delivery; only the full run measured it.
+
+## netflix-local-r11 — both unverifiable fixes confirmed, neither reduced cost
+
+Aborted at 75min of lane time, no release. Full run against r10:
+
+    metric        r10      r11
+    turns        4312     5108      ↑
+    tools/turn    1.40     1.77     ✅ #1141b, on the FULL run this time
+    LLM calls    6084     6965      ↑
+    edit fails     24       35      ↑
+    elisions        0      244      ✅ #1147
+
+Both fixes are confirmed working and NEITHER reduced total cost: each turn got denser and the
+run simply took more turns. "Fewer turns" was the premise behind #1141 and it did not hold —
+recorded as a negative result, not spun.
+
+#1147 exonerated of a suspicion raised here: all 244 elisions hit
+`.agents/skills/*/SKILL.md`, ZERO hit `app/backend` or `app/frontend`. It never withheld
+content from a file a lane was editing.
+
+## 1148 — a present `app/` hid a missing artifact inside it  ★ FIXED 2026-08-28
+
+r11's dominant blocker was `database_sql_missing`, 20 of 21 gate evaluations. Traced in the
+run's own repo:
+
+    app/database/init/01_init.sql — 2855 bytes, written by the framework delivery itself
+    exists at 43ef69a, which is on `main`
+    `git merge-base --is-ancestor 43ef69a HEAD` → NO
+    every branch, integration included, lacks it; no deletion commit anywhere
+    r10, same code: on integration, on disk, gate passed that check
+
+This is #691's mechanism exactly — its own comment: *"the writer commits mcp_server/ on
+`main`, delivery runs on `integration`, and merge-base says main is NOT an ancestor"*, with
+125 of 144 corpus runs missing mcp_server for that reason. The recovery it added asks whether
+a SUBTREE ROOT exists, so one level down it is blind: `app/` was present (backend, frontend),
+the loop skipped, and the stranded file inside was neither warned about nor recovered.
+
+FIX: the recovery set is the delivery gate's own required ARTIFACTS, not three directory
+names. `app/database` is added when it holds no `.sql` — literally the predicate
+`database_sql_missing` tests (`(output_dir/"app/database").glob("**/*.sql")`). Two tests pin
+that the recovery and the gate use the SAME predicate: a recovery checking something else than
+the gate is a recovery that misses.
+
+The three original subtrees keep existence-only semantics, so nothing regresses.

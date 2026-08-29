@@ -1913,8 +1913,30 @@ class HealPipeline:
                 return
             repo = _P(repo)
             staged_any = False
-            for sub in ("app", "mcp_server", "docker"):
-                if not (repo / sub).exists():
+            # #1148: the guard below asks whether the SUBTREE ROOT exists, and #691's own
+            # mechanism can strand a file INSIDE a subtree that does exist. netflix-local-r11:
+            # `app/` was present (backend + frontend), so this loop skipped — while
+            # `app/database/init/01_init.sql` (2855 bytes, written by this very delivery) sat
+            # on `main` at 43ef69a, which is NOT an ancestor of `integration`, exactly as #691
+            # describes for mcp_server. The file never reached the delivered tree and
+            # `database_sql_missing` blocked 20 of that run's 21 gate evaluations — its
+            # dominant cause of failure. r10, same code, had it on integration and delivered
+            # its gate past that check.
+            #
+            # So the recovery set is the delivery gate's own required ARTIFACTS, not just the
+            # three top-level directories: a partially-present `app/` must not hide a missing
+            # one. `app/database` is checked for a .sql because that is literally what
+            # `database_sql_missing` tests (`(output_dir/"app/database").glob("**/*.sql")`).
+            _subs_1148 = ["app", "mcp_server", "docker"]
+            try:
+                _appdb = repo / "app" / "database"
+                if (repo / "app").exists() and not any(_appdb.glob("**/*.sql")):
+                    _subs_1148.append("app/database")
+            except Exception:
+                pass
+            for sub in _subs_1148:
+                if not (repo / sub).exists() or (
+                        sub == "app/database" and not any((repo / sub).glob("**/*.sql"))):
                     # #691: SAY WHEN A DELIVERY SUBTREE IS NOT THERE TO SHIP.
                     # This skip was silent, and one of the three is routinely absent: the MCP
                     # server. r145 and r146 both log "mcp_server/app/: 15 tool(s) emitted, 15
