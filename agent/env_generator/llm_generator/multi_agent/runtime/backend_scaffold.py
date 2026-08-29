@@ -243,10 +243,15 @@ def repair_custom_routes_router_prologue(backend_dir) -> Dict[str, object]:
     try:
         p = Path(backend_dir) / "custom_routes.py"
         if not p.exists():
-            return out
+            # #1149c: r13 logged this heal as "(no cause reported)" 19 times. Both no-op
+            # paths are healthy, and they mean different things about the lane.
+            return {"repaired": False, "reason": "no custom_routes.py"}
         src = p.read_text(encoding="utf-8")
         if not _ROUTER_USE_RE.search(src) or _ROUTER_DEF_RE.search(src):
-            return out
+            return {"repaired": False,
+                    "reason": ("router already defined"
+                               if _ROUTER_DEF_RE.search(src)
+                               else "no @router use to support")}
         lines = src.split("\n")
         last_import = max((i for i, l in enumerate(lines)
                            if l.startswith("import ") or l.startswith("from ")), default=-1)
@@ -307,6 +312,10 @@ def repair_auth_import_paths(backend_dir) -> Dict[str, object]:
             if new != src:
                 _write_py_995(p, new, what="repair_auth_import_paths")
                 rewritten.append(p.name)
+        # #1149c: an empty `rewritten` is a healthy no-op — say which kind.
+        if not rewritten:
+            return {"repaired": False, "rewritten": rewritten,
+                    "reason": "no wrong-module get_current_user import"}
         return {"repaired": bool(rewritten), "rewritten": rewritten}
     except Exception as exc:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -1022,6 +1031,9 @@ def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
             new_src = "".join(lines)
             ast.parse(new_src)   # never write a syntax error
             _write_py_995(cr, new_src, what="repair_custom_routes_param_types")
+        # #1149c: 0 here means every path param already carried the right annotation.
+        if not fixed:
+            return {"fixed": 0, "reason": "no str-annotated integer-PK path param"}
         return {"fixed": fixed}
     except Exception as exc:
         return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}

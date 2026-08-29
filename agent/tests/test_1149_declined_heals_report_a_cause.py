@@ -80,3 +80,34 @@ def test_the_caller_reports_the_cause_it_was_given():
     # and it must name the three heals whose silence was unreadable
     for name in ("inline_token_46", "auth_middleware_47", "integrity_map_82"):
         assert name in body, name
+
+
+def test_no_backend_heal_reports_an_unexplained_no_op(tmp_path):
+    """#1149c: r13's first hour logged three heals as "(no cause reported)" 19 times --
+    router_prologue, auth_imports_48 and param_types_106. An unexplained no-op is the
+    exact ambiguity #1149 exists to remove, so the reporter's own fallback string must
+    stop being reachable for these three."""
+    be = tmp_path / "app" / "backend"
+    be.mkdir(parents=True)
+    (be / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n",
+                                encoding="utf-8")
+    for fn in (bs.repair_custom_routes_router_prologue,
+               bs.repair_auth_import_paths,
+               bs.repair_custom_routes_param_types):
+        res = fn(be)
+        assert isinstance(res, dict), fn.__name__
+        assert not (res.get("repaired") or res.get("fixed")), fn.__name__
+        assert res.get("reason") or res.get("error"), \
+            "%s declined without a cause" % fn.__name__
+
+
+def test_router_prologue_separates_its_two_healthy_causes(tmp_path):
+    be = tmp_path / "app" / "backend"
+    be.mkdir(parents=True)
+    absent = bs.repair_custom_routes_router_prologue(be)
+    (be / "custom_routes.py").write_text(
+        "from fastapi import APIRouter\nrouter = APIRouter()\n"
+        "@router.get('/x')\ndef x(): return {}\n", encoding="utf-8")
+    defined = bs.repair_custom_routes_router_prologue(be)
+    assert absent.get("reason") == "no custom_routes.py"
+    assert defined.get("reason") == "router already defined"
