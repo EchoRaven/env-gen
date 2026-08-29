@@ -1056,10 +1056,15 @@ class HealPipeline:
             # /api/titles, /api/titles/trending and /api/titles/top10 all answering the
             # same 60 rows; #1155 fixes top10 (a `top10_rank` column exists to rank by)
             # and `trending` has no backing column at all -- a CONTRACT gap only the
-            # lane can close. Never a failed_check: a duplicate list is a quality defect,
-            # not a broken app, and a false blocker costs a run (#566j).
+            # lane can close. Read from the FINAL main.py, not from this call's
+            # bookkeeping: r14's handlers came from backend_skeleton, not from
+            # project_missing_routes, and a check living inside either generator sees
+            # only half the runs. Never a failed_check: a duplicate list is a quality
+            # defect, not a broken app, and a false blocker costs a run (#566j).
             try:
-                _dupes = res.get("identical_bodies_1156") or []
+                from .route_projector import identical_projected_bodies_1156
+                _dupes = identical_projected_bodies_1156(
+                    _P(out_dir) / "app" / "backend")
                 if _dupes:
                     orch._logger.warning(
                         "#1156 %d group(s) of declared endpoints project the IDENTICAL "

@@ -2004,39 +2004,7 @@ def project_missing_routes(
                 + "\n\n\n".join(param_blocks))
         _write_py_995(main_py, new_src, what="project_missing_routes")
 
-    # #1156: TWO ENDPOINTS THAT PROJECT A BYTE-IDENTICAL BODY ARE A CONTRACT GAP.
-    #
-    # netflix-local-r13 delivered /api/titles, /api/titles/trending and
-    # /api/titles/top10 all answering the same 60 rows. #1155 fixes top10, because a
-    # `top10_rank` column exists to rank by. `trending` has NO backing column, so there
-    # is nothing to project and inventing an ordering would be a guess -- the contract
-    # itself is what is incomplete, and only the lane can close it.
-    #
-    # Detected STRUCTURALLY, with no word list: enumerating "ranked-sounding" segments
-    # (trending / popular / featured) would be guessing at English. Two DISTINCT
-    # registered endpoints whose handlers are identical once their path-bearing
-    # decorator and def line are dropped is a fact about the projection, whatever the
-    # words are.
-    #
-    # Reported, never enforced: shipping a duplicate list is a quality defect, not a
-    # broken app, and a false blocker costs a whole run (#566j). It rides out with the
-    # result the way #790 publishes its errored checks -- this module keeps no logger on
-    # purpose, so the caller is where it becomes visible.
-    _dupes_1156: List[Tuple[str, ...]] = []
-    try:
-        _by_body: Dict[str, List[str]] = {}
-        for _p, _h in block_info:
-            _ls = [l for l in str(_h).split("\n") if l.strip()]
-            _body = "\n".join(_ls[2:])          # drop @app.<verb>(path) + def <name>(...)
-            if not _body or "db.query(" not in _body:
-                continue
-            _by_body.setdefault(_body, []).append(_p)
-        _dupes_1156 = [tuple(sorted(ps)) for ps in _by_body.values() if len(ps) > 1]
-    except Exception:
-        _dupes_1156 = []
-
-    return {"projected": projected, "already": len(existing) - len(projected),
-            "identical_bodies_1156": _dupes_1156}
+    return {"projected": projected, "already": len(existing) - len(projected)}
 
 
 # ---------------------------------------------------------------------------
@@ -2053,6 +2021,57 @@ def project_missing_routes(
 # Generalizable — derived from the schema (mutable column(s) + owner/subject FKs),
 # never from any product literal. Byte-identical when the entity already has a
 # write or isn't state-bearing (the shared #557 classifier returns it empty).
+
+def identical_projected_bodies_1156(backend_dir: Any) -> List[Tuple[str, ...]]:
+    """#1156: routes whose handler BODIES are identical answer the same rows.
+
+    netflix-local-r14 delivered /api/titles and /api/titles/trending both as
+    `db.query(Title).limit(100).all()`. #1155 fixed /api/titles/top10 in the SAME run
+    (verified in the shipped main.py: `.filter(top10_rank.isnot(None)).order_by(...)
+    .limit(10)`) because a column exists to rank by. `trending` has no backing column,
+    so there is nothing to project — the CONTRACT is what is incomplete, and only the
+    lane can close it. It was never told.
+
+    Read from the FINAL main.py rather than from one generator's bookkeeping: r14's
+    handlers came from `backend_skeleton`, not `project_missing_routes`, so a check
+    living inside either one sees only half the runs. The file is what ships.
+
+    Compares the ast.dump of each route function's BODY, which carries neither the
+    function name nor the decorator — both of which encode the path, so comparing
+    whole functions would find nothing, ever. No word list: enumerating
+    "ranked-sounding" segments (trending / popular / featured) would be guessing at
+    English, while identical bodies are a fact about the code.
+
+    Returns ``[("GET /api/titles", "GET /api/titles/trending"), …]``; never raises.
+    """
+    try:
+        src = (Path(backend_dir) / "main.py").read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(src)
+    except Exception:
+        return []
+    by_body: Dict[str, List[str]] = {}
+    for node in getattr(tree, "body", []):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        route = ""
+        for d in node.decorator_list:
+            if (isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
+                    and d.args and isinstance(d.args[0], ast.Constant)
+                    and isinstance(d.args[0].value, str)):
+                route = "%s %s" % (d.func.attr.upper(), d.args[0].value)
+        if not route:
+            continue
+        try:
+            body = "".join(ast.dump(n) for n in node.body)
+        except Exception:
+            continue
+        # only DB-reading collections: two identical `raise HTTPException` stubs are
+        # not a contract gap, and neither are two identical health probes.
+        if "query" not in body:
+            continue
+        by_body.setdefault(body, []).append(route)
+    return [tuple(sorted(v)) for v in by_body.values() if len(v) > 1]
+
 
 def _fk_columns(meta: Dict[str, Any]) -> List[str]:
     """The table's foreign-key columns (schema order): a column declared with an

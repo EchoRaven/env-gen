@@ -1,66 +1,116 @@
-"""#1156: two endpoints that project a byte-identical body are a contract gap.
+"""#1156: routes whose handler BODIES are identical answer the same rows.
 
-netflix-local-r13 DELIVERED and then answered the same 60 rows for /api/titles,
-/api/titles/trending and /api/titles/top10.  #1155 fixes top10 -- a `top10_rank`
-column exists to rank by.  `trending` has NO backing column, so there is nothing
-to project and inventing an ordering would be a guess: the CONTRACT is what is
-incomplete, and only the lane can close it.
+netflix-local-r13 delivered /api/titles, /api/titles/trending and
+/api/titles/top10 all answering the same 60 rows.  r14, with #1155, shipped
+top10 correctly (`.filter(top10_rank.isnot(None)).order_by(...).limit(10)`)
+and still shipped `trending` as a copy of `/api/titles` -- it has no backing
+column, so there is nothing to project and inventing an ordering would be a
+guess.  The CONTRACT is what is incomplete, and only the lane can close it.
 
-Detected structurally rather than from a word list -- enumerating "ranked
-sounding" segments (trending / popular / featured) would be guessing at English.
-Reported, never enforced: a duplicate list is a quality defect, not a broken app,
-and a false blocker costs a whole run (#566j).
+Read from the FINAL main.py, not from one generator's bookkeeping: r14's
+handlers came from `backend_skeleton`, not `project_missing_routes`, and the
+first version of this check lived inside the latter and stayed silent through
+a whole run that had the defect.  The file is what ships.
 """
+import textwrap
 from pathlib import Path
 
 from env_generator.llm_generator.multi_agent.runtime import heal_pipeline as hp
-from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
-
-SRC = Path(rp.__file__).read_text(encoding="utf-8")
-
-
-def _detector_body():
-    """Anchor on the ticket, stop at the return it precedes (#943)."""
-    i = SRC.index("# #1156: TWO ENDPOINTS")
-    return SRC[i:SRC.index('return {"projected"', i)]
+from env_generator.llm_generator.multi_agent.runtime.route_projector import (
+    identical_projected_bodies_1156 as dupes)
 
 
-def test_the_detector_ignores_the_path_bearing_lines():
-    """The decorator and def line carry the path and the index, so every handler
-    differs there -- comparing them would find nothing, ever."""
-    b = _detector_body()
-    assert "_ls[2:]" in b, "must drop @app.<verb>(path) and def <name>(...)"
+def _backend(tmp_path, body: str):
+    be = tmp_path / "app" / "backend"
+    be.mkdir(parents=True)
+    (be / "main.py").write_text(textwrap.dedent(body), encoding="utf-8")
+    return be
 
 
-def test_it_only_compares_db_reading_handlers():
-    b = _detector_body()
-    assert '"db.query(" not in _body' in b
+def test_two_routes_with_the_same_body_are_named(tmp_path):
+    be = _backend(tmp_path, '''
+        @app.get("/api/titles")
+        def a(db=None):
+            rows = db.query(Title).limit(100).all()
+            return {"items": rows}
+
+        @app.get("/api/titles/trending")
+        def b(db=None):
+            rows = db.query(Title).limit(100).all()
+            return {"items": rows}
+        ''')
+    assert dupes(be) == [("GET /api/titles", "GET /api/titles/trending")]
+
+
+def test_a_ranked_route_is_no_longer_a_duplicate(tmp_path):
+    """#1155's shape, taken verbatim from r14's delivered main.py."""
+    be = _backend(tmp_path, '''
+        @app.get("/api/titles")
+        def a(db=None):
+            rows = db.query(Title).limit(100).all()
+            return {"items": rows}
+
+        @app.get("/api/titles/top10")
+        def b(db=None):
+            rows = db.query(Title).filter(getattr(Title, "top10_rank").isnot(None)).order_by(getattr(Title, "top10_rank")).limit(10).all()
+            return {"items": rows}
+        ''')
+    assert dupes(be) == []
+
+
+def test_the_decorator_and_name_are_not_compared(tmp_path):
+    """Both encode the path, so comparing whole functions would find nothing."""
+    be = _backend(tmp_path, '''
+        @app.get("/api/a")
+        def handler_one(db=None):
+            rows = db.query(T).limit(100).all()
+            return {"items": rows}
+
+        @app.get("/api/b")
+        def handler_two(db=None):
+            rows = db.query(T).limit(100).all()
+            return {"items": rows}
+        ''')
+    assert dupes(be) == [("GET /api/a", "GET /api/b")]
+
+
+def test_non_db_handlers_are_not_a_contract_gap(tmp_path):
+    """Two identical health probes or stubs are not the defect."""
+    be = _backend(tmp_path, '''
+        @app.get("/healthz")
+        def a():
+            return {"ok": True}
+
+        @app.get("/readyz")
+        def b():
+            return {"ok": True}
+        ''')
+    assert dupes(be) == []
+
+
+def test_a_missing_or_unparseable_main_never_raises(tmp_path):
+    assert dupes(tmp_path / "nope") == []
+    be = tmp_path / "broken"
+    be.mkdir()
+    (be / "main.py").write_text("def (: syntax error\n", encoding="utf-8")
+    assert dupes(be) == []
 
 
 def test_it_uses_no_word_list():
-    """A list of ranked-sounding segments would be guessing at English."""
-    for word in ("trending", "popular", "featured", "recommended"):
-        assert ('"%s"' % word) not in _detector_body()
-
-
-def test_the_result_carries_the_finding():
-    b = _detector_body()
-    assert "_dupes_1156" in b
-    i = SRC.index('return {"projected"', SRC.index("# #1156: TWO ENDPOINTS"))
-    assert "identical_bodies_1156" in SRC[i:SRC.index("\n\n", i)]
-
-
-def test_the_detector_cannot_break_the_projection():
-    b = _detector_body()
-    assert "except Exception" in b and "_dupes_1156 = []" in b
+    src = Path(dupes.__module__ and
+               __import__("env_generator.llm_generator.multi_agent.runtime."
+                          "route_projector", fromlist=["x"]).__file__
+               ).read_text(encoding="utf-8")
+    i = src.index("def identical_projected_bodies_1156")
+    body = src[i:src.index("\ndef ", i + 1)]
+    for word in ("popular", "featured", "recommended"):
+        assert ('"%s"' % word) not in body
 
 
 def test_the_caller_makes_it_visible_without_blocking():
     h = Path(hp.__file__).read_text(encoding="utf-8")
-    i = h.index("#1156 name the endpoints") if "#1156 name the endpoints" in h \
-        else h.index("# #1156: name the endpoints")
+    i = h.index("#1156: name the endpoints")
     seg = h[i:h.index("except Exception", i)]
-    assert "identical_bodies_1156" in seg
+    assert "identical_projected_bodies_1156" in seg
     assert "_logger.warning" in seg
-    # never a gate check
     assert "failed_checks" not in seg
