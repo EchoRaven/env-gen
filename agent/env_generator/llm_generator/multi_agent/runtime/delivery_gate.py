@@ -791,7 +791,14 @@ def _stale_open_p0_evidence_1023(task, output_dir) -> str:
             touched.append(f"{rel} (+{int((mtime - ref) / 60)}m)")
         return "every affected file changed since the evidence was taken: " + "; ".join(
             touched[:3]) + ("" if len(touched) <= 3 else f"; +{len(touched) - 3} more")
-    except Exception:
+    except Exception as _exc_1153:
+        # #1153: "" is the PERMISSIVE answer here -- it means "the evidence still
+        # stands", i.e. the open P0 is real and the gate keeps blocking. That is the
+        # safe direction, but a detector that CRASHED and a detector that found the
+        # files unchanged were the same observation, in the one file that already
+        # owns a reporter for exactly this (#790, 9 call sites) and did not use it here.
+        _swallowed_790("_stale_open_p0_evidence_1023", _exc_1153,
+                       '"" = the evidence stands (P0 stays open)')
         return ""
 
 

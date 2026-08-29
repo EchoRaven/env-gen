@@ -1035,7 +1035,18 @@ def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
                                               reference_routes=reference_routes))
                 if len(blockers) >= limit:
                     return blockers
-    except Exception:
+    except Exception as _exc_1153:
+        # #1153: `[]` from here is read as "no dead nav links" and the gate passes.
+        # A blanket except wrapping the WHOLE scan means one unreadable JSX file
+        # silently converts every remaining page into a clean verdict. Report it
+        # through #790's channel so the release records the axis as unverified
+        # instead of as passed. Behaviour is unchanged -- still permissive.
+        try:
+            from .delivery_gate import _swallowed_790
+            _swallowed_790("dead_nav_link_blockers", _exc_1153,
+                           "[] = no dead nav links")
+        except Exception:
+            pass
         return []
     return blockers
 

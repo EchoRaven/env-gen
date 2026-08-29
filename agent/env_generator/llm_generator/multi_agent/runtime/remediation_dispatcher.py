@@ -22,6 +22,28 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .message_format import join_capped  # #1034
 
+def _swallowed_1152(where: str, exc: BaseException, defaulting_to: str) -> None:
+    """#1152: SAY WHEN A REMEDIATION DETECTOR COULD NOT RUN.
+
+    delivery_gate has had `_swallowed_790` since r148 and uses it 9 times; nothing
+    outside that one file does. This module is where the framework decides WHAT TO
+    TELL A LANE, and four of its detectors answered a raised exception with `[]` --
+    the same value they return when everything is fine. So a broken detector and a
+    clean codebase were indistinguishable, and the lane was told nothing either way.
+    That is the shape of r4/r7/r9/r10: a run ends 1-3 checks short with no
+    remediation ever filed for them.
+
+    Reuse #790's reporter rather than opening a second channel, so a swallowed
+    remediation check surfaces in `check_errors_790()` beside the gate's own.
+    Never raises.
+    """
+    try:
+        from .delivery_gate import _swallowed_790
+        _swallowed_790(where, exc, defaulting_to)
+    except Exception:                      # a reporter must never break remediation
+        pass
+
+
 # FIX #143 — content-based owner routing for docker_up build failures.
 # run-65 M4 (2nd occurrence of the run-52 class): a frontend syntax error
 # (Unterminated regex in HomeFeedPage.jsx) broke the build; the docker_up
@@ -282,7 +304,8 @@ def _chain_broken_detail_798(orch) -> List[str]:
             return out[:8] + ["… and %d more broken step(s) — the same reading applies to each; "
                               "this list is capped to keep the task readable" % (len(out) - 8)]
         return out
-    except Exception:
+    except Exception as _exc_1152:
+        _swallowed_1152("_chain_broken_detail_798", _exc_1152, "[] = nothing to remediate")
         return []
 
 
@@ -331,7 +354,8 @@ def _ui_flow_missing_names(orch) -> List[str]:
                 seen.add(s)
                 out.append(s)
         return out
-    except Exception:
+    except Exception as _exc_1152:
+        _swallowed_1152("_ui_flow_missing_names", _exc_1152, "[] = nothing to remediate")
         return []
 
 
@@ -353,7 +377,8 @@ def _ui_evidence_failed_pages(orch) -> List[str]:
         report = _b(getattr(orch, "_last_validation_results", None)
                     or getattr(orch, "_validation_results", None))
         return [str(x) for x in (report or {}).get("pages_failed") or [] if str(x) and str(x) != "?"]
-    except Exception:
+    except Exception as _exc_1152:
+        _swallowed_1152("_ui_evidence_failed_pages", _exc_1152, "[] = nothing to remediate")
         return []
 
 
@@ -438,7 +463,8 @@ def _ui_flow_failed_names(orch) -> List[str]:
                 seen.add(t)
                 out.append(t)
         return out
-    except Exception:
+    except Exception as _exc_1152:
+        _swallowed_1152("_ui_flow_failed_names", _exc_1152, "[] = nothing to remediate")
         return []
 
 
