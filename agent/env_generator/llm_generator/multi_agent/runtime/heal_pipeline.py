@@ -1958,6 +1958,65 @@ class HealPipeline:
                     _subs_1148.append("app/database")
             except Exception:
                 pass
+            # #1150: #1148 special-cased ONE stranded artifact; the mechanism strands
+            # arbitrary FILES. Measured on the kept repos, every run has exactly the same
+            # shape — `main` holds one orphan commit ("framework delivery: backend skeleton
+            # + frontend infra + projections") that `integration` never sees, and the
+            # release is cut from `integration`:
+            #
+            #   r5   main..integration 106   integration..main 1   files stranded: 0
+            #   r8   main..integration  79   integration..main 1   files stranded: 0
+            #   r11  main..integration 108   integration..main 1   files stranded: 2
+            #
+            # Most of the orphan's ~500 files escape because the projector rewrites them
+            # every round. The tail does not, and WHICH files fall in it varies per run:
+            # r11 stranded `app/database/init/01_init.sql` (#1148, which killed that run)
+            # AND `app/frontend/src/pages/LoginPage.jsx`, which a subtree-root check can
+            # never see because `app/` exists. Enumerating subtrees is whack-a-mole; ask
+            # the question at the granularity the damage happens at.
+            #
+            # Safety: restore ONLY a file this branch has never known. If a lane deliberately
+            # deleted it, HEAD's history carries that file and we leave it alone — absence is
+            # then a decision, not an accident. Best-effort throughout: a failed sweep must
+            # fall through to the subtree loop below, never break the delivery commit.
+            try:
+                _roots_1150 = ("app/", "mcp_server/", "docker/")
+                # Ask for the FRAMEWORK'S OWN stranded delivery commit, not for every
+                # commit off HEAD. Measured on r11, a bare `--all --not HEAD` returns ~200
+                # commits — every lane branch's un-merged WIP — and the one that matters
+                # sorts LAST, so a cap would have missed it while the rest would have
+                # dragged un-merged lane work into the release. Grepping the framework's
+                # own commit subject yields exactly one commit in r8 and in r11: the
+                # orphan this whole defect family is about.
+                _rc_o, _orphans, _ = _run_git(
+                    ["log", "--all", "--not", "HEAD", "--format=%H",
+                     "--grep=^framework delivery"], cwd=repo)
+                _rescued_1150 = []
+                for _osha in (_orphans or "").split()[:40]:
+                    _rc_l, _files, _ = _run_git(
+                        ["show", "--name-only", "--format=", _osha], cwd=repo)
+                    if _rc_l != 0:
+                        continue
+                    for _rel in (_files or "").splitlines():
+                        _rel = _rel.strip()
+                        if not _rel or not _rel.startswith(_roots_1150):
+                            continue
+                        if (repo / _rel).exists():
+                            continue
+                        _rc_h, _hist, _ = _run_git(
+                            ["log", "HEAD", "-1", "--format=%H", "--", _rel], cwd=repo)
+                        if (_hist or "").strip():
+                            continue  # this branch knows the file; its absence is deliberate
+                        _rc_c, _, _ = _run_git(["checkout", _osha, "--", _rel], cwd=repo)
+                        if _rc_c == 0 and (repo / _rel).exists():
+                            _rescued_1150.append(_rel)
+                if _rescued_1150:
+                    orch._logger.warning(
+                        "#1150 recovered %d stranded delivery file(s) — committed on a branch "
+                        "the release is not cut from, and this branch has never known them: "
+                        "%s", len(_rescued_1150), "; ".join(sorted(_rescued_1150)[:12]))
+            except Exception as _exc_1150:
+                orch._logger.debug("#1150 stranded-file sweep skipped: %s", _exc_1150)
             for sub in _subs_1148:
                 if not (repo / sub).exists() or (
                         sub == "app/database" and not any((repo / sub).glob("**/*.sql"))):
