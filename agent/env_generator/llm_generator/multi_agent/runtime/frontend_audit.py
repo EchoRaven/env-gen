@@ -1008,9 +1008,20 @@ def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
             t = t[:-1] if len(t) > 1 and t.endswith("/") else t
             return any(rx.match(t) for rx in matchers)
 
-        # to="/path" | to='/path' | navigate("/path") | navigate('/path')
+        # to="/path" | to='/path' | navigate("/path") | navigate('/path') | href="/path"
+        #
+        # #1165: `href` was missing, and a plain <a href> is a dead control exactly the
+        # way a <Link to> is — it just fails LOUDER, with a full page load onto the SPA's
+        # catch-all. netflix-local-r13 shipped `<a href="/home">Home</a>` in
+        # NewAndPopularPage while App.jsx declares no `/home` route, and this detector —
+        # which exists for precisely that defect (#238) — logged nothing all run.
         pat = re.compile(
-            r"""(?:\bto\s*=\s*|\bnavigate\s*\(\s*)["'](/[^"'{}$]*)["']""")
+            r"""(?:\bto\s*=\s*|\bnavigate\s*\(\s*|\bhref\s*=\s*)["'](/[^"'{}$]*)["']""")
+        # An `href` can also point at a STATIC FILE, which is not a route and must not be
+        # reported as a dead one. `to=`/`navigate()` never do, so this only narrows the
+        # newly-admitted spelling.
+        _ASSET_1165 = ("/assets/", "/static/", "/public/", "/media/", "/img/", "/images/",
+                       "/fonts/", "/favicon")
         seen: set = set()
         for jsx in sorted(src.rglob("*.jsx")):
             if jsx.name == "App.jsx":
@@ -1020,6 +1031,9 @@ def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
             except Exception:
                 continue
             for m in pat.finditer(text):
+                _t1165 = m.group(1)
+                if _t1165.startswith(_ASSET_1165) or re.search(r"\.[A-Za-z0-9]{2,5}$", _t1165):
+                    continue   # #1165: a file, not a route
                 target = m.group(1).strip()
                 if _is_concat_prefix_820(text, m.end()):
                     continue          # `navigate('/watch/' + id)` — the id is supplied
