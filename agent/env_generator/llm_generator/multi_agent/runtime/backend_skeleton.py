@@ -22,7 +22,7 @@ import re
 from urllib.parse import quote as _quote
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Iterable, Any, Dict, List, Mapping, Optional, Tuple
 
 from .database_scaffold import _columns_of, _is_constraint_pseudo_column
 
@@ -193,7 +193,36 @@ def _fk_target(col: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _render_column(col: Dict[str, Any]) -> Optional[str]:
+def _infer_fk_target_1162(col_name: str, known_tables: Iterable[str]) -> Optional[str]:
+    """``<x>_id`` -> ``<x>s.id`` when a table by that name exists, else None.
+
+    Structural only: what does this column REFERENCE. Deliberately NOT
+    `_seed_infer_fk`, which answers "what should the seed put here" and therefore maps
+    `profile_id` -> users; see the note in `_render_column`. The owner vocabulary is a
+    LAST resort here, so a `<x>_id` that names a real table always wins over it.
+    """
+    n = str(col_name or "").lower().strip()
+    if not n.endswith("_id"):
+        return None
+    known = {str(t).lower() for t in (known_tables or ())}
+    base = n[:-3]
+    if not base:
+        return None
+    for cand in (base, base + "s", base + "es", base[:-1] if base.endswith("s") else base):
+        if cand and cand in known:
+            return "%s.id" % cand
+    # only now: a conventional actor column with no table of its own (`author_id`,
+    # `posted_by_id`) points at the identity spine.
+    try:
+        if n in _owner_fk_vocabulary() and "users" in known:
+            return "users.id"
+    except Exception:
+        pass
+    return None
+
+
+def _render_column(col: Dict[str, Any],
+                   infer_fk_tables: Optional[Iterable[str]] = None) -> Optional[str]:
     from .database_scaffold import _counter_default
     col = _counter_default(col)   # FIX #97: *_count integers default 0 by construction
     name = str(col.get("name") or "").strip()
@@ -201,6 +230,37 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
         return None
     args = [_sa_type(str(col.get("type") or "text"))]
     fk = _fk_target(col)
+    # #1162: A CONVENTIONAL FK COLUMN THE CONTRACT DID NOT DECLARE IS STILL AN FK.
+    #
+    # `_fk_target` only sees an EXPLICIT `fk`/`references`, and lanes routinely register
+    # `profile_id` as a bare integer — netflix-local-r13's whole models.py carries TWO
+    # ForeignKeys. Everything that introspects `column.foreign_keys` is then blind, which
+    # is one root with three separate symptoms already patched at the consumers:
+    # #1158 (_fw_owns 403'd a caller's OWN sub-entity), #1158b (and fail-opened on
+    # another user's once the target resolved), #1160 (_fw_owner_val wrote the USER id
+    # into a PROFILE column, so every my_list row pointed at a row that does not exist).
+    #
+    # NOT `_seed_infer_fk`, though it looks like the same question. That one answers
+    # "what should the SEED put here", so it checks the owner vocabulary FIRST and maps
+    # `profile_id` -> users (fill the owner column with a user). As an ORM FK target that
+    # is wrong and actively harmful: `my_list.profile_id` references `profiles.id`, and
+    # declaring `ForeignKey("users.id")` would send `_fw_owns` straight back down its
+    # "target is the users table -> the value must equal the caller's uid" branch — the
+    # exact 403 #1158 fixed. Caught by rendering r13's real contract before shipping.
+    # The structural question is different: what does this column REFERENCE. Table name
+    # first; the owner fallback only when no such table exists.
+    #
+    # Callers pass `infer_fk_tables` for APP tables ONLY. The spine (users/tenants) is
+    # excluded on purpose: those two are absent from `01_init.sql` in every measured run
+    # (r13 models 11 / DDL 9, r14 10 / 8 — the diff is exactly users+tenants), so
+    # `Base.metadata.create_all` actually CREATES them and any FK on them would become a
+    # real DDL constraint. App tables all exist in the DDL, so create_all skips them and
+    # the inferred FK stays ORM metadata — which is all the introspection needs.
+    if not fk and infer_fk_tables:
+        try:
+            fk = _infer_fk_target_1162(name, infer_fk_tables)
+        except Exception:
+            fk = None
     if fk:
         args.append(f'ForeignKey("{fk}")')
     kw = []
@@ -460,7 +520,10 @@ def render_models(tables: Dict[str, Any]) -> str:
 
     blocks: List[str] = []
 
-    def emit(table: str, cols: List[Dict[str, Any]]) -> None:
+    _infer_tables_1162 = set(by_name) | {"tenants", "users"}
+
+    def emit(table: str, cols: List[Dict[str, Any]],
+             infer_fks: bool = False) -> None:
         real = [c for c in cols if not _is_constraint_pseudo_column(c)]
         # Ensure exactly one primary key. If a column is already PK, keep it. Else mark
         # an existing ``id`` column PK (NOT prepend a duplicate — a second ``id =
@@ -472,7 +535,9 @@ def render_models(tables: Dict[str, Any]) -> str:
                 real = [{**c, "primary_key": True} if c is idc else c for c in real]
             else:
                 real = [{"name": "id", "type": "integer", "primary_key": True}] + real
-        lines = [c for c in (_render_column(col) for col in real) if c]
+        lines = [c for c in (
+            _render_column(col, _infer_tables_1162 if infer_fks else None)
+            for col in real) if c]
         lines += _temporal_synonym_lines(real)   # #61: _at↔_time drift aliases
         body = "\n".join(lines) or "    pass"
         blocks.append(f'class {_cls_map_1096.get(table) or _class_name(table)}(Base):\n'
@@ -483,7 +548,7 @@ def render_models(tables: Dict[str, Any]) -> str:
     for name, cols in by_name.items():
         if name in ("users", "tenants") or name in _SKIP_TABLES:
             continue
-        emit(name, cols)
+        emit(name, cols, infer_fks=True)
 
     header = (
         '"""Framework-generated SQLAlchemy ORM models — by-construction from the\n'

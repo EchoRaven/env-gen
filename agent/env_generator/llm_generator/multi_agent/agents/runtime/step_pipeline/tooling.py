@@ -340,6 +340,20 @@ class AgentStepToolingMixin:
         prompt: str,
         stage_tools: List[Dict[str, Any]],
     ) -> Any:
+        # #1161b: #1161 guards the STEP boundary, and a step runs several stages that
+        # each open their own call. r17 (the A/B that took the same failure from 2h50m to
+        # 272s) still emitted 101 requests AFTER the provider was latched terminal — the
+        # tail of steps already in flight. This is the single implementation every staged
+        # call routes through, so one check here bounds that tail too. Raising, not
+        # returning: the caller expects an LLM result, and #1161's step guard converts the
+        # stop into a clean lane return on the next boundary.
+        try:
+            from utils.llm import terminal_llm_error as _term_1161b
+            _t = _term_1161b()
+        except Exception:
+            _t = None
+        if _t:
+            raise RuntimeError("LLM provider terminally unavailable: %s" % _t)
         self._active_stage = stage_name
         messages.append(Message.user(prompt))
         # NOTE: the previous in-place condense guard was REMOVED here. It fired on

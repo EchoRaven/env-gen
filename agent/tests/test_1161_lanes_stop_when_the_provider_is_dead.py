@@ -21,8 +21,10 @@ import re
 from pathlib import Path
 
 from env_generator.llm_generator.multi_agent.agents.runtime import step_runner
+from env_generator.llm_generator.multi_agent.agents.runtime.step_pipeline import tooling
 
 SRC = Path(step_runner.__file__).read_text(encoding="utf-8")
+TOOLING_SRC = Path(tooling.__file__).read_text(encoding="utf-8")
 
 
 def _guard():
@@ -76,3 +78,44 @@ def test_the_shutdown_guard_is_still_first():
     """#1161 must not displace the shutdown path."""
     body = SRC[SRC.index("for step in range(max_steps):"):]
     assert body.index("_shutdown_requested") < body.index("#1161")
+
+
+def _stage_guard():
+    i = TOOLING_SRC.index("# #1161b:")
+    return TOOLING_SRC[i:TOOLING_SRC.index("self._active_stage = stage_name", i)]
+
+
+def test_the_stage_call_is_guarded_too():
+    """#1161 guards the STEP boundary, but a step runs several stages that each open
+    their own call — r17 still emitted 101 requests after the latch, the tail of
+    steps already in flight. `_call_stage_llm` is the single implementation every
+    staged call routes through."""
+    g = _stage_guard()
+    assert "terminal_llm_error" in g
+    assert "raise RuntimeError" in g
+
+
+def test_the_guard_precedes_the_message_append():
+    """Appending the prompt and then failing would leave the transcript dirty."""
+    i = TOOLING_SRC.index("async def _call_stage_llm(")
+    body = TOOLING_SRC[i:TOOLING_SRC.index("\n    async def ", i + 1)]
+    assert body.index("#1161b") < body.index("messages.append(")
+    assert body.index("#1161b") < body.index("call_with_retry")
+
+
+def test_raising_here_is_safe_because_every_call_site_catches():
+    """All four call sites sit inside a try whose handler is cheap (return False /
+    log + skip marker), so the raise short-circuits the CALL and #1161's step guard
+    ends the lane at the next boundary — no unclean death, no retry storm."""
+    import re
+    from pathlib import Path as _P
+    d = _P(tooling.__file__).parent
+    sites = 0
+    for f in ("stages.py", "action.py"):
+        src = (d / f).read_text(encoding="utf-8")
+        for m in re.finditer(r"await self\._call_stage_llm\(", src):
+            sites += 1
+            before = src[:m.start()]
+            assert "try:" in before.rsplit("\n", 8)[0] or "try:" in "\n".join(
+                before.splitlines()[-8:]), "%s: call site not inside a try" % f
+    assert sites == 4, sites
