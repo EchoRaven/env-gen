@@ -21,6 +21,7 @@ import sqlalchemy.orm as _orm
 from sqlalchemy import create_engine
 
 from env_generator.llm_generator.multi_agent.runtime import backend_skeleton as bs
+from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
 from env_generator.llm_generator.multi_agent.runtime.backend_skeleton import (
     _infer_fk_target_1162 as infer, render_models)
 
@@ -97,3 +98,41 @@ def test_the_spine_is_excluded_from_inference():
     assert "emit(\"tenants\"" in body and "infer_fks=True" not in body.split(
         'emit("users"')[0].split('emit("tenants"')[1]
     assert "emit(name, cols, infer_fks=True)" in body
+
+
+def _models_from(contract, tmp_path):
+    (tmp_path / "models.py").write_text(render_models(contract), encoding="utf-8")
+    return rp._orm_models(tmp_path)
+
+
+def test_a_many_to_many_nested_collection_starts_filtering(tmp_path):
+    """Found by sweeping r13's LIVE api AFTER #1162 shipped: /api/genres/1/titles,
+    /2/titles and /3/titles all answered the SAME 60 rows — identical ids, equal to
+    /api/titles — while /api/genres/999/titles correctly 404'd. The parent check
+    worked; the child scoping did not.
+
+    `_assoc_table` is keyed "purely off the contract's FK graph" (its own docstring)
+    and title_genres carried title_id/genre_id as bare integers, so it returned None
+    and `_generate_handler` fell through to `db.query(Title).limit(100).all()`.
+    A fifth consumer of the same root, found after the fix and already covered by it.
+    """
+    contract = _contract("r13")
+    assert rp._assoc_table(
+        rp._orm_models(Path(bs.__file__).parents[5] / "generated" /
+                       "netflix-local-r13" / "app" / "backend"),
+        "genres", "titles") is None, "the delivered artifact is the before-state"
+    assert rp._assoc_table(_models_from(contract, tmp_path), "genres", "titles") == (
+        "TitleGenre", "genre_id", "title_id")
+
+
+def test_owner_scoping_decisions_do_not_move(tmp_path):
+    """The risk check. Ten projector functions read the FK graph, so filling it could
+    have flipped decisions that were fine. Measured across r13's whole contract:
+    _owner_fk changes for 0 tables — it keys off name vocabulary, not FKs — so the
+    only behaviour that moves is the association lookup above."""
+    contract = _contract("r13")
+    old = rp._orm_models(Path(bs.__file__).parents[5] / "generated" /
+                         "netflix-local-r13" / "app" / "backend")
+    new = _models_from(contract, tmp_path)
+    for t in sorted(set(old) & set(new)):
+        assert rp._owner_fk(old[t]) == rp._owner_fk(new[t]), t
