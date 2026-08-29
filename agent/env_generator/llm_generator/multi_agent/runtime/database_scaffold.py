@@ -1389,8 +1389,14 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
         if isinstance(_t, dict):
             _recon[str(_n).lower()] = _columns_of(_t)
     try:
-        from .backend_skeleton import _reconcile_fk_types_in_map
+        from .backend_skeleton import (_reconcile_fk_types_in_map,
+                                       _reconcile_ordinal_types_1164)
         _reconcile_fk_types_in_map(_recon)
+        # #1164: the ORM and the DDL must agree, and they are rendered by different
+        # functions from the same contract. Retyping an ordinal column in models.py
+        # alone would recreate the exact mismatch that cost r13 its browse page —
+        # `column titles.genres does not exist` — with the sides swapped.
+        _reconcile_ordinal_types_1164(_recon)
     except Exception:
         pass  # best-effort: reconciliation must never break DDL emission. `_recon` still
               # holds the UNreconciled columns, i.e. exactly the pre-#1022 behaviour.

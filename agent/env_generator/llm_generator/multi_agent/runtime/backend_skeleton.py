@@ -503,6 +503,49 @@ def _temporal_synonym_lines(real: List[Dict[str, Any]]) -> List[str]:
     return out
 
 
+# #1164: AN ORDINAL COLUMN DECLARED text SORTS LEXICOGRAPHICALLY.
+#
+# Same shape as PROPOSAL #3 above, one column class over: the framework already
+# overrides a declared type when leaving it would produce something that cannot work.
+#
+# Two framework components disagree about these columns and one of them is right. The
+# SEED vocabulary lists "seconds"/"count"/"rank"/"position"/"index" and routes them to
+# `_seed_number`, so the framework writes INTEGERS into them (r13's seed:
+# progress_seconds 83, 136, 189, 242) — while the contract said `text`, so the column is
+# TEXT and the API hands the client back "83".
+#
+# Measured consequence, on a feature shipped this session: r13 declared `top10_rank` TEXT
+# and r14 declared it INTEGER, for the same concept in the same env. #1155 now emits
+# ORDER BY top10_rank, which on r13's TEXT column orders 1, 10, 11, 12, 2, 3 — a top-10
+# that is not the top 10. Arithmetic and range filters on a text number are wrong the
+# same way.
+#
+# DELIBERATELY NARROW — suffix-anchored names that can only be ordinals/counters. `value`,
+# `rating`, `score` and `price` are excluded on purpose even though the seed vocabulary
+# covers them: a lane can legitimately mean text there, and #566t saw exactly that
+# ({"rating": "thumbs_up"}). A column carrying an FK is never touched.
+_ORDINAL_SUFFIXES_1164 = ("_rank", "_index", "_position", "_seconds", "_count")
+
+
+def _reconcile_ordinal_types_1164(by_name: Dict[str, List[Dict[str, Any]]]) -> None:
+    """In-place: retype text ordinal columns to integer. Never raises."""
+    try:
+        for _cols in (by_name or {}).values():
+            for c in _cols or []:
+                if not isinstance(c, dict):
+                    continue
+                n = str(c.get("name") or "").lower()
+                t = str(c.get("type") or "").lower()
+                if not n.endswith(_ORDINAL_SUFFIXES_1164):
+                    continue
+                if c.get("primary_key") or c.get("pk") or _fk_target(c):
+                    continue
+                if "text" in t or "varchar" in t or "char" in t or "string" in t:
+                    c["type"] = "integer"
+    except Exception:
+        return
+
+
 def render_models(tables: Dict[str, Any]) -> str:
     """Render ``models.py`` (SQLAlchemy ORM) from the SchemaHub ``tables`` contract.
     Always emits the spine ``User``/``Tenant``; app tables generate one model each."""
@@ -517,6 +560,7 @@ def render_models(tables: Dict[str, Any]) -> str:
     # rendering the ORM, so the models — and the DDL introspected from them — never
     # carry an unbootable integer→text FK (run #16 channels.id).
     _reconcile_fk_types_in_map(by_name)
+    _reconcile_ordinal_types_1164(by_name)
 
     blocks: List[str] = []
 
