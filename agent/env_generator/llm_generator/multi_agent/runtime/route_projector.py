@@ -2049,6 +2049,22 @@ def identical_projected_bodies_1156(backend_dir: Any) -> List[Tuple[str, ...]]:
         tree = ast.parse(src)
     except Exception:
         return []
+    # A route the LANE serves from custom_routes.py is not a duplicate, whatever main.py
+    # says about it. r14 delivered a projected `/api/titles/trending` body identical to
+    # `/api/titles` AND a lane handler with `limit: int = Query(default=20)`;
+    # `include_router(_custom_router)` runs at main.py:948, hundreds of lines before the
+    # projected route, so the lane's wins. Probed on the live stack: ?limit=5 -> 5 rows,
+    # ?limit=37 -> 37. The projected body is dead code, and reporting it would send a
+    # lane to fix an endpoint it had already implemented correctly.
+    _lane_routes: set = set()
+    try:
+        _cr = (Path(backend_dir) / "custom_routes.py").read_text(
+            encoding="utf-8", errors="ignore")
+        for _m in re.finditer(
+                r'@router\.(get|post|put|patch|delete)\(\s*["\']([^"\']+)["\']', _cr):
+            _lane_routes.add("%s %s" % (_m.group(1).upper(), _m.group(2)))
+    except Exception:
+        _lane_routes = set()
     by_body: Dict[str, List[str]] = {}
     for node in getattr(tree, "body", []):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -2068,6 +2084,8 @@ def identical_projected_bodies_1156(backend_dir: Any) -> List[Tuple[str, ...]]:
         # only DB-reading collections: two identical `raise HTTPException` stubs are
         # not a contract gap, and neither are two identical health probes.
         if "query" not in body:
+            continue
+        if route in _lane_routes:
             continue
         by_body.setdefault(body, []).append(route)
     return [tuple(sorted(v)) for v in by_body.values() if len(v) > 1]

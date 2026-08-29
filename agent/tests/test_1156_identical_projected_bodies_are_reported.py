@@ -20,10 +20,12 @@ from env_generator.llm_generator.multi_agent.runtime.route_projector import (
     identical_projected_bodies_1156 as dupes)
 
 
-def _backend(tmp_path, body: str):
+def _backend(tmp_path, body: str, custom: str = ""):
     be = tmp_path / "app" / "backend"
     be.mkdir(parents=True)
     (be / "main.py").write_text(textwrap.dedent(body), encoding="utf-8")
+    if custom:
+        (be / "custom_routes.py").write_text(textwrap.dedent(custom), encoding="utf-8")
     return be
 
 
@@ -114,3 +116,47 @@ def test_the_caller_makes_it_visible_without_blocking():
     assert "identical_projected_bodies_1156" in seg
     assert "_logger.warning" in seg
     assert "failed_checks" not in seg
+
+
+DUP_MAIN = '''
+    @app.get("/api/titles")
+    def a(db=None):
+        rows = db.query(Title).limit(100).all()
+        return {"items": rows}
+
+    @app.get("/api/titles/trending")
+    def b(db=None):
+        rows = db.query(Title).limit(100).all()
+        return {"items": rows}
+    '''
+
+
+def test_a_route_the_lane_serves_is_not_a_duplicate(tmp_path):
+    """r14's real shape. The projected body IS identical to /api/titles, and it is
+    DEAD: include_router(_custom_router) runs at main.py:948, hundreds of lines
+    before the projected route, so the lane's handler wins. Probed on the live
+    stack: ?limit=5 -> 5 rows, ?limit=37 -> 37. Reporting it would send a lane to
+    fix an endpoint it had already implemented correctly."""
+    be = _backend(tmp_path, DUP_MAIN, custom='''
+        @router.get("/api/titles/trending")
+        def trending_titles(limit: int = Query(default=20), db=None):
+            return {"items": db.query(Title).limit(limit).all()}
+        ''')
+    assert dupes(be) == []
+
+
+def test_without_a_lane_override_it_still_reports(tmp_path):
+    """r13's real shape: no custom_routes entry, and the delivered API answered 60
+    rows for /api/titles and /api/titles/trending alike."""
+    assert dupes(_backend(tmp_path, DUP_MAIN)) == [
+        ("GET /api/titles", "GET /api/titles/trending")]
+
+
+def test_a_lane_override_on_a_DIFFERENT_verb_does_not_excuse_the_route(tmp_path):
+    """POST /x does not make GET /x lane-served."""
+    be = _backend(tmp_path, DUP_MAIN, custom='''
+        @router.post("/api/titles/trending")
+        def make(db=None):
+            return {}
+        ''')
+    assert dupes(be) == [("GET /api/titles", "GET /api/titles/trending")]
