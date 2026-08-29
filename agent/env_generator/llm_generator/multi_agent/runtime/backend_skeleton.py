@@ -948,6 +948,28 @@ def _fw_owns(cls, col, fk_val, user):
             _tgt_table = _fk.column.table
             _tgt_col = _fk.column.name
             break
+        # #1158: RESOLVE THE TARGET BY NAME WHEN THE MODEL DOES NOT DECLARE IT.
+        # render_models emits plain ``Column(Integer)`` for FKs — netflix-local-r13's whole
+        # models.py declares TWO ForeignKeys — so ``foreign_keys`` is empty for
+        # ``my_list.profile_id`` and every FK like it, ``_tgt_table`` stays None, and the
+        # branch below then compares a PROFILE id against the caller's USER id. Measured on
+        # r13's delivered stack: POST /api/my-list carrying the caller's OWN profile_id
+        # (created seconds earlier, its user_id verified through the owner-scoped list)
+        # answered 403 "profile_id does not belong to the caller". So the per-user
+        # SUB-ENTITY path this function exists for (#566s) is unreachable in the normal
+        # case, and the only writes that work are the ones that omit the FK entirely.
+        # ``<x>_id`` -> a mapped table named ``<x>``/``<x>s``/``<x>es`` is the same
+        # singular/plural resolution the projector already uses for nested resources.
+        if _tgt_table is None:
+            _stem = str(col)[:-3] if str(col).endswith("_id") else ""
+            if _stem:
+                for _m in Base.registry.mappers:
+                    _t = getattr(_m, "local_table", None)
+                    _tn = getattr(_t, "name", None)
+                    if _tn and _tn in (_stem, _stem + "s", _stem + "es"):
+                        _tgt_table = _t
+                        _tgt_col = "id"
+                        break
         _USER_TABLES = ("users", "user", "accounts", "account")
         # direct user-owned FK (or self / unknown target) → the value must be the caller's own uid
         if (_tgt_table is None or _tgt_table.name in _USER_TABLES
@@ -965,6 +987,20 @@ def _fw_owns(cls, col, fk_val, user):
                     break
             if _sub_ufk:
                 break
+        if _sub_ufk is None:
+            # #1158b: the SAME missing-ForeignKey root, one level down. Resolving the
+            # target table by name is not enough — judging ownership needs the target's
+            # own user column, and `profiles.user_id` is a bare Column(Integer) too, so
+            # this stayed None and fell through to fail-open. Live proof that the half
+            # fix is WORSE than the bug: on r13, POSTing another user's profile_id=1
+            # answered 201 where it had answered 403. That is the cross-user IDOR #566s
+            # exists to stop (netflix r127). Resolve the user column by name as well,
+            # and only fail open when the target really carries none.
+            for _tc in _tgt_table.columns:
+                _cn = str(getattr(_tc, "name", "") or "")
+                if _cn in ("user_id", "account_id", "owner_id", "owner_user_id"):
+                    _sub_ufk = _cn
+                    break
         if _sub_ufk is None:
             return True   # T is not a per-user sub-entity → cannot assert ownership → fail-open
         _Sub = None
