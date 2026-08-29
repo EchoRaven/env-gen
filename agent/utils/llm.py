@@ -825,11 +825,29 @@ def _is_terminal_llm_error(error: Exception) -> bool:
     """True for an UNRECOVERABLE provider error — spend/budget/quota exhaustion or a hard auth
     rejection (401/403). A 429 rate limit is transient and explicitly NOT terminal."""
     status = getattr(error, "status_code", None)
-    if isinstance(status, int) and status == 429:
-        return False
     s = str(error).lower()
+    # #1159: ASK WHAT THE 429 SAYS BEFORE DECIDING IT IS TRANSIENT.
+    #
+    # OpenAI returns quota exhaustion AS a 429 — `Error code: 429 - {'error':
+    # {'message': 'You have no credits remaining...', 'type': 'insufficient_quota'}}`.
+    # The early return below fired first, so the phrase list underneath (which has
+    # carried "insufficient_quota" all along) was never reached for the one provider
+    # whose billing errors arrive with that status, and `terminal_llm_error()` — which
+    # exists precisely so "a run loop should poll this and abort instead of spinning" —
+    # stayed None.
+    #
+    # The cost, measured: netflix-local-r15 hit its first quota error at 08:54:28 and
+    # kept retrying until 11:44:19 — 2h50m of exponential backoff against an account
+    # that could not recover, 322 x 429, zero milestones. r14 logged 837 of them across
+    # 6.8 hours. The comment on the rate-limit path already says it spent "6.4 HOURS
+    # asleep"; this is where those hours come from.
+    #
+    # A 429 that names a billing phrase is terminal; a 429 that does not is still the
+    # transient throttle it always was.
     if any(p in s for p in _TERMINAL_ERROR_PHRASES):
         return True
+    if isinstance(status, int) and status == 429:
+        return False
     if isinstance(status, int) and status in (401, 403, 402):
         return True
     return False
