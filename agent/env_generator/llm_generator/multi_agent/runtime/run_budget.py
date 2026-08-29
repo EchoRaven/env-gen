@@ -57,6 +57,17 @@ class RunBudget:
                     "updated_at": time.time(),
                 },
             }
+            # #1163: carry the SPEND beside the wall-clock and tick caps. The framework
+            # had a budget abort and no budget: what a run cost only existed afterwards,
+            # by grepping `prompt_tokens=` out of a log. It rides here because this file
+            # is what the live monitor already reads, so the number is visible DURING a
+            # run rather than in a post-mortem. Best-effort: accounting must never be the
+            # reason a run record fails to write.
+            try:
+                from utils.llm import llm_usage
+                payload["llm"] = llm_usage()
+            except Exception:
+                pass
             path = self.path()
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")

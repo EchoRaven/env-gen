@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, Optional, Union, Tuple, Set
+from typing import Any, AsyncIterator, Dict, Optional, Union, Tuple, Set
 import asyncio
 import base64
 import json
@@ -799,6 +799,78 @@ _TERMINAL_ERROR_PHRASES = (
     "spend exceeded", "budget for", "insufficient_quota", "insufficient quota",
     "payment required", "billing hard limit", "entitlement",
 )
+
+
+# #1163: THE FRAMEWORK HAD A SPEND CAP AND NO SPEND.
+#
+# `terminal_llm_error()` can abort a run when the PROVIDER says the money ran out, but
+# nothing ever counted what a run costs, so the number only existed after the fact by
+# grepping `prompt_tokens=` out of a log. Measured that way across the kept runs, the
+# variance is the point: r13 delivered on 6362 calls and r14 delivered on 2626 — a 2.4x
+# spread on the same task, never observed while it happened. And 91-92% of input tokens
+# are CACHE HITS, so any "fewer rounds" optimisation is worth far less than protecting
+# that hit rate — a fact that was invisible without this counter.
+#
+# Prices are configuration, not knowledge: this file must not carry a guess at a model's
+# rate. Unset -> tokens are still counted and the cost reads 0.0, which is honest ("not
+# priced") rather than wrong.
+_LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unreported": 0}
+
+
+def _price_env_1163(name: str) -> float:
+    try:
+        return float(os.environ.get(name, "") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def llm_usage() -> Dict[str, Any]:
+    """Token totals for this process plus the cost they imply at the configured rates.
+
+    ``uncached`` is what a non-cached run would have paid input for; keeping it beside
+    ``cached`` is what makes the 91% hit rate legible at a glance.
+    """
+    u = dict(_LLM_USAGE)
+    u["uncached"] = max(0, u["prompt"] - u["cached"])
+    p_in = _price_env_1163("ENVGEN_PRICE_IN_PER_M")
+    p_cache = _price_env_1163("ENVGEN_PRICE_CACHED_PER_M")
+    p_out = _price_env_1163("ENVGEN_PRICE_OUT_PER_M")
+    u["priced"] = bool(p_in or p_cache or p_out)
+    u["usd"] = round(u["uncached"] / 1e6 * p_in
+                     + u["cached"] / 1e6 * p_cache
+                     + u["completion"] / 1e6 * p_out, 4)
+    return u
+
+
+def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens: Any) -> None:
+    """Accumulate one response. Never raises — accounting must not break a call."""
+    try:
+        _LLM_USAGE["calls"] += 1
+        _LLM_USAGE["prompt"] += int(prompt_tokens or 0)
+        _LLM_USAGE["completion"] += int(completion_tokens or 0)
+        try:
+            _LLM_USAGE["cached"] += int(cached_tokens)
+        except (TypeError, ValueError):
+            # #1026 reports "n/a" when the provider omits the field. Counting that as 0
+            # would silently understate the hit rate, so count the omission instead.
+            _LLM_USAGE["cache_unreported"] += 1
+    except Exception:
+        return
+    # A budget cap reuses the TERMINAL latch rather than opening a second abort path:
+    # #1159 classifies, #1161 stops the lanes, #326 ends the run. One mechanism, and it
+    # is the one already verified on live runs (r17: 2h50m -> 272s).
+    try:
+        cap = _price_env_1163("ENVGEN_MAX_SPEND_USD")
+        if cap > 0 and not _TERMINAL_LLM_ERROR["reason"]:
+            u = llm_usage()
+            if u["priced"] and u["usd"] >= cap:
+                _TERMINAL_LLM_ERROR["reason"] = (
+                    "[BudgetExceeded] run spend $%.2f reached ENVGEN_MAX_SPEND_USD=$%.2f "
+                    "after %d calls (uncached-in %d, cached-in %d, out %d)"
+                    % (u["usd"], cap, u["calls"], u["uncached"], u["cached"],
+                       u["completion"]))
+    except Exception:
+        return
 
 
 def _is_timeout_error_1036(error: Exception) -> bool:
@@ -1788,6 +1860,7 @@ class OpenAIClient(BaseLLMClient):
         except Exception:
             cached_tokens = "n/a"      # a provider without the field must never break a call
         has_tool_calls = bool(message.tool_calls)
+        _record_usage_1163(prompt_tokens, cached_tokens, completion_tokens)  # #1163
         self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={choice.finish_reason}")
 
         return LLMResponse(
@@ -2926,6 +2999,7 @@ class GoogleClient(BaseLLMClient):
         if _thinking:
             self._logger.info(f"[LLM thinking] {_thinking[:1500]}")
 
+        _record_usage_1163(prompt_tokens, cached_tokens, completion_tokens)  # #1163
         self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
 
         return LLMResponse(

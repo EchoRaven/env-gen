@@ -466,6 +466,22 @@ async def main():
     print(f"  Status: {'SUCCESS' if result.success else 'FAILED'}")
     print(f"  Phases: {', '.join(result.phases_completed)}")
     print(f"  Issues: {result.issues_found} found, {result.issues_fixed} fixed")
+    # #1163: what did this run COST. Printed here because the number was previously
+    # recoverable only by grepping `prompt_tokens=` out of the log afterwards, which is
+    # how the 2.4x spread between two DELIVERING runs (r13 6362 calls, r14 2626) stayed
+    # invisible. The cache line is deliberate: 91-92% of input tokens are hits, so
+    # protecting that rate matters more than shaving rounds.
+    try:
+        from utils.llm import llm_usage
+        _u = llm_usage()
+        if _u.get("calls"):
+            _hit = (100 * _u["cached"] // _u["prompt"]) if _u.get("prompt") else 0
+            print(f"  LLM: {_u['calls']:,} calls | in {_u['uncached']:,} uncached "
+                  f"+ {_u['cached']:,} cached ({_hit}% hit) | out {_u['completion']:,}")
+            print("  Cost: $%.2f" % _u["usd"] if _u.get("priced") else
+                  "  Cost: not priced (set ENVGEN_PRICE_IN_PER_M / _CACHED_PER_M / _OUT_PER_M)")
+    except Exception:
+        pass
     print(f"  Duration: {result.duration:.1f}s")
     print(f"  Output: {result.project_path}")
     
