@@ -2014,7 +2014,8 @@ class HealPipeline:
                     orch._logger.warning(
                         "#1150 recovered %d stranded delivery file(s) — committed on a branch "
                         "the release is not cut from, and this branch has never known them: "
-                        "%s", len(_rescued_1150), "; ".join(sorted(_rescued_1150)[:12]))
+                        "%s", len(_rescued_1150),
+                        join_capped(sorted(_rescued_1150), len(_rescued_1150), cap=12))
             except Exception as _exc_1150:
                 orch._logger.debug("#1150 stranded-file sweep skipped: %s", _exc_1150)
             for sub in _subs_1148:

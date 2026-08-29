@@ -488,6 +488,15 @@ def never_matching_filters_1139(project_dir: Any) -> List[Dict[str, str]]:
         return []
 
 
+# #1154: browser/network markers that mean "the origin was not reachable", NOT "the app is
+# wrong". Deliberately narrow — a bare `request_failed` also appears on 4xx/5xx, which ARE
+# product evidence, so it is not on this list.
+_UNREACHABLE_1154 = (
+    "ERR_CONNECTION_REFUSED", "ECONNREFUSED", "Connection refused", "connection refused",
+    "ERR_CONNECTION_RESET", "ERR_EMPTY_RESPONSE", "ERR_NAME_NOT_RESOLVED",
+)
+
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -518,6 +527,8 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     # last-write-wins), so this reads the history the way the store means it. A failure that is
     # still the newest word on its flow blocks, exactly as intended; one that a later pass has
     # answered does not.
+    # #1154: connection-level failures are tracked apart from product failures.
+    unreachable: List[str] = []
     _latest757: Dict[str, Any] = {}
     for r in (validation_results or []):
         if not isinstance(r, dict):
@@ -566,12 +577,43 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
         if _st in ("passed", "success", "pass"):
             passed.append(page)
         elif _st in ("failed", "failure", "error"):
-            failed.append(page)
+            # #1154: A CONNECTION-LEVEL FAILURE IS NOT EVIDENCE ABOUT THE PRODUCT.
+            #
+            # netflix-local-r12, to the minute: the stack was down from 20:50 to 22:04
+            # (~70 net::ERR_CONNECTION_REFUSED), `ui_flow:login_page` recorded "POST
+            # http://localhost:8081/auth/register request_failed / ERR_CONNECTION_REFUSED",
+            # `docker_up` succeeded at 22:04:20, and the flow never re-ran. #757 retires a
+            # failure only when a LATER pass supersedes it by name, so with no re-run that
+            # record stayed the newest word on its flow and blocked alone until the
+            # no-convergence abort at 22:13 — with the checklist reading docker_build=
+            # success, npm_install=success, backend_start=success and 8 UI records passing.
+            #
+            # The framework already knows this shape elsewhere: test_user_runner calls
+            # ERR_CONNECTION_REFUSED "a FALSE 'unusable' that escape-ships a HEALTHY app",
+            # and test_user_squad notes agents filing "connection refused" as a product
+            # defect. It is the same category as #790 — the check could not RUN.
+            #
+            # NOT unconditional: if NOTHING passed, the app really may be dead and this must
+            # still block. Discounted only when another UI record passed, which is proof the
+            # origin is reachable and this record is stale infrastructure noise.
+            _blob = " ".join(str(r.get(k) or "") for k in
+                             ("error", "detail", "message", "reason", "evidence", "output"))
+            if any(m in _blob for m in _UNREACHABLE_1154):
+                unreachable.append(page)
+            else:
+                failed.append(page)
+    # #1154: fold back when there is no positive evidence the origin is up at all.
+    if unreachable and not passed:
+        failed.extend(unreachable)
+        unreachable = []
     return {
         "passed_records": len(passed),
         "failed_records": len(failed),
         "pages_passed": sorted(set(passed)),
         "pages_failed": sorted(set(failed)),
+        # Reported, never blocking (#790's category): the check could not run.
+        "unreachable_records": len(unreachable),
+        "pages_unreachable": sorted(set(unreachable)),
     }
 
 
@@ -2513,6 +2555,22 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 logger.warning("#1017 could not name the failed UI records: %s",
                                type(_e).__name__)
         failed_checks.append("validation_ui_evidence_failed")
+    # #1154: say when a UI record was discounted as unreachable-origin rather than product
+    # evidence. Discounting silently would be the #691/#790 mistake — a correct decision that
+    # nobody can audit. This never blocks; it explains why a record is not in the count above.
+    try:
+        if int(_breadth739.get("unreachable_records") or 0):
+            logger.warning(
+                "#1154 %d UI record(s) failed on a CONNECTION-LEVEL error (%s) while %d other "
+                "record(s) passed — the origin was unreachable when they ran, which is not "
+                "evidence about the product. Discounted from validation_ui_evidence_failed; "
+                "re-run the flow to get a real verdict.",
+                int(_breadth739.get("unreachable_records") or 0),
+                join_capped([str(x)[:44] for x in
+                             (_breadth739.get("pages_unreachable") or [])], 4, cap=4),
+                int(_breadth739.get("passed_records") or 0))
+    except Exception:
+        pass
     if ui_smoke_pass and _breadth739["failed_records"]:
         logger.warning(
             "#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed "
@@ -2900,6 +2958,10 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # with 24 passing UI records and ONE failing flow, having come down 7 → 2 → 1 across
         # the session's runs. The count is already computed here; it just never left.
         "ui_evidence_failed_records": int(_breadth739.get("failed_records") or 0),
+        # #1154: UI records whose failure was the origin being unreachable, not the product
+        # being wrong. Travels with the verdict for the same reason #790's errored checks do.
+        "ui_evidence_unreachable_records": int(_breadth739.get("unreachable_records") or 0),
+        "ui_evidence_unreachable_pages": list(_breadth739.get("pages_unreachable") or []),
         # #1139: filters that can never match a seeded row. Evidence for the orchestrator,
         # which reads this result every tick and can file the fix; never a failed_check.
         "never_matching_filters": never_matching_filters_1139(output_dir),

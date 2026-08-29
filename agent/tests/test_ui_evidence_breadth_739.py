@@ -72,8 +72,12 @@ def test_a_true_verdict_over_failures_is_announced(caplog):
 def test_a_clean_run_reports_no_failures():
     b = dg._ui_evidence_breadth_739([_rec("ui_smoke", "passed", "a"),
                                      _rec("ui_flow", "passed", "b")])
+    # #1154 added two keys. This assertion is deliberately key-for-key -- the same
+    # contract shape #750 and #558 extended rather than loosened -- so a new key has to
+    # be declared here on purpose instead of appearing unnoticed.
     assert b == {"passed_records": 2, "failed_records": 0,
-                 "pages_passed": ["a", "b"], "pages_failed": []}
+                 "pages_passed": ["a", "b"], "pages_failed": [],
+                 "unreachable_records": 0, "pages_unreachable": []}
 
 
 def test_non_ui_records_are_ignored():
