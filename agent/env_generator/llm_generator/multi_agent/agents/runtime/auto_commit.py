@@ -1255,6 +1255,36 @@ def promote_integration_to_main(
             _paths = ""
         _detail = _paths or (p.stdout or "").strip() or (p.stderr or "").strip() or "no detail"
         _run_git(["merge", "--abort"], cwd=repo)
+        # #1151: THIS BRANCH IS THE ONLY OUTCOME THIS FUNCTION HAS EVER PRODUCED.
+        # Across 213 kept run logs the success line never appears once; the two runs
+        # that reached the call site at all — r5 and r8, the only two deliveries —
+        # both landed here ("promotion merge conflict: 21 file(s)" / "22 file(s)").
+        # So #706 wired a mechanism that cannot complete, and `main` stays frozen at
+        # the orphan bootstrap commit in every repo: r5 106 commits behind, r8 79,
+        # r11 108, and 0 runs in sync.
+        #
+        # A plain merge asks "which side is right?" — but the docstring above already
+        # answers that: the release is CUT from integration and `main` FOLLOWS it.
+        # main's side of every conflicting hunk is the stale orphan. So retry with
+        # integration winning each conflicting hunk. `-X theirs` resolves only the
+        # CONFLICTING hunks; files that exist solely on `main` are still carried into
+        # the merge, so nothing on main is dropped by taking this side.
+        try:
+            _p2 = subprocess.run(
+                ["git", "merge", "--no-ff", "-X", "theirs", "-m",
+                 message + f" [conflicts resolved toward {integration_branch}]",
+                 integration_branch],
+                cwd=str(repo), env=env,
+                capture_output=True, text=True, timeout=_GIT_TIMEOUT,
+            )
+        except Exception as exc:
+            return False, f"promotion merge conflict: {_detail}; retry raised: {exc}"
+        if _p2.returncode == 0:
+            _rc2, _out2, _ = _run_git(["rev-parse", "--short", "HEAD"], cwd=repo)
+            return True, (
+                f"{_out2.strip() if _rc2 == 0 else '?'} "
+                f"(conflicts resolved toward {integration_branch}: {_detail})")
+        _run_git(["merge", "--abort"], cwd=repo)
         return False, f"promotion merge conflict: {_detail}"
     rc, out, _err = _run_git(["rev-parse", "--short", "HEAD"], cwd=repo)
     return True, out.strip() if rc == 0 else "?"
