@@ -257,6 +257,38 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 if self._shutdown_requested:
                     return {"success": False, "error": "Shutdown requested", "files_created": files_created}
 
+                # #1161: STOP STEPPING WHEN THE PROVIDER IS TERMINALLY DEAD.
+                #
+                # #1159 made the classification right — netflix-local-r16 logs "TERMINAL
+                # provider error — not retrying, run should abort" 939 times where r15
+                # logged it 0 — but "not retrying" only bounds ONE call's retries. Every
+                # step opens a NEW call, so the run kept issuing them: r16 spent 11+
+                # minutes and 842 quota errors in design-prep/kickoff without stopping.
+                #
+                # The orchestrator DOES poll `terminal_llm_error()` (#326) and abort, but
+                # only inside `while not _project_delivered_event.is_set()` — the main
+                # delivery loop, which starts AFTER kickoff. Design-prep and kickoff run
+                # before it and had no check at all, which is exactly where a run spends
+                # its first ~15 minutes.
+                #
+                # This loop is where every agent in every phase takes a step, so one check
+                # here covers all three. Same shape as the `_shutdown_requested` guard
+                # above: return, do not raise — a lane that stops cleanly still lets the
+                # orchestrator write its run record.
+                try:
+                    from utils.llm import terminal_llm_error as _term_1161
+                    _t1161 = _term_1161()
+                except Exception:
+                    _t1161 = None
+                if _t1161:
+                    self._logger.error(
+                        "[%s] LLM provider is terminally unavailable (%s) — stopping this "
+                        "lane at step %d instead of opening another call. Get a budget "
+                        "increase or a fresh key; raising ENVGEN_MAX_* will not help.",
+                        getattr(self, "agent_id", "?"), _t1161, step)
+                    return {"success": False, "error": "LLM provider terminal: %s" % _t1161,
+                            "files_created": files_created}
+
                 # Condense at EVERY step boundary (was step % 10 — too rare, let
                 # context bloat to ~770 → saturation). A step boundary is BETWEEN
                 # endpoints (the prior endpoint is written + registered), so
