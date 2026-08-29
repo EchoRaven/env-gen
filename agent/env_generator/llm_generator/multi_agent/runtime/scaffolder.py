@@ -145,6 +145,36 @@ class Scaffolder:
         api_port = orch.context.api_port
         ui_port = orch.context.ui_port
 
+        # #1157: NAME THE COMPOSE PROJECT AFTER THE RUN.
+        #
+        # Without this, the project name comes from the compose file's DIRECTORY, which is
+        # `docker` for EVERY run — so every run shares the containers `docker-backend-1`,
+        # the networks, the volumes, and (the damaging one) the image tags
+        # `docker-backend:latest` / `docker-frontend:latest`.
+        #
+        # #962 already documented the ambiguity and worked around it for container LOOKUP
+        # ("Stop the stale stack, or give the run its own compose project name"), but the
+        # project name itself was never fixed, and the lookup was not the worst of it:
+        # a later run's build silently REPLACES an earlier run's image. Measured live —
+        # r13 delivered and was runtime-verified, r14 then ran and tagged
+        # `docker-backend:latest` at 02:20; bringing r13 up afterwards without --build
+        # served r14's backend against r13's database, and r14's model declares
+        # `titles.genres` while r13's DDL does not. Every /api/titles call answered
+        # `UndefinedColumn: column titles.genres does not exist` -> 500, so the browse home
+        # had no data and only the empty My List rendered. The artifact had been verified
+        # working hours earlier; nothing about it changed except that another run happened.
+        #
+        # `name:` is Compose-spec and supported by the v2 CLI. Sanitised to the charset
+        # Compose accepts (lowercase alnum, dash, underscore) and never empty. Built with
+        # str methods, not `re`: #940's checker reads `re` as possibly-unbound here, and
+        # the line is PREPENDED rather than placed inside the template because
+        # test_compose_db_env_conventions renders that f-string with `.format()` over a
+        # fixed key set — a new placeholder inside it is a KeyError, not a compose change.
+        _raw1157 = str(getattr(orch.output_dir, "name", "") or "").lower()
+        _proj1157 = "".join(
+            ch if ((ch.isalnum() and ch.isascii()) or ch in "-_") else "-"
+            for ch in _raw1157).strip("-") or "envgen-run"
+
         docker_compose = f'''version: '3.8'
 
 # Generated with run-specific free host ports.
@@ -244,6 +274,10 @@ volumes:
 
         docker_dir = orch.output_dir / "docker"
         docker_dir.mkdir(exist_ok=True)
+        # #1157: prepended AFTER the template is built, so the template itself stays
+        # placeholder-free — test_compose_db_env_conventions locates it by the literal
+        # `docker_compose = f'''` and renders it with .format() over a fixed key set.
+        docker_compose = f"name: {_proj1157}\n" + docker_compose
         (docker_dir / "docker-compose.yml").write_text(docker_compose)
 
     async def generate_database(self) -> None:
