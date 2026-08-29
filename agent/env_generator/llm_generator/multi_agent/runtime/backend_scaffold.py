@@ -355,14 +355,18 @@ def repair_inline_token_auth(backend_dir) -> Dict[str, object]:
         be = Path(backend_dir)
         main_py = be / "main.py"
         if not main_py.exists():
-            return {"fixed": 0}
+            return {"fixed": 0, "reason": "no main.py"}
         src = main_py.read_text(encoding="utf-8", errors="ignore")
         if _FAKE_PARTS_MARKER not in src or "_framework_jwt_sub(" in src:
-            return {"fixed": 0}  # not the fake-token shape / already repaired
+            # #1149: name the two very different causes apart — the lane never wrote
+            # the fake shape (healthy) vs. we already repaired it (also healthy).
+            return {"fixed": 0, "reason": ("already repaired"
+                                          if "_framework_jwt_sub(" in src
+                                          else "no inline fake-token parse")}
         new_src, n = _FAKE_SPLIT_RE.subn(
             r'parts = ["user", str(_framework_jwt_sub(\1))]', src)
         if n == 0:
-            return {"fixed": 0}
+            return {"fixed": 0, "reason": "marker present but no rewritable split site"}
         # inject the helper after the import block (before the first def/class/@/app=)
         lines = new_src.splitlines(keepends=True)
         insert_at = 0

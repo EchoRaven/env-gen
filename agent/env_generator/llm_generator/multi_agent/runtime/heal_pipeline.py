@@ -842,6 +842,30 @@ class HealPipeline:
                 orch._logger.warning(
                     "custom_routes.py path-param annotations corrected (FIX #106): %s "
                     "str→int on integer-PK routes.", pt.get("fixed"))
+            # #1149: every repair above returns a ``reason`` when it declines and
+            # NOTHING logged it — so a heal that correctly no-ops ("already
+            # present", because the scaffold now emits it by construction) and a
+            # heal whose detector is broken ("no FastAPI app") were indistinguish‐
+            # able in the log. That blind spot is exactly what forces a live run to
+            # tell the two apart. Say which declined, and why.
+            _declined_1149 = [
+                (_n, _r.get("reason") or _r.get("error") or "(no cause reported)")
+                for _n, _r, _k in (
+                    ("router_prologue", _rp, "repaired"),
+                    ("auth_dependency_45", rep, "repaired"),
+                    ("auth_imports_48", imp, "repaired"),
+                    ("inline_token_46", inline, "fixed"),
+                    ("auth_middleware_47", mw, "injected"),
+                    ("integrity_map_82", ih, "injected"),
+                    ("custom_routes_db_86", dbh, "repaired"),
+                    ("param_types_106", pt, "fixed"),
+                )
+                if isinstance(_r, dict) and not _r.get(_k)
+            ]
+            if _declined_1149:
+                orch._logger.info(
+                    "#1149 backend heals declined (no-op) with cause: %s",
+                    "; ".join("%s=%s" % (_n, _w) for _n, _w in _declined_1149))
         except Exception as exc:
             orch._logger.debug("backend auth repair skipped: %s", exc)
 
