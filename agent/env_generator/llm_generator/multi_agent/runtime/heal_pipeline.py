@@ -1052,6 +1052,25 @@ class HealPipeline:
                     "endpoint(s) it never coded — projected working handlers from "
                     "the ORM so the contract is complete (no 404 on declared "
                     "routes): %s", len(projected), projected)
+            # #1156: name the endpoints that project to the SAME body. r13 delivered
+            # /api/titles, /api/titles/trending and /api/titles/top10 all answering the
+            # same 60 rows; #1155 fixes top10 (a `top10_rank` column exists to rank by)
+            # and `trending` has no backing column at all -- a CONTRACT gap only the
+            # lane can close. Never a failed_check: a duplicate list is a quality defect,
+            # not a broken app, and a false blocker costs a run (#566j).
+            try:
+                _dupes = res.get("identical_bodies_1156") or []
+                if _dupes:
+                    orch._logger.warning(
+                        "#1156 %d group(s) of declared endpoints project the IDENTICAL "
+                        "handler body — they will answer the same rows: %s. Each needs "
+                        "either a column to rank/filter by (then the projection uses it, "
+                        "#1155) or a narrower contract; the framework will not guess an "
+                        "ordering for a segment no column supports.",
+                        len(_dupes),
+                        join_capped(["+".join(g) for g in _dupes], len(_dupes), cap=6))
+            except Exception:
+                pass
             # PROPOSAL #13: with the skeleton + projection done, audit the registry
             # against CODE TRUTH — flip an endpoint `implemented` only when its route
             # is actually on the SERVED surface (main.py `@app` + the `include_router`

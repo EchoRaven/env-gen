@@ -2004,7 +2004,39 @@ def project_missing_routes(
                 + "\n\n\n".join(param_blocks))
         _write_py_995(main_py, new_src, what="project_missing_routes")
 
-    return {"projected": projected, "already": len(existing) - len(projected)}
+    # #1156: TWO ENDPOINTS THAT PROJECT A BYTE-IDENTICAL BODY ARE A CONTRACT GAP.
+    #
+    # netflix-local-r13 delivered /api/titles, /api/titles/trending and
+    # /api/titles/top10 all answering the same 60 rows. #1155 fixes top10, because a
+    # `top10_rank` column exists to rank by. `trending` has NO backing column, so there
+    # is nothing to project and inventing an ordering would be a guess -- the contract
+    # itself is what is incomplete, and only the lane can close it.
+    #
+    # Detected STRUCTURALLY, with no word list: enumerating "ranked-sounding" segments
+    # (trending / popular / featured) would be guessing at English. Two DISTINCT
+    # registered endpoints whose handlers are identical once their path-bearing
+    # decorator and def line are dropped is a fact about the projection, whatever the
+    # words are.
+    #
+    # Reported, never enforced: shipping a duplicate list is a quality defect, not a
+    # broken app, and a false blocker costs a whole run (#566j). It rides out with the
+    # result the way #790 publishes its errored checks -- this module keeps no logger on
+    # purpose, so the caller is where it becomes visible.
+    _dupes_1156: List[Tuple[str, ...]] = []
+    try:
+        _by_body: Dict[str, List[str]] = {}
+        for _p, _h in block_info:
+            _ls = [l for l in str(_h).split("\n") if l.strip()]
+            _body = "\n".join(_ls[2:])          # drop @app.<verb>(path) + def <name>(...)
+            if not _body or "db.query(" not in _body:
+                continue
+            _by_body.setdefault(_body, []).append(_p)
+        _dupes_1156 = [tuple(sorted(ps)) for ps in _by_body.values() if len(ps) > 1]
+    except Exception:
+        _dupes_1156 = []
+
+    return {"projected": projected, "already": len(existing) - len(projected),
+            "identical_bodies_1156": _dupes_1156}
 
 
 # ---------------------------------------------------------------------------
