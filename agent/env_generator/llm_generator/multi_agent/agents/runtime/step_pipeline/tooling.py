@@ -703,6 +703,26 @@ class AgentStepToolingMixin:
             # result reaches the model, so it perceives its workspace as root and
             # never learns the host path to script against (run #13 leak).
             result_str = self._scrub_workspace_paths(result_str)
+            # #1171: ATTRIBUTE THE UNCACHED TOKENS TO A TOOL.
+            #
+            # #1163 says a run costs $425 at the real rate and that 30.8M of it is
+            # UNCACHED input — $169, 40% of the bill, at 10x the cached rate. The
+            # distribution says where to look: the median call adds only 1,297 uncached
+            # tokens, while the top 10% of calls carry 57% of the total and one carried
+            # 220,729 (that single call cost $1.21). So the money is in a minority of
+            # calls with a large payload — and the payload is a TOOL RESULT, which is
+            # the one thing never recorded. Ruled out first, by measurement: the hub
+            # pulse is appended (cache-friendly, not a prefix break) and post-condense
+            # calls hit 90.7% vs an 88.8% baseline, so neither is the cause.
+            #
+            # Counting bytes here — the single point every tool result passes on its way
+            # into the message list — makes the next run able to answer "which tool put
+            # 220K tokens in the context", which no log in the corpus can answer today.
+            try:
+                from utils.llm import record_tool_result_bytes_1171
+                record_tool_result_bytes_1171(tool_name, len(result_str or ""))
+            except Exception:
+                pass
             messages.append(Message.tool(result_str, tool_call_id))
             if _mm_image is not None:
                 _img_label = ""

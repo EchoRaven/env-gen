@@ -64,8 +64,14 @@ class RunBudget:
             # run rather than in a post-mortem. Best-effort: accounting must never be the
             # reason a run record fails to write.
             try:
-                from utils.llm import llm_usage
+                from utils.llm import llm_usage, tool_result_bytes
                 payload["llm"] = llm_usage()
+                # #1171: the top contributors only — the whole map is long and the
+                # question ("which tool put that much in the context") is answered by
+                # the head of it.
+                _tb = tool_result_bytes()
+                if _tb:
+                    payload["tool_result_bytes"] = dict(list(_tb.items())[:12])
             except Exception:
                 pass
             path = self.path()

@@ -842,6 +842,34 @@ def llm_usage() -> Dict[str, Any]:
     return u
 
 
+# #1171: bytes each TOOL put into the context, so the uncached half of the bill can be
+# attributed. #1163 measures the total; this says which tool produced it.
+_TOOL_RESULT_BYTES: Dict[str, Any] = {}
+
+
+def record_tool_result_bytes_1171(tool: Any, nbytes: Any) -> None:
+    """Accumulate one tool result's size. Never raises."""
+    try:
+        t = str(tool or "?")
+        n = int(nbytes or 0)
+        e = _TOOL_RESULT_BYTES.setdefault(t, {"calls": 0, "bytes": 0, "max": 0})
+        e["calls"] += 1
+        e["bytes"] += n
+        if n > e["max"]:
+            e["max"] = n
+    except Exception:
+        return
+
+
+def tool_result_bytes() -> Dict[str, Any]:
+    """{tool: {calls, bytes, max}} sorted by bytes, biggest first."""
+    try:
+        return dict(sorted(_TOOL_RESULT_BYTES.items(),
+                           key=lambda kv: -int(kv[1].get("bytes") or 0)))
+    except Exception:
+        return {}
+
+
 def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens: Any) -> None:
     """Accumulate one response. Never raises — accounting must not break a call."""
     try:
