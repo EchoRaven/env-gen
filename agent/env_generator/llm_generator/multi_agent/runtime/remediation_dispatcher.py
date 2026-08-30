@@ -438,6 +438,207 @@ def _ui_evidence_failed_extra(pages: Sequence[Any]) -> str:
             "the page works when you open it, re-run the walk and move on.")
 
 
+# ---- #1176 -----------------------------------------------------------------
+# r17 (live, 2026-08-30) spent 20 minutes and ~$80 on a loop that could not
+# converge, while the framework held both halves of the answer the whole time.
+#
+# The landing page sits at route "/" and App.jsx -- which the framework
+# scaffolds -- leaves it OUTSIDE every auth guard, so the walk opens it logged
+# out. The backend lane registered the whole catalogue with
+# `metadata.auth_required=True`, and `resolve_endpoint_auth` honours an explicit
+# statement over its own (correct) shape default for a public GET, so
+# /api/titles/top10 projected with `Depends(get_current_user)`. Two artifacts,
+# each self-consistent, and a guaranteed 401 where they meet:
+#
+#     validation:ui_smoke:landing_page  FAILED
+#       "Landing page loaded but emitted GET /api/titles/top10 401 Unauthorized"
+#
+# The dispatch was already right ("a 4xx from the API is BACKEND") and the
+# backend lane did act: it re-registered /api/titles, /api/titles/top10 and
+# /api/titles/trending again and again. Every one of those calls re-sent
+# `status=implemented` and none touched `auth_required`, which read True before
+# the loop and True after it. The lane could reach the lever. Nothing told it
+# the lever was there -- so it re-asserted the state it was already in, which
+# is what a lane does when the evidence names a symptom and no cause.
+#
+# WHY THE PUBLIC-ROUTE TEST IS NOT OPTIONAL: without it this text would say
+# "make the endpoint public" about a page that is SUPPOSED to be authenticated
+# and merely failed to log in -- repairing a red gate by deleting an auth
+# boundary. That is #1158's mistake (a fail-open that turned another user's 403
+# into a 201) handed over as remediation. So the lever is named only when
+# App.jsx itself put the route outside every guard, and even then BOTH legal
+# repairs are named -- publish the endpoint, or protect the page -- because
+# which one is correct is a question about the product, not about the gate.
+#
+# It reads files that exist only when the gate has ALREADY failed, and adds
+# prose to an existing remediation. A miss costs the old generic text.
+
+# Deliberately NARROWER than frontend_audit's `_ROUTE_WRAPPERS`: that set also
+# carries Layout / Suspense / ErrorBoundary, which wrap a route without saying
+# anything about auth. Counting `<Layout>` as a guard would silence this
+# diagnosis on every app that wraps its pages in a shell -- that is, most.
+_AUTH_GUARD_IDENTS_1176 = frozenset({
+    "protectedroute", "privateroute", "requireauth", "requireadmin", "authguard",
+    "routeguard", "guard", "authroute", "protected", "requiresession", "authonly",
+})
+
+# "... emitted GET /api/titles/top10 401 Unauthorized" and the inverted phrasing
+# a different verifier turn produces ("401 on GET /api/titles/top10").
+_M4XX_A_1176 = re.compile(
+    r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[^\s\"'<>,;)\]]+)\D{0,24}?(401|403)\b")
+_M4XX_B_1176 = re.compile(
+    r"\b(401|403)\b\D{0,24}?(GET|POST|PUT|PATCH|DELETE)\s+(/[^\s\"'<>,;)\]]+)")
+
+
+def _norm_path_1176(path: str) -> str:
+    """`/api/titles/5` -> `/api/titles/{id}` so a probed URL matches its contract row."""
+    out = []
+    for seg in str(path or "").split("?")[0].split("/"):
+        out.append("{id}" if seg.isdigit() else seg)
+    return "/".join(out).rstrip("/") or "/"
+
+
+def _hub_json_1176(root, filename: str):
+    """Best-effort read of one hub file -> {} when absent/unreadable."""
+    import json as _json
+    try:
+        p = Path(root) / "shared" / "hubs" / filename
+        if not p.is_file():
+            return {}
+        return _json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except Exception as _exc:
+        _swallowed_1152("_hub_json_1176(%s)" % filename, _exc, "{} = no diagnosis")
+        return {}
+
+
+def _walk_records_1176(obj, want):
+    """Yield every dict in a hub blob for which `want(d)` is true (shape-agnostic:
+    the hubs nest records differently per file and per framework version)."""
+    stack = [obj]
+    seen = 0
+    while stack and seen < 200000:
+        cur = stack.pop()
+        seen += 1
+        if isinstance(cur, dict):
+            try:
+                if want(cur):
+                    yield cur
+            except Exception:
+                pass
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+
+
+def _route_is_public_1176(app_jsx: str, route: str) -> Optional[bool]:
+    """True when App.jsx declares `route` outside every auth guard, False when a
+    guard wraps it, None when the route is not found (say nothing rather than guess).
+
+    The span is cut at the NEXT route landmark, never at a fixed byte offset: a
+    `<Route>` element carrying a guard plus a lazy import runs well past any
+    constant window, and a window that ends early reads as "no guard" -- the exact
+    direction that would produce the fail-open advice this helper exists to avoid.
+    """
+    if not app_jsx or not route:
+        return None
+    m = re.search(r"<Route\b[^>]*?\bpath\s*=\s*[\"'{]\s*%s\s*[\"'}]" % re.escape(route), app_jsx)
+    if m is None:
+        return None
+    tail = app_jsx[m.start():]
+    # Landmark: the next route declaration, or the end of the route table.
+    ends = [i for i in (tail.find("<Route", 6), tail.find("</Routes>")) if i > 0]
+    span = tail[:min(ends)] if ends else tail
+    low = span.lower()
+    return not any(("<" + g) in low or (g + " ") in low for g in _AUTH_GUARD_IDENTS_1176)
+
+
+def auth_contradiction_1176(orch, pages: Sequence[Any]) -> str:
+    """Name the contract switch behind a 401/403 on a page that is public by construction."""
+    try:
+        root = getattr(orch, "output_dir", None)
+        if not root:
+            return ""
+        wanted = {str(p).strip() for p in (pages or []) if str(p).strip()}
+        if not wanted:
+            return ""
+
+        # 1. The failing UI records for those pages, and the 4xx they name.
+        checks = _hub_json_1176(root, "codehub_checks.json")
+        hits = {}          # (METHOD, normpath) -> page
+        for rec in _walk_records_1176(
+                checks,
+                lambda d: str(d.get("status", "")).lower() in ("failure", "failed")
+                and str(d.get("name", "")).startswith("validation:ui")):
+            name = str(rec.get("name", ""))
+            page = name.rsplit(":", 1)[-1]
+            if page not in wanted:
+                continue
+            blob = " ".join(str(v) for v in (rec.get("evidence") or {}).values())[:8000]
+            for mm in _M4XX_A_1176.finditer(blob):
+                hits.setdefault((mm.group(1).upper(), _norm_path_1176(mm.group(2))), page)
+            for mm in _M4XX_B_1176.finditer(blob):
+                hits.setdefault((mm.group(2).upper(), _norm_path_1176(mm.group(3))), page)
+        if not hits:
+            return ""
+
+        # 2. What the CONTRACT says about each of those endpoints.
+        eps = _hub_json_1176(root, "registryhub_endpoints.json")
+        authed = {}
+        for rec in _walk_records_1176(eps, lambda d: "path" in d and "method" in d):
+            stated = rec.get("auth_required")
+            if stated is None:
+                stated = (rec.get("metadata") or {}).get("auth_required")
+            if stated is None:
+                continue
+            authed[(str(rec.get("method", "")).upper(),
+                    _norm_path_1176(rec.get("path")))] = bool(stated)
+
+        # 3. Which route each failing page occupies, and whether App.jsx guards it.
+        routes = {}
+        for rec in _walk_records_1176(
+                _hub_json_1176(root, "registryhub_ui_pages.json"),
+                lambda d: d.get("name") and d.get("route")):
+            routes.setdefault(str(rec["name"]), str(rec["route"]))
+        try:
+            app_jsx = (Path(root) / "app" / "frontend" / "src" / "App.jsx").read_text(
+                encoding="utf-8", errors="replace")
+        except Exception:
+            app_jsx = ""
+
+        lines = []
+        for (method, path), page in sorted(hits.items()):
+            if not authed.get((method, path)):
+                continue                       # contract does not demand the token
+            if _route_is_public_1176(app_jsx, routes.get(page, "")) is not True:
+                continue                       # page is guarded (or unknown) -> stay quiet
+            lines.append("- `%s %s` is registered with auth_required=True, and `%s` "
+                         "renders at route `%s`, which App.jsx leaves outside every auth "
+                         "guard. Logged out, that call can only ever be %s."
+                         % (method, path, page, routes.get(page, "?"), "401/403"))
+        if not lines:
+            return ""
+        return (
+            "\n\n★ THE CONTRACT, NOT THE HANDLER, IS WHAT REQUIRES THE TOKEN HERE:\n"
+            + "\n".join(lines[:6]) +
+            "\n\nThe handler is PROJECTED from that registration: `resolve_endpoint_auth` "
+            "treats an explicit `auth_required` as final, so the projector wrote "
+            "`Depends(get_current_user)` because the contract asked it to. Editing the "
+            "projected handler in main.py CANNOT fix this -- the next projection rewrites "
+            "it -- and re-registering the endpoint with the same metadata changes nothing "
+            "(r17 did exactly that, repeatedly, and the flag read True before and after).\n"
+            "Pick ONE, by what the product means:\n"
+            "  (a) the data is public -> registryhub_register_endpoint the SAME method+path "
+            "with metadata.auth_required=False, then re-project and re-run the walk; or\n"
+            "  (b) the data is private -> the page must not render logged out: put its route "
+            "behind the app's auth guard in App.jsx, or stop it fetching this endpoint "
+            "before login.\n"
+            "Do NOT publish an endpoint merely to turn the gate green -- a read that leaks "
+            "another user's rows is a worse defect than the one you are clearing.")
+    except Exception as _exc_1176:
+        _swallowed_1152("auth_contradiction_1176", _exc_1176, "'' = generic remediation")
+        return ""
+
+
 def _ui_flow_failed_names(orch) -> List[str]:
     """#981: the flows the gate counts as FAILED — recorded, but not passing.
 
@@ -1715,13 +1916,19 @@ class RemediationDispatcher:
                     # #982: the other half of r159's terminal pair. Same shape as #981.
                     _fp = _ui_evidence_failed_pages(orch)
                     if _fp:
-                        _extra = _ui_evidence_failed_extra(_fp)
+                        # #1176: append the contract-vs-public-route diagnosis when the
+                        # failing record names a 401/403. Empty string when it does not
+                        # apply, so the #982 text is unchanged in every other case.
+                        _extra = _ui_evidence_failed_extra(_fp) + auth_contradiction_1176(orch, _fp)
                 if name == "deliverability_ui_flow_failed":
                     # #981: the sibling branch below has named its instances since FIX #284;
                     # this one never did, so the verifier was handed the check name alone.
                     _ff = _ui_flow_failed_names(orch)
                     if _ff:
-                        _extra = _ui_flow_failed_extra(_ff)
+                        # #1176: same 401/403 diagnosis, other check -- a failing ui_flow
+                        # record carries the same evidence shape. Silent when the flow name
+                        # does not resolve to a declared ui_page route.
+                        _extra = _ui_flow_failed_extra(_ff) + auth_contradiction_1176(orch, _ff)
                 if name == "deliverability_ui_flow_missing":
                     # FIX #284: hand the verifier the EXACT missing flow names + the
                     # contradiction that broke r68 (it broadcast "already recorded" for

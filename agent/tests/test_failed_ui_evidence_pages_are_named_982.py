@@ -60,9 +60,14 @@ def test_a_broken_report_falls_back_quietly(monkeypatch):
 
 
 def test_the_dispatcher_uses_it():
+    """The named-pages body is built INSIDE this branch — anchored on the next branch
+    landmark, not on a byte count. The original `- i < 500` was a fixed window: #1176
+    added three comment lines above the assignment and the window, not the wiring,
+    was what went red."""
     src = inspect.getsource(rd)
     i = src.index('if name == "validation_ui_evidence_failed":')
-    assert src.index("_extra = _ui_evidence_failed_extra(", i) - i < 500
+    branch = src[i:src.index('if name == "deliverability_ui_flow_failed":', i)]
+    assert "_extra = _ui_evidence_failed_extra(" in branch
 
 
 def test_both_halves_of_the_pair_are_covered():
