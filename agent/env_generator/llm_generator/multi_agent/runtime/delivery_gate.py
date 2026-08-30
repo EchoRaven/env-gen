@@ -2943,6 +2943,17 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         and not (missing_files or missing_dirs or invalid_json)
     )
     gate_state = "ok" if ok else ("waiting_for_retry" if soft_fail_only else "failed")
+    # #1183: tell the spend ceiling that this run is FINISHING, not wedged. The cap exists
+    # to bound a wedge and has nothing left to protect once this gate passes — r20 reached
+    # "zero blockers" at $403 of a $500 ceiling, and r17's two resumes were each stopped
+    # mid-convergence, losing everything already spent. Raises the ceiling by a bounded
+    # factor from here; a run that wedges after passing still stops, 25% later.
+    if ok:
+        try:
+            from utils.llm import mark_delivering_1183
+            mark_delivering_1183()
+        except Exception:
+            pass
     return {
         "ok": ok,
         "state": gate_state,

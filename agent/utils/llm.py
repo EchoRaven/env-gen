@@ -832,6 +832,45 @@ _TERMINAL_ERROR_PHRASES = (
 _LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unreported": 0}
 
 
+# ---- #1183 ------------------------------------------------------------------
+# A CEILING THAT KILLS A RUN WHICH IS ALREADY FINISHING SPENDS EVERYTHING TO SAVE A LITTLE.
+#
+# The cap exists to bound a WEDGE. It has repeatedly ended runs that were not wedged but
+# converging, and each time the whole run was lost:
+#
+#   r17 resume 2  stopped at $150.36 having taken the gate from 5 failed checks to 1
+#   r17 resume 3  stopped at $120.28 with ui_flow:signup green and one record left
+#   r20           reached "final deliverability is green with zero blockers" at $403 of $500
+#
+# Three runs, ~$670, none delivered, and in every case the money already spent was the part
+# that was lost. A cap has nothing to protect once the gate has PASSED: the remaining work is
+# the release itself, it is bounded, and stopping there throws away the entire run.
+#
+# So: while the delivery gate reports zero blockers, the ceiling is raised by a bounded
+# factor (25% by default, ENVGEN_DELIVERY_OVERSHOOT) and the overshoot is stated in the
+# abort reason if it is ever reached. This is not a way around the cap -- nothing sets the
+# flag except the gate passing, and a run that then wedges still stops, 25% later.
+_DELIVERING_1183 = {"on": False}
+
+
+def mark_delivering_1183(on: bool = True) -> None:
+    """Called by the delivery gate when it passes: the run is finishing, not wedged."""
+    _DELIVERING_1183["on"] = bool(on)
+
+
+def delivering_1183() -> bool:
+    return bool(_DELIVERING_1183["on"])
+
+
+def _overshoot_1183() -> float:
+    """Bounded, and never below 1.0 — a value under 1 would TIGHTEN the cap at delivery."""
+    try:
+        v = float(os.environ.get("ENVGEN_DELIVERY_OVERSHOOT", "") or 1.25)
+    except (TypeError, ValueError):
+        return 1.25
+    return min(2.0, max(1.0, v))
+
+
 def _price_env_1163(name: str) -> float:
     try:
         return float(os.environ.get(name, "") or 0.0)
@@ -914,11 +953,16 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
         cap = _price_env_1163("ENVGEN_MAX_SPEND_USD")
         if cap > 0 and not _TERMINAL_LLM_ERROR["reason"]:
             u = llm_usage()
-            if u["priced"] and u["usd"] >= cap:
+            # #1183: once the gate has passed there is nothing left to protect — stopping
+            # here loses the whole run to save the tail of it. Bounded, and stated.
+            _shoot = _overshoot_1183() if delivering_1183() else 1.0
+            if u["priced"] and u["usd"] >= cap * _shoot:
+                _extra = ("" if _shoot <= 1.0 else
+                          " (delivery overshoot x%.2f applied; the gate had passed)" % _shoot)
                 _TERMINAL_LLM_ERROR["reason"] = (
-                    "[BudgetExceeded] run spend $%.2f reached ENVGEN_MAX_SPEND_USD=$%.2f "
+                    "[BudgetExceeded] run spend $%.2f reached ENVGEN_MAX_SPEND_USD=$%.2f%s "
                     "after %d calls (uncached-in %d, cached-in %d, out %d)"
-                    % (u["usd"], cap, u["calls"], u["uncached"], u["cached"],
+                    % (u["usd"], cap, _extra, u["calls"], u["uncached"], u["cached"],
                        u["completion"]))
     except Exception:
         return
