@@ -2529,7 +2529,7 @@ export default function __COMP__() {
       __BRAND_HEADER__
       <div className="flex items-center justify-center px-4 py-12">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border __CLS_CARD__ p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold __CLS_TITLE__">{isRegister ? 'Create account' : 'Sign in'}</h1>
+        <h1 className="text-2xl font-semibold __CLS_TITLE__">{isRegister ? 'Sign up' : 'Sign in'}</h1>
         {isRegister ? (
           <input name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
                  className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
