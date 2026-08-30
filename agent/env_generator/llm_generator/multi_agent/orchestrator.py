@@ -1246,6 +1246,29 @@ class Orchestrator:
     ) -> GenerationResult:
         """Run environment generation."""
         start_time = datetime.now()
+        # #1170: PUBLISH SPEND FROM MINUTE ONE, NOT FROM THE MAIN LOOP.
+        #
+        # #1163 counts every call, but its carrier — `run_budget.json` — is first written
+        # at the top of the delivery loop, which starts AFTER design-prep and kickoff.
+        # Those are a run's first ~15 minutes, and they are exactly where a run can burn
+        # money invisibly: r15 spent 2h50m there against a dead account. Observed live on
+        # r16 — 50 calls and 961K prompt tokens in, and no run_budget.json existed yet.
+        #
+        # Same structural gap #1161 fixed for the abort poll, one file over. Write the
+        # record once here, with the env caps, so the number is readable while the phase
+        # that produces it is still running. Best-effort: accounting must never be the
+        # reason a run fails to start.
+        try:
+            self._write_run_budget(
+                self._load_run_budget_caps({
+                    "max_wall_sec": float(os.environ.get("ENVGEN_MAX_WALLCLOCK_SEC", "7200")),
+                    "max_ticks": int(os.environ.get("ENVGEN_MAX_TICKS", "240")),
+                    "unlimited": str(os.environ.get("ENVGEN_BUDGET_UNLIMITED", "")).strip().lower()
+                                 in ("1", "true", "yes"),
+                }),
+                start_time.timestamp(), 0.0, 0, "starting")
+        except Exception as _e1170:
+            self._logger.debug("#1170 early run_budget write skipped: %s", _e1170)
         # Multi-milestone: run N milestones sequentially, each a FRESH lane-set
         # implementing a slice on the GROWING app. The degenerate (single
         # milestone) case is synthesized below so the one-milestone path is
