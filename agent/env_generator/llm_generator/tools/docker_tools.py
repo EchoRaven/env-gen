@@ -183,6 +183,28 @@ def _compose_port_conflict_hint(stderr: str, compose_file: Path) -> Optional[str
     )
 
 
+def _compose_project_name_1169(compose_file) -> str:
+    """The project name compose itself will use for ``compose_file``.
+
+    Compose's own precedence: an explicit ``name:`` in the file (#1157 writes one per
+    run), else the directory the file sits in. Reading it back — rather than inventing a
+    name and passing ``-p`` — is what keeps this tool's stack findable by
+    ``container_id(compose_file, service)`` and by #962's config_files label check.
+    Best-effort: an unreadable file falls back to the directory, which is exactly what
+    compose would do.
+    """
+    try:
+        from pathlib import Path as _P
+        _f = _P(compose_file)
+        for _line in _f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            _m = re.match(r"^name\s*:\s*(\S+)\s*$", _line)
+            if _m:
+                return _m.group(1).strip().strip("\"'")
+        return _f.parent.name
+    except Exception:
+        return "docker"
+
+
 def _find_compose_file_global(workspace_root: Path) -> Optional[Path]:
     """
     Find docker-compose file - very forgiving, searches many locations.
@@ -1297,8 +1319,22 @@ Example:
         steps_completed = []
         errors = []
         
-        # Generate unique project name to avoid stale references
-        project_name = f"gen_{uuid.uuid4().hex[:8]}"
+        # #1169: USE THE COMPOSE FILE'S OWN PROJECT, NOT A RANDOM ONE.
+        #
+        # `gen_<random>` was chosen "to avoid stale references", and it does — by
+        # orphaning the stack from everything else. Every other component resolves a
+        # container through the COMPOSE FILE (`container_id(compose_file, service)` ->
+        # `compose ps -q`, and #962's config_files label check), so a stack brought up
+        # under a name only this tool knows is invisible to the validation runner, the
+        # seed audit's live row counts, #1039/#1168's queries and the port probes. The
+        # `down --remove-orphans` two lines above is what actually clears stale state;
+        # the random name only guarantees the new state is unreachable.
+        #
+        # #1157 gives every generated compose a `name:` derived from the run, so passing
+        # no `-p` at all lets compose use it and every resolver agrees. Read it back for
+        # the report rather than inventing one. The tool has never been called in any run
+        # in the corpus, so this changes no observed behaviour — it removes a trap.
+        project_name = _compose_project_name_1169(compose_file)
         compose_dir = compose_file.parent
         
         try:
@@ -1324,7 +1360,7 @@ Example:
                 if build:
                     build_result = await _await_blocking_990(_run_compose, 
                         compose_file,
-                        ["-p", project_name, "build", "--no-cache"],
+                        ["build", "--no-cache"],
                         cwd=self.workspace.base_root,
                         timeout=600,
                     )
@@ -1336,7 +1372,7 @@ Example:
                 # Step 5: Start with fresh project name
                 up_result = await _await_blocking_990(_run_compose, 
                     compose_file,
-                    ["-p", project_name, "up", "-d", "--force-recreate"],
+                    ["up", "-d", "--force-recreate"],
                     cwd=self.workspace.base_root,
                     timeout=180,
                 )
@@ -1344,7 +1380,7 @@ Example:
                 if up_result.returncode != 0:
                     errors.append(f"Start failed: {up_result.stderr}")
                 else:
-                    steps_completed.append(f"docker compose -p {project_name} up -d")
+                    steps_completed.append(f"docker compose up -d (project {project_name})")
                 
                 # Step 6: Wait for containers to be running
                 await asyncio.sleep(3)
@@ -1352,7 +1388,7 @@ Example:
                 # Check status
                 status_result = await _await_blocking_990(_run_compose, 
                     compose_file,
-                    ["-p", project_name, "ps"],
+                    ["ps"],
                     cwd=self.workspace.base_root,
                     timeout=30,
                 )
