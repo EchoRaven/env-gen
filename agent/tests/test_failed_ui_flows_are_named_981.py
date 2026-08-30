@@ -80,9 +80,12 @@ def test_duplicates_collapse(monkeypatch):
 def test_the_dispatcher_uses_it_for_the_failed_branch():
     src = inspect.getsource(rd)
     assert 'if name == "deliverability_ui_flow_failed":' in src
+    # #943, again: this was `i_use - i_failed < 500`, a fixed byte window. #1176 added
+    # three comment lines inside the branch and the WINDOW went red while the wiring
+    # it guards was untouched. Anchor on the next branch instead of counting bytes.
     i_failed = src.index('if name == "deliverability_ui_flow_failed":')
-    i_use = src.index("_extra = _ui_flow_failed_extra(", i_failed)
-    assert i_use - i_failed < 500, "the failed branch must set its own extra"
+    branch = src[i_failed:src.index('if name == "deliverability_ui_flow_missing":', i_failed)]
+    assert "_ui_flow_failed_extra(" in branch, "the failed branch must set its own extra"
 
 
 def test_the_missing_branch_is_untouched():

@@ -67,7 +67,10 @@ def test_the_dispatcher_uses_it():
     src = inspect.getsource(rd)
     i = src.index('if name == "validation_ui_evidence_failed":')
     branch = src[i:src.index('if name == "deliverability_ui_flow_failed":', i)]
-    assert "_extra = _ui_evidence_failed_extra(" in branch
+    # Not "_extra = _ui_evidence_failed_extra(": #1177 wrapped the assignment in
+    # parentheses to append its own text, and the literal prefix stopped matching
+    # while the wiring was correct. Assert the CALL, not its punctuation.
+    assert "_ui_evidence_failed_extra(" in branch
 
 
 def test_both_halves_of_the_pair_are_covered():
