@@ -40,7 +40,36 @@ R15 = ("Error code: 429 - {'error': {'message': 'You have no credits remaining. 
 
 
 def test_the_error_that_burned_two_hours_fifty_is_terminal():
-    assert is_terminal(_Err(R15, 429)) is True
+    """#1174 refined this: the message is still recognised, but a quota outage now
+    gets a grace window before it counts as terminal, because r16 was killed by a
+    57-SECOND one while sitting at a single failing gate check with $262 spent.
+    r15's protection is unchanged -- it aborts once the outage PERSISTS, which is
+    the case this test was written for (its outage ran 3h01m)."""
+    import os
+    import utils.llm as _L
+    os.environ["ENVGEN_QUOTA_GRACE_S"] = "0"      # the pre-#1174 contract, verbatim
+    _L._QUOTA_FIRST_SEEN_1174["at"] = None
+    try:
+        assert is_terminal(_Err(R15, 429)) is True
+    finally:
+        os.environ.pop("ENVGEN_QUOTA_GRACE_S", None)
+        _L._QUOTA_FIRST_SEEN_1174["at"] = None
+
+
+def test_a_persistent_outage_is_terminal_under_the_default_grace():
+    """The r15 case as it now behaves: not on the first error, but once it lasts."""
+    import time
+    import os
+    import utils.llm as _L
+    os.environ["ENVGEN_QUOTA_GRACE_S"] = "1"
+    _L._QUOTA_FIRST_SEEN_1174["at"] = None
+    try:
+        assert is_terminal(_Err(R15, 429)) is False
+        time.sleep(1.1)
+        assert is_terminal(_Err(R15, 429)) is True
+    finally:
+        os.environ.pop("ENVGEN_QUOTA_GRACE_S", None)
+        _L._QUOTA_FIRST_SEEN_1174["at"] = None
 
 
 def test_it_does_not_depend_on_the_status_attribute():

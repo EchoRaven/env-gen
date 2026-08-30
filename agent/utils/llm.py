@@ -795,6 +795,21 @@ _TERMINAL_LLM_ERROR = {"reason": None}
 
 # Specific billing/quota phrases — deliberately NOT the generic "quota"/"exceeded" (those
 # appear in transient 429 rate-limit messages, e.g. Gemini ResourceExhausted).
+import time as _time_1174
+
+# #1174: when the CURRENT quota outage started. Cleared by any successful call, so an
+# outage that ends resets the clock and a later one gets its own grace window.
+_QUOTA_FIRST_SEEN_1174: Dict[str, Any] = {"at": None}
+
+
+def _quota_grace_1174() -> float:
+    """Seconds a quota outage may persist before it counts as terminal."""
+    try:
+        return float(os.environ.get("ENVGEN_QUOTA_GRACE_S", "300") or 0)
+    except (TypeError, ValueError):
+        return 300.0
+
+
 _TERMINAL_ERROR_PHRASES = (
     "spend exceeded", "budget for", "insufficient_quota", "insufficient quota",
     "payment required", "billing hard limit", "entitlement",
@@ -872,6 +887,14 @@ def tool_result_bytes() -> Dict[str, Any]:
 
 def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens: Any) -> None:
     """Accumulate one response. Never raises — accounting must not break a call."""
+    # #1174: a successful response means the outage (if any) is over. Clearing here —
+    # the one place every success passes — stops an early blip from spending a later
+    # outage's grace window, which would make the second one latch instantly.
+    try:
+        if _QUOTA_FIRST_SEEN_1174.get("at") is not None:
+            _QUOTA_FIRST_SEEN_1174["at"] = None
+    except Exception:
+        pass
     try:
         _LLM_USAGE["calls"] += 1
         _LLM_USAGE["prompt"] += int(prompt_tokens or 0)
@@ -945,6 +968,35 @@ def _is_terminal_llm_error(error: Exception) -> bool:
     # A 429 that names a billing phrase is terminal; a 429 that does not is still the
     # transient throttle it always was.
     if any(p in s for p in _TERMINAL_ERROR_PHRASES):
+        # #1174: QUOTA EXHAUSTION IS NOT ALWAYS PERMANENT.
+        #
+        # #1159 was right that a 429 saying "no credits" must not be retried like a
+        # throttle — r15 spent 2h50m doing exactly that. It was wrong that the condition
+        # never recovers. Measured across three runs on the same account:
+        #
+        #     r16   01:12:10 -> 01:13:07     57 SECONDS, then the balance was back
+        #     r15   08:42:50 -> 11:44:19     3h01m, never recovered in-run
+        #     r14   02:34:32 -> 08:19:52     5h45m of intermittent outages — and r14
+        #                                    still DELIVERED, so it recovered repeatedly
+        #
+        # r16 was killed by the 57-second one. It was at ONE failing gate check with $262
+        # already spent, and the account answered HTTP 200 again minutes later. An
+        # auto-renewing account makes this a BLIP, not a wall.
+        #
+        # So: hold the first quota error and let the retry path work. Latch terminal only
+        # once the condition has PERSISTED past the grace window — which keeps r15's
+        # protection (abort ~5 min in rather than 2h50m) while surviving r16's.
+        # A hard auth rejection below is unaffected: 401/403 never recovers by waiting.
+        if isinstance(status, int) and status == 429:
+            _g = _quota_grace_1174()
+            if _g > 0:
+                _first = _QUOTA_FIRST_SEEN_1174.get("at")
+                _now = _time_1174.time()
+                if _first is None:
+                    _QUOTA_FIRST_SEEN_1174["at"] = _now
+                    return False          # first sighting — let it retry
+                if (_now - float(_first)) < _g:
+                    return False          # still inside the grace window
         return True
     if isinstance(status, int) and status == 429:
         return False
