@@ -1635,6 +1635,8 @@ def _custom_route_overrides_projected(method, path):
         return False
     return True                                       # actions / search / novel → custom wins
 
+_FW_DROPPED_1166 = []   # #1166: (route, method, path) dropped for a projection that may not exist
+
 try:
     import custom_routes as _custom_mod
     from fastapi import APIRouter as _APIRouter
@@ -1687,7 +1689,53 @@ try:
                 "its SHAPE in the contract (an action segment such as "
                 "/x/{id}/publish overrides; a bare collection or item-by-id does not): %s",
                 len(_dropped_cr), [f"{_t[1]} {_t[2]}" for _t in _dropped_cr])
+        # #1166: a dropped route must be dropped IN FAVOUR OF something.
+        # `_custom_route_overrides_projected` decides on SHAPE alone and never asks
+        # whether a projected handler for that method+path actually exists. Measured on
+        # both delivered artifacts: within the SAME platform resource, POST and GET
+        # /api/v1/tenants are kept while DELETE /api/v1/tenants/{tenant_id} is dropped as
+        # "standard CRUD" — and the projector never touches the spine, so nothing serves
+        # it. r14 live: DELETE /api/v1/tenants/default -> 404, on an endpoint the contract
+        # DECLARES and the lane IMPLEMENTED.
+        #
+        # The check cannot run here: the projected handlers are appended to main.py BELOW
+        # this line, so at include time they are not registered yet. Re-examine at startup,
+        # when the module has finished executing and the route table is complete, and
+        # restore only the ones nothing else serves. "Projected wins" is untouched — this
+        # only stops a lane route from being dropped into the void.
+        for _t_cr in _dropped_cr:
+            _FW_DROPPED_1166.append((_t_cr[0], _t_cr[1], _t_cr[2]))
         app.include_router(_custom_router)
+
+
+    @app.on_event("startup")
+    async def _fw_restore_unserved_dropped_1166():
+        """Re-register a dropped lane route that nothing else ended up serving."""
+        try:
+            import logging as _l1166
+            _served = set()
+            for _rt in app.routes:
+                for _mm in (getattr(_rt, "methods", None) or ()):
+                    _served.add((str(_mm).upper(), str(getattr(_rt, "path", ""))))
+            _back = []
+            for _r1166, _m1166, _p1166 in _FW_DROPPED_1166:
+                if (str(_m1166).upper(), str(_p1166)) in _served:
+                    continue          # a projection really does serve it — stay dropped
+                app.router.routes.append(_r1166)
+                _back.append("%s %s" % (_m1166, _p1166))
+            if _back:
+                _l1166.getLogger("custom_routes").warning(
+                    "#1166 restored %d lane route(s) that were dropped for a projected "
+                    "handler that does not exist — nothing else serves them, so dropping "
+                    "them would have left a DECLARED endpoint answering 404: %s",
+                    len(_back), _back)
+        except Exception as _e1166:      # never let the repair break startup
+            try:
+                import logging as _l2
+                _l2.getLogger("custom_routes").warning(
+                    "#1166 restore skipped: %s", _e1166)
+            except Exception:
+                pass
 except ImportError as _custom_imp:
     # ONLY "custom_routes does not exist" is benign. A NESTED broken import (the lane's
     # `import asyncpg` with the package missing) also lands here — and silently dropping
