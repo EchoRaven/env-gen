@@ -374,8 +374,31 @@ def _ui_evidence_failed_pages(orch) -> List[str]:
         _b = globals().get("_ui_evidence_breadth_739")
         if _b is None:
             from .delivery_gate import _ui_evidence_breadth_739 as _b
-        report = _b(getattr(orch, "_last_validation_results", None)
-                    or getattr(orch, "_validation_results", None))
+        # #1178: THIS PRODUCER READ TWO ATTRIBUTES THAT DO NOT EXIST.
+        #
+        # `_last_validation_results` and `_validation_results` are not on the orchestrator
+        # -- it exposes the METHOD `_get_validation_results(limit=...)`, which is what the
+        # gate's own consumer calls (orchestrator.py:1117) and whose docstring says "the two
+        # readers must agree". Both getattr calls returned None, `_b(None)` reported nothing
+        # failing, and this function returned [] on every call since #982 landed.
+        #
+        # So the ENTIRE named-pages remediation was dead: #982's page list, #1043's
+        # auth-root hint, and (as shipped) #1176 and #1177 all hang off this list being
+        # non-empty. The dispatcher fell through to the 789-character generic body every
+        # time. r17 shows it on both sides of a resume -- task_fa4adc4f11 (original run) and
+        # task_f2496728f6 (resume) are both exactly 789 chars, while the gate one line above
+        # printed "#1017 validation_ui_evidence_failed on 1 record(s), 1 named page(s):
+        # landing_page". The gate could name it; the lane was never told.
+        #
+        # This is the #1040 shape one layer down: a fix that exists and cannot be reached.
+        _results = None
+        _getter = getattr(orch, "_get_validation_results", None)
+        if callable(_getter):
+            _results = _getter(limit=9999)
+        if not _results:
+            _results = (getattr(orch, "_last_validation_results", None)
+                        or getattr(orch, "_validation_results", None))
+        report = _b(_results)
         return [str(x) for x in (report or {}).get("pages_failed") or [] if str(x) and str(x) != "?"]
     except Exception as _exc_1152:
         _swallowed_1152("_ui_evidence_failed_pages", _exc_1152, "[] = nothing to remediate")
