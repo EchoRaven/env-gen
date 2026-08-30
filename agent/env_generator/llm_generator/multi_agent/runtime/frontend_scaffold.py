@@ -2232,7 +2232,7 @@ def _landing_page_src(name: str, label: str, page: Mapping[str, Any],
         cta = (
             "        <form className=\"mt-8 flex w-full max-w-xl flex-col gap-3 sm:flex-row\" "
             "onSubmit={(e) => { e.preventDefault(); window.location.href = '/signup'; }}>\n"
-            "          <input type=\"email\" placeholder=\"Email address\" aria-label=\"Email address\" "
+            "          <input type=\"email\" name=\"email\" placeholder=\"Email address\" aria-label=\"Email address\" "
             "className=\"w-full flex-1 rounded border px-4 py-3 text-base\" "
             f"style={{{{ backgroundColor: 'rgba(0,0,0,0.5)', borderColor: 'rgba(128,128,128,0.5)', color: '{text}' }}}} />\n"
             "          <button type=\"submit\" className=\"rounded px-6 py-3 text-base font-semibold\" "
@@ -2531,12 +2531,12 @@ export default function __COMP__() {
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border __CLS_CARD__ p-8 shadow-sm">
         <h1 className="text-2xl font-semibold __CLS_TITLE__">{isRegister ? 'Create account' : 'Sign in'}</h1>
         {isRegister ? (
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
+          <input name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
                  className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         ) : null}
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
+        <input type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
                className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
+        <input type="password" name="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
                className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <button type="submit" className="w-full rounded-lg __CLS_SUBMIT__ px-4 py-2 font-medium">
@@ -3208,6 +3208,37 @@ def _auth_extras_873(design) -> Dict[str, str]:
     return {"__EXTRA_NOTICE__": notice, "__EXTRA_SUPPORT__": support}
 
 
+def _apply_auth_classes_1179(src: str, *mappings) -> str:
+    """Apply the auth class maps until no placeholder they can fill is left (bounded).
+
+    ONE PASS IS NOT ENOUGH, BECAUSE A VALUE CAN CONTAIN A PLACEHOLDER. `_auth_extras_873`
+    supplies `__EXTRA_NOTICE__` whose value is a `<p className="pt-1 text-xs __CLS_LINK__">`,
+    and it is merged into the map AFTER `__CLS_LINK__` -- `**_auth_extras_873(design)` sits
+    last in the dict literal and dicts keep insertion order. So the `__CLS_LINK__` pass runs
+    first, the `__EXTRA_NOTICE__` pass then injects a fresh `__CLS_LINK__`, and nothing ever
+    revisits it.
+
+    The token SHIPPED, literally. netflix r13, r14 and r17 each carry
+    `<p className="pt-1 text-xs __CLS_LINK__" ...>` in SignupPage.jsx, it survives the vite
+    build into the bundle, and the browser renders `class="pt-1 text-xs __CLS_LINK__"` on the
+    signup form of three delivered apps. Reproducible in every run that scaffolds an auth
+    page, and user-visible.
+
+    Iterating to a fixed point fixes this case and every future one of its shape, including
+    a value from one map that injects a placeholder owned by another. Bounded at 4 rounds so
+    a self-referential value cannot spin, and it exits as soon as a round changes nothing --
+    the normal case costs one extra scan that finds nothing.
+    """
+    for _ in range(4):
+        _before = src
+        for _mapping in mappings:
+            for _ph, _cls in (_mapping or {}).items():
+                src = src.replace(_ph, _cls)
+        if src == _before:
+            break
+    return src
+
+
 def _auth_page_classes(design) -> Dict[str, str]:
     """Class fragments for the projected auth page.
 
@@ -3305,13 +3336,13 @@ export default function __COMP__() {
         <h1 className="text-3xl font-semibold __CLS_TITLE__">__HEADING__</h1>
         __SUBHEADING__
         {isRegister ? (
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
+          <input name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
                  className="w-full rounded __CLS_INPUT__ px-4 py-3" />
         ) : null}
-        <input type="__INPUT_TYPE__" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="__INPUT_PLACEHOLDER__" required
+        <input type="__INPUT_TYPE__" name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="__INPUT_PLACEHOLDER__" required
                className="w-full rounded __CLS_INPUT__ px-4 py-3" />
         {(!single || step === 1 || isRegister) ? (
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
+          <input type="password" name="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
                  className="w-full rounded __CLS_INPUT__ px-4 py-3" />
         ) : null}
         {error ? <p className="text-sm" style={{ color: '#e87c03' }}>{error}</p> : null}
@@ -3530,10 +3561,10 @@ def _auth_page_src_540(name, page, screen, design, pal, surf, nav_routes=None):
            .replace("__BRAND_HEADER__",
                     '<header className="px-6 sm:px-10 py-4">'
                     + _brand_mark_jsx(design, _app, dark) + "</header>"))
-    for _ph, _cls in _auth_page_classes(design).items():
-        src = src.replace(_ph, _cls)
-    for _ph, _cls in _auth_footer_classes_603(design).items():   # #603
-        src = src.replace(_ph, _cls)
+    # #1179: to a fixed point, and across BOTH maps — a value in either can carry a
+    # placeholder owned by the other.
+    src = _apply_auth_classes_1179(src, _auth_page_classes(design),
+                                   _auth_footer_classes_603(design))   # #603
     src = src.replace("__AUTH_PAGE_STYLE__", _surf_style_attr_526(surf))
     return src
 
@@ -6700,8 +6731,8 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                               '<header className="px-6 sm:px-10 py-4">'
                               + _brand_mark_jsx(design, _auth_app, _auth_dark)
                               + "</header>"))
-        for _ph, _cls in _auth_page_classes(design).items():
-            _auth_src = _auth_src.replace(_ph, _cls)
+        # #1179: to a fixed point — a substituted value can itself carry a placeholder.
+        _auth_src = _apply_auth_classes_1179(_auth_src, _auth_page_classes(design))
         # #526: paint this login screen's OWN measured surface (netflix: the
         # dark-red vertical gradient) on the auth page root. None => '' => the
         # page is byte-identical to the pre-#526 class-only bg.
@@ -8292,8 +8323,8 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                               '<header className="px-6 sm:px-10 py-4">'
                               + _brand_mark_jsx(design, _auth_app, _auth_dark)
                               + "</header>"))
-        for _ph, _cls in _auth_page_classes(design).items():
-            _auth_src = _auth_src.replace(_ph, _cls)
+        # #1179: to a fixed point — a substituted value can itself carry a placeholder.
+        _auth_src = _apply_auth_classes_1179(_auth_src, _auth_page_classes(design))
         # #526: paint this login screen's OWN measured surface (dark-red gradient)
         # on the auth root. No `screen` dict here, so resolve from the contract
         # page (route/name/id -> "login" surface via the kind alias). None => '' =>
