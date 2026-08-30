@@ -695,7 +695,31 @@ def _visual_fast_release_args(gate) -> dict:
 # evaluation; outlook run-28/31 were the live-probe flavor of the same drift). Same
 # membership as REVALIDATION_FIXABLE_CHECKS — a re-validatable blocker is exactly one
 # a stale milestone verdict can outrank OR a re-run can clear.
-FINAL_GATE_DRIFT_CLASSES = REVALIDATION_FIXABLE_CHECKS
+# #1184: THE #139 WAIVER HAS NEVER FIRED. It was built for one situation — the milestone
+# gate evaluates fully clear, every release is cut, and then the FINAL gate fails on hub
+# state a lane mutated during the multi-minute delivery tail — and it could not fire in that
+# situation, because it was defined as REVALIDATION_FIXABLE_CHECKS, which answers a
+# different question: "can re-running validation clear this?" (chains, checklists). What
+# actually fails at the final gate is something else entirely. Measured over seven netflix
+# runs, the final gate rejected on first evaluation three times:
+#
+#   r17  ['validation_ui_evidence_failed']   a stale ui_smoke record; the app worked
+#   r18  ['validation_ui_evidence_failed']   the #1181 label collision; the app worked
+#   r20  ['unresolved_failed_tasks']         a task that failed 30s AFTER DELIVER_PROJECT,
+#                                            reporting that its own work was already moot
+#
+# Three for three outside the set, three runs ended, and the waiver logged nothing in any of
+# them. r20 stopped with $73 and 26 minutes still available.
+#
+# Both added names are MUTABLE HUB STATE a lane writes during the delivery tail — exactly the
+# drift #139 describes — and neither is structural. The waiver's own preconditions do the
+# real work and are unchanged: the milestone gate must have evaluated FULLY clear (which
+# includes these same checks) within the window, every release must have been cut, and the
+# final failure set must contain NOTHING else. A docker/contract/build failure still ends the
+# run, and a check that was already failing at the milestone gate is not drift and never
+# reaches here.
+FINAL_GATE_DRIFT_CLASSES = REVALIDATION_FIXABLE_CHECKS | frozenset({
+    "validation_ui_evidence_failed", "unresolved_failed_tasks"})
 
 
 def _final_gate_drift_waiver(ms_cleared_at, failed_checks, now: float,

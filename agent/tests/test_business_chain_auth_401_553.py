@@ -162,8 +162,16 @@ def test_2xx_expected_step_returning_4xx_still_fails(base_url):
 def test_constants_shared_and_membership():
     assert REVALIDATION_FIXABLE_CHECKS == frozenset(
         {"business_chain_failing", "verification_checklist_not_ready"})
-    # the drift-waiver classes ARE the re-validatable set (single source of truth).
-    assert FINAL_GATE_DRIFT_CLASSES is REVALIDATION_FIXABLE_CHECKS
+    # #1184: these were ONE object ("single source of truth"), and that identity is why the
+    # #139 drift waiver never fired in seven runs. They answer different questions:
+    # REVALIDATION_FIXABLE asks "can re-running validation clear this?" (chains, checklists);
+    # DRIFT_CLASSES asks "is this mutable hub state a lane wrote during the delivery tail?".
+    # All three observed final-gate rejections — r17/r18 validation_ui_evidence_failed, r20
+    # unresolved_failed_tasks — were the second kind and none was the first. The revalidation
+    # set is unchanged; the drift set now contains it.
+    assert REVALIDATION_FIXABLE_CHECKS < FINAL_GATE_DRIFT_CLASSES
+    assert FINAL_GATE_DRIFT_CLASSES - REVALIDATION_FIXABLE_CHECKS == frozenset(
+        {"validation_ui_evidence_failed", "unresolved_failed_tasks"})
 
 
 @pytest.mark.parametrize("failed,expected", [
