@@ -636,10 +636,23 @@ def _expected_shape(method: str, path: str) -> Optional[str]:
 
 
 def _shape_violation(method: str, path: str, status: Optional[int],
-                     body_text: str) -> Optional[str]:
+                     body_text: str, ep_status: Any = "implemented") -> Optional[str]:
     """Return a violation message if a 2xx response's shape contradicts the contract
     for its path-type, else None. Conservative — only a clear single↔collection
     mismatch is flagged; a custom/other shape (no item/items key) is left alone."""
+    # #1167: THE SAME LOOP'S OTHER GATE ALREADY KNOWS ABOUT STATUS, THIS ONE DID NOT.
+    #
+    # `_unimplemented_route` is called one line above with `ep.get("status")` and returns
+    # None for anything not claiming `implemented` — its own message even offers
+    # "implement the route or DEPRECATE the registration" as the escape. `_shape_violation`
+    # was never given the status, so a deprecated registration still had its response shape
+    # judged. netflix-local-r6: an agent parked `GET /__noop__` at status=deprecated, and
+    # the verifier reported "run_validation/api_smoke failed on GET /__noop__ contract
+    # shape" — a blocker on an endpoint the contract had already retired. Both delivered
+    # artifacts still carry that registration, so this is not a one-run accident.
+    if str(ep_status or "").lower() not in ("implemented", ""):
+        return None
+
     expected = _expected_shape(method, path)
     if not expected or not status or not (200 <= status < 300):
         return None
@@ -1122,7 +1135,8 @@ def run_smoke_validation(
             # shape for its path-type (catches the real instagram bug where GET
             # /api/users/me returned {"items":[all users]} — reachable but semantically
             # wrong). Conservative: only a clear single↔collection mismatch is flagged.
-            _sv = _shape_violation(method, path, res["status"], res["body_text"])
+            _sv = _shape_violation(method, path, res["status"], res["body_text"],
+                                   ep_status=ep.get("status"))
             if _sv:
                 shape_violations.append(_sv)
         # FIX #157: on a 5xx (backend crash-in-handler, not a mere 404), pull the
