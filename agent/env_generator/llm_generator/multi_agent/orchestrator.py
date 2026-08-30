@@ -1269,6 +1269,47 @@ class Orchestrator:
                 start_time.timestamp(), 0.0, 0, "starting")
         except Exception as _e1170:
             self._logger.debug("#1170 early run_budget write skipped: %s", _e1170)
+        # #1175: REFRESH IT ON A CLOCK, NOT ON THE LOOP BODY.
+        #
+        # The per-tick write sits after the delivery loop's `wait_for(..., timeout=60)`,
+        # which reads like a 60-second cadence and is not one: the loop BODY runs a whole
+        # coordination cycle, so one iteration can take many minutes. Measured on r17 —
+        # `run_budget.json` said 372 calls / $25.35 with `ticks: 0` while the log showed
+        # 1,251 calls / $86.23, sixteen minutes stale and 3.4x low. A spend record that
+        # lags by that much is worse than none: it is read as current.
+        #
+        # A small task on its own clock fixes the axis the loop cannot. It only reads
+        # counters #1163 already keeps, so it costs nothing and cannot disturb the run.
+        async def _budget_ticker_1175():
+            import asyncio as _a1175
+            _iv = 30.0
+            try:
+                _iv = float(os.environ.get("ENVGEN_BUDGET_REFRESH_S", "30") or 30)
+            except (TypeError, ValueError):
+                _iv = 30.0
+            if _iv <= 0:
+                return
+            while True:
+                try:
+                    await _a1175.sleep(_iv)
+                    self._budget.write(
+                        self._load_run_budget_caps({
+                            "max_wall_sec": float(os.environ.get("ENVGEN_MAX_WALLCLOCK_SEC", "7200")),
+                            "max_ticks": int(os.environ.get("ENVGEN_MAX_TICKS", "240")),
+                            "unlimited": str(os.environ.get("ENVGEN_BUDGET_UNLIMITED", "")).strip().lower()
+                                         in ("1", "true", "yes"),
+                        }),
+                        start_time.timestamp(),
+                        time.time() - start_time.timestamp(), 0, "running")
+                except _a1175.CancelledError:
+                    raise
+                except Exception:
+                    pass          # a stale number is bad; a crashed run is worse
+        try:
+            self._budget_ticker_1175 = asyncio.create_task(_budget_ticker_1175())
+        except Exception as _e1175:
+            self._budget_ticker_1175 = None
+            self._logger.debug("#1175 budget ticker not started: %s", _e1175)
         # Multi-milestone: run N milestones sequentially, each a FRESH lane-set
         # implementing a slice on the GROWING app. The degenerate (single
         # milestone) case is synthesized below so the one-milestone path is
@@ -2893,6 +2934,22 @@ class Orchestrator:
 
         duration = (datetime.now() - start_time).total_seconds()
         
+        # #1175: stop the refresher and take one FINAL reading, so the record on disk
+        # matches the summary printed below instead of trailing it by a tick.
+        try:
+            _t1175 = getattr(self, "_budget_ticker_1175", None)
+            if _t1175 is not None:
+                _t1175.cancel()
+            self._budget.write(
+                self._load_run_budget_caps({
+                    "max_wall_sec": float(os.environ.get("ENVGEN_MAX_WALLCLOCK_SEC", "7200")),
+                    "max_ticks": int(os.environ.get("ENVGEN_MAX_TICKS", "240")),
+                    "unlimited": False,
+                }),
+                start_time.timestamp(),
+                time.time() - start_time.timestamp(), 0, "finished")
+        except Exception:
+            pass
         return GenerationResult(
             success=success,
             project_path=str(self.output_dir),
