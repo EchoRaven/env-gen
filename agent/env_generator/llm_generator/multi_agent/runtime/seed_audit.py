@@ -74,6 +74,10 @@ def detect_placeholder_score(rows: List[dict]) -> float:
 @dataclass
 class SeedReport:
     flagged_tables: List[dict] = field(default_factory=list)
+    # #1168: {"table.column": orphan_count} for seeded rows whose owner FK points at a
+    # parent that does not exist. Reported, never part of `is_clean` — a false seed
+    # blocker wedges a run (#566j), and this is evidence for the lane, not a verdict.
+    orphan_fk_rows: dict = field(default_factory=dict)
     # #1023d: how many tables this audit actually LOOKED AT, and how many it could have.
     # `is_clean` is `not flagged_tables`, so an audit that examined nothing returns True and
     # is indistinguishable from one that examined everything and found nothing wrong. #956
@@ -230,6 +234,93 @@ def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, in
     return counts
 
 
+def orphan_fk_rows_1168(project_dir: Any, *, timeout: int = 30) -> Dict[str, int]:
+    """Seeded rows whose owner FK points at a parent that does not exist.
+
+    The framework audits seed DENSITY (#84's floor, #1039's live COUNT(*)) and never
+    once audits whether those rows REFERENCE anything. #1105 is what that costs: a seed
+    backfilled a tenant nobody created, `users.tenant_id` pointed at it, and 58 of 59 runs
+    lost every seeded user — found by disaster, not by a check. #1160 produced the same
+    shape from the other end (the owner auto-fill wrote a USER id into a PROFILE column,
+    so every my_list row referenced a profile that does not exist) and the only reason it
+    surfaced was a hand probe of a live app.
+
+    The DDL carries no FK CONSTRAINTS — #1162's foreign keys are ORM metadata, and the
+    tables come from `01_init.sql` — so `information_schema` cannot answer this. The
+    parentage is derived with the SAME rule #1162 renders from, `<x>_id` -> a table named
+    `<x>`/`<x>s`/`<x>es`, entirely inside SQL so the two cannot drift on a
+    schema this function never sees.
+
+    Returns ``{"table.column": orphan_count}`` for the columns that HAVE orphans, or
+    ``{}``. Like #1039: an empty result means "not measured or clean", never "everything
+    is broken" — this is evidence, not a gate.
+    """
+    from pathlib import Path as _P
+    out: Dict[str, int] = {}
+    try:
+        proj = _P(project_dir)
+        _parts = proj.parts
+        if "worktrees" in _parts:          # #1044: lanes carry their own dead compose
+            proj = _P(*_parts[:_parts.index("worktrees")])
+        compose = None
+        for cand in (proj / "docker" / "docker-compose.yml",
+                     proj.parent / "docker" / "docker-compose.yml",
+                     proj / "docker-compose.yml"):
+            if cand.exists():
+                compose = cand
+                break
+        if compose is None:
+            return out
+        from .container_runtime import runtime_bin
+        import subprocess
+        cid = _db_container_1039(compose, timeout)
+        if not cid:
+            return out
+
+        def _psql(q):
+            return subprocess.run(
+                [runtime_bin(), "exec", cid, "sh", "-c",
+                 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAF"\t" -c ' + _shq(q)],
+                capture_output=True, text=True, timeout=timeout)
+
+        # Build one UNION ALL over every `<x>_id` column whose stem names a real table.
+        build = (
+            "SELECT string_agg(format("
+            "  'SELECT %L, count(*) FROM %I c LEFT JOIN %I p ON c.%I = p.id"
+            "   WHERE c.%I IS NOT NULL AND p.id IS NULL',"
+            "  c.table_name||'.'||c.column_name, c.table_name, t.tablename,"
+            "  c.column_name, c.column_name), ' UNION ALL ')"
+            " FROM information_schema.columns c"
+            " JOIN pg_tables t ON t.schemaname='public' AND t.tablename IN ("
+            "   left(c.column_name, -3), left(c.column_name, -3)||'s',"
+            "   left(c.column_name, -3)||'es')"
+            " WHERE c.table_schema='public' AND c.column_name LIKE '%_id'"
+            "   AND c.table_name <> t.tablename"
+            "   AND EXISTS (SELECT 1 FROM information_schema.columns pk"
+            "               WHERE pk.table_schema='public' AND pk.table_name=t.tablename"
+            "                 AND pk.column_name='id')")
+        built = _psql(build)
+        inner = (built.stdout or "").strip()
+        if built.returncode != 0 or not inner:
+            return out
+        res = _psql(inner)
+        if res.returncode != 0:
+            return out
+        for line in (res.stdout or "").splitlines():
+            if "\t" not in line:
+                continue
+            col, _, n = line.partition("\t")
+            try:
+                cnt = int((n or "0").strip())
+            except ValueError:
+                continue
+            if cnt > 0:
+                out[col.strip()] = cnt
+    except Exception:
+        return {}
+    return out
+
+
 def _not_measured_1039(why: str) -> Dict[str, int]:
     """Announce that the live row count did not happen, and return the empty mapping.
 
@@ -285,6 +376,10 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     # Strictly additive: `{}` — no DB, no compose, any error — leaves every branch below
     # exactly as it was.
     _live = live_row_counts_1039(project_dir) if project_dir is not None else {}
+    # #1168: density was audited, parentage never was. Same additive contract as #1039:
+    # `{}` on no DB / no compose / any error, so every branch below is untouched.
+    _orphans_1168 = (orphan_fk_rows_1168(project_dir)
+                     if project_dir is not None else {})
     _spine = _spine_tables_1039()
 
     flagged: List[dict] = []
@@ -424,7 +519,8 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
             len(tables), len(seed_regs))
     # #1023d: carry the coverage with the verdict, not only in a log line — a consumer reading
     # `is_clean` must be able to tell "checked and fine" from "checked nothing".
-    return SeedReport(flagged_tables=flagged, examined=_examined_956, candidates=len(tables))
+    return SeedReport(flagged_tables=flagged, examined=_examined_956,
+                      candidates=len(tables), orphan_fk_rows=_orphans_1168)
 
 
 # ---------------------------------------------------------------------------

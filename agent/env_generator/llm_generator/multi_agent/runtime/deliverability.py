@@ -609,8 +609,17 @@ def _seed_summary(hub_registry, project_dir=None) -> Dict[str, Any]:
     registered = len((schema_hub.list_seed_registrations() if schema_hub else {}) or {})
     missing = sum(1 for f in report.flagged_tables if f.get("reason") == "missing_seed")
     flagged = len(report.flagged_tables)
-    return {"tables": total_tables, "registered": registered,
-            "missing": missing, "flagged": flagged}
+    # #1168: carry the referential finding out with the density one. Reported, never a
+    # blocker — the seed audit's verdict is deliberately unchanged (#956/#1023d), and a
+    # false seed blocker wedges a run (#566j). It rides here because this dict is what the
+    # gate report prints, so a seed whose rows point at nothing stops being invisible.
+    _orph = getattr(report, "orphan_fk_rows", None) or {}
+    out = {"tables": total_tables, "registered": registered,
+           "missing": missing, "flagged": flagged}
+    if _orph:
+        out["orphan_fk_rows"] = dict(_orph)
+        out["orphan_fk_total"] = int(sum(_orph.values()))
+    return out
 
 
 _DEGRADED_FLOW_COVERAGE = {
