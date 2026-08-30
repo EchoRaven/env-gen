@@ -822,6 +822,24 @@ async def maybe_author_ui_flow_evidence(orch: Any, failed_checks) -> bool:
         return False
 
 
+import time as _time
+
+
+def _os_access_w(p: Any) -> bool:
+    """#1173: is this path writable by the CURRENT process (not by root)."""
+    try:
+        import os as _o
+        _s = str(p)
+        # A path that does not exist cannot be blocking anything, and `os.access`
+        # answers False for it — which would read as "root owns this" and trigger a
+        # move for nothing. Absent → writable, same as unknown.
+        if not _o.path.exists(_s):
+            return True
+        return _o.access(_s, _o.W_OK | _o.X_OK)
+    except Exception:
+        return True          # unknown → assume yes; never invent a blocker
+
+
 async def reauthor_missing_database_sql(orch: Any) -> bool:
     """#482 — restore ``app/database/*.sql`` whenever it is MISSING, independent of
     skeleton-regen. THE last Part-B blocker on a fully-converged run (r53 + r54, live):
@@ -846,6 +864,44 @@ async def reauthor_missing_database_sql(orch: Any) -> bool:
         db_dir = _DBP(orch.output_dir) / "app" / "database"
         if any(db_dir.glob("**/*.sql")):
             return False  # present → nothing to do (cheap glob, no subprocess)
+        # #1173: THE RE-AUTHOR CANNOT WRITE BECAUSE DOCKER OWNS THE DIRECTORY.
+        #
+        # The wipe this heal exists for removes app/database/init/ ENTIRELY — the dir,
+        # not just the file. The compose stack then mounts `../app/database/init`, and
+        # Docker CREATES a missing bind-mount source as ROOT. The framework runs as an
+        # ordinary user, so every later re-author fails EACCES and the run can never
+        # clear `database_sql_missing`.
+        #
+        # This is what actually killed netflix-local-r11: 119 `Permission denied:
+        # .../app/database/init/` lines and `app/database` owned root:root, while r13 and
+        # r14 (0 errors, owned by the run user) both delivered. It recurred on r16 mid
+        # session — 26 failures, the gate stuck on database_sql_missing — and clearing it
+        # by hand let the same run reach a single remaining check within one tick.
+        #
+        # The parent `app/` belongs to the run, so the directory can be moved aside and
+        # rebuilt WITHOUT root: rename is a parent-directory operation. Do that rather
+        # than log EACCES forever. A running container keeps its own inode, and the next
+        # `docker_up` re-mounts the new one.
+        try:
+            _init = db_dir / "init"
+            _blocked = db_dir.exists() and not _os_access_w(db_dir)
+            if not _blocked and _init.exists() and not _os_access_w(_init):
+                _blocked = True
+            if _blocked:
+                _aside = db_dir.parent / (".database-root-orphan-%d" % int(_time.time()))
+                db_dir.rename(_aside)
+                _init.mkdir(parents=True, exist_ok=True)
+                orch._logger.warning(
+                    "#1173 app/database was not writable by this process (Docker creates a "
+                    "missing bind-mount source as root, and the merge that wipes this dir "
+                    "leaves it missing). Moved it to %s and rebuilt a writable one — this "
+                    "is what left r11 stuck on database_sql_missing for 119 ticks.",
+                    _aside.name)
+        except Exception as _perm1173:
+            orch._logger.warning(
+                "#1173 could not rebuild a writable app/database (%s) — the re-author "
+                "below will fail EACCES and `database_sql_missing` will not clear. Fix on "
+                "the host: the directory is owned by root.", _perm1173)
         await orch._generate_database()
         restored = any(db_dir.glob("**/*.sql"))
         if restored:
