@@ -1944,6 +1944,34 @@ class RemediationDispatcher:
                 "maps to NO backing table — DECLARE the backing table for that resource, or "
                 "REMOVE the endpoint from the contract; the projector then reads it "
                 "automatically."),
+            "deliverability_critical_visuals_pending": (
+                # #1187: this check BLOCKS and had no owner. Measured: it declined a delivery
+                # alongside three other checks and the very next log line read "Delivery
+                # declined on gate check(s) with NO remediation owner ... ['deliverability_
+                # critical_visuals_pending']" -- the #1040 shape, one check to the side.
+                #
+                # `_visual_summary` counts ui_page records whose status is `pending` or
+                # `reviewing`, and the gate blocks on that only when the UI is not otherwise
+                # validated. `submit_visual_review` is locked to the verifier, so the verifier
+                # is the only agent who can move one -- which is exactly why a missing owner
+                # left it unmovable.
+                #
+                # ★ #958 measured that NO ui_page with kind='visual_review' exists in any run
+                # of the corpus, so a nonzero `pending` here usually means a page was
+                # registered with a review status nobody intends to fulfil, rather than that
+                # a real review is owed. Both readings are given, because only the verifier
+                # can tell them apart by looking.
+                "verifier", "Resolve the pending critical visual review(s) (blocks delivery)",
+                "one or more CRITICAL ui_page records sit at status `pending`/`reviewing`, so "
+                "the visual-review gate cannot pass and the UI is not otherwise validated. "
+                "`submit_visual_review` is yours alone -- no other lane can clear these. For "
+                "each pending page: open it, compare it against its reference screenshot, and "
+                "submit_visual_review with `approved` or `needs_revision` (with what to change, "
+                "which routes to the frontend lane). If the page is NOT a visual-review "
+                "subject at all -- #958 measured that no run has ever carried a ui_page with "
+                "kind='visual_review' -- then the review status is the defect: re-register the "
+                "page with its real kind so the gate stops counting it. Do NOT leave it "
+                "pending: nothing else in the pipeline can move a record only you can write."),
             "deliverability_frontend_fallback_page": (
                 # #223: a route-wired GENERIC framework-fallback page, detected by
                 # CONTENT fingerprint (#222 — marker-stripping doesn't clear it).
@@ -2317,6 +2345,11 @@ class RemediationDispatcher:
                         # does not resolve to a declared ui_page route.
                         _extra = (_ui_flow_failed_extra(_ff) + auth_contradiction_1176(orch, _ff)
                                   + control_absence_contradicted_1182(orch, _ff)
+                                  # Symmetry: the other three diagnoses are wired to BOTH
+                                  # branches and #1177's absence here was an oversight, not a
+                                  # decision. It self-gates on a failing ui_smoke record, so it
+                                  # is silent when this branch's flows are the only failures.
+                                  + ui_smoke_refresh_1177(orch, _ff)
                                   + two_step_login_1185(orch, _ff))
                 if name == "deliverability_ui_flow_missing":
                     # FIX #284: hand the verifier the EXACT missing flow names + the
