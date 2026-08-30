@@ -2948,12 +2948,16 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # "zero blockers" at $403 of a $500 ceiling, and r17's two resumes were each stopped
     # mid-convergence, losing everything already spent. Raises the ceiling by a bounded
     # factor from here; a run that wedges after passing still stops, 25% later.
-    if ok:
-        try:
-            from utils.llm import mark_delivering_1183
-            mark_delivering_1183()
-        except Exception:
-            pass
+    # Pass the CURRENT verdict, not a one-way latch. Observed live on r21's resume: the
+    # gate passed once, the ceiling rose, the gate then failed again on
+    # `deliverability_ui_page_unwired` — and the run kept the raised ceiling while no longer
+    # finishing. The relaxation is only justified while the gate is actually green, so it
+    # tracks the latest verdict and drops back the moment one fails.
+    try:
+        from utils.llm import mark_delivering_1183
+        mark_delivering_1183(bool(ok))
+    except Exception:
+        pass
     return {
         "ok": ok,
         "state": gate_state,

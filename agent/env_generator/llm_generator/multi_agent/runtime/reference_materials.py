@@ -535,6 +535,33 @@ def _component_specs_enabled() -> bool:
         "0", "false", "no", "off")
 
 
+def _spec_is_current_1186(output_dir: Any, img: Any) -> bool:
+    """True when this reference already has a usable component spec NEWER than the image.
+
+    MATERIAL-PREP is one vision call per reference screen and it re-ran in full on every
+    resume: netflix r17 (three resumes) and r21 all re-decomposed all 20 screens, ~3 minutes
+    and ~$2.50 each time, over inputs that had not changed. The checkpoint cannot prevent
+    this -- its `phases` entry stays `status=planning, iteration=0` and its `files` map is
+    empty, because start_file/complete_file are never called anywhere in the framework -- so
+    the guard has to be idempotence at the artifact, which needs no resume flag at all.
+
+    Freshness is decided by mtime against the SOURCE image, not by mere existence: a replaced
+    or edited reference is newer than its spec and gets decomposed again. A spec that is
+    missing, unreadable, or empty of components is likewise redone, so a corrupt write is
+    self-healing rather than sticky.
+    """
+    try:
+        spec = Path(output_dir) / "design" / "component_specs" / f"{Path(img).stem}.json"
+        if not spec.is_file():
+            return False
+        if spec.stat().st_mtime < Path(img).stat().st_mtime:
+            return False          # the reference changed after the spec was written
+        data = json.loads(spec.read_text(encoding="utf-8", errors="replace"))
+        return bool(isinstance(data, Mapping) and data.get("components"))
+    except Exception:
+        return False              # unreadable/corrupt -> decompose again
+
+
 async def precompute_component_specs(
     images: List[str],
     *,
@@ -575,11 +602,27 @@ async def precompute_component_specs(
         async with _sem:
             return await decompose_reference(_img, llm)
 
+    # #1186: decompose only what is not already decomposed from this same image. On a first
+    # run every image is fresh and this changes nothing; on a resume it turns ~3 minutes of
+    # vision calls into a stat() per screen.
+    _reused: List[str] = []
+    _todo = []
+    for _img in imgs:
+        if _spec_is_current_1186(output_dir, _img):
+            _reused.append(str(Path("design") / "component_specs" / f"{Path(_img).stem}.json"))
+        else:
+            _todo.append(_img)
+    if _reused:
+        logger.warning(
+            "MATERIAL-PREP: reusing %d/%d component spec(s) already decomposed from the same "
+            "reference image(s); %d to decompose. %s",
+            len(_reused), len(imgs), len(_todo),
+            "Nothing to do." if not _todo else "")
     results = await asyncio.gather(
-        *[_decompose_bounded(img) for img in imgs], return_exceptions=True)
+        *[_decompose_bounded(img) for img in _todo], return_exceptions=True)
     specs_dir = Path(output_dir) / "design" / "component_specs"
-    written: List[str] = []
-    for img, res in zip(imgs, results):
+    written: List[str] = list(_reused)
+    for img, res in zip(_todo, results):
         if isinstance(res, BaseException) or not isinstance(res, Mapping):
             logger.info("component decompose failed for %s: %s", Path(img).name, res)
             continue
