@@ -17,6 +17,7 @@ Integration Points:
 - task_complete: Summarize and persist important learnings
 """
 
+import os
 import logging
 import re
 import hashlib
@@ -1446,8 +1447,47 @@ class GeneratorMemory(AgentMemory):
         return await self.conversation_condenser.maybe_condense(messages)
     
     def should_condense_messages(self, messages: List[Dict]) -> bool:
-        """Check if messages should be condensed."""
-        return len(messages) > self.conversation_condenser.max_messages
+        """Condense when the history is too LONG or too LARGE.
+
+        #1172: the count alone was the whole test, and the cost is in TOKENS. Measured
+        on r13 at the real rate: cached input is the single biggest line item ($192 of a
+        $425 run, 45%), because every call re-sends 54,753 tokens of context at
+        $0.55/M. A handful of large tool results can take one call to 269,589 tokens
+        without moving the message count anywhere near 50 -- and 269,589 is 0.9% under
+        272,000, the threshold where OpenAI bills input at 2x and output at 1.5x. r13
+        never crossed it; a slightly heavier payload would, and nothing in the framework
+        was watching.
+
+        The bound is deliberately generous. On r13's 6,362 calls a 200K threshold fires
+        on 2.0% of them and the p95 call (149,186) is untouched, so normal traffic is
+        unaffected and only the tail that approaches the cliff is cut. Condensing is
+        cheap here: calls immediately after one hit 90.7% cache against an 88.8%
+        baseline, i.e. rewriting the list costs no measurable hit rate.
+
+        chars/4 is the same estimate the rest of the framework uses; it does not need to
+        be exact, only to fire before a hard billing edge that sits 35% above it.
+        """
+        try:
+            if len(messages) > self.conversation_condenser.max_messages:
+                return True
+        except Exception:
+            pass
+        try:
+            cap = int(os.environ.get("ENVGEN_CONDENSER_MAX_TOKENS", "200000") or 0)
+            if cap <= 0:
+                return False
+            approx = 0
+            for m in (messages or []):
+                c = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+                if isinstance(c, str):
+                    approx += len(c)
+                elif c is not None:
+                    approx += len(str(c))
+                if approx // 4 > cap:
+                    return True
+            return approx // 4 > cap
+        except Exception:
+            return False
     
     def score_message_importance(self, content: str, role: str = "assistant") -> ImportanceScore:
         """
