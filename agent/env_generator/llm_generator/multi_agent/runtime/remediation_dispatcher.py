@@ -752,6 +752,168 @@ def ui_smoke_refresh_1177(orch, pages: Sequence[Any]) -> str:
         return ""
 
 
+# ---- #1182 -----------------------------------------------------------------
+# "THE CONTROL IS NOT THERE" — SAID ABOUT A CONTROL THAT IS THERE AND WORKS.
+#
+# Twice now a run has been ended by a walk that could not FIND a control, on a page whose
+# source declares it and whose flow works when driven by hand:
+#
+#   r17  ui_flow:signup  "input[name='email'] was not present/interactable; page exposed
+#                         app-shell controls instead of signup form."
+#        -> the form was complete; the inputs simply carried no `name` (fixed at source
+#           by #1179b). Driving it in a real browser: register 201, navigation, no errors.
+#
+#   r19  ui_flow:search_discovery  "authenticated /search page loaded but no interactable
+#                         search/text input exists, so the flow cannot be exercised."
+#        -> SearchPage.jsx declares
+#             <input className="field" type="search" name="q" placeholder="Search titles,
+#                    people, genres" autoFocus aria-label="Search"/>
+#           — interactable, labelled, and focused on mount. A probe written as
+#           `input[type=text]` misses `type="search"`; nothing about the app is wrong.
+#           r19 aborted STUCK on this single record after 18 coordination ticks, at $355.
+#
+# The framework can settle this without judgement: it HAS the page source. When a failing
+# record claims a control is absent, resolve the route it names to the component App.jsx
+# renders there, read that file, and — if controls exist — put them in the remediation with
+# the attributes needed to select them.
+#
+# It never contradicts a real defect: the text is emitted only when the file genuinely
+# declares a control, and it prescribes RE-LOCATING, not closing the item. A page that
+# really has no input yields nothing extra and the generic remediation stands.
+#
+# Deliberately NOT a gate discount. #739 made failing UI records block for good reasons and
+# a record asserting a missing control may yet be right about something (a control rendered
+# only after a state the walk never reached). What was missing was the source of truth, not
+# the blocking.
+
+# Phrasings a verifier uses when it cannot find a control. Kept literal and narrow: a fuzzy
+# match would fire on "no results match your search", which is an app STATE, not a missing
+# control, and the advice would then be nonsense.
+_ABSENT_1182 = (
+    "no interactable", "not present/interactable", "was not present", "not interactable",
+    "no search/text input", "could not find", "no input", "does not exist",
+)
+
+# A route mentioned in prose ("/search page loaded but ..."). `/api/...` is excluded: the
+# record's network errors name endpoints, and an endpoint is not a page route.
+_ROUTE_1182 = re.compile(r"(?<![\w/])(/[a-z][a-z0-9/_-]*)")
+
+
+def _control_tags_1182(page: str):
+    """Whole `<input>` / `<textarea>` / `<select>` tags, brace-aware.
+
+    A naive `<input\b[^>]*` stops at the FIRST `>`, and in JSX that is usually inside a
+    handler: `onChange={(e)=>setQuery(e.target.value)}`. On r19's SearchPage that truncated
+    the tag before `placeholder` and `aria-label` -- losing exactly the attribute a walk
+    should be told to select by. So scan to the `>` that closes the tag at brace depth 0.
+    """
+    out, i, n = [], 0, len(page)
+    while len(out) < 24:
+        m = re.compile(r"<(?:input|textarea|select)\b").search(page, i)
+        if not m:
+            break
+        j, depth = m.end(), 0
+        while j < n:
+            c = page[j]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth = max(0, depth - 1)
+            elif c == ">" and depth == 0:
+                break
+            j += 1
+        out.append(page[m.start():j])
+        i = j + 1
+    return out
+
+
+def _page_controls_1182(root, route: str):
+    """(component, [control-attrs]) for the page App.jsx renders at `route`, or (None, [])."""
+    try:
+        src_dir = Path(root) / "app" / "frontend" / "src"
+        app = (src_dir / "App.jsx").read_text(encoding="utf-8", errors="replace")
+        m = re.search(
+            r'<Route\b[^>]*?\bpath\s*=\s*["\']%s["\'][^>]*?element=\{(.{0,240}?)\}\s*/?>'
+            % re.escape(route), app, re.S)
+        if not m:
+            return None, []
+        # Pick the component that HAS a page file rather than filtering a guard vocabulary:
+        # r19's guard is `<Authed>`, which no such list contained, and the first prototype
+        # resolved /search to "Authed" and found nothing.
+        comp = next((n for n in re.findall(r"<([A-Z][A-Za-z0-9_]*)", m.group(1))
+                     if (src_dir / "pages" / f"{n}.jsx").is_file()), None)
+        if not comp:
+            return None, []
+        page = (src_dir / "pages" / f"{comp}.jsx").read_text(encoding="utf-8", errors="replace")
+        out = []
+        for tag in _control_tags_1182(page)[:8]:
+            attrs = dict(re.findall(r'([\w-]+)\s*=\s*["\{]([^"\}]{0,40})', tag))
+            kept = {k: attrs[k] for k in ("type", "name", "id", "placeholder", "aria-label")
+                    if k in attrs}
+            if kept:
+                out.append(kept)
+        return comp, out
+    except Exception as _exc:
+        _swallowed_1152("_page_controls_1182", _exc, "(None, []) = no diagnosis")
+        return None, []
+
+
+def control_absence_contradicted_1182(orch, pages) -> str:
+    """Answer a record that says a control is missing with the markup that declares it."""
+    try:
+        root = getattr(orch, "output_dir", None)
+        if not root:
+            return ""
+        wanted = {str(p).strip() for p in (pages or []) if str(p).strip()}
+        if not wanted:
+            return ""
+        lines = []
+        for rec in _walk_records_1176(
+                _hub_json_1176(root, "codehub_checks.json"),
+                lambda d: str(d.get("status", "")).lower() in ("failure", "failed")
+                and str(d.get("name", "")).startswith("validation:ui")):
+            name = str(rec.get("name", ""))
+            if name.rsplit(":", 1)[-1] not in wanted:
+                continue
+            summary = str((rec.get("evidence") or {}).get("summary") or "")
+            low = summary.lower()
+            if not any(p in low for p in _ABSENT_1182):
+                continue
+            for route in _ROUTE_1182.findall(summary):
+                if route.startswith("/api") or len(route) < 2:
+                    continue
+                comp, ctrls = _page_controls_1182(root, route)
+                if not ctrls:
+                    continue
+                # join_capped, not `[:4]`: printing the COUNT beside a silently
+                # truncated list is the shape #1034's ratchet exists to catch.
+                _shown = [" ".join(f'{k}="{v}"' for k, v in c.items()) for c in ctrls]
+                lines.append(
+                    "- `%s` says a control is missing at `%s`. %s.jsx declares %d: %s"
+                    % (name, route, comp, len(ctrls),
+                       join_capped(_shown, len(_shown), cap=4)))
+                break
+        if not lines:
+            return ""
+        return (
+            "\n\n★ THE PAGE'S SOURCE DECLARES THE CONTROL THIS RECORD CALLS MISSING:\n"
+            + join_capped(lines, len(lines), cap=4, sep="\n") +
+            "\n\nSo 'not present' is about the SELECTOR, not the app. r19 ended STUCK at $355 "
+            "on one such record: the walk reported no search input while SearchPage.jsx had "
+            "`<input type=\"search\" name=\"q\" aria-label=\"Search\" autoFocus>` — a probe "
+            "written as `input[type=text]` does not match `type=\"search\"`.\n"
+            "Re-locate it before concluding anything: prefer the ACCESSIBLE ROLE "
+            "(getByRole('textbox'/'searchbox'/'button', {name: ...})), then the aria-label, "
+            "then the name= shown above; when you match on `type`, accept text/search/email/"
+            "tel/url, not text alone. Then re-run the flow.\n"
+            "If the control genuinely does not render — it may appear only after a state your "
+            "walk did not reach — say which step you performed and what the page showed, and "
+            "bug_create for frontend with that. The record stays red until the flow runs.")
+    except Exception as _exc_1182:
+        _swallowed_1152("control_absence_contradicted_1182", _exc_1182, "'' = generic")
+        return ""
+
+
 def _ui_flow_failed_names(orch) -> List[str]:
     """#981: the flows the gate counts as FAILED — recorded, but not passing.
 
@@ -2035,7 +2197,9 @@ class RemediationDispatcher:
                         _extra = (_ui_evidence_failed_extra(_fp) + auth_contradiction_1176(orch, _fp)
                                   # #1177: and correct the refresh instruction for any
                                   # failing ui_smoke record, which run_validation cannot rewrite.
-                                  + ui_smoke_refresh_1177(orch, _fp))
+                                  + ui_smoke_refresh_1177(orch, _fp)
+                                  # #1182: and answer any 'control is missing' claim with the markup.
+                                  + control_absence_contradicted_1182(orch, _fp))
                 if name == "deliverability_ui_flow_failed":
                     # #981: the sibling branch below has named its instances since FIX #284;
                     # this one never did, so the verifier was handed the check name alone.
@@ -2044,7 +2208,8 @@ class RemediationDispatcher:
                         # #1176: same 401/403 diagnosis, other check -- a failing ui_flow
                         # record carries the same evidence shape. Silent when the flow name
                         # does not resolve to a declared ui_page route.
-                        _extra = _ui_flow_failed_extra(_ff) + auth_contradiction_1176(orch, _ff)
+                        _extra = (_ui_flow_failed_extra(_ff) + auth_contradiction_1176(orch, _ff)
+                                  + control_absence_contradicted_1182(orch, _ff))
                 if name == "deliverability_ui_flow_missing":
                     # FIX #284: hand the verifier the EXACT missing flow names + the
                     # contradiction that broke r68 (it broadcast "already recorded" for
