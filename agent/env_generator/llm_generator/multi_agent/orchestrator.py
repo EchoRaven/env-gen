@@ -2398,9 +2398,28 @@ class Orchestrator:
                         if not budget_exceeded:
                             _term = _terminal_llm_error()
                             if _term:
-                                budget_exceeded = (
-                                    "LLM provider budget/auth exhausted — get a budget increase "
-                                    f"or a fresh key (raising ENVGEN_MAX_* will NOT help): {_term}")
+                                # #1180: #326's message blames the PROVIDER, and #1163 then
+                                # reused this same latch for our OWN ceiling
+                                # (ENVGEN_MAX_SPEND_USD). So a run stopped by the operator's
+                                # cap reported "LLM provider budget/auth exhausted — get a
+                                # budget increase or a fresh key (raising ENVGEN_MAX_* will
+                                # NOT help)" while naming, in the very same string, the
+                                # ENVGEN_MAX_* knob that WAS the cause. netflix r17's three
+                                # resumes all ended on that line; it sent me to check whether
+                                # the API key had died (it had not — a probe answered 200
+                                # immediately) before the number in the message settled it.
+                                # Advice that names the one knob and says it will not help is
+                                # worse than no advice.
+                                if "ENVGEN_MAX_SPEND_USD" in str(_term):
+                                    budget_exceeded = (
+                                        "this run's OWN spend ceiling stopped it — the "
+                                        "provider is fine. Raise ENVGEN_MAX_SPEND_USD (or "
+                                        f"unset it) to let a run go further: {_term}")
+                                else:
+                                    budget_exceeded = (
+                                        "LLM provider budget/auth exhausted — get a budget "
+                                        "increase or a fresh key (raising ENVGEN_MAX_* will "
+                                        f"NOT help): {_term}")
                         if budget_exceeded:
                             self._logger.error(
                                 "Run budget exceeded (%s) before delivery; aborting generation.",
