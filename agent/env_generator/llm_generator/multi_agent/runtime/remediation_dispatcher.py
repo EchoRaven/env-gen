@@ -914,6 +914,111 @@ def control_absence_contradicted_1182(orch, pages) -> str:
         return ""
 
 
+# ---- #1185 -----------------------------------------------------------------
+# THE LOGIN PAGE TAKES TWO SUBMITS, AND NOTHING SAYS SO.
+#
+# #540 gives this design its real login: a single-step flow (email, then password), which is
+# what the reference screenshots show. In the generated page that becomes
+#
+#     const single = true;
+#     if (single && step === 0 && !isRegister) { setStep(1); return; }
+#     ... {isRegister ? 'Create account' : (single && step === 1 ? 'Sign In' : 'Continue')}
+#
+# so the FIRST submit issues no request at all — it reveals the password field and relabels
+# the button. A walk that fills the email, clicks once and treats itself as logged in is
+# anonymous, and the next protected page 401s.
+#
+# That is exactly r21's terminal record, and the app is fine:
+#
+#     validation:ui_flow:login_profile_catalog_my_list_flow  FAILED
+#       "Live re-walk failed: after login submit, /profiles triggers
+#        GET /api/profiles 401 Unauthorized; console/network errors present."
+#
+# Driven in a real browser against that same stack: fill email -> "Continue" (no request, the
+# password field appears) -> fill password -> "Sign In" -> /auth/login 200 -> /api/profiles
+# 200 -> /profiles, token in localStorage. The flow works; one submit is half of it.
+#
+# Present in every netflix run measured (r13, r14, r17-r21: 7 of 7 carry `single = true` and
+# the `step === 0` gate), so a walk that does not know this fails the same way in all of
+# them. r21 ended FAILED at $295 holding this one record.
+#
+# Same contract as #1182: speaks only when a record has ALREADY failed AND the page source
+# actually shows the gate, and prescribes re-driving, never closing the item.
+
+_AUTH_FAIL_1185 = (
+    "401", "unauthorized", "not authenticated", "still on /login", "stayed on /login",
+    "after login", "login submit", "not logged in",
+)
+
+
+def _single_step_login_1185(root):
+    """(page-file, button-labels) when the app's login page gates its password behind a
+    first submit, else (None, ())."""
+    try:
+        pages = Path(root) / "app" / "frontend" / "src" / "pages"
+        if not pages.is_dir():
+            return None, ()
+        for f in sorted(pages.glob("*ogin*.jsx")) + sorted(pages.glob("*uth*.jsx")):
+            src = f.read_text(encoding="utf-8", errors="replace")
+            # The gate itself, not merely the word "step": this is the line that makes the
+            # first submit a no-op.
+            if not re.search(r"step\s*===\s*0[^\n]{0,40}setStep\(\s*1\s*\)", src):
+                continue
+            labels = re.findall(r"step === 1 \? '([^']+)' : '([^']+)'", src)
+            return f.name, (labels[0] if labels else ("Sign In", "Continue"))
+        return None, ()
+    except Exception as _exc:
+        _swallowed_1152("_single_step_login_1185", _exc, "(None, ()) = no diagnosis")
+        return None, ()
+
+
+def two_step_login_1185(orch, pages) -> str:
+    """Say that the first submit is not the login, when a record blames auth right after it."""
+    try:
+        root = getattr(orch, "output_dir", None)
+        if not root:
+            return ""
+        wanted = {str(p).strip() for p in (pages or []) if str(p).strip()}
+        if not wanted:
+            return ""
+        hit = None
+        for rec in _walk_records_1176(
+                _hub_json_1176(root, "codehub_checks.json"),
+                lambda d: str(d.get("status", "")).lower() in ("failure", "failed")
+                and str(d.get("name", "")).startswith("validation:ui")):
+            name = str(rec.get("name", ""))
+            if name.rsplit(":", 1)[-1] not in wanted:
+                continue
+            blob = " ".join(str(v) for v in (rec.get("evidence") or {}).values()).lower()
+            if "login" in blob and any(p in blob for p in _AUTH_FAIL_1185):
+                hit = name
+                break
+        if not hit:
+            return ""
+        page, labels = _single_step_login_1185(root)
+        if not page:
+            return ""
+        step1, step0 = (labels + ("Sign In", "Continue"))[:2]
+        return (
+            "\n\n★ THIS APP'S LOGIN TAKES TWO SUBMITS — THE FIRST ONE IS NOT THE LOGIN:\n"
+            "- `%s` blames authentication right after a login submit, and %s gates its "
+            "password field behind a first submit (#540's single-step flow, which is what "
+            "the reference screenshots show).\n"
+            "The first click only runs `setStep(1)` — it sends NO request and reveals the "
+            "password field, relabelling the button from `%s` to `%s`. Submitting once "
+            "leaves you anonymous, so the next protected page returns 401 and the record "
+            "reads like a broken login.\n"
+            "Drive it as two steps: fill the email, submit (`%s`), then fill the password "
+            "that appears and submit again (`%s`). Verified in a real browser against r21's "
+            "own stack: /auth/login 200, /api/profiles 200, token stored.\n"
+            "If it still fails after BOTH steps, that is a real defect — say which step "
+            "broke and what the page showed, and bug_create for the owning lane."
+            % (hit, page, step0, step1, step0, step1))
+    except Exception as _exc_1185:
+        _swallowed_1152("two_step_login_1185", _exc_1185, "'' = generic remediation")
+        return ""
+
+
 def _ui_flow_failed_names(orch) -> List[str]:
     """#981: the flows the gate counts as FAILED — recorded, but not passing.
 
@@ -2199,7 +2304,9 @@ class RemediationDispatcher:
                                   # failing ui_smoke record, which run_validation cannot rewrite.
                                   + ui_smoke_refresh_1177(orch, _fp)
                                   # #1182: and answer any 'control is missing' claim with the markup.
-                                  + control_absence_contradicted_1182(orch, _fp))
+                                  + control_absence_contradicted_1182(orch, _fp)
+                                  # #1185: and say when a login needs two submits.
+                                  + two_step_login_1185(orch, _fp))
                 if name == "deliverability_ui_flow_failed":
                     # #981: the sibling branch below has named its instances since FIX #284;
                     # this one never did, so the verifier was handed the check name alone.
@@ -2209,7 +2316,8 @@ class RemediationDispatcher:
                         # record carries the same evidence shape. Silent when the flow name
                         # does not resolve to a declared ui_page route.
                         _extra = (_ui_flow_failed_extra(_ff) + auth_contradiction_1176(orch, _ff)
-                                  + control_absence_contradicted_1182(orch, _ff))
+                                  + control_absence_contradicted_1182(orch, _ff)
+                                  + two_step_login_1185(orch, _ff))
                 if name == "deliverability_ui_flow_missing":
                     # FIX #284: hand the verifier the EXACT missing flow names + the
                     # contradiction that broke r68 (it broadcast "already recorded" for
