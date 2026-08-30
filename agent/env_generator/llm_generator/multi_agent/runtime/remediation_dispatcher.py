@@ -639,6 +639,91 @@ def auth_contradiction_1176(orch, pages: Sequence[Any]) -> str:
         return ""
 
 
+# ---- #1177 -----------------------------------------------------------------
+# THE MOST COMMON TERMINAL BLOCKER IS A DEADLOCK THE REMEDIATION TEXT CREATES.
+#
+# `validation_ui_evidence_failed` is "7 of the last 10 declining runs" (#1040) and the
+# gate's own note records it as "the ONLY failing check for 85 minutes". r17 (live,
+# 2026-08-30) is the same shape, and the cause is three framework statements that cannot
+# all be satisfied at once:
+#
+#   1. `_ui_evidence_breadth_739` pools EVERY failing UI record -- `ui_flow:*` and
+#      `ui_smoke:*` alike -- and one failing entry blocks delivery.
+#   2. The remediation for the check says: "re-run the walk (run_validation) so the record
+#      is rewritten from the CURRENT app ... Do NOT close the gate item by editing the
+#      record -- only a fresh walk counts."
+#   3. `validation_tools` says, in its own words: "ui_smoke stays the verifier's browser
+#      job -- run_validation is api-only and does not probe the UI."
+#
+# So for a failing `ui_smoke:*` record the prescribed action CANNOT rewrite it, and the
+# only action that can is the one the text forbids. r17 ran the prescription and it
+# behaved exactly as (3) says:
+#
+#   03:10:14  verifier records validation:ui_smoke:landing_page = failure   (by hand)
+#   03:27:23  "Verification UI evidence re-check complete ... run_validation passed"
+#   03:28:01  #1017 validation_ui_evidence_failed on 1 record(s): landing_page
+#
+# The record still carries its 03:10:14 timestamp. Meanwhile the page's defect was
+# genuinely repaired at ~03:20 (the frontend lane removed the landing page's fetch of an
+# authed endpoint -- LandingPage.jsx is a 49-line marketing page with no API call), and
+# `validation:ui_flow:landing_page` PASSES. The app is fine; the ledger cannot say so.
+#
+# Worth stating plainly: these per-page ui_smoke records are VOLUNTEERED. r14 delivered
+# with zero of them and r13 with a single global `validation:ui_smoke`. A verifier that
+# offers extra evidence should not thereby manufacture an unclearable blocker.
+#
+# The repair is to make the instruction true rather than to weaken the gate. For a
+# `ui_smoke` record the verifier's own fresh browser observation IS the walk -- that is
+# what (3) means -- so re-recording it FROM A NEW OBSERVATION is the legitimate refresh,
+# not the forbidden edit. The prohibition still holds for what it was written about:
+# closing an item without re-observing anything.
+
+_UI_SMOKE_PREFIX_1177 = "validation:ui_smoke"
+
+
+def ui_smoke_refresh_1177(orch, pages: Sequence[Any]) -> str:
+    """Correct the refresh instruction for failing records `run_validation` cannot rewrite."""
+    try:
+        root = getattr(orch, "output_dir", None)
+        if not root:
+            return ""
+        wanted = {str(p).strip() for p in (pages or []) if str(p).strip()}
+        if not wanted:
+            return ""
+        stuck = []
+        for rec in _walk_records_1176(
+                _hub_json_1176(root, "codehub_checks.json"),
+                lambda d: str(d.get("status", "")).lower() in ("failure", "failed")
+                and str(d.get("name", "")).startswith(_UI_SMOKE_PREFIX_1177)):
+            name = str(rec.get("name", ""))
+            if name.rsplit(":", 1)[-1] in wanted and name not in stuck:
+                stuck.append(name)
+        if not stuck:
+            return ""
+        return (
+            "\n\n★ THESE RECORDS CANNOT BE REWRITTEN BY `run_validation`:\n- "
+            + "\n- ".join(sorted(stuck)[:6]) +
+            "\n\n`run_validation` is API-ONLY — it probes endpoints and records "
+            "contract_tests, api_smoke, builds and a RunHub run. It does not drive a "
+            "browser, so it never touches a `ui_smoke` record. Re-running it leaves the "
+            "failing record at its original timestamp, the gate re-reads the same failure, "
+            "and the loop repeats with nothing changed (r17 spent 18 minutes doing exactly "
+            "this while the underlying page defect was already repaired).\n"
+            "For a `ui_smoke` record YOUR OWN BROWSER OBSERVATION IS THE WALK. So:\n"
+            "  1. Open the page in the browser and reproduce what the record claims.\n"
+            "  2. If the defect is still there, fix it (or bug_create for the owning lane) "
+            "and look again.\n"
+            "  3. Once the page is clean IN FRONT OF YOU, codehub_record_check the SAME "
+            "check name from that fresh observation, with the evidence you just saw.\n"
+            "Step 3 is a re-observation, not a record edit — the 'only a fresh walk counts' "
+            "rule above is about `ui_flow` records, which run_validation does rewrite. What "
+            "remains forbidden is flipping a check green without looking at the page: if you "
+            "cannot state what you observed, the record stays red.")
+    except Exception as _exc_1177:
+        _swallowed_1152("ui_smoke_refresh_1177", _exc_1177, "'' = generic remediation")
+        return ""
+
+
 def _ui_flow_failed_names(orch) -> List[str]:
     """#981: the flows the gate counts as FAILED — recorded, but not passing.
 
@@ -1919,7 +2004,10 @@ class RemediationDispatcher:
                         # #1176: append the contract-vs-public-route diagnosis when the
                         # failing record names a 401/403. Empty string when it does not
                         # apply, so the #982 text is unchanged in every other case.
-                        _extra = _ui_evidence_failed_extra(_fp) + auth_contradiction_1176(orch, _fp)
+                        _extra = (_ui_evidence_failed_extra(_fp) + auth_contradiction_1176(orch, _fp)
+                                  # #1177: and correct the refresh instruction for any
+                                  # failing ui_smoke record, which run_validation cannot rewrite.
+                                  + ui_smoke_refresh_1177(orch, _fp))
                 if name == "deliverability_ui_flow_failed":
                     # #981: the sibling branch below has named its instances since FIX #284;
                     # this one never did, so the verifier was handed the check name alone.
