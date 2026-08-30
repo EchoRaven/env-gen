@@ -619,7 +619,8 @@ def auth_contradiction_1176(orch, pages: Sequence[Any]) -> str:
             return ""
         return (
             "\n\n★ THE CONTRACT, NOT THE HANDLER, IS WHAT REQUIRES THE TOKEN HERE:\n"
-            + "\n".join(lines[:6]) +
+            # join_capped declares the cut instead of hiding it (#1034's rule).
+            + join_capped(lines, len(lines), cap=6, sep="\n") +
             "\n\nThe handler is PROJECTED from that registration: `resolve_endpoint_auth` "
             "treats an explicit `auth_required` as final, so the projector wrote "
             "`Depends(get_current_user)` because the contract asked it to. Editing the "
@@ -702,7 +703,7 @@ def ui_smoke_refresh_1177(orch, pages: Sequence[Any]) -> str:
             return ""
         return (
             "\n\n★ THESE RECORDS CANNOT BE REWRITTEN BY `run_validation`:\n- "
-            + "\n- ".join(sorted(stuck)[:6]) +
+            + join_capped(sorted(stuck), len(stuck), cap=6, sep="\n- ") +
             "\n\n`run_validation` is API-ONLY — it probes endpoints and records "
             "contract_tests, api_smoke, builds and a RunHub run. It does not drive a "
             "browser, so it never touches a `ui_smoke` record. Re-running it leaves the "
