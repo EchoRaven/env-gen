@@ -716,10 +716,14 @@ def ui_smoke_refresh_1177(orch, pages: Sequence[Any]) -> str:
             "and look again.\n"
             "  3. Once the page is clean IN FRONT OF YOU, codehub_record_check the SAME "
             "check name from that fresh observation, with the evidence you just saw.\n"
-            "Step 3 is a re-observation, not a record edit — the 'only a fresh walk counts' "
-            "rule above is about `ui_flow` records, which run_validation does rewrite. What "
-            "remains forbidden is flipping a check green without looking at the page: if you "
-            "cannot state what you observed, the record stays red.")
+            "Step 3 is a re-observation, not a record edit. The 'only a fresh walk counts' "
+            "rule above is about `ui_flow` records, which the framework's OWN authenticated "
+            "DOM walk rewrites deterministically (#240/#254 — a measured pass outranks an "
+            "LLM report of the same flow). No such writer exists for `ui_smoke`: yours is "
+            "the only walk it has, which is why re-recording it from a fresh look is the "
+            "refresh rather than an edit. What remains forbidden is flipping a check green "
+            "without looking at the page: if you cannot state what you observed, the record "
+            "stays red.")
     except Exception as _exc_1177:
         _swallowed_1152("ui_smoke_refresh_1177", _exc_1177, "'' = generic remediation")
         return ""
