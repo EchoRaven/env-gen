@@ -1756,18 +1756,25 @@ class RegistryHub:
                 # match between two ROUTED records proves nothing. A record with no route
                 # cannot be a distinct route, so when it names a component that is already
                 # spoken for, it is the same page.
-                _comp1195 = str(component or "").strip()
-                if _comp1195 and not str(route or "").strip() and name not in _live:
+                # Keyed on PATH — the component source file — not on the component NAME.
+                # The first draft matched names and over-merged: test_596 registers five
+                # genuinely distinct pages that all carry component="SomePage" with no route,
+                # and they collapsed into one. A component name can legitimately repeat; the
+                # FILE cannot. r26's pair shares the file exactly:
+                #     name=login       path=app/frontend/src/pages/LoginPage.jsx
+                #     name=login_page  path=app/frontend/src/pages/LoginPage.jsx
+                _path1195 = str(path or "").strip()
+                if _path1195 and not str(route or "").strip() and name not in _live:
                     for _k1195, _v1195 in _live.items():
                         if (isinstance(_v1195, dict)
-                                and str(_v1195.get("component") or "").strip() == _comp1195):
+                                and str(_v1195.get("path") or "").strip() == _path1195):
                             _rec = dict(rec)
                             _md = dict(_rec.get("metadata") or {})
                             _al = list(_md.get("merged_route_aliases") or [])
                             if name not in _al:
                                 _al.append(name)
                             _md["merged_route_aliases"] = _al
-                            _md["merged_by_component_1195"] = _comp1195
+                            _md["merged_by_path_1195"] = _path1195
                             _rec["metadata"] = _md
                             _rec["route"] = _rec.get("route") or _v1195.get("route") or ""
                             return m.set(_k1195, _rec, actor)
