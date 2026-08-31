@@ -1324,7 +1324,17 @@ class Orchestrator:
                                          in ("1", "true", "yes"),
                         }),
                         start_time.timestamp(),
-                        time.time() - start_time.timestamp(), 0, "running")
+                        time.time() - start_time.timestamp(),
+                        # #1192: the live tick count, NOT 0. This ticker fires every 30s and
+                        # was overwriting the coordination loop's real count with a literal
+                        # zero, so `ticks` read 0 in every run's ledger (r19-r24 all ended at
+                        # 0) and the only true values I ever saw — r17's 27, r20's 31/200 —
+                        # were reads that happened to land between a loop write and the next
+                        # overwrite. `max_ticks` still ENFORCES correctly, because the loop
+                        # compares its own local; what this destroyed was the ability to see
+                        # how close a run was to that ceiling, which is the number I set the
+                        # ceiling from. My own defect, introduced with #1175.
+                        getattr(self, "_tick_count_1192", 0), "running")
                 except _a1175.CancelledError:
                     raise
                 except Exception:
@@ -2408,6 +2418,9 @@ class Orchestrator:
 
                         caps = self._load_run_budget_caps(env_caps)  # pick up live cap raises
                         elapsed = time.time() - loop_start
+                        # #1192: publish the live count for the #1175 ticker, which runs in a
+                        # separate task and cannot see this local.
+                        self._tick_count_1192 = tick_count
                         self._write_run_budget(caps, loop_start, elapsed, tick_count, "running")
                         if not caps.get("unlimited"):  # admins run with no budget ceiling
                             if elapsed > caps["max_wall_sec"]:
