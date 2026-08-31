@@ -57,12 +57,24 @@ def test_only_transient_connection_errors_are_retried():
 
 def test_the_retry_is_bounded():
     """Unbounded retry against a genuinely dead stack would hang the lane instead of failing
-    it — worse than the defect."""
-    assert "range(3)" in _retry_block(), "three attempts, not unlimited"
+    it — worse than the defect. The BOUND survives #1189; its unit changed.
+
+    #996 bounded by attempt count (`range(3)`, 3s + 6s = nine seconds). Measured over
+    netflix-r22's resume, 50 of 51 compose recycles ran LONGER than that — median 20s, P90
+    111s — so the count-based bound abandoned the navigation mid-recycle 98% of the time.
+    #1189 bounds by a deadline instead, which adapts to the actual outage and still refuses
+    to wait forever.
+    """
+    blk = _retry_block()
+    assert "_deadline" in blk and "monotonic" in blk, "bounded by time"
+    assert "range(3)" not in blk, "the attempt-counted bound was the defect"
+    assert "_nav_wait_budget_1189()" in blk, "and the budget is explicit + overridable"
 
 
-def test_it_backs_off_between_attempts():
-    assert "asyncio.sleep(3 * (_attempt + 1))" in _retry_block()
+def test_it_waits_between_attempts():
+    """Still a wait, still bounded — a flat gap under a deadline rather than a ramp under a
+    counter (a ramp only matters when the attempts are few)."""
+    assert "asyncio.sleep(3)" in _retry_block()
 
 
 def test_a_dead_stack_still_reports_the_original_error():

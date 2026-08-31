@@ -11,6 +11,30 @@ from utils.tool import BaseTool, ToolResult, ToolCategory
 from ._manager import BrowserManager, PLAYWRIGHT_AVAILABLE
 
 
+import logging as _lg1189
+import time as _t1189
+
+# A real module logger: the #1189 wait line sits in a try/except, so without one the
+# NameError would be swallowed and the wait would be invisible — the exact silence this
+# session spent its time removing.
+_LOG1189 = _lg1189.getLogger(__name__)
+
+
+def _nav_wait_budget_1189() -> float:
+    """Seconds to keep retrying a refused navigation. Bounded, and env-overridable.
+
+    120s covers the P90 of the measured recycle windows (111s) with headroom; the P100 was
+    250s, and waiting that long for every dead stack would be worse than failing. A value of
+    0 restores #996's give-up-immediately behaviour for anyone who needs it.
+    """
+    import os as _os1189
+    try:
+        v = float(_os1189.environ.get("ENVGEN_NAV_WAIT_SEC", "") or 120.0)
+    except (TypeError, ValueError):
+        return 120.0
+    return min(600.0, max(0.0, v))
+
+
 class BrowserNavigateTool(BaseTool):
     NAME = "browser_navigate"
     """Navigate to a URL and capture page state"""
@@ -69,9 +93,30 @@ class BrowserNavigateTool(BaseTool):
             # not serialize anything: the stack is DOWN for seconds, so waiting briefly and
             # retrying costs far less than a lost capture, and a genuinely dead stack still
             # fails — just three attempts later, with the same error.
+            # #1189: #996's budget is an order of magnitude below the event it exists for.
+            # Three attempts with 3s + 6s of sleep gives up after NINE seconds, and the
+            # recycle it is waiting out is far longer. Measured over netflix-r22's resume,
+            # pairing each `docker down` with the `docker up` that completed after it:
+            #
+            #     51 windows   median 20s   P75 28s   P90 111s   max 250s
+            #     longer than #996's 9s budget: 50 of 51  (98%)
+            #
+            # So it abandoned the navigation while the stack was still coming up in 98% of
+            # recycles. That resume ended holding three failing ui_flow records — title-
+            # detail-open, login_auth_flow, profile_creation — every one of them an
+            # ERR_CONNECTION_REFUSED, one of them refused by the FRONTEND's own origin, on
+            # an app that answers register/login/titles correctly when probed by hand. The
+            # orchestrator then stopped voluntarily because its pre-delivery run "aborted on
+            # /health". #1154 discounts these records after the fact; this stops minting them.
+            #
+            # Waiting is bounded by a DEADLINE rather than an attempt count, so the cost is
+            # paid only while the origin is actually down, and a genuinely dead stack still
+            # fails with the same error — just later, after the window a recycle needs.
             _last_exc = None
             response = None
-            for _attempt in range(3):
+            _deadline = _t1189.monotonic() + _nav_wait_budget_1189()
+            _waited = 0.0
+            while True:
                 try:
                     response = await self.browser.state.page.goto(
                         url,
@@ -86,10 +131,19 @@ class BrowserNavigateTool(BaseTool):
                                                    "ERR_EMPTY_RESPONSE")):
                         raise
                     _last_exc = _e
-                    if _attempt < 2:
-                        await asyncio.sleep(3 * (_attempt + 1))
+                    if _t1189.monotonic() >= _deadline:
+                        break
+                    await asyncio.sleep(3)
+                    _waited += 3
             if response is None and _last_exc is not None:
                 raise _last_exc
+            if _waited:
+                try:
+                    _LOG1189.info("#1189 navigation to %s waited %.0fs for the origin to come "
+                                "back (compose recycle); median recycle is ~20s.",
+                                url, _waited)
+                except Exception:
+                    pass
             
             self.browser.state.current_url = url
             
