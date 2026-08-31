@@ -859,6 +859,30 @@ def _fw_uid(user):
         return _v
 
 
+# #1190: THE ACTIVE SUB-ENTITY THE CALLER IS ACTING AS.
+#
+# The frontend already tells the backend which profile is in use — api.js sends
+# `X-Profile-ID` on every call — and nothing on the server has ever read it. Measured on
+# netflix-r22's DELIVERED release 1.0.0: `X-Profile-ID` appears 0 times in main.py and 0
+# times in custom_routes.py. `_fw_owner_val` resolves "the caller's FIRST row in T", so
+# every profile of one account resolves to the same value and they all read each other's
+# rows. On that release, with one account and two profiles, a title added under profile 12
+# came back verbatim to profile 13, and continue-watching behaved the same. The run's own
+# description asks for the opposite in as many words: "Each profile sees only its own My
+# List, ratings and Continue Watching (per-profile private data)."
+#
+# NOT a cross-account leak — profiles, my_list and continue_watching are user-scoped
+# already and a second account sees none of it. This is the boundary INSIDE one account.
+# Self-contained: the import sits with the definition rather than at the top of the module,
+# because callers exec SLICES of this header (the #1158/#1160/owner-val test harnesses do),
+# and a slice that carries the definition must carry what it needs to evaluate.
+try:
+    import contextvars as _cv1190
+    _FW_PROFILE_CTX_1190 = _cv1190.ContextVar("fw_active_profile_1190", default=None)
+except Exception:          # pragma: no cover - contextvars is stdlib since 3.7
+    _FW_PROFILE_CTX_1190 = None
+
+
 def _fw_owner_val(cls, col, user):
     """FIX #134 (instagram run-57, live): _fw_uid coerced to THIS owner column's TYPE.
     _fw_uid int-coerces a digit sub (the run-39 fix for INTEGER owner columns) — but a
@@ -1048,6 +1072,19 @@ def _fw_owner_val(cls, col, user):
             "col": col, "uid": _fw_uid(user), "resolved": _v})
     except Exception:
         pass
+    # #1190: the caller's ACTIVE sub-entity overrides the first-row default — but only
+    # after `_fw_owns` confirms the caller owns it. The header can therefore only ever
+    # NARROW to another of the caller's OWN profiles; an absent, unparseable or not-owned
+    # value falls through to exactly today's resolution. That ownership gate is the
+    # difference from the earlier attempt at this, which fail-opened and was reverted. It
+    # runs last, so the existing resolution (and its auto-create) is untouched, and the
+    # coercion below still normalises the header's string to the column's type.
+    try:
+        _act1190 = _FW_PROFILE_CTX_1190.get() if _FW_PROFILE_CTX_1190 is not None else None
+        if _act1190 not in (None, "") and _fw_owns(cls, col, _act1190, user):
+            _v = _act1190
+    except Exception as _e1190:
+        _fw_dbg("fw_owner_val.active_profile_1190", _e1190)
     try:
         _pt = getattr(cls, col).type.python_type
     except Exception as _e:

@@ -414,6 +414,17 @@ except Exception:
 
 @app.middleware("http")
 async def _framework_auth_guard(request, call_next):
+    # #1190: publish the caller's ACTIVE sub-entity for this request. The frontend sends
+    # `X-Profile-ID` on every call and the server has never read it, so every profile of one
+    # account resolved to the same owner value and read the others' rows (measured on
+    # netflix-r22's delivered release). Only a ContextVar is set here — `_fw_owner_val`
+    # decides whether to honour it, and only after `_fw_owns` confirms the caller owns that
+    # sub-entity, so this can never widen access. Best-effort: a missing ContextVar (an
+    # older skeleton) or any failure leaves resolution exactly as it was.
+    try:
+        _FW_PROFILE_CTX_1190.set((request.headers.get("x-profile-id") or "").strip() or None)
+    except Exception:
+        pass
     p = request.url.path
     public = (
         p in ("/", "/health", "/openapi.json", "/docs", "/redoc", "/favicon.ico")
