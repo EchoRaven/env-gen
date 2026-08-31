@@ -1714,7 +1714,48 @@ class RegistryHub:
         if not existing:
             rec["created_by"] = agent
             rec["created_at"] = now
-        self._ui_pages.update(lambda m: m.set(name, rec, actor),
+        # #1193: RE-CHECK THE ROUTE COLLISION INSIDE THE LOCK.
+        #
+        # The dedup above reads a SNAPSHOT (`_pages_now`, taken before this write) and
+        # decides against it, while the write itself happens inside JsonStore.update's
+        # lock. Five agent roles hold registryhub_register_ui_page, so two lanes
+        # registering the same screen concurrently each read a snapshot without the
+        # other's entry, each conclude they are first, and both write.
+        #
+        # It shows in the ledgers: netflix-r24 carries `/login` under BOTH `login` and
+        # `login_page`, and `/profiles` under BOTH `profiles` and `profiles_page`, all four
+        # with merged_route_aliases=None — the merge never ran. r21 has the same on
+        # `/profiles`. Both runs FAILED to deliver and both spent their gate budget on
+        # `deliverability_ui_page_unwired`, which r24 hit 15 times: that check asks whether
+        # each registered page NAME is wired, and a route has exactly one component, so one
+        # of every duplicate pair can never be satisfied. The five delivering runs have zero
+        # duplicates.
+        #
+        # The mutator runs under the lock with a freshly loaded view, so the same question
+        # asked there is not racing anything. The outer check stays: it is what builds `rec`
+        # from the right `existing`, and this is the backstop for the case it cannot see.
+        def _set_under_lock_1193(m):
+            try:
+                _live = m.value() or {}
+                if route and name not in _live:
+                    _r1193 = str(route).strip()
+                    for _k1193, _v1193 in _live.items():
+                        if (isinstance(_v1193, dict)
+                                and str(_v1193.get("route") or "").strip() == _r1193):
+                            _rec = dict(rec)
+                            _md = dict(_rec.get("metadata") or {})
+                            _al = list(_md.get("merged_route_aliases") or [])
+                            if name not in _al:
+                                _al.append(name)
+                            _md["merged_route_aliases"] = _al
+                            _md["merged_under_lock_1193"] = True
+                            _rec["metadata"] = _md
+                            return m.set(_k1193, _rec, actor)
+            except Exception:
+                pass          # a registration must never fail on the dedup
+            return m.set(name, rec, actor)
+
+        self._ui_pages.update(_set_under_lock_1193,
                               change_info={"agent": actor})
         self._emit("ui_page_registered", rec, recipients=[])
         self._autoregister_ui_consumers_627(rec, actor)
