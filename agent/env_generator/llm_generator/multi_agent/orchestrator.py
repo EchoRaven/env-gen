@@ -1323,8 +1323,18 @@ class Orchestrator:
                             "unlimited": str(os.environ.get("ENVGEN_BUDGET_UNLIMITED", "")).strip().lower()
                                          in ("1", "true", "yes"),
                         }),
-                        start_time.timestamp(),
-                        time.time() - start_time.timestamp(),
+                        getattr(self, "_loop_start_1196", None) or start_time.timestamp(),
+                        # #1196: measured from the SAME origin the cap compares against.
+                        # netflix-r26 read "墙钟余 -31 min" — 31 minutes past a 300-minute
+                        # ceiling, still running — while the loop saw 25 minutes of room,
+                        # because design-prep and kickoff had taken ~60 minutes before the
+                        # loop began. I then concluded from that number that the wall-clock
+                        # cap "never binds and is a dead safety net", which was wrong: it
+                        # binds fine, against a clock I was not reading. Before the loop
+                        # exists there is no loop origin, so it falls back to process start,
+                        # which is the honest answer for that window.
+                        time.time() - (getattr(self, "_loop_start_1196", None)
+                                       or start_time.timestamp()),
                         # #1192: the live tick count, NOT 0. This ticker fires every 30s and
                         # was overwriting the coordination loop's real count with a literal
                         # zero, so `ticks` read 0 in every run's ledger (r19-r24 all ended at
@@ -2421,6 +2431,12 @@ class Orchestrator:
                         # #1192: publish the live count for the #1175 ticker, which runs in a
                         # separate task and cannot see this local.
                         self._tick_count_1192 = tick_count
+                        # #1196: and the ORIGIN the wall-clock cap is measured from. The cap
+                        # compares `time.time() - loop_start`; the ticker was writing
+                        # `time.time() - start_time`, which starts at process launch and so
+                        # includes design-prep and kickoff. One field, two meanings,
+                        # whichever writer touched it last.
+                        self._loop_start_1196 = loop_start
                         self._write_run_budget(caps, loop_start, elapsed, tick_count, "running")
                         if not caps.get("unlimited"):  # admins run with no budget ceiling
                             if elapsed > caps["max_wall_sec"]:
