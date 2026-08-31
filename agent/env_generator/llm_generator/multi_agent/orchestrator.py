@@ -3003,7 +3003,12 @@ class Orchestrator:
                     "unlimited": False,
                 }),
                 start_time.timestamp(),
-                time.time() - start_time.timestamp(), 0, "finished")
+                # #1192b: the live count, NOT 0. The first pass fixed only the periodic
+                # ticker and left this one, which runs LAST and overwrites everything —
+                # r24's resume proved it: the abort message read "aborted after 11
+                # coordination ticks" while the ledger it wrote said ticks=0.
+                time.time() - start_time.timestamp(),
+                getattr(self, "_tick_count_1192", 0), "finished")
         except Exception:
             pass
         return GenerationResult(
