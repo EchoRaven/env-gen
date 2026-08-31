@@ -75,11 +75,22 @@ _IDEMPOTENT_READ_TOOLS_609 = frozenset({"read"})
 # #1191: read-only SNAPSHOT queries whose repeated answer teaches a lane nothing. Every one
 # returns current hub state and nothing else — no file contents, no inbox bodies. `read` and
 # `check_inbox` are absent on purpose (see the note at the insertion point).
+# Every name here was checked against its own DESCRIPTION line, and the first draft got two
+# wrong: `workhub_task` is "Create, claim, claim_all, complete, fail, or cancel a WorkHub
+# task" -- a WRITE, 459 calls in r22 -- where deduping the echo of two identical creates or
+# claims would read to the lane as "nothing happened"; and `registryhub_list_chains` does not
+# exist at all (the only chain tool is registryhub_register_verification_chain, also a write).
+# test_1191 now asserts both properties for every entry, so the next addition cannot repeat it.
 _DEDUP_TOOLS_1191 = frozenset({
-    "workhub_list_tasks", "workhub_get_task", "workhub_task",
-    "registryhub_get_endpoint", "registryhub_list_endpoints", "registryhub_list_ui_pages",
-    "registryhub_list_tables", "registryhub_list_chains",
-    "deliverability_summary", "deliverability_check", "coverage_audit_check",
+    "workhub_list_tasks",           # "List WorkHub tasks, optionally filtered by ..."
+    "workhub_get_task",             # "Get a single WorkHub task by its id."
+    "registryhub_get_endpoint",     # "Get a single RegistryHub endpoint by its id ..."
+    "registryhub_list_endpoints",   # "List all RegistryHub endpoints ..."
+    "registryhub_list_ui_pages",    # "READ the ui_page registry ..."
+    "registryhub_list_tables",      # "List registered tables ..."
+    "deliverability_summary",       # "One-line summary of deliverability ..."
+    "deliverability_check",         # "Evidence-based unified deliverability report ..."
+    "coverage_audit_check",         # "Scan ... Returns dead endpoints / tables / files."
 })
 # Below this, a pointer costs about as much as the body.
 _DEDUP_MIN_BYTES_1191 = 1500
@@ -788,14 +799,22 @@ class AgentStepToolingMixin:
                         and len(result_str) >= _DEDUP_MIN_BYTES_1191):
                     _prior = _identical_tool_msg_1191(messages, result_str)
                     if _prior is not None:
+                        # Carry the head of the body. Masking runs at SEND time, after
+                        # this check, so an earlier copy can be trimmed to 6000 chars
+                        # AFTER a pointer to it was emitted — the pointer then names a
+                        # message whose content is gone. It self-heals (the next identical
+                        # result no longer matches by length, so the full body returns),
+                        # but a prefix means even the dangling case is not a total loss.
+                        _head1191 = " ".join(result_str[:280].split())
                         _emit1191 = (
                             "[#1191] byte-identical to the earlier `%s` result already in "
                             "this conversation (message %d of %d) — the state has not "
-                            "changed, so the %d-byte body is not repeated. Read it there. "
-                            "Re-issue this query only to detect a CHANGE; if you keep "
-                            "seeing this line, the state you are waiting on is not moving "
-                            "and polling it again will not move it."
-                            % (tool_name, _prior + 1, len(messages), len(result_str)))
+                            "changed, so the %d-byte body is not repeated. It begins: %s…\n"
+                            "Read it in full there. Re-issue this query only to detect a "
+                            "CHANGE; if you keep seeing this line, the state you are "
+                            "waiting on is not moving and polling it again will not move it."
+                            % (tool_name, _prior + 1, len(messages), len(result_str),
+                               _head1191))
                         from utils.llm import record_dedup_saved_1191
                         record_dedup_saved_1191(
                             tool_name, len(result_str) - len(_emit1191))
