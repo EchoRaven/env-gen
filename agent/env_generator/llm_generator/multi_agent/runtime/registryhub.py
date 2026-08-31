@@ -1737,6 +1737,40 @@ class RegistryHub:
         def _set_under_lock_1193(m):
             try:
                 _live = m.value() or {}
+                # #1195: a ROUTE-LESS registration whose COMPONENT is already registered is
+                # the same page under a second name. The route test alone cannot see it —
+                # `if route and ...` skips entirely when route is "", and route-less
+                # registrations are the norm, not the exception: 20 of r23's 32 records, 21
+                # of r24's 44, 7 of r25's 16, 6 of r26's 31. Once the name exists the route
+                # test never runs again, so a route filled in by a later update slips past
+                # both. r26 shows the whole sequence in its log, twice:
+                #
+                #     register_ui_page  name=login       path=.../pages/LoginPage.jsx
+                #     register_ui_page  name=login_page  path=.../pages/LoginPage.jsx
+                #
+                # and ended with /login under both names, /profiles likewise, all four with
+                # merged_under_lock_1193=None — #1193 never fired on any of them.
+                #
+                # Matching on component is only safe in THIS direction. Two routes may
+                # legitimately render one component (a shared list page), so a component
+                # match between two ROUTED records proves nothing. A record with no route
+                # cannot be a distinct route, so when it names a component that is already
+                # spoken for, it is the same page.
+                _comp1195 = str(component or "").strip()
+                if _comp1195 and not str(route or "").strip() and name not in _live:
+                    for _k1195, _v1195 in _live.items():
+                        if (isinstance(_v1195, dict)
+                                and str(_v1195.get("component") or "").strip() == _comp1195):
+                            _rec = dict(rec)
+                            _md = dict(_rec.get("metadata") or {})
+                            _al = list(_md.get("merged_route_aliases") or [])
+                            if name not in _al:
+                                _al.append(name)
+                            _md["merged_route_aliases"] = _al
+                            _md["merged_by_component_1195"] = _comp1195
+                            _rec["metadata"] = _md
+                            _rec["route"] = _rec.get("route") or _v1195.get("route") or ""
+                            return m.set(_k1195, _rec, actor)
                 if route and name not in _live:
                     _r1193 = str(route).strip()
                     for _k1193, _v1193 in _live.items():
