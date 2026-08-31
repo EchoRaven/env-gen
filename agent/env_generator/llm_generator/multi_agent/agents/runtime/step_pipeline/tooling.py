@@ -72,6 +72,37 @@ def _auto_stage(agent, file_path: str, *, action: str) -> None:
 _IDEMPOTENT_READ_TOOLS_609 = frozenset({"read"})
 
 
+# #1191: read-only SNAPSHOT queries whose repeated answer teaches a lane nothing. Every one
+# returns current hub state and nothing else — no file contents, no inbox bodies. `read` and
+# `check_inbox` are absent on purpose (see the note at the insertion point).
+_DEDUP_TOOLS_1191 = frozenset({
+    "workhub_list_tasks", "workhub_get_task", "workhub_task",
+    "registryhub_get_endpoint", "registryhub_list_endpoints", "registryhub_list_ui_pages",
+    "registryhub_list_tables", "registryhub_list_chains",
+    "deliverability_summary", "deliverability_check", "coverage_audit_check",
+})
+# Below this, a pointer costs about as much as the body.
+_DEDUP_MIN_BYTES_1191 = 1500
+
+
+def _identical_tool_msg_1191(messages, body: str):
+    """Index of an earlier tool message whose content is byte-identical to `body`, else None.
+
+    Scans the conversation being sent rather than any side cache: a pointer must name a
+    message the model can actually still see, and after masking or condensing an older copy
+    may be gone. Length is compared first, so the common miss is cheap.
+    """
+    _n = len(body)
+    for _i in range(len(messages) - 1, -1, -1):
+        _m = messages[_i]
+        if getattr(_m, "role", "") != "tool":
+            continue
+        _c = getattr(_m, "content", None)
+        if isinstance(_c, str) and len(_c) == _n and _c == body:
+            return _i
+    return None
+
+
 class AgentStepToolingMixin:
     # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
     # supplied by the class it is mixed into, so a checker reading this file alone reports
@@ -723,7 +754,54 @@ class AgentStepToolingMixin:
                 record_tool_result_bytes_1171(tool_name, len(result_str or ""))
             except Exception:
                 pass
-            messages.append(Message.tool(result_str, tool_call_id))
+            # #1191: DO NOT CARRY THE SAME SNAPSHOT TWICE.
+            #
+            # `_mask_old_observations` only trims once the history EXCEEDS the working
+            # budget (313,600 chars) — below it, `return messages` keeps everything in
+            # full. The median request in netflix-r22 was 195K chars, i.e. under the
+            # budget, so nothing was trimmed and every repeated result was carried whole
+            # on every later call. Measured over that run, the same read-only hub query
+            # was re-issued again and again:
+            #
+            #     313x  workhub_list_tasks status=in_progress
+            #     218x  workhub_list_tasks status=pending
+            #     117x  registryhub_get_endpoint GET /api/titles
+            #     611 of 691 workhub_list_tasks calls were three identical queries
+            #
+            # and each result then rode along in every subsequent request of that lane's
+            # conversation — which reaches ~1,485 messages, so one insertion is re-sent
+            # 700-950 times. #1171 attributes 23% of all tool bytes to this one tool.
+            #
+            # When the answer is BYTE-IDENTICAL to one already present in this same
+            # conversation, the lane has already read it verbatim and learns nothing from
+            # a second copy. Replace it with a pointer to that message.
+            #
+            # DELIBERATELY NARROW. Only read-only snapshot queries, and only against the
+            # conversation actually being sent — no cache, no TTL, no cross-conversation
+            # state, so a pointer can never name a message the model cannot see, and a
+            # changed answer is always delivered in full. `check_inbox` and `read` are
+            # excluded on purpose: #274 is a standing user directive that inbox bodies are
+            # never clipped, and a lane re-reading a file is usually verifying its own edit.
+            _emit1191 = result_str
+            try:
+                if (tool_name in _DEDUP_TOOLS_1191 and result_str
+                        and len(result_str) >= _DEDUP_MIN_BYTES_1191):
+                    _prior = _identical_tool_msg_1191(messages, result_str)
+                    if _prior is not None:
+                        _emit1191 = (
+                            "[#1191] byte-identical to the earlier `%s` result already in "
+                            "this conversation (message %d of %d) — the state has not "
+                            "changed, so the %d-byte body is not repeated. Read it there. "
+                            "Re-issue this query only to detect a CHANGE; if you keep "
+                            "seeing this line, the state you are waiting on is not moving "
+                            "and polling it again will not move it."
+                            % (tool_name, _prior + 1, len(messages), len(result_str)))
+                        from utils.llm import record_dedup_saved_1191
+                        record_dedup_saved_1191(
+                            tool_name, len(result_str) - len(_emit1191))
+            except Exception:
+                _emit1191 = result_str
+            messages.append(Message.tool(_emit1191, tool_call_id))
             if _mm_image is not None:
                 _img_label = ""
                 if isinstance(result.data, dict):

@@ -901,6 +901,23 @@ def llm_usage() -> Dict[str, Any]:
 _TOOL_RESULT_BYTES: Dict[str, Any] = {}
 
 
+_DEDUP_SAVED_1191 = {"calls": 0, "bytes": 0}
+
+
+def record_dedup_saved_1191(tool: str, saved: int) -> None:
+    """#1191: bytes NOT re-inserted because the result was byte-identical to one already in
+    this conversation. Counted so the next run reports the real size instead of an estimate."""
+    try:
+        _DEDUP_SAVED_1191["calls"] += 1
+        _DEDUP_SAVED_1191["bytes"] += max(0, int(saved))
+    except Exception:
+        pass
+
+
+def dedup_saved_1191() -> dict:
+    return dict(_DEDUP_SAVED_1191)
+
+
 def record_tool_result_bytes_1171(tool: Any, nbytes: Any) -> None:
     """Accumulate one tool result's size. Never raises."""
     try:

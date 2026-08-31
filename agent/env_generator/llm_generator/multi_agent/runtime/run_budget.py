@@ -72,6 +72,13 @@ class RunBudget:
                 _tb = tool_result_bytes()
                 if _tb:
                     payload["tool_result_bytes"] = dict(list(_tb.items())[:12])
+                    # #1191: how much the identical-snapshot dedup kept out of the context. Reported
+                    # beside the tool attribution so the saving is a measurement, not an estimate.
+                    try:
+                        from utils.llm import dedup_saved_1191
+                        payload["dedup_saved_1191"] = dedup_saved_1191()
+                    except Exception:
+                        pass
             except Exception:
                 pass
             path = self.path()

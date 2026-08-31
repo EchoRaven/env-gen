@@ -62,9 +62,25 @@ def test_it_is_recorded_where_every_result_passes():
     partial and therefore misleading."""
     src = Path(tooling.__file__).read_text(encoding="utf-8")
     i = src.index("record_tool_result_bytes_1171(")
-    j = src.index("messages.append(Message.tool(result_str, tool_call_id))")
+    # #1191 renamed what is appended (`_emit1191`, which may be a pointer instead of the
+    # body), so the assertion anchors on the append ITSELF rather than on its argument.
+    # Searched FROM the record, not from the top: there are earlier, unrelated
+    # `messages.append(Message.tool(` calls (the error paths), and anchoring on the first
+    # one in the file compared against the wrong append.
+    j = src.index("messages.append(Message.tool(", i)
     assert i < j, "must count BEFORE the result enters the context"
     assert src.count("record_tool_result_bytes_1171(") == 1
+
+
+def test_it_attributes_the_full_result_not_the_deduped_one():
+    """#1191 may replace a byte-identical repeat with a short pointer. The ATTRIBUTION must
+    still name what the tool produced — counting the pointer would understate the tool that
+    is actually generating the bytes, which is the one question #1171 exists to answer."""
+    src = Path(tooling.__file__).read_text(encoding="utf-8")
+    i = src.index("record_tool_result_bytes_1171(")
+    call = src[i:src.index(")", i) + 1]
+    assert "len(result_str" in call, call
+    assert "_emit1191" not in call, "attribution must not shrink with the dedup"
 
 
 def test_the_counter_cannot_break_a_tool_call():
