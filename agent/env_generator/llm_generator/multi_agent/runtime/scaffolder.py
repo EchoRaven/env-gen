@@ -888,6 +888,24 @@ volumes:
             # 84 call sites read it (gates, `_all_get_endpoints`, the #627/#629 consumer
             # index). Runs post-merge, so it sees the lane's page. Never wipes: a page whose
             # endpoints cannot be resolved is left exactly as declared.
+            # #1202j: an asset the code references that nothing ever staged is a 404 the
+            # visual judge scores as a broken render. Own try (#1201).
+            try:
+                from .frontend_scaffold import unstaged_asset_refs_1202j
+                from .message_format import join_capped
+                _as1202j = unstaged_asset_refs_1202j(
+                    fe, _P(out_dir) / "app" / "backend" / "seed_data.json")
+                if _as1202j:
+                    orch._logger.warning(
+                        "#1202j %d asset path(s) are referenced but exist nowhere in the "
+                        "tree — they will 404 and the visual judge will score the hole they "
+                        "leave (#113's symptom, a cause it does not cover). Stage them into "
+                        "design/assets or stop referencing them: %s",
+                        len(_as1202j), join_capped(_as1202j, total=len(_as1202j)))
+            except Exception as _e1202j:
+                from .message_format import warn_once_1201
+                warn_once_1201("unstaged_asset_refs_1202j",
+                               "the unstaged-asset report (#1202j)", _e1202j)
             try:
                 from .frontend_scaffold import reconcile_ui_page_apis_1199
                 _rec1199 = reconcile_ui_page_apis_1199(fe, ui_pages, registryhub)

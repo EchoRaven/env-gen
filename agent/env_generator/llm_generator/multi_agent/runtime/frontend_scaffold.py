@@ -12009,6 +12009,58 @@ def sync_frontend_package_json_deps(frontend_dir) -> Dict[str, object]:
         return {"added": [], "error": f"{type(exc).__name__}: {exc}"}
 
 
+# --- #1202j: an asset the code references but nothing ever staged ---------------------
+# FIX #113 stages `design/assets` at every build entry point, because a checkout window could
+# drop already-staged files. What nothing checks is the other direction: a lane referencing
+# `/assets/icons/apps_24.svg` when no such icon was ever in the design input. The file simply
+# is not there, the browser 404s, and the visual judge scores the broken-glyph render — the
+# exact symptom #113's own docstring describes ("every /assets/icons/*.svg 404 while the JS
+# bundle loaded fine"), arriving through a cause #113 does not cover.
+#
+# Measured across the 114 generated frontends: 21 reference assets that exist nowhere in the
+# delivered tree, 142 references in total. googlemaps gmrun3 alone references 22 icons it does
+# not have, against 72 it does — `apps_24.svg`, `bookmark_border_24.svg` and so on, verified
+# absent from the whole app, not merely from the path searched.
+#
+# Reports rather than blocks: a reference may legitimately resolve at runtime (a CDN URL
+# assembled elsewhere), and a missing icon is not worth failing a delivery over. What it is
+# worth is not being invisible until a judge scores the hole it leaves.
+_ASSET_REF_1202J = re.compile(r"['\"](/assets/[^'\"?)\s]+)")
+
+
+def unstaged_asset_refs_1202j(frontend_dir, seed_path=None, cap: int = 40) -> List[str]:
+    """`/assets/...` paths the tree references but does not contain. Never raises. (#1202j)"""
+    out: List[str] = []
+    try:
+        fe = Path(frontend_dir)
+        refs: Set[str] = set()
+        src = fe / "src"
+        if src.is_dir():
+            for f in list(src.rglob("*.js")) + list(src.rglob("*.jsx")) + \
+                    list(src.rglob("*.ts")) + list(src.rglob("*.tsx")):
+                try:
+                    refs |= set(_ASSET_REF_1202J.findall(f.read_text(encoding="utf-8")))
+                except Exception:
+                    continue
+        if seed_path is not None:
+            try:
+                refs |= set(_ASSET_REF_1202J.findall(
+                    Path(seed_path).read_text(encoding="utf-8")))
+            except Exception:
+                pass
+        roots = [fe / "public", fe, src]
+        for ref in sorted(refs):
+            rel = ref.lstrip("/")
+            if any((r / rel).is_file() for r in roots):
+                continue
+            out.append(ref)
+            if len(out) >= cap:
+                break
+    except Exception:
+        return []
+    return out
+
+
 def ensure_assets_staged_for_build(anchor) -> List[str]:
     """FIX #113 (run-29 M4 live): re-stage design assets at EVERY docker-build entry
     point. The staged assets are TRACKED files in the codehub repo, so a lane
