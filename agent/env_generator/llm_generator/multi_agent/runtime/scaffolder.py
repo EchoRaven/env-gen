@@ -411,8 +411,10 @@ volumes:
                 from .heal_pipeline import _isolation_scoped_tables_from_chains
                 _probed = set(_isolation_scoped_tables_from_chains(
                     registryhub, set(tables.keys())) if registryhub else set())
-            except Exception:
-                pass
+            except Exception as _e1201a:
+                from .message_format import warn_once_1201
+                warn_once_1201("isolation_scoped_tables",
+                               "the chain-probe owner-scoping signal", _e1201a)
             # #1200: the lane's own READ filter is the same judgment as a probe, and r23 had
             # it while the probe was missing — its custom_routes filtered
             # `Profile.user_id == _user_id(user)` while the projection that replaced it
@@ -422,8 +424,10 @@ volumes:
                 from .backend_skeleton import _lane_owner_scoped_read_tables_1200
                 _probed |= _lane_owner_scoped_read_tables_1200(
                     Path(out_dir) / "app" / "backend", tables)
-            except Exception:
-                pass
+            except Exception as _e1201b:
+                from .message_format import warn_once_1201
+                warn_once_1201("lane_read_signal_wiring",
+                               "the lane-read owner-scoping signal (#1200)", _e1201b)
             for _t in _probed:
                 _rec = tables.get(_t)
                 if isinstance(_rec, dict):

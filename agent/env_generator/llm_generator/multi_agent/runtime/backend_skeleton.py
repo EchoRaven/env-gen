@@ -198,7 +198,10 @@ def _lane_owner_scoped_read_tables_1200(backend_dir: Any, tables: Any) -> set:
                                  body):
                         found.add(table)
                         break
-    except Exception:
+    except Exception as _e1201:
+        from .message_format import warn_once_1201
+        warn_once_1201("lane_owner_scoped_read_1200",
+                       "the lane-read owner-scoping signal (#1200)", _e1201)
         return set()
     return found
 

@@ -10350,8 +10350,10 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
                 "The declaration was written at registration and never checked against the "
                 "code; 84 call sites read this field.",
                 name, sorted(dec_paths), sorted(actual))
-    except Exception:
-        pass
+    except Exception as _e1201:
+        from .message_format import warn_once_1201
+        warn_once_1201("reconcile_ui_page_apis_1199",
+                       "apis_used reconciliation (#1199)", _e1201)
     return out
 
 

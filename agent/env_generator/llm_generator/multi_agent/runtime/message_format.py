@@ -42,3 +42,35 @@ def join_capped(items: Iterable[Any], total: Optional[Any] = None, cap: int = 6,
     text = sep.join(shown)
     hidden = n - len(shown)
     return f"{text} (+{hidden} more not shown)" if hidden > 0 else text
+
+# --- #1201: a safety mechanism that fails must not fail SILENTLY ---------------------
+# Three times in one session a mechanism was wired and never reached — an api-module scan
+# hidden behind its own bound, a helper reported as landed while it sat outside the directory
+# every commit staged, and #1200's leak signal sharing a try with an import that is wrapped
+# precisely because it can fail. Each was invisible because the guard around it ends in
+# `except Exception: pass`.
+#
+# Those guards are right: a repair must never break the run it repairs. What is wrong is that
+# they say nothing, so a mechanism can be off for an entire run — a cross-user leak reopened,
+# a declaration never reconciled — with a clean log. #1102 already named this exactly: "a
+# notice nobody sees is the silence this fix exists to end."
+#
+# Once per process per site, so a per-tick pass cannot flood the log. Never raises: a
+# reporter that can break its caller is worse than the silence it replaces.
+_WARNED_1201 = set()
+
+
+def warn_once_1201(site: str, what: str, exc: Any) -> None:
+    """Say, once, that a best-effort mechanism did not run. (#1201)"""
+    try:
+        if site in _WARNED_1201:
+            return
+        _WARNED_1201.add(site)
+        import logging
+        logging.getLogger(__name__).warning(
+            "#1201 %s did NOT run this process: %s: %s. It is guarded so it cannot break the "
+            "run, which also means nothing else will report it — treat this as the mechanism "
+            "being OFF, not as a transient.",
+            what, type(exc).__name__, str(exc)[:160])
+    except Exception:
+        pass
