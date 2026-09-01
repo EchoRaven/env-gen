@@ -1,6 +1,7 @@
 """
 Browser Manager - Manages browser lifecycle and state
 """
+import asyncio
 import logging
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -22,6 +23,12 @@ class BrowserState:
     console_logs: List[Dict] = field(default_factory=list)
     network_errors: List[Dict] = field(default_factory=list)
     current_url: str = ""
+
+
+# #1198: how many times the shared driver may be rebuilt in one process. A death is a flake
+# worth one retry; repeated deaths are a crash loop, and relaunching into it would burn the
+# run's remaining ticks re-dying instead of reporting.
+_MAX_RELAUNCH_1198 = 5
 
 
 class BrowserManager:
@@ -79,11 +86,75 @@ class BrowserManager:
             self._logger.warning(f"Path {path} escapes workspace, using screenshots dir")
             return self.screenshot_dir / Path(path).name
     
+    async def _driver_is_live_1198(self) -> bool:
+        """Is the shared driver actually reachable, or only non-None? (#1198)
+
+        `ensure_browser` used to ask ONLY `self.state.browser is None`. A driver that has
+        DIED leaves a perfectly non-None object behind, so the check passed forever and every
+        later call failed instantly against a dead pipe. r26: 214 of its 232 navigation
+        failures are one line — `Page.goto: Connection closed while reading from the driver`,
+        returning in 7ms, preceded by asyncio's `pipe closed by peer`. There is no recovery
+        path anywhere in this module: `is_connected`/`is_closed` appear nowhere and
+        `state.browser` is never reset outside the explicit `close()`. One death therefore
+        blinds every browser gate for the REST OF THE RUN, across all 12 browser_test_user
+        lanes, which share this one manager.
+
+        `is_connected()` alone is not enough — it can still report True over a pipe whose peer
+        is gone — so this also does one cheap protocol round-trip, which is precisely what
+        comes back instantly when the driver is gone.
+
+        #234 healed a MISSING browser binary and stopped there; this is the same class of
+        fault one step later in the lifecycle. Any error here means "not live": the caller
+        rebuilds, which is always safe.
+        """
+        try:
+            if self.state.browser is None or not self.state.browser.is_connected():
+                return False
+            if self.state.page is None or self.state.page.is_closed():
+                return False
+            await asyncio.wait_for(self.state.page.title(), timeout=10)
+            return True
+        except Exception:
+            return False
+
+    async def _discard_dead_driver_1198(self) -> None:
+        """Drop every handle to a driver that is gone. Best-effort; never raises. (#1198)"""
+        for handle in (self.state.page, self.state.context, self.state.browser):
+            try:
+                if handle is not None:
+                    await handle.close()
+            except Exception:
+                pass
+        try:
+            if self._playwright is not None:
+                await self._playwright.stop()
+        except Exception:
+            pass
+        self._playwright = None
+        self.state = BrowserState()
+
     async def ensure_browser(self) -> bool:
         """Ensure browser is started"""
         if not PLAYWRIGHT_AVAILABLE:
             return False
-        
+
+        # #1198: a dead driver is not a started browser. Rebuild it, bounded, so a crash
+        # costs one retry instead of every remaining UI gate in the run.
+        if self.state.browser is not None and not await self._driver_is_live_1198():
+            self._relaunch_count_1198 = getattr(self, "_relaunch_count_1198", 0) + 1
+            if self._relaunch_count_1198 > _MAX_RELAUNCH_1198:
+                self._logger.error(
+                    "#1198 shared browser driver died again (%d times); not relaunching. "
+                    "Every browser gate from here on will fail — this is a crash loop, not "
+                    "a flake.", self._relaunch_count_1198)
+                return False
+            self._logger.warning(
+                "#1198 shared browser driver is gone (relaunch %d/%d) — rebuilding. Before "
+                "this, one death blinded every UI gate for the rest of the run (r26: 214 "
+                "identical navigation failures).",
+                self._relaunch_count_1198, _MAX_RELAUNCH_1198)
+            await self._discard_dead_driver_1198()
+
         if self.state.browser is None:
             try:
                 self._playwright = await async_playwright().start()
