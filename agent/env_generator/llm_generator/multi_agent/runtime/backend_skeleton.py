@@ -131,6 +131,14 @@ def _class_name(table: str) -> str:
 # AND to sofia.martinez. r22/r24/r26 return one profile each — the same generator, the same
 # schema, a different outcome.
 #
+# It is not an API-only abstraction. Driven in a real browser, r23's "Who's watching?" picker
+# renders the SAME list to both accounts:
+#
+#     ava.chen        Ava | Family Room | Kids | Marcus | Weekend | Nina | Owen | Sofia | ...
+#     sofia.martinez  Ava | Family Room | Kids | Marcus | Weekend | Nina | Owen | Sofia | ...
+#
+# Every account's profile names, on the screen the product opens with.
+#
 # The chain: `owner_scoped_reads` is set only for tables a verifier chain happens to probe
 # for cross-user isolation (`_isolation_scoped_tables_from_chains`). r23 had no such chain
 # for `profiles`, so the projected read shipped as `db.query(Profile).limit(100).all()`. And
