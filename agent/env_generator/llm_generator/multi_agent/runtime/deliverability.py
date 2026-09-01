@@ -576,6 +576,55 @@ def _unscoped_owner_read_blockers(app_root) -> List[str]:
         return []
 
 
+# #1202w: a PLACEHOLDER page must not be a reachable route.
+#
+# netflix-r25 shipped `NoopVerifierRead.jsx` carrying the framework's own
+# "framework-projected page" header — I had blamed the lane for that file and was wrong; a lane
+# registered the junk ui_page NAME and the projector dutifully built a page for it. Swept over
+# the 97 runs with an App.jsx, four SHIPPED one as a live route:
+#
+#     instagram run76   DummyToGetRegistryList
+#     tiktok r61        ExplorePlaceholderPage, FollowingPlaceholderPage, LivePlaceholderPage
+#     tiktok r69        PlaceholderPage
+#     tiktok r87        PlaceholderPage
+#
+# A user navigating there gets a placeholder, which is the user's standing bar exactly: no dead
+# UI, no fake data. The name is a far sharper signal than "renders no API call" — that broader
+# check flags NotFoundPage, FallbackPage and ComingSoonPage, which are legitimately static, and
+# a gate that blocks those is the #566j false-blocker failure this repo has already paid for.
+# Verified against the reverse case: NotFoundPage / FallbackPage / ComingSoonPage / ProfilePage
+# all pass; PlaceholderPage does not.
+_JUNK_PAGE_WORDS_1202W = "noop|dummy|placeholder|todo|fixme|untitled|testpage|foobar|temppage"
+
+
+def _placeholder_route_blockers_1202w(app_root) -> List[str]:
+    """Routed pages whose NAME says they are placeholders. Static; `[]` on any failure.
+
+    `re` is imported here on purpose: this module has no module-level `re`, and a pattern
+    compiled at import time would have made the whole gate module fail to import — which
+    compiles clean and dies at runtime, the shape this session keeps finding.
+    """
+    try:
+        import re as _re1202w
+        app = Path(app_root) / "frontend" / "src" / "App.jsx"
+        if not app.is_file():
+            return []
+        src = app.read_text(encoding="utf-8")
+        routed = sorted({m.group(1)
+                         for m in _re1202w.finditer(r"element=\{\s*<(\w+)", src)})
+        bad = [c for c in routed
+               if _re1202w.search(_JUNK_PAGE_WORDS_1202W, c, _re1202w.I)]
+        if not bad:
+            return []
+        return ["App.jsx routes %d placeholder page(s) — %s. A route a user can reach must "
+                "render the real thing; four runs of the corpus shipped one of these live. "
+                "Either build the page or remove its route and its ui_page registration."
+                % (len(bad), ", ".join(bad))]
+    except Exception as exc:
+        _gate_absent_792("_placeholder_route_blockers_1202w", exc, "run")
+        return []
+
+
 def _invented_field_blockers(app_root) -> List[str]:
     """#175 (gmrun9): frontend member-field fallbacks to FABRICATED display literals
     (``place.rating || '4.5'`` / ``? place.name : 'HI Point Montara Lighthouse'``) render
@@ -862,6 +911,7 @@ def compute_deliverability(hub_registry, app_root,
     # shown whenever the real field is absent (often always, on a field-name drift). Static
     # scan of the frontend JSX, self-clearing once the fake literal is removed.
     blockers.extend(_invented_field_blockers(app_root))
+    blockers.extend(_placeholder_route_blockers_1202w(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
