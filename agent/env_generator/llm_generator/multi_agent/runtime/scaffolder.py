@@ -428,6 +428,16 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("lane_read_signal_wiring",
                                "the lane-read owner-scoping signal (#1200)", _e1201b)
+            # #1202: the signal that asks nothing of any agent — a table other rows are
+            # OWNED BY is per-user identity, whatever its column shape. Its own try, per
+            # #1201, so neither of the other two can switch it off.
+            try:
+                from .backend_skeleton import _sub_entity_owner_tables_1202
+                _probed |= _sub_entity_owner_tables_1202(tables)
+            except Exception as _e1202:
+                from .message_format import warn_once_1201
+                warn_once_1201("sub_entity_owner_1202",
+                               "the sub-entity owner-scoping signal (#1202)", _e1202)
             for _t in _probed:
                 _rec = tables.get(_t)
                 if isinstance(_rec, dict):

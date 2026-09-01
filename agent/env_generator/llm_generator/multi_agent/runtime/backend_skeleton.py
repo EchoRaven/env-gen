@@ -125,6 +125,58 @@ def _class_name(table: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts) or "Model"
 
 
+# --- #1202: a sub-entity that OWNS other rows is per-user, whatever its shape ------------
+# #1200 learns from the lane's own read filter, so it cannot help a run where the lane never
+# wrote one — r1 and r27 ship `profiles` unscoped with no signal to learn from. A third
+# source is needed that asks nothing of any agent.
+#
+# #598 declined to scope a table carrying a user FK and nothing else, because
+# `profiles(user_id, name)` is shape-identical to a public `posts(user_id, title, body)`, and
+# scoping by that shape would break every public feed. True — but there is a second shape that
+# separates them, and the framework already names it: `_NARROW_OWNER_FK_NAMES`, the owner
+# columns that attribute a row to a SUB-ENTITY rather than to a user. A table other rows are
+# OWNED BY is an identity table, not content:
+#
+#     netflix    my_list.profile_id -> profiles     `profile_id` IS an owner name  -> private
+#     instagram  comments.post_id   -> posts        `post_id` is NOT               -> public
+#     tiktok     (nothing owns videos by video_id)                                 -> public
+#
+# Measured over the 94 generated backends that carry models: 14 ship an unscoped projected
+# read on a table with an owner column, and this rule separates them 9/9 — netflix's
+# `profiles` in r1/r2/r23/r27 private, instagram's `posts`/`comments` and tiktok's
+# `videos`/`live_streams` public, which is what those apps mean.
+#
+# The vocabulary is IMPORTED, never re-listed: #908 wrote "a second hand-written copy of this
+# vocabulary is how one member goes missing from one of them" while deriving its own.
+def _sub_entity_owner_tables_1202(tables: Any) -> set:
+    """Tables that other tables are owned BY — per-user identity, so reads are scoped. (#1202)"""
+    found: set = set()
+    try:
+        from .route_projector import _NARROW_OWNER_FK_NAMES
+    except Exception:
+        return found
+    try:
+        cols_by_table = {}
+        for name, rec in (tables or {}).items():
+            cols = []
+            if isinstance(rec, dict):
+                cols = [c.get("name") if isinstance(c, dict) else c
+                        for c in ((rec.get("schema") or {}).get("columns") or [])]
+            cols_by_table[name] = {c for c in cols if c}
+        for name in cols_by_table:
+            singular = name[:-1] if name.endswith("s") else name
+            owner_col = singular + "_id"
+            if owner_col not in _NARROW_OWNER_FK_NAMES:
+                continue
+            # Some OTHER table must actually be owned by it. Without that, nothing in the app
+            # treats this as an owner, and a public directory of profiles stays public.
+            if any(owner_col in c for t, c in cols_by_table.items() if t != name):
+                found.add(name)
+    except Exception:
+        return set()
+    return found
+
+
 # --- #1200: the lane's own READ filter is evidence that a read is per-user -------------
 # r23 shipped a cross-user leak and delivered with every gate green. Live on the delivered
 # artifact: `GET /api/profiles` returned all 33 profiles, spanning eight users, to ava.chen
