@@ -406,6 +406,17 @@ volumes:
                 from .heal_pipeline import _isolation_scoped_tables_from_chains
                 _probed = _isolation_scoped_tables_from_chains(
                     registryhub, set(tables.keys())) if registryhub else set()
+                # #1200: the lane's own READ filter is the same judgment as a probe, and
+                # r23 had it while the probe was missing — its custom_routes filtered
+                # `Profile.user_id == _user_id(user)` while the projection that replaced it
+                # shipped `db.query(Profile).limit(100).all()` and leaked every user's
+                # profiles. Union it in; empty set == previous behaviour.
+                try:
+                    from .backend_skeleton import _lane_owner_scoped_read_tables_1200
+                    _probed = set(_probed) | _lane_owner_scoped_read_tables_1200(
+                        Path(out_dir) / "app" / "backend", tables)
+                except Exception:
+                    pass
                 for _t in _probed:
                     _rec = tables.get(_t)
                     if isinstance(_rec, dict):

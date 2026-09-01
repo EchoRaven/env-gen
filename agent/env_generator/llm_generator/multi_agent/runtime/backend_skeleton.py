@@ -125,6 +125,76 @@ def _class_name(table: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts) or "Model"
 
 
+# --- #1200: the lane's own READ filter is evidence that a read is per-user -------------
+# r23 shipped a cross-user leak and delivered with every gate green. Live on the delivered
+# artifact: `GET /api/profiles` returned all 33 profiles, spanning eight users, to ava.chen
+# AND to sofia.martinez. r22/r24/r26 return one profile each — the same generator, the same
+# schema, a different outcome.
+#
+# The chain: `owner_scoped_reads` is set only for tables a verifier chain happens to probe
+# for cross-user isolation (`_isolation_scoped_tables_from_chains`). r23 had no such chain
+# for `profiles`, so the projected read shipped as `db.query(Profile).limit(100).all()`. And
+# `_is_user_content_relation` (#598) deliberately does NOT cover it: a table with a user FK
+# and nothing else is shape-identical to a public feed (`posts(user_id, title, body)`), so
+# scoping it by shape would break every such feed. That reasoning is sound; the gap is that
+# the opt-in's only source is an agent remembering to write a probe.
+#
+# There is a second source, and r23 had it all along: the lane's OWN handler for that path,
+# which the framework then dropped as "duplicate standard CRUD ... schema-safe by
+# construction" — a claim that is false exactly when the projection is unscoped:
+#
+#     custom_routes.py:  db.query(Profile).filter(Profile.user_id == _user_id(user))
+#     main.py (won):     db.query(Profile).limit(100).all()
+#
+# So take the lane's filter as the judgment it is, and scope the PROJECTION with it. The
+# alternative — restoring the lane's route — is the r130 wedge in the other direction (a
+# buggy lane GET oscillating 403-own/200-cross-user until the run died), and "projected wins"
+# stays untouched here.
+#
+# #77's caution applies and is honoured: only a READ handler counts. A write handler that
+# checks ownership proves write authz only, which is true of public resources too, and using
+# it as a read signal once scoped a world-readable feed to its caller.
+_OWNERISH_COLS_1200 = ("user_id", "owner_id", "account_id", "profile_id", "author_id")
+_ROUTE_DECOR_1200 = re.compile(r"@\w+\.(get|post|put|patch|delete)\s*\(", re.I)
+
+
+def _lane_owner_scoped_read_tables_1200(backend_dir: Any, tables: Any) -> set:
+    """Tables whose own lane READ handler filters by an owner column. (#1200)
+
+    Best-effort and read-only; any failure yields an empty set, which reproduces the
+    behaviour that existed before this signal.
+    """
+    found: set = set()
+    try:
+        src_p = Path(backend_dir) / "custom_routes.py"
+        if not src_p.is_file():
+            return found
+        src = src_p.read_text(encoding="utf-8")
+    except Exception:
+        return found
+    try:
+        names = {t: _class_name(t) for t in (tables or {})}
+        # Split on route decorators so each handler body is bounded by the NEXT one — a
+        # landmark, not a byte window (#943).
+        marks = [(m.start(), m.group(1).lower()) for m in _ROUTE_DECOR_1200.finditer(src)]
+        for idx, (start, verb) in enumerate(marks):
+            if verb != "get":
+                continue                     # #77: only a READ filter is read evidence
+            end = marks[idx + 1][0] if idx + 1 < len(marks) else len(src)
+            body = src[start:end]
+            for table, cls in names.items():
+                if not cls or ("query(%s)" % cls) not in body:
+                    continue
+                for col in _OWNERISH_COLS_1200:
+                    if re.search(r"\b%s\s*\.\s*%s\s*==" % (re.escape(cls), re.escape(col)),
+                                 body):
+                        found.add(table)
+                        break
+    except Exception:
+        return set()
+    return found
+
+
 def _class_names_1096(tables: Any) -> Dict[str, str]:
     """``{table: ClassName}`` with collisions resolved — two tables may never share a class.
 
