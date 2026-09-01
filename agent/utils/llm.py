@@ -24,6 +24,36 @@ import re
 from .config import LLMConfig, LLMProvider
 
 
+def _payload_chars_1199(messages) -> int:
+    """How many characters this request actually carries. (#1199)
+
+    The measurement used to be `sum(len(str(m.content or "")) for m in messages)`, which
+    reads only `content`. An assistant message that CALLS a tool carries its arguments in
+    `tool_calls` and leaves `content` empty, so every file body the lane wrote — the whole
+    `write`/`edit`/`apply_patch` payload — counted as zero. Every context-size diagnosis
+    drawn from `content_chars` was therefore an undercount of unknown size, which is a bad
+    property for the number used to decide whether context needs trimming at all.
+
+    Counts both, defensively: messages here are ordinary objects or dicts depending on the
+    provider path, and a measurement must never be the thing that raises.
+    """
+    total = 0
+    for m in messages or []:
+        try:
+            content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+            total += len(str(content or ""))
+            tcs = m.get("tool_calls") if isinstance(m, dict) else getattr(m, "tool_calls", None)
+            for tc in (tcs or []):
+                fn = tc.get("function") if isinstance(tc, dict) else getattr(tc, "function", None)
+                args = None
+                if fn is not None:
+                    args = fn.get("arguments") if isinstance(fn, dict) else getattr(fn, "arguments", None)
+                total += len(str(args or ""))
+        except Exception:
+            continue
+    return total
+
+
 def _redact_secrets(text: str) -> str:
     """
     Best-effort redaction of secrets and very large inline blobs.
@@ -1890,7 +1920,7 @@ class OpenAIClient(BaseLLMClient):
         
         # Log request info for debugging
         msg_count = len(safe_messages)
-        total_content_len = sum(len(str(m.content or "")) for m in safe_messages)
+        total_content_len = _payload_chars_1199(safe_messages)
         tool_count = len(tools) if tools else 0
         self._logger.info(f"[LLM Request] model={model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}")
         
@@ -2934,7 +2964,7 @@ class GoogleClient(BaseLLMClient):
         
         # Log request info
         msg_count = len(safe_messages)
-        total_content_len = sum(len(str(m.content or "")) for m in safe_messages)
+        total_content_len = _payload_chars_1199(safe_messages)
         tool_count = len(tools) if tools else 0
         self._logger.info(f"[LLM Request] model={self.config.model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}")
         

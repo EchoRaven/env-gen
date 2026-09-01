@@ -13,7 +13,7 @@ sys.path.insert(0, str(AGENT_DIR / "env_generator" / "llm_generator"))
 from multi_agent.runtime.hub_registry import HubRegistry  # noqa: E402
 from multi_agent.runtime.coverage_audit import (  # noqa: E402
     CoverageReport, compute_coverage, scan_dead_files,
-    scan_dead_endpoints, scan_dead_tables,
+    scan_dead_endpoints,
 )
 
 
@@ -64,34 +64,17 @@ class DeadTablesTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_no_tables_returns_empty(self) -> None:
-        self.assertEqual(scan_dead_tables(self.reg), [])
-
-    def test_table_without_consumer_is_dead(self) -> None:
+    def test_the_dead_table_scan_is_gone_1199(self) -> None:
+        """#1199 removed it: `registryhub_table_consumers.json` holds 0 records in 172 of 172
+        corpus runs, so the scan returned every table every run until #1023b neutralised it,
+        after which it could only ever return []. `dead_tables` stays on the report as a
+        permanently empty list so deliverability's arithmetic is unchanged."""
+        import multi_agent.runtime.coverage_audit as _ca
+        self.assertFalse(hasattr(_ca, "scan_dead_tables"))
         self.reg.schema_hub.register_table(
             "notifications", schema={"columns": []},
             provider="backend", agent="backend")
-        # #1023b: when the table-consumer index is empty for EVERY table, "dead"
-        # cannot be told apart from "never registered", so the audit reports none
-        # rather than all — nothing called registryhub_register_table_consumer in
-        # 172 of 172 corpus runs, and an all-or-nothing term carries no
-        # information. A second table WITH a consumer makes the index meaningful,
-        # which is the state this test is actually about.
-        self.reg.schema_hub.register_table(
-            "users", schema={"columns": []}, provider="backend", agent="backend")
-        self.reg.registryhub.register_table_consumer(
-            "users", file_path="app/frontend/src/pages/Profile.jsx", agent="frontend")
-        dead = scan_dead_tables(self.reg)
-        self.assertEqual(len(dead), 1)
-        self.assertEqual(dead[0]["table"], "notifications")
-
-    def test_table_with_consumer_is_not_dead(self) -> None:
-        self.reg.schema_hub.register_table(
-            "users", schema={"columns": []},
-            provider="backend", agent="backend")
-        self.reg.schema_hub.register_table_consumer(
-            "users", file_path="backend/routes/auth.py", agent="backend")
-        self.assertEqual(scan_dead_tables(self.reg), [])
+        self.assertEqual(compute_coverage(self.reg, self.tmp).dead_tables, [])
 
 
 class DeadFilesTests(unittest.TestCase):
@@ -176,23 +159,20 @@ class ComputeCoverageTests(unittest.TestCase):
         self.assertEqual(report.dead_files, [])
         self.assertTrue(report.is_clean)
 
-    def test_aggregates_all_three_categories(self) -> None:
+    def test_aggregates_the_categories_that_still_detect(self) -> None:
+        # #1199: `tables` no longer detects anything — the scan is deleted, so the term is a
+        # permanently empty list (nothing ever registered a table consumer: 0 records in 172
+        # of 172 corpus runs). Endpoints and files still detect, and is_clean still turns on
+        # them, which is what this test is for.
         self.reg.registryhub.register_endpoint(
             "GET", "/api/x", schema={}, provider="backend", agent="backend")
         self.reg.schema_hub.register_table(
             "t", schema={"columns": []}, provider="backend", agent="backend")
-        # #1023b: a consumed table elsewhere, so the consumer index is not empty
-        # for every table and "dead" means something for `t` (see
-        # test_table_without_consumer_is_dead).
-        self.reg.schema_hub.register_table(
-            "users", schema={"columns": []}, provider="backend", agent="backend")
-        self.reg.registryhub.register_table_consumer(
-            "users", file_path="app/frontend/src/pages/Profile.jsx", agent="frontend")
         _write(self.app_root / "frontend/src/main.tsx", "x = 1;\n")
         _write(self.app_root / "frontend/src/Dead.tsx", "export const d = 1;\n")
         report = compute_coverage(self.reg, self.app_root)
         self.assertEqual(len(report.dead_endpoints), 1)
-        self.assertEqual(len(report.dead_tables), 1)
+        self.assertEqual(report.dead_tables, [])
         self.assertEqual(len(report.dead_files), 1)
         self.assertFalse(report.is_clean)
 
