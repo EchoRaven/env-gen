@@ -10391,6 +10391,16 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
             if not f.is_file():
                 cand = list(src_root.rglob(Path(rel).name))
                 if not cand:
+                    # #1202g: a registered `path` that resolves to nothing makes EVERY
+                    # path-based check skip this page in silence — this reporter, the
+                    # staleness guard, the audits. Measured across the 114 generated
+                    # environments: 4 carry such records, and instagram run51 carries 13 of
+                    # them, `login` and `home_feed` among them. Its app is fine — the routes
+                    # are mounted and the files exist as `HomeFeedPage.jsx` — but the lane
+                    # registered `frontend/src/pages/home_feed.jsx`: no `app/` prefix and a
+                    # snake_case name. Nothing checks a path at registration, so the record
+                    # simply points nowhere and every reader quietly agrees.
+                    out.setdefault("unresolved_paths", []).append(name)
                     continue
                 f = cand[0]
             out["checked"] += 1
@@ -10436,6 +10446,16 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
                 "Re-register the page with what it actually calls (the reading here is "
                 "static, so treat it as a pointer, not a verdict).",
                 name, sorted(dec_paths), sorted(actual))
+        if out.get("unresolved_paths"):
+            from .message_format import join_capped
+            logging.getLogger(__name__).warning(
+                "#1202g %d registered ui_page(s) name a `path` that resolves to no file, so "
+                "every path-based check skips them silently: %s. The page itself may be fine "
+                "— instagram run51 mounts its routes and ships the files under different "
+                "names — but the registry points nowhere and nothing validates it at "
+                "registration.",
+                len(out["unresolved_paths"]),
+                join_capped(out["unresolved_paths"], total=len(out["unresolved_paths"])))
     except Exception as _e1201:
         from .message_format import warn_once_1201
         warn_once_1201("reconcile_ui_page_apis_1199",
