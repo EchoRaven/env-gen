@@ -514,6 +514,35 @@ def _stub_handler_blockers(app_root) -> List[str]:
         return []
 
 
+def _auth_override_blockers_1202s(app_root) -> List[str]:
+    """#1202s: lane code that replaces the framework's password check.
+
+    r30 delivered milestone 1 at 13:32:37 carrying a `custom_routes.py` patch merged at
+    13:10:30 that reassigned `OAuthStore.verify_user_password` to a helper which, on a wrong
+    password for an EXISTING user, overwrote that user's password_hash and returned it — and
+    created the account outright for an unknown email. Verified against the delivered stack:
+    a wrong password returns 200 with a valid bearer token, and so does an email that has
+    never existed. Only an empty pair is refused.
+
+    The framework's denial-probe chain did catch it (`POST /auth/login -> 200, expected
+    [401, 400]`) and blocked milestone 2 until the run aborted STUCK — 148 minutes and one
+    release too late, because that probe runs in validation and the release gate had already
+    passed. This blocks at the gate on the structural property instead: the framework owns
+    /auth/login and /auth/register, so lane code reassigning an auth primitive is never
+    legitimate. Static and best-effort — `[]` on any failure, per #792.
+    """
+    try:
+        from .backend_audit import auth_override_findings_1202s
+    except Exception as exc:
+        _gate_absent_792("_auth_override_blockers_1202s", exc, "import")
+        return []
+    try:
+        return auth_override_findings_1202s(Path(app_root) / "backend")
+    except Exception as exc:
+        _gate_absent_792("_auth_override_blockers_1202s", exc, "run")
+        return []
+
+
 def _unscoped_owner_read_blockers(app_root) -> List[str]:
     """#919: a served GET that returns every row of an OWNED table to any authenticated caller.
 
@@ -826,6 +855,7 @@ def compute_deliverability(hub_registry, app_root,
     # ownership decision the projector uses to emit the filter, so the gate and the
     # generator cannot disagree about what is private.
     blockers.extend(_unscoped_owner_read_blockers(app_root))
+    blockers.extend(_auth_override_blockers_1202s(app_root))
 
     # FABRICATED member-field fallback gate (#175, gmrun9). The frontend renders
     # `place.rating || '4.5'` / `? place.name : 'HI Point Montara Lighthouse'` — invented data
