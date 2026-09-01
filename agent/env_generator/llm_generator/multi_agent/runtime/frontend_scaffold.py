@@ -9879,6 +9879,15 @@ _AUTH_CALL_1197 = re.compile(r"\b(?:login|signIn|signin|register|signUp|signup)\
 # `<input name={name} ...>` — requiring a literal `<input` here made the predicate false for
 # exactly the page this fix exists to keep (5 of 5 real r26 lane revisions).
 _INPUT_NAME_1197 = re.compile(r"<(?:input|select|textarea|[A-Z]\w*)\b[^>]*\bname\s*=", re.S)
+# #1199b: the projection this defers to PERSISTS the session — its template says so, "stores
+# the access_token under BOTH localStorage keys the projected pages read", and every projected
+# read is `localStorage.getItem('access_token') || localStorage.getItem('token')`. A lane login
+# that posts credentials and never stores the result would satisfy the two conditions above and
+# leave every framework-projected page unauthenticated: #1108 exactly, where the token went to
+# a key nobody read (401s 17 -> 0 once fixed). Keeping the lane's page means inheriting that
+# contract, so it has to be visible in the same bundle.
+_TOKEN_PERSIST_1197 = re.compile(
+    r"(?:localStorage|sessionStorage)\s*\.\s*setItem\s*\(|\bsetItem\s*\(\s*[\'\"`][^\'\"`]*token")
 _SUBMIT_1197 = re.compile(r"<form\b|type\s*=\s*[\"']submit[\"']")
 _REL_IMPORT_1197 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
 
@@ -10008,7 +10017,8 @@ def _lane_auth_page_is_live_1197(src: str, page_file) -> bool:
     wired = bool(_AUTH_EP_1197.search(blob)) or (
         bool(_AUTH_CTX_1197.search(blob)) and bool(_AUTH_CALL_1197.search(blob)))
     drivable = bool(_INPUT_NAME_1197.search(blob)) and bool(_SUBMIT_1197.search(blob))
-    return wired and drivable
+    persists = bool(_TOKEN_PERSIST_1197.search(blob))
+    return wired and drivable and persists
 
 
 def _stale_thin_projection_583(existing: str, cand: str) -> bool:
@@ -10289,6 +10299,15 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
             rel = str(page.get("path") or "").strip()
             declared = [str(a) for a in (page.get("apis_used") or [])]
             if not name or not rel or not declared:
+                continue
+            # #1199b: a ROUTE-LESS registration is exactly the input #1195 merges by path —
+            # `register_ui_page(name=..., route="", path=X)` folds into whatever other record
+            # already holds path X. Writing a reconciliation through that door lands THIS
+            # page's endpoints on ANOTHER page's record, which corrupts the field this fix
+            # exists to correct. Verified against the real hub: a_page(/a) and b_page("")
+            # sharing Shared.jsx, reconciling b_page rewrote a_page's apis_used.
+            # A route-less page keeps its declaration; it is the one shape we cannot write.
+            if not str(page.get("route") or "").strip():
                 continue
             f = fe.parents[1] / rel if not Path(rel).is_absolute() else Path(rel)
             if not f.is_file():
