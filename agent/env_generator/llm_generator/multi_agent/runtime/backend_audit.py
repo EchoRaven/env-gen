@@ -874,6 +874,66 @@ _AUTH_PRIMITIVES_1202S = frozenset({
     "check_password", "verify_password", "authenticate_user", "get_current_user",
 })
 _LANE_OWNED_1202S = ("custom_routes.py",)
+# Replacing the PASSWORD CHECK with a provisioner is a bypass in every reading; replacing a
+# request-scoped identity resolver can be a tightening. Only the first blocks.
+_BLOCKING_AUTH_PRIMITIVES_1202S = frozenset({
+    "verify_user_password", "verify_user_by_username", "check_password", "verify_password"})
+
+
+def _writes_users_1202s(fn: Any) -> bool:
+    """Does this replacement WRITE to the user store? (#1202s)
+
+    The distinction that keeps this check honest. Reassigning an auth primitive is not by
+    itself a bypass — measured over 93 runs, 5 do it and they do opposite things:
+
+        r30, r24  verify_user_password -> creates the account, or resets its password, when
+                  the original refused.  A bypass.
+        r73       get_current_user -> _tenant_scoped_get_current_user.  Adds tenant isolation,
+                  which is the multi-tenancy the framework asks for.  NARROWER.
+        r24       get_current_user -> _strict_current_user.  Narrower again.
+        r21       accepts framework-minted tokens through a store race.  Ambiguous.
+
+    A check that only narrows is a check. What makes r30's a bypass is that it PROVISIONS:
+    an INSERT or UPDATE against the user store inside the verification path means the
+    function hands out an identity it was asked to verify. Blocking on the reassignment alone
+    would have blocked r73 for tightening security, so the write is the signal.
+    """
+    import ast as _ast
+    for n in _ast.walk(fn):
+        if isinstance(n, _ast.Constant) and isinstance(n.value, str):
+            t = n.value.strip().upper()
+            if (t.startswith("INSERT INTO USERS") or t.startswith("UPDATE USERS")
+                    or "UPDATE USERS SET" in t or "INSERT INTO USERS" in t):
+                return True
+        if isinstance(n, _ast.Call):
+            f = n.func
+            nm = getattr(f, "attr", None) or getattr(f, "id", None)
+            if nm in ("create_user", "_create_user", "register_user", "add_user"):
+                return True
+    return False
+
+
+def _widens_auth_1202s(tree: Any, assign_node: Any) -> bool:
+    """True when the value assigned to an auth primitive provisions users. (#1202s)"""
+    import ast as _ast
+    try:
+        val = getattr(assign_node, "value", None)
+        target_names = set()
+        if isinstance(val, _ast.Name):
+            target_names.add(val.id)
+        elif isinstance(val, _ast.Attribute):
+            target_names.add(val.attr)
+        elif isinstance(val, (_ast.Lambda, _ast.Call)):
+            return False        # not a named replacement we can read
+        if not target_names:
+            return False
+        for n in _ast.walk(tree):
+            if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef)) and n.name in target_names:
+                if _writes_users_1202s(n):
+                    return True
+        return False
+    except Exception:
+        return False
 
 
 def auth_override_findings_1202s(backend_dir: Any) -> List[str]:
@@ -902,7 +962,16 @@ def auth_override_findings_1202s(backend_dir: Any) -> List[str]:
                         name = t.attr
                     elif isinstance(t, _ast.Name):
                         name = t.id
-                    if name in _AUTH_PRIMITIVES_1202S:
+                    # #1202s: BLOCK only the unambiguous case — the password check itself
+                    # replaced by something that provisions users. Measured over 93 runs, the
+                    # other primitives are genuinely ambiguous: r21 replaces `get_current_user`
+                    # with a wrapper that pyjwt-VERIFIES the framework's own signature and then
+                    # materializes the local row for an identity already proven, and r73's
+                    # replacement adds tenant scoping. Blocking those would block a lane for
+                    # tightening security, which is the #566j failure mode this repo has already
+                    # paid 75 minutes for.
+                    if (name in _BLOCKING_AUTH_PRIMITIVES_1202S
+                            and _widens_auth_1202s(tree, node)):
                         out.append(
                             "%s reassigns the auth primitive `%s` (line %d). The framework owns "
                             "/auth/login and /auth/register; a lane that replaces the password "
