@@ -125,6 +125,76 @@ def _class_name(table: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts) or "Model"
 
 
+# --- #1202h: the surface the gates never see ------------------------------------------
+# Every delivery gate evaluates the REGISTRY. A route the app serves but never registered is
+# therefore ungated by construction — not checked for auth, not checked for owner scoping,
+# not checked at all — and it still ships.
+#
+# Measured across the 114 generated backends: 8 such routes in 7 environments, all delivered:
+#
+#     POST /api/admin/fix        googlemaps      an admin action
+#     GET  /api/debug_routes2    tiktok          debugging scaffolding
+#     GET  /api/test_debug       tiktok          "
+#     GET  /api/health2          instagram       "
+#     GET  /api/test_feed        instagram       "
+#     POST /api/posts            instagram       a real business endpoint
+#     GET  /api/users/following  tiktok          "
+#     POST /api/oauth/register   netflix         "
+#
+# Five of the eight are debug or admin scaffolding the lane wrote while working and never
+# removed. They are invisible to every audit in the system because no audit reads the code
+# for routes — they read what was declared.
+#
+# This REPORTS, it does not block: a lane may have a good reason for an extra route, and
+# #1166 already restores lane routes nothing else serves. What it must not be is invisible.
+_UNREGISTERED_SKIP_1202H = ("/api/v1/", "/api/auth/", "/auth/", "/oauth", "/.well-known")
+_ROUTE_DECOR_PATH_1202H = re.compile(
+    r'@(?:app|router|\w+_router)\.(get|post|put|patch|delete)\(\s*["\']([^"\']+)')
+
+
+def _norm_route_1202h(path: str) -> str:
+    p = re.sub(r"\{[^}]*\}", "{}", str(path or ""))
+    p = re.sub(r":\w+", "{}", p)
+    return p.rstrip("/") or "/"
+
+
+def unregistered_routes_1202h(backend_dir: Any, endpoints: Any) -> list:
+    """Routes the backend serves that the contract never declared. Never raises. (#1202h)"""
+    out: list = []
+    try:
+        declared = set()
+        for ep in (endpoints or []):
+            if not isinstance(ep, Mapping):
+                continue
+            m = str(ep.get("method") or "").upper()
+            p = _norm_route_1202h(ep.get("path"))
+            if m and p:
+                declared.add((m, p))
+        be = Path(backend_dir)
+        if not be.is_dir():
+            return out
+        for f in sorted(be.glob("*.py")):
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for mt in _ROUTE_DECOR_PATH_1202H.finditer(text):
+                verb, raw = mt.group(1).upper(), mt.group(2)
+                path = _norm_route_1202h(raw)
+                if not path.startswith("/api/"):
+                    continue
+                if any(path.startswith(s) for s in _UNREGISTERED_SKIP_1202H):
+                    continue
+                if (verb, path) in declared:
+                    continue
+                entry = "%s %s (%s)" % (verb, path, f.name)
+                if entry not in out:
+                    out.append(entry)
+    except Exception:
+        return []
+    return out
+
+
 # --- #1202: a sub-entity that OWNS other rows is per-user, whatever its shape ------------
 # #1200 learns from the lane's own read filter, so it cannot help a run where the lane never
 # wrote one — r1 and r27 ship `profiles` unscoped with no signal to learn from. A third
