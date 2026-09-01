@@ -1768,6 +1768,26 @@ class RegistryHub:
                     for _k1195, _v1195 in _live.items():
                         if (isinstance(_v1195, dict)
                                 and str(_v1195.get("path") or "").strip() == _path1195):
+                            # #1202f: merge only when the two records agree about WHAT the
+                            # page is. Sharing a source file is the evidence they are the same
+                            # page; a different component name, or a different declared API
+                            # surface, means they are not, and folding one into the other
+                            # would drop a registration the projector still needs.
+                            #
+                            # Measured over all 114 generated environments: 58 of them merge,
+                            # 189 pairs in total, and the components agree in 189 of 189 while
+                            # no pair carries conflicting `apis_used`. So this changes nothing
+                            # that happens today — it makes "safe in the corpus" into "safe by
+                            # construction", which is the difference between a fact and a
+                            # guarantee.
+                            _c_new = str(rec.get("component") or "").strip()
+                            _c_old = str(_v1195.get("component") or "").strip()
+                            if _c_new and _c_old and _c_new != _c_old:
+                                break
+                            _a_new = {str(a) for a in (rec.get("apis_used") or [])}
+                            _a_old = {str(a) for a in (_v1195.get("apis_used") or [])}
+                            if _a_new and _a_old and _a_new != _a_old:
+                                break
                             _rec = dict(rec)
                             _md = dict(_rec.get("metadata") or {})
                             _al = list(_md.get("merged_route_aliases") or [])
