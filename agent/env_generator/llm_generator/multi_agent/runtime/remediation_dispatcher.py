@@ -1912,6 +1912,27 @@ class RemediationDispatcher:
                 "screens look like the references (~a dozen for the primary "
                 "table), believable names/subjects/bodies/timestamps, mixed "
                 "states (read/unread, flagged), FK-valid ids."),
+            "deliverability_seed_quality": (
+                # #1199: the generic sibling of the row above, and the last check in the
+                # recent corpus that reaches `if not spec: uncovered.append(name); continue`
+                # — where nothing is dispatched and the run logs "NO remediation owner".
+                # #1040 is what that costs when it lands on a common blocker: 26 runs, on the
+                # most frequent one, with a working fix sitting unreachable behind the lookup.
+                #
+                # Measured before adding, and time-sliced (frequency alone ranks already-fixed
+                # gaps first): across r20-r26 exactly ONE gate tick logged no owner, and it
+                # was this check. The historical 157 hits on `deliverability_dead_artifacts`
+                # are all from before its row was added.
+                #
+                # Owner matches its sibling for the same reason: the seed file is the
+                # backend's artifact, and this branch fires on the same file's content
+                # ("low row count" / "placeholder seed" rather than the authored-seed audit).
+                "backend", "Raise the seeded data to realistic density (blocks delivery)",
+                "the database seed is too thin or too placeholder-shaped to populate the "
+                "screens: a low row count, or values built from marker words rather than "
+                "domain content. Rewrite the seed with domain-REALISTIC rows — enough that "
+                "list screens look like the references, believable names/subjects/timestamps, "
+                "mixed states, FK-valid ids — then re-run run_validation."),
             "deliverability_bare_authed_fetch": (
                 # #154 (§6-1, gmrun4): the frontend calls authed /api/ endpoints with a
                 # bare fetch() that never attaches the Authorization token — every such

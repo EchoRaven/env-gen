@@ -494,7 +494,27 @@ def never_matching_filters_1139(project_dir: Any) -> List[Dict[str, str]]:
 _UNREACHABLE_1154 = (
     "ERR_CONNECTION_REFUSED", "ECONNREFUSED", "Connection refused", "connection refused",
     "ERR_CONNECTION_RESET", "ERR_EMPTY_RESPONSE", "ERR_NAME_NOT_RESOLVED",
+    # #1199: the DRIVER dying belongs in this category and was missing from it. r26 produced
+    # 214 `Page.goto: Connection closed while reading from the driver` — 92% of that run's
+    # navigation failures — and every one of them was scored as evidence about the product.
+    # The consequences are in the log verbatim: `validation:ui_flow:login could not be
+    # re-recorded because browser driver closes during nav` became a P0 that survived to the
+    # delivery cut, then "Anti-stall escalation: delivery is still blocked by the same
+    # browser-driver closure" nearly three hours later, plus a P0 whose owner could not be
+    # resolved at all. #1198 stops the driver staying dead; this stops its death being read
+    # as a product defect. #1154's own words: the check could not RUN.
+    "Connection closed while reading from the driver",
+    "Target page, context or browser has been closed",
+    "Browser has been closed",
+    "pipe closed by peer",
 )
+
+# #1199: agents paraphrase the failure when they write the record ("browser driver closes
+# during nav", "browser-driver closure", "browser_navigate closed the driver"), so the exact
+# transport strings above do not match what actually lands in `detail`. Narrow on purpose:
+# "driver" is not a word a product failure uses, and it must sit next to a closure verb.
+_DRIVER_GONE_RE_1199 = re.compile(
+    r"(?i)(\bdriver\b[^.\n]{0,40}\bclos|\bclos\w+[^.\n]{0,20}\bthe driver\b)")
 
 
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
@@ -598,7 +618,8 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
             # origin is reachable and this record is stale infrastructure noise.
             _blob = " ".join(str(r.get(k) or "") for k in
                              ("error", "detail", "message", "reason", "evidence", "output"))
-            if any(m in _blob for m in _UNREACHABLE_1154):
+            if (any(m in _blob for m in _UNREACHABLE_1154)
+                    or _DRIVER_GONE_RE_1199.search(_blob)):
                 unreachable.append(page)
             else:
                 failed.append(page)
