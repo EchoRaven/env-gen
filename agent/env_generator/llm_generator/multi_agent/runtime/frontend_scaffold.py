@@ -10001,10 +10001,42 @@ def _is_our_auth_projection_1197(frontend_dir, comp: str, src: str) -> bool:
         return False
 
 
+def _auth_template_line_1202e() -> str:
+    """The one line of the framework's auth template that no lane page writes. (#1202e)
+
+    A SECOND line of defence behind the provenance sidecar. Measured over every auth page in
+    the corpus — 207 framework-written, 35 lane-written — this line appears in 204 of the 207
+    and in 0 of the 35:
+
+        const path = isRegister ? '/auth/register' : '/auth/login';
+
+    #1197 said a fingerprint "cannot work either", and that was the wrong conclusion from a
+    real observation: the fingerprint I tried was "the longest substitution-free line", which
+    picked a FOOTER that r26's page did not carry. The template does have a discriminating
+    line; I had not looked for it.
+
+    It matters because the predicate below CANNOT tell the framework's own page from a lane's
+    on content alone — the projection is wired, drivable and persists, by construction — so
+    without this everything rests on `auth_projections_1197.json` being present. A resumed run
+    whose design/ directory was rebuilt, or a first pass after an upgrade, would otherwise see
+    the framework defer to its OWN page and freeze it against every later template fix.
+
+    Derived from the template, never retyped (#905/#906).
+    """
+    for line in (_AUTH_PAGE_TEMPLATE or "").splitlines():
+        s = line.strip()
+        if s.startswith("const path = isRegister"):
+            return s
+    return ""
+
+
 def _lane_auth_page_is_live_1197(src: str, page_file) -> bool:
     """Is this existing auth page the lane's OWN, wired, drivable login? (#1197)"""
     if not (src or "").strip():
         return False
+    _fw_line = _auth_template_line_1202e()
+    if _fw_line and _fw_line in src:
+        return False          # #1202e: our own template, whatever the sidecar knows
     try:
         from .frontend_page_projector import _STRUCTURED_MARKER, _PAGE_MARKER
         _marks = (_STRUCTURED_MARKER, _PAGE_MARKER)
