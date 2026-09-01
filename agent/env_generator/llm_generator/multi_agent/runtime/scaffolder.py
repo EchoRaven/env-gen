@@ -870,8 +870,13 @@ volumes:
                         len(_rec1199["reconciled"]),
                         join_capped([r["page"] for r in _rec1199["reconciled"]],
                                     total=len(_rec1199["reconciled"])))
-            except Exception:
-                pass
+            except Exception as _e1201c:
+                # #1201: the import itself can fail here, and this guard used to end in
+                # `pass` — the detector that intersects "guarded import" with "log marker
+                # never seen in the corpus" pointed at this exact line.
+                from .message_format import warn_once_1201
+                warn_once_1201("reconcile_wiring_1199",
+                               "apis_used reconciliation wiring (#1199)", _e1201c)
             if rep.get("scaffolded") or rep.get("app_wired"):
                 orch._logger.info(
                     "Frontend pages projected from contract: %d stub(s), "
