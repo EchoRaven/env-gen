@@ -9889,6 +9889,10 @@ _INPUT_NAME_1197 = re.compile(r"<(?:input|select|textarea|[A-Z]\w*)\b[^>]*\bname
 _TOKEN_PERSIST_1197 = re.compile(
     r"(?:localStorage|sessionStorage)\s*\.\s*setItem\s*\(|\bsetItem\s*\(\s*[\'\"`][^\'\"`]*token")
 _SUBMIT_1197 = re.compile(r"<form\b|type\s*=\s*[\"']submit[\"']")
+# #1202p: per-frontend memo of the drift already reported, so an unchanged
+# finding is stated once instead of once per scaffold pass.
+_DRIFT_SAID_1202P: Dict[str, Dict[str, tuple]] = {}
+
 _REL_IMPORT_1197 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
 
 
@@ -10439,6 +10443,17 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
             # lane that owns it. Nothing is written, so nothing can be corrupted.
             out["reconciled"].append({"page": name, "was": sorted(dec_paths),
                                       "now": sorted(actual)})
+            # #1202p: once per page per DISTINCT drift, not once per scaffold pass. r30
+            # reported 28 drifts in its first hour — 4 pages x 8 repetitions of the same
+            # finding, because this runs on every pass and the finding does not change until
+            # someone acts on it. That is the same noise #1202n just removed from the heal
+            # declines, introduced by me two commits earlier. A drift that CHANGES is said
+            # again; so is the same drift on a different page.
+            _seen1199 = _DRIFT_SAID_1202P.setdefault(str(frontend_dir), {})
+            _key1199 = (tuple(sorted(dec_paths)), tuple(sorted(actual)))
+            if _seen1199.get(name) == _key1199:
+                continue
+            _seen1199[name] = _key1199
             logging.getLogger(__name__).warning(
                 "#1199 DECLARATION DRIFT on %s: apis_used declares %s, but the shipped page "
                 "reaches %s. The declaration is written once at registration and never "
