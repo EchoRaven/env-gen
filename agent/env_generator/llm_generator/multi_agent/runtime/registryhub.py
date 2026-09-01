@@ -2360,6 +2360,40 @@ class RegistryHub:
                             "will keep failing: DROP those steps (or the chain). If delivery "
                             "genuinely needs this coverage, ask the backend lane to implement + "
                             "register the endpoint FIRST." % (", ".join(_shown(_e) for _e in _repeat), _worst))
+                        # #1202m: this message reaches the VERIFIER, and it ends by telling it
+                        # to ask the backend lane. Nothing tells the BACKEND. So the only
+                        # party who can end the loop — by implementing and registering the
+                        # endpoint, or by deciding it should not exist — never hears that it
+                        # is being asked for.
+                        #
+                        # Measured: r26's counter for `PUT /api/profiles/{}` climbs
+                        # monotonically to 49 and never plateaus; r24 33, r25 26, r22 22 —
+                        # every run of the corpus is in this loop. The module's own comment
+                        # puts it at 514 rejections across 50 of 50 runs, median 18 per run
+                        # for a median of 2 distinct causes.
+                        #
+                        # Twice the answer was better wording for the verifier (#636 led with
+                        # the instruction, #710 refined it) and twice the loop continued. A
+                        # third round of wording aimed at the same reader is not an answer.
+                        #
+                        # This does NOT decide anything: the rejection stands, the chain still
+                        # covers what it covered, and no task is filed. Auto-dropping the steps
+                        # was tried and reverted — it registers a chain that proves LESS, which
+                        # is a weakened judge, and three tests (#664, #71) correctly defend
+                        # against changing this contract silently. All this does is put the
+                        # request where the party who can answer it will see it.
+                        try:
+                            import logging as _l1202m
+                            _l1202m.getLogger(__name__).warning(
+                                "#1202m BACKEND: the verifier has now asked %d times for "
+                                "endpoint(s) NOT in the contract: %s. Either implement and "
+                                "register them (registryhub_register_endpoint) or treat the "
+                                "coverage as out of scope — until one of those happens the "
+                                "verifier cannot register the chain and will keep retrying "
+                                "(corpus: 514 such rejections across 50 of 50 runs).",
+                                _worst, ", ".join(_shown(_e) for _e in _repeat))
+                        except Exception:
+                            pass
                 except Exception:
                     _escalate = ""
                 # #636 — LEAD WITH THE INSTRUCTION, NOT THE CONTRACT DUMP.
