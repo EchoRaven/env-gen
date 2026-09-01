@@ -863,9 +863,21 @@ class HealPipeline:
                 if isinstance(_r, dict) and not _r.get(_k)
             ]
             if _declined_1149:
-                orch._logger.info(
-                    "#1149 backend heals declined (no-op) with cause: %s",
-                    "; ".join("%s=%s" % (_n, _w) for _n, _w in _declined_1149))
+                # #1202n: say it when it CHANGES, not once per tick. #1149 exists so a
+                # declined heal states its cause, and the cause is right — every entry reads
+                # "the defect this heal exists for is not present". But the state it describes
+                # barely moves: measured across r22-r26, each run emits 27 to 135 copies of
+                # this line for exactly TWO distinct cause-sets (r26: 134 lines, 2 states).
+                #
+                # Repeating an unchanged line 134 times is its own way of hiding a signal —
+                # the inverse of the silence #1102 is about, and the same reason #1201 reports
+                # once per site. Every distinct state is still logged, and a transition back
+                # to a state already seen is logged again, so nothing that MOVED is lost.
+                _cause_1202n = "; ".join("%s=%s" % (_n, _w) for _n, _w in _declined_1149)
+                if getattr(orch, "_heal_decline_cause_1202n", None) != _cause_1202n:
+                    orch._heal_decline_cause_1202n = _cause_1202n
+                    orch._logger.info(
+                        "#1149 backend heals declined (no-op) with cause: %s", _cause_1202n)
         except Exception as exc:
             orch._logger.debug("backend auth repair skipped: %s", exc)
 
