@@ -9843,6 +9843,173 @@ def _imports_own_components(src: str) -> bool:
     return "../components/" in (src or "")
 
 
+# --- #1197: the auth branch is the last unconditional clobber -------------------------
+# #914's deference rule shipped OFF, #1020 turned it ON, and it protects every page the
+# projector writes EXCEPT one: `scaffold_pages_from_contract`'s auth branch never consults
+# `_env_flag_914()` at all. #910b named this in its own comment ("this branch is
+# UNCONDITIONAL for an auth page ... and #910's announcement did not cover it") and left it
+# as a user decision. The decision has since been made everywhere else, and the measurement
+# is one-sided: r26 overwrote LoginPage 87 times and SignupPage 58, and 143 of those 145
+# clobbers replaced a COMPONENT-BASED lane page (18 lines/3 components, 24/4, 26/4 ...) —
+# exactly the shape #583's condition, quoted in `_imports_own_components`, calls real lane
+# work. Every capture after the first photographs the framework's copy, so the lane's page
+# never reaches the judge, and each cycle costs a lane tick (r21 76 clobbers, r25 143).
+#
+# The branch's own justification stays intact: "the lane consistently ships a dead/unwired
+# login" is right about a DEAD login, so deference here is strictly narrower than #914's
+# `_imports_own_components` — importing a component is not evidence that the form logs in.
+# A lane auth page is kept only when it is BOTH:
+#   * wired — it reaches the framework-universal /auth/* endpoints (see the projector's own
+#     `const path = isRegister ? '/auth/register' : '/auth/login'`), or it drives an auth
+#     context with a login/register call; and
+#   * drivable — a named input plus a submit path, which is what the ui_flow/ui_smoke DOM
+#     walk needs to fill and submit it (the guarantee #1179b added `name=` for).
+# Evidence may live one hop away in a component the page imports (r134's
+# `<AuthShell><AuthForm/></AuthShell>` is 11 lines and holds neither on its own), so the
+# predicate reads the page plus its own relative imports.
+#
+# Same precedent, same shape as #566j, which already stopped this exact clobber for detail
+# pages after r117/r120 wedged deliverability into the 75-minute no-deliver abort.
+_AUTH_EP_1197 = re.compile(r"/auth/(?:login|register|signin|signup|token)")
+_AUTH_CTX_1197 = re.compile(r"\b(?:useAuth|AuthContext|AuthProvider)\b")
+_AUTH_CALL_1197 = re.compile(r"\b(?:login|signIn|signin|register|signUp|signup)\s*\(")
+# #1197b: the DOM walk needs a NAMED control, and in real lane code the name reaches the DOM
+# THROUGH a component. r26's kept page renders `<TextInput name="email" ...>`, and TextInput is
+# `<input name={name} ...>` — requiring a literal `<input` here made the predicate false for
+# exactly the page this fix exists to keep (5 of 5 real r26 lane revisions).
+_INPUT_NAME_1197 = re.compile(r"<(?:input|select|textarea|[A-Z]\w*)\b[^>]*\bname\s*=", re.S)
+_SUBMIT_1197 = re.compile(r"<form\b|type\s*=\s*[\"']submit[\"']")
+_REL_IMPORT_1197 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
+
+
+def _resolve_rel_import_1197(base, rel):
+    """`../components/SignInCard` -> the file it means, trying the usual suffixes."""
+    for suffix in ("", ".jsx", ".js", ".tsx", ".ts", "/index.jsx", "/index.js"):
+        try:
+            p = Path(str(Path(base) / rel) + suffix)
+            if p.is_file():
+                return p.resolve()
+        except Exception:
+            continue
+    return None
+
+
+def _auth_page_bundle_1197(src: str, page_file, max_depth: int = 2,
+                           max_files: int = 24) -> str:
+    """The page's source plus the modules it pulls in, followed TRANSITIVELY.
+
+    One hop is not enough, and the corpus says so precisely. r26's lane page imports
+    `SignInCard`; SignInCard imports `{ login, register }` from `../services/api`; and the
+    `/auth/login` literal lives THERE — two hops from the page. A one-hop bundle judged all
+    five real r26 revisions dead and would have left the 87-times-clobbered page unprotected,
+    which is the whole point of the fix.
+
+    Bounded on both axes (depth and file count), cycle-safe, and best-effort: an unresolvable
+    or unreadable import simply contributes nothing rather than raising.
+    """
+    parts = [src or ""]
+    try:
+        frontier = [(Path(page_file).parent, src or "")]
+    except Exception:
+        return "\n".join(parts)
+    seen = set()
+    for _depth in range(max(0, max_depth)):
+        nxt = []
+        for base, text in frontier:
+            for m in _REL_IMPORT_1197.finditer(text or ""):
+                if len(seen) >= max_files:
+                    break
+                p = _resolve_rel_import_1197(base, m.group(1))
+                if p is None or p in seen:
+                    continue
+                seen.add(p)
+                try:
+                    body = p.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+                parts.append(body)
+                nxt.append((p.parent, body))
+        if not nxt:
+            break
+        frontier = nxt
+    return "\n".join(parts)
+
+
+def _auth_hash_file_1197(frontend_dir):
+    try:
+        return Path(frontend_dir).resolve().parents[1] / "design" / "auth_projections_1197.json"
+    except Exception:
+        return None
+
+
+def _remember_auth_projection_1197(frontend_dir, comp: str, body: str) -> None:
+    """Record what the framework just wrote to an auth page, so it can recognise it later.
+
+    The auth template deliberately carries NO marker — *"No placeholder marker -> passes the
+    stub gate"* — so the marker checks every other page relies on find nothing here. Nor can a
+    fingerprint stand in: the #540 spec-driven path renders a DIFFERENT template, and r26's
+    72-line framework page contains no line of `_AUTH_PAGE_TEMPLATE` at all (measured — the
+    first attempt at this check passed it as an author). Without provenance an EARLIER
+    framework projection reads as a lane page and gets kept, freezing the auth page against
+    later template work (#526/#540/#1179 all land through it).
+
+    So record it exactly rather than inferring it. Best-effort; never raises.
+    """
+    try:
+        import hashlib
+        f = _auth_hash_file_1197(frontend_dir)
+        if f is None or not (body or "").strip():
+            return
+        f.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if f.is_file():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8")) or {}
+            except Exception:
+                data = {}
+        h = hashlib.sha1((body or "").encode("utf-8")).hexdigest()
+        seen = list(data.get(comp) or [])
+        if h not in seen:
+            seen.append(h)
+            data[comp] = seen[-32:]     # bounded: a run cannot grow this without bound
+            f.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _is_our_auth_projection_1197(frontend_dir, comp: str, src: str) -> bool:
+    """Did the framework itself write this exact auth page earlier in the run? (#1197)"""
+    try:
+        import hashlib
+        f = _auth_hash_file_1197(frontend_dir)
+        if f is None or not f.is_file():
+            return False
+        data = json.loads(f.read_text(encoding="utf-8")) or {}
+        h = hashlib.sha1((src or "").encode("utf-8")).hexdigest()
+        return h in list(data.get(comp) or [])
+    except Exception:
+        return False
+
+
+def _lane_auth_page_is_live_1197(src: str, page_file) -> bool:
+    """Is this existing auth page the lane's OWN, wired, drivable login? (#1197)"""
+    if not (src or "").strip():
+        return False
+    try:
+        from .frontend_page_projector import _STRUCTURED_MARKER, _PAGE_MARKER
+        _marks = (_STRUCTURED_MARKER, _PAGE_MARKER)
+    except Exception:
+        _marks = ()
+    for mark in tuple(_marks) + ("framework-projected", "framework-wired"):
+        if mark and mark in src:
+            return False   # our own output — overwriting it is not clobbering an author
+    blob = _auth_page_bundle_1197(src, page_file)
+    wired = bool(_AUTH_EP_1197.search(blob)) or (
+        bool(_AUTH_CTX_1197.search(blob)) and bool(_AUTH_CALL_1197.search(blob)))
+    drivable = bool(_INPUT_NAME_1197.search(blob)) and bool(_SUBMIT_1197.search(blob))
+    return wired and drivable
+
+
 def _stale_thin_projection_583(existing: str, cand: str) -> bool:
     """#583 — is this marked page a STALE THIN projection rather than a refined floor?
 
@@ -10193,10 +10360,40 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 # should yield to a component-based auth page is the same user decision as #910;
                 # this only makes the loop visible instead of costing 41 silent lane ticks.
                 # Never raises: observability must not break the scaffold it observes.
+                #
+                # #1197: and now it can stop, not just watch. Under the SAME switch as
+                # #914/#1020 (`ENVGEN_DEFER_TO_LANE_PAGE=0` restores this branch's
+                # unconditional clobber byte-for-byte), keep an existing auth page that is
+                # the lane's own AND both wired and drivable. Strictly narrower than
+                # #914's rule — a dead login is still replaced, which is what this branch
+                # was for. `_body = None` is how the loop below skips the write.
+                if _body is not None and _is_auth_page(comp, page) and target.exists():
+                    try:
+                        _prev1197 = target.read_text(encoding="utf-8")
+                    except Exception:
+                        _prev1197 = ""
+                    if (_prev1197.strip() and _prev1197 != _body and _env_flag_914()
+                            and not _is_our_auth_projection_1197(frontend_dir, comp, _prev1197)
+                            and _lane_auth_page_is_live_1197(_prev1197, target)):
+                        __import__("logging").getLogger(__name__).info(
+                            "#1197 KEEPING the lane's auth page: %s — %d lines, wired and "
+                            "drivable; the framework's %d-line projection is NOT written "
+                            "(r26 clobbered this page 87 times). Set "
+                            "ENVGEN_DEFER_TO_LANE_PAGE=0 to restore the overwrite.",
+                            comp, len(_prev1197.splitlines()), len(_body.splitlines()))
+                        _body = None
+                # Remember every auth page the framework writes — including the FIRST, when
+                # the file did not exist yet and the block above never ran. #1179b gives the
+                # projection named inputs and it posts to /auth/login, so it satisfies this
+                # fix's own predicate: without provenance the framework would defer to its
+                # own previous output and freeze the page (measured on r26's 72-line one).
+                if _body is not None and _is_auth_page(comp, page):
+                    _remember_auth_projection_1197(frontend_dir, comp, _body)
                 try:
                     if target.exists():
                         _prev_910b = target.read_text(encoding="utf-8")
-                        if _prev_910b.strip() and _prev_910b != (_body or ""):
+                        if (_body is not None and _prev_910b.strip()
+                                and _prev_910b != _body):
                             _n939 = _count_overwrite_939(frontend_dir, comp, _prev_910b)
                             _log939 = __import__("logging").getLogger(__name__)
                             _log939.warning(
