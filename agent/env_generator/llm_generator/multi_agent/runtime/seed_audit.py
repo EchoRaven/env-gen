@@ -359,6 +359,9 @@ def _not_measured_1039(why: str) -> Dict[str, int]:
     return {}
 
 
+_SAID_0_OF_1202V = None
+
+
 def _db_container_1039(compose, timeout: int) -> str:
     """Resolve the database container id from the compose file, or "".
 
@@ -525,7 +528,15 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     # So: say the state out loud, change no verdict. The real repair is to count ROWS at gate time
     # — the database is up when this runs — and that needs a live run to validate, not a unit test.
     if not _examined_956 and tables:
-        logging.getLogger(__name__).warning(
+        # #1202v: say it when the STATE changes, not once per gate evaluation. Measured:
+        # r26 156 identical lines, r30 213, r22-r25 40-132 — for one unchanging fact.
+        # #1202n removed the same noise from the heal declines; the rule is the same, and a
+        # state that moves is still reported. The verdict is untouched.
+        _state1202v = len(tables)
+        global _SAID_0_OF_1202V
+        if _SAID_0_OF_1202V != _state1202v:
+            _SAID_0_OF_1202V = _state1202v
+            logging.getLogger(__name__).warning(
             "SEED AUDIT EXAMINED 0 OF %d TABLES: every one has a status other than 'defined', "
             "which is the only status this audit inspects (corpus: 1729 implemented vs 16 "
             "defined; 145 of 147 runs have none). Its clean verdict below means NOT CHECKED, not "
