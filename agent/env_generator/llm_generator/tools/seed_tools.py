@@ -9,6 +9,29 @@ from utils.tool import BaseTool, ToolCategory, ToolResult, create_tool_param
 from multi_agent.runtime.seed_audit import audit_seed_data
 
 
+def _project_dir_1202q(hub_registry):
+    """The project root, so the seed audit can do its LIVE row count. (#1202q)
+
+    Both agent-facing seed tools called `audit_seed_data(hub_registry)` with no project_dir,
+    and without one the live path cannot even find the compose file — so an agent asking
+    "audit the seeds" always got the fallback filter instead, which is
+    `status == "defined"` and, per this module's own comment, "examines 0 tables in 145 of
+    147 runs" and "skips 1729 of 1745 corpus tables".
+
+    Measured across r22-r26 and r30: the live row count has succeeded ZERO times in any run,
+    while `SEED AUDIT EXAMINED 0 OF N TABLES` fires 40-156 times per run. r26 shipped on that
+    silence: its seed declares 8 `continue_watching` rows and its delivered database holds 1,
+    because the child rows reference `profile_id: 1` while the parents were inserted with
+    fresh ids (26-30). Nothing looked, so nothing said so.
+
+    `HubRegistry.base_dir` is that root. Best-effort: an audit must not raise.
+    """
+    try:
+        return getattr(hub_registry, "base_dir", None)
+    except Exception:
+        return None
+
+
 class _SeedToolBase(BaseTool):
     def __init__(self, *, hub_registry=None):
         super().__init__(name=self.NAME, category=ToolCategory.KNOWLEDGE)
@@ -65,7 +88,7 @@ class SeedAuditCheckTool(_SeedToolBase):
             parameters={"type": "object", "properties": {}}, required=[])
 
     async def execute(self, **_kw) -> ToolResult:
-        report = audit_seed_data(self.hub_registry)
+        report = audit_seed_data(self.hub_registry, _project_dir_1202q(self.hub_registry))
         return ToolResult.ok(data=report.to_dict())
 
 
@@ -82,7 +105,7 @@ class ListSeedIssuesTool(_SeedToolBase):
             parameters={"type": "object", "properties": {}}, required=[])
 
     async def execute(self, **_kw) -> ToolResult:
-        report = audit_seed_data(self.hub_registry)
+        report = audit_seed_data(self.hub_registry, _project_dir_1202q(self.hub_registry))
         issues = [
             {"table": f["table"], "reason": f["reason"], "detail": f["detail"]}
             for f in report.flagged_tables
