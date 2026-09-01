@@ -1117,11 +1117,24 @@ def _mask_old_observations(messages, model: Optional[str] = None,
         except Exception:
             budget = 0
         if budget:
-            total = 0
-            for m in messages:
-                c = getattr(m, "content", None)
-                if isinstance(c, str):
-                    total += len(c)
+            # #1199c: measure what the request actually CARRIES. This summed `content` only,
+            # so an assistant message that calls a tool — arguments in `tool_calls`, content
+            # empty — contributed nothing, and every file body a lane wrote was invisible to
+            # the very check that decides whether the history needs trimming. Measured on the
+            # frontend lane's own log: tool-call arguments are ~20% of its history (write
+            # 0.26MB + apply_patch 0.15 + edit 0.06 against 1.2MB of results), so the gate was
+            # effectively running at a fifth again the intended budget.
+            #
+            # This CHANGES BEHAVIOUR — masking now engages where it previously did not — but
+            # in the direction the docstring above already promises: *"If the FULL message
+            # history fits the model's recommended working window, do NOT mask at all"*. The
+            # code was asking that question about a subset. Shared with the logging path so
+            # the two accountings cannot drift (they already had).
+            try:
+                from utils.llm import _payload_chars_1199
+                total = _payload_chars_1199(messages)
+            except Exception:
+                total = sum(len(str(getattr(m, "content", None) or "")) for m in messages)
             if total <= budget:
                 return messages
     tool_idxs = [i for i, m in enumerate(messages)
