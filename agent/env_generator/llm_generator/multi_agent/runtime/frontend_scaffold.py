@@ -10257,12 +10257,13 @@ def _page_endpoints_1199(page_file, helper_map: Dict[str, str], max_depth: int =
     itself, whose body would otherwise contribute the whole surface.
     """
     found: Set[str] = set()
+    own: Set[str] = set()   # #1202b: what the PAGE FILE itself reaches (depth 0)
     try:
         frontier = [Path(page_file)]
     except Exception:
         return found
     seen: Set[Any] = set()
-    for _ in range(max(1, max_depth)):
+    for _depth1202 in range(max(1, max_depth)):
         nxt = []
         for cur in frontier:
             try:
@@ -10272,10 +10273,34 @@ def _page_endpoints_1199(page_file, helper_map: Dict[str, str], max_depth: int =
             is_api_module = bool(_API_MODULE_1199.search(str(cur).replace(os.sep, "/")))
             if not is_api_module:
                 for m in _API_LITERAL_1199.finditer(text):
-                    found.add(m.group(1).rstrip("/") or m.group(1))
+                    # #1202b: a literal that stops at an interpolation is a PREFIX, not an
+                    # endpoint. `` `/api/comments/${id}/like` `` matches as `/api/comments/`,
+                    # and recording that would reconcile a precise declaration DOWN to a
+                    # truncated one — measured across the corpus, tiktok's `fyp_comments`
+                    # declares /api/comments/:id/like and /api/videos/:id/comments and would
+                    # have been rewritten to /api/comments + /api/videos. Partial evidence is
+                    # not evidence: skip it, and if nothing else resolves, the page keeps its
+                    # declaration (the never-wipe rule already covers that).
+                    _tail = text[m.end():m.end() + 2]
+                    if _tail.startswith("${") or _tail.startswith("$"):
+                        # #1202c: we cannot see the rest of this URL, so the page's endpoint
+                        # set is INCOMPLETE. Replacing a declaration from an incomplete
+                        # reading drops whatever we could not read — instagram's `profile`
+                        # declares /api/users/:id/follow + /unfollow, calls both through
+                        # template literals, and would have been rewritten to the one
+                        # endpoint that happened to be spelled out.
+                        if _depth1202 == 0:
+                            own.add("\x00incomplete")
+                        continue
+                    _lit = m.group(1).rstrip("/") or m.group(1)
+                    found.add(_lit)
+                    if _depth1202 == 0:
+                        own.add(_lit)
                 for name, ep in helper_map.items():
                     if re.search(r"\b" + re.escape(name) + r"\s*\(", text):
                         found.add(ep)
+                        if _depth1202 == 0:
+                            own.add(ep)
             for m in _REL_IMPORT_1197.finditer(text):
                 if len(seen) >= max_files:
                     break
@@ -10288,11 +10313,24 @@ def _page_endpoints_1199(page_file, helper_map: Dict[str, str], max_depth: int =
         frontier = nxt
     # A bare `/api` or `/auth` is the PREFIX of a URL built at runtime (`${API}/titles`),
     # not an endpoint — keeping it would make every such page "disagree" with its declaration.
-    return {e for e in found if e.startswith("/") and e.strip("/").count("/") >= 1}
+    _keep = {e for e in found if e.startswith("/") and e.strip("/").count("/") >= 1}
+    # #1202b: the page's OWN evidence decides whether this page was measured at all. Shared
+    # chrome contributes its endpoints to every page that imports it, so a page whose own
+    # calls are all parameterised (and therefore skipped above) would otherwise be
+    # "reconciled" to whatever its nav happens to touch — instagram's `profile` declares
+    # /api/users/:id/follow and would have been rewritten to /api/explore.
+    if "\x00incomplete" in own:
+        return set()          # #1202c: incomplete reading -> not evidence about this page
+    if not (own & _keep):
+        return set()
+    return _keep
 
 
 def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str, Any]:
-    """Rewrite `apis_used` to the endpoints the shipped page reaches. Never raises."""
+    """REPORT pages whose `apis_used` disagrees with the code that shipped. Never raises.
+
+    Named `reconcile_*` when it rewrote the field; it now only reports (see #1202d inside).
+    """
     out: Dict[str, Any] = {"checked": 0, "reconciled": []}
     try:
         fe = Path(frontend_dir)
@@ -10330,25 +10368,41 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
             dec_paths = {a.split()[-1].split("{")[0].rstrip("/") for a in declared if "/" in a}
             if dec_paths & actual:
                 continue          # they already agree on at least one endpoint
-            verbs = {}
-            for a in declared:
-                parts = a.split()
-                if len(parts) == 2:
-                    verbs.setdefault(parts[1].split("{")[0].rstrip("/"), parts[0])
-            new = sorted("GET " + e for e in actual)
-            try:
-                registryhub.register_ui_page(
-                    name=name, route=page.get("route") or "", path=rel,
-                    apis_used=new, components=page.get("components") or [],
-                    actor="framework:1199")
-            except Exception:
+            # #1202b: never replace a declaration with a GENERALISATION of itself. A page
+            # declaring /api/places/:id whose resolvable calls are /api/places is not drift —
+            # it is the same endpoint seen without its parameter.
+            if any(d == a or d.startswith(a.rstrip("/") + "/")
+                   for d in dec_paths for a in actual):
                 continue
+            # #1202d: REPORT, do not rewrite. This shipped as a write-back, and each time it
+            # was measured against a wider slice of the corpus it turned out to DEGRADE
+            # declarations rather than correct them:
+            #
+            #   tiktok    fyp_comments  /api/comments/:id/like -> /api/comments   (truncated
+            #                           at the template interpolation)
+            #   googlemaps place_detail /api/places/:id        -> /api/places     (the same
+            #                           endpoint, seen without its parameter)
+            #   instagram profile       /api/users/:id/follow  -> /api/explore    (its own
+            #                           calls unresolvable; the one spelled-out endpoint won)
+            #
+            # Three guards were added and each cut the false rewrites down without reaching
+            # zero — 34 environments, then 23, then 21, with instagram's still wrong. The
+            # underlying reason does not go away: statically resolving a JS app's endpoint set
+            # is unreliable, and `apis_used` is read by 84 call sites. A field that 84 readers
+            # trust must not be written from evidence I cannot verify page by page.
+            #
+            # What survives is the part that was always the point (#728: "code and declaration
+            # agree, so the consistency audits pass on the wrong thing" — except they do not
+            # even agree): the disagreement is now VISIBLE and named, once per page, for the
+            # lane that owns it. Nothing is written, so nothing can be corrupted.
             out["reconciled"].append({"page": name, "was": sorted(dec_paths),
                                       "now": sorted(actual)})
             logging.getLogger(__name__).warning(
-                "#1199 RECONCILED %s.apis_used: declared %s, but the shipped page reaches %s. "
-                "The declaration was written at registration and never checked against the "
-                "code; 84 call sites read this field.",
+                "#1199 DECLARATION DRIFT on %s: apis_used declares %s, but the shipped page "
+                "reaches %s. The declaration is written once at registration and never "
+                "checked against the code, and 84 call sites read it — including the gates. "
+                "Re-register the page with what it actually calls (the reading here is "
+                "static, so treat it as a pointer, not a verdict).",
                 name, sorted(dec_paths), sorted(actual))
     except Exception as _e1201:
         from .message_format import warn_once_1201
