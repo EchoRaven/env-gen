@@ -834,6 +834,24 @@ volumes:
             # page stub for its blank-route page twin (see the helper for the measurement).
             ui_pages = drop_component_page_twins_1087(ui_pages, registryhub)
             rep = scaffold_pages_from_contract(fe, ui_pages)
+            # #1199: reconcile `apis_used` with the code that actually shipped. The
+            # declaration is written once at registration and nothing checks it again, while
+            # 84 call sites read it (gates, `_all_get_endpoints`, the #627/#629 consumer
+            # index). Runs post-merge, so it sees the lane's page. Never wipes: a page whose
+            # endpoints cannot be resolved is left exactly as declared.
+            try:
+                from .frontend_scaffold import reconcile_ui_page_apis_1199
+                _rec1199 = reconcile_ui_page_apis_1199(fe, ui_pages, registryhub)
+                if _rec1199.get("reconciled"):
+                    # #1034: a count must not sit beside a silently truncated list.
+                    from .message_format import join_capped
+                    orch._logger.warning(
+                        "#1199 reconciled %d ui_page declaration(s) with the shipped code: %s",
+                        len(_rec1199["reconciled"]),
+                        join_capped([r["page"] for r in _rec1199["reconciled"]],
+                                    total=len(_rec1199["reconciled"])))
+            except Exception:
+                pass
             if rep.get("scaffolded") or rep.get("app_wired"):
                 orch._logger.info(
                     "Frontend pages projected from contract: %d stub(s), "

@@ -417,9 +417,22 @@ class BrowserCloseTool(BaseTool):
         }
     
     async def execute(self, **kwargs) -> ToolResult:
-        try:
-            await self.browser.close()
-            return ToolResult.ok("Browser closed")
-        except Exception as e:
-            return ToolResult.fail(f"Failed to close browser: {str(e)}")
+        # #1199: this used to tear down the SHARED driver — the one every lane holds.
+        # `BrowserManager` is a singleton handed to all browser tools ("Create all browser
+        # tools with shared browser manager"), so one lane tidying up after itself would
+        # take down the other eleven mid-walk: their pages, their contexts, their logins.
+        # Since #1198 the next caller rebuilds it, but a rebuild is a NEW session — cookies
+        # and auth state are gone, and a walk that was three steps into a logged-in flow
+        # fails for a reason no lane can see from its own transcript.
+        #
+        # No agent has ever called it (r22-r26: every `browser_close` line in the logs is a
+        # tool-surface registration), so this is a hazard that has not fired yet rather than
+        # a fix for an observed failure — and nothing else in the codebase calls
+        # `manager.close()`, so the teardown path has no other user to preserve.
+        #
+        # The tool stays on the surface and stays honest: the session is shared, so the
+        # caller is told what actually happened rather than being handed "Browser closed".
+        return ToolResult.ok(
+            "Nothing to close: this browser session is shared by every lane in the run, so "
+            "it stays up. Navigate somewhere else if you are done with the current page.")
 

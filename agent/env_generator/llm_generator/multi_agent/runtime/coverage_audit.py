@@ -131,66 +131,25 @@ def scan_dead_endpoints(hub_registry) -> List[dict]:
     return out
 
 
-def scan_dead_tables(hub_registry) -> List[dict]:
-    schema_hub = getattr(hub_registry, "schema_hub", None)
-    if schema_hub is None or not hasattr(schema_hub, "list_tables"):
-        return []
-    tables = schema_hub.list_tables() or {}
-    # PR 5 Q3: ``get_table_consumers(table_name)`` is the same shape as
-    # ``RegistryHub.get_consumers(endpoint_id)`` — iterate tables and ask
-    # SchemaHub directly instead of reaching into the private store.
-    out = []
-    registered_any = False
-    for name, table in tables.items():
-        if schema_hub.get_table_consumers(name):
-            registered_any = True
-            continue
-        out.append({"table": name, "provider": table.get("provider")})
-    # #1023b: AN EMPTY INDEX IS NOT A FACT. If NOT ONE table in this run has a registered
-    # consumer, the index is unpopulated rather than telling us every table is unused, and
-    # "dead" would be a verdict read off missing data. Measured over the whole corpus:
-    # **0 real records in `registryhub_table_consumers.json` in 172 of 172 runs**, while
-    # `registryhub_consumers.json` carries endpoint consumers by the hundred. The
-    # `registryhub_register_table_consumer` tool exists and is offered to the lanes, and no
-    # agent has called it once.
-    #
-    # So this branch was returning EVERY table, EVERY run — r172 reported "12 dead tables"
-    # while its database served titles, episodes, genres and five more populated tables — and
-    # the count feeds a delivery blocker ("N dead artifact(s)").
-    #
-    # Safe by construction, which is why it does not need a live run to justify: when the index
-    # is empty the previous answer was 100% false positives, so suppressing it can only remove
-    # false blockers (#566j: a false blocker cost r117/r120 a 75-minute no-deliver abort); and
-    # the moment anything DOES register a table consumer, `registered_any` is True and the scan
-    # behaves exactly as before, including reporting genuinely unreferenced tables.
-    if tables and not registered_any:
-        logging.getLogger(__name__).warning(
-            "COVERAGE: table-consumer index is EMPTY for all %d table(s), so 'dead' cannot be "
-            "distinguished from 'never registered' — reporting NO dead tables instead of all "
-            "%d (#1023b). Nothing has called registryhub_register_table_consumer in 172 of 172 "
-            "corpus runs; until something does, the `tables` term carries no information.",
-            len(tables), len(tables))
-        return []
-    # #957: "dead" here means "no REGISTERED consumer", and nothing in the system ever registers
-    # one. `registryhub_table_consumers.json` holds **0 records across the entire corpus**, while
-    # `registryhub_consumers.json` holds 1145 — every one keyed by `endpoint_id`, none by table.
-    # So this returns EVERY table, every run: r154's twelve are all reported dead while its
-    # database serves 60 titles, 57 title_genres, 16 episodes and five more populated tables.
-    #
-    # The count feeds a delivery blocker ("N dead artifact(s)", relaxed once
-    # `functionally_validated`), so the number is not inert — it inflates every pre-validation
-    # gate tick by the whole table count and carries no information about any of them.
-    #
-    # Not silently zeroed: dropping tables from the count would change a blocker's arithmetic, and
-    # that needs a live run to validate (this session's rule after #566j's 75-minute abort). Said
-    # once instead, so the next reader does not spend the afternoon I nearly did.
-    if out and len(out) == len(tables):
-        logging.getLogger(__name__).warning(
-            "COVERAGE: all %d table(s) report as dead because none has a REGISTERED consumer — "
-            "and nothing registers one (registryhub_table_consumers is empty in every run of the "
-            "corpus, while endpoint consumers number 1145). Treat the `tables` term of "
-            "dead_count_by_kind as a constant, not a finding (#957).", len(tables))
-    return out
+# #1199: `scan_dead_tables` DELETED — the detection never existed in practice.
+#
+# It called a table dead when `get_table_consumers(name)` came back empty, and
+# `registryhub_table_consumers.json` holds 0 records in 172 of 172 corpus runs: nothing, agent
+# or framework, has ever registered a table consumer, while endpoint consumers number 1145.
+# So the scan returned EVERY table every run (r154: twelve "dead" tables over a database
+# serving 60 titles, 57 title_genres, 16 episodes...), feeding a delivery blocker.
+#
+# #957 announced it; #1023b neutralised it (an empty index returns no dead tables, since
+# suppressing a 100%-false-positive verdict can only remove false blockers — #566j's cost a
+# 75-minute no-deliver abort). That left a scan that can only ever return [], plus 650
+# warnings per run saying so. Measured before removing: r26's delivered app has 13 tables and
+# NO dead ones — every table is referenced 5+ times — so a repaired detector would find
+# nothing here either.
+#
+# `dead_tables` stays on the report as a permanently empty list: deliverability reads it for
+# `dead_count_by_kind` and it has received [] in every run since #1023b, so the arithmetic and
+# the report schema are byte-identical. The registration tool comes off the lane bundles in
+# the same change — a tool nobody should call is re-sent in every request that offers it.
 
 
 def _is_test_file(path_str: str) -> bool:
@@ -674,7 +633,7 @@ def compute_coverage(hub_registry, app_root) -> CoverageReport:
     app_root = Path(app_root)
     return CoverageReport(
         dead_endpoints=scan_dead_endpoints(hub_registry),
-        dead_tables=scan_dead_tables(hub_registry),
+        dead_tables=[],   # #1199: detection removed; see the note above
         dead_files=scan_dead_files(app_root),
         dead_mcp_tools=scan_dead_mcp_tools(hub_registry),
         empty_mcp_servers=scan_empty_mcp_servers(hub_registry),
@@ -684,7 +643,7 @@ def compute_coverage(hub_registry, app_root) -> CoverageReport:
 
 __all__ = [
     "CoverageReport", "compute_coverage",
-    "scan_dead_endpoints", "scan_dead_tables", "scan_dead_files",
+    "scan_dead_endpoints", "scan_dead_files",
     "scan_dead_mcp_tools", "scan_empty_mcp_servers",
     "scan_pages_without_files",
 ]

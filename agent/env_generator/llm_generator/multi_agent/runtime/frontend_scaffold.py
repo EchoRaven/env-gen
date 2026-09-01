@@ -16,6 +16,7 @@ app that won't build at all).
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -10163,6 +10164,167 @@ def drop_component_page_twins_1087(ui_pages, registryhub):
             if name in comps and not route.startswith("/"):
                 continue
         out.append(pg)
+    return out
+
+
+# --- #1199: the registry's `apis_used` is reconciled with the code that shipped -----------
+# A ui_page's `apis_used` is written once, at registration, and nothing ever checks it against
+# what the page actually calls. Measured on r26 and hand-verified by reading the delivered
+# files:
+#
+#   my_list_page            declares GET /api/titles     ships getMyList()  -> /api/my-list
+#   card_hover_preview_page declares GET /api/profiles   ships fetch('/api/titles')
+#
+# #728 warns about the first one 478 times in a single run and nothing reconciles it. Its own
+# words name the damage exactly: *"code and declaration agree, so the consistency audits pass
+# on the wrong thing"* — except here they do not even agree, and 84 call sites read this field
+# (gates, the projector's `_all_get_endpoints`, the #627/#629 consumer index).
+#
+# Which side is ground truth is NOT fixed: in r26 the code was right and the declaration
+# stale, while #728's warning assumes the opposite. Reconciling toward the CODE is right in
+# both readings — a stale declaration gets corrected, and a page that really is calling
+# another page's endpoint now says so in the registry, where the route-word audit can catch it
+# accurately instead of by accident.
+#
+# The one way this can do harm is an inference miss wiping a correct declaration, so: never
+# write an empty set, and only replace when at least one concrete endpoint was resolved.
+#
+# Resolution is per-CALL, not per-file. Scanning the transitive bundle for `/api/...` literals
+# pulls in `services/api.js` whole and yields every endpoint in the app (measured: it turned
+# five distinct pages into the same "actual" set). So the api module is used only to build a
+# helper -> endpoint map, and a page claims an endpoint when it CALLS that helper or writes
+# the literal itself.
+# Backticks included: `request(`/api/titles?${qs}`)` is how half of a generated api module
+# writes its endpoints, and a quote-only pattern silently skips exactly those.
+_API_LITERAL_1199 = re.compile(r"['\"`](/(?:api|auth)/[^'\"`?${]*)")
+_HELPER_DEF_1199 = re.compile(
+    r"export\s+(?:async\s+)?(?:function\s+(\w+)\s*\([^)]*\)\s*\{|const\s+(\w+)\s*=)")
+_API_MODULE_1199 = re.compile(r"(?:^|/)(?:api|client|http|services?)[^/]*\.(?:js|ts)$")
+
+
+def _api_helper_map_1199(src_root) -> Dict[str, str]:
+    """`getMyList` -> `/api/my-list`, read out of whatever module exports it."""
+    out: Dict[str, str] = {}
+    try:
+        files = list(Path(src_root).rglob("*.js")) + list(Path(src_root).rglob("*.ts"))
+    except Exception:
+        return out
+    for f in files[:200]:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        for m in _HELPER_DEF_1199.finditer(text):
+            name = m.group(1) or m.group(2)
+            if not name:
+                continue
+            # #943: landmark, not a fixed byte window. A 600-char slice ran past the end
+            # of a one-line helper into the NEXT export, and combined with the missing
+            # backtick case it shifted the whole map by one function: searchTitles took
+            # getMyList's /api/my-list, getTop10Titles took getGenres' /api/genres.
+            nxt = text.find("\nexport ", m.end())
+            body = text[m.end():nxt if nxt != -1 else len(text)]
+            lit = _API_LITERAL_1199.search(body)
+            if lit and name not in out:
+                out[name] = lit.group(1).rstrip("/") or lit.group(1)
+    return out
+
+
+def _page_endpoints_1199(page_file, helper_map: Dict[str, str], max_depth: int = 3,
+                         max_files: int = 40) -> Set[str]:
+    """Endpoints this page actually reaches: its own literals plus the helpers it calls.
+
+    Follows the page's relative imports (a refined page holds neither the literal nor the
+    call — r26's login is `<AuthShell><AuthForm/></AuthShell>`), but SKIPS the api module
+    itself, whose body would otherwise contribute the whole surface.
+    """
+    found: Set[str] = set()
+    try:
+        frontier = [Path(page_file)]
+    except Exception:
+        return found
+    seen: Set[Any] = set()
+    for _ in range(max(1, max_depth)):
+        nxt = []
+        for cur in frontier:
+            try:
+                text = cur.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            is_api_module = bool(_API_MODULE_1199.search(str(cur).replace(os.sep, "/")))
+            if not is_api_module:
+                for m in _API_LITERAL_1199.finditer(text):
+                    found.add(m.group(1).rstrip("/") or m.group(1))
+                for name, ep in helper_map.items():
+                    if re.search(r"\b" + re.escape(name) + r"\s*\(", text):
+                        found.add(ep)
+            for m in _REL_IMPORT_1197.finditer(text):
+                if len(seen) >= max_files:
+                    break
+                p = _resolve_rel_import_1197(cur.parent, m.group(1))
+                if p is not None and p not in seen:
+                    seen.add(p)
+                    nxt.append(p)
+        if not nxt:
+            break
+        frontier = nxt
+    # A bare `/api` or `/auth` is the PREFIX of a URL built at runtime (`${API}/titles`),
+    # not an endpoint — keeping it would make every such page "disagree" with its declaration.
+    return {e for e in found if e.startswith("/") and e.strip("/").count("/") >= 1}
+
+
+def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str, Any]:
+    """Rewrite `apis_used` to the endpoints the shipped page reaches. Never raises."""
+    out: Dict[str, Any] = {"checked": 0, "reconciled": []}
+    try:
+        fe = Path(frontend_dir)
+        src_root = fe / "src"
+        if not src_root.is_dir() or registryhub is None:
+            return out
+        helper_map = _api_helper_map_1199(src_root)
+        for page in (ui_pages or []):
+            if not isinstance(page, dict):
+                continue
+            name = str(page.get("name") or "").strip()
+            rel = str(page.get("path") or "").strip()
+            declared = [str(a) for a in (page.get("apis_used") or [])]
+            if not name or not rel or not declared:
+                continue
+            f = fe.parents[1] / rel if not Path(rel).is_absolute() else Path(rel)
+            if not f.is_file():
+                cand = list(src_root.rglob(Path(rel).name))
+                if not cand:
+                    continue
+                f = cand[0]
+            out["checked"] += 1
+            actual = _page_endpoints_1199(f, helper_map)
+            if not actual:
+                continue          # inference found nothing -> say nothing (never wipe)
+            dec_paths = {a.split()[-1].split("{")[0].rstrip("/") for a in declared if "/" in a}
+            if dec_paths & actual:
+                continue          # they already agree on at least one endpoint
+            verbs = {}
+            for a in declared:
+                parts = a.split()
+                if len(parts) == 2:
+                    verbs.setdefault(parts[1].split("{")[0].rstrip("/"), parts[0])
+            new = sorted("GET " + e for e in actual)
+            try:
+                registryhub.register_ui_page(
+                    name=name, route=page.get("route") or "", path=rel,
+                    apis_used=new, components=page.get("components") or [],
+                    actor="framework:1199")
+            except Exception:
+                continue
+            out["reconciled"].append({"page": name, "was": sorted(dec_paths),
+                                      "now": sorted(actual)})
+            logging.getLogger(__name__).warning(
+                "#1199 RECONCILED %s.apis_used: declared %s, but the shipped page reaches %s. "
+                "The declaration was written at registration and never checked against the "
+                "code; 84 call sites read this field.",
+                name, sorted(dec_paths), sorted(actual))
+    except Exception:
+        pass
     return out
 
 

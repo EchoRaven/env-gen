@@ -347,7 +347,6 @@ def _bundle_schemahub_tools(builder: ToolPoolBuilder, context: ToolAssemblyConte
         include_names={
             "registryhub_register_table",
             "registryhub_list_tables",
-            "registryhub_register_table_consumer",
             "registryhub_get_table_breaking_changes",
             "registryhub_update_table_schema",
         },
@@ -539,7 +538,6 @@ def _bundle_registryhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyCon
             "registryhub_deprecate_endpoint",
             "registryhub_register_table",
             "registryhub_list_tables",
-            "registryhub_register_table_consumer",
             "registryhub_get_table_breaking_changes",
             "registryhub_update_table_schema",
             "hub_snapshot",
