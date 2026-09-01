@@ -20,6 +20,22 @@ _PLACEHOLDER_WORDS = {
 _SEQUENTIAL_RE = re.compile(r"^[a-zA-Z_]+[\s_-]?\d+$")
 
 
+# #1202i: the framework's OWN staged asset paths are not lane-authored placeholder content.
+#
+# `ensure_assets_staged_for_build` writes avatars as `/assets/placeholders/ph-avatar-N.svg`,
+# and the substring scan below then reads its own file naming as evidence that the lane wrote
+# placeholder data. Measured over the 94 generated seeds: 181 tables cross the advisory
+# threshold and 74 of them — 41% — do so ONLY because of these paths.
+#
+# This does not touch the policy the comments below describe. The BLOCKING check keeps its
+# strict word-boundary vocabulary ("latest" must not hit "test"), and the advisory scan keeps
+# its deliberate substring match over the full word list. It stops the audit reading the
+# framework's own filenames as the lane's content, which is not a judgement about seeds at all.
+def _is_framework_asset_1202i(value: str) -> bool:
+    v = str(value or "")
+    return v.startswith("/assets/") or "/assets/placeholders/" in v
+
+
 def detect_placeholder_score(rows: List[dict]) -> float:
     if not rows:
         return 0.0
@@ -34,6 +50,8 @@ def detect_placeholder_score(rows: List[dict]) -> float:
             continue
         for v in row.values():
             if not isinstance(v, str):
+                continue
+            if _is_framework_asset_1202i(v):
                 continue
             lowered = v.lower()
             for word in _PLACEHOLDER_WORDS:
