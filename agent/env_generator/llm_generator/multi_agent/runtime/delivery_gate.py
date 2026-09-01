@@ -488,6 +488,35 @@ def never_matching_filters_1139(project_dir: Any) -> List[Dict[str, str]]:
         return []
 
 
+# #1202k: an outage does not produce one failing record, it produces a cascade — and only the
+# first one quotes the network error.
+#
+# r25, measured from its own check records: ONE record says
+# `POST /auth/login request_failed/ERR_CONNECTION_REFUSED`, and TWELVE more describe the same
+# outage as consequence — "Login-to-profiles flow blocked by login submit failing",
+# "cannot be reached because the two-step login flow fails", "authenticated journey blocked by
+# login submit failure". Only the first carries a marker this module recognises, so the gate
+# discounted 1 and scored 12 as product defects. Its ledger: 28 records discounted across the
+# run against 655 counted as failures.
+#
+# Discounting the other twelve is NOT attempted. #1154 exists because over-discounting hides
+# a genuinely dead app, and "blocked by X" is prose an agent wrote, not a dependency the
+# framework recorded — inferring the closure from it would be guessing with a delivery gate.
+# What can be said without guessing is the arithmetic: N discounted and M counted IN THE SAME
+# PASS, so whoever reads the line can see that one outage may be behind both numbers.
+def _co_failure_note_1202k(breadth: Any) -> str:
+    try:
+        failed = int((breadth or {}).get("failed_records") or 0)
+        if failed <= 0:
+            return ""
+        return ("%d other record(s) in this same pass were counted as FAILURES; if they read "
+                "as 'blocked by <flow>' rather than naming a network error, they are likely "
+                "the same outage seen downstream (r25: 1 discounted, 12 counted, one origin)."
+                % failed)
+    except Exception:
+        return ""
+
+
 # #1154: browser/network markers that mean "the origin was not reachable", NOT "the app is
 # wrong". Deliberately narrow — a bare `request_failed` also appears on 4xx/5xx, which ARE
 # product evidence, so it is not on this list.
@@ -2585,11 +2614,12 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "#1154 %d UI record(s) failed on a CONNECTION-LEVEL error (%s) while %d other "
                 "record(s) passed — the origin was unreachable when they ran, which is not "
                 "evidence about the product. Discounted from validation_ui_evidence_failed; "
-                "re-run the flow to get a real verdict.",
+                "re-run the flow to get a real verdict. %s",
                 int(_breadth739.get("unreachable_records") or 0),
                 join_capped([str(x)[:44] for x in
                              (_breadth739.get("pages_unreachable") or [])], 4, cap=4),
-                int(_breadth739.get("passed_records") or 0))
+                int(_breadth739.get("passed_records") or 0),
+                _co_failure_note_1202k(_breadth739))
     except Exception:
         pass
     if ui_smoke_pass and _breadth739["failed_records"]:
