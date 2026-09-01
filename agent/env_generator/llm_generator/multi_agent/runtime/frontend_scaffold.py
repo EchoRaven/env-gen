@@ -10216,9 +10216,17 @@ def _api_helper_map_1199(src_root) -> Dict[str, str]:
     """`getMyList` -> `/api/my-list`, read out of whatever module exports it."""
     out: Dict[str, str] = {}
     try:
-        files = list(Path(src_root).rglob("*.js")) + list(Path(src_root).rglob("*.ts"))
+        files = sorted(set(list(Path(src_root).rglob("*.js"))
+                           + list(Path(src_root).rglob("*.ts"))))
     except Exception:
         return out
+    # #1199c: the bound must not be able to hide the one file that matters. `rglob` yields
+    # filesystem order and a bare `[:200]` could drop `services/api.js` while keeping two
+    # hundred unrelated modules — the map would come back empty, nothing would reconcile, and
+    # the mechanism would be silently inert (the failure mode most of this session's fixes
+    # were). Measured: real trees hold 2-5 such files, so the cap never binds today; ordering
+    # api-shaped names first means it cannot matter if one ever does.
+    files.sort(key=lambda f: (not _API_MODULE_1199.search(str(f).replace(os.sep, "/")), str(f)))
     for f in files[:200]:
         try:
             text = f.read_text(encoding="utf-8")
