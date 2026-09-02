@@ -460,6 +460,22 @@ async def main():
         milestones=milestones,
     )
     
+    # #1202as: hand back the per-lane worktree checkouts. `git worktree add` had no
+    # counterpart anywhere in the pipeline, so 24 byte-identical copies of a 186MB app/
+    # survived every run (tiktok-web-r74: 4.4GB of its 4.7GB). Across the corpus that is
+    # 93GB of 138GB, and it is why /data reached 99%. Nothing is lost: `remove` runs
+    # without --force so a dirty lane keeps its files, and branches are left alone so
+    # every commit stays reachable for forensics.
+    try:
+        from multi_agent.runtime.worktree_reclaim import reclaim_run_worktrees_1202as
+        _wt = reclaim_run_worktrees_1202as(output_dir)
+        if _wt.get("bytes_reclaimed"):
+            print(f"  Disk: reclaimed {_wt['bytes_reclaimed'] / 1073741824:.1f} GB from "
+                  f"{len(_wt['removed'])} lane worktrees"
+                  + (f" ({len(_wt['kept'])} kept — uncommitted work)" if _wt.get("kept") else ""))
+    except Exception:
+        pass
+
     print("\n" + "=" * 60)
     print("GENERATION COMPLETE")
     print("=" * 60)
