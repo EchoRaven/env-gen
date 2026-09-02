@@ -158,6 +158,16 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
         # container resolved)`, so the seed audit was blind for entire runs while the log
         # blamed a name collision.
         if not matched:
+            # #1202au: say it when the STATE changes, not on every probe. The message is
+            # correct — verified against r32, whose `database` container genuinely was not
+            # running for the 4h24m this fired — but it fired 179 times saying exactly that,
+            # one unchanging fact per probe. Same rule as #1202n/#1202p/#1202v/#1202ab/
+            # #1202ac. A move back to a previously-seen state still reports, so a stack that
+            # goes down, comes up and goes down again is not silently swallowed.
+            from .message_format import state_changed_1202ad
+            if not state_changed_1202ad(
+                    "container_zero_match:%s:%s" % (want, service), len(ids)):
+                return ""
             log.error(
                 "#962/#1130 `%s ps --filter name=%s` found %d running container(s) with that "
                 "name and NONE of them belongs to this run (no config_files label matches %s). "

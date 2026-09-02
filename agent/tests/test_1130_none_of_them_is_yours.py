@@ -68,6 +68,12 @@ def _resolve(testcase, id_to_label):
 
 
 class NoneOfThemIsYours(unittest.TestCase):
+    def setUp(self) -> None:
+        # #1202au deduplicates this message by STATE, and that memo is process-wide,
+        # so a sibling test that already saw the same state would silence this one.
+        from multi_agent.runtime.message_format import reset_state_memo_1202ad
+        reset_state_memo_1202ad("container_zero_match")
+
 
     def test_the_zero_case_says_this_run_is_not_running(self):
         cid, log = _resolve(self, {f"id{i}": f"/runs/{p}/docker/docker-compose.yml"
