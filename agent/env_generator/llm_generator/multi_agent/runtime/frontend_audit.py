@@ -2414,8 +2414,16 @@ def dropped_prop_findings_1202ai(frontend_src: Any, limit: int = 12) -> List[str
             return []
         files = [f for f in list(root.rglob("*.jsx")) + list(root.rglob("*.tsx"))
                  if "node_modules" not in f.parts]
-        decls: Dict[str, set] = {}
-        bodies: Dict[str, str] = {}
+        # #1202ak: key declarations by (FILE, name), not by name alone. r32 has two
+        # components called `TitleCard` — `TitleGrid.jsx` declares {title, rank} and
+        # `NetflixUI.jsx` declares {title, rank, onOpen, showLabel} — and a name-keyed map
+        # judged one file's call site against the other file's declaration, reporting
+        # `onOpen` as dropped when the component it actually resolves to declares and uses
+        # it. Resolution now follows the caller's own import, and a component that cannot be
+        # resolved to a single declaration is skipped rather than guessed at.
+        decls: Dict[Any, set] = {}
+        bodies: Dict[Any, str] = {}
+        by_name: Dict[str, list] = {}
         opaque: set = set()
         texts: Dict[Any, str] = {}
         for f in files[:400]:
@@ -2433,28 +2441,48 @@ def dropped_prop_findings_1202ai(frontend_src: Any, limit: int = 12) -> List[str
                         continue
                     props = {p.split("=")[0].split(":")[0].strip()
                              for p in m.group(2).split(",") if p.strip()}
-                    if props and m.group(1) not in decls:
-                        decls[m.group(1)] = props
-                        bodies[m.group(1)] = t
+                    if props:
+                        key = (f, m.group(1))
+                        decls.setdefault(key, props)
+                        bodies.setdefault(key, t)
+                        by_name.setdefault(m.group(1), []).append(key)
         seen = set()
+        _imp = re.compile(r"""import\s+(?:\{[^}]*\}|\w+)[^'"]*from\s+['"](\.[^'"]+)['"]""")
         for f, t in texts.items():
+            # Which file does each name in THIS file come from? A relative import wins; a
+            # local declaration in the same file wins over that.
+            local = {n: (f, n) for (ff, n) in decls if ff == f}
+            imported = {}
+            for m in _imp.finditer(t):
+                for suf in ("", ".jsx", ".js", ".tsx"):
+                    cand = (f.parent / (m.group(1) + suf)).resolve()
+                    hits = [k for k in decls if k[0].resolve() == cand] if cand.exists() else []
+                    for k in hits:
+                        imported.setdefault(k[1], k)
+                    if hits:
+                        break
             for m in _PROP_USE_1202AI.finditer(t):
                 comp = m.group(1)
-                if comp in opaque or comp not in decls:
+                if comp in opaque:
+                    continue
+                key = local.get(comp) or imported.get(comp)
+                if key is None:
+                    # unresolved, or the name exists in several files with no import to
+                    # disambiguate -> say nothing rather than guess
                     continue
                 passed = set(_PROP_ATTR_1202AI.findall(m.group(2)))
-                for attr in sorted(passed - decls[comp] - _PROP_SAFE_1202AI):
-                    if re.search(r"\b" + re.escape(attr) + r"\b", bodies[comp]):
+                for attr in sorted(passed - decls[key] - _PROP_SAFE_1202AI):
+                    if re.search(r"\b" + re.escape(attr) + r"\b", bodies[key]):
                         continue          # mentioned somewhere in the component -> not dropped
-                    key = (comp, attr)
-                    if key in seen:
+                    dedupe = (comp, attr)
+                    if dedupe in seen:
                         continue
-                    seen.add(key)
+                    seen.add(dedupe)
                     out.append(
                         "%s: <%s %s={...}> — %s never declares or mentions `%s`, so React "
                         "drops it silently and whatever it was for does nothing. The "
                         "component takes {%s}."
-                        % (f.name, comp, attr, comp, attr, ", ".join(sorted(decls[comp])[:6])))
+                        % (f.name, comp, attr, comp, attr, ", ".join(sorted(decls[key])[:6])))
                     if len(out) >= limit:
                         return out
     except Exception as _e1202ai:
