@@ -1005,3 +1005,66 @@ def auth_override_findings_1202s(backend_dir: Any) -> List[str]:
         warn_once_1201("auth_override_findings_1202s", "the lane auth-override gate (#1202s) — delivery is NOT known clean", _e1202ae)
         return []
     return sorted(set(out))
+
+
+# #1202ax: `example.com` is reserved by RFC 2606 precisely so that it never resolves to
+# real content. A media URL pointing there is not a placeholder that might work later —
+# it is a guaranteed broken image, and the visual judge scores it as a broken render.
+_RESERVED_MEDIA_HOST_1202AX = re.compile(
+    r"""https?://(?:www\.)?example\.(?:com|org|net)/[^"'`\s,)\]]*""")
+
+# Scanned files: seed data and the code that writes it. Deliberately NOT e-mail
+# addresses — `testuser@example.com` is the correct thing to use for a probe account,
+# which is why the pattern requires a scheme and a path.
+# `custom_routes.py` earns its place: the case that started this investigation is
+# netflix-r32's games backfill, which INSERTS Title rows carrying
+# `video_url="https://example.com/games/..."` on first read. Scanning only the seed
+# files reported that run clean, which is how the detector first missed the very
+# defect it was written for.
+_SEED_FILES_1202AX = ("seed_data.json", "seed_dataset.json", "generate_seed.py",
+                      "seed_data.py", "custom_routes.py", "main.py")
+
+
+def placeholder_media_urls_1202ax(project_dir: Any, limit: int = 12) -> List[str]:
+    """Seeded media URLs on an RFC 2606 reserved domain — guaranteed 404s. (#1202ax)
+
+    Measured across the corpus: 20 of 119 runs with a delivered app ship at least one,
+    hand-checked in three of them — `https://example.com/ferry.jpg` (googlemaps),
+    `https://example.com/article` (instagram), and `https://example.com/avatar{i}.jpg`,
+    which is an unformatted f-string placeholder that reached the data as literal text.
+
+    #1202j already refuses a LOCAL asset path that exists nowhere in the tree; an
+    external URL walks past that check because there is no local path to miss. Unlike
+    #844's unseeded entity — which the lane provably cannot fix, since the framework
+    dataset replaces its rows wholesale (#807) — this one lives in code the backend
+    lane owns, so it is worth telling it.
+
+    Never raises: a scan that dies must not read as a clean app.
+    """
+    out: List[str] = []
+    try:
+        be = Path(project_dir) / "app" / "backend"
+        if not be.is_dir():
+            return out
+        seen = set()
+        for name in _SEED_FILES_1202AX:
+            f = be / name
+            if not f.is_file():
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            for m in _RESERVED_MEDIA_HOST_1202AX.finditer(text):
+                url = m.group(0)
+                if url in seen:
+                    continue
+                seen.add(url)
+                out.append("%s: %s" % (name, url[:120]))
+                if len(out) >= limit:
+                    return out
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("placeholder_media_urls_1202ax",
+                       "the scan for seeded media URLs on a reserved domain", _exc)
+    return out

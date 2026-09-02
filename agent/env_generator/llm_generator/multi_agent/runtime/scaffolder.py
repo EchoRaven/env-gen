@@ -959,6 +959,38 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("unstaged_asset_refs_1202j",
                                "the unstaged-asset report (#1202j)", _e1202j)
+            # #1202ax: a seeded media URL on an RFC 2606 reserved domain is a guaranteed
+            # 404 — example.com exists so that it never serves real content — and the
+            # visual judge scores it as a broken render. #1202j catches a LOCAL path that
+            # is missing; an external URL walks past it because there is no local path to
+            # miss. 20 of 119 corpus runs with a delivered app ship at least one, three
+            # hand-checked, and one of them (`https://example.com/avatar{i}.jpg`) is an
+            # unformatted f-string that reached the data as literal text.
+            #
+            # Unlike #844's unseeded entity, which the lane provably CANNOT fix (#807
+            # replaces its rows wholesale), this lives in files the backend lane owns,
+            # so it is worth its inbox. Own try (#1201).
+            try:
+                from .backend_audit import placeholder_media_urls_1202ax
+                from .message_format import join_capped
+                _ph1202ax = placeholder_media_urls_1202ax(_P(out_dir))
+                if _ph1202ax:
+                    orch.hubs.workhub.create_task(
+                        title=("Replace %d seeded media URL(s) that can never load"
+                               % len(_ph1202ax))[:180],
+                        description=(
+                            "These seeded URLs point at example.com/.org/.net, which RFC "
+                            "2606 reserves so that it NEVER serves real content — every one "
+                            "renders as a broken image and the visual judge scores it that "
+                            "way: %s.\n\nPoint them at an asset that is actually staged in "
+                            "this project, or drop the field. If one contains a literal "
+                            "`{...}`, it is an unformatted f-string that reached the data as "
+                            "text." % join_capped(_ph1202ax, total=len(_ph1202ax), cap=6)),
+                        assignee="backend", agent="scaffolder", priority="P2",
+                        kind="fidelity")
+            except Exception as _e1202ax:
+                warn_once_1201("placeholder_media_urls_1202ax",
+                               "the reserved-domain media URL report (#1202ax)", _e1202ax)
             # #1202ai: a prop the component never declares is dropped by React with no
             # runtime symptom — no console error, no failed request — so every gate stays
             # green while the feature does nothing. 232 occurrences across 51 of the 117
