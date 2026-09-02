@@ -52,6 +52,15 @@ NEVER ship generic AI-generated aesthetics: overused fonts (Inter, Roboto, Arial
 
 - You are the **frontend** lane. Stack is Vite + React with the standard `api.js` wrapper — scaffold with `ui-bootstrap` first if the skeleton doesn't exist.
 - Run `ui-ux-review` before sign-off (hierarchy, spacing, state coverage, consistency).
+- **A prop the component does not destructure is silently dropped.** React raises nothing for it:
+  no console error, no failed request, no crash — so every gate stays green while the feature does
+  nothing. Measured across 117 generated environments: **152 such props in 47 of them**, e.g.
+  `<PostHeader createdAt>` where PostHeader takes `{user}` (no timestamp ever renders),
+  `<LoginForm setToken>` where it takes `{setIsRegister}` (the token is never stored),
+  `<NetflixChrome title subtitle>` where it takes `{children, activeLabel}` (the page heading is
+  simply absent). Whenever you pass a prop, open the component and confirm it is in the
+  destructuring AND used. This is the single most common way a generated app looks finished and
+  is not.
 - Your output is checked by `validation:ui_smoke` / `validation:ui_flow:*` and, for clones, the `visual_review_gate` / `visual_similarity` against `reference_images/`. Design to pass those, not just to look good in isolation.
 
 Don't hold back on craft — but for a clone, the most impressive result is one indistinguishable from the real product.
