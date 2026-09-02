@@ -811,8 +811,21 @@ Requires Playwright: pip install playwright && playwright install
                 )
                 
         except Exception as e:
-            self._logger.error(f"Screenshot failed: {e}")
-            return ToolResult(success=False, error_message=f"Screenshot failed: {e}")
+            # #1202ba: a refused connection is not a page bug, and the raw Playwright
+            # text does not say so. netflix-r30 got `net::ERR_CONNECTION_REFUSED at
+            # http://localhost:8042/` eight times over 100 minutes while the run's stack
+            # was down, and the gate it feeds (validation_ui_evidence_failed) was one of
+            # the two still failing at the 148-minute no-convergence abort. Nothing in
+            # that message tells a lane that editing its page cannot help, so name the
+            # cause and the one action that can.
+            _msg = f"Screenshot failed: {e}"
+            if "ERR_CONNECTION_REFUSED" in str(e) or "ECONNREFUSED" in str(e):
+                _msg += (" — NOTHING IS LISTENING on that port. The app is not running, "
+                         "so this is not a page you can fix by editing it: no change to "
+                         "the frontend will make this capture succeed. Bring the stack "
+                         "up (compose up) and retry, or report the stack as down.")
+            self._logger.error(_msg)
+            return ToolResult(success=False, error_message=_msg)
 
 
 # =============================================================================
