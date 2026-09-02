@@ -950,7 +950,10 @@ volumes:
                                 "These props are passed in JSX to a component that never "
                                 "declares or mentions them, so React drops them and the "
                                 "behaviour they were for does nothing:\n\n"
-                                + "\n".join("  - " + x for x in _dp[:12])
+                                # #1034: a count must not sit beside a silently truncated
+                                # list — join_capped declares the remainder it drops.
+                                + join_capped(["  - " + x for x in _dp],
+                                              total=len(_dp), cap=12, sep="\n")
                                 + "\n\nThere is NO runtime symptom — no console error, no "
                                 "failed request, no 404 — so no gate can catch this. Fix each "
                                 "by destructuring the prop in the component and using it, or "
