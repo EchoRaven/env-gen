@@ -153,6 +153,28 @@ class Coordination:
                 self._orch._silent_lane_nudges.pop(lane_id, None)
                 continue
 
+            # #1202aa: a STOPPED lane is not a slow one, and nudging it cannot work. This
+            # loop reads heartbeat freshness only, so a lane whose run loop has exited looks
+            # exactly like a lane that is merely busy — and r32 ended on that confusion:
+            #
+            #     00:31:38  Stopping agent: Frontend Engineer Agent
+            #     ...       Stall escalation (5560s -> 5778s), urgent task_ready to
+            #               silent resident lanes ['frontend'], over and over
+            #     Status: FAIL — cannot complete task
+            #
+            # 95 minutes of urgent dispatch at a lane whose queue had no reader (#1202z is
+            # the other half: the wakeup that claimed it had been scheduled). The agent
+            # object is right here and knows. Say which it is — a nudge that cannot be
+            # received should not be counted as a nudge that was.
+            _agent_obj = (self._orch._agents or {}).get(lane_id)
+            if _agent_obj is not None and getattr(_agent_obj, "is_running", True) is False:
+                self._orch._logger.error(
+                    "Stall escalation: lane %r is STOPPED, not slow — its run loop has "
+                    "exited, so nothing consumes its queue and an urgent task_ready cannot "
+                    "reach it. Nudging is skipped; this lane needs restarting or the run "
+                    "will wait on it until the no-deliver abort (#1202aa).", lane_id)
+                continue
+
             # Don't nudge a lane that has NO actionable work. The nudge orders the lane to
             # "pick up your assigned kickoff task_tree entries" — but idle-BY-DESIGN lanes
             # (knowledge = observer; debugger before any bug_found) have ZERO assigned
