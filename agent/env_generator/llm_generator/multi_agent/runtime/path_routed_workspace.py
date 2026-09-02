@@ -707,8 +707,25 @@ class PathRoutedWorkspace:
             return True
         try:
             return not (p.is_file() and p.stat().st_size > 0)
-        except Exception:
-            return True
+        except Exception as _exc_1202bd:
+            # #1202bd: this guard failed OPEN. By the time we are here the path is
+            # KNOWN lane-owned, so "I could not tell whether it has content" was
+            # answered with "go ahead and overwrite it" — the one outcome #1011 exists
+            # to prevent, and the one the docstring above measures at 46 deleted
+            # LoginPages in r164.
+            #
+            # The two directions are not symmetric. Refusing costs one tick: the
+            # projection runs again every tick, which is the whole reason the clobber
+            # loop exists at all. Allowing costs the work permanently — netflix-r32's
+            # 138-line lane GenresPage survives in neither worktree nor any branch.
+            # So an unreadable lane-owned path is treated as occupied.
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "framework_may_write.stat",
+                "the check for whether a lane-owned file already has content — "
+                "refusing the framework write rather than risking a clobber",
+                _exc_1202bd)
+            return False
 
     def is_framework_owned(self, path: Union[str, Path]) -> bool:
         """CLASS B (#36): True if ``path`` is a framework-OWNED file in app/backend or
