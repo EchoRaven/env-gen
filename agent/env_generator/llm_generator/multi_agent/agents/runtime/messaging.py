@@ -332,6 +332,31 @@ class AgentMessaging:
         Extracted so the deferred-wakeup re-arm on task completion enqueues through the
         SAME path as the live one — a second copy of this would drift.
         """
+        # #1202z: a queue nobody is reading is not a schedule. `stop()` sets `_running =
+        # False` and cancels the worker tasks, so anything put on `_message_queue` after that
+        # is never consumed — while this method logged "scheduled resident wakeup" and
+        # returned as if it had been. r32 ended on exactly that:
+        #
+        #     00:31:38  Stopping agent: Frontend Engineer Agent
+        #     00:31:40  [frontend] scheduled resident wakeup for endpoint_schema_changed
+        #     ...       Stall escalation ... silent resident lanes ['frontend']  (x many)
+        #     Status: FAIL — cannot complete task
+        #
+        # The orchestrator then spent 95 minutes dispatching urgent task_ready to a lane that
+        # could not answer, and the run aborted with one milestone instead of three. This is
+        # the #1178 shape again: a delivery that reports success into a void.
+        #
+        # Say it instead. The lane still cannot be woken — restarting it is the
+        # orchestrator's call, not this method's — but "could not deliver" is a fact someone
+        # can act on, and "scheduled" was not.
+        if not getattr(self, "is_running", True):
+            self._resident_wakeup_task_pending = False
+            self._logger.warning(
+                "[%s] resident wakeup for %s from %s NOT scheduled: this lane is stopped, so "
+                "its queue has no consumer and the message would be silently lost. The lane "
+                "will read as SILENT to the orchestrator until it is restarted (#1202z).",
+                self.agent_id, msg_type, source)
+            return
         try:
             header = MessageHeader(
                 message_id=str(uuid4()),
