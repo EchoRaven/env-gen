@@ -935,6 +935,35 @@ volumes:
                         "mentions them — React drops them silently, so whatever they were for "
                         "does nothing and no gate can see it: %s",
                         len(_dp), join_capped(_dp, total=len(_dp), cap=4))
+                    # #1202aj: and to the LANE, not only to the logger. A finding nobody is
+                    # assigned is a finding nobody fixes — #780 exists for exactly that reason
+                    # and measured its own log-only fallback at 1 filed task across 154 runs.
+                    # This defect has no runtime symptom at all, so the log line is the ONLY
+                    # thing standing between it and shipping: 232 occurrences across 51 of the
+                    # 117 corpus environments, every gate green in all of them. create_task's
+                    # own #672 twin-check keeps a re-run from filing it twice.
+                    try:
+                        orch.hubs.workhub.create_task(
+                            title=("Wire %d dropped prop(s) — passed but never received"
+                                   % len(_dp))[:180],
+                            description=(
+                                "These props are passed in JSX to a component that never "
+                                "declares or mentions them, so React drops them and the "
+                                "behaviour they were for does nothing:\n\n"
+                                + "\n".join("  - " + x for x in _dp[:12])
+                                + "\n\nThere is NO runtime symptom — no console error, no "
+                                "failed request, no 404 — so no gate can catch this. Fix each "
+                                "by destructuring the prop in the component and using it, or "
+                                "by removing it from the call if it is genuinely unwanted. "
+                                "Measured across the corpus: 232 occurrences in 51 of 117 "
+                                "environments (#1202ai)."),
+                            assignee="frontend", agent="scaffolder", priority="P2",
+                            kind="fidelity")
+                    except Exception as _t1202aj:
+                        orch._logger.warning(
+                            "#1202aj could not file the dropped-prop task (%s: %s) — the "
+                            "finding is log-only again, which is the state this exists to end.",
+                            type(_t1202aj).__name__, str(_t1202aj)[:110])
             except Exception as _e1202ai:
                 from .message_format import warn_once_1201
                 warn_once_1201("dropped_prop_findings_1202ai",
