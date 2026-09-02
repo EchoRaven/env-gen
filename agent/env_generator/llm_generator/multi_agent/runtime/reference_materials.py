@@ -442,12 +442,39 @@ def merge_user_gates(workspace: Any, new_gates: List[Dict[str, Any]]) -> int:
     re-compile never accretes stale gates. Returns the number now present from
     this source."""
     path = Path(workspace) / ".user_gates.json"
+    # #1202ao: the same shape #1202an found in JsonStore, on a file that matters more. A read
+    # failure here sets `existing = []`, `kept` is then empty, and the write below persists only
+    # this compile's gates — every user-authored gate in `.user_gates.json` is deleted, silently.
+    # That file is what `deliver_project_call` evaluates, so the loss makes delivery EASIER: the
+    # run then passes a bar the user never agreed to lower.
+    #
+    # An ABSENT file is legitimately empty and stays quiet. A file that exists but cannot be
+    # parsed is damage: its bytes are copied aside before the overwrite, and the consequence is
+    # stated. Proceeding rather than refusing, for #1202an's reason — refusing would drop this
+    # compile's gates instead and leave the file unreadable forever — but the operator now has
+    # both the bytes and a line saying which criteria stopped being enforced.
+    _failed_1202ao = False
     try:
         existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         if not isinstance(existing, list):
             existing = []
-    except Exception:
+    except Exception as _e1202ao:
         existing = []
+        _failed_1202ao = True
+        try:
+            import shutil as _sh1202ao, time as _t1202ao, os as _os1202ao
+            _q = path.with_suffix(path.suffix + ".corrupt.%d.%d"
+                                  % (_os1202ao.getpid(), int(_t1202ao.time())))
+            if path.exists() and not _q.exists():
+                _sh1202ao.copy2(path, _q)
+        except Exception:
+            _q = None
+        logging.getLogger(__name__).error(
+            "#1202ao .user_gates.json exists but could not be parsed (%s: %s) — every "
+            "user-authored delivery gate in it is about to be dropped, which LOWERS the bar "
+            "this run has to clear. Original bytes preserved at %s.",
+            type(_e1202ao).__name__, str(_e1202ao)[:90],
+            getattr(_q, "name", "(copy failed)"))
     kept = [g for g in existing if not (isinstance(g, Mapping) and g.get("source") == "reference_spec")]
     names = {g.get("name") for g in kept if isinstance(g, Mapping)}
     added = [g for g in new_gates if g.get("name") not in names]
