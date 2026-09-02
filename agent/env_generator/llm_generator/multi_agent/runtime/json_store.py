@@ -299,11 +299,26 @@ class JsonStore:
     def _save_raw(self, data: Dict[str, Any]) -> None:
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.file_path.with_suffix(self.file_path.suffix + f".{os.getpid()}.tmp")
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, self.file_path)
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.file_path)
+        except Exception:
+            # #1202ap: a write that dies partway leaves its half-written temp behind for
+            # good. Measured on this machine: 5 orphans across the corpus, the worst being
+            # 2.4MB of a 6.5MB target (netflix-r17 eventhub_events, 2026-08-30 04:12) —
+            # the same day /data reached 99% and r19's hub read failed. Nothing ever
+            # reclaims them and each retry writes a fresh one, so a disk that is already
+            # full keeps filling from the very failures being full caused. Drop ours and
+            # re-raise unchanged: os.replace is atomic, so the live file was never at
+            # risk here, and the caller's error handling is left exactly as it was.
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+            raise
 
     def _bump_meta(
         self, raw: Dict[str, Any], agent: str, *, last_caller: str = ""
