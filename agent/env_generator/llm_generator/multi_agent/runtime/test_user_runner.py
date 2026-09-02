@@ -433,7 +433,20 @@ async def _frontend_rendered(page) -> bool:
             "() => { const r = document.getElementById('root') || document.body;"
             " return !!(r && ((r.children && r.children.length > 0)"
             " || ((document.body && document.body.innerText || '').trim().length > 0))); }"))
-    except Exception:
+    except Exception as _exc_1202be:
+        # #1202be: degrading here is the documented choice above — never BLOCK
+        # readiness on this probe — and that stays. What was missing is the line
+        # saying it happened. If the evaluate fails every time (a closed page, a
+        # hostile CSP), the render check is OFF for the whole run and readiness
+        # silently falls back to "the server responded", which is the weaker
+        # signal this probe exists to replace. r30 aborted with
+        # validation_ui_evidence_failed still failing; whether this probe was even
+        # running is part of reading that.
+        from .message_format import warn_once_1201
+        warn_once_1201("_frontend_rendered",
+                       "the DOM render probe — readiness falls back to the weaker "
+                       "'server responded' check for the rest of this process",
+                       _exc_1202be)
         return True
 
 
