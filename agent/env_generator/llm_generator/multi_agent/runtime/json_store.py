@@ -233,6 +233,35 @@ class JsonStore:
             # this fires + the next ``update()`` saves an empty pages
             # dict, the meeting page vanishes. Log loud + diagnostic.
             logger.warning(f"JsonStore: failed to load {self.file_path}: {e}")
+            # #1202an: a failed load returns {}, and the next update() writes that {} back —
+            # so ONE transient corruption silently destroys the whole store. The comment two
+            # lines below predicted exactly this ("the meeting page vanishes") and left it.
+            # Demonstrated: write {keep_me}, corrupt the file, update() -> the file is
+            # {new_key} and keep_me is gone for good. Measured in the corpus: 2 loads failed
+            # across 30+ netflix runs — r19's eventhub_inboxes.json truncated at char 147456
+            # (144KB exactly) and r11's missing — rare, and each one is total loss of a hub
+            # every lane reads.
+            #
+            # Quarantine the bytes before anything can overwrite them, and let the run carry
+            # on with an empty store. Refusing the write instead would wedge every lane on a
+            # hub that can never load again; this way the run survives, the data is on disk to
+            # recover from, and the log says which file to look at. `_load_failed_1202an` is
+            # what `update` reports on, so the loss is announced at the moment it becomes
+            # permanent rather than only here.
+            self._load_failed_1202an = True
+            try:
+                import shutil as _sh1202an
+                _q = self.file_path.with_suffix(
+                    self.file_path.suffix + f".corrupt.{os.getpid()}.{int(time.time())}")
+                if self.file_path.exists() and not _q.exists():
+                    _sh1202an.copy2(self.file_path, _q)
+                    logger.error(
+                        "JsonStore: %s could not be parsed; its bytes are preserved at %s "
+                        "before anything overwrites them. Everything it held is missing from "
+                        "this process until it is restored (#1202an).",
+                        self.file_path.name, _q.name)
+            except Exception:
+                pass
             if _debug_active(self.file_path):
                 try:
                     file_size = self.file_path.stat().st_size
@@ -327,8 +356,19 @@ class JsonStore:
         change_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         with self._lock, self._file_lock():
+            self._load_failed_1202an = False
             raw = self._load_raw()
             data = {k: v for k, v in raw.items() if k != _META_KEY}
+            if getattr(self, "_load_failed_1202an", False):
+                # #1202an: this write is the moment the loss becomes permanent — the store is
+                # about to be rewritten from the {} a failed parse produced. Say it HERE, not
+                # only at the read, because the read alone reads as a transient hiccup.
+                logger.error(
+                    "JsonStore: rewriting %s from an EMPTY state because its previous "
+                    "contents could not be parsed — every key it held is now gone from the "
+                    "file. The original bytes were copied aside next to it; restore from "
+                    "there if anything downstream depended on them (#1202an).",
+                    self.file_path.name)
             view = _MapView(data)
             result = mutator(view)
             new_data = result.value() if isinstance(result, _MapView) else dict(result or {})

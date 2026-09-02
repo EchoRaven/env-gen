@@ -32,7 +32,12 @@ import pathlib
 import pytest
 
 
-_CEILING = 8
+# 8 -> 10 for #1202an's two json_store frames. They are in _FIXED_UPSTREAM below with their
+# reason: the finding reaches a real artifact — the corrupt store's own bytes, copied beside it
+# — but via `shutil.copy2`, which this intra-procedural scan does not count as persistence, and
+# json_store is the layer the hubs are built ON so "write it to a hub" is not available to it.
+# Raised deliberately and once; a ceiling moved without a reason stops being a ratchet.
+_CEILING = 10
 
 #: Detectors the scan flags but whose finding DOES reach an artifact via the caller. The scan is
 #: intra-procedural — it cannot follow a returned structure — so a fix applied one frame up is
@@ -40,7 +45,16 @@ _CEILING = 8
 #: orchestrator wrapper now appends its whole 21-field return to `logs/delivery_gate.jsonl`.
 #: Recorded here rather than papered over, because a ceiling that silently counts a FIXED entry
 #: stops meaning anything.
-_FIXED_UPSTREAM = {"validate_delivery_gate": "#948 — persisted by _validate_delivery_gate wrapper"}
+_FIXED_UPSTREAM = {
+    "validate_delivery_gate": "#948 — persisted by _validate_delivery_gate wrapper",
+    # #1202an: these two DO reach an artifact — the corrupt store's own bytes, copied to
+    # `<name>.corrupt.<pid>.<ts>` beside it before anything can overwrite them. The copy is
+    # `shutil.copy2`, which is not in _PERSIST_CALLS, so the intra-procedural scan cannot see
+    # it. json_store is also the layer the hubs are built ON, so "write it to a hub" is not
+    # available to it: the artifact has to be a plain file, and it is.
+    "_load_raw": "#1202an — quarantines the unparsable bytes to <name>.corrupt.<pid>.<ts>",
+    "update": "#1202an — the same quarantine; this frame announces that the loss is permanent",
+}
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1] / "env_generator"
 
