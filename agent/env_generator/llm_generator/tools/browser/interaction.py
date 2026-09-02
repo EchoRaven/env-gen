@@ -246,7 +246,24 @@ Features:
                 
             except Exception as e:
                 last_error = str(e)
-                
+
+                # #1202y: retrying a click against a driver that is GONE just spends the
+                # remaining attempts on the same corpse. r32's 21:39 record is exactly that
+                # shape — two attempts, both reporting the connection to the driver closed.
+                # Rebuild first, then let the normal retry proceed against a live page.
+                # Best-effort: if the rebuild fails, the loop behaves as before.
+                #
+                # The failure text is deliberately NOT quoted here: #362's test locates that
+                # message by searching this file for it, so a second copy in a comment
+                # becomes the match and the test reads the wrong window.
+                try:
+                    from ._manager import is_dead_driver_error_1202y
+                    if is_dead_driver_error_1202y(e):
+                        if await self.browser.recover_for_retry_1202y(e):
+                            page = self.browser.state.page
+                except Exception:
+                    pass
+
                 if attempt < retry - 1:
                     # Wait before retry
                     await asyncio.sleep(0.5)

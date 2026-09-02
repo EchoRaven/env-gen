@@ -135,6 +135,21 @@ class BrowserNavigateTool(BaseTool):
                         break
                     await asyncio.sleep(3)
                     _waited += 3
+            # #1202y: a driver that died mid-goto costs this call unless we rebuild and try
+            # once more. #1198 rebuilds on the NEXT tool call, which is one FAIL record too
+            # late — r32 wrote two of them (a click at 21:39, a navigate at 00:24 that burned
+            # 113s first), and both became prose a human then had to triage as "probe, not
+            # product". One retry makes the death invisible where it belongs.
+            if response is None and _last_exc is not None:
+                from ._manager import is_dead_driver_error_1202y
+                if is_dead_driver_error_1202y(_last_exc):
+                    if await self.browser.recover_for_retry_1202y(_last_exc):
+                        _LOG1189.warning(
+                            "#1202y driver died during navigation to %s — rebuilt and "
+                            "retrying once so the death does not become a FAIL record.", url)
+                        response = await self.browser.state.page.goto(
+                            url, wait_until=wait_for, timeout=30000)
+                        _last_exc = None
             if response is None and _last_exc is not None:
                 raise _last_exc
             if _waited:

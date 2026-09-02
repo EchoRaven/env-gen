@@ -31,6 +31,25 @@ class BrowserState:
 _MAX_RELAUNCH_1198 = 5
 
 
+# #1202y: the error text a dead driver produces, whichever tool trips over it first.
+_DEAD_DRIVER_MARKS_1202Y = (
+    "Connection closed while reading from the driver",
+    "Target page, context or browser has been closed",
+    "Browser has been closed",
+    "Target closed",
+    "browserContext.newPage",
+)
+
+
+def is_dead_driver_error_1202y(exc: Any) -> bool:
+    """Is this exception the shared driver having gone away? (#1202y)"""
+    try:
+        t = str(exc)
+    except Exception:
+        return False
+    return any(m in t for m in _DEAD_DRIVER_MARKS_1202Y)
+
+
 class BrowserManager:
     """Manages browser lifecycle and state"""
     
@@ -86,6 +105,33 @@ class BrowserManager:
             self._logger.warning(f"Path {path} escapes workspace, using screenshots dir")
             return self.screenshot_dir / Path(path).name
     
+    async def recover_for_retry_1202y(self, exc: Any) -> bool:
+        """Rebuild if `exc` says the driver died, so the caller can retry ONCE. (#1202y)
+
+        #1198 made a dead driver recoverable, and r30 proved it: the driver died twice and
+        was rebuilt twice, with no permanent failures. What it does not do is save the call
+        that DISCOVERS the death — `ensure_browser` runs at the start of a tool, so the
+        in-flight `goto`/`click` still fails and the lane still writes a FAIL record for it.
+        r32 measured the residue: two rebuilds, and two failures that reached the verifier —
+
+            21:39  browser_click FAILED: Page.click: Connection closed while reading ...
+            00:24  browser_navigate FAILED (113778ms): Page.goto: Connection closed ...
+
+        Both are the probe, not the product, and both become prose in a check record that
+        someone then has to triage. Rebuilding here and retrying once makes the death
+        invisible to the caller, which is where it belongs.
+
+        Returns True only when it both recognised the error AND rebuilt, so a caller can
+        retry without having to re-check anything. Never raises.
+        """
+        try:
+            if not is_dead_driver_error_1202y(exc):
+                return False
+            await self._discard_dead_driver_1198()
+            return bool(await self.ensure_browser())
+        except Exception:
+            return False
+
     async def _driver_is_live_1198(self) -> bool:
         """Is the shared driver actually reachable, or only non-None? (#1198)
 
