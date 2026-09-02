@@ -1068,3 +1068,68 @@ def placeholder_media_urls_1202ax(project_dir: Any, limit: int = 12) -> List[str
         warn_once_1201("placeholder_media_urls_1202ax",
                        "the scan for seeded media URLs on a reserved domain", _exc)
     return out
+
+
+def underspecified_tables_1202az(tables: Any, project_dir: Any,
+                                 limit: int = 8) -> List[str]:
+    """Contract tables that hold a primary key and nothing else. (#1202az)
+
+    The projector is faithful: it materialises ORM + DDL from exactly what the contract
+    holds. So a table registered with only `id` produces a one-column table, the staged
+    rows cannot land, and every consumer fails somewhere far away from the cause.
+
+    netflix-r30 is the worked example and it cost a whole run. Its contract registered
+    `titles` with 1 column while the staged dataset carried 12 fields per row; r32, same
+    environment two days later, registered 13. What r30 then did with the difference:
+
+        GET /api/genres/11/titles -> 404   x15, the id correctly SUBSTITUTED from the
+                                           list endpoint, because the lane derived genre
+                                           names from title rows that had no genre column
+        DELIVERY-GATE NO-CONVERGENCE ABORT after 148min, $930, nothing delivered
+
+    None of those symptoms names the cause. The framework holds both halves the whole
+    time — the contract shape and the dataset shape — and never compares them. 2 of 79
+    corpus runs carry this (r30 `titles`, tiktok-r81 `videos`); rare, and each one is a
+    dead run.
+
+    Only fires when the staged data proves the table needs more: a genuinely
+    single-column table with no rows staged for it is not a finding. Never raises.
+    """
+    out: List[str] = []
+    try:
+        import json as _json
+        from .message_format import join_capped as _jc1202az
+        data_f = Path(project_dir) / "app" / "backend" / "seed_dataset.json"
+        if not data_f.is_file() or not isinstance(tables, dict):
+            return out
+        try:
+            data = _json.loads(data_f.read_text(encoding="utf-8"))
+        except Exception:
+            return out
+        if not isinstance(data, dict):
+            return out
+        for name, rec in tables.items():
+            if not isinstance(rec, dict):
+                continue
+            cols = ((rec.get("schema") or {}).get("columns") or [])
+            if len(cols) > 1:
+                continue
+            rows = data.get(name)
+            if not (isinstance(rows, list) and rows and isinstance(rows[0], dict)):
+                continue
+            if len(rows[0]) <= len(cols):
+                continue
+            out.append(
+                "%s: the contract registers %d column(s) %s, but %d staged row(s) carry "
+                "%d fields each (%s)" % (
+                    name, len(cols),
+                    [c.get("name") for c in cols if isinstance(c, dict)][:3],
+                    len(rows), len(rows[0]),
+                    _jc1202az(sorted(rows[0]), total=len(rows[0]), cap=6)))
+            if len(out) >= limit:
+                break
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("underspecified_tables_1202az",
+                       "the scan for contract tables with no columns but staged data", _exc)
+    return out

@@ -477,6 +477,45 @@ volumes:
                 "(%d tables, %d endpoints) — the whole backend is framework-owned "
                 "(deterministic, consistent, auth-enforced): %s",
                 len(tables), len(endpoints), res.get("written"))
+              # #1202az: the projection above is faithful, which is exactly why a table
+              # registered with only `id` is dangerous — it materialises a one-column table,
+              # the staged rows cannot land, and every consumer fails far from the cause.
+              # netflix-r30 registered `titles` with 1 column while its dataset carried 12
+              # fields per row; r32, same environment two days later, registered 13. r30 then
+              # spent 148 minutes and $930 on `GET /api/genres/11/titles -> 404` (x15, the id
+              # correctly substituted from the list endpoint) before DELIVERY-GATE
+              # NO-CONVERGENCE ABORT, and nothing in that chain of symptoms names the cause.
+              # Both halves are in hand right here. Own try (#1201).
+              try:
+                  from .backend_audit import underspecified_tables_1202az
+                  from .message_format import join_capped as _jc1202az
+                  from pathlib import Path as _Path1202az
+                  _us1202az = underspecified_tables_1202az(
+                      tables, _Path1202az(out_dir))
+                  if _us1202az:
+                      orch._logger.error(
+                          "#1202az %d contract table(s) hold a primary key and nothing else "
+                          "while data is staged for them: %s. The skeleton just materialised "
+                          "them exactly as registered, so the rows cannot land and the "
+                          "failures will surface far from here (r30: 148min and $930 of "
+                          "`GET /api/genres/{id}/titles -> 404` before a no-convergence abort).",
+                          len(_us1202az), _jc1202az(_us1202az, total=len(_us1202az), cap=3))
+                      orch.hubs.workhub.create_task(
+                          title=("Register the columns for %d table(s) that have only an id"
+                                 % len(_us1202az))[:180],
+                          description=(
+                              "These tables are registered with a primary key and nothing else, "
+                              "but the staged dataset carries far more per row, so the framework "
+                              "projected a one-column table and the data has nowhere to go: "
+                              "%s.\n\nRegister the real columns for each and the skeleton will "
+                              "re-project them. Symptoms otherwise appear far away — a genre "
+                              "lookup 404ing on an id the list endpoint just returned, for one."
+                              % _jc1202az(_us1202az, total=len(_us1202az), cap=6)),
+                          assignee="backend", agent="scaffolder", priority="P1", kind="contract")
+              except Exception as _e1202az:
+                  from .message_format import warn_once_1201 as _w1202az
+                  _w1202az("underspecified_tables_1202az",
+                           "the empty-table-contract report (#1202az)", _e1202az)
             # Mechanism #43 (round 32: 17 endpoint tasks cancelled in cascade):
             # the skeleton just MATERIALIZED every contract table as ORM+DDL,
             # but their RegistryHub status stayed 'defined' — so the impl.table.*
