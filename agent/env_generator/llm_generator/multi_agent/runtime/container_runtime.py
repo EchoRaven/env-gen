@@ -38,6 +38,55 @@ from typing import Any, Dict
 _SAID: Dict[str, bool] = {}
 
 
+
+def _exited_container_reason_1202av(rt: str, service: str, want: str, timeout: int) -> str:
+    """Why is this run's `service` container gone? Ask the EXITED ones. (#1202av)
+
+    `docker compose up -d` without `--wait` returns rc=0 as soon as the start is issued, so
+    a container that starts and immediately dies still reports success. r32 shows both halves
+    and never joins them: 66 `up -d --remove-orphans -> rc=0` between 20:10 and 00:15, and
+    across the very same window 179 errors saying this run has no running container. The log
+    holds no exit, no restart, no unhealthy line anywhere — because nothing ever looked at a
+    stopped container. Four and a half hours of "NOT RUNNING" with the reason one command away.
+
+    Best-effort and read-only: any failure returns "" and the caller says exactly what it said
+    before. Never raises.
+    """
+    try:
+        ps = subprocess.run(
+            [rt, "ps", "-a", "--filter", "name=%s" % service, "--format", "{{.ID}}"],
+            capture_output=True, text=True, timeout=timeout)
+        for cid in [x for x in ps.stdout.split() if x][:12]:
+            try:
+                out = subprocess.run(
+                    [rt, "inspect", cid, "--format",
+                     "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}"
+                     "|{{.State.Status}}|{{.State.ExitCode}}"],
+                    capture_output=True, text=True, timeout=timeout).stdout.strip()
+                lbl, _, rest = out.partition("|")
+                status, _, code = rest.partition("|")
+            except Exception:
+                continue
+            if not lbl or not (lbl == want or want in lbl.split(",")):
+                continue
+            if status == "running":
+                continue
+            tail = ""
+            try:
+                lg = subprocess.run([rt, "logs", "--tail", "3", cid],
+                                    capture_output=True, text=True, timeout=timeout)
+                _raw1202av = " ".join(((lg.stdout or "") + (lg.stderr or "")).split())
+                # #1034: declare the cut rather than presenting a slice as the whole tail.
+                tail = _raw1202av[:220] + ("…" if len(_raw1202av) > 220 else "")
+            except Exception:
+                pass
+            return ("this run's container %s is %s with exit code %s%s"
+                    % (cid[:12], status or "gone", code or "?",
+                       (" — last output: " + tail) if tail else ""))
+    except Exception:
+        pass
+    return ""
+
 def runtime_bin() -> str:
     """``docker`` when the binary exists, else ``podman``.
 
@@ -168,6 +217,14 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
             if not state_changed_1202ad(
                     "container_zero_match:%s:%s" % (want, service), len(ids)):
                 return ""
+            _why1202av = _exited_container_reason_1202av(rt, service, want, timeout)
+            if _why1202av:
+                log.error(
+                    "#1202av why this run's `%s` container is not running: %s. `up -d` without "
+                    "--wait returns rc=0 once the start is ISSUED, so a container that dies "
+                    "immediately still looks like a successful bring-up — r32 logged 66 such "
+                    "successes across the same window as 179 of the line below, and never once "
+                    "looked at the stopped container.", service, _why1202av)
             log.error(
                 "#962/#1130 `%s ps --filter name=%s` found %d running container(s) with that "
                 "name and NONE of them belongs to this run (no config_files label matches %s). "
