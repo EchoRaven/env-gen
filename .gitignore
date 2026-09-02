@@ -41,6 +41,7 @@ forgingground_gen.db
 # Dev run/launch scripts — kept local only, not pipeline code.
 run_*.sh
 launch_*.sh
+check_*.sh
 .env
 
 # Design-Prep validation fixtures (local-only, like run scripts)
