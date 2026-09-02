@@ -1579,7 +1579,15 @@ def complete_coverage_chain(hubs) -> Dict[str, Any]:
         return {}
     try:
         chains = rh.get_verification_chains() or {}
-    except Exception:
+    except Exception as _e1202am:
+        # #1202am: the caller's #701 handler announces only when this RAISES. Swallowing
+        # here returns {} and #701 never fires, so the prevention for what its own comment
+        # calls "the #1 recurring stuck-blocker (run-12/run-19 wedged 78min on
+        # business_chain_api_coverage)" fails with nothing anywhere saying so.
+        from .message_format import warn_once_1201
+        warn_once_1201("complete_coverage_chain.read",
+                       "coverage-by-construction (#701) — the existing chains could NOT be read, so business_chain_api_coverage "
+                       "may wedge delivery", _e1202am)
         return {}
     verifier_authored = [
         rec for name, rec in chains.items()
@@ -1614,7 +1622,15 @@ def complete_coverage_chain(hubs) -> Dict[str, Any]:
             return {}
         vc.update(lambda m: m.set("_framework_coverage", rec, "framework"),
                   change_info={"agent": "framework"})
-    except Exception:
+    except Exception as _e1202am:
+        # #1202am: the caller's #701 handler announces only when this RAISES. Swallowing
+        # here returns {} and #701 never fires, so the prevention for what its own comment
+        # calls "the #1 recurring stuck-blocker (run-12/run-19 wedged 78min on
+        # business_chain_api_coverage)" fails with nothing anywhere saying so.
+        from .message_format import warn_once_1201
+        warn_once_1201("complete_coverage_chain.write",
+                       "coverage-by-construction (#701) — the coverage chain could NOT be registered, so business_chain_api_coverage "
+                       "may wedge delivery", _e1202am)
         return {}
     return {"covered": len(steps), "endpoints": [s["path"] for s in steps]}
 
