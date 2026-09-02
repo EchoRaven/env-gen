@@ -40,6 +40,14 @@ ALLOWED_DOTFILES = frozenset({
     ".env.example",
 })
 
+# #1202aw: the framework's OWN scratch. `.openenv_trash/` is created by file_tools'
+# delete path (it moves a file there instead of unlinking it) and is written into the
+# generated project's .gitignore, so refusing to stage it is both correct and entirely
+# unremarkable — there is nothing for a reader to act on. r32 logged 71 warnings about
+# the framework's own trash can, all of them for one path. Still refused, just not
+# announced: a dotfile an AGENT authored is a real finding and keeps its warning.
+FRAMEWORK_SCRATCH_DOTDIRS_1202AW = frozenset({".openenv_trash"})
+
 
 def _should_stage_path(rel_path: str, agent_id: Optional[str] = None) -> bool:
     """Return True if ``rel_path`` is safe to auto-stage in a worktree.
@@ -77,6 +85,8 @@ def _should_stage_path(rel_path: str, agent_id: Optional[str] = None) -> bool:
     if "__pycache__" in parts or base.endswith((".pyc", ".pyo", ".pyd")):
         return False
     for part in parts:
+        if part in FRAMEWORK_SCRATCH_DOTDIRS_1202AW:
+            return False          # #1202aw: ours, gitignored, and not worth a line
         if part.startswith(".") and part not in ALLOWED_DOTFILES:
             try:
                 _LOG.warning(
