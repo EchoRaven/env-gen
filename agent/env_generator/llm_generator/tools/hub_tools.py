@@ -1607,6 +1607,40 @@ class WorkhubAddMeetingDecisionTool(HubTool):
                 # implying truncation, so it stops looping.
                 _wrong = non_contract_keys(_content, _sec)
                 if _wrong:
+                    # #1202bb: 145 of the ~171 corpus rejections are ['api_endpoints'] — the
+                    # comment above measured it. #1037 made the message name the substitution
+                    # (`api_endpoints` -> `endpoints`) and still threw the section away, so the
+                    # framework states the lane's intent with certainty and discards the work
+                    # anyway. r31 shows the cost: rejected four times in the same second, the
+                    # correct spelling already in hand each time.
+                    #
+                    # Accept ONLY where rejecting loses everything and the rename cannot be
+                    # wrong: every key present is a near-miss (nothing valid to preserve), each
+                    # maps to a DIFFERENT recognized key, and no target is already occupied.
+                    # `deprecated_endpoints` matches the same suffix rule while meaning
+                    # something else, so anything ambiguous or partial still falls through.
+                    try:
+                        import logging as _lg1202bb
+                        from multi_agent.runtime.kickoff.section_substance import (
+                            near_miss_contract_keys_1037)
+                        _near = near_miss_contract_keys_1037(_wrong, _sec)
+                        _tgts = list(_near.values())
+                        if (isinstance(_content, dict) and _near
+                                and len(_near) == len(_wrong)
+                                and len(set(_tgts)) == len(_tgts)
+                                and not any(t in _content for t in _tgts)):
+                            for _k, _t in list(_near.items()):
+                                _content[_t] = _content.pop(_k)
+                            _lg1202bb.getLogger(__name__).warning(
+                                "#1202bb accepted section '%s' after renaming %s — the near-miss "
+                                "was unambiguous and rejecting would have discarded the lane's "
+                                "whole section over a key name the framework had already "
+                                "resolved.", _sec,
+                                ", ".join(f"`{k}`->`{v}`" for k, v in sorted(_near.items())))
+                            _wrong = non_contract_keys(_content, _sec)
+                    except Exception:
+                        pass
+                if _wrong:
                     # #1037: the remediation used to be the auth paragraph unconditionally.
                     # 145 of the ~171 rejections in the r1-r175 corpus are ['api_endpoints']
                     # and only 10 involve auth, so the advice addressed 6% of cases and
