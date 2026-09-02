@@ -190,7 +190,13 @@ def unregistered_routes_1202h(backend_dir: Any, endpoints: Any) -> list:
                 entry = "%s %s (%s)" % (verb, path, f.name)
                 if entry not in out:
                     out.append(entry)
-    except Exception:
+    except Exception as _e1202ae:
+        # #1202ae: a crashed scan must not read as "no unregistered routes". The caller sees
+        # only this return value, so a bare `[]` is indistinguishable from a clean tree.
+        from .message_format import warn_once_1201
+        warn_once_1201("unregistered_routes_1202h",
+                       "the unregistered-route scan (#1202h) — routes are NOT known declared",
+                       _e1202ae)
         return []
     return out
 

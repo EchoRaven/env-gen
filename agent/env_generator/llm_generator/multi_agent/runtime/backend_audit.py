@@ -932,7 +932,15 @@ def _widens_auth_1202s(tree: Any, assign_node: Any) -> bool:
                 if _writes_users_1202s(n):
                     return True
         return False
-    except Exception:
+    except Exception as _e1202ae:
+        # #1202ae: a detector that CRASHED must not read as a detector that found
+        # nothing. The gate wrapper announces via #792 when it cannot run, but it only sees
+        # this function's return value — a bare `[]` here makes the wrapper report "clean"
+        # and the announcement never fires. That is the exact shape this session kept
+        # finding in other people's code (#1201, #1039, the seed audit), written by me into
+        # a SECURITY gate.
+        from .message_format import warn_once_1201
+        warn_once_1201("_widens_auth_1202s", "the auth-provisioning check (#1202s) — a bypass may go unblocked", _e1202ae)
         return False
 
 
@@ -979,6 +987,14 @@ def auth_override_findings_1202s(backend_dir: Any) -> List[str]:
                             "shipped exactly that. Fix the flow the validator is complaining "
                             "about, not the check it complains through."
                             % (fname, name, getattr(node, "lineno", 0)))
-    except Exception:
+    except Exception as _e1202ae:
+        # #1202ae: a detector that CRASHED must not read as a detector that found
+        # nothing. The gate wrapper announces via #792 when it cannot run, but it only sees
+        # this function's return value — a bare `[]` here makes the wrapper report "clean"
+        # and the announcement never fires. That is the exact shape this session kept
+        # finding in other people's code (#1201, #1039, the seed audit), written by me into
+        # a SECURITY gate.
+        from .message_format import warn_once_1201
+        warn_once_1201("auth_override_findings_1202s", "the lane auth-override gate (#1202s) — delivery is NOT known clean", _e1202ae)
         return []
     return sorted(set(out))

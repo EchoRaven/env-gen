@@ -12091,7 +12091,15 @@ def unstaged_asset_refs_1202j(frontend_dir, seed_path=None, cap: int = 40) -> Li
             out.append(ref)
             if len(out) >= cap:
                 break
-    except Exception:
+    except Exception as _e1202ae:
+        # #1202ae: a crashed detector must not read as a clean one. This function's caller
+        # only sees its return value, so a bare `[]` reports "no unstaged assets" whether it
+        # checked or died — the shape this session kept finding elsewhere (#1201, #1039, the
+        # seed audit), written by me two days ago.
+        from .message_format import warn_once_1201
+        warn_once_1201("unstaged_asset_refs_1202j",
+                       "the unstaged-asset scan (#1202j) — assets are NOT known staged",
+                       _e1202ae)
         return []
     return out
 
