@@ -370,7 +370,16 @@ def _db_container_1039(compose, timeout: int) -> str:
     failed probe comes to read as a measurement.
     """
     from .container_runtime import container_id
-    for svc in ("database", "db", "postgres"):
+    # #1202x: probe only the services this compose file actually declares. The blind sweep
+    # over ("database", "db", "postgres") means two of the three name a service the project
+    # does not have, and each miss costs a `docker ps` and an ERROR line saying it found
+    # other runs' containers instead. r30 logged 132 of those for `db` alone, on a project
+    # whose only database service is `database` — an error about a service that was never
+    # supposed to exist. Falls back to the full list when the file cannot be read, so a
+    # parse failure loses nothing.
+    _declared = _compose_services_1202x(compose)
+    _order = [s for s in ("database", "db", "postgres") if not _declared or s in _declared]
+    for svc in (_order or ["database", "db", "postgres"]):
         try:
             cid = container_id(compose, svc, timeout=timeout)
         except Exception:
@@ -378,6 +387,31 @@ def _db_container_1039(compose, timeout: int) -> str:
         if cid:
             return cid
     return ""
+
+
+def _compose_services_1202x(compose) -> set:
+    """Service names declared in a compose file, or an empty set if it cannot be read.
+
+    Deliberately not a YAML parse: this runs inside a gate, pyyaml is not guaranteed here, and
+    an empty set means "do not narrow", which is the safe direction.
+    """
+    out = set()
+    try:
+        from pathlib import Path as _P
+        import re as _re1202x
+        text = _P(compose).read_text(encoding="utf-8")
+        body = text.split("\nservices:", 1)
+        if len(body) < 2:
+            return out
+        for line in body[1].splitlines():
+            if line[:1] not in (" ", "\t") and line.strip():
+                break                       # left the services block
+            m = _re1202x.match(r"^  ([A-Za-z0-9._-]+):\s*$", line)
+            if m:
+                out.add(m.group(1))
+    except Exception:
+        return set()
+    return out
 
 
 def _shq(s: str) -> str:
