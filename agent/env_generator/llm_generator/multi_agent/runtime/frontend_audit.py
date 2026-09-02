@@ -2368,3 +2368,99 @@ def duplicate_route_content_groups(frontend_src: Any, ui_pages: Any) -> List[Dic
     except Exception:
         return out
     return sorted(out, key=lambda g: -len(g["routes"]))
+
+
+# --- #1202ai: a prop the component never declares is silently dropped -------------------
+# React does not complain about an attribute a component does not destructure, so this class
+# of break has NO runtime symptom: no console error, no failed request, no 404. Every gate
+# this repo owns stays green while a feature quietly does nothing.
+#
+# Measured over the 117 corpus environments, counting only cases where the prop name appears
+# NOWHERE in the component's own source file (so it cannot be read off `props` or forwarded):
+#
+#     232 occurrences in 51 of 117 runs (44%)
+#
+#     <ResultsSidebar hoveredPlaceId onHover>  declares {error, isPharmacy, loading}
+#                                              -> map/list hover linkage is dead
+#     <PostHeader createdAt>                   declares {user}      -> no timestamp
+#     <PostHeader onFollowToggle>              declares {isFollowed, setIsFollowed, user}
+#     <LoginForm setToken>                     declares {setIsRegister} -> token never stored
+#     <NetflixChrome title subtitle>  (r32)    declares {children, activeLabel, menuOpen}
+#
+# REPORTS, does not block. The inference is static and this repo has been burned by static
+# inference before — #1199 was downgraded from rewriting `apis_used` to reporting it after
+# false rewrites on tiktok/googlemaps/instagram. Components taking `props` wholesale, using a
+# rest element, or wrapped in memo/forwardRef/HOC are excluded rather than guessed at.
+_PROP_DECL_FN_1202AI = re.compile(r"function\s+(\w+)\s*\(\s*\{([^}]*)\}")
+_PROP_DECL_ARROW_1202AI = re.compile(
+    r"(?:const|let|var)\s+(\w+)\s*=\s*(?:React\.)?(?:memo|forwardRef)?\(?\s*\(?\s*\{([^}]*)\}", re.S)
+_PROP_OPAQUE_1202AI = re.compile(
+    r"(?:const|let|var)\s+(\w+)\s*=\s*(?:\w+\.)?(?:memo|forwardRef|withRouter|connect|styled)[\s(]"
+    r"|(?:const|let|var)\s+(\w+)\s*=\s*\(?\s*props\s*\)?\s*=>"
+    r"|function\s+(\w+)\s*\(\s*props\s*\)")
+_PROP_USE_1202AI = re.compile(r"<([A-Z]\w*)\s+([^/>]{0,300})")
+_PROP_ATTR_1202AI = re.compile(r"(\w+)\s*=")
+_PROP_SAFE_1202AI = frozenset({
+    "key", "ref", "className", "style", "children", "data-testid", "id", "onClick",
+    "aria-label"})
+
+
+def dropped_prop_findings_1202ai(frontend_src: Any, limit: int = 12) -> List[str]:
+    """Props passed to a component that never declares or mentions them. Never raises."""
+    out: List[str] = []
+    try:
+        root = Path(frontend_src)
+        if not root.is_dir():
+            return []
+        files = [f for f in list(root.rglob("*.jsx")) + list(root.rglob("*.tsx"))
+                 if "node_modules" not in f.parts]
+        decls: Dict[str, set] = {}
+        bodies: Dict[str, str] = {}
+        opaque: set = set()
+        texts: Dict[Any, str] = {}
+        for f in files[:400]:
+            try:
+                texts[f] = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            t = texts[f]
+            for m in _PROP_OPAQUE_1202AI.finditer(t):
+                opaque.add(m.group(1) or m.group(2) or m.group(3))
+            for rx in (_PROP_DECL_FN_1202AI, _PROP_DECL_ARROW_1202AI):
+                for m in rx.finditer(t):
+                    if "..." in m.group(2):
+                        opaque.add(m.group(1))
+                        continue
+                    props = {p.split("=")[0].split(":")[0].strip()
+                             for p in m.group(2).split(",") if p.strip()}
+                    if props and m.group(1) not in decls:
+                        decls[m.group(1)] = props
+                        bodies[m.group(1)] = t
+        seen = set()
+        for f, t in texts.items():
+            for m in _PROP_USE_1202AI.finditer(t):
+                comp = m.group(1)
+                if comp in opaque or comp not in decls:
+                    continue
+                passed = set(_PROP_ATTR_1202AI.findall(m.group(2)))
+                for attr in sorted(passed - decls[comp] - _PROP_SAFE_1202AI):
+                    if re.search(r"\b" + re.escape(attr) + r"\b", bodies[comp]):
+                        continue          # mentioned somewhere in the component -> not dropped
+                    key = (comp, attr)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(
+                        "%s: <%s %s={...}> — %s never declares or mentions `%s`, so React "
+                        "drops it silently and whatever it was for does nothing. The "
+                        "component takes {%s}."
+                        % (f.name, comp, attr, comp, attr, ", ".join(sorted(decls[comp])[:6])))
+                    if len(out) >= limit:
+                        return out
+    except Exception as _e1202ai:
+        from .message_format import warn_once_1201
+        warn_once_1201("dropped_prop_findings_1202ai",
+                       "the dropped-prop scan (#1202ai) — passed props are NOT known received",
+                       _e1202ai)
+        return []
+    return out

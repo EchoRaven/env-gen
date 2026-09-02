@@ -920,6 +920,25 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("unstaged_asset_refs_1202j",
                                "the unstaged-asset report (#1202j)", _e1202j)
+            # #1202ai: a prop the component never declares is dropped by React with no
+            # runtime symptom — no console error, no failed request — so every gate stays
+            # green while the feature does nothing. 232 occurrences across 51 of the 117
+            # corpus environments. Reports; the inference is static and #1199 already taught
+            # this repo what static inference costs when it writes. Own try (#1201).
+            try:
+                from .frontend_audit import dropped_prop_findings_1202ai
+                from .message_format import join_capped, state_changed_1202ad
+                _dp = dropped_prop_findings_1202ai(fe / "src")
+                if _dp and state_changed_1202ad("dropped_props:%s" % out_dir, tuple(_dp)):
+                    orch._logger.warning(
+                        "#1202ai %d prop(s) are passed to a component that never declares or "
+                        "mentions them — React drops them silently, so whatever they were for "
+                        "does nothing and no gate can see it: %s",
+                        len(_dp), join_capped(_dp, total=len(_dp), cap=4))
+            except Exception as _e1202ai:
+                from .message_format import warn_once_1201
+                warn_once_1201("dropped_prop_findings_1202ai",
+                               "the dropped-prop report (#1202ai)", _e1202ai)
             try:
                 from .frontend_scaffold import reconcile_ui_page_apis_1199
                 _rec1199 = reconcile_ui_page_apis_1199(fe, ui_pages, registryhub)
