@@ -552,6 +552,45 @@ volumes:
             from .frontend_audit import sync_ui_page_statuses
             _pa = sync_ui_page_statuses(orch.output_dir, orch.hubs.workhub,
                                         registryhub=getattr(orch.hubs, "registryhub", None))
+            # #1202bc: `component_drift` has been computed and returned all along and
+            # nobody reads it. r31 reported 12 pages whose declared components the
+            # delivered page renders NONE of — `landing` declares public_header and
+            # landing_hero, and the shipped LandingPage.jsx is 45 lines with no component
+            # tag and no ../components/ import at all. Checked against the clobber loop
+            # first, and it is a different fault: r31 logged zero PROJECTION CLOBBER and
+            # zero SCAFFOLD LOOP.
+            #
+            # The condition is already conservative — it fires only when EVERY declared
+            # component is missing — and the frontend lane both owns the pages and can fix
+            # it, so this is #780's "a finding nobody is assigned" once more. The advice
+            # doubles as #1202at's: a page built out of ../components/ is also the shape
+            # the projector keeps.
+            try:
+                _cd1202bc = _pa.get("component_drift") or {}
+                if _cd1202bc:
+                    from .message_format import join_capped as _jc1202bc
+                    _pg1202bc = sorted(_cd1202bc)
+                    orch.hubs.workhub.create_task(
+                        title=("Build the %d page(s) whose declared components are missing"
+                               % len(_pg1202bc))[:180],
+                        description=(
+                            "These pages declare components in the contract and the delivered "
+                            "page renders none of them, so the contract describes a page that "
+                            "was not shipped: %s.\n\nBuild each declared component under "
+                            "`src/components/` and have the page import and render it. That is "
+                            "also the shape the projector KEEPS (#914/#1020) — a page built "
+                            "from ../components/ survives later scaffold passes, one written "
+                            "inline does not."
+                            % _jc1202bc(
+                            ["%s (%s)" % (n, _jc1202bc(
+                                _cd1202bc[n], total=len(_cd1202bc[n]), cap=3))
+                             for n in _pg1202bc],
+                            total=len(_pg1202bc), cap=6)),
+                        assignee="frontend", agent="scaffolder", priority="P2", kind="fidelity")
+            except Exception as _e1202bc:
+                from .message_format import warn_once_1201 as _w1202bc
+                _w1202bc("component_drift_1202bc",
+                         "the component-drift report (#1202bc)", _e1202bc)
             if _pa.get("implemented") or _pa.get("regressed"):
                 orch._logger.warning(
                     "UI-PAGE LIFECYCLE: implemented=%s regressed=%s pending=%s",
