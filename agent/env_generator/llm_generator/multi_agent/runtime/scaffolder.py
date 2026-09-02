@@ -895,13 +895,21 @@ volumes:
                 from .message_format import join_capped
                 _as1202j = unstaged_asset_refs_1202j(
                     fe, _P(out_dir) / "app" / "backend" / "seed_data.json")
+                # #1202ac: once per DISTINCT set, not once per scaffold pass. r32 logged
+                # 117 copies of this line for one unchanging list — the same noise I removed
+                # from the heal declines (#1202n), the drift report (#1202p), the seed audit
+                # (#1202v) and the lane-page verdict (#1202ab), reintroduced by me here. A
+                # set that CHANGES is reported again; standing still is quiet.
                 if _as1202j:
-                    orch._logger.warning(
-                        "#1202j %d asset path(s) are referenced but exist nowhere in the "
-                        "tree — they will 404 and the visual judge will score the hole they "
-                        "leave (#113's symptom, a cause it does not cover). Stage them into "
-                        "design/assets or stop referencing them: %s",
-                        len(_as1202j), join_capped(_as1202j, total=len(_as1202j)))
+                    _key1202ac = tuple(sorted(_as1202j))
+                    if getattr(orch, "_unstaged_assets_said_1202ac", None) != _key1202ac:
+                        orch._unstaged_assets_said_1202ac = _key1202ac
+                        orch._logger.warning(
+                            "#1202j %d asset path(s) are referenced but exist nowhere in the "
+                            "tree — they will 404 and the visual judge will score the hole they "
+                            "leave (#113's symptom, a cause it does not cover). Stage them into "
+                            "design/assets or stop referencing them: %s",
+                            len(_as1202j), join_capped(_as1202j, total=len(_as1202j)))
             except Exception as _e1202j:
                 from .message_format import warn_once_1201
                 warn_once_1201("unstaged_asset_refs_1202j",

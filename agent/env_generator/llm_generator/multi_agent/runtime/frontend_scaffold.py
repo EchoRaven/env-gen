@@ -9892,6 +9892,8 @@ _SUBMIT_1197 = re.compile(r"<form\b|type\s*=\s*[\"']submit[\"']")
 # #1202p: per-frontend memo of the drift already reported, so an unchanged
 # finding is stated once instead of once per scaffold pass.
 _DRIFT_SAID_1202P: Dict[str, Dict[str, tuple]] = {}
+# #1202ab: per-frontend memo of the lane-page verdict already reported.
+_LANE_PAGE_SAID_1202AB: Dict[str, Dict[str, tuple]] = {}
 
 _REL_IMPORT_1197 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
 
@@ -10816,14 +10818,32 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                                 "would_keep_lane": bool(_defer_914),
                                 "flag_on": bool(_env_flag_914()),
                             })
+                            # #1202ab: two things wrong with this line, both from #914's
+                            # era. It carried the advice "set ENVGEN_DEFER_TO_LANE_PAGE=1 to
+                            # keep the lane's" NEXT TO the verdict "KEEPING the lane's page"
+                            # — advice for a flag #1020 turned ON by default, so it told the
+                            # reader to switch on the very behaviour they were watching work.
+                            # And it fired on every scaffold pass: r32 logged 117 copies per
+                            # page across nine pages, roughly a thousand lines saying nothing
+                            # had changed. Same rule as #1202n/#1202p/#1202v — report a state,
+                            # not a heartbeat — and only offer the flag when it would change
+                            # something.
                             try:
-                                __import__("logging").getLogger(__name__).warning(
-                                    "LANE PAGE WITH OWN COMPONENTS: %s — %d lines importing "
-                                    "../components/ vs a %d-line projection. %s (#914; set "
-                                    "ENVGEN_DEFER_TO_LANE_PAGE=1 to keep the lane's).",
-                                    comp, len((_existing or "").splitlines()),
-                                    len((_cand or "").splitlines()),
-                                    "KEEPING the lane's page" if _defer_914 else "replacing it")
+                                _state1202ab = (comp, bool(_defer_914),
+                                                len((_existing or "").splitlines()))
+                                _seen1202ab = _LANE_PAGE_SAID_1202AB.setdefault(
+                                    str(frontend_dir), {})
+                                if _seen1202ab.get(comp) != _state1202ab:
+                                    _seen1202ab[comp] = _state1202ab
+                                    __import__("logging").getLogger(__name__).warning(
+                                        "LANE PAGE WITH OWN COMPONENTS: %s — %d lines importing "
+                                        "../components/ vs a %d-line projection. %s%s",
+                                        comp, len((_existing or "").splitlines()),
+                                        len((_cand or "").splitlines()),
+                                        "KEEPING the lane's page (#914)" if _defer_914
+                                        else "replacing it (#914)",
+                                        "" if _defer_914 else
+                                        " — set ENVGEN_DEFER_TO_LANE_PAGE=1 to keep it instead.")
                             except Exception:
                                 pass
                         if (_cand_ok and not _defer_914 and
