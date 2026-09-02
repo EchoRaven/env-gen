@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
@@ -47,6 +48,36 @@ def _dir_bytes(path: Path) -> int:
             continue
     return total
 
+
+
+# #1202ay: compiled-Python leftovers are the one kind of "dirty" that means nothing.
+# `auto_commit` refuses `__pycache__/` and `*.pyc` unconditionally — committed .pyc
+# files cause "Cannot merge binary files" on agent->integration merges — so they can
+# never be lane work being protected. Measured across the recent runs: 4 of 52
+# worktrees are dirty, and r32's backend is dirty ONLY for `?? app/backend/__pycache__/`,
+# which would keep 186MB checked out to preserve build junk. r31's backend, by
+# contrast, holds `M app/backend/custom_routes.py` — real uncommitted source, and
+# exactly what the no-force policy exists to save.
+#
+# Removing the junk first lets `git worktree remove` make the same decision it made
+# before, on the same evidence, minus the noise. Anything else dirty still refuses.
+_BUILD_JUNK_SUFFIXES_1202AY = (".pyc", ".pyo", ".pyd")
+
+
+def _drop_build_junk_1202ay(worktree: Path) -> None:
+    """Delete compiled-Python leftovers so they cannot masquerade as lane work."""
+    try:
+        for d in worktree.rglob("__pycache__"):
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+        for f in worktree.rglob("*"):
+            try:
+                if f.is_file() and f.name.endswith(_BUILD_JUNK_SUFFIXES_1202AY):
+                    f.unlink()
+            except Exception:
+                continue
+    except Exception:
+        pass
 
 def reclaim_run_worktrees_1202as(output_dir: Any) -> Dict[str, Any]:
     """Remove the run's per-lane worktree checkouts. Never raises. (#1202as)
@@ -70,6 +101,7 @@ def reclaim_run_worktrees_1202as(output_dir: Any) -> Dict[str, Any]:
             if not entry.is_dir():
                 continue
             size = _dir_bytes(entry)
+            _drop_build_junk_1202ay(entry)
             try:
                 subprocess.run(
                     ["git", "worktree", "remove", str(entry)],
