@@ -243,7 +243,11 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
             if want and not (want & have):
                 out.append(f"{name} (route_hint {sc.get('route_hint') or '-'})")
         return out[:8]
-    except Exception:
+    except Exception as _exc_1202aq:
+        # #1202aq: report-only, but a crashed scan returned [] with no line at
+        # all, so "did not run" and "found nothing" looked identical.
+        from .message_format import warn_once_1201
+        warn_once_1201("_imageless_spec_screens_unreachable_823", "the scan for spec screens whose images are unreachable", _exc_1202aq)
         return []
 
 # #830: `validation:<kind>:<flow>` — the kind as the record NAME carries it.
@@ -305,7 +309,11 @@ def _unstaged_asset_classes_842(output_dir: Any) -> List[str]:
                 seen.add(cls)
                 out.append(f"{cls} (asked by {sc.get('name')})")
         return out[:6]
-    except Exception:
+    except Exception as _exc_1202aq:
+        # #1202aq: report-only, but a crashed scan returned [] with no line at
+        # all, so "did not run" and "found nothing" looked identical.
+        from .message_format import warn_once_1201
+        warn_once_1201("_unstaged_asset_classes_842", "the scan for asset classes that were never staged", _exc_1202aq)
         return []
 
 # #844: entity KINDS a screen is about, against the kinds the staged dataset actually contains.
@@ -366,7 +374,11 @@ def _unseeded_entity_kinds_844(output_dir: Any) -> List[str]:
                         and not (have & set(kinds)):
                     out.append(f"{cls} (screen {name})")
         return out[:6]
-    except Exception:
+    except Exception as _exc_1202aq:
+        # #1202aq: report-only, but a crashed scan returned [] with no line at
+        # all, so "did not run" and "found nothing" looked identical.
+        from .message_format import warn_once_1201
+        warn_once_1201("_unseeded_entity_kinds_844", "the scan for entity kinds the seed never populates", _exc_1202aq)
         return []
 
 # #845: say-once for STANDING facts. #842 fires on 150 of 150 corpus runs and #844 on 141 of 150 --
@@ -484,7 +496,11 @@ def never_matching_filters_1139(project_dir: Any) -> List[Dict[str, str]]:
                                    else "every seeded row leaves it empty")),
                 })
         return out[:5]
-    except Exception:
+    except Exception as _exc_1202aq:
+        # #1202aq: report-only, but a crashed scan returned [] with no line at
+        # all, so "did not run" and "found nothing" looked identical.
+        from .message_format import warn_once_1201
+        warn_once_1201("never_matching_filters_1139", "the scan for filters that can never match any row", _exc_1202aq)
         return []
 
 
