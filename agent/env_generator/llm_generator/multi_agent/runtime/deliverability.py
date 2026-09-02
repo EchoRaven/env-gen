@@ -147,15 +147,40 @@ def _probe_counts(probes: list) -> Dict[str, int]:
     return counts
 
 
+# #1202ag: a coverage audit that CRASHED told the gate the app was clean.
+#
+# Both failure paths returned `{"is_clean": True, "dead_count_by_kind": {}}`, and the gate
+# reads it as `if not coverage.get("is_clean", True) ...` — so a broken audit and a spotless
+# app produce byte-identical gate behaviour, silently. This is the shape the session has been
+# removing all day (#1201, #1039, #1202ae, #1202af), sitting in the gate module itself.
+#
+# `is_clean: True` STAYS. Flipping it would turn every audit fault into a hard blocker, which
+# is #566j's false-blocker failure and cost r117/r120 a 75-minute abort. What changes is that
+# the result now carries `degraded: True` — the convention this same module already uses for
+# `_DEGRADED_FLOW_COVERAGE`, whose docstring says it exists "so operators can distinguish a
+# broken audit from a clean app" — and says so once.
+_DEGRADED_COVERAGE_1202AG = {
+    "is_clean": True, "dead_count_by_kind": {}, "source": "degraded", "degraded": True,
+}
+
+
 def _coverage_summary(hub_registry, app_root) -> Dict[str, Any]:
     try:
         from .coverage_audit import compute_coverage
-    except Exception:
-        return {"is_clean": True, "dead_count_by_kind": {}}
+    except Exception as _e1202ag:
+        from .message_format import warn_once_1201
+        warn_once_1201("_coverage_summary.import",
+                       "the coverage audit (#1202ag) — dead endpoints/tables/files are NOT "
+                       "known absent; the gate is reading a DEGRADED clean", _e1202ag)
+        return dict(_DEGRADED_COVERAGE_1202AG)
     try:
         report = compute_coverage(hub_registry, Path(app_root))
-    except Exception:
-        return {"is_clean": True, "dead_count_by_kind": {}}
+    except Exception as _e1202ag:
+        from .message_format import warn_once_1201
+        warn_once_1201("_coverage_summary.run",
+                       "the coverage audit (#1202ag) — dead endpoints/tables/files are NOT "
+                       "known absent; the gate is reading a DEGRADED clean", _e1202ag)
+        return dict(_DEGRADED_COVERAGE_1202AG)
     return {
         "is_clean": report.is_clean,
         "dead_count_by_kind": {
