@@ -9895,6 +9895,24 @@ _DRIFT_SAID_1202P: Dict[str, Dict[str, tuple]] = {}
 # #1202ab: per-frontend memo of the lane-page verdict already reported.
 _LANE_PAGE_SAID_1202AB: Dict[str, Dict[str, tuple]] = {}
 
+
+# #1202at: pages the projector clobbers again after the lane has rewritten them. #951
+# already DETECTS the loop and calls it "waste either way", then clobbers anyway and
+# tells no one who could stop it — r32 burned three rounds each on GenresPage and
+# LoginPage. The lane cannot see that its work is discarded, so it keeps rewriting.
+# There IS an exit: #914/#1020 KEEPS a page that imports `../components/` and replaces
+# one that does not, so the lane can keep its work by moving it into a component. That
+# is a fact only the framework holds, which makes telling the lane the whole fix.
+_SCAFFOLD_LOOP_PAGES_1202AT: Dict[str, Dict[str, int]] = {}
+
+
+def scaffold_loop_pages_1202at(frontend_dir: Any) -> Dict[str, int]:
+    """Pages whose lane rewrite the projector has clobbered 3+ times. (#1202at)"""
+    try:
+        return dict(_SCAFFOLD_LOOP_PAGES_1202AT.get(str(frontend_dir), {}))
+    except Exception:
+        return {}
+
 _REL_IMPORT_1197 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
 
 
@@ -10900,6 +10918,11 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                                             "capture. ENVGEN_DEFER_TO_LANE_PAGE decides who should "
                                             "win (#914); that this repeats is waste either way "
                                             "(#951).", comp, _n951)
+                                        # #1202at: and remember it, so the caller —
+                                        # which has the hubs this module does not —
+                                        # can tell the lane what would end the loop.
+                                        _SCAFFOLD_LOOP_PAGES_1202AT.setdefault(
+                                            str(frontend_dir), {})[comp] = _n951
                                     _ex_comp = len(set(re.findall(r"<([A-Z]\w*)", _existing)))
                                     __import__("logging").getLogger(__name__).warning(
                                         "PROJECTION CLOBBER: %s — replacing the lane's %d-line "

@@ -889,6 +889,45 @@ volumes:
             # page stub for its blank-route page twin (see the helper for the measurement).
             ui_pages = drop_component_page_twins_1087(ui_pages, registryhub)
             rep = scaffold_pages_from_contract(fe, ui_pages)
+            # #1202at: #951 detects the projector/lane tug-of-war, calls it "waste either
+            # way", and then clobbers anyway while telling nobody who could stop it. r32
+            # burned three rounds each on GenresPage and LoginPage; the lane never learns
+            # its work was discarded, so it rewrites the page and loses it again.
+            #
+            # The exit is a fact only the framework holds: #914/#1020 KEEPS a lane page
+            # that imports `../components/` and replaces one that does not. So the lane
+            # can keep every line it wrote by moving the body into a component — no
+            # policy change, no judge weakened, and the same projection still wins for
+            # the stubs it was built for. Own try (#1201); #672's twin-check stops a
+            # re-run filing it twice.
+            try:
+                from .frontend_scaffold import scaffold_loop_pages_1202at
+                from .message_format import join_capped
+                _loop1202at = scaffold_loop_pages_1202at(fe)
+                if _loop1202at:
+                    _names = sorted(_loop1202at)
+                    orch.hubs.workhub.create_task(
+                        title=("Keep %d page(s) the projector keeps overwriting"
+                               % len(_names))[:180],
+                        description=(
+                            "The framework has re-projected these pages after you rewrote "
+                            "them, 3+ times each this run, so none of that work reaches a "
+                            "screenshot: %s. This is not a verdict on your code — the "
+                            "projector replaces any page it cannot tell apart from a stub.\n\n"
+                            "How to keep it: the projector KEEPS a page that imports from "
+                            "`../components/` and REPLACES one that does not (#914/#1020). "
+                            "Move the page body into a component under `src/components/` "
+                            "and have the page import and render it. The same content then "
+                            "survives every later scaffold pass."
+                            % join_capped(_names, total=len(_names), cap=6)),
+                        assignee="frontend", agent="scaffolder", priority="P1",
+                        kind="fidelity")
+            except Exception as _t1202at:
+                orch._logger.warning(
+                    "#1202at could not tell the frontend lane about the projection loop "
+                    "(%s: %s) — the loop stays invisible to the only agent that can end "
+                    "it, which is the state this exists to fix.",
+                    type(_t1202at).__name__, str(_t1202at)[:110])
             # #1199: REPORT pages whose `apis_used` disagrees with the code that shipped. The
             # declaration is written once at registration and nothing checks it again, while
             # 84 call sites read it (gates, `_all_get_endpoints`, the #627/#629 consumer
