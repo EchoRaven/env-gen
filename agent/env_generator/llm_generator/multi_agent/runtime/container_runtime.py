@@ -53,10 +53,30 @@ def _exited_container_reason_1202av(rt: str, service: str, want: str, timeout: i
     before. Never raises.
     """
     try:
-        ps = subprocess.run(
-            [rt, "ps", "-a", "--filter", "name=%s" % service, "--format", "{{.ID}}"],
-            capture_output=True, text=True, timeout=timeout)
-        for cid in [x for x in ps.stdout.split() if x][:12]:
+        # Ask the daemon for OUR container by label rather than paging through every
+        # container that happens to share the service name. The first version capped the
+        # name scan at 12 and real data killed it immediately: this machine has 20
+        # containers matching `name=backend` and the one being asked about was 18th, so
+        # the diagnostic answered "" precisely in the many-runs case it was written for.
+        ids = []
+        try:
+            lf = subprocess.run(
+                [rt, "ps", "-a",
+                 "--filter", "label=com.docker.compose.project.config_files=%s" % want,
+                 "--filter", "name=%s" % service, "--format", "{{.ID}}"],
+                capture_output=True, text=True, timeout=timeout)
+            ids = [x for x in lf.stdout.split() if x]
+        except Exception:
+            ids = []
+        if not ids:
+            # A multi-file compose joins config_files with commas, which an exact label
+            # match cannot express — fall back to the name scan, uncapped, and let the
+            # label comparison below do the filtering.
+            ps = subprocess.run(
+                [rt, "ps", "-a", "--filter", "name=%s" % service, "--format", "{{.ID}}"],
+                capture_output=True, text=True, timeout=timeout)
+            ids = [x for x in ps.stdout.split() if x]
+        for cid in ids:
             try:
                 out = subprocess.run(
                     [rt, "inspect", cid, "--format",
