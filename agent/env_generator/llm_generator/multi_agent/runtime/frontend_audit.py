@@ -2070,13 +2070,29 @@ def invented_field_fallback_blockers(frontend_src: Any, limit: int = 20) -> List
         src = Path(frontend_src)
         if not src.is_dir():
             return []
-    except Exception:
+    except Exception as _e1202af:
+        # #1202af: this feeds the #175 delivery blocker, so an empty return reads as "no
+        # invented values" whether it checked or died. The wrapper's #792 announcement only
+        # fires when the CALL raises; an exception swallowed here never reaches it. Same
+        # default, same behaviour — only the silence is gone.
+        from .message_format import warn_once_1201
+        warn_once_1201("invented_field_fallback_blockers",
+                       "the invented-field scan (#175) — displayed values are NOT known real",
+                       _e1202af)
         return []
     seen = set()
     blockers: List[str] = []
     try:
         files = list(src.rglob("*.jsx")) + list(src.rglob("*.tsx"))
-    except Exception:
+    except Exception as _e1202af:
+        # #1202af: this feeds the #175 delivery blocker, so an empty return reads as "no
+        # invented values" whether it checked or died. The wrapper's #792 announcement only
+        # fires when the CALL raises; an exception swallowed here never reaches it. Same
+        # default, same behaviour — only the silence is gone.
+        from .message_format import warn_once_1201
+        warn_once_1201("invented_field_fallback_blockers",
+                       "the invented-field scan (#175) — displayed values are NOT known real",
+                       _e1202af)
         return []
     for f in sorted(files):
         if "node_modules" in f.parts:

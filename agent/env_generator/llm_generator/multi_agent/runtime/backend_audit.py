@@ -568,7 +568,14 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                 "owned via `%s` and the handler applies no owner filter, while its paired write "
                 "refuses a foreign owner. Scope the read to the caller (#919)."
                 % (_OWNED_READ_919, paths[0], cls2tbl.get(model or "", "?"), fk))
-    except Exception:
+    except Exception as _e1202af:
+        # #1202af: this feeds a DELIVERY BLOCKER, so an empty return is read as "nothing
+        # wrong" whether it checked or died. #1202ae found the same shape in three detectors
+        # I had written days earlier; this is the framework's own set. The wrapper's #792
+        # announcement only fires when the CALL raises — an exception swallowed in here never
+        # reaches it. Same default, same behaviour, just no longer silent.
+        from .message_format import warn_once_1201
+        warn_once_1201("unscoped_owner_read_findings", "the unscoped owner-read scan (#919) — cross-user reads are NOT known scoped", _e1202af)
         return []
     return out
 
