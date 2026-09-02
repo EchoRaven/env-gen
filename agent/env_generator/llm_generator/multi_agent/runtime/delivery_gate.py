@@ -2623,7 +2623,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     except Exception:
         pass
     if ui_smoke_pass and _breadth739["failed_records"]:
-        logger.warning(
+        # #1202ad: 267 copies across two runs. The warning matters — it says a passing
+        # ui_smoke rests on an existential check that never reads a failing record — but it
+        # is a standing condition, not an event. Report it when the counts move.
+        from .message_format import state_changed_1202ad as _sc1202ad
+        if _sc1202ad("ui_smoke_existential_739",
+                     (int(_breadth739.get("passed_records") or 0),
+                      int(_breadth739.get("failed_records") or 0))):
+         logger.warning(
             "#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed "
             "%s / failed %s. The check is existential (#287) and never consults a failing "
             "record, so one working page certifies the whole UI. r148 read True off landing + "

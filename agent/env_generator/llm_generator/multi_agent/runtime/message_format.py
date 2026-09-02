@@ -13,7 +13,7 @@ Bounding the list is right — an unbounded dump is worse. The fix is to SAY the
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional
 
 __all__ = ["join_capped"]
 
@@ -72,5 +72,58 @@ def warn_once_1201(site: str, what: str, exc: Any) -> None:
             "run, which also means nothing else will report it — treat this as the mechanism "
             "being OFF, not as a transient.",
             what, type(exc).__name__, str(exc)[:160])
+    except Exception:
+        pass
+
+
+# --- #1202ad: one place for "report a state, not a heartbeat" ----------------------------
+# This rule has now been implemented five separate times, once per site, and I introduced one
+# of the offenders myself two days after removing the same noise elsewhere:
+#
+#     #1202n  heal declines             r26 134 lines,  2 distinct states
+#     #1202p  declaration drift         r30 416 lines,  4 pages
+#     #1202v  seed audit "0 of N"       r30 213 lines,  1 state
+#     #1202ab lane-page verdict         r32 280 lines,  9 pages
+#     #1202ac unstaged assets (mine)    r32 117 lines,  1 set
+#
+# Each fix was a private dict and a hand-written comparison. A rule that lives in five copies
+# drifts on the first edit to any of them — the same reasoning `_imports_own_components`
+# records for #905/#906. So: one helper, and the remaining sites call it.
+#
+# It is deliberately NOT "log once". A state that MOVES is news and must be said again,
+# including a move back to a state already seen — that is the difference between silence and
+# a heartbeat, and #1202n's tests pin it.
+_STATE_SAID_1202AD: Dict[str, Any] = {}
+
+
+def state_changed_1202ad(site: str, state: Any) -> bool:
+    """True when `state` differs from what `site` last reported. Never raises.
+
+    `site` is the caller's own key — include the page/lane/table when the same code reports
+    per-item, so two items cannot silence each other. `state` should carry everything whose
+    change is worth a line: a verdict flip is a change, a count that moves is a change.
+    """
+    try:
+        key = str(site)
+        try:
+            token = repr(state)
+        except Exception:
+            return True                     # unrepresentable state -> always report
+        if _STATE_SAID_1202AD.get(key) == token:
+            return False
+        _STATE_SAID_1202AD[key] = token
+        return True
+    except Exception:
+        return True                         # a memo failure must never silence a report
+
+
+def reset_state_memo_1202ad(prefix: str = "") -> None:
+    """Forget what has been said, for a site prefix or entirely. For tests and new runs."""
+    try:
+        if not prefix:
+            _STATE_SAID_1202AD.clear()
+            return
+        for k in [k for k in _STATE_SAID_1202AD if k.startswith(prefix)]:
+            _STATE_SAID_1202AD.pop(k, None)
     except Exception:
         pass

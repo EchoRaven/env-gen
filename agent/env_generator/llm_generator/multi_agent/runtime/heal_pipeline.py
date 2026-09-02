@@ -972,7 +972,11 @@ class HealPipeline:
                     written.append(str(t))
                 except Exception:
                     continue
-            orch._logger.warning(
+            # #1202ad: 273 copies across r30/r31/r32 for one unchanging set of tables and
+            # targets. A schema that CHANGES is news; regenerating the same DDL is not.
+            from .message_format import state_changed_1202ad as _sc1202ad
+            if _sc1202ad("orm_ddl_regen", (tuple(sorted(tables)), tuple(sorted(written)))):
+              orch._logger.warning(
                 "DDL regenerated from the app's ORM models + written to all "
                 "compose-mounted init paths (FIX #43 + mount-path fix): tables=%s "
                 "targets=%s", sorted(tables), written)
