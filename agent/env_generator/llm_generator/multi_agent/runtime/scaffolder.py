@@ -1161,6 +1161,40 @@ volumes:
                         len(_rec1199["reconciled"]),
                         join_capped([r["page"] for r in _rec1199["reconciled"]],
                                     total=len(_rec1199["reconciled"])))
+                    # #1202bh: and to the LANE, not only the logger. The reconciler's own comment
+                    # says the finding belongs to "the lane that owns it", and it has never been
+                    # handed there — frontend_scaffold files no tasks at all. This one is worth an
+                    # inbox more than most: `apis_used` is read by 84 call sites INCLUDING THE
+                    # GATES, so a wrong declaration means a gate checks the wrong endpoint and
+                    # passes. r30 shipped `browse_by_languages_page` declaring ['/api/profiles']
+                    # while the page reaches ['/api/titles'].
+                    #
+                    # Reporting, still not rewriting: #1202d made this report-only because
+                    # auto-rewriting produced false rewrites on tiktok, googlemaps and instagram.
+                    # A task changes nothing on disk, so that decision is untouched.
+                    try:
+                        _pairs1202bh = [
+                            "%s: declares %s, code reaches %s" % (
+                                r.get("page"),
+                                join_capped(r.get("was") or [], total=len(r.get("was") or []), cap=3),
+                                join_capped(r.get("now") or [], total=len(r.get("now") or []), cap=3))
+                            for r in _rec1199["reconciled"]]
+                        orch.hubs.workhub.create_task(
+                            title=("Fix %d ui_page api declaration(s) that disagree with the code"
+                                   % len(_pairs1202bh))[:180],
+                            description=(
+                                "The `apis_used` on these pages does not match what the shipped code "
+                                "calls: %s.\n\n84 call sites read that field, including the delivery "
+                                "gates, so a wrong declaration makes a gate check an endpoint the page "
+                                "never touches — and pass. Re-register each page with the endpoints it "
+                                "actually calls, or change the page to call what it declared. Nothing "
+                                "was rewritten for you: #1202d found auto-reconciliation produced false "
+                                "rewrites, so this is yours to decide."
+                                % join_capped(_pairs1202bh, total=len(_pairs1202bh), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P1", kind="contract")
+                    except Exception as _e1202bh:
+                        warn_once_1201("declaration_drift_1202bh",
+                                       "the declaration-drift task (#1202bh)", _e1202bh)
             except Exception as _e1201c:
                 # #1201: the import itself can fail here, and this guard used to end in
                 # `pass` — the detector that intersects "guarded import" with "log marker
