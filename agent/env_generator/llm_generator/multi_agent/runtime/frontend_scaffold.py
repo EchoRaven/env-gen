@@ -2106,7 +2106,8 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
                 unrepairable.append(
                     f"{f.relative_to(frontend_dir)} imports default `{name}` from {rel}, "
                     f"which exports no default"
-                    + (f" (available: {', '.join(sorted(exported)[:4])})" if exported else ""))
+                    + (f" (available: {join_capped(sorted(exported), len(exported), cap=4)})"
+                       if exported else ""))
                 return m.group(0)
 
             new_text = _LOCAL_DEFAULT_IMPORT.sub(_repl_default, new_text)

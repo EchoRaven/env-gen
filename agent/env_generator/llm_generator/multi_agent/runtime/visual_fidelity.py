@@ -2933,6 +2933,44 @@ async def run_visual_fidelity(
                 "capture_unavailable": True,
                 "capture_errors": dict(_cap_err935),
                 "min_similarity": min_similarity}
+
+    _refused_1202cc = sorted(k for k, v in _cap_err935.items()
+                             if _CONNECTION_ERR_1202CC.search(str(v)))
+    if shots and _refused_1202cc:
+        # #1202cc: the stack was pulled out from under the capture MID-ROUND.
+        #
+        # `capture_unavailable` above required ZERO photographs, so a round that captured
+        # some screens and had the rest refused was scored as a REAL verdict with the
+        # refused ones at 0.00. r35 live, 10:59:45: the verifier's run_validation ran
+        # `docker compose down -v --remove-orphans` (a 37s down/build/up cycle) while this
+        # capture was walking the routes -- 13 screens photographed and scored 0.34-0.82,
+        # 12 raised ERR_CONNECTION_REFUSED in the same second, and the round reported a
+        # live average of 0.0592 against a 0.6000 bar. Delivery deferred, one of three
+        # per-source attempts burnt, on an app whose own next round scored 0.4538. Nothing
+        # in the framework serialises the compose stack: locks exist elsewhere (JsonStore,
+        # the priority queue) but no subsystem owns the running app, so the capture and the
+        # validation cycle simply race.
+        #
+        # #768r withdrew the blanket `capture_missing` exclusion, and rightly: the branch
+        # there could not tell "the page never loaded" (the app's failure, must count) from
+        # "the harness never photographed it" (evidence of nothing). THIS branch can. A
+        # refusal is a TRANSPORT error, and the same round holds successful captures -- a
+        # server cannot be serving and refusing at once, so the stack moved underneath us.
+        # The narrow signal is what makes the exclusion safe here and not there.
+        #
+        # Bounded by the caller's existing _TRANSIENT_REFUND_CAP, so an app that is
+        # genuinely down satisfies this every round, exhausts the refunds and lands on a
+        # real verdict -- the same shape as the blank-page and auth-wipeout refunds.
+        return {"passed": False,
+                "summary": ("capture raced the compose stack — "
+                            f"{len(shots)} screen(s) photographed but "
+                            f"{len(_refused_1202cc)} refused the connection "
+                            f"({join_capped(_refused_1202cc, len(_refused_1202cc), cap=3)}); "
+                            "the app was torn down mid-round, so this is not a judgment"),
+                "screens": [], "skipped": skipped,
+                "capture_unavailable": True,
+                "capture_errors": dict(_cap_err935),
+                "min_similarity": min_similarity}
     judge = judge_fn or judge_screen_pair
 
     # #892: a per-ROUND budget, spent as VERDICTS rather than as skips.
@@ -3241,6 +3279,14 @@ def _container_id_936(compose_file: Any, service: str, *, timeout: int = 20) -> 
     """The running container id for a compose service, on either runtime (#936)."""
     from .container_runtime import container_id
     return container_id(compose_file, service, timeout=timeout)
+
+
+# #1202cc: TRANSPORT-level failures — the server refused or dropped the connection. These say
+# nothing about what a page renders; they say the server was not there. Distinct from a page that
+# LOADED and drew nothing, which is the app's failure and must keep counting (#768r).
+_CONNECTION_ERR_1202CC = re.compile(
+    r"ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED"
+    r"|ERR_EMPTY_RESPONSE|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE|ECONNREFUSED")
 
 
 def _retire_stale_capture_934(shots_dir: Any, name: str) -> bool:
