@@ -182,6 +182,18 @@ def design_premises_text() -> str:
              "dimensions (you will be evaluated on the same ones):"]
     for d in _DIMENSIONS:
         lines.append(f"- {d['title']}: {d['rubric']}")
+    # #1202cm: the same content-vs-presentation rule the JUDGE is given. This block exists so
+    # the lane designs against the criteria it will be scored on, and a rule that reached only
+    # one of the two would put them back out of step — which is the shape of most of what this
+    # session has been fixing.
+    lines.append(
+        "- Content is not the criterion; its presentation is: your titles, artwork, avatars "
+        "and copy are your app's own and will NOT be compared against the reference's. What "
+        "is compared is how they are presented — artwork where the reference has artwork, at "
+        "that crop and aspect, under that gradient, with that title lockup, metadata row and "
+        "buttons. Do not hard-code the reference's title text or reproduce its imagery. But a "
+        "placeholder tile, a grey box or a blank/loading region where the reference shows "
+        "rendered content IS a deviation and will be scored as one.")
     return "\n".join(lines)
 
 
@@ -2152,10 +2164,42 @@ _JUDGE_INSTRUCTIONS = (
     "the screen is instantly recognisable. If the reference is a partial or transient state (an "
     "ad playing, a modal open, a loading view), score the implementation against THAT state. "
     "Never list under `missing` an element you cannot point to in the first image.\n\n"
+    # #1202cm: SCORE THE PRESENTATION, NOT THE CONTENT.
+    #
+    # The reference is a screenshot of the real product, so it shows real titles, real cover
+    # art, real avatars. The implementation is seeded with its own. Those can never be the
+    # same images, and asking for them is asking for something unreachable — the honest
+    # target is that the same DESIGN is applied to whatever content is there.
+    #
+    # Measured over 2888 recorded deviations: only one says outright that the imagery
+    # differs, so the judge is already largely doing this. But 63 name a specific title
+    # ("implementation lacks the large 'ALL AMERICAN' title artwork"), and that wording sends
+    # the fixing lane after the words rather than after the treatment — the deviation it
+    # should read is "no title-artwork treatment over the hero", which is true whatever is
+    # featured.
+    #
+    # The line this must NOT cross is the other 55, which complain that a tile is a
+    # placeholder or the page is a blank loading state. Those are presentation failures and
+    # must keep costing marks; "different content" is not a licence to show none.
+    "CONTENT IS NOT THE CRITERION; ITS PRESENTATION IS. The reference shows the real "
+    "product's own titles, artwork, avatars and text, and the implementation is seeded with "
+    "different ones. A DIFFERENT image, title, name or number in the same place, at the same "
+    "size, with the same treatment, is NOT a deviation and must not cost marks. What you are "
+    "scoring is how the content is PRESENTED: is there artwork where the reference has "
+    "artwork, at that crop and aspect, under that gradient, with that title lockup, that "
+    "metadata row, those buttons. Describe deviations in those terms — say 'no title-artwork "
+    "treatment over the hero', never 'missing ALL AMERICAN'. This is NOT licence for an "
+    "empty state: a placeholder tile, a grey box, a blank or loading region where the "
+    "reference shows rendered content is a presentation failure and scores as one.\n\n"
     "Assess each dimension (these are your evaluation criteria):\n"
     "{rubric_block}\n\n"
-    "Then judge OVERALL similarity holistically (1.0 = a user would take the "
-    "implementation for the reference product; 0.5 = clearly related but with "
+    # #1202cm: the anchor said "a user would take the implementation for the reference
+    # PRODUCT", which is an identity test — and identity is decided by content, which is the
+    # one thing that legitimately differs. Anchored on the DESIGN instead: same design
+    # language, applied to this app's own content.
+    "Then judge OVERALL similarity holistically (1.0 = a designer would say the same design "
+    "was applied here — same structure, same treatments, same colour system — even though "
+    "the titles, artwork and names are this app's own; 0.5 = clearly related but with "
     "significant gaps; 0.0 = unrelated). Weigh component completeness and "
     "layout most heavily.\n"
     "Respond with ONLY a JSON object:\n"
