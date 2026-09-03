@@ -225,8 +225,10 @@ def _enforce_user_bootstrap_rows(conn, user_id, specs):
     and best-effort: a per-row failure is swallowed so seeding/registration never breaks."""
     for _s in (specs or []):
         try:
-            _t = _s.get("table"); _owner = _s.get("owner_col")
-            _mcol = _s.get("match_col"); _lit = _s.get("literal")
+            _t = _s.get("table")
+            _owner = _s.get("owner_col")
+            _mcol = _s.get("match_col")
+            _lit = _s.get("literal")
             _row = dict(_s.get("row") or {})
             if not (_t and _owner and _mcol):
                 continue

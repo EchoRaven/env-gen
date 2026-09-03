@@ -294,8 +294,10 @@ class OAuthStore:
         swallowed so registration never fails on a bootstrap hiccup."""
         for s in self._user_bootstrap_specs():
             try:
-                t = s.get("table"); owner = s.get("owner_col")
-                mcol = s.get("match_col"); lit = s.get("literal")
+                t = s.get("table")
+                owner = s.get("owner_col")
+                mcol = s.get("match_col")
+                lit = s.get("literal")
                 row = dict(s.get("row") or {})
                 if not (t and owner and mcol):
                     continue
