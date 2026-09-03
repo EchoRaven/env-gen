@@ -9878,7 +9878,40 @@ _AUTH_CALL_1197 = re.compile(r"\b(?:login|signIn|signin|register|signUp|signup)\
 # THROUGH a component. r26's kept page renders `<TextInput name="email" ...>`, and TextInput is
 # `<input name={name} ...>` — requiring a literal `<input` here made the predicate false for
 # exactly the page this fix exists to keep (5 of 5 real r26 lane revisions).
-_INPUT_NAME_1197 = re.compile(r"<(?:input|select|textarea|[A-Z]\w*)\b[^>]*\bname\s*=", re.S)
+# #1202bs: `name=` is the HTML-form idiom, and React's controlled inputs replace it with
+# a state binding. Demanding it judged a working, componentised login form "not drivable"
+# and clobbered it — netflix-r34, live: the lane did exactly what #1202at's task advises,
+#
+#     import LoginForm from '../components/LoginPage';
+#     export default function LoginPage(){ return <LoginForm />; }
+#
+# with the component rendering three controlled inputs:
+#
+#     <input className="field" value={email}    onChange={e=>...} />
+#     <input className="field" type="password" value={password} onChange={...} />
+#
+# Three of the four #1197 signals passed on that bundle — it calls the auth endpoint, it
+# submits, it persists the token — and this one regex failed, so the page was overwritten
+# seven times and counting. r33 lost the same two pages twelve times; the docstring above
+# records r26 at 87 and r154 at 19. My own two fixes were contradicting each other:
+# #1202at tells the lane to componentise, and this predicate then refused to see the
+# result as live.
+#
+# A control is drivable when a test user can find it and change it. `name=` still counts;
+# so does a controlled binding (value + onChange), and so does any of the attributes a
+# selector actually targets.
+# Deliberately NOT `[^>]*` between the tag and the attribute: an arrow handler contains
+# `>` (`onChange={e=>...}`), so that class truncates at the first one and the attribute
+# after it is never seen. Same trap as the signature regex that stopped at the `)` inside
+# `Depends(get_db)`. `.*?` with DOTALL, bounded by the alternation, is what actually works.
+#
+# `onChange=` alone is enough: a change handler on a control IS the state binding that
+# replaces `name=`. Requiring value AND onChange was over-constraining on top of being
+# unmatchable.
+_INPUT_NAME_1197 = re.compile(
+    r"<(?:input|select|textarea|[A-Z]\w*)\b.*?\b(?:"
+    r"name\s*=|placeholder\s*=|aria-label\s*=|data-testid\s*=|onChange\s*="
+    r")", re.S)
 # #1199b: the projection this defers to PERSISTS the session — its template says so, "stores
 # the access_token under BOTH localStorage keys the projected pages read", and every projected
 # read is `localStorage.getItem('access_token') || localStorage.getItem('token')`. A lane login
