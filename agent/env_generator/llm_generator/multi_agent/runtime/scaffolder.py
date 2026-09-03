@@ -500,18 +500,26 @@ volumes:
                           "failures will surface far from here (r30: 148min and $930 of "
                           "`GET /api/genres/{id}/titles -> 404` before a no-convergence abort).",
                           len(_us1202az), _jc1202az(_us1202az, total=len(_us1202az), cap=3))
-                      orch.hubs.workhub.create_task(
-                          title=("Register the columns for %d table(s) that have only an id"
-                                 % len(_us1202az))[:180],
-                          description=(
-                              "These tables are registered with a primary key and nothing else, "
-                              "but the staged dataset carries far more per row, so the framework "
-                              "projected a one-column table and the data has nowhere to go: "
-                              "%s.\n\nRegister the real columns for each and the skeleton will "
-                              "re-project them. Symptoms otherwise appear far away — a genre "
-                              "lookup 404ing on an id the list endpoint just returned, for one."
-                              % _jc1202az(_us1202az, total=len(_us1202az), cap=6)),
-                          assignee="backend", agent="scaffolder", priority="P1", kind="contract")
+                      # #1202bn: file on a CHANGED finding, not once per scaffold pass.
+                      # create_task has no duplicate check — #672 only REPORTS a twin and
+                      # says so ("This does NOT block") — and the scaffold ran 117 times in
+                      # r32, so a finding that persists until a lane fixes it would file 117
+                      # tasks. The corpus already measures that cost: of 838 cancelled tasks,
+                      # 462 (55%, across 79 of 144 runs) were cancelled as duplicates.
+                      from .message_format import state_changed_1202ad as _sc1202az
+                      if _sc1202az("task:underspecified_tables", tuple(sorted(map(str, _us1202az)))):
+                          orch.hubs.workhub.create_task(
+                              title=("Register the columns for %d table(s) that have only an id"
+                                     % len(_us1202az))[:180],
+                              description=(
+                                  "These tables are registered with a primary key and nothing else, "
+                                  "but the staged dataset carries far more per row, so the framework "
+                                  "projected a one-column table and the data has nowhere to go: "
+                                  "%s.\n\nRegister the real columns for each and the skeleton will "
+                                  "re-project them. Symptoms otherwise appear far away — a genre "
+                                  "lookup 404ing on an id the list endpoint just returned, for one."
+                                  % _jc1202az(_us1202az, total=len(_us1202az), cap=6)),
+                              assignee="backend", agent="scaffolder", priority="P1", kind="contract")
               except Exception as _e1202az:
                   from .message_format import warn_once_1201 as _w1202az
                   _w1202az("underspecified_tables_1202az",
@@ -570,23 +578,31 @@ volumes:
                 if _cd1202bc:
                     from .message_format import join_capped as _jc1202bc
                     _pg1202bc = sorted(_cd1202bc)
-                    orch.hubs.workhub.create_task(
-                        title=("Build the %d page(s) whose declared components are missing"
-                               % len(_pg1202bc))[:180],
-                        description=(
-                            "These pages declare components in the contract and the delivered "
-                            "page renders none of them, so the contract describes a page that "
-                            "was not shipped: %s.\n\nBuild each declared component under "
-                            "`src/components/` and have the page import and render it. That is "
-                            "also the shape the projector KEEPS (#914/#1020) — a page built "
-                            "from ../components/ survives later scaffold passes, one written "
-                            "inline does not."
-                            % _jc1202bc(
-                            ["%s (%s)" % (n, _jc1202bc(
-                                _cd1202bc[n], total=len(_cd1202bc[n]), cap=3))
-                             for n in _pg1202bc],
-                            total=len(_pg1202bc), cap=6)),
-                        assignee="frontend", agent="scaffolder", priority="P2", kind="fidelity")
+                    # #1202bn: file on a CHANGED finding, not once per scaffold pass.
+                    # create_task has no duplicate check — #672 only REPORTS a twin and
+                    # says so ("This does NOT block") — and the scaffold ran 117 times in
+                    # r32, so a finding that persists until a lane fixes it would file 117
+                    # tasks. The corpus already measures that cost: of 838 cancelled tasks,
+                    # 462 (55%, across 79 of 144 runs) were cancelled as duplicates.
+                    from .message_format import state_changed_1202ad as _sc1202bc
+                    if _sc1202bc("task:component_drift", tuple(sorted(map(str, _pg1202bc)))):
+                        orch.hubs.workhub.create_task(
+                            title=("Build the %d page(s) whose declared components are missing"
+                                   % len(_pg1202bc))[:180],
+                            description=(
+                                "These pages declare components in the contract and the delivered "
+                                "page renders none of them, so the contract describes a page that "
+                                "was not shipped: %s.\n\nBuild each declared component under "
+                                "`src/components/` and have the page import and render it. That is "
+                                "also the shape the projector KEEPS (#914/#1020) — a page built "
+                                "from ../components/ survives later scaffold passes, one written "
+                                "inline does not."
+                                % _jc1202bc(
+                                ["%s (%s)" % (n, _jc1202bc(
+                                    _cd1202bc[n], total=len(_cd1202bc[n]), cap=3))
+                                 for n in _pg1202bc],
+                                total=len(_pg1202bc), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P2", kind="fidelity")
             except Exception as _e1202bc:
                 from .message_format import warn_once_1201 as _w1202bc
                 _w1202bc("component_drift_1202bc",
@@ -984,22 +1000,26 @@ volumes:
                 _loop1202at = scaffold_loop_pages_1202at(fe)
                 if _loop1202at:
                     _names = sorted(_loop1202at)
-                    orch.hubs.workhub.create_task(
-                        title=("Keep %d page(s) the projector keeps overwriting"
-                               % len(_names))[:180],
-                        description=(
-                            "The framework has re-projected these pages after you rewrote "
-                            "them, 3+ times each this run, so none of that work reaches a "
-                            "screenshot: %s. This is not a verdict on your code — the "
-                            "projector replaces any page it cannot tell apart from a stub.\n\n"
-                            "How to keep it: the projector KEEPS a page that imports from "
-                            "`../components/` and REPLACES one that does not (#914/#1020). "
-                            "Move the page body into a component under `src/components/` "
-                            "and have the page import and render it. The same content then "
-                            "survives every later scaffold pass."
-                            % join_capped(_names, total=len(_names), cap=6)),
-                        assignee="frontend", agent="scaffolder", priority="P1",
-                        kind="fidelity")
+                    # #1202bn: one task per CHANGED finding, not one per scaffold pass —
+                    # create_task does not deduplicate (#672 only reports a twin).
+                    from .message_format import state_changed_1202ad as _sc1202at
+                    if _sc1202at("task:scaffold_loop_pages", tuple(sorted(map(str, _loop1202at or ())))):
+                        orch.hubs.workhub.create_task(
+                            title=("Keep %d page(s) the projector keeps overwriting"
+                                   % len(_names))[:180],
+                            description=(
+                                "The framework has re-projected these pages after you rewrote "
+                                "them, 3+ times each this run, so none of that work reaches a "
+                                "screenshot: %s. This is not a verdict on your code — the "
+                                "projector replaces any page it cannot tell apart from a stub.\n\n"
+                                "How to keep it: the projector KEEPS a page that imports from "
+                                "`../components/` and REPLACES one that does not (#914/#1020). "
+                                "Move the page body into a component under `src/components/` "
+                                "and have the page import and render it. The same content then "
+                                "survives every later scaffold pass."
+                                % join_capped(_names, total=len(_names), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P1",
+                            kind="fidelity")
             except Exception as _t1202at:
                 orch._logger.warning(
                     "#1202at could not tell the frontend lane about the projection loop "
@@ -1053,19 +1073,23 @@ volumes:
                 from .message_format import join_capped
                 _ph1202ax = placeholder_media_urls_1202ax(_P(out_dir))
                 if _ph1202ax:
-                    orch.hubs.workhub.create_task(
-                        title=("Replace %d seeded media URL(s) that can never load"
-                               % len(_ph1202ax))[:180],
-                        description=(
-                            "These seeded URLs point at example.com/.org/.net, which RFC "
-                            "2606 reserves so that it NEVER serves real content — every one "
-                            "renders as a broken image and the visual judge scores it that "
-                            "way: %s.\n\nPoint them at an asset that is actually staged in "
-                            "this project, or drop the field. If one contains a literal "
-                            "`{...}`, it is an unformatted f-string that reached the data as "
-                            "text." % join_capped(_ph1202ax, total=len(_ph1202ax), cap=6)),
-                        assignee="backend", agent="scaffolder", priority="P2",
-                        kind="fidelity")
+                    # #1202bn: one task per CHANGED finding, not one per scaffold pass —
+                    # create_task does not deduplicate (#672 only reports a twin).
+                    from .message_format import state_changed_1202ad as _sc1202ax
+                    if _sc1202ax("task:reserved_domain_urls", tuple(sorted(map(str, _ph1202ax or ())))):
+                        orch.hubs.workhub.create_task(
+                            title=("Replace %d seeded media URL(s) that can never load"
+                                   % len(_ph1202ax))[:180],
+                            description=(
+                                "These seeded URLs point at example.com/.org/.net, which RFC "
+                                "2606 reserves so that it NEVER serves real content — every one "
+                                "renders as a broken image and the visual judge scores it that "
+                                "way: %s.\n\nPoint them at an asset that is actually staged in "
+                                "this project, or drop the field. If one contains a literal "
+                                "`{...}`, it is an unformatted f-string that reached the data as "
+                                "text." % join_capped(_ph1202ax, total=len(_ph1202ax), cap=6)),
+                            assignee="backend", agent="scaffolder", priority="P2",
+                            kind="fidelity")
             except Exception as _e1202ax:
                 warn_once_1201("placeholder_media_urls_1202ax",
                                "the reserved-domain media URL report (#1202ax)", _e1202ax)
@@ -1081,20 +1105,28 @@ volumes:
                 from .message_format import join_capped as _jc1202bm
                 _iv1202bm = invalid_value_defaults_1202bm(_P(out_dir))
                 if _iv1202bm:
-                    orch.hubs.workhub.create_task(
-                        title=("Reject %d invalid value(s) instead of storing a substitute"
-                               % len(_iv1202bm))[:180],
-                        description=(
-                            "These handlers decide an input is invalid and then store a "
-                            "different, valid-looking value and answer 201, so the caller is "
-                            "told its value was saved when a substitute was: %s.\n\nRaise "
-                            "HTTPException(400) instead. Normalising aliases (\"like\" -> "
-                            "\"thumbs_up\") is correct and is not what this is about; the "
-                            "problem is the branch that has already judged the input invalid. "
-                            "If a chain sends a value the schema cannot take, the chain or the "
-                            "contract is what needs fixing."
-                            % _jc1202bm(_iv1202bm, total=len(_iv1202bm), cap=5)),
-                        assignee="backend", agent="scaffolder", priority="P2", kind="fidelity")
+                    # #1202bn: file on a CHANGED finding, not once per scaffold pass.
+                    # create_task has no duplicate check — #672 only REPORTS a twin and
+                    # says so ("This does NOT block") — and the scaffold ran 117 times in
+                    # r32, so a finding that persists until a lane fixes it would file 117
+                    # tasks. The corpus already measures that cost: of 838 cancelled tasks,
+                    # 462 (55%, across 79 of 144 runs) were cancelled as duplicates.
+                    from .message_format import state_changed_1202ad as _sc1202bm
+                    if _sc1202bm("task:invalid_value_defaults", tuple(sorted(map(str, _iv1202bm)))):
+                        orch.hubs.workhub.create_task(
+                            title=("Reject %d invalid value(s) instead of storing a substitute"
+                                   % len(_iv1202bm))[:180],
+                            description=(
+                                "These handlers decide an input is invalid and then store a "
+                                "different, valid-looking value and answer 201, so the caller is "
+                                "told its value was saved when a substitute was: %s.\n\nRaise "
+                                "HTTPException(400) instead. Normalising aliases (\"like\" -> "
+                                "\"thumbs_up\") is correct and is not what this is about; the "
+                                "problem is the branch that has already judged the input invalid. "
+                                "If a chain sends a value the schema cannot take, the chain or the "
+                                "contract is what needs fixing."
+                                % _jc1202bm(_iv1202bm, total=len(_iv1202bm), cap=5)),
+                            assignee="backend", agent="scaffolder", priority="P2", kind="fidelity")
             except Exception as _e1202bm:
                 warn_once_1201("invalid_value_defaults_1202bm",
                                "the invalid-value-substitution report (#1202bm)", _e1202bm)
@@ -1121,25 +1153,29 @@ volumes:
                     # 117 corpus environments, every gate green in all of them. create_task's
                     # own #672 twin-check keeps a re-run from filing it twice.
                     try:
-                        orch.hubs.workhub.create_task(
-                            title=("Wire %d dropped prop(s) — passed but never received"
-                                   % len(_dp))[:180],
-                            description=(
-                                "These props are passed in JSX to a component that never "
-                                "declares or mentions them, so React drops them and the "
-                                "behaviour they were for does nothing:\n\n"
-                                # #1034: a count must not sit beside a silently truncated
-                                # list — join_capped declares the remainder it drops.
-                                + join_capped(["  - " + x for x in _dp],
-                                              total=len(_dp), cap=12, sep="\n")
-                                + "\n\nThere is NO runtime symptom — no console error, no "
-                                "failed request, no 404 — so no gate can catch this. Fix each "
-                                "by destructuring the prop in the component and using it, or "
-                                "by removing it from the call if it is genuinely unwanted. "
-                                "Measured across the corpus: 232 occurrences in 51 of 117 "
-                                "environments (#1202ai)."),
-                            assignee="frontend", agent="scaffolder", priority="P2",
-                            kind="fidelity")
+                        # #1202bn: one task per CHANGED finding, not one per scaffold pass —
+                        # create_task does not deduplicate (#672 only reports a twin).
+                        from .message_format import state_changed_1202ad as _sc1202aj
+                        if _sc1202aj("task:dropped_props", tuple(sorted(map(str, _dp or ())))):
+                            orch.hubs.workhub.create_task(
+                                title=("Wire %d dropped prop(s) — passed but never received"
+                                       % len(_dp))[:180],
+                                description=(
+                                    "These props are passed in JSX to a component that never "
+                                    "declares or mentions them, so React drops them and the "
+                                    "behaviour they were for does nothing:\n\n"
+                                    # #1034: a count must not sit beside a silently truncated
+                                    # list — join_capped declares the remainder it drops.
+                                    + join_capped(["  - " + x for x in _dp],
+                                                  total=len(_dp), cap=12, sep="\n")
+                                    + "\n\nThere is NO runtime symptom — no console error, no "
+                                    "failed request, no 404 — so no gate can catch this. Fix each "
+                                    "by destructuring the prop in the component and using it, or "
+                                    "by removing it from the call if it is genuinely unwanted. "
+                                    "Measured across the corpus: 232 occurrences in 51 of 117 "
+                                    "environments (#1202ai)."),
+                                assignee="frontend", agent="scaffolder", priority="P2",
+                                kind="fidelity")
                     except Exception as _t1202aj:
                         orch._logger.warning(
                             "#1202aj could not file the dropped-prop task (%s: %s) — the "
@@ -1163,18 +1199,26 @@ volumes:
                 from .message_format import join_capped as _jc1202bg
                 _nh1202bg = noop_handler_findings_1202bg(fe / "src")
                 if _nh1202bg:
-                    orch.hubs.workhub.create_task(
-                        title=("Wire %d control(s) whose handler does nothing"
-                               % len(_nh1202bg))[:180],
-                        description=(
-                            "These handlers have an empty body, so the control renders, hovers "
-                            "and responds to a click by doing nothing — it looks available and "
-                            "is not: %s.\n\nGive each one its real behaviour, or remove the "
-                            "control. A console.log-only body counts here too: it is a debugging "
-                            "stub that reached delivery."
-                            % _jc1202bg(_nh1202bg, total=len(_nh1202bg), cap=6)),
-                        assignee="frontend", agent="scaffolder", priority="P1",
-                        kind="fidelity")
+                    # #1202bn: file on a CHANGED finding, not once per scaffold pass.
+                    # create_task has no duplicate check — #672 only REPORTS a twin and
+                    # says so ("This does NOT block") — and the scaffold ran 117 times in
+                    # r32, so a finding that persists until a lane fixes it would file 117
+                    # tasks. The corpus already measures that cost: of 838 cancelled tasks,
+                    # 462 (55%, across 79 of 144 runs) were cancelled as duplicates.
+                    from .message_format import state_changed_1202ad as _sc1202bg
+                    if _sc1202bg("task:noop_handlers", tuple(sorted(map(str, _nh1202bg)))):
+                        orch.hubs.workhub.create_task(
+                            title=("Wire %d control(s) whose handler does nothing"
+                                   % len(_nh1202bg))[:180],
+                            description=(
+                                "These handlers have an empty body, so the control renders, hovers "
+                                "and responds to a click by doing nothing — it looks available and "
+                                "is not: %s.\n\nGive each one its real behaviour, or remove the "
+                                "control. A console.log-only body counts here too: it is a debugging "
+                                "stub that reached delivery."
+                                % _jc1202bg(_nh1202bg, total=len(_nh1202bg), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P1",
+                            kind="fidelity")
             except Exception as _e1202bg:
                 from .message_format import warn_once_1201 as _w1202bg
                 _w1202bg("noop_handler_findings_1202bg",
@@ -1208,19 +1252,23 @@ volumes:
                                 join_capped(r.get("was") or [], total=len(r.get("was") or []), cap=3),
                                 join_capped(r.get("now") or [], total=len(r.get("now") or []), cap=3))
                             for r in _rec1199["reconciled"]]
-                        orch.hubs.workhub.create_task(
-                            title=("Fix %d ui_page api declaration(s) that disagree with the code"
-                                   % len(_pairs1202bh))[:180],
-                            description=(
-                                "The `apis_used` on these pages does not match what the shipped code "
-                                "calls: %s.\n\n84 call sites read that field, including the delivery "
-                                "gates, so a wrong declaration makes a gate check an endpoint the page "
-                                "never touches — and pass. Re-register each page with the endpoints it "
-                                "actually calls, or change the page to call what it declared. Nothing "
-                                "was rewritten for you: #1202d found auto-reconciliation produced false "
-                                "rewrites, so this is yours to decide."
-                                % join_capped(_pairs1202bh, total=len(_pairs1202bh), cap=6)),
-                            assignee="frontend", agent="scaffolder", priority="P1", kind="contract")
+                        # #1202bn: one task per CHANGED finding, not one per scaffold pass —
+                        # create_task does not deduplicate (#672 only reports a twin).
+                        from .message_format import state_changed_1202ad as _sc1202bh
+                        if _sc1202bh("task:declaration_drift", tuple(sorted(map(str, _pairs1202bh or ())))):
+                            orch.hubs.workhub.create_task(
+                                title=("Fix %d ui_page api declaration(s) that disagree with the code"
+                                       % len(_pairs1202bh))[:180],
+                                description=(
+                                    "The `apis_used` on these pages does not match what the shipped code "
+                                    "calls: %s.\n\n84 call sites read that field, including the delivery "
+                                    "gates, so a wrong declaration makes a gate check an endpoint the page "
+                                    "never touches — and pass. Re-register each page with the endpoints it "
+                                    "actually calls, or change the page to call what it declared. Nothing "
+                                    "was rewritten for you: #1202d found auto-reconciliation produced false "
+                                    "rewrites, so this is yours to decide."
+                                    % join_capped(_pairs1202bh, total=len(_pairs1202bh), cap=6)),
+                                assignee="frontend", agent="scaffolder", priority="P1", kind="contract")
                     except Exception as _e1202bh:
                         warn_once_1201("declaration_drift_1202bh",
                                        "the declaration-drift task (#1202bh)", _e1202bh)
