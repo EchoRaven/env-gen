@@ -16,6 +16,24 @@ The milestone gate for the **orchestrator** and **verifier** lanes: run this rig
 3. **Edge cases** — empty states, invalid-input / validation errors, and dependency/network-failure behavior where applicable.
 4. **Delivery gate (`_validate_delivery_gate`)** — every required `build:*` / `validation:*` check is present and green (a missing check fails the gate as hard as a red one); known critical bugs are either fixed or filed via `bug_create` on eventhub and explicitly accepted as blocking; workhub tasks, registryhub spec, implementation, and validation evidence all tell the same story.
 
+## What actually blocks delivery
+
+The `build:*` / `validation:*` families above are what you RUN. These four are what the
+delivery gate REPORTS when it refuses, measured across 40 run logs — none of them was named
+anywhere in these skills before, so lanes met them for the first time in a remediation task:
+
+| blocker | times | what it means |
+|---|---|---|
+| `validation_ui_evidence_failed` | 46 | no passing UI capture for a page. Twice as common as anything else. A capture also fails when the STACK is down — `net::ERR_CONNECTION_REFUSED` is not a page bug and no edit to your page will fix it (#1202ba). |
+| `business_chain_failing` | 19 | a chain step returned a status its `expect` does not list. netflix-r30 spent 148min and $930 here on `GET /api/genres/11/titles -> 404`, where the id had been correctly captured from the list endpoint and the detail handler could not resolve it. |
+| `deliverability_ui_flow_failed` | 13 | a declared UI flow could not be walked end to end. |
+| `database_sql_missing` | 4 | the DDL the app needs is not staged. |
+
+Two of these have causes that live outside the failing lane, so check before rewriting your
+own code: a refused capture means the stack is down, and a chain 404 on a valid id often
+means the CONTRACT is thin — netflix-r30 registered `titles` with one column while 60 rows
+of 12 fields were staged for it, and every symptom appeared four layers away (#1202az).
+
 ## Output expectations
 
 - Separate three buckets explicitly: **verified pass** (green check + read output), **known fail** (red check or open `bug_create` with owning lane), **not yet checked** (no record). Never collapse the third into the first.
