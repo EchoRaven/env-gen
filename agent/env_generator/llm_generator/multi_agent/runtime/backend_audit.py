@@ -1128,6 +1128,26 @@ def underspecified_tables_1202az(tables: Any, project_dir: Any,
                     _jc1202az(sorted(rows[0]), total=len(rows[0]), cap=6)))
             if len(out) >= limit:
                 break
+
+        # #1202bf: the worse case, invisible to the loop above because that walks the
+        # CONTRACT — a table the contract does not have at all is never visited, so
+        # "titles has one column" is caught while "there is no videos table" is not.
+        # tiktok-web-r46 and r83 each carry FOUR contract tables — oauth_clients,
+        # oauth_authorization_codes, tenants, users, every one of them framework
+        # infrastructure — and not one domain table, while the staged dataset holds 35
+        # videos, 295 comments and 8 sounds. The entire subject of the app had nowhere
+        # to go and nothing said so.
+        for name, rows in data.items():
+            if len(out) >= limit:
+                break
+            if name in tables:
+                continue
+            if not (isinstance(rows, list) and rows and isinstance(rows[0], dict)):
+                continue
+            out.append(
+                "%s: %d row(s) are staged for it and the contract has NO such table, so "
+                "the skeleton never creates one and every row is dropped" % (
+                    name, len(rows)))
     except Exception as _exc:
         from .message_format import warn_once_1201
         warn_once_1201("underspecified_tables_1202az",
