@@ -43,7 +43,12 @@ def _git(repo, *args):
 # --- the list ---------------------------------------------------------------------------------
 
 def test_it_covers_the_directories_the_framework_creates():
-    assert set(FRAMEWORK_SCRATCH_DIRS) == {".agents", ".agent_logs", "worktrees", ".memory"}
+    """#1202bw added "snapshots" — restore points pass the same test as the rest of this
+    set (no lane authors them, none can ship) and each is a full copy of shared/hubs/,
+    7.3MB measured on r34, so leaving them tracked would both dirty every worktree and
+    carry megabytes of ledger copies into the run's history on every tick."""
+    assert set(FRAMEWORK_SCRATCH_DIRS) == {
+        ".agents", ".agent_logs", "worktrees", ".memory", "snapshots"}
 
 
 def test_build_artifacts_are_deliberately_excluded():
