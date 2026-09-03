@@ -1950,17 +1950,29 @@ class Orchestrator:
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
-                    self._vf_gate.reset_for_milestone()
+                    # #1202ce: name the milestone so a resume RE-ENTERING it keeps the deferral
+                    # clock and the escape progress it already earned, instead of restarting both.
+                    self._vf_gate.reset_for_milestone(_mkey)
                     # Per-milestone page-build deferral state (mirror of the visual
                     # gate): the deferral clock + attempt count anchor to THIS milestone.
-                    self._pages_gate_deferred_since = None
-                    self._pages_gate_attempts = 0
+                    # #1202ce: unless we are RE-ENTERING this milestone after a resume, in which
+                    # case these counters are progress the run already earned — the escape reads
+                    # `(now - deferred_since) > escape_s`, so zeroing it restarts the clock.
+                    try:
+                        from .runtime.milestone_resume import restore_gate_counters_1202ce
+                        _restored_1202ce = restore_gate_counters_1202ce(self, _mkey)
+                    except Exception:
+                        _restored_1202ce = False
+                    if not _restored_1202ce:
+                        self._pages_gate_deferred_since = None
+                        self._pages_gate_attempts = 0
                     # Per-milestone TEST-USER SQUAD gate state (§3.5). Unlike the visual
                     # gate, this runs EVERY milestone (the verify->fix loop the user's flow
                     # diagram puts inside each milestone), bounded by squad_release_decision.
-                    self._tu_squad_passed = False
-                    self._tu_squad_deferred_since = None
-                    self._tu_squad_attempts = 0
+                    if not _restored_1202ce:
+                        self._tu_squad_passed = False
+                        self._tu_squad_deferred_since = None
+                        self._tu_squad_attempts = 0
                     # #532: the squad now runs as a single-flight BACKGROUND task; a
                     # leftover handle from the prior milestone must not be consumed by
                     # this one. Cancel any in-flight squad and drop the handle so the
@@ -2675,6 +2687,8 @@ class Orchestrator:
                             try:
                                 from .runtime.run_snapshot import maybe_snapshot as _snap1202bw2
                                 _snap1202bw2(self.output_dir, "interval", f"t{tick_count}")
+                                from .runtime.milestone_resume import save_gate_counters_1202ce
+                                save_gate_counters_1202ce(self, _mkey)   # #1202ce
                             except Exception:
                                 pass
                             last_coordination_tick_at = _now_tick  # reset cadence (Defect B decouple)
@@ -3561,7 +3575,21 @@ class Orchestrator:
     async def _maybe_run_visual_fidelity(self) -> None:
         """Run the bounded visual-fidelity judge-and-remediate loop (delegates to
         the extracted VisualFidelityGate)."""
-        await self._vf_gate.maybe_run()
+        # #1202ce: land the gate's milestone counters on EVERY exit path. maybe_run has
+        # eight returns, and a counter that reached disk on only some of them would be worse
+        # than one that never did. The finally lives HERE rather than in a wrapper around
+        # maybe_run because seven tests read that method with `inspect.getsource` to assert
+        # the mechanisms recorded inside it — a wrapper hands them eight lines instead.
+        try:
+            await self._vf_gate.maybe_run()
+        finally:
+            # Guarded: a safety net that can abort the run is worse than none. The gate is
+            # a double in some tests and could be one in any future refactor; persisting
+            # its counters must never be the reason a judged round fails.
+            try:
+                self._vf_gate._save_state_1202ce()
+            except Exception:
+                pass
 
     def _all_business_endpoints_have_route_code(self) -> bool:
         """Code-reality complement to ``all_business_endpoints_implemented``

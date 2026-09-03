@@ -78,3 +78,82 @@ def phase_status_map_1202bz(checkpoint_manager) -> Dict[str, str]:
         except Exception:
             continue
     return out
+
+
+# ---------------------------------------------------------------------------
+# #1202ce: the OTHER two milestone-scoped deferral gates.
+# ---------------------------------------------------------------------------
+# The visual gate carries its counters in a class that can persist itself. The page-build
+# and test-user-squad gates keep theirs as plain orchestrator attributes, reset in the same
+# milestone block, and read by the same shape of release decision --
+# `pages_release_decision(deferred_since, attempts, ...)` escapes on
+# `(now - deferred_since) > escape_s`. So a resume restarted those clocks at zero too, and a
+# run most of the way to an escape had to earn all of it again.
+#
+# Saved at the coordination tick rather than at each mutation: there are only five fields
+# and two write sites each, but a tick is the natural granularity and bounds the loss to one
+# tick's movement instead of everything. Keyed by milestone, so advancing still starts clean.
+
+_GATE_STATE_1202CE = "milestone_gates.json"
+
+_GATE_FIELDS_1202CE = (
+    "_pages_gate_deferred_since", "_pages_gate_attempts",
+    "_tu_squad_passed", "_tu_squad_deferred_since", "_tu_squad_attempts",
+    # The same escape shape, found by scanning the orchestrator for `*_deferred_since` /
+    # `*_attempts` pairs rather than by waiting for each to surface: both of these feed
+    # `squad_release_decision(deferred_since, attempts, now)`, the identical bounded escape.
+    # They differ only in being run-scoped rather than milestone-scoped -- initialised
+    # lazily (`if getattr(self, ..., None) is None`), which is also why restoring them here
+    # is enough: a restored value is not None, so the lazy branch leaves it alone.
+    "_rc_deferred_since", "_rc_attempts",
+    "_tu_browser_deferred_since", "_tu_browser_attempts",
+)
+
+
+def _gate_state_path_1202ce(output_dir):
+    from pathlib import Path as _P
+    return _P(output_dir) / "design" / _GATE_STATE_1202CE
+
+
+def save_gate_counters_1202ce(orch, milestone_key) -> None:
+    """Land the page-build and squad deferral counters. Best-effort: failing costs a resume
+    the progress it would otherwise have inherited, never the run."""
+    import json
+    import os
+    try:
+        p = _gate_state_path_1202ce(orch.output_dir)
+        blob = {"milestone": milestone_key}
+        for f in _GATE_FIELDS_1202CE:
+            blob[f] = getattr(orch, f, None)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(blob, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, p)          # atomic, like JsonStore._save_raw
+    except Exception:
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+
+
+def restore_gate_counters_1202ce(orch, milestone_key) -> bool:
+    """Put the counters back onto ``orch`` when the saved ones belong to THIS milestone.
+
+    Returns True if anything was restored, so the caller can skip its reset. A missing file,
+    an unreadable one, or a different milestone all return False and leave the caller's
+    fresh-milestone defaults exactly as they were -- today's behaviour.
+    """
+    import json
+    try:
+        p = _gate_state_path_1202ce(orch.output_dir)
+        if not (milestone_key and p.is_file()):
+            return False
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(blob, dict) or blob.get("milestone") != milestone_key:
+            return False
+        for f in _GATE_FIELDS_1202CE:
+            if f in blob:
+                setattr(orch, f, blob[f])
+        return True
+    except Exception:
+        return False

@@ -5274,6 +5274,9 @@ class VisualFidelityGate:
         #                                    below the bar; per-milestone (not reset by churn).
         self._verdict_cache: Dict[str, Dict[str, Any]] = {}  # #142: (screen, shot-md5) → verdict
         self.last_judgment_at = None       # #145: wall-clock of the last real judgment
+        # #1202ce: which milestone the counters below belong to, so a resume can tell
+        # "re-entering this milestone" from "starting the next one".
+        self._milestone_key_1202ce: Optional[str] = None
         self.released = False              # #521: STICKY escape latch — once the deferral
         #                                    escapes (below-threshold delivery earned), the
         #                                    milestone stays released; a later >0.02 per-screen
@@ -5281,10 +5284,28 @@ class VisualFidelityGate:
         #                                    defer (r91/r92: escape fired then re-deferred, so
         #                                    the deliver_project loop only terminated at the
         #                                    3600s wall-clock — 44/88 narrations, ~75min tails).
+        # #1202ce: the restore happens in reset_for_milestone, NOT here. Loading in the
+        # constructor would hand ANY gate the counters of whatever ran last in this output
+        # directory, with nothing having checked that they belong to it; restoring only when
+        # the milestone being entered matches the milestone they were saved under means no
+        # path can inherit state that is not its own.
 
-    def reset_for_milestone(self) -> None:
+    def reset_for_milestone(self, milestone_key: Optional[str] = None) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
-        (PIPE-C3: within a milestone neither is reset by lane churn)."""
+        (PIPE-C3: within a milestone neither is reset by lane churn).
+
+        #1202ce: NEW is the operative word. This is called on every pass through the
+        milestone loop, so after a --resume it fired for the milestone the run was already
+        working on and wiped the state just restored from disk. When the caller names the
+        milestone and it is the one this state belongs to, the run is RE-ENTERING it, not
+        starting it, and nothing is reset. Callers that pass nothing keep the old
+        unconditional behaviour.
+        """
+        if milestone_key is not None:
+            if milestone_key == self._milestone_key_1202ce:
+                return                       # already holding this milestone's counters
+            if self._load_state_1202ce(milestone_key):
+                return                       # a resume re-entering it — restored from disk
         self.deferred_since = None
         self.total_judgments = 0
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
@@ -5297,6 +5318,10 @@ class VisualFidelityGate:
         self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
         self.last_judgment_at = None   # #145: idle-source stamp is per milestone
         self.released = False          # #521: sticky escape latch is per milestone
+        # #1202ce: stamp WHICH milestone these fresh counters belong to, and land them, so a
+        # resume can tell re-entry from advance without re-deriving it.
+        self._milestone_key_1202ce = milestone_key
+        self._save_state_1202ce()
 
     def _frontend_wiring_blockers(self) -> list:
         """#417: declared ui_pages with a HARD wiring defect (declared route not
@@ -5323,6 +5348,103 @@ class VisualFidelityGate:
         except Exception:
             return []
 
+    # ---- #1202ce: carry this gate's milestone progress across a --resume ------------
+    _STATE_FILE_1202CE = "gate_state.json"
+    # Every field below decides SOMETHING. `deferred_since` and `total_judgments` are read
+    # by _visual_release_decision, whose wall-clock branch is
+    # `(now - deferred_since) > escape_s` -- so a resume that lost it restarts the escape
+    # clock at zero and a run 50 minutes into its deferral has to earn all of it again.
+    # `plateau_rounds` / `avg_pass_rounds` are the other two escape preconditions,
+    # `released` is #521's sticky latch (a milestone that already escaped would re-defer),
+    # `_passed_screens` is #129's per-screen pass latch, and `attempts` is the per-source
+    # judging budget -- without it a resume silently grants three more paid judgments on
+    # source that already spent them. `_verdict_cache` is pixel-keyed (#142), so restoring
+    # it is the difference between re-judging an identical screenshot and not paying twice.
+    _STATE_FIELDS_1202CE = (
+        "sig", "attempts", "passed", "deferred_since", "total_judgments",
+        "transient_refunds", "unreachable_refunds", "plateau_rounds", "avg_pass_rounds",
+        "released", "app_dead_750", "_seed_reminder_sent", "last_judgment_at",
+        "last_judged_sig", "_milestone_key_1202ce",
+    )
+
+    def _state_path_1202ce(self):
+        try:
+            return (Path(self._orch.output_dir) / "design" / "visual_gate"
+                    / self._STATE_FILE_1202CE)
+        except Exception:
+            return None
+
+    def _save_state_1202ce(self) -> None:
+        """Best-effort: a gate that cannot write its state must still judge.
+
+        Anchored state only. Counters with no milestone key can never be restored -- the
+        loader requires a match -- so writing them is pure waste, and it puts a file under
+        whatever `output_dir` happens to be. The pre-existing blank-refund tests point that
+        at the repo root, so before this check a plain test run left `agent/design/` behind:
+        an untracked directory in the tree, which is precisely what makes a worktree DIRTY
+        (#624) and what forces the `git stash -u` whose failures ignited #623's conflict
+        storm. A gate that has not been anchored to a milestone has nothing worth saving.
+        """
+        p = self._state_path_1202ce()
+        if p is None or not self._milestone_key_1202ce:
+            return
+        try:
+            blob = {k: getattr(self, k, None) for k in self._STATE_FIELDS_1202CE}
+            blob["_passed_screens"] = sorted(self._passed_screens or ())
+            blob["_best_by_screen"] = dict(self._best_by_screen or {})
+            blob["_verdict_cache"] = dict(self._verdict_cache or {})
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(p.suffix + f".{os.getpid()}.tmp")
+            tmp.write_text(json.dumps(blob, indent=2, default=str), encoding="utf-8")
+            os.replace(tmp, p)          # atomic, like JsonStore._save_raw
+        except Exception:
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+
+    def _load_state_1202ce(self, expect_milestone: str) -> bool:
+        """Restore what a continuous run would still be holding, but ONLY when the saved
+        counters were anchored to ``expect_milestone``.
+
+        Returns True if they were restored. Best-effort in the safe direction: an absent,
+        unreadable, wrong-shaped or differently-anchored file returns False and leaves every
+        counter at its constructor default -- which is today's behaviour -- so this can only
+        make a resume MORE like a run that never stopped, never less.
+        """
+        p = self._state_path_1202ce()
+        if p is None or not p.is_file():
+            return False
+        try:
+            blob = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        if not isinstance(blob, dict):
+            return False
+        if blob.get("_milestone_key_1202ce") != expect_milestone:
+            return False
+        for k in self._STATE_FIELDS_1202CE:
+            if k in blob:
+                try:
+                    setattr(self, k, blob[k])
+                except Exception:
+                    pass
+        try:
+            self._passed_screens = set(blob.get("_passed_screens") or ())
+            self._best_by_screen = {str(k): float(v) for k, v in
+                                    (blob.get("_best_by_screen") or {}).items()}
+            self._verdict_cache = dict(blob.get("_verdict_cache") or {})
+        except Exception:
+            pass
+        return True
+
+    # #1202ce: the `finally` that lands these counters lives at the CALL SITE
+    # (_maybe_run_visual_fidelity), not in a wrapper here. Wrapping this method meant
+    # renaming its body, and seven tests read it with `inspect.getsource(maybe_run)` to
+    # assert the mechanisms recorded inside it (#737's blackout reasoning, #750/#751/#752's
+    # latches) — a wrapper hands them eight lines and every one of those assertions
+    # evaporates. The guarantee is identical either way: one try/finally around the only
+    # caller covers all eight of this method's return paths.
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
         running frontend on the routes the reference images depict, has the
