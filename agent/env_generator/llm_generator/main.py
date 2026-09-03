@@ -319,6 +319,14 @@ async def main():
                             "--api-base the Azure endpoint.")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    # #1202bw: restore points. `--resume` continues from the run's LATEST state, which
+    # for a wedged run is the wedge itself; these let an operator rewind first.
+    parser.add_argument("--list-snapshots", action="store_true",
+                       help="List this run's restore points and exit")
+    parser.add_argument("--restore-snapshot", dest="restore_snapshot", default=None,
+                       help="Rewind the run directory to the named snapshot and exit "
+                            "(the current state is copied to snapshots/.pre-restore-*). "
+                            "Follow with --resume to continue from it.")
     parser.add_argument("--reference-images", nargs="*", default=[], 
                        help="Reference screenshot paths for design (e.g., screenshot/expedia.png)")
     parser.add_argument("--reference-dir", default=None,
@@ -342,6 +350,28 @@ async def main():
     args = parser.parse_args()
     
     output_dir = Path(args.output) / args.name
+    # #1202bw: both act on an EXISTING run dir and exit, so they must be handled before
+    # the --fresh reset below — which would otherwise delete the very snapshots asked for.
+    if args.list_snapshots or args.restore_snapshot:
+        from env_generator.llm_generator.multi_agent.runtime.run_snapshot import (
+            list_snapshots, restore_snapshot)
+        if args.list_snapshots:
+            snaps = list_snapshots(output_dir)
+            if not snaps:
+                print(f'No snapshots under {output_dir}/snapshots')
+            for s in snaps:
+                print(f"{s['name']:<34} {s.get('kind',''):<10} "
+                      f"{s.get('files',0):>5} files  {s.get('bytes',0)/1e6:>7.1f} MB")
+        else:
+            res = restore_snapshot(output_dir, args.restore_snapshot)
+            if res['ok']:
+                print(f"Restored {len(res['restored'])} files from "
+                      f"{args.restore_snapshot}; previous state saved to {res['backup']}")
+                print('Continue with: --resume')
+            else:
+                print(f"Restore FAILED: {res['error']}")
+                return 1
+        return 0
     if args.fresh is None:
         args.fresh = not args.resume
     if args.resume and args.fresh:

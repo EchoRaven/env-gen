@@ -1,0 +1,290 @@
+"""#1202bw — RESTORE POINTS for a long run.
+
+A run's coordination state is already durable: ``shared/hubs/`` is file-backed JsonStore
+that re-reads on every access, ``app/`` and ``worktrees/`` are git, ``run_budget.json`` and
+``.checkpoint`` are on disk. So "resume" has never been blocked by lost state.
+
+What was missing is a way to go BACK. JsonStore rewrites each file in place, so the only
+state a run has is its LATEST state — and for a run that has wedged (r34: 20 LoginPage
+overwrites, no gate progress for 42 minutes while $92 burned) the latest state IS the
+wedged state. Resuming into it just resumes the wedge. This module keeps periodic copies so
+an operator can rewind to a tick that was still making progress and continue from there
+instead of paying for a whole fresh run.
+
+CONSISTENCY, stated honestly: ``JsonStore._save_raw`` writes tmp + ``os.replace``, so every
+individual file copied here is atomically-written and can never be torn. Files are NOT
+captured under a global lock, so two files may come from moments milliseconds apart. That
+is the same consistency a resume has always had (the hubs are eventually-consistent
+ledgers, and lanes reconcile against them), so this adds no weakness — but it is a copy,
+not a transaction, and nothing here should be described as one.
+
+Cadence (all optional, read at call time so a live run can be retuned by restarting):
+  ENVGEN_SNAPSHOT_EVERY_MIN     interval between automatic snapshots (default 20; 0 = off)
+  ENVGEN_SNAPSHOT_ON_MILESTONE  snapshot at each milestone boundary (default 1)
+  ENVGEN_SNAPSHOT_KEEP          how many to retain PER KIND (default 5; 0 = unlimited)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import time
+from pathlib import Path
+from typing import Dict, List, Optional
+
+# Copied wholesale. `shared/hubs` is the coordination ledger — tasks, events, code state,
+# registry — and is the only directory a resume genuinely cannot re-derive.
+_STATE_DIRS = ("shared/hubs",)
+
+# Copied individually. design_system.json is here because it is the single most expensive
+# artifact in a run (#1202bv lets a resume inherit it); the rest are small and pin the run's
+# identity and spend.
+_STATE_FILES = (
+    ".checkpoint",
+    "run_budget.json",
+    "project.json",
+    "design/design_system.json",
+    "design/.design_prep_input.json",
+)
+
+# JsonStore leaves `.lock` sentinels and, when a write dies partway, `.<pid>.tmp` orphans
+# (#1202ap measured 5 across the corpus, worst 2.4MB). Neither is state; copying them would
+# restore a stale lock and re-plant the orphans a later cleanup is meant to reclaim.
+_SKIP_SUFFIXES = (".lock", ".tmp")
+
+_MANIFEST = "manifest.json"
+_KIND_MILESTONE = "milestone"
+_KIND_INTERVAL = "interval"
+_KIND_MANUAL = "manual"
+
+_last_snapshot_ts: Dict[str, float] = {}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "").strip() or default)
+    except Exception:
+        return default
+
+
+def snapshots_root(output_dir) -> Path:
+    return Path(output_dir) / "snapshots"
+
+
+def _skip(p: Path) -> bool:
+    return any(str(p.name).endswith(s) for s in _SKIP_SUFFIXES)
+
+
+def take_snapshot(output_dir, kind: str = _KIND_MANUAL,
+                  label: str = "") -> Optional[Path]:
+    """Copy the run's restorable state into ``snapshots/<ts>-<kind>-<label>/``.
+
+    Best-effort by design: a snapshot is an OPTIONAL safety net, and a run must never die
+    because one could not be written. Returns the directory, or None if nothing was
+    captured (which is itself logged into the manifest of the next successful one).
+    """
+    out = Path(output_dir)
+    root = snapshots_root(out)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    base = f"{stamp}-{kind}" + (f"-{label}" if label else "")
+    # The stamp resolves to the SECOND, so two snapshots of the same kind and label inside
+    # one second would land on the same path and `mkdir(exist_ok=True)` would silently MERGE
+    # them into one half-and-half directory. Suffix instead: a restore point that is a blend
+    # of two moments is worse than no restore point at all.
+    name, _n = base, 1
+    while (root / name).exists():
+        name = f"{base}.{_n}"
+        _n += 1
+    dest = root / name
+    copied: List[str] = []
+    failed: List[str] = []
+    total = 0
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return None
+
+    for rel in _STATE_DIRS:
+        src = out / rel
+        if not src.is_dir():
+            continue
+        for f in sorted(src.rglob("*")):
+            if not f.is_file() or _skip(f):
+                continue
+            try:
+                r = f.relative_to(out)
+                tgt = dest / r
+                tgt.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, tgt)
+                copied.append(str(r))
+                total += tgt.stat().st_size
+            except Exception:
+                failed.append(str(f.relative_to(out)))
+
+    for rel in _STATE_FILES:
+        src = out / rel
+        if not src.is_file() or _skip(src):
+            continue
+        try:
+            tgt = dest / rel
+            tgt.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, tgt)
+            copied.append(rel)
+            total += tgt.stat().st_size
+        except Exception:
+            failed.append(rel)
+
+    if not copied:
+        try:
+            shutil.rmtree(dest, ignore_errors=True)
+        except Exception:
+            pass
+        return None
+
+    try:
+        (dest / _MANIFEST).write_text(json.dumps({
+            "created": stamp,
+            "epoch": time.time(),
+            "kind": kind,
+            "label": label,
+            "files": len(copied),
+            "bytes": total,
+            "failed": failed,
+        }, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+    _last_snapshot_ts[str(out)] = time.time()
+    _prune(out, kind)
+    return dest
+
+
+def _prune(output_dir, kind: str) -> None:
+    """Retain the newest ``ENVGEN_SNAPSHOT_KEEP`` PER KIND.
+
+    Per kind, not overall, on purpose: the most valuable restore point is usually the last
+    milestone boundary, and a long tail of interval snapshots would evict exactly that one
+    under a single global budget.
+    """
+    keep = _env_int("ENVGEN_SNAPSHOT_KEEP", 5)
+    if keep <= 0:
+        return
+    try:
+        same = sorted((d for d in snapshots_root(output_dir).iterdir()
+                       if d.is_dir() and _kind_of(d) == kind),
+                      key=_order_key)
+        for d in same[:-keep]:
+            shutil.rmtree(d, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _order_key(d: Path):
+    """Chronological order.
+
+    Sorting by directory NAME looks equivalent — names are timestamp-prefixed — but the
+    stamp resolves only to the second, so two snapshots inside one second fall back to
+    alphabetical order on the KIND, which is not chronological at all. Both the operator's
+    listing ("newest last") and `_prune` ("drop all but the newest N") read this order, so
+    a tie there can delete the NEWER snapshot. The manifest's float epoch breaks the tie.
+    """
+    try:
+        m = json.loads((d / _MANIFEST).read_text(encoding="utf-8"))
+        e = m.get("epoch")
+        if isinstance(e, (int, float)):
+            return (float(e), d.name)
+    except Exception:
+        pass
+    return (float("inf"), d.name)
+
+
+def _kind_of(d: Path) -> str:
+    try:
+        m = json.loads((d / _MANIFEST).read_text(encoding="utf-8"))
+        k = m.get("kind")
+        if isinstance(k, str) and k:
+            return k
+    except Exception:
+        pass
+    parts = d.name.split("-")
+    return parts[2] if len(parts) > 2 else ""
+
+
+def maybe_snapshot(output_dir, kind: str = _KIND_INTERVAL,
+                   label: str = "") -> Optional[Path]:
+    """Cadence gate for the automatic call sites. Returns the snapshot, or None when it is
+    not due yet / disabled."""
+    if kind == _KIND_MILESTONE:
+        if _env_int("ENVGEN_SNAPSHOT_ON_MILESTONE", 1) <= 0:
+            return None
+        return take_snapshot(output_dir, kind, label)
+
+    every = _env_int("ENVGEN_SNAPSHOT_EVERY_MIN", 20)
+    if every <= 0:
+        return None
+    key = str(Path(output_dir))
+    last = _last_snapshot_ts.get(key)
+    if last is None:
+        # First call establishes the clock rather than snapshotting a run that has barely
+        # started — an empty ledger is not a restore point worth keeping.
+        _last_snapshot_ts[key] = time.time()
+        return None
+    if (time.time() - last) < every * 60:
+        return None
+    return take_snapshot(output_dir, kind, label)
+
+
+def list_snapshots(output_dir) -> List[Dict]:
+    """Newest last. Each entry carries the manifest plus the directory name to restore."""
+    out: List[Dict] = []
+    root = snapshots_root(output_dir)
+    if not root.is_dir():
+        return out
+    for d in sorted(root.iterdir(), key=_order_key):
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        rec = {"name": d.name, "kind": _kind_of(d), "files": 0, "bytes": 0}
+        try:
+            rec.update(json.loads((d / _MANIFEST).read_text(encoding="utf-8")))
+        except Exception:
+            pass
+        rec["name"] = d.name
+        out.append(rec)
+    return out
+
+
+def restore_snapshot(output_dir, name: str) -> Dict:
+    """Copy a snapshot back over the run directory.
+
+    The CURRENT state is copied aside first (``snapshots/.pre-restore-<ts>/``) — restoring
+    is the one operation here that destroys state, and an operator who rewinds to the wrong
+    point must be able to get back. That safety copy is exempt from pruning (it is not a
+    snapshot kind) and is the caller's to delete.
+
+    Returns {"ok": bool, "restored": [...], "backup": str, "error": str}.
+    """
+    out = Path(output_dir)
+    src = snapshots_root(out) / name
+    if not src.is_dir():
+        return {"ok": False, "restored": [], "backup": "",
+                "error": f"no such snapshot: {name}"}
+
+    backup = snapshots_root(out) / f".pre-restore-{time.strftime('%Y%m%d-%H%M%S')}"
+    restored: List[str] = []
+    try:
+        for f in sorted(src.rglob("*")):
+            if not f.is_file() or f.name == _MANIFEST:
+                continue
+            rel = f.relative_to(src)
+            live = out / rel
+            if live.is_file():
+                b = backup / rel
+                b.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(live, b)
+            live.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, live)
+            restored.append(str(rel))
+    except Exception as e:
+        return {"ok": False, "restored": restored, "backup": str(backup), "error": str(e)}
+    return {"ok": True, "restored": restored, "backup": str(backup), "error": ""}
