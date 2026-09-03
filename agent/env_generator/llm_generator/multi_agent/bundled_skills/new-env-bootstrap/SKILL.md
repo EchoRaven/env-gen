@@ -83,6 +83,8 @@ Once locked, those choices feed:
 
 ## Auth posture: ALWAYS embedded for a new env
 
+*(Concrete `src/envs/...` paths below are reference examples from the product these envs ship into — they do NOT exist in your workspace, which holds `app/`, `design/`, `shared/` and your worktree. Treat them as shape, not as files to open.)*
+
 For a new env you're scaffolding here, there is one supported answer:
 **Topology A — embedded AS in the same FastAPI app as the business
 endpoints.** Don't deliberate, don't explore alternatives.

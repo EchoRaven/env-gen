@@ -74,6 +74,8 @@ color picker.
 
 ## File layout
 
+*(Concrete `src/envs/...` paths below are reference examples from the product these envs ship into — they do NOT exist in your workspace, which holds `app/`, `design/`, `shared/` and your worktree. Treat them as shape, not as files to open.)*
+
 ```
 src/envs/<env>/
 ├── docker-compose.yml
