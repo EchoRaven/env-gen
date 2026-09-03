@@ -1482,6 +1482,10 @@ class Orchestrator:
             {"name": self.context.name, "goal": goal},
         )
         
+        # #1202bv: design-prep runs in _compile_reference_materials, which cannot see
+        # this parameter. Record it so that phase can inherit a design_system.json the
+        # previous attempt already paid an analyst to measure.
+        self._resume = bool(resume)
         checkpoint_already_complete = False
         if resume:
             if not self.checkpoint.load():
@@ -1866,6 +1870,16 @@ class Orchestrator:
                             pass
 
                 for _m_idx, _milestone in enumerate(milestones, start=1):
+                    # #1202bw: a milestone boundary is the most defensible restore point in a run —
+                    # the previous milestone has landed and nothing of the next one has started. The
+                    # hubs are rewritten IN PLACE, so without this the only state a wedged run has is
+                    # the wedged state (r34: 42min and $92 with no gate progress, and resuming into it
+                    # would just resume the wedge). Best-effort: never let a safety net kill the run.
+                    try:
+                        from .runtime.run_snapshot import maybe_snapshot as _snap1202bw
+                        _snap1202bw(self.output_dir, "milestone", f"m{_m_idx}")
+                    except Exception:
+                        pass
                     # Human-in-the-loop approval (ask mode): pause before STARTING
                     # each milestone so the user can verify it (after seeing the
                     # prior milestone land). Milestones aren't a tool, so this is
@@ -2634,6 +2648,14 @@ class Orchestrator:
                                 break
                             tick_count += 1
                             idle_tick_count += 1
+                            # #1202bw: interval restore points between milestones, which on a long
+                            # milestone are hours apart. Cadence/retention via ENVGEN_SNAPSHOT_EVERY_MIN
+                            # and ENVGEN_SNAPSHOT_KEEP; the gate itself decides when one is due.
+                            try:
+                                from .runtime.run_snapshot import maybe_snapshot as _snap1202bw2
+                                _snap1202bw2(self.output_dir, "interval", f"t{tick_count}")
+                            except Exception:
+                                pass
                             last_coordination_tick_at = _now_tick  # reset cadence (Defect B decouple)
                             stalled = idle_tick_count >= 3
                             gate = self._validate_delivery_gate()
@@ -3315,12 +3337,28 @@ class Orchestrator:
                 from .runtime.design_prep import (
                     resolve_design_input, write_skeleton_design_system, run_design_prep,
                     load_valid_design_system, complete_design_system,
-                    design_system_is_enriched, design_system_summary_for_requirements)
+                    design_system_is_enriched, design_system_summary_for_requirements,
+                    design_prep_reusable_1202bv, record_design_prep_input_1202bv)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
-                write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
-                agent_done = await self._spawn_design_analyst(resolved)
                 dsp = self.output_dir / "design" / "design_system.json"
+                # #1202bv: on a --resume, INHERIT an already-enriched design_system.json instead
+                # of overwriting it with a skeleton and respawning the analyst. This phase is the
+                # most expensive prefix of a run and was the one part a resume paid for TWICE; the
+                # predicate demands the same `enriched` bar the normal path applies below, plus a
+                # fingerprint match on the design input.
+                if getattr(self, "_resume", False) and design_prep_reusable_1202bv(
+                        self.output_dir, self._design_input, resolved):
+                    agent_done = True
+                    self._logger.info(
+                        "#1202bv Design-Prep: reusing the ENRICHED design_system.json already "
+                        "on disk (same design input) — skipping the skeleton rewrite and the "
+                        "design_analyst spawn")
+                else:
+                    write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
+                    agent_done = await self._spawn_design_analyst(resolved)
+                    record_design_prep_input_1202bv(
+                        self.output_dir, self._design_input, resolved)
                 # Validate the agent's output: parseable AND a design doc. A spawned LLM that wrote
                 # MALFORMED JSON must not discard the whole phase — rebuild via the single-shot
                 # enrich (which re-lays a valid skeleton + doc) instead.

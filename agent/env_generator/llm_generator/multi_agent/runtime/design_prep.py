@@ -1344,6 +1344,84 @@ def load_valid_design_system(path) -> Optional[Dict]:
     return d if isinstance(d, dict) and (d.get("design_system") or d.get("screens")) else None
 
 
+# ---------------------------------------------------------------------------
+# #1202bv: let a --resume INHERIT the design_system.json it already paid for.
+# ---------------------------------------------------------------------------
+_DESIGN_PREP_INPUT_1202BV = ".design_prep_input.json"
+
+
+def _design_input_fingerprint_1202bv(design_input, resolved) -> Dict:
+    """What the on-disk design_system.json was MEASURED FROM. Basenames rather than
+    absolute paths, so a run whose output dir moved still matches; sorted, so ordering
+    noise out of resolve_design_input never forces a needless re-run."""
+    r = resolved if isinstance(resolved, dict) else {}
+
+    def _names(key):
+        v = r.get(key) or []
+        if not isinstance(v, (list, tuple)):
+            return []
+        return sorted(Path(str(x)).name for x in v)
+
+    return {
+        "design_input": Path(str(design_input)).name if design_input else "",
+        "references": _names("references"),
+        "docs": _names("docs"),
+    }
+
+
+def record_design_prep_input_1202bv(output_dir, design_input, resolved) -> None:
+    """Stamp what produced design_system.json so a later resume can tell whether it may
+    inherit that doc. Best-effort: failing here only costs a re-run, never correctness."""
+    try:
+        p = Path(output_dir) / "design" / _DESIGN_PREP_INPUT_1202BV
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(
+            json.dumps(_design_input_fingerprint_1202bv(design_input, resolved),
+                       indent=2, sort_keys=True),
+            encoding="utf-8")
+    except Exception:
+        pass
+
+
+def design_prep_reusable_1202bv(output_dir, design_input, resolved) -> bool:
+    """True when a resumed run may SKIP the analyst and keep the design_system.json that is
+    already on disk.
+
+    design-prep is the most expensive PREFIX of a run: a spawned design_analyst bounded at
+    1800s plus, when it falls short, a single-shot enrich over the same references. A
+    ``--resume`` used to pay for all of it AGAIN every time, because
+    ``write_skeleton_design_system`` overwrites the enriched doc with a bare skeleton
+    before the analyst is respawned -- so the resume did not merely re-derive the doc, it
+    destroyed the old one first. (r17: three resumes, $299, no delivery; $635 total against
+    $400 for a fresh run -- resuming cost MORE than starting over.) Nothing else a resume
+    needs was ever at risk this way: shared/hubs/ is file-backed JsonStore that re-reads on
+    every access, app/ and worktrees/ are git, run_budget.json is on disk. design-prep was
+    the one phase that paid twice.
+
+    Two conditions, both required:
+      * the doc passes ``design_system_is_enriched`` -- the SAME predicate the normal path
+        uses to decide the analyst produced something real, so reuse can never carry a
+        hollow doc further than a fresh run would; and
+      * the recorded fingerprint matches the design input resolved NOW -- a resume that
+        changed ``--design-input`` must not inherit a doc measured from other references.
+
+    A missing fingerprint reads as "no": a doc written before this fix records nothing, and
+    a blind inherit there would be guessing at what it was measured from.
+    """
+    try:
+        ds = load_valid_design_system(
+            Path(output_dir) / "design" / "design_system.json")
+        if ds is None or not design_system_is_enriched(ds):
+            return False
+        p = Path(output_dir) / "design" / _DESIGN_PREP_INPUT_1202BV
+        if not p.exists():
+            return False
+        prior = json.loads(p.read_text(encoding="utf-8"))
+        return prior == _design_input_fingerprint_1202bv(design_input, resolved)
+    except Exception:
+        return False
+
+
 def design_system_summary_for_requirements(ds: Dict) -> str:
     """Compact BINDING block appended to the requirements every lane reads (mirrors
     reference_materials.spec_summary_for_requirements) — so the measured design system drives the
