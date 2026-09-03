@@ -2852,6 +2852,38 @@ async def run_visual_fidelity(
                                 "host port after 240s — refusing to screenshot a "
                                 "possibly-unrelated :8080 service; skipping judgment"),
                     "screens": [], "skipped": skipped}
+        # #1202ck: the loop above breaks the moment the FRONTEND answers. `be_port` is
+        # resolved beside it and then never probed, so a capture could start while the
+        # backend was still coming up -- the frontend serves static files in seconds, the
+        # backend does not. Every page then renders its empty state and the round scores as
+        # if the app were broken.
+        #
+        # r30 is that shape, in its own words: `docker up -d` at 14:42:03, then
+        # "#1189 navigation to .../movies waited 12s for the origin to come back (compose
+        # recycle)", then a round that went 0.42 -> 0.15. #1189 waits for the ORIGIN to
+        # accept a connection, which is not the same thing as the app being able to answer.
+        #
+        # All three score collapses measured across r30/r34/r35 are this same race between
+        # the capture and a compose recycle; #1202cc catches the two that surfaced as
+        # ERR_CONNECTION_REFUSED, and this catches the third, where the origin came back but
+        # the app had not. Each one costs a judged round out of a per-source budget of
+        # three, and the ground it erases has to be climbed again (r35: 0.59 -> 0.06 -> 0.45
+        # -> 0.48, two rounds spent recovering a number it already had).
+        #
+        # Reuses validation_runner.wait_backend_ready rather than probing here: #555 already
+        # established that HTTP liveness is necessary but not sufficient, because FastAPI
+        # answers while Postgres is still starting, so that helper also clears a DB-touching
+        # probe. Bounded and best-effort -- if the backend never becomes ready the capture
+        # proceeds exactly as it does today, so this can only ever delay a capture that was
+        # going to be taken anyway.
+        try:
+            from .validation_runner import wait_backend_ready as _wbr1202ck
+            if not _wbr1202ck(project_dir, timeout_s=90):
+                _LOG.warning(
+                    "#1202ck the backend was still not answering after 90s; capturing "
+                    "anyway — screens that need data may score as empty")
+        except Exception:
+            pass
         auth_measured = any(s["auth"] for s in judged_screens)
         # #522b (netflix r93): DO NOT gate token minting on the design-analyst's per-screen
         # `requires_auth` flag — it is lane-NOISY (r92 measured catalog auth → token minted →
@@ -4487,6 +4519,70 @@ def _measured_diff_lines(r: Mapping[str, Any], output_dir: Any = None) -> List[s
     return lines
 
 
+def _rgb_1202cl(h):
+    t = str(h or "").strip().lstrip("#")
+    if len(t) != 6:
+        return None
+    try:
+        return tuple(int(t[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _composited_components_1202cl(output_dir: Any, threshold: float = 60.0) -> Dict[str, str]:
+    """Components whose MEASURED background is really the backdrop showing through.
+
+    The decomposition samples the reference screenshot inside each component's region, so a
+    component that is translucent or sits over photographic content measures whatever is
+    BEHIND it. A component appears on many screens; its own colour does not change between
+    them, so a name whose samples disagree across screens is measuring the backdrop.
+
+    netflix r35, one `top_navigation_bar` across nine screens: #271e17 on genre_category
+    (a warm sports still), #202a33 on games (cover art), #5a564d on browse_home, #000000 on
+    card_hover_preview, #080808 on my_list — brown to blue-grey to black, spread 148.
+    googlemaps' `results_header` spans 265 across sixteen screens. 27 such components across
+    the corpus.
+
+    The framework already KNOWS this at document level: r35's measured palette carries
+    `top_nav_translucent_on_hero: #5a564d` as its own named entry. Only the per-component
+    rows, which are the ones handed to the lane as EXACT and never-eyeball, assert the
+    composite as the component's colour -- and a lane that obeys paints one navigation bar
+    nine different colours, which is worse than eyeballing it.
+
+    Returns {component name: short reason} for the disagreeing ones. Never raises.
+    """
+    out: Dict[str, str] = {}
+    try:
+        d = Path(output_dir) / "design" / "component_specs"
+        if not d.is_dir():
+            return out
+        seen: Dict[str, List[tuple]] = {}
+        for f in sorted(d.glob("*.json")):
+            try:
+                spec = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            for c in (spec.get("components") or []):
+                v = _rgb_1202cl(c.get("background"))
+                if v is None:
+                    continue
+                seen.setdefault(str(c.get("name") or ""), []).append((f.stem, v))
+        for name, vals in seen.items():
+            if len(vals) < 3:
+                continue
+            mx = 0.0
+            for i in range(len(vals)):
+                for j in range(i + 1, len(vals)):
+                    dist = sum((a - b) ** 2 for a, b in zip(vals[i][1], vals[j][1])) ** 0.5
+                    mx = max(mx, dist)
+            if mx > threshold:
+                out[name] = (f"measures {mx:.0f} apart across {len(vals)} screens — this is "
+                             "the backdrop showing through, not the component's own colour")
+    except Exception:
+        return out
+    return out
+
+
 def _spec_snippet(output_dir: Any, screen_name: str) -> str:
     """The pre-computed component spec's MEASURED values for one screen, compact.
 
@@ -4500,16 +4596,27 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
         if not p.exists():
             return ""
         spec = json.loads(p.read_text(encoding="utf-8"))
+        # #1202cl: which of these rows are measuring the backdrop rather than the component.
+        _composite = _composited_components_1202cl(output_dir)
         rows = []
         for c in (spec.get("components") or [])[:12]:
             acc = ", ".join(f"{k}={v}" for k, v in (c.get("accents") or {}).items())
+            _nm = str(c.get("name") or "")
+            _caveat = _composite.get(_nm)
             rows.append(f"  · {c.get('name')}: bg {c.get('background')}"
                         + (f", accents {acc}" if acc else "")
-                        + (f" — {c.get('state')}" if c.get("state") else ""))
+                        + (f" — {c.get('state')}" if c.get("state") else "")
+                        + (f"  ⚠ {_caveat}; keep it translucent over the backdrop and take "
+                           "its own surface from the palette instead" if _caveat else ""))
         if not rows:
             return ""
         return ("MEASURED SPEC (design/component_specs/" + screen_name + ".json — use these "
-                "EXACT hex values, never eyeball):\n" + "\n".join(rows))
+                "EXACT hex values, never eyeball" +
+                (", EXCEPT any row marked ⚠: that one measured the backdrop through a "
+                 "translucent component and its hex is not the component's own colour"
+                 if any(str(c.get("name") or "") in _composite
+                        for c in (spec.get("components") or [])[:12]) else "") +
+                "):\n" + "\n".join(rows))
     except Exception:
         return ""
 
