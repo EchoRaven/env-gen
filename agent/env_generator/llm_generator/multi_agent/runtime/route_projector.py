@@ -1673,6 +1673,33 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 # key) INSERTs NULL even when the column has a DB DEFAULT → NOT-NULL 400. Apply the
                 # column's DB default explicitly for any absent NOT-NULL no-model-default column.
                 body_lines += [f'    valid = _fw_fill_required_defaults({cls}, valid, db)']
+                # #1202bl: a create that names NO subject reaches the table anyway. Measured
+                # live on netflix-r32: `POST /api/continue-watching {}` returns 201 and
+                # inserts {profile_id: 28, title_id: null} — the owner FK is filled from the
+                # user, the SUBJECT fk is not, and `GET /api/continue-watching` then hands that
+                # row to the frontend, which renders a tile for no title. The lane's own handler
+                # rejects exactly this with a 400, but it is not registered: it duplicates
+                # standard CRUD, so the projection serves the path and calls itself
+                # "schema-safe by construction".
+                #
+                # NOT a schema change. #1045 is why these columns are nullable — NOT NULL with no
+                # default made 20 recent runs 400 at INSERT and r176 died on it — so this refuses
+                # BEFORE the insert, on the one case that can never mean anything: the table has
+                # subject FKs and the request named none of them.
+                #
+                # Blast radius measured: of 6946 corpus POSTs to a bare collection path, 83 send
+                # an empty body and all but 3 are framework-owned auth/oauth/tenant routes the
+                # projection does not serve. Those 3 already list 400 in their `expect`. Zero
+                # corpus steps break.
+                _subj_1202bl = [str(_f) for _f in (meta.get("fks") or {})
+                                if str(_f) != str(_owner_fk(meta, exclude=tuple(bound)) or "")
+                                and str(_f) not in {str(_b) for _b in bound}]
+                if _subj_1202bl:
+                    body_lines += [
+                        "    if not any(valid.get(_k) is not None for _k in %r):" % (_subj_1202bl,),
+                        '        raise HTTPException(status_code=400, detail="one of %s is '
+                        'required")' % (", ".join(_subj_1202bl),),
+                    ]
                 # #566u: enable upsert-on-conflict for an owner-scoped STATE-WRITE (owner + subject FKs
                 # = natural key: rating/my_list/continue_watching re-write must UPDATE, not 409).
                 _uc_ofk = _owner_fk(meta, exclude=tuple(bound))
