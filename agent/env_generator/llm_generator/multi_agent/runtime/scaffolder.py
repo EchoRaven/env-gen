@@ -1186,6 +1186,30 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("dropped_prop_findings_1202ai",
                                "the dropped-prop report (#1202ai)", _e1202ai)
+            # #1202cj: a routed authenticated page that imports nothing from components/
+            # while its siblings do. `components` is the weakest of the seven judged
+            # dimensions across 31 netflix runs and 333 screen judgments (0.478 mean; color,
+            # which design-prep measures deterministically, is the strongest at 0.676), and
+            # a page that shares nothing re-invents the chrome — usually omitting it.
+            # Corpus: 13 of 130 routed auth pages, clustered rather than spread (r13 alone
+            # has eight). REPORTS only, like #1202ai: a full-screen player legitimately owns
+            # its whole surface, which is why the finding names the sibling count instead of
+            # asserting a rule. Own try (#1201).
+            try:
+                from .frontend_audit import orphan_auth_page_findings_1202cj
+                from .message_format import join_capped as _jc1202cj
+                from .message_format import state_changed_1202ad as _sc1202cj
+                _op = orphan_auth_page_findings_1202cj(fe / "src")
+                if _op and _sc1202cj("orphan_auth_pages:%s" % out_dir, tuple(_op)):
+                    orch._logger.warning(
+                        "#1202cj %d authenticated page(s) share no component with their "
+                        "siblings — each re-invents the shared chrome, and the visual "
+                        "judge's most repeated component deviation is a missing header/nav: "
+                        "%s", len(_op), _jc1202cj(_op, total=len(_op), cap=4))
+            except Exception as _e1202cj:
+                from .message_format import warn_once_1201
+                warn_once_1201("orphan_auth_page_findings_1202cj",
+                               "the orphan auth-page report (#1202cj)", _e1202cj)
             # #1202bg: a handler that is present and does nothing. `onClick={() => {}}` renders
             # a control that looks live, hovers, and answers a click with silence — the shape of
             # "everything renders and nothing works". 24 of 117 delivered frontends carry one;

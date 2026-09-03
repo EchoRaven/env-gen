@@ -2546,3 +2546,79 @@ def noop_handler_findings_1202bg(frontend_src: Any, limit: int = 12) -> List[str
         warn_once_1201("noop_handler_findings_1202bg",
                        "the scan for event handlers with an empty body", _exc)
     return out
+
+
+# ---------------------------------------------------------------------------
+# #1202cj — an authenticated page that shares nothing with its siblings.
+# ---------------------------------------------------------------------------
+_AUTH_ROUTE_1202CJ = re.compile(r"element=\{<RequireAuth>\s*<(\w+)")
+_SHARED_IMPORT_1202CJ = re.compile(
+    r"^import\s+(?:\{[^}]*\}|\w+)(?:\s*,\s*\{[^}]*\})?\s+from\s+'\.\.?/components/", re.M)
+
+
+def orphan_auth_page_findings_1202cj(frontend_src: Any, limit: int = 12) -> List[str]:
+    """Routed, authenticated pages that import NO shared component while their siblings do.
+
+    The visual judge's most repeated component-level deviation, across 31 netflix runs and
+    333 screen judgments, is some form of "implementation lacks the logo and full navigation
+    bar" — and `components` is the weakest dimension of the seven (0.478 mean; `color`, which
+    design-prep measures deterministically, is the strongest at 0.676). Those two facts meet
+    in the code: in r35 `BrowseHomePage` imports NetflixHeader and scores well, while
+    `GamesPage` and `NewAndPopularPage` import nothing at all and score 0.50 and 0.495. A
+    page that shares nothing re-invents the chrome, and usually omits it.
+
+    Measured across the corpus: 13 of 130 routed authenticated pages (10%) import no shared
+    component, clustered into a few runs rather than spread evenly.
+
+    DOMAIN-AGNOSTIC by construction. Two earlier versions of this scan were wrong in
+    opposite directions and both are the reason it is written this way:
+
+      * matching component NAMES (`NavBar|Header|Shell`) reported 49%, because instagram
+        calls its chrome `NavRail`. Names are lane variance; this counts IMPORTS instead.
+      * requiring the shared component to be used by a MAJORITY of pages reported 9%,
+        because it silently skipped every app whose chrome is used by a minority — which is
+        exactly the app with the problem. r35 was excluded by that filter.
+
+    So the predicate is only: this page imports nothing from components/, and at least one
+    sibling auth page does. No name, no threshold, no app knowledge.
+
+    REPORTS, does not block — the same disposition as #1202ai, and for the same reason: a
+    page legitimately owns its whole surface sometimes (a full-screen player is the honest
+    example, and it is why this names the siblings rather than asserting a rule).
+    """
+    out: List[str] = []
+    try:
+        src = Path(frontend_src)
+        app = src / "App.jsx"
+        if not app.is_file():
+            return out
+        try:
+            routes = app.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return out
+        bodies: Dict[str, str] = {}
+        for comp in _AUTH_ROUTE_1202CJ.findall(routes):
+            f = src / "pages" / f"{comp}.jsx"
+            if not f.is_file():
+                continue
+            try:
+                bodies[comp] = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+        if len(bodies) < 3:
+            return out
+        shares = {c: bool(_SHARED_IMPORT_1202CJ.search(b)) for c, b in bodies.items()}
+        if not any(shares.values()):
+            # No page in this app shares anything — that is a different (whole-app) shape and
+            # naming one page for it would be arbitrary.
+            return out
+        for comp in sorted(c for c, ok in shares.items() if not ok):
+            out.append(
+                f"{comp}.jsx is routed behind RequireAuth and imports nothing from "
+                f"components/, while {sum(1 for v in shares.values() if v)} sibling auth "
+                f"page(s) do — it will re-invent (and usually omit) the shared chrome")
+            if len(out) >= limit:
+                break
+    except Exception:
+        return out
+    return out
