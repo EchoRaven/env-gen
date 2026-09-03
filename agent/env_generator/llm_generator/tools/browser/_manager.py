@@ -279,10 +279,43 @@ class BrowserManager:
         })
 
     def _on_page_error(self, error):
-        """Capture page errors"""
+        """Capture page errors — the MESSAGE, not just where it happened. (#1202br)
+
+        `str(error)` on a Playwright pageerror yields only a minified location. netflix-r33
+        recorded exactly that as the evidence for its two blocking UI flows:
+
+            Error at http://localhost:8053/assets/index--TCHSJCV.js:49:360
+            page-level Error
+
+        A lane handed that cannot act: the file is a production bundle, and 49:360 names
+        no source it can open. Both flows — account_menu_sign_out and
+        verify_profile_isolation — were "blocked by frontend runtime JavaScript Error on
+        page navigation", and `validation_ui_evidence_failed` is the corpus's single most
+        common delivery blocker (46 times across 40 run logs).
+
+        Playwright's Error carries `.message`, `.name` and `.stack`; the message is the one
+        a lane can search its own source for. Each is read defensively: a handler that
+        raises here would lose the error entirely, which is worse than a vague one.
+        """
+        def _attr(name):
+            try:
+                v = getattr(error, name, None)
+                return str(v) if v else ""
+            except Exception:
+                return ""
+
+        msg, kind, stack = _attr("message"), _attr("name"), _attr("stack")
+        text = str(error)
+        if msg and msg not in text:
+            text = f"{kind or 'Error'}: {msg} — {text}" if kind else f"{msg} — {text}"
         self.state.console_logs.append({
             "type": "error",
-            "text": str(error),
+            "text": text,
+            "message": msg,
+            "error_name": kind,
+            # Bounded: a bundled stack is long and repetitive, and the frames that name
+            # the lane's own files are at the top.
+            "stack": "\n".join(stack.splitlines()[:6]) if stack else "",
             "location": "page",
         })
     

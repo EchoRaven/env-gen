@@ -215,7 +215,17 @@ def bootstrap_spec_for_backend(output_dir: Any, tables: Dict[str, Any]) -> List[
         return []
 
 
-# ── Runtime enforcement routine (emitted verbatim into seed_data.py AND oauth_store.py) ──
+# ── Runtime enforcement routine ───────────────────────────────────────────────────────
+# #1202bq: the header used to read "emitted verbatim into seed_data.py AND
+# oauth_store.py". Measured 2026-09-03 and that is not true of either: nothing in the
+# framework references ENFORCE_ROUTINE_SRC outside this file, `_enforce_user_bootstrap_rows`
+# appears in no oauth template, and not one of the 98 corpus seed_data.py files contains
+# it. It has been unreferenced since fix(#72) added it on 2026-07-03.
+#
+# The claim is corrected rather than the code deleted: what disconnected the wiring is not
+# recorded, so whether this is abandoned or pending is not mine to decide from here. What
+# IS certain is that the header misled a reader — it misled me, and I repeated it in
+# #1202bo's commit message before checking the corpus.
 # psycopg3-style ``conn.execute`` with %s params. Idempotent: inserts a canonical row for a
 # user only when absent. Never raises into the caller (a bootstrap failure must not break
 # seeding or registration). Kept as SOURCE TEXT so both generated consumers embed one copy.
