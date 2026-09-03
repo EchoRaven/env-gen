@@ -10748,6 +10748,15 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                                     "0.50. Which page should win is ENVGEN_DEFER_TO_LANE_PAGE's "
                                     "question (#914); the loop itself is waste either way (#939).",
                                     comp, _n939)
+                                # #1202bp: record it for the caller, exactly as the projection
+                                # branch does. #1202at instrumented THAT branch because it is
+                                # what r32 showed; r33 hit this one instead — LoginPage and
+                                # SignupPage overwritten four times each, projection branch zero
+                                # — so the lane lost its auth pages four times and no task was
+                                # filed. Same loop, same waste, same exit (#914/#1020 keeps a
+                                # page that imports ../components/); only the branch differs.
+                                _SCAFFOLD_LOOP_PAGES_1202AT.setdefault(
+                                    str(frontend_dir), {})[comp] = _n939
                 except Exception:
                     pass
             else:
