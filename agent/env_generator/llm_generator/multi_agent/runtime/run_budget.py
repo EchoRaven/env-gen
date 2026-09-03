@@ -25,9 +25,65 @@ class RunBudget:
     def __init__(self, output_dir, logger):
         self._output_dir = Path(output_dir)
         self._logger = logger
+        # #1202cg: what every EARLIER process in this output dir already spent. Computed
+        # once, on this process's first write; see _carry_1202cg.
+        self._carry_1202cg = None
 
     def path(self) -> Path:
         return self._output_dir / "run_budget.json"
+
+    def _carry_1202cg_for(self, started_at: float, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Project spend ACROSS resumes.
+
+        This payload is rebuilt from scratch on every write, so a ``--resume`` -- a new
+        process over the same output dir -- starts the ledger at zero. r35 is the case:
+        the fresh run died having spent $163 by tick 24, the resume's ledger then read
+        $0.20, and nothing on disk said the project had cost $163 more than the number an
+        operator was looking at. ``ENVGEN_MAX_SPEND_USD`` is likewise a FRESH allowance on
+        a resume, not a remainder, which is correct (a new process, an operator setting a
+        new cap) but only if the cumulative figure exists somewhere to be read.
+
+        Folded exactly once per process: the carry is computed on the first write, from the
+        file the PREVIOUS process left, and then held. Re-reading it on every write would
+        add this run's own spend to itself several times a minute. A file whose
+        ``usage.started_at`` matches ours was written by this process, so its cumulative is
+        already correct and is carried unchanged.
+
+        Best-effort: accounting must never be the reason a run record fails to write, which
+        is the same rule the spend block above already follows.
+        """
+        if self._carry_1202cg is None:
+            prior_total, prior_calls, runs, first = 0.0, 0, 0, started_at
+            try:
+                old = json.loads(self.path().read_text(encoding="utf-8"))
+                prev_cum = old.get("cumulative_1202cg") or {}
+                same_process = float((old.get("usage") or {}).get("started_at") or 0.0) == float(started_at)
+                prior_total = float(prev_cum.get("usd_before_this_run") or 0.0)
+                prior_calls = int(prev_cum.get("calls_before_this_run") or 0)
+                runs = int(prev_cum.get("runs") or 0)
+                first = float(prev_cum.get("first_started_at") or started_at)
+                if not same_process:
+                    # A previous process's totals become part of the carry.
+                    prior_total += float((old.get("llm") or {}).get("usd") or 0.0)
+                    prior_calls += int((old.get("llm") or {}).get("calls") or 0)
+                    runs += 1
+            except Exception:
+                pass
+            self._carry_1202cg = {
+                "usd_before_this_run": round(prior_total, 4),
+                "calls_before_this_run": prior_calls,
+                "runs": max(1, runs + (0 if runs else 1)),
+                "first_started_at": first,
+            }
+        out = dict(self._carry_1202cg)
+        try:
+            out["usd_total"] = round(out["usd_before_this_run"]
+                                     + float((payload.get("llm") or {}).get("usd") or 0.0), 4)
+            out["calls_total"] = (out["calls_before_this_run"]
+                                  + int((payload.get("llm") or {}).get("calls") or 0))
+        except Exception:
+            pass
+        return out
 
     def load_caps(self, env_defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Caps from run_budget.json if present (UI can raise them live), else env."""
@@ -81,6 +137,8 @@ class RunBudget:
                         pass
             except Exception:
                 pass
+            # #1202cg: fold the previous process's spend forward.
+            payload["cumulative_1202cg"] = self._carry_1202cg_for(started_at, payload)
             path = self.path()
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
