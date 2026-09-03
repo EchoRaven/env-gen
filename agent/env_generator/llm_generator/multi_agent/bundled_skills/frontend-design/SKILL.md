@@ -61,6 +61,15 @@ NEVER ship generic AI-generated aesthetics: overused fonts (Inter, Roboto, Arial
   simply absent). Whenever you pass a prop, open the component and confirm it is in the
   destructuring AND used. This is the single most common way a generated app looks finished and
   is not.
+- **A page written inline gets replaced; a page built from `../components/` is kept.** The framework
+  projects a page for every registered `ui_page` on every scaffold pass. It cannot tell a rich page
+  it did not write from a stub, so it takes the file back — unless the page imports from
+  `../components/`, which is the signal it defers to (#914/#1020). Measured: netflix-r32's
+  138-line GenresPage was replaced by a 66-line projection three times, and that lane's version
+  now survives in neither worktree nor any branch. Put the page body in a component under
+  `src/components/`, import it, and render it from a thin page. The same content then survives
+  every later pass, and it is also what fixes a `COMPONENT DRIFT` finding — one action, both
+  problems.
 - Your output is checked by `validation:ui_smoke` / `validation:ui_flow:*` and, for clones, the `visual_review_gate` / `visual_similarity` against `reference_images/`. Design to pass those, not just to look good in isolation.
 
 Don't hold back on craft — but for a clone, the most impressive result is one indistinguishable from the real product.
