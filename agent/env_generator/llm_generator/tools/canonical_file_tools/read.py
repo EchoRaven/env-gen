@@ -197,7 +197,18 @@ Parameters:
                     "contract (tables/endpoints/pages) and any edit you make here is discarded "
                     "at the next projection. Read it freely; author changes in "
                     "custom_routes.py (backend) or src/pages/*.jsx + App.jsx (frontend), or "
-                    "change the CONTRACT if the projection itself is wrong.")
+                    "change the CONTRACT if the projection itself is wrong. "
+                    # #1202bt: and the copy in front of you may simply be OLD. netflix-r34,
+                    # live: the framework had already regenerated pyproject.toml without the
+                    # spurious `custom` dependency, integration carried the fix, and the
+                    # backend lane's worktree was 5 commits behind and still had it. The lane
+                    # spent three claimed P0 tasks reporting a framework defect that was
+                    # already repaired upstream, because nothing here said staleness was
+                    # possible — it only said the file is not yours to edit.
+                    "IF IT LOOKS WRONG: your worktree copy may be behind integration. Merge "
+                    "integration first and re-read before reporting it — a framework-owned "
+                    "file you cannot edit is also one you cannot see the latest version of "
+                    "until you pull.")
         except Exception:
             _notices_1144 = []
         return ToolResult(
