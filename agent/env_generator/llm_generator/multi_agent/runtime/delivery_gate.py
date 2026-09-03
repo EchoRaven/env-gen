@@ -1230,15 +1230,23 @@ def format_delivery_gate_report(gate: Dict[str, Any]) -> str:
 
     semantic_drift = gate.get("semantic_hub_drift", {})
     if semantic_drift:
-        lines.append(
-            "- Semantic hub drift: "
-            f"spec_endpoints={semantic_drift.get('spec_endpoints', 0)}, "
-            f"hub_endpoints={semantic_drift.get('hub_endpoints', 0)}, "
-            f"spec_tables={semantic_drift.get('spec_tables', 0)}, "
-            f"hub_tables={semantic_drift.get('hub_tables', 0)}, "
-            f"spec_pages={semantic_drift.get('spec_pages', 0)}, "
-            f"hub_pages={semantic_drift.get('hub_pages', 0)}"
-        )
+        # #1202by: print the counts only when they were actually MEASURED. This check was
+        # retired ("vestigial -- specs no longer exist as independent source") and now carries
+        # nothing but empty errors/warnings, so every `.get(..., 0)` fell through to its
+        # default and the report claimed, in every run, `spec_pages=0, hub_pages=0` two lines
+        # above `hub counts: pages=30`. Six zeros read as a measurement showing perfect
+        # agreement; they were a retired check printing defaults, and "did not run" looked
+        # exactly like "found nothing" -- the failure mode this repo has shipped seven times.
+        # It is not merely cosmetic: this report is handed to lanes as remediation context,
+        # so the contradiction burns lane attention on a discrepancy that does not exist.
+        _counts = [(k, semantic_drift[k]) for k in
+                   ("spec_endpoints", "hub_endpoints", "spec_tables",
+                    "hub_tables", "spec_pages", "hub_pages") if k in semantic_drift]
+        if _counts:
+            lines.append("- Semantic hub drift: "
+                         + ", ".join(f"{k}={v}" for k, v in _counts))
+        elif semantic_drift.get("errors") or semantic_drift.get("warnings"):
+            lines.append("- Semantic hub drift (counts not measured):")
         for item in semantic_drift.get("errors", [])[:5]:
             lines.append(f"  • ERROR: {item}")
         for item in semantic_drift.get("warnings", [])[:5]:
