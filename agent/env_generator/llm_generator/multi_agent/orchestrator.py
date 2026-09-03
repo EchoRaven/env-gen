@@ -1870,6 +1870,27 @@ class Orchestrator:
                             pass
 
                 for _m_idx, _milestone in enumerate(milestones, start=1):
+                    # #1202bz: milestone-level resume. The checkpoint used to hold one phase for the
+                    # whole run, so a resume re-entered at milestone 1 every time. Skip only a
+                    # milestone that COMPLETED and that the run demonstrably moved past (a later
+                    # milestone has a record): the milestone still in flight has no successor and is
+                    # re-entered, because the lanes' work — and therefore any remediation — happens
+                    # inside this body, while the gate that ends a run runs after the loop.
+                    try:
+                        from .runtime.milestone_resume import (
+                            milestone_key_1202bz, should_skip_milestone_1202bz,
+                            phase_status_map_1202bz)
+                        _mkey = milestone_key_1202bz(_m_idx, _milestone)
+                        if should_skip_milestone_1202bz(
+                                phase_status_map_1202bz(self.checkpoint), _m_idx, _milestone):
+                            self._logger.info(
+                                "#1202bz milestone %d/%d (%s) already completed in an earlier "
+                                "attempt and the run moved past it — skipping",
+                                _m_idx, len(milestones), _milestone.get('name', '?'))
+                            continue
+                        self.checkpoint.start_phase(_mkey)
+                    except Exception:
+                        _mkey = None
                     # #1202bw: a milestone boundary is the most defensible restore point in a run —
                     # the previous milestone has landed and nothing of the next one has started. The
                     # hubs are rewritten IN PLACE, so without this the only state a wedged run has is
@@ -2760,6 +2781,14 @@ class Orchestrator:
                             f"Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS."
                         )
 
+                    # #1202bz: the milestone finished. Recorded HERE, at the end of the body, so a
+                    # milestone that raised (budget exceeded, gate blocker) is never marked done and
+                    # a resume re-enters it. Best-effort: losing the record only costs a re-entry.
+                    try:
+                        if _mkey:
+                            self.checkpoint.complete_phase(_mkey)
+                    except Exception:
+                        pass
                 # Hard gate: objective validation before marking generation successful.
                 self._enter_project_phase("test", reason="run delivery gate checks")
                 gate = self._validate_delivery_gate()
