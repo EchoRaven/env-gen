@@ -334,7 +334,18 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
             from .frontend_audit import crossed_page_endpoints_728
             _rh728 = getattr(hub_registry, "registryhub", None)
             _eps728 = (_rh728.get_endpoints() or {}) if _rh728 is not None else {}
-            for _x in crossed_page_endpoints_728(_pages_700, _eps728) or []:
+            _cross728 = crossed_page_endpoints_728(_pages_700, _eps728) or []
+            # #1202bu: report the STATE, not once per deliverability_check. r34 logged 382
+            # copies of the same two findings — 193 for my_list_page and 189 for
+            # browse_home_page — because this runs on every check and the finding does not
+            # change until a lane re-registers the page. Same rule as #1202n/#1202p/#1202v/
+            # #1202ab/#1202au; a finding that CHANGES is news and reports again.
+            from .message_format import state_changed_1202ad as _sc728
+            if _cross728 and not _sc728(
+                    "crossed_page_endpoints_728",
+                    tuple(sorted(str(_x) for _x in _cross728))):
+                _cross728 = []
+            for _x in _cross728:
                 _LOG_700.warning(
                     "#728 %s (%s) declares %s, which shares no path word with its own route, "
                     "while %s is implemented and used by nothing. The page is calling another "
