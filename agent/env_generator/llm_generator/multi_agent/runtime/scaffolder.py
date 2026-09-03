@@ -1120,6 +1120,36 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("dropped_prop_findings_1202ai",
                                "the dropped-prop report (#1202ai)", _e1202ai)
+            # #1202bg: a handler that is present and does nothing. `onClick={() => {}}` renders
+            # a control that looks live, hovers, and answers a click with silence — the shape of
+            # "everything renders and nothing works". 24 of 117 delivered frontends carry one;
+            # tiktok-web-r91's login modal wires EVERY option row that way, so QR / Facebook /
+            # Google / Apple sign-in all look available and do nothing.
+            #
+            # No existing check sees it: the element is there, the prop is there, the page
+            # renders, so dead-nav, fallback-page, bare-fetch and invented-field all pass it.
+            # The frontend lane owns these files, so it gets the task. Own try (#1201).
+            try:
+                from .frontend_audit import noop_handler_findings_1202bg
+                from .message_format import join_capped as _jc1202bg
+                _nh1202bg = noop_handler_findings_1202bg(fe / "src")
+                if _nh1202bg:
+                    orch.hubs.workhub.create_task(
+                        title=("Wire %d control(s) whose handler does nothing"
+                               % len(_nh1202bg))[:180],
+                        description=(
+                            "These handlers have an empty body, so the control renders, hovers "
+                            "and responds to a click by doing nothing — it looks available and "
+                            "is not: %s.\n\nGive each one its real behaviour, or remove the "
+                            "control. A console.log-only body counts here too: it is a debugging "
+                            "stub that reached delivery."
+                            % _jc1202bg(_nh1202bg, total=len(_nh1202bg), cap=6)),
+                        assignee="frontend", agent="scaffolder", priority="P1",
+                        kind="fidelity")
+            except Exception as _e1202bg:
+                from .message_format import warn_once_1201 as _w1202bg
+                _w1202bg("noop_handler_findings_1202bg",
+                         "the no-op handler report (#1202bg)", _e1202bg)
             try:
                 from .frontend_scaffold import reconcile_ui_page_apis_1199
                 _rec1199 = reconcile_ui_page_apis_1199(fe, ui_pages, registryhub)

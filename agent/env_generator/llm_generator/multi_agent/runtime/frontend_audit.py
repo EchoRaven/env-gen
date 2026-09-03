@@ -2492,3 +2492,57 @@ def dropped_prop_findings_1202ai(frontend_src: Any, limit: int = 12) -> List[str
                        _e1202ai)
         return []
     return out
+
+
+# #1202bg: a handler that is syntactically present and does nothing. `onClick={() => {}}`
+# renders a control that looks live, responds to hover, and answers a click with silence.
+_NOOP_HANDLER_1202BG = re.compile(
+    r"""on[A-Z]\w+=\{\s*(?:\(\s*[\w,\s]*\)|\w+)\s*=>\s*(?:\{\s*\}|console\.\w+\([^()]*\))\s*\}"""
+    r"""|on[A-Z]\w+=\{\s*function\s*\([^)]*\)\s*\{\s*\}\s*\}""")
+
+
+def noop_handler_findings_1202bg(frontend_src: Any, limit: int = 12) -> List[str]:
+    """Event handlers wired to an empty body — controls that cannot do anything. (#1202bg)
+
+    Measured across the corpus: 24 of 117 delivered frontends carry at least one. The
+    clearest is tiktok-web-r91's login modal, where EVERY option row is wired this way —
+
+        <LoginOptionRow icon={<Ic.QR />}       label="Use QR code"            onClick={() => {}} />
+        <LoginOptionRow icon={<Ic.Google />}   label="Continue with Google"   onClick={() => {}} />
+        <LoginOptionRow icon={<Ic.Apple />}    label="Continue with Apple"    onClick={() => {}} />
+
+    — five sign-in routes that look available and answer with nothing. No existing check
+    sees this: the element is present, the prop is present, the page renders, so
+    dead-nav, fallback-page, bare-fetch and invented-field all pass it. It is the shape
+    of "everything renders and nothing works".
+
+    A console.log-only body counts too: it is a debugging stub that reached delivery.
+
+    None of the three current-era runs (r30/r31/r32) carries one, so this may already be
+    rarer than the corpus average — which costs nothing when clean and catches it if it
+    returns. Never raises.
+    """
+    out: List[str] = []
+    try:
+        root = Path(frontend_src)
+        if not root.is_dir():
+            return out
+        for f in sorted(root.rglob("*")):
+            if f.suffix not in (".jsx", ".tsx") or "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            for m in _NOOP_HANDLER_1202BG.finditer(text):
+                _h = " ".join(m.group(0).split())
+                # #1034: declare the cut rather than showing a slice as the whole handler.
+                out.append("%s: %s" % (
+                    f.name, _h[:90] + ("…" if len(_h) > 90 else "")))
+                if len(out) >= limit:
+                    return out
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("noop_handler_findings_1202bg",
+                       "the scan for event handlers with an empty body", _exc)
+    return out
