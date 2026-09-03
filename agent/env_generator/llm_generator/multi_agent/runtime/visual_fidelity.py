@@ -391,6 +391,21 @@ def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
 _UI_PAGE_STOPWORDS: frozenset = frozenset({
     "page", "screen", "view", "views", "main", "own", "my", "the", "of", "and",
     "grid", "list", "menu", "modal", "empty", "logged", "out", "in", "panel",
+    # #1202cd: "state" is the FRAMEWORK'S OWN page-naming suffix, not a content word.
+    # The scaffolder names a screen's dedicated page `<screen>StatePage`
+    # (PlayerControlsStatePage, CardHoverPreviewStatePage, RateDialogStatePage), and
+    # _match_ui_page demands token EQUALITY, so the extra `state` token made every one of
+    # them fail to match the reference screen it was built for. r35 live: `player_controls`
+    # was reported as an unjudged declared screen SEVEN times -- "an unbuilt page is not
+    # exempt from its own exam - author the page so it can be captured and scored" -- while
+    # PlayerControlsStatePage.jsx and its route /watch/:titleId/controls both existed and
+    # the page was already registered as implemented. The lane answered that blocker by
+    # writing a 48-character components/player_controls.jsx, and the gate blocked again.
+    #
+    # Safe by the same test the equality rule exists to protect: `rows` in browse_home_rows
+    # is a DISTINCT reference screen and stays distinct. Verified over r35's 20 reference
+    # screens that dropping `state` collapses no two of them into one token set.
+    "state",
 })
 
 
