@@ -63,7 +63,7 @@
 - Use knowledge tools through the `knowledge_sync` stage when helpful.
 - If you execute `knowledge_sync`, call `query_knowledge(...)` or `get_relevant_knowledge(...)` at least once.
 - If you solved a blocker, discovered an excellent implementation pattern, or found a reusable workflow pattern, persist it with `store_knowledge(...)`.
-- If you discover a reusable lesson that the knowledge agent should classify, submit it with `submit_learning(...)`; the knowledge agent can decide whether it belongs in searchable knowledge or a reusable skill.
+- If you discover a reusable lesson worth keeping, record it with `submit_learning(...)` — it lands in the knowledge store, which is curated outside this pipeline; the knowledge agent can decide whether it belongs in searchable knowledge or a reusable skill.
 - Do not hand-write `tasks/tasks.yaml` via `write`; define tasks with `define_task` and persist the suite via `save_task_suite`.
 - For HuggingFace data, call `discover_datasets(query=...)` before `preview_dataset(...)`; do not guess unknown dataset IDs.
 - In `execute_bash`, use plain ASCII punctuation for flags/options (e.g., `-la`, not typographic dashes).

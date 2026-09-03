@@ -31,7 +31,6 @@
 
     peers=[
         {"id": "parent",        "role": "Parent agent who spawned you (any lead)", "calls_you": "via parallel_execute or define_team_agent + task_ready",                                                                            "you_call": "send_message(parent_id, content=<status / completion / questions>) at completion. Optionally one ask_agent during work if genuinely ambiguous.",                "escalate_via": "send_message + ask_agent"},
-        {"id": "knowledge",     "role": "Knowledge curator",                       "calls_you": "never",                                                                                                                              "you_call": "retrieve_context EARLY if a past similar task is plausibly relevant",                                                                                            "escalate_via": "retrieve_context"}
     ],
 
     hubs=[

@@ -153,12 +153,6 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         # aware of the milestone's task_tree.
         ("orchestrator", "kickoff_complete", "high"),
     ],
-    "knowledge": [
-        # Knowledge curator is otherwise event-driven on store/retrieve
-        # ops; subscribing to kickoff_complete lets it snapshot the
-        # milestone contract for cross-project lessons.
-        ("orchestrator", "kickoff_complete", "high"),
-    ],
 }
 
 

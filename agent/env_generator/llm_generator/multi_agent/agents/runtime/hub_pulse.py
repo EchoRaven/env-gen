@@ -42,7 +42,7 @@ _PHASE_ROLE = {
 def _lane_keyword(agent_id: str) -> str:
     """Map a (possibly worker-suffixed) agent_id to its lane keyword."""
     aid = str(agent_id or "").lower()
-    for lane in ("orchestrator", "backend", "frontend", "verifier", "debugger", "knowledge"):
+    for lane in ("orchestrator", "backend", "frontend", "verifier", "debugger"):
         if lane in aid:
             return lane
     return aid

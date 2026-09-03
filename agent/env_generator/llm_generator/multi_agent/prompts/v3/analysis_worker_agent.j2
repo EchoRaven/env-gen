@@ -37,7 +37,6 @@
     peers=[
         {"id": "parent",        "role": "Parent agent who spawned you (orchestrator / debugger / a lead)", "calls_you": "via parallel_execute or define_team_agent + task_ready",                                    "you_call": "send_message(parent_id, content=<findings + confidence>) once at completion. Optionally one ask_agent call for clarification during analysis if genuinely ambiguous.",                                 "escalate_via": "send_message"},
         {"id": "peer_workers",  "role": "Other analysis_workers with COMPETING candidates (in debate rounds)",            "calls_you": "via debate_round in task_data — you see their findings",                                  "you_call": "in 'challenge round' mode, find holes in their evidence; defend yours; update your confidence based on new info",                                                                                       "escalate_via": "send_message + structured challenge in report"},
-        {"id": "knowledge",     "role": "Knowledge curator",                                                              "calls_you": "never",                                                                                  "you_call": "retrieve_context EARLY (before deep analysis) if a similar past investigation might inform the candidate",                                                                                              "escalate_via": "retrieve_context"}
     ],
 
     hubs=[

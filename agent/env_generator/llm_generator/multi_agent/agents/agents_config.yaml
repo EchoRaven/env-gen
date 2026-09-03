@@ -1208,6 +1208,11 @@ profiles:
         hub_commit_gate: 0
         knowledge_sync: 2
 
+  # RETIRED (#1202ch): nothing spawns this profile any more — the knowledge lane is out of
+  # `resident_lanes`, and no code path requests agent_type/config_key "knowledge" (verified
+  # against a control: `debugger` is not hard-coded either, both came from resident_lanes).
+  # Left in place rather than deleted: it is inert without a spawn request, and whatever
+  # curates the knowledge store from outside the pipeline may want the profile.
   knowledge:
     name: "Knowledge Agent"
     reasoning_effort: "low"  # Knowledge curator is event-driven, single-action-per-wake; low effort sufficient.
@@ -1764,10 +1769,20 @@ resident_lanes:
     profile: debugger
     resident: true
     description: "Resident bug-triage lane (root-cause analysis + assigns remediation to owning agent; replaces bug_triage_orchestrator)"
-  knowledge:
-    profile: knowledge
-    resident: true
-    description: "Resident knowledge observer lane"
+  # RETIRED (#1202ch): the knowledge lane. It spawned, registered 69 tools, woke once per
+  # milestone on `kickoff_complete`, matched nothing in its own wake_contract table and
+  # emitted `{"kind":"summarization_ack","action":"skipped","reason":"no matching trigger"}`.
+  # Measured across six runs spanning 22 to 354 minutes, its log volume was CONSTANT at
+  # 25-37 lines while every working lane scaled with the run — the signature of a lane that
+  # only ever boots. Its two intended jobs were already elsewhere or unreachable:
+  # `query_knowledge` is answered directly by `store.search()` (32 calls in r35, none of
+  # them through this lane), and the learning-capture loop was broken in three places at
+  # once — every lane's prompt says "Default: skip" for submit_learning (0 calls in 18315
+  # corpus tasks), this lane subscribed only to `kickoff_complete` rather than to the
+  # `learning_event` its contract table names, and no task in the corpus was ever assigned
+  # to it (0 of 18315). Knowledge collection now lives OUTSIDE the pipeline; the store, the
+  # query/store tools and the knowledge_* tool bundles are untouched and remain available
+  # to whatever curates them.
 
 # Resident lane dispatch graph - which resident lane notifies which downstream lane.
 # Agents use HubRegistry (RegistryHub, WorkHub, CodeHub, EventHub) for observation-driven coordination.

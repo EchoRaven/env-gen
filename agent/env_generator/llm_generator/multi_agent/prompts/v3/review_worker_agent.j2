@@ -36,7 +36,6 @@
     peers=[
         {"id": "parent",          "role": "Parent agent who spawned you",                                                  "calls_you": "via parallel_execute or define_team_agent + task_ready",                                                              "you_call": "send_message(parent_id, content=<review summary>) ONCE at completion if not PR-scoped",                                                                              "escalate_via": "send_message + send_message(review_summary)"},
         {"id": "other_review_workers", "role": "Peer review_workers with different focus roles",                            "calls_you": "rarely — review workers usually operate independently in parallel",                                                  "you_call": "rarely — if you find an issue your peer's role should investigate (e.g. quality_analyst spots a SQL injection while reviewing tests), flag to parent NOT directly to peer", "escalate_via": "send_message to parent"},
-        {"id": "knowledge",        "role": "Knowledge curator",                                                            "calls_you": "never",                                                                                                              "you_call": "retrieve_context BEFORE deep review if past similar patterns are plausibly relevant",                                                                                  "escalate_via": "retrieve_context"}
     ],
 
     hubs=[
