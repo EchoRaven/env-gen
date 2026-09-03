@@ -118,7 +118,8 @@ def ensure_base_gitignore(output_dir: Path) -> list:
     try:
         from ...tools.file_tools import FRAMEWORK_SCRATCH_DIRS
     except Exception:  # pragma: no cover — import-shape safety only
-        FRAMEWORK_SCRATCH_DIRS = (".agents", ".agent_logs", "worktrees", ".memory")
+        FRAMEWORK_SCRATCH_DIRS = (
+            ".agents", ".agent_logs", "worktrees", ".memory", "snapshots")
     gi = Path(output_dir) / ".gitignore"
     want = ["memory-bank/"] + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS]
     cur = gi.read_text(encoding="utf-8") if gi.exists() else ""

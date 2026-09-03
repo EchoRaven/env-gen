@@ -40,7 +40,12 @@ from workspace import Workspace
 # Exported so scaffolder's .gitignore and this prune-set cannot drift apart. Build artifacts
 # (node_modules/dist/build/.next) are deliberately NOT in here: they are a different category
 # with different delivery risk, and nothing measured points at them.
-FRAMEWORK_SCRATCH_DIRS = (".agents", ".agent_logs", "worktrees", ".memory")
+# #1202bw adds "snapshots": restore points are framework scratch by the same test as the
+# rest of this set -- no lane authors them and none can ship -- and each is a full copy of
+# shared/hubs/ (7.3MB measured on r34). Left out, git would list them as untracked, which
+# is exactly what makes a worktree DIRTY (#624), and auto_commit would carry megabytes of
+# ledger copies into the run's history on every tick.
+FRAMEWORK_SCRATCH_DIRS = (".agents", ".agent_logs", "worktrees", ".memory", "snapshots")
 
 
 # ===== Unified Path Gateway =====
