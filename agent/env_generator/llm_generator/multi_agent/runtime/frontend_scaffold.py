@@ -1993,7 +1993,22 @@ _INLINE_STUB_ROUTE = re.compile(
 _COMPONENT_DIR = re.compile(r"/(pages|components|views|screens|routes)/")
 _LOCAL_NAMED_IMPORT = re.compile(
     r"""import\s*\{([^}]*)\}\s*from\s*(['"])(\.[^'"]+)\2""")
-_HAS_DEFAULT_EXPORT = re.compile(r"export\s+default\b")
+# #1202cb: `export default` is not the only way a module provides one. Measured on the
+# corpus while building the mirror repair below: netflix-r26 `HeroBillboard.jsx` is exactly
+# one line, `export { HeroBillboard as default } from './BrowseChrome'`, and tiktok-r86 has
+# the same shape -- both would have been reported as build-breakers by a detector that only
+# knows the keyword form, i.e. a false warning handed to a lane about correct code. Two of
+# the six corpus hits were this, so the real count is four.
+_HAS_DEFAULT_EXPORT = re.compile(
+    r"export\s+default\b"                       # export default X
+    r"|export\s*\{[^}]*\bas\s+default\b[^}]*\}"  # export { X as default }
+    r"|export\s*\{[^}]*\bdefault\b[^}]*\}\s*from"  # export { default } from '...'
+)
+# #1202cb: the MIRROR of _LOCAL_NAMED_IMPORT. `\s+from` right after the identifier is what
+# keeps this off `import { X } from` and `import X, { Y } from` — a mixed import has a comma
+# there, and rewriting one of those would drop the named half.
+_LOCAL_DEFAULT_IMPORT = re.compile(
+    r"""import\s+([A-Za-z_$][\w$]*)\s+from\s*(['"])(\.[^'"]+)\2""")
 
 
 def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
@@ -2034,6 +2049,7 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
             return None
 
         fixed: List[str] = []
+        unrepairable: List[str] = []
         for f in src.rglob("*"):
             if f.suffix.lower() not in _FRONT_EXTS or not f.is_file():
                 continue
@@ -2059,10 +2075,46 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
                 return m.group(0)
 
             new_text = _LOCAL_NAMED_IMPORT.sub(_repl, text)
+
+            # #1202cb: the same break in the OTHER direction. This function only ever
+            # handled named-import-against-default-export; a DEFAULT import against a
+            # named-only target fails Rollup identically ("No default export"). It is the
+            # framework's own shape: the page scaffolder emits
+            # `import {comp} from '../components/{comp}.jsx'` for a component the LANE
+            # writes, and a lane that exported names instead breaks the build.
+            # r35 live: framework-projected GenresPage did
+            # `import CatalogExperience from '../components/CatalogExperience.jsx'` against
+            # a file exporting only BrowsePage/CategoryPage/LanguagesPage/NewPopularPage →
+            # frontend build blocked → visual fidelity scored 0.0592 against a 0.6000
+            # record → delivery deferred. Corpus: 6 of 3799 default imports across 120
+            # delivered frontends, in 3 runs -- rare, and each one costs the whole build.
+            def _repl_default(m: "re.Match") -> str:
+                name, quote, rel = m.group(1), m.group(2), m.group(3)
+                tgt = _resolve(f, rel)
+                if tgt is None:
+                    return m.group(0)
+                exported, has_default = _target_info(tgt)
+                if has_default:
+                    return m.group(0)
+                if name in exported:
+                    # The target exports this very name -- the import form is simply wrong.
+                    state["changed"] = True
+                    return f"import {{ {name} }} from {quote}{rel}{quote}"
+                # No default and no matching name: any rewrite here would be a GUESS at
+                # which of the target's exports was meant, so report it instead. Naming a
+                # build-breaker before the docker build is worth more than a wrong repair.
+                unrepairable.append(
+                    f"{f.relative_to(frontend_dir)} imports default `{name}` from {rel}, "
+                    f"which exports no default"
+                    + (f" (available: {', '.join(sorted(exported)[:4])})" if exported else ""))
+                return m.group(0)
+
+            new_text = _LOCAL_DEFAULT_IMPORT.sub(_repl_default, new_text)
             if state["changed"] and new_text != text:
                 f.write_text(new_text, encoding="utf-8")
                 fixed.append(str(f.relative_to(frontend_dir)))
-        return {"repaired": bool(fixed), "fixed": fixed}
+        return {"repaired": bool(fixed), "fixed": fixed,
+                "unrepairable": unrepairable}
     except Exception as exc:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 

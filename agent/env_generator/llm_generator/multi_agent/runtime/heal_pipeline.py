@@ -1672,6 +1672,12 @@ class HealPipeline:
             if _nd.get("repaired"):
                 orch._logger.warning(
                     "Frontend named→default imports reconciled: %s", _nd.get("fixed"))
+            # #1202cb: a DEFAULT import against a named-only target breaks Rollup the same
+            # way, and when neither a default export nor a matching name exists there is no
+            # repair that is not a guess. Say so HERE, where it is cheap, rather than letting
+            # it surface as a failed docker build and a P0 several minutes later.
+            for _u in (_nd.get("unrepairable") or [])[:4]:
+                orch._logger.warning("#1202cb frontend build-breaker: %s", _u)
             # Build-integrity: the frontend lane routinely imports a page it never
             # created (e.g. ./pages/MessagesInboxPage) → ``npm run build`` fails →
             # frontend container can't boot. Scaffold a valid stub for any dangling
