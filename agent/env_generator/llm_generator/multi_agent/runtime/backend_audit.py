@@ -1153,3 +1153,64 @@ def underspecified_tables_1202az(tables: Any, project_dir: Any,
         warn_once_1201("underspecified_tables_1202az",
                        "the scan for contract tables with no columns but staged data", _exc)
     return out
+
+
+# #1202bm: `if value not in {a, b, c}: value = a` — an input the handler just judged
+# INVALID is replaced with a valid one and stored, and the caller is told 201.
+_INVALID_TO_DEFAULT_1202BM = re.compile(
+    r"if\s+(\w+)\s+not\s+in\s+[\{\(\[]([^\}\)\]]{3,120})[\}\)\]]\s*:\s*\n"
+    r"(?:\s*#[^\n]*\n)*"
+    r"\s+\1\s*=\s*(['\"][^'\"]+['\"])")
+
+
+def invalid_value_defaults_1202bm(project_dir: Any, limit: int = 8) -> List[str]:
+    """A handler that stores a DIFFERENT value than the caller sent. (#1202bm)
+
+    The frontend has had a fabricated-fallback gate since #191; the backend has none, and
+    this is the same defect one layer down. netflix-r32, live:
+
+        POST /api/titles/1/rating {"value": "garbage_not_a_rating"}
+        -> 201 {"value": "thumbs_up"}
+
+    The lane wrote why, and the reason is the point: *"Be tolerant of stale
+    verifier/client payloads ... Persist a valid default instead of rejecting the
+    multi-step business flow."* A chain step that 400s blocks delivery, so the handler was
+    made unable to 400 — the gate's pressure produced an endpoint that records a positive
+    rating for anything at all, including nothing.
+
+    Only the SUBSTITUTING form is a finding. Normalising aliases (`"like" -> "thumbs_up"`)
+    is correct and untouched; so is rejecting with a 400. What this catches is the branch
+    that has already decided the input is invalid and then claims it was valid.
+
+    1 of 94 corpus custom_routes.py files carries it. Rare, and it is the shape a lane
+    reaches for whenever a chain sends something the schema will not take, so it is worth
+    a name before it spreads. Never raises.
+    """
+    out: List[str] = []
+    try:
+        be = Path(project_dir) / "app" / "backend"
+        if not be.is_dir():
+            return out
+        for f in sorted(be.glob("*.py")):
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            for m in _INVALID_TO_DEFAULT_1202BM.finditer(text):
+                var, allowed, default = m.group(1), m.group(2), m.group(3)
+                # Substituting only counts when the replacement is itself one of the
+                # values just rejected — otherwise it is a sentinel, not a claim of
+                # validity.
+                if default.strip("'\"") not in allowed:
+                    continue
+                line = text[:m.start()].count("\n") + 1
+                out.append("%s:%d: `%s` is rejected as invalid and then set to %s and "
+                           "stored, so the caller is told 201 for a value the handler "
+                           "refused" % (f.name, line, var, default))
+                if len(out) >= limit:
+                    return out
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("invalid_value_defaults_1202bm",
+                       "the scan for invalid values silently replaced with a default", _exc)
+    return out

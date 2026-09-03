@@ -1700,6 +1700,19 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                         '        raise HTTPException(status_code=400, detail="one of %s is '
                         'required")' % (", ".join(_subj_1202bl),),
                     ]
+                else:
+                    # No subject FK to require, so the same empty create lands a row that is
+                    # nothing but its own id and its owner. r32, live: `POST /api/profiles {}`
+                    # -> 201 {"id":29,"user_id":25,"name":null,"is_kids":null}, a profile with
+                    # no name, which the picker renders as a blank tile. Require that the body
+                    # supplied SOMETHING — any column at all after coercion. Same blast radius as
+                    # above: it is the same empty bodies, already measured at 83 of 6946 bare
+                    # collection POSTs, 80 of them framework-owned routes this does not serve.
+                    body_lines += [
+                        "    if not valid:",
+                        '        raise HTTPException(status_code=400, detail='
+                        '"a create needs at least one field")',
+                    ]
                 # #566u: enable upsert-on-conflict for an owner-scoped STATE-WRITE (owner + subject FKs
                 # = natural key: rating/my_list/continue_watching re-write must UPDATE, not 409).
                 _uc_ofk = _owner_fk(meta, exclude=tuple(bound))

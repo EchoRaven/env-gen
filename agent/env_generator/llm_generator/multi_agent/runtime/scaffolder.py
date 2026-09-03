@@ -1069,6 +1069,35 @@ volumes:
             except Exception as _e1202ax:
                 warn_once_1201("placeholder_media_urls_1202ax",
                                "the reserved-domain media URL report (#1202ax)", _e1202ax)
+            # #1202bm: a handler that judges an input INVALID and then stores a valid one in
+            # its place. r32, live: `POST /api/titles/1/rating {"value":"garbage_not_a_rating"}`
+            # returns 201 and records "thumbs_up". The lane wrote the reason and the reason is
+            # the point — "persist a valid default instead of rejecting the multi-step business
+            # flow" — so a chain step that would 400 was made unable to, and the endpoint now
+            # records a positive rating for anything, including nothing. The frontend has had a
+            # fabricated-fallback gate since #191; the backend had none. Own try (#1201).
+            try:
+                from .backend_audit import invalid_value_defaults_1202bm
+                from .message_format import join_capped as _jc1202bm
+                _iv1202bm = invalid_value_defaults_1202bm(_P(out_dir))
+                if _iv1202bm:
+                    orch.hubs.workhub.create_task(
+                        title=("Reject %d invalid value(s) instead of storing a substitute"
+                               % len(_iv1202bm))[:180],
+                        description=(
+                            "These handlers decide an input is invalid and then store a "
+                            "different, valid-looking value and answer 201, so the caller is "
+                            "told its value was saved when a substitute was: %s.\n\nRaise "
+                            "HTTPException(400) instead. Normalising aliases (\"like\" -> "
+                            "\"thumbs_up\") is correct and is not what this is about; the "
+                            "problem is the branch that has already judged the input invalid. "
+                            "If a chain sends a value the schema cannot take, the chain or the "
+                            "contract is what needs fixing."
+                            % _jc1202bm(_iv1202bm, total=len(_iv1202bm), cap=5)),
+                        assignee="backend", agent="scaffolder", priority="P2", kind="fidelity")
+            except Exception as _e1202bm:
+                warn_once_1201("invalid_value_defaults_1202bm",
+                               "the invalid-value-substitution report (#1202bm)", _e1202bm)
             # #1202ai: a prop the component never declares is dropped by React with no
             # runtime symptom — no console error, no failed request — so every gate stays
             # green while the feature does nothing. 232 occurrences across 51 of the 117
