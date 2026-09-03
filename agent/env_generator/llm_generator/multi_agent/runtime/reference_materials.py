@@ -810,6 +810,69 @@ def _ref_compile_timeout_s_871() -> float:
     return llm_ceiling_898("ENVGEN_REF_COMPILE_TIMEOUT_S")
 
 
+# ---- #1202ca: a resume must not re-buy the compiled reference spec --------------------
+_REF_SPEC_INPUT_1202CA = ".reference_spec_input.json"
+
+
+def _reference_spec_fingerprint_1202ca(images, docs, raw_req) -> dict:
+    """What the on-disk reference_spec.json was compiled FROM. Basenames (so a moved run
+    still matches) and a hash of the requirements text (so an edited brief does not)."""
+    import hashlib
+
+    def _names(v):
+        return sorted(Path(str(x)).name for x in (v or []))
+
+    return {
+        "images": _names(images),
+        "docs": _names(docs),
+        "req_sha": hashlib.sha256((raw_req or "").encode("utf-8")).hexdigest(),
+    }
+
+
+def record_reference_spec_input_1202ca(output_dir, images, docs, raw_req) -> None:
+    """Stamp what produced reference_spec.json. Best-effort: failing costs a recompile."""
+    try:
+        p = Path(output_dir) / "design" / _REF_SPEC_INPUT_1202CA
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(_reference_spec_fingerprint_1202ca(images, docs, raw_req),
+                                indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def reusable_reference_spec_1202ca(output_dir, images, docs, raw_req):
+    """The spec already on disk, when it was compiled from exactly these inputs; else None.
+
+    `compile_reference_spec` is a single LLM call over every staged reference and document:
+    2.3M characters on r35's resume, roughly $3 at uncached rates, issued five seconds into
+    the run. Its result is written to design/reference_spec.json -- and then recompiled from
+    scratch on the next attempt, the same shape #1202bv fixed for design-prep.
+
+    Gated on the FINGERPRINT rather than on --resume, because the argument does not depend
+    on resuming: when the images, the documents and the requirements text are byte-for-byte
+    what produced the spec on disk, compiling it again buys nothing. An edited brief or a
+    changed reference set changes the hash and the compile runs.
+
+    The usability test is the caller's own -- a spec with no screens/endpoints/entities/
+    mcp_tools is treated as nothing there, so it must not be resurrected here either.
+    """
+    try:
+        sidecar = Path(output_dir) / "design" / _REF_SPEC_INPUT_1202CA
+        spec_path = Path(output_dir) / "design" / "reference_spec.json"
+        if not (sidecar.is_file() and spec_path.is_file()):
+            return None
+        if json.loads(sidecar.read_text(encoding="utf-8")) != \
+                _reference_spec_fingerprint_1202ca(images, docs, raw_req):
+            return None
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        if not isinstance(spec, dict) or not any(
+                spec.get(k) for k in ("screens", "endpoints", "entities", "mcp_tools")):
+            return None
+        return spec
+    except Exception:
+        return None
+
+
 async def compile_reference_materials(
     raw_req: str,
     *,
@@ -863,15 +926,31 @@ async def compile_reference_materials(
         #
         # Calibrated against the 240s watchdog like #870: one full attempt per branch (they run
         # concurrently, so the pair does not need double), and the second re-roll truncated.
+        # #1202ca: reuse the compiled spec when the inputs are byte-for-byte the ones that
+        # produced it. Component specs still run — they carry their own per-image reuse
+        # (#1186) and are what MATERIAL-PREP reports as "reusing N/N".
+        _spec_1202ca = reusable_reference_spec_1202ca(output_dir, images, docs, raw_req)
         try:
-            spec, _ = await _asyncio.wait_for(
-                _asyncio.gather(
-                    compile_reference_spec(llm, images, docs, raw_req),
+            if _spec_1202ca is not None:
+                logger.info(
+                    "#1202ca Reference spec: reusing design/reference_spec.json compiled "
+                    "from these same %d image(s)/%d doc(s) — skipping the compile call",
+                    len(images or []), len(docs or []))
+                spec = _spec_1202ca
+                await _asyncio.wait_for(
                     precompute_component_specs(images, output_dir=output_dir,
                                                llm=llm, logger=logger),
-                ),
-                timeout=_ref_compile_timeout_s_871(),
-            )
+                    timeout=_ref_compile_timeout_s_871(),
+                )
+            else:
+                spec, _ = await _asyncio.wait_for(
+                    _asyncio.gather(
+                        compile_reference_spec(llm, images, docs, raw_req),
+                        precompute_component_specs(images, output_dir=output_dir,
+                                                   llm=llm, logger=logger),
+                    ),
+                    timeout=_ref_compile_timeout_s_871(),
+                )
         except _asyncio.TimeoutError:
             logger.error(
                 "Reference compile TIMED OUT after %.0fs (#871) — continuing without a spec. "
@@ -886,6 +965,10 @@ async def compile_reference_materials(
         spec_path = Path(output_dir) / "design" / "reference_spec.json"
         spec_path.parent.mkdir(parents=True, exist_ok=True)
         spec_path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+        # #1202ca: record what this spec was compiled from, so the next attempt can tell
+        # whether it may inherit it. Written after the spec itself, so a crash between the
+        # two leaves a spec with no fingerprint — which reads as 'recompile', the safe way.
+        record_reference_spec_input_1202ca(output_dir, images, docs, raw_req)
         gates = gates_from_spec(spec)
         n = merge_user_gates(output_dir, gates) if gates else 0
         summary = spec_summary_for_requirements(spec)
