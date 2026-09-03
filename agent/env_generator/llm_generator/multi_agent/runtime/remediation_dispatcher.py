@@ -827,6 +827,55 @@ def _control_tags_1182(page: str):
     return out
 
 
+def _controls_from_1182(src: str):
+    """The selectable attributes of every control a source file declares."""
+    out = []
+    for tag in _control_tags_1182(src)[:8]:
+        attrs = dict(re.findall(r'([\w-]+)\s*=\s*["\{]([^"\}]{0,40})', tag))
+        kept = {k: attrs[k] for k in ("type", "name", "id", "placeholder", "aria-label")
+                if k in attrs}
+        if kept:
+            out.append(kept)
+    return out
+
+
+def _delegated_controls_1202bx(src_dir, page: str):
+    """(component, controls) for a control the page RENDERS but does not DECLARE.
+
+    #1182 resolves a route to its page file and reads the controls there. That is blind
+    exactly when the page delegates its form to a child -- `SearchPage.jsx` renders
+    `<SearchBox/>` and the `<input>` lives in `components/SearchBox.jsx` -- so the diagnosis
+    came back empty and the generic remediation stood. Measured over the corpus: 222 of the
+    1117 pages that declare no control of their own do render one from a local component,
+    across several environments. r35 died on precisely this (delivery gate, ui_flow:search,
+    $174) and r19 before it ($355, STUCK after 18 ticks), both times on an app whose input
+    was present, labelled and correct.
+
+    The pressure is increasing, not decreasing: #1202at tells lanes to break pages into
+    components, so the shape this misses is the shape the framework now asks for.
+
+    One level deep and capped: enough for a page that hands its form to a child, without
+    walking a component graph. The child's OWN name is returned because the caller prints
+    "<name>.jsx declares N" -- naming the page there would be false.
+    """
+    seen = 0
+    for _, cname in re.findall(
+            r"import\s+(\w+)\s+from\s+['\"][^'\"]*?/?(?:components)/(\w+)", page):
+        if seen >= 12:
+            break
+        seen += 1
+        f = Path(src_dir) / "components" / f"{cname}.jsx"
+        if not f.is_file():
+            continue
+        try:
+            ctrls = _controls_from_1182(f.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        if ctrls:
+            return cname, ctrls
+    return None, []
+
+
 def _page_controls_1182(root, route: str):
     """(component, [control-attrs]) for the page App.jsx renders at `route`, or (None, [])."""
     try:
@@ -845,14 +894,16 @@ def _page_controls_1182(root, route: str):
         if not comp:
             return None, []
         page = (src_dir / "pages" / f"{comp}.jsx").read_text(encoding="utf-8", errors="replace")
-        out = []
-        for tag in _control_tags_1182(page)[:8]:
-            attrs = dict(re.findall(r'([\w-]+)\s*=\s*["\{]([^"\}]{0,40})', tag))
-            kept = {k: attrs[k] for k in ("type", "name", "id", "placeholder", "aria-label")
-                    if k in attrs}
-            if kept:
-                out.append(kept)
-        return comp, out
+        out = _controls_from_1182(page)
+        if out:
+            return comp, out
+        # #1202bx: the page renders its control from a local component instead of
+        # declaring it. Report the CHILD, because the caller names this file as the
+        # declaring one.
+        child, ctrls = _delegated_controls_1202bx(src_dir, page)
+        if ctrls:
+            return child, ctrls
+        return comp, []
     except Exception as _exc:
         _swallowed_1152("_page_controls_1182", _exc, "(None, []) = no diagnosis")
         return None, []
