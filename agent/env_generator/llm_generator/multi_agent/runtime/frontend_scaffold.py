@@ -2004,11 +2004,11 @@ _HAS_DEFAULT_EXPORT = re.compile(
     r"|export\s*\{[^}]*\bas\s+default\b[^}]*\}"  # export { X as default }
     r"|export\s*\{[^}]*\bdefault\b[^}]*\}\s*from"  # export { default } from '...'
 )
-# #1202cb: the MIRROR of _LOCAL_NAMED_IMPORT. `\s+from` right after the identifier is what
-# keeps this off `import { X } from` and `import X, { Y } from` — a mixed import has a comma
-# there, and rewriting one of those would drop the named half.
-_LOCAL_DEFAULT_IMPORT = re.compile(
-    r"""import\s+([A-Za-z_$][\w$]*)\s+from\s*(['"])(\.[^'"]+)\2""")
+# #1202cb reuses the _LOCAL_DEFAULT_IMPORT defined above rather than declaring its own.
+# It briefly did declare one, which SHADOWED that definition — `scaffold_missing_local_pages`
+# unpacks `for name, rel in _LOCAL_DEFAULT_IMPORT.findall(text)` and the shadow captured the
+# quote as a third group, so every dangling-page stub silently stopped being scaffolded. Two
+# module-level names, one meaning: the second one wins and nothing says so.
 
 
 def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
@@ -2089,7 +2089,11 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
             # record → delivery deferred. Corpus: 6 of 3799 default imports across 120
             # delivered frontends, in 3 runs -- rare, and each one costs the whole build.
             def _repl_default(m: "re.Match") -> str:
-                name, quote, rel = m.group(1), m.group(2), m.group(3)
+                name, rel = m.group(1), m.group(2)
+                # The shared pattern does not capture the quote; take it back off the match
+                # so a rewrite preserves the file's own quoting style.
+                _g0 = m.group(0)
+                quote = _g0[_g0.index(rel) - 1]
                 tgt = _resolve(f, rel)
                 if tgt is None:
                     return m.group(0)
