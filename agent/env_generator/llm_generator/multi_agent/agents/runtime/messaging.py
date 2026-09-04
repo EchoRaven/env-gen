@@ -980,6 +980,31 @@ Start by thinking about what might cause this issue.
         from_agent = message.header.source_agent_id
         content = message.payload if isinstance(message.payload, str) else str(message.payload)
 
+        # #1202ct: #326 aborts the run when the provider latches terminal, but that check
+        # lives in the orchestrator's TICK loop — up to a full tick (~60s) away. In that
+        # window every task_ready still opens a full agentic loop and registers 141 tools
+        # before the first call discovers the provider is dead. r41 measured 81 such dead
+        # spawns per MINUTE after its spend ceiling latched at $400.01 (88 in the first
+        # 135s, 267KB of log). #1161 guards the step boundary and #1161b the staged call;
+        # neither is reached, because the waste is upstream of the first LLM call. Declining
+        # here costs one comparison and makes the window bounded rather than tick-shaped.
+        try:
+            from utils.llm import terminal_llm_error as _term_1202ct
+            _dead_1202ct = _term_1202ct()
+        except Exception:
+            _dead_1202ct = None
+        if _dead_1202ct:
+            self._logger.info(
+                f"[{self.agent_id}] declining task_ready from {from_agent} — "
+                f"LLM provider terminally unavailable ({_dead_1202ct})")
+            await self._send_runtime_status_update(
+                to_agent=from_agent,
+                status="failed",
+                content=f"{self.agent_id} cannot start work: {_dead_1202ct}",
+                metadata={"source_message_type": "task_ready", "reason": "terminal_llm_1202ct"},
+            )
+            return
+
         self._logger.info(f"[{self.agent_id}] Starting work - triggered by {from_agent}: {content[:100]}...")
         await self._send_runtime_status_update(
             to_agent=from_agent,

@@ -35,7 +35,23 @@ from typing import Dict, List, Optional
 
 # Copied wholesale. `shared/hubs` is the coordination ledger — tasks, events, code state,
 # registry — and is the only directory a resume genuinely cannot re-derive.
+# #1202cs: `design/visual_gate` belongs here for the same reason — it is the ONLY
+# record of what the run has already WON. #500's best-ever-per-screen merge reads
+# `verdict.json` back off disk, and gate_state.json carries deferred_since /
+# total_judgments / plateau_rounds / released. A snapshot without them restores a run
+# that has forgotten every screen score it ever earned, with the escape timer and
+# plateau detection back at zero — the "two rounds spent re-winning points already
+# won" failure, reintroduced by the very mechanism meant to prevent lost work.
 _STATE_DIRS = ("shared/hubs",)
+
+# #1202cs: `design/visual_gate` is captured, but only its LEDGER. Measured on r41: the
+# whole directory is 107MB against 8.9MB for the rest of the snapshot, and 97MB of that
+# is PNGs — reference frames and per-round captures that a resumed run RE-TAKES anyway.
+# The state that cannot be re-derived is 472KB of JSON. Disk has been this project's
+# binding constraint, and `_KEEP` multiplies every snapshot, so copying the images would
+# trade one lost-work bug for a full disk.
+_STATE_DIRS_JSON_ONLY_1202CS = ("design/visual_gate",)
+_JSON_SUFFIXES_1202CS = (".json", ".jsonl")
 
 # Copied individually. design_system.json is here because it is the single most expensive
 # artifact in a run (#1202bv lets a resume inherit it); the rest are small and pin the run's
@@ -105,12 +121,15 @@ def take_snapshot(output_dir, kind: str = _KIND_MANUAL,
     except Exception:
         return None
 
-    for rel in _STATE_DIRS:
+    for rel in _STATE_DIRS + _STATE_DIRS_JSON_ONLY_1202CS:
         src = out / rel
         if not src.is_dir():
             continue
+        json_only = rel in _STATE_DIRS_JSON_ONLY_1202CS
         for f in sorted(src.rglob("*")):
             if not f.is_file() or _skip(f):
+                continue
+            if json_only and f.suffix.lower() not in _JSON_SUFFIXES_1202CS:
                 continue
             try:
                 r = f.relative_to(out)
