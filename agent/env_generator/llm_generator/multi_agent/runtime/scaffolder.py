@@ -1218,6 +1218,36 @@ volumes:
                         "siblings — each re-invents the shared chrome, and the visual "
                         "judge's most repeated component deviation is a missing header/nav: "
                         "%s", _where, len(_op), _jc1202cj(_op, total=len(_op), cap=4))
+                    # #780 / #947: a finding that reaches only a logger reaches nobody —
+                    # measured at 1 filed task across 154 runs. File it, and let the LANE
+                    # judge the exception: a full-screen player legitimately owns its whole
+                    # surface, which is why the task asks rather than asserts.
+                    try:
+                        if _sc1202cj("task:orphan_auth_pages",
+                                     tuple(sorted(map(str, _op or ())))):
+                            orch.hubs.workhub.create_task(
+                                title=("Give %d page(s) the shared chrome, or say why they "
+                                       "own their surface" % len(_op))[:180],
+                                description=(
+                                    "These pages are routed behind RequireAuth and import "
+                                    "nothing from components/, while their siblings do. A "
+                                    "page that shares nothing re-invents the chrome and "
+                                    "usually omits it:\n\n"
+                                    + _jc1202cj(["  - " + x for x in _op],
+                                                total=len(_op), cap=12, sep="\n")
+                                    + "\n\nFor each: mount the same header/nav its siblings "
+                                    "use, OR — if the screen genuinely owns its whole surface, "
+                                    "as a full-screen player does — reply saying so and leave "
+                                    "it. `components` is the weakest of the seven judged "
+                                    "dimensions (0.478 mean over 31 runs and 333 screen "
+                                    "judgments; `color`, which is measured deterministically, "
+                                    "is strongest at 0.676), and the judge's most repeated "
+                                    "component deviation is a missing header/nav. Scanned "
+                                    "tree: " + _where + " (#1202cj)."),
+                                assignee="frontend", agent="scaffolder", priority="P2",
+                                kind="fidelity")
+                    except Exception:
+                        pass
             except Exception as _e1202cj:
                 from .message_format import warn_once_1201
                 warn_once_1201("orphan_auth_page_findings_1202cj",
