@@ -1058,6 +1058,51 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("unstaged_asset_refs_1202j",
                                "the unstaged-asset report (#1202j)", _e1202j)
+            # #1202cp: the same reference WITHOUT the leading slash. #1202j requires one, so
+            # the relative form was invisible to it, which is how #1202co survived: the DB
+            # held `assets/posters/x.jpg`, twelve render sites emitted it verbatim, and on
+            # /browse the browser asked for /browse/assets/posters/x.jpg and got 200 +
+            # index.html from the SPA fallback. Not a 404 — so no probe, no console error and
+            # no gate ever saw it, and eleven screens scored a median 0.27 with every hero
+            # black. #1202co fixes the source; this catches whatever gets past it. Own try.
+            try:
+                from .frontend_scaffold import relative_asset_refs_1202cp
+                from .message_format import join_capped as _jc1202cp
+                from .message_format import state_changed_1202ad as _sc1202cp
+                _rel = relative_asset_refs_1202cp(
+                    fe, _P(out_dir) / "app" / "backend" / "seed_dataset.json")
+                if _rel and _sc1202cp("rel_assets:%s" % out_dir, tuple(_rel)):
+                    orch._logger.warning(
+                        "#1202cp %d asset path(s) are NOT root-relative — they resolve "
+                        "against whatever route is open, and on a SPA every one of those "
+                        "URLs answers 200 with the app shell, so the image renders as "
+                        "nothing and reports no error: %s",
+                        len(_rel), _jc1202cp(_rel, total=len(_rel), cap=4))
+                    try:
+                        if _sc1202cp("task:rel_assets", tuple(sorted(map(str, _rel or ())))):
+                            orch.hubs.workhub.create_task(
+                                title=("Root-relative %d asset path(s) — they fetch the app "
+                                       "shell, not the image" % len(_rel))[:180],
+                                description=(
+                                    "These paths lack a leading slash, so the browser "
+                                    "resolves them against the current route:\n\n"
+                                    + _jc1202cp(["  - " + x for x in _rel],
+                                                total=len(_rel), cap=12, sep="\n")
+                                    + "\n\nOn /browse, `assets/posters/x.jpg` is fetched as "
+                                    "/browse/assets/posters/x.jpg, and the SPA fallback "
+                                    "answers 200 with index.html — NOT a 404. The <img> "
+                                    "receives HTML, renders nothing, and no console error, "
+                                    "network error or gate can see it. Prefix each with `/` "
+                                    "so it resolves from the site root on every route "
+                                    "(#1202cp)."),
+                                assignee="frontend", agent="scaffolder", priority="P1",
+                                kind="fidelity")
+                    except Exception:
+                        pass
+            except Exception as _e1202cp:
+                from .message_format import warn_once_1201
+                warn_once_1201("relative_asset_refs_1202cp",
+                               "the relative-asset report (#1202cp)", _e1202cp)
             # #1202ax: a seeded media URL on an RFC 2606 reserved domain is a guaranteed
             # 404 — example.com exists so that it never serves real content — and the
             # visual judge scores it as a broken render. #1202j catches a LOCAL path that

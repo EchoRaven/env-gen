@@ -12183,6 +12183,57 @@ def sync_frontend_package_json_deps(frontend_dir) -> Dict[str, object]:
 # assembled elsewhere), and a missing icon is not worth failing a delivery over. What it is
 # worth is not being invisible until a judge scores the hole it leaves.
 _ASSET_REF_1202J = re.compile(r"['\"](/assets/[^'\"?)\s]+)")
+# #1202cp: the SAME reference without the leading slash. `_ASSET_REF_1202J` requires one, so
+# the relative form was invisible to it — which is exactly how #1202co survived: the DB held
+# `assets/posters/x.jpg`, twelve render sites emitted it verbatim, and on `/browse` the browser
+# asked for `/browse/assets/posters/x.jpg` and got 200 + index.html from the SPA fallback. Not a
+# 404, so no probe, no console error and no gate ever saw it; the picture just rendered as
+# nothing and eleven screens scored a median 0.27.
+_REL_ASSET_REF_1202CP = re.compile(r"['\"](\.{0,2}/?assets/[^'\"?)\s]+)")
+
+
+def relative_asset_refs_1202cp(frontend_dir, seed_path=None, cap: int = 40) -> List[str]:
+    """Asset paths that are NOT root-relative — they resolve against the current route.
+
+    `/assets/x.jpg` is the same file from every route. `assets/x.jpg` is a different URL on
+    every route, and on a SPA every one of those URLs answers 200 with the app shell. The
+    image element gets HTML, renders nothing, and reports no error anywhere.
+
+    Never raises. Reports only — a genuinely relative reference inside a nested static page
+    could be intentional, so this names them rather than rewriting them (#1202co fixes the
+    source; this catches anything that gets past it).
+    """
+    out: List[str] = []
+    try:
+        fe = Path(frontend_dir)
+        refs: Set[str] = set()
+        src = fe / "src"
+        if src.is_dir():
+            for f in (list(src.rglob("*.js")) + list(src.rglob("*.jsx"))
+                      + list(src.rglob("*.ts")) + list(src.rglob("*.tsx"))):
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+                for m in _REL_ASSET_REF_1202CP.findall(text):
+                    if not m.startswith("/"):
+                        refs.add(f"{f.relative_to(fe)}: {m}")
+        if seed_path is not None:
+            try:
+                sp = Path(seed_path)
+                if sp.is_file():
+                    for m in _REL_ASSET_REF_1202CP.findall(
+                            sp.read_text(encoding="utf-8", errors="ignore")):
+                        if not m.startswith("/"):
+                            refs.add(f"{sp.name}: {m}")
+            except Exception:
+                pass
+        out = sorted(refs)[:cap]
+    except Exception:
+        return out
+    return out
+
+
 
 
 def unstaged_asset_refs_1202j(frontend_dir, seed_path=None, cap: int = 40) -> List[str]:
