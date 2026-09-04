@@ -1201,11 +1201,23 @@ volumes:
                 from .message_format import state_changed_1202ad as _sc1202cj
                 _op = orphan_auth_page_findings_1202cj(fe / "src")
                 if _op and _sc1202cj("orphan_auth_pages:%s" % out_dir, tuple(_op)):
+                    # r37 reported this twenty times in an hour with the count swinging
+                    # 11/3/12/10/4, and a reader could not tell why. The scaffolder runs per
+                    # LANE WORKTREE, so each number was true of a different tree — the state
+                    # gate was keyed correctly (`fe` is derived from `out_dir`) and the trees
+                    # genuinely differ. What was missing is which tree, so name it: an
+                    # oscillation that is legible is a measurement, one that is not is noise.
+                    try:
+                        _where = str(_P(out_dir).name)
+                        if _P(out_dir).parent.name == "worktrees":
+                            _where = "worktrees/" + _where
+                    except Exception:
+                        _where = "?"
                     orch._logger.warning(
-                        "#1202cj %d authenticated page(s) share no component with their "
+                        "#1202cj [%s] %d authenticated page(s) share no component with their "
                         "siblings — each re-invents the shared chrome, and the visual "
                         "judge's most repeated component deviation is a missing header/nav: "
-                        "%s", len(_op), _jc1202cj(_op, total=len(_op), cap=4))
+                        "%s", _where, len(_op), _jc1202cj(_op, total=len(_op), cap=4))
             except Exception as _e1202cj:
                 from .message_format import warn_once_1201
                 warn_once_1201("orphan_auth_page_findings_1202cj",
