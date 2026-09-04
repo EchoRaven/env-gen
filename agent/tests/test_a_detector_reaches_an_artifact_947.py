@@ -36,8 +36,15 @@ import pytest
 # reason: the finding reaches a real artifact — the corrupt store's own bytes, copied beside it
 # — but via `shutil.copy2`, which this intra-procedural scan does not count as persistence, and
 # json_store is the layer the hubs are built ON so "write it to a hub" is not available to it.
+# 10 -> 11 for #1202cn's `_compose` frame. Its audience is the OPERATOR, not a lane: it
+# names a failure the host owns ("docker has run out of network address pools ... stop the
+# finished runs' stacks"), and there is no artifact a lane would read because no lane can
+# act on it. r37 is why it exists — 168 minutes and $371.74 with every `docker up` failing
+# the same way forty times, the orchestrator escalating stalls and nudging lanes the whole
+# time. Filing that as a task would send a lane after the host; the log line, read by
+# whoever clears it, IS the right destination.
 # Raised deliberately and once; a ceiling moved without a reason stops being a ratchet.
-_CEILING = 10
+_CEILING = 11
 
 #: Detectors the scan flags but whose finding DOES reach an artifact via the caller. The scan is
 #: intra-procedural — it cannot follow a returned structure — so a fix applied one frame up is

@@ -125,6 +125,17 @@ class RunBudget:
                 # #1171: the top contributors only — the whole map is long and the
                 # question ("which tool put that much in the context") is answered by
                 # the head of it.
+                # #1202cr: the per-phase split beside the total, so a finished run can be
+                # asked WHERE its budget went — the question r40-vs-r41 turns on. Capped at
+                # 24 labels (costliest first) to keep run_budget.json small; the total in
+                # payload["llm"] stays authoritative and is never derived from this.
+                try:
+                    from utils.llm import llm_usage_by_label_1202cr
+                    _bl = llm_usage_by_label_1202cr()
+                    if _bl:
+                        payload["llm_by_phase_1202cr"] = dict(list(_bl.items())[:24])
+                except Exception:
+                    pass
                 _tb = tool_result_bytes()
                 if _tb:
                     payload["tool_result_bytes"] = dict(list(_tb.items())[:12])

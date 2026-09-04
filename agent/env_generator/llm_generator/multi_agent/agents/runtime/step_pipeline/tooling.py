@@ -397,6 +397,12 @@ class AgentStepToolingMixin:
         if _t:
             raise RuntimeError("LLM provider terminally unavailable: %s" % _t)
         self._active_stage = stage_name
+        # #1202cr: this is the single implementation every staged lane call routes
+        # through (see the #1161b note above), and it is the only place that holds BOTH
+        # the agent identity and the stage name — so it is the only place attribution
+        # costs nothing to obtain. Everything not reached from here (design-prep, the
+        # visual judge, the condenser) lands under "unattributed" by construction.
+        _label_1202cr = "%s:%s" % (getattr(self, "agent_id", "?"), stage_name)
         messages.append(Message.user(prompt))
         # NOTE: the previous in-place condense guard was REMOVED here. It fired on
         # EVERY staged call — i.e. MID-ACTION, while a step was part-way through
@@ -407,7 +413,9 @@ class AgentStepToolingMixin:
         # every-step-boundary condensation (between endpoints, where it's safe),
         # which keeps the list ~28-100 — well under the ~770 saturation — without
         # ever interrupting an in-progress implementation.
-        return await self.call_with_retry(self.llm.chat_messages, messages, tools=stage_tools)
+        from utils.llm import attribute_llm_1202cr as _attr_1202cr
+        with _attr_1202cr(_label_1202cr):
+            return await self.call_with_retry(self.llm.chat_messages, messages, tools=stage_tools)
 
     async def _maybe_condense_messages_in_place(self, messages: List[Message]) -> None:
         """Condense ``messages`` in-place if it exceeds the condenser cap.

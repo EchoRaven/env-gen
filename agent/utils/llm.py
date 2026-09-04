@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any, AsyncIterator, Dict, Optional, Union, Tuple, Set
 import asyncio
 import base64
+import contextvars
 import json
 import logging
 import os
@@ -862,6 +863,111 @@ _TERMINAL_ERROR_PHRASES = (
 _LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unreported": 0}
 
 
+# ---- #1202cr ----------------------------------------------------------------
+# A RUN THAT CANNOT SAY WHERE ITS MONEY WENT CANNOT BE MADE CHEAPER.
+#
+# r40 delivered on $283.86 having judged 11 visual rounds; r41 reached $297.73 having
+# judged ONE. Same budget, opposite outcome — the difference is which PHASE consumed
+# it, and `_LLM_USAGE` above is a single global with no dimension to answer that. So
+# every optimisation so far has been aimed at what was measurable (crash rate, batching)
+# rather than at what decides delivery (how much budget survives to the gate).
+#
+# The label is a ContextVar, not a parameter: `_record_usage_1163` is reached through
+# provider clients and retry wrappers that must not grow a cost-accounting argument.
+# ContextVar is also the only primitive that stays correct here — lanes run as
+# concurrent asyncio tasks, and each task inherits a COPY of the context at creation,
+# so one lane's label can never leak into another's accounting.
+#
+# Unlabelled calls (design-prep, judges, condenser) accumulate under UNATTRIBUTED
+# rather than being dropped: a phase this never learns to name still shows up as a
+# number that does not add up, which is the honest failure mode.
+_LLM_BY_LABEL_1202CR: Dict[str, Dict[str, int]] = {}
+_UNATTRIBUTED_1202CR = "unattributed"
+_LLM_LABEL_1202CR: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "envgen_llm_label_1202cr", default=_UNATTRIBUTED_1202CR
+)
+
+
+class attribute_llm_1202cr:
+    """Attribute every LLM call made inside this block to ``label``.
+
+    Re-entrant by design: a nested block (a retry that re-enters, an action round
+    inside a stage) overrides for its own extent and restores the outer label on
+    exit, so accounting follows the innermost active phase without the caller
+    tracking depth. Never raises — cost accounting must not break a call.
+    """
+
+    __slots__ = ("_label", "_token")
+
+    def __init__(self, label: Any) -> None:
+        try:
+            self._label = str(label or _UNATTRIBUTED_1202CR)[:120]
+        except Exception:
+            self._label = _UNATTRIBUTED_1202CR
+        self._token = None
+
+    def __enter__(self) -> "attribute_llm_1202cr":
+        try:
+            self._token = _LLM_LABEL_1202CR.set(self._label)
+        except Exception:
+            self._token = None
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        try:
+            if self._token is not None:
+                _LLM_LABEL_1202CR.reset(self._token)
+        except Exception:
+            pass
+        return False
+
+
+def _record_by_label_1202cr(prompt_tokens: Any, cached_tokens: Any,
+                            completion_tokens: Any) -> None:
+    """Accumulate one response against the active label. Never raises."""
+    try:
+        label = _LLM_LABEL_1202CR.get()
+    except Exception:
+        label = _UNATTRIBUTED_1202CR
+    try:
+        e = _LLM_BY_LABEL_1202CR.setdefault(
+            label, {"calls": 0, "prompt": 0, "cached": 0, "completion": 0})
+        e["calls"] += 1
+        e["prompt"] += int(prompt_tokens or 0)
+        e["completion"] += int(completion_tokens or 0)
+        try:
+            e["cached"] += int(cached_tokens)
+        except (TypeError, ValueError):
+            pass
+    except Exception:
+        return
+
+
+def llm_usage_by_label_1202cr() -> Dict[str, Dict[str, Any]]:
+    """Per-label usage, priced with the same rates as ``llm_usage``, costliest first.
+
+    Prices are read here rather than cached at record time so a run priced after the
+    fact (rates set late) still reports dollars, matching ``llm_usage``'s behaviour.
+    """
+    p_in = _price_env_1163("ENVGEN_PRICE_IN_PER_M")
+    p_cache = _price_env_1163("ENVGEN_PRICE_CACHED_PER_M")
+    p_out = _price_env_1163("ENVGEN_PRICE_OUT_PER_M")
+    out: Dict[str, Dict[str, Any]] = {}
+    for label, e in _LLM_BY_LABEL_1202CR.items():
+        uncached = max(0, int(e.get("prompt") or 0) - int(e.get("cached") or 0))
+        out[label] = {
+            "calls": int(e.get("calls") or 0),
+            "prompt": int(e.get("prompt") or 0),
+            "cached": int(e.get("cached") or 0),
+            "uncached": uncached,
+            "completion": int(e.get("completion") or 0),
+            "usd": round(uncached / 1e6 * p_in
+                         + int(e.get("cached") or 0) / 1e6 * p_cache
+                         + int(e.get("completion") or 0) / 1e6 * p_out, 4),
+        }
+    return dict(sorted(out.items(), key=lambda kv: -float(kv[1]["usd"] or 0)))
+
+
 # ---- #1183 ------------------------------------------------------------------
 # A CEILING THAT KILLS A RUN WHICH IS ALREADY FINISHING SPENDS EVERYTHING TO SAVE A LITTLE.
 #
@@ -985,6 +1091,9 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
         _LLM_USAGE["calls"] += 1
         _LLM_USAGE["prompt"] += int(prompt_tokens or 0)
         _LLM_USAGE["completion"] += int(completion_tokens or 0)
+        # #1202cr: same numbers, one extra dimension. Inside the same try/except so a
+        # labelling fault can never cost the global counter its increment.
+        _record_by_label_1202cr(prompt_tokens, cached_tokens, completion_tokens)
         try:
             _LLM_USAGE["cached"] += int(cached_tokens)
         except (TypeError, ValueError):

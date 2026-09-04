@@ -173,7 +173,51 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
             _tail = _full[-600:]
         _LOG.warning("compose spawn: %s %s FAILED rc=%s — transcript tail:\n%s",
                      _bin, _verb, cp.returncode, _tail or "(the command produced no output)")
+        # #1202cn: say when the HOST is the problem, because no lane can fix it.
+        #
+        # r37 ran 168 minutes and spent $371.74 over 4910 calls without ever reaching a
+        # single visual judgment. Every `docker up` failed the same way, forty times:
+        # "could not find an available, non-overlapping IPv4 address pool among the
+        # defaults" -- Docker's pools run out near 31 networks and sixteen finished runs
+        # still held theirs. Nothing said so. The failure arrived as a plain `docker_up`
+        # failure, the orchestrator kept escalating stalls and nudging silent lanes, and
+        # the lanes kept being asked to fix an application that was never the problem.
+        #
+        # tools/docker_tools.py already recognises two of these shapes for the tools an
+        # AGENT calls; this is the path the FRAMEWORK calls, and it recognised none.
+        #
+        # Announce only -- deliberately not an abort. Aborting on a transient (a port
+        # freed a second later, a daemon restarting) would be worse than a wasted retry,
+        # and this repo has been burned acting on static inference before. What it buys
+        # is that minute five says what minute 168 said.
+        try:
+            _low = (_full or "").lower()
+            _host = next((m for k, m in _HOST_LEVEL_1202CN.items() if k in _low), None)
+            if _host:
+                _LOG.error(
+                    "#1202cn this is a HOST failure, not the app's: %s. No lane can fix "
+                    "it and remediation will not converge — the operator has to clear it "
+                    "before this run can validate anything.", _host)
+        except Exception:
+            pass
     return cp
+
+
+# #1202cn: compose failures the HOST owns. Keyed on the daemon's own wording, lowercased.
+# Each names the remedy, because this message is read by whoever has to clear it.
+_HOST_LEVEL_1202CN = {
+    "non-overlapping ipv4 address pool": (
+        "docker has run out of network address pools (the defaults run out near 31 "
+        "networks) — stop the finished runs' stacks (`docker compose down`, without `-v`, "
+        "keeps the volumes) and `docker network prune -f`"),
+    "cannot connect to the docker daemon": (
+        "the docker daemon is not reachable — start it, or fix access to docker.sock"),
+    "no space left on device": (
+        "the disk is full — reclaim space before retrying"),
+    "port is already allocated": (
+        "a host port this stack needs is held by another container — stop whatever holds "
+        "it, or move this run to different ports"),
+}
 
 
 def _compose_capture(compose_file: Path, *args: str, cwd: Path, timeout: int):
