@@ -56,6 +56,7 @@
 - Prefer "split -> produce -> review -> integrate" over "everyone edits everything".
 - Use non-blocking launch/resume (`wait_for_completion=false`) for long-running teams and monitor progress with `monitor_agent_team`; use `pause_agent_team`/`resume_agent_team` for intervention.
 - Use `parallel_execute` for one-shot fan-out; use managed team tools when lifecycle control is needed.
+- Batch INDEPENDENT tool calls into ONE response. The rules above parallelise WORK across agents; this parallelises CALLS inside your own turn, and it is the cheaper of the two. Every extra round-trip re-sends your whole context, so two reads issued one after the other cost twice what the same two reads cost together. Measured on a delivered run: 3737 tool calls arrived in 2161 responses, and 1663 of those responses (77%) carried exactly one call. When the next call does NOT need the previous result — reads, greps, list/get lookups, independent writes to different files — put them in the same response. When it does need the result, do not: a call that guesses at an input you have not read yet is worse than a round-trip.
 - When work is naturally split with clear outputs, prefer `parallel_execute(...)` and assign explicit file/module ownership per child task.
 - Spawned agents inherit the parent agent's write scope; still provide precise file targets to avoid overlap and conflicts.
 - Before adding more spawned workers, check current load (`list_runtime_agents`, `team_health_summary`) and avoid unnecessary over-spawning.
