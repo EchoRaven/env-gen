@@ -1967,7 +1967,10 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
                 or _p.startswith("/oauth") or _p.startswith("/api/oauth")
                 or _p.startswith("/.well-known")):
             continue
-        # #1202dp: the same unwinnable gate #251 already fixed once, one endpoint short.
+        # #1202ds (renumbered from #1202dp: a concurrent session shipped a different
+        # #1202dp — the final-gate grace in orchestrator.py — and its two handoff
+        # documents already reference that number, so this one yielded).
+        # The same unwinnable gate #251 already fixed once, one endpoint short.
         # netflix-r44 ended without delivering, and this check was one of its two final
         # blockers. The ONLY endpoint it flagged was the orchestrator's own deprecated probe,
         # `GET /__noop_orchestrator_state_check__` (provider=orchestrator, response_key=
@@ -3060,7 +3063,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # catch it at the gate instead of at the user's screen.
     noncanonical_response_keys = noncanonical_business_response_keys(hubs)
     if noncanonical_response_keys:
-        # #1202dp: NAME THE INSTANCE. This check decides delivery and logged only its own
+        # #1202ds: NAME THE INSTANCE. This check decides delivery and logged only its own
         # name, so r44's backend agent audited the business surface three times, correctly
         # found it canonical, and never learned which endpoint held the gate shut. The
         # comment on `incomplete_required_tasks` twenty lines up diagnoses this exact shape
@@ -3069,7 +3072,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             try:
                 for _nc in noncanonical_response_keys[:8]:
                     logger.warning(
-                        "#1202dp business_response_key_noncanonical: %s declares "
+                        "#1202ds business_response_key_noncanonical: %s declares "
                         "response_key=%r — %s",
                         _nc.get("endpoint"), _nc.get("response_key"), _nc.get("reason"))
             except Exception:
