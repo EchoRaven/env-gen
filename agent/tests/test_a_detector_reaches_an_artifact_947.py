@@ -67,6 +67,10 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1] / "env_generator"
 
 #: serialising is NOT persisting — `dumps` here hid the canonical case behind `json.dumps(token)`.
 _PERSIST_CALLS = {"write_text", "writelines", "dump"}
+# #1202cw routed every projector write through a choke point, so the `.write_text` these
+# functions used to call is now one frame away. It is the SAME file write — a plain call,
+# not an attribute, hence the separate set below.
+_PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw"}
 _PERSIST_TARGETS = {"_verdict", "row", "rec", "results", "payload", "report", "out",
                     "findings", "data"}
 _LOGGERS = {"_LOG", "logger", "_LOGGER", "_log939"}
@@ -83,6 +87,8 @@ def _persists(fn):
         if isinstance(n, ast.Call):
             attr = getattr(n.func, "attr", None)
             if attr in _PERSIST_CALLS:
+                return True
+            if getattr(n.func, "id", None) in _PERSIST_FUNCS_1202CW:
                 return True
             owner = getattr(getattr(n.func, "value", None), "id", None)
             if attr in ("setdefault", "append", "update") and owner and durable(owner):

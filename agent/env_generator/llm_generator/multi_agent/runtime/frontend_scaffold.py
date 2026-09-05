@@ -29,6 +29,13 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 # the scaffold loop would raise where it is hardest to see.
 from .flow_coverage import _is_navigable_page
 from .message_format import join_capped  # #1034
+try:  # #1202cw
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except ImportError:  # pragma: no cover - only when this file is loaded BY PATH (two tests)
+    def _fw_write_1202cw(_p, _text, **_kw):
+        from pathlib import Path as _P
+        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))
+        return True
 
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
@@ -274,7 +281,7 @@ def repair_frontend_duplicate_imports(frontend_dir) -> Dict[str, object]:
                 all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
             if changed:
                 try:
-                    f.write_text(new, encoding="utf-8")
+                    _fw_write_1202cw(f, new, encoding="utf-8")
                     repaired.append(str(f.relative_to(src_dir)))
                 except Exception:
                     continue
@@ -467,7 +474,7 @@ def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
                 all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
             if removed:
                 try:
-                    f.write_text(new, encoding="utf-8")
+                    _fw_write_1202cw(f, new, encoding="utf-8")
                     repaired[str(f.relative_to(src_dir))] = removed
                 except Exception:
                     continue
@@ -507,7 +514,7 @@ def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
             fixed = _unescape_jsx_attr_quotes(fixed)
             if fixed != txt:
                 try:
-                    f.write_text(fixed, encoding="utf-8")
+                    _fw_write_1202cw(f, fixed, encoding="utf-8")
                     repaired.append(str(f.relative_to(src_dir)))
                 except Exception:
                     pass
@@ -608,7 +615,8 @@ def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
                 _at = _last.end()
                 out = txt[:_at] + "\n" + add.rstrip("\n") + txt[_at:]
             try:
-                f.write_text(out, encoding="utf-8")
+                _fw_write_1202cw(f, out, encoding="utf-8", clobber_ok=(
+                    "#500: INSERTS the missing default export after the module's last import so a projected default-import resolves. Purely additive — no existing line is altered."))
                 repaired.append(str(f.relative_to(src_dir)))
             except Exception:
                 pass
@@ -651,7 +659,8 @@ def repair_frontend_default_export_wrapper(frontend_dir) -> Dict[str, object]:
             fixed = _DEFAULT_WRAPPER_RE.sub(f"export default {name};", txt, count=1)
             if fixed != txt:
                 try:
-                    f.write_text(fixed, encoding="utf-8")
+                    _fw_write_1202cw(f, fixed, encoding="utf-8", clobber_ok=(
+                        "#500: rewrites `export default { name };` to `export default name;` for a SINGLE exported member — a projected `import api from` would otherwise get the wrapper object. One statement changes; the module is otherwise untouched."))
                     repaired.append(str(f.relative_to(src_dir)))
                 except Exception:
                     pass
@@ -765,7 +774,7 @@ def neutralize_frontend_external_backgrounds(frontend_dir) -> Dict[str, object]:
             new = _EXT_URL_RE.sub(_repl, new)
             if new != txt:
                 try:
-                    f.write_text(new, encoding="utf-8")
+                    _fw_write_1202cw(f, new, encoding="utf-8")
                     touched.append(str(f.relative_to(src_dir)))
                 except Exception:
                     pass
@@ -898,7 +907,7 @@ def _placeholder_ref(public_dir: Path, url: str, avatarish: bool) -> str:
     f = pdir / name
     if not f.is_file():
         tpl = _PH_AVATAR_SVG if avatarish else _PH_IMAGE_SVG
-        f.write_text(tpl.format(bg=bg, fg=fg), encoding="utf-8")
+        _fw_write_1202cw(f, tpl.format(bg=bg, fg=fg), encoding="utf-8")
     return f"/assets/{_PLACEHOLDER_DIRNAME}/{name}"
 
 
@@ -972,7 +981,7 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
             new = _BARE_IMG_STR_RE.sub(_bare_repl, new)  # src={x || 'https://picsum…'}
             if new != txt:
                 try:
-                    f.write_text(new, encoding="utf-8")
+                    _fw_write_1202cw(f, new, encoding="utf-8")
                     touched.append(str(f.relative_to(src_dir)))
                 except Exception:
                     pass
@@ -1013,8 +1022,9 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
 
         _walk(data)
         if count:
-            seed.write_text(json.dumps(data, indent=2, ensure_ascii=False),
-                            encoding="utf-8")
+            _fw_write_1202cw(seed, json.dumps(data, indent=2, ensure_ascii=False),
+                            encoding="utf-8",
+                clobber_ok=("#99: rewrites the SEED file's external image URLs to localized asset paths — a data localization pass, not a code projection."))
         result["localized"] = count
     except Exception as exc:  # never break generation/validation
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -1218,8 +1228,9 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
                     f"so the page still renders.'); return {_empty753}; }};"
                 )
                 stubbed.append(name)
-        api_js.write_text(
-            api_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+        _fw_write_1202cw(api_js, 
+            api_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8", clobber_ok=(
+                "#753: APPENDS the missing exports/aliases/stubs to the lane's own api.js — every original byte is preserved above them, so a projected page import resolves instead of rendering blank."))
         return {"repaired": True, "aliased": aliased, "stubbed": stubbed,
                 "reexported": reexported, "api_js": str(api_js)}
     except Exception as exc:  # never break generation/validation
@@ -1408,7 +1419,8 @@ def repair_frontend_cjs_module_exports(frontend_dir) -> Dict[str, object]:
                     f"export {{ {parts} }};\n"
             if new_txt != txt:
                 try:
-                    f.write_text(new_txt, encoding="utf-8")
+                    _fw_write_1202cw(f, new_txt, encoding="utf-8", clobber_ok=(
+                        "#500: appends an ESM re-export line to a CJS module so the projected imports resolve; every original byte is preserved above it."))
                     repaired.append({"file": str(f.relative_to(src_dir)),
                                      "default": default_name,
                                      "named": [n for n, _ in esm_named]})
@@ -1518,7 +1530,10 @@ def repair_frontend_default_api_import(frontend_dir) -> Dict[str, object]:
                 body = "\n// auto-added (#499): a component default-imports this module; aggregate\n" \
                        "// the named exports so `import X from '<this module>'` resolves.\n" \
                        "export default { " + ", ".join(names) + " };\n"
-            tgt.write_text(src.rstrip() + "\n" + body, encoding="utf-8")
+            _fw_write_1202cw(tgt, src.rstrip() + "\n" + body, encoding="utf-8", clobber_ok=(
+                "ADDITIVE: appends an aggregating default export to the lane's api.js. A "
+                "component that default-imports a named-only module hard-fails the Rollup "
+                "build, so the frontend image never builds and nothing is delivered."))
             repaired.append({"module": str(tgt), "default_export_added": names})
         if not repaired:
             return {"repaired": False, "reason": "default-imported api module(s) already have a default export"}
@@ -1611,7 +1626,7 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
                     return m.group(0)
                 new = _API_CALL_PATH_RE.sub(_sub, text)
                 if local:
-                    fpath.write_text(new, encoding="utf-8")
+                    _fw_write_1202cw(fpath, new, encoding="utf-8")
                     rewrites.extend(local)
         result["rewritten"] = rewrites
     except Exception as exc:
@@ -1729,7 +1744,7 @@ def repair_token_key_mismatch_1108(frontend_dir) -> Dict[str, object]:
                 out_lines.append(_indent + add + _eol)
                 changed = True
             if changed:
-                p.write_text("".join(out_lines), encoding="utf-8")
+                _fw_write_1202cw(p, "".join(out_lines), encoding="utf-8")
                 result["added"].append({"file": p.name, "keys": missing})
     except Exception:
         return result
@@ -1765,7 +1780,8 @@ def normalize_frontend_api_base(frontend_dir) -> Dict[str, object]:
                 continue
             new = _ABS_LOCAL_ORIGIN_RE.sub(r"\1", text)
             if new != text:
-                f.write_text(new, encoding="utf-8")
+                _fw_write_1202cw(f, new, encoding="utf-8", clobber_ok=(
+                    "ADDITIVE: strips a hardcoded absolute local origin (http://localhost:PORT) so the built image talks to its own backend; one substitution, nothing else moves."))
                 changed.append(str(f.relative_to(fe)))
         result["normalized"] = sorted(changed)
     except Exception as exc:  # never break generation/validation
@@ -1838,7 +1854,7 @@ def normalize_frontend_token_key(frontend_dir) -> Dict[str, object]:
                 continue
             new = _LS_KEY_RE.sub(_sub, text)
             if new != text:
-                f.write_text(new, encoding="utf-8")
+                _fw_write_1202cw(f, new, encoding="utf-8")
                 changed.append(str(f.relative_to(fe)))
         result["normalized"] = sorted(changed)
     except Exception as exc:  # never break generation/validation
@@ -1954,7 +1970,7 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                         f"console.error('[auto-stub] {n} is imported but its module does not "
                         f"export it - MISSING IMPLEMENTATION, not an empty result. Returning "
                         f"{_empty761} so the page still renders.'); return {_empty761}; }};")
-            target.write_text(tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+            _fw_write_1202cw(target, tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
             result["repaired"].append((target.name, add))
         # Re-export existing-but-unexported local bindings (e.g. a Context the lane
         # declared with `const X = createContext()` and imported { X } elsewhere).
@@ -1972,7 +1988,7 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                 continue
             lines = ["", "// auto-reconciled missing exports (re-export existing local bindings)."]
             lines += [f"export {{ {n} }};" for n in reexp]
-            target.write_text(tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+            _fw_write_1202cw(target, tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
             result.setdefault("reexported", []).append((target.name, reexp))
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -2116,7 +2132,7 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
 
             new_text = _LOCAL_DEFAULT_IMPORT.sub(_repl_default, new_text)
             if state["changed"] and new_text != text:
-                f.write_text(new_text, encoding="utf-8")
+                _fw_write_1202cw(f, new_text, encoding="utf-8")
                 fixed.append(str(f.relative_to(frontend_dir)))
         return {"repaired": bool(fixed), "fixed": fixed,
                 "unrepairable": unrepairable}
@@ -5718,6 +5734,25 @@ def _project_nav_component_src(frontend_dir, design, comp_name: str) -> Optional
         _seen.add(_r)
         seg = _r.strip("/").split("/")[0]
         nav_routes.append((re.sub(r"[-_]+", " ", seg).title() or seg, _r))
+    # #1202cv: A GATE MUST COUNT THE EVIDENCE, NOT SOMETHING CORRELATED WITH IT.
+    # This function's docstring promises it returns None — caller KEEPS the lane nav —
+    # "when App.jsx is unreadable or the design lacks a substantial nav (<4 links), so a
+    # weak/absent decomposition never clobbers a good lane nav". The count below is of
+    # nav_routes, which come from App.jsx's ROUTE TABLE and not from the reference at all.
+    # The two agree only while the measurement works. When it fails they diverge totally:
+    # r41 measured ZERO reference nav labels, so `_filter_nav_to_ref` (itself gated on >=4
+    # labels) returned its input unfiltered, all seven route entries survived — including
+    # the capture-only states /browse/rows, /browse/card-hover and /browse/rate — the count
+    # passed, and the projection overwrote a lane nav that was ALREADY exactly what the
+    # judge had asked for: Home, Shows, Movies, Games, New & Popular, My List, Browse by
+    # Languages. Seven screens share that header; all seven regressed in one round, and the
+    # run ended below its own round-3 peak having spent two more rounds re-winning them.
+    #
+    # So the projection fired precisely where it had the least justification to. Counting
+    # the reference labels makes the gate measure what it claims to, and zero evidence now
+    # means what #520 said it should: keep the lane's nav.
+    if len(_ref_nav_labels(design)) < 4:
+        return None
     nav_routes = _filter_nav_to_ref(nav_routes, design)[:7]
     if len(nav_routes) < 4:              # gate: only project a SUBSTANTIAL nav
         return None
@@ -5872,7 +5907,7 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
             at = _first.start()
             body = body[:at] + f"import {comp} from '../components/{comp}.jsx';\n" + body[at:]
             try:
-                p.write_text(body, encoding="utf-8")
+                _fw_write_1202cw(p, body, encoding="utf-8")
                 mounted.append(p.stem)
             except Exception:
                 continue
@@ -5943,7 +5978,8 @@ def recover_agent_nav(frontend_dir) -> Dict[str, object]:
             _proj = (_project_nav_component_src(frontend_dir, _design, comp_name)
                      if _design else None)
             if _proj:
-                comp_path.write_text(_proj, encoding="utf-8")
+                _fw_write_1202cw(comp_path, _proj, encoding="utf-8", clobber_ok=(
+                    "#520: the lane nav did not converge on the reference across r91/r92 — nav was flagged on ~11/12 screens while remediation kept feeding it the deviations. Now gated on a MEASURED reference nav (#1202cv), so zero evidence keeps the lane's."))
                 _projected_nav = True
         except Exception:
             pass  # never break delivery; leave the lane nav in place
@@ -5960,7 +5996,11 @@ def recover_agent_nav(frontend_dir) -> Dict[str, object]:
                 continue
             new = _rewire_fw_nav(src, comp_name, rel)
             if new != src:
-                pg.write_text(new, encoding="utf-8")
+                # The edit is confined to the framework's own `fw-nav:start/end` block (see the
+                # `if "fw-nav:start" not in src: continue` above), so lane content outside it
+                # is untouched — a framework region that happens to live in a lane-owned file.
+                _fw_write_1202cw(pg, new, encoding="utf-8", clobber_ok=(
+                    "#520: rewires the framework's own fw-nav marker block"))
                 rewired.append(pg.name)
         return {"rewired": sorted(rewired), "nav": comp_name,
                 "projected_nav": _projected_nav}  # #520
@@ -6089,7 +6129,10 @@ def wire_detail_modal_534(frontend_dir) -> Dict[str, object]:
             "  const nav = useNavigate();\n"
             "  return <" + modal_name + " " + _attrs + " />;\n"
             "}\n")
-        page_file.write_text(src, encoding="utf-8")
+        # The page being replaced is the framework's own mis-projection of the detail
+        # route; the modal it now mounts is the lane's.
+        _fw_write_1202cw(page_file, src, encoding="utf-8", clobber_ok=(
+            "#534: the detail ROUTE was mis-projected as a video player; this mounts the lane's OWN existing detail-modal component instead, so the lane's component is what renders. Only the thin route page is replaced."))
         return {"wired": target_comp, "modal": modal_name}
     except Exception as exc:  # never break delivery
         return {"wired": None, "error": f"{type(exc).__name__}: {exc}"}
@@ -6246,10 +6289,11 @@ def wire_owned_list_shell_535(frontend_dir) -> Dict[str, object]:
                 continue
             label = (_label_words_1080(pg.stem)
                      .replace("Page", "").strip() or pg.stem)
-            pg.write_text(
+            _fw_write_1202cw(pg, 
                 _owned_list_shell_src_535(pg.stem, nav_name, grid_name,
                                           m.group(1), label, bg, text),
-                encoding="utf-8")
+                encoding="utf-8",
+                clobber_ok=("#535: gives an owned list page the shared shell while KEEPING the lane's own fetch endpoint (matched immediately above and carried through)."))
             wired.append(pg.name)
         return {"wired": sorted(wired), "nav": nav_name, "grid": grid_name}
     except Exception as exc:  # never break delivery
@@ -8838,7 +8882,7 @@ def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, objec
                 # is absent or empty, so first-run scaffolding is unaffected.
                 if _target_exists_with_content_1013(target):
                     continue
-                target.write_text(body, encoding="utf-8")
+                _fw_write_1202cw(target, body, encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
         return {"scaffolded": sorted(set(scaffolded))}
     except Exception as exc:  # never break generation/validation
@@ -8997,7 +9041,8 @@ def repair_stub_declared_pages(frontend_dir, ui_pages=None) -> Dict[str, object]
                 continue
             if new_body and new_body.strip() and new_body != body_now:
                 try:
-                    target.write_text(new_body, encoding="utf-8")
+                    _fw_write_1202cw(target, new_body, encoding="utf-8", clobber_ok=(
+                        "#488: fills a STUB page — one the framework itself projected as a placeholder — with real content; a non-stub lane page never reaches here."))
                     repaired.append(str(target.relative_to(frontend_dir)))
                 except Exception:
                     pass
@@ -9141,7 +9186,10 @@ def repair_fallback_declared_pages(frontend_dir, ui_pages=None) -> Dict[str, obj
             if (new_body and new_body.strip() and new_body != body_now
                     and not _is_generic_fallback_page(new_body)):
                 try:
-                    target.write_text(new_body, encoding="utf-8")
+                    # Guarded directly above: only a GENUINE non-fallback projection is written, and
+                    # never one that would itself be a fallback.
+                    _fw_write_1202cw(target, new_body, encoding="utf-8", clobber_ok=(
+                        "#495: replaces a FALLBACK page — one the framework itself projected as a placeholder — with real content"))
                     repaired.append(str(target.relative_to(frontend_dir)))
                 except Exception:
                     pass
@@ -9299,7 +9347,10 @@ def repair_dead_nav_links(frontend_dir, reference_routes=None) -> Dict[str, obje
             new_text = _DEAD_NAV_SITE_RE.sub(_repl, text)
             if file_changes and new_text != text:
                 try:
-                    jsx.write_text(new_text, encoding="utf-8")
+                    # A targeted substitution of dead hrefs via _DEAD_NAV_SITE_RE — every other byte
+                    # of the lane's page is preserved by the regex itself.
+                    _fw_write_1202cw(jsx, new_text, encoding="utf-8", clobber_ok=(
+                        "#493: repoints nav links aimed at routes that do not exist; the page is otherwise byte-identical"))
                     rel = jsx.relative_to(src_root).as_posix()
                     for ch in file_changes:
                         repaired.append(f"{rel}: {ch}")
@@ -9389,7 +9440,8 @@ def reroute_inline_stub_routes(frontend_dir) -> Dict[str, object]:
                 new_src = new_src[:at] + "\n" + "\n".join(add) + new_src[at:]
             else:
                 new_src = "\n".join(add) + "\n" + new_src
-        app.write_text(new_src, encoding="utf-8")
+        _fw_write_1202cw(app, new_src, encoding="utf-8", clobber_ok=(
+            "ADDITIVE: rewrites only the import block and the route targets it repaired; the lane's router body is otherwise carried through unchanged."))
         return {"rerouted": sorted(set(rerouted))}
     except Exception as exc:  # never break generation/validation
         return {"rerouted": [], "error": f"{type(exc).__name__}: {exc}"}
@@ -10096,7 +10148,7 @@ def _remember_auth_projection_1197(frontend_dir, comp: str, body: str) -> None:
         if h not in seen:
             seen.append(h)
             data[comp] = seen[-32:]     # bounded: a run cannot grow this without bound
-            f.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+            _fw_write_1202cw(f, json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     except Exception:
         pass
 
@@ -10227,7 +10279,7 @@ def _record_exposure_946(frontend_dir: Any, comp: str, payload: Dict[str, Any]) 
             except Exception:
                 data = {}
         data[str(comp)] = payload
-        f.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+        _fw_write_1202cw(f, json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
     except Exception:
         pass
 
@@ -10279,7 +10331,7 @@ def _count_overwrite_939(frontend_dir: Any, comp: str, replaced: str = "") -> in
                 seen.append(_sig)
         data[str(comp)] = {"overwrites": n, "distinct_replaced": seen[:20],
                            "distinct_count": len(seen)}
-        f.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+        _fw_write_1202cw(f, json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
         return n
     except Exception:
         return 0
@@ -11033,7 +11085,8 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                                 pass
                             _body = _cand
             if _body is not None:
-                target.write_text(_body, encoding="utf-8")
+                _fw_write_1202cw(target, _body, encoding="utf-8", clobber_ok=(
+                    "#910: the structured-floor projection wins over a lower-scoring lane page. Whether it SHOULD win is the open decision #910 names; this records that it does."))
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
         app_wired = False
@@ -11057,7 +11110,11 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             # `</Routes>` → preserved (additive path), so this never clobbers genuine custom
             # routing/layout.
             if (not existing.strip()) or (_ROUTES_MARKER in existing) or ("</Routes>" not in existing):
-                app.write_text(_render_routed_app(entries), encoding="utf-8")
+                # The condition IS the argument: empty, framework-marked, or router-less. A real
+                # lane router has `</Routes>` and takes the additive path, so genuine custom
+                # routing is never overwritten.
+                _fw_write_1202cw(app, _render_routed_app(entries), encoding="utf-8", clobber_ok=(
+                    "#1102: a marker-less, router-less App.jsx guarantees blank pages — regenerate it"))
                 app_wired = True
             else:
                 # PROPOSAL #19: the lane took over App.jsx (dropped the marker) WITH a real
@@ -11074,7 +11131,11 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 new_text, _recomped = repair_stale_route_components_597(
                     new_text, ui_pages, app.parent / "pages")
                 if injected_routes or _recomped:
-                    app.write_text(new_text, encoding="utf-8")
+                    # The lane's router is kept; this only adds the routes it is missing. Without
+                    # the declaration every declared ui_page would stay orphaned and render blank —
+                    # the failure #1102 was raised for.
+                    _fw_write_1202cw(app, new_text, encoding="utf-8", clobber_ok=(
+                        "ADDITIVE: injects the missing <Route> entries (and #597 repairs stale route components) into the lane's OWN router — the lane's routing and layout are preserved, which is the path #1102's branch above defers to."))
         # #632: whole-tree pass — a default import of a key of the module's default-exported
         # object binds the OBJECT, so the first call throws and the page renders blank. 21 such
         # sites ship across 6 of 45 runs, all of them pages.
@@ -11670,7 +11731,8 @@ def enforce_measured_dark_theme(frontend_dir) -> Dict[str, Any]:
         new, n = darkify_light_utilities(cur)
         if n and new != cur:
             try:
-                p.write_text(new, encoding="utf-8")
+                _fw_write_1202cw(p, new, encoding="utf-8", clobber_ok=(
+                    "#1202cm: darkens the lane's LIGHT utility classes to the design's MEASURED dark palette; only the colour utilities change, structure and copy are untouched."))
             except Exception:
                 continue
             changed.append(str(p.relative_to(fe)))
@@ -12002,14 +12064,14 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
             p = fe / rel
             if (not p.exists()) or p.read_text(encoding="utf-8", errors="ignore") != content:
                 p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(content, encoding="utf-8")
+                _fw_write_1202cw(p, content, encoding="utf-8")
                 changed.append(rel)
         # The pinned tailwind.config.js IMPORTS ./tailwind.theme.js — guarantee that
         # frontend-writable token file EXISTS (create-if-missing) so the config never
         # fails to load on a fresh tree. Do NOT overwrite it: the lane owns its palette.
         _theme_p = fe / "tailwind.theme.js"
         if not _theme_p.exists():
-            _theme_p.write_text(_BASELINE_TAILWIND_THEME, encoding="utf-8")
+            _fw_write_1202cw(_theme_p, _BASELINE_TAILWIND_THEME, encoding="utf-8")
             changed.append("tailwind.theme.js (created)")
         # CSS wiring is infra too: a lane-written src/main.jsx that omits
         # ``import './index.css'`` ships a bundle with NO stylesheet at all —
@@ -12020,7 +12082,7 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
             try:
                 mtxt = main_jsx.read_text(encoding="utf-8")
                 if "index.css" not in mtxt:
-                    main_jsx.write_text("import './index.css';\n" + mtxt,
+                    _fw_write_1202cw(main_jsx, "import './index.css';\n" + mtxt,
                                         encoding="utf-8")
                     changed.append("src/main.jsx (+index.css import)")
             except Exception:
@@ -12029,7 +12091,7 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         try:
             if not idx_css.exists() or "@tailwind" not in idx_css.read_text(encoding="utf-8"):
                 idx_css.parent.mkdir(parents=True, exist_ok=True)
-                idx_css.write_text(_BASELINE_INDEX_CSS, encoding="utf-8")
+                _fw_write_1202cw(idx_css, _BASELINE_INDEX_CSS, encoding="utf-8")
                 changed.append("src/index.css (tailwind directives)")
         except Exception:
             pass
@@ -12040,12 +12102,12 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         try:
             bc_auth = fe / "src" / "bc_auth.js"
             if not bc_auth.exists() or bc_auth.read_text(encoding="utf-8") != _BC_AUTH_GUARD_JS:
-                bc_auth.write_text(_BC_AUTH_GUARD_JS, encoding="utf-8")
+                _fw_write_1202cw(bc_auth, _BC_AUTH_GUARD_JS, encoding="utf-8")
                 changed.append("src/bc_auth.js (401 → /login guard)")
             if main_jsx.exists():
                 mtxt = main_jsx.read_text(encoding="utf-8")
                 if "bc_auth" not in mtxt:
-                    main_jsx.write_text("import './bc_auth.js';\n" + mtxt,
+                    _fw_write_1202cw(main_jsx, "import './bc_auth.js';\n" + mtxt,
                                         encoding="utf-8")
                     changed.append("src/main.jsx (+bc_auth import)")
         except Exception:
@@ -12108,7 +12170,7 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 _scripts.setdefault("dev", "vite")
                 _scripts["build"] = "vite build"
                 _scripts.setdefault("preview", "vite preview")
-                pj.write_text(_json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                _fw_write_1202cw(pj, _json.dumps(data, indent=2) + "\n", encoding="utf-8")
                 changed.append("package.json")
         return {"pinned": bool(changed), "changed": changed}
     except Exception as exc:
@@ -12160,7 +12222,7 @@ def sync_frontend_package_json_deps(frontend_dir) -> Dict[str, object]:
             declared.add(imp)
             added.append(f"{imp}@{ver}")
         if added:
-            pj.write_text(_json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            _fw_write_1202cw(pj, _json.dumps(data, indent=2) + "\n", encoding="utf-8")
         return {"added": added}
     except Exception as exc:
         return {"added": [], "error": f"{type(exc).__name__}: {exc}"}
@@ -12648,7 +12710,7 @@ def stage_missing_frontend_assets(output_dir) -> List[str]:
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 if body is not None:
-                    dest.write_text(body, encoding="utf-8")
+                    _fw_write_1202cw(dest, body, encoding="utf-8")
                 else:
                     # #707: raster fallback. Anything that is not an SVG gets the 1x1 PNG —
                     # a transparent pixel resolves the request, so no broken-image glyph, and
@@ -12725,7 +12787,8 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
                         _late = _reexport_late_sibling_1053(p)
                         if _late is not None:
                             _sib, _text = _late
-                            _sib.write_text(_text, encoding="utf-8")
+                            _fw_write_1202cw(_sib, _text, encoding="utf-8", clobber_ok=(
+                                "#1053: re-exports a LATE SIBLING so the baseline keeps resolving for projected imports (#638's constraint) — an added re-export line, not a rewrite."))
                             written.append(
                                 str(_sib.relative_to(frontend_dir))
                                 + " (late sibling -> re-export of " + p.name + ")")
@@ -12749,11 +12812,11 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
             _shim = _reexport_shim_638(p)
             if _shim is not None:
                 p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(_shim, encoding="utf-8")
+                _fw_write_1202cw(p, _shim, encoding="utf-8")
                 written.append(rel + " (re-export shim → lane module)")
                 continue
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
+            _fw_write_1202cw(p, content, encoding="utf-8")
             written.append(rel)
         # FIX #208: hard-wire the MEASURED palette by construction. tailwind.theme.js
         # becomes FRAMEWORK-OWNED (like the pinned tailwind.config.js) carrying the
@@ -12805,7 +12868,7 @@ def _apply_measured_palette(frontend_dir) -> None:
         # or they would be discarded on the very next tick.
         _sections = render_measured_theme_sections(ds)
         _tail = ("\n" + _sections) if _sections else ""
-        _theme_p.write_text(
+        _fw_write_1202cw(_theme_p, 
             f"export default {{\n  colors: {{\n{_lines}\n  }},{_tail}\n}}\n",
             encoding="utf-8")
     # index.css — inject the measured body layer ONCE (preserve lane styles).
@@ -12830,9 +12893,9 @@ def _apply_measured_palette(frontend_dir) -> None:
         return  # already injected
     if not cur.strip():
         _css_p.parent.mkdir(parents=True, exist_ok=True)
-        _css_p.write_text(_measured, encoding="utf-8")
+        _fw_write_1202cw(_css_p, _measured, encoding="utf-8")
     else:
-        _css_p.write_text(cur.rstrip() + "\n\n" + _block, encoding="utf-8")
+        _fw_write_1202cw(_css_p, cur.rstrip() + "\n\n" + _block, encoding="utf-8")
 
 
 __all__ = [

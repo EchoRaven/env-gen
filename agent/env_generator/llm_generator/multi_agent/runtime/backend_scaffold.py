@@ -17,6 +17,13 @@ import ast
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
+try:  # #1202cw
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except ImportError:  # pragma: no cover - only when this file is loaded BY PATH (two tests)
+    def _fw_write_1202cw(_p, _text, **_kw):
+        from pathlib import Path as _P
+        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))
+        return True
 
 _AUTH_DEPENDENCY_PY = '''"""Framework-owned auth dependency: real RS256 JWT verification.
 
@@ -1101,7 +1108,7 @@ def repair_backend_packaging(backend_dir) -> Dict[str, object]:
             "# so `pip install .` installs the deps without failing on package detection.\n"
             "bypass-selection = true\n"
         )
-        pp.write_text(src.rstrip() + "\n" + addition, encoding="utf-8")
+        _fw_write_1202cw(pp, src.rstrip() + "\n" + addition, encoding="utf-8")
         return {"repaired": True, "pyproject": str(pp)}
     except Exception as exc:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -1198,7 +1205,7 @@ def sanitize_pyproject_local_deps(backend_dir) -> Dict[str, object]:
         if not dropped:
             return {"repaired": False, "reason": "no local-module deps"}
         new_src = src[:m.start()] + head + "\n".join(kept_lines) + tail + src[m.end():]
-        pp.write_text(new_src, encoding="utf-8")
+        _fw_write_1202cw(pp, new_src, encoding="utf-8")
         return {"repaired": True, "dropped": dropped, "pyproject": str(pp)}
     except Exception as exc:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}

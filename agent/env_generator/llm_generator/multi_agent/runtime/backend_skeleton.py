@@ -1923,6 +1923,23 @@ try:
         # lesson for its own case ("invisible for hours"); the same applies here.
         if _dropped_cr:
             import logging as _cr_log
+            # #1202db: SAY WHAT 'SCHEMA-SAFE' ACTUALLY COVERS.
+            #
+            # This line used to promise the projected handler was 'schema-safe by
+            # construction' with no qualifier. Probed on netflix-r42's DELIVERED artifact:
+            # `POST /api/profiles {}` returns 201 and inserts name=null, avatar=null,
+            # is_kids=null — and the lane's own custom_routes.py:298 rejects exactly that
+            # with `name is required`, but was dropped here as duplicate standard CRUD.
+            #
+            # The promise is true for what it can see: route_projector refuses a body that
+            # names no subject FK, and a NOT NULL column is caught at INSERT. `name` is a
+            # plain nullable string, so there is no schema constraint to be safe about — the
+            # lane KNEW it was required and that knowledge had nowhere to go. A nameless
+            # profile is not cosmetic: it is what the who's-watching picker renders.
+            #
+            # 'Projected wins' is untouched (it is a decision, and #1166 already carved out
+            # the unserved case). What changes is that the notice no longer overstates the
+            # guarantee, and names the two exits the lane actually has.
             # WARNING, not info: uvicorn leaves the root logger at WARNING, so an
             # info() on a non-uvicorn logger is swallowed — verified by booting a
             # rendered app and finding no line at all. A notice nobody sees is the
@@ -1930,7 +1947,11 @@ try:
             _cr_log.getLogger("custom_routes").warning(
                 "custom_routes: %d route(s) NOT registered because they duplicate "
                 "standard CRUD — the framework's projected handler serves them, and it "
-                "is schema-safe by construction. This is expected; do NOT patch the "
+                "enforces the OWNER and SUBJECT foreign keys (#1202db) and whatever the "
+                "DB column declares NOT NULL. It does NOT know a constraint the contract "
+                "never stated: a nullable column your handler validated is now "
+                "unvalidated — declare it in the contract or give the path an action "
+                "segment. This is expected; do NOT patch the "
                 "app's route table to force them in. To own one of these paths, change "
                 "its SHAPE in the contract (an action segment such as "
                 "/x/{id}/publish overrides; a bare collection or item-by-id does not): %s",

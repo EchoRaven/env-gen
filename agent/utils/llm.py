@@ -1007,6 +1007,64 @@ def _overshoot_1183() -> float:
     return min(2.0, max(1.0, v))
 
 
+# ---- #1202cz ----------------------------------------------------------------
+# A CAP THAT KILLS A CONVERGING RUN LOSES EVERYTHING IT ALREADY BOUGHT.
+#
+# #1183 makes this argument for a run whose delivery gate has PASSED and grants 25%. The
+# same loss happens one step earlier, and the ledger now shows how often:
+#
+#     delivered   r38 $237 plateau 1   r40 $284 plateau 1
+#     wedged      r37 $372 plateau 5           (correctly stopped — it WAS stuck)
+#     killed      r39 $414 plateau 0   r41 $401 plateau 0   r42 $379 plateau 0
+#
+# Every run that delivered had plateau >= 1. Every run that reached the ceiling with
+# nothing to show had plateau 0 — the visual gate's OWN signal that the last round still
+# moved the score. Three runs, ~$1,195, zero delivered, each stopped while the gate said
+# it was still improving; r41 died at a 0.74 median, the best any run has reached.
+#
+# So the grace keys on evidence the gate already computes, not on optimism: plateau 0 AND
+# a score above round one's. A run that has plateaued, or that sits below where it
+# started, gets nothing and stops exactly as before — r37 is the case that must keep
+# stopping. Granted ONCE and bounded (15% by default, under #1183's 25% because the
+# evidence is weaker: what remains is not the bounded release, it is more rounds). Stated
+# in the abort reason, so a run that spends the grace and still fails says so.
+_CONVERGING_1202CZ = {"plateau": None, "first": None, "latest": None, "granted": False}
+
+
+def note_convergence_1202cz(plateau_rounds, first_avg, latest_avg) -> None:
+    """Record the visual gate's own convergence signals. Never raises."""
+    try:
+        _CONVERGING_1202CZ["plateau"] = (None if plateau_rounds is None
+                                         else int(plateau_rounds))
+        _CONVERGING_1202CZ["first"] = None if first_avg is None else float(first_avg)
+        _CONVERGING_1202CZ["latest"] = None if latest_avg is None else float(latest_avg)
+    except Exception:
+        return
+
+
+def converging_1202cz() -> bool:
+    """True only while the gate says the run is STILL MOVING and is ahead of round one."""
+    c = _CONVERGING_1202CZ
+    try:
+        if c["plateau"] is None or int(c["plateau"]) != 0:
+            return False
+        if c["first"] is None or c["latest"] is None:
+            return False
+        return float(c["latest"]) > float(c["first"])
+    except Exception:
+        return False
+
+
+def _converging_overshoot_1202cz() -> float:
+    """Bounded, never below 1.0, and never above #1183's delivery grace."""
+    try:
+        v = float(os.environ.get("ENVGEN_CONVERGING_OVERSHOOT", "") or 1.15)
+    except (TypeError, ValueError):
+        v = 1.15
+    return min(_overshoot_1183(), max(1.0, v))
+
+
+
 def _price_env_1163(name: str) -> float:
     try:
         return float(os.environ.get(name, "") or 0.0)
@@ -1068,6 +1126,47 @@ def record_tool_result_bytes_1171(tool: Any, nbytes: Any) -> None:
         return
 
 
+# ---- #1202cy ----------------------------------------------------------------
+# WHICH STAGE ACTUALLY USES ITS TOOLS.
+#
+# #1202cr priced the stages and #1202cx spent that: the verifier was paying $10.30 a run
+# for an `edit_code` stage while `agent/verifier` sat 0 commits ahead of integration. But
+# that case was only decidable because "did this role author a commit" happens to be
+# answerable from git. `deliver` is the next suspect — 20.6% of r42's spend, and its
+# delivery tools (deliver_project, deliverability_check/summary, report_completion) are
+# used by the ORCHESTRATOR alone — yet the lanes commit from it, so "is the lane's
+# deliver stage doing anything" cannot be answered. No log in the corpus records which
+# STAGE a tool call belonged to.
+#
+# Dropping a stage on a guess is not a cheap mistake: `action_stage_policy` warns that a
+# stage is the HOME of its categories, and mis-trimming one strands granted tools and
+# wedges the lane on MALFORMED_FUNCTION_CALL. So the instrument comes first.
+_STAGE_TOOLS_1202CY: Dict[str, Dict[str, int]] = {}
+
+
+def record_stage_tool_1202cy(label: Any, tool: Any) -> None:
+    """Count one tool call under ``<agent>:<stage>``. Never raises."""
+    try:
+        key = str(label or "?")[:120]
+        e = _STAGE_TOOLS_1202CY.setdefault(key, {})
+        t = str(tool or "?")[:80]
+        e[t] = e.get(t, 0) + 1
+    except Exception:
+        return
+
+
+def stage_tools_1202cy() -> Dict[str, Dict[str, int]]:
+    """{"<agent>:<stage>": {tool: calls}}, busiest stage first.
+
+    A stage that appears with an empty/near-empty map is one whose LLM call is paid for
+    every round and answered with nothing — the #1202cx shape, made visible for stages
+    where git cannot settle it.
+    """
+    return {k: dict(sorted(v.items(), key=lambda kv: -kv[1]))
+            for k, v in sorted(_STAGE_TOOLS_1202CY.items(),
+                               key=lambda kv: -sum(kv[1].values()))}
+
+
 def tool_result_bytes() -> Dict[str, Any]:
     """{tool: {calls, bytes, max}} sorted by bytes, biggest first."""
     try:
@@ -1112,9 +1211,19 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
             # #1183: once the gate has passed there is nothing left to protect — stopping
             # here loses the whole run to save the tail of it. Bounded, and stated.
             _shoot = _overshoot_1183() if delivering_1183() else 1.0
+            _why = "delivery overshoot applied; the gate had passed"
+            # #1202cz: one bounded grace for a run the gate says is still improving.
+            # Checked only where #1183's stronger claim does not already apply, and
+            # latched so it is granted once rather than at every call past the ceiling.
+            if _shoot <= 1.0 and converging_1202cz():
+                _shoot = _converging_overshoot_1202cz()
+                if _shoot > 1.0:
+                    _CONVERGING_1202CZ["granted"] = True
+                    _why = ("converging overshoot applied; the visual gate reported "
+                            "plateau 0 and a score above round one")
             if u["priced"] and u["usd"] >= cap * _shoot:
                 _extra = ("" if _shoot <= 1.0 else
-                          " (delivery overshoot x%.2f applied; the gate had passed)" % _shoot)
+                          " (%s, x%.2f)" % (_why, _shoot))
                 _TERMINAL_LLM_ERROR["reason"] = (
                     "[BudgetExceeded] run spend $%.2f reached ENVGEN_MAX_SPEND_USD=$%.2f%s "
                     "after %d calls (uncached-in %d, cached-in %d, out %d)"

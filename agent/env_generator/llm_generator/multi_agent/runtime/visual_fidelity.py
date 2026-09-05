@@ -1226,6 +1226,58 @@ def screen_coverage(*, results, measured, owned=None):
     }
 
 
+# ---- #1202dc ----------------------------------------------------------------
+# THE TAIL OF STDERR IS NOT THE REASON.
+#
+# `_compose_up` reported `(stderr or stdout)[-400:]`, and docker compose ends a failed
+# `up` with whatever it happened to print last. netflix-r43 spent its whole $400 with the
+# gate reporting
+#
+#     visual gate could not boot app: yml: the attribute `version` is obsolete, it will
+#     be ignored, please remove it to avoid potential confusion
+#
+# — a DEPRECATION WARNING — while the actual failure, `Bind for 0.0.0.0:8006 failed: port
+# is already allocated`, sat earlier in the same stderr and was cut off by the slice. The
+# gate then failed to boot 7 times, `_best_by_screen` stayed empty, plateau climbed to 7,
+# and the run ended with zero screens ever scored. Every lane meanwhile churned on
+# `docker_up`, which is where the $400 went.
+#
+# A host-level cause is a different problem from a broken app and needs a different
+# reader: nobody can fix "the attribute version is obsolete", and anyone can free a port.
+# Same shape as #1202cn for the validation runner — key on the daemon's own wording and
+# LEAD with it, keeping the raw tail behind it so nothing is lost.
+_COMPOSE_FATAL_1202DC = (
+    ("port is already allocated",
+     "a HOST PORT this app's compose binds is taken by another container — free it or "
+     "give this run its own ports; nothing in the app is wrong"),
+    ("address pool",
+     "docker has no free address pool left — remove finished runs' networks"),
+    ("no space left on device",
+     "the host disk is full — reclaim space before retrying"),
+    ("bind: address already in use",
+     "a HOST PORT this app's compose binds is taken — free it"),
+    ("Cannot connect to the Docker daemon",
+     "the docker daemon is not reachable from this process"),
+)
+
+
+def _compose_failure_reason_1202dc(stderr: Any, stdout: Any) -> str:
+    """Lead with the host-level cause when the daemon named one; keep the raw tail after.
+
+    Deprecation notices are excluded from the lead by construction: they are matched by
+    none of the signatures above, so a run whose only stderr is a warning still reports
+    the raw text and does not gain a false diagnosis.
+    """
+    text = str(stderr or "") + ("\n" + str(stdout or "") if stdout else "")
+    if not text.strip():
+        return "compose up failed"
+    low = text.lower()
+    for token, why in _COMPOSE_FATAL_1202DC:
+        if token.lower() in low:
+            return "%s — %s. Raw: %s" % (token, why, text.strip()[-240:])
+    return text[-400:]
+
+
 def _compose_up(project_dir: Path,
                 timeout: int = int(os.environ.get("ENVGEN_VISUAL_COMPOSE_TIMEOUT", "900") or 900)) -> Optional[str]:
     compose_file = project_dir / "docker" / "docker-compose.yml"
@@ -1238,7 +1290,7 @@ def _compose_up(project_dir: Path,
             [_runtime_bin_936(), "compose", "-f", str(compose_file), "up", "-d"],
             cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
         if r.returncode != 0:
-            return (r.stderr or r.stdout or "compose up failed")[-400:]
+            return _compose_failure_reason_1202dc(r.stderr, r.stdout)
     except Exception as exc:
         return str(exc)[:400]
     return None
@@ -3209,6 +3261,19 @@ async def run_visual_fidelity(
                 if _err740:
                     _dev += (". The browser reported: " + " | ".join(_err740[:3])
                              + " — fix THAT, it is the reason the shell is empty")
+                else:
+                    # #1202da: THE SILENCE IS EVIDENCE TOO.
+                    #
+                    # #740 above names the cause when the browser gave one. When it gave
+                    # NOTHING the deviation stopped at 'never hydrated', which points the
+                    # lane at mounting and data-loading — the one explanation the silence
+                    # rules out. Measured across the corpus: 404 screen records carry the
+                    # console field and only 4 are non-empty, and the listener itself was
+                    # verified against a page that throws (console.error, a failed script
+                    # load and an uncaught TypeError were all captured). So a blank screen
+                    # with an empty console is not a bundle that failed to load or a
+                    # component that threw: it is a component that rendered nothing.
+                    _dev += (". No console error and no uncaught exception was recorded for this route, and that listener is known to capture both — so the bundle LOADED and RAN. Look for a component that returns null/empty (an unguarded empty list, a data fetch whose empty result has no fallback render), not for a mount or bundle failure.")
             elif screen["name"] in _auth_bounced:
                 _dev = (f"route {screen['route']} redirected to /login — the auth guard "
                         "rejected the session on THIS route only; fix the route's auth "
@@ -5725,6 +5790,25 @@ class VisualFidelityGate:
                     len(_unwired), str(_unwired[0])[:120])
                 return
             self.attempts = self.attempts + 1
+            # #1202dd: A SNAPSHOT CADENCE THAT ONLY TICKS WITH THE TICK LOOP STOPS WHEN THE
+            # RUN DOES.
+            #
+            # #1202bw's interval call sits inside the orchestrator's tick loop, so it is only
+            # ASKED once per tick even though it decides on wall-clock. netflix-r43 spent its
+            # last 82 minutes inside two ticks — the gate retrying docker_up against a host
+            # port it could never bind — and took ZERO snapshots in that window while the
+            # cadence was 15 minutes. The safety net's rhythm was coupled to the thing it
+            # exists to survive: the slower a run gets, the fewer restore points it keeps.
+            #
+            # A judged round is the other place a long milestone reliably passes through (r43
+            # reached 7 of them in that same window). `maybe_snapshot` is already cadence-
+            # gated internally, so an extra call site cannot snapshot more often than
+            # ENVGEN_SNAPSHOT_EVERY_MIN allows — it only removes the dependency on ticks.
+            try:
+                from .run_snapshot import maybe_snapshot as _snap_1202dd
+                _snap_1202dd(orch.output_dir, 'interval', 'gate%d' % self.total_judgments)
+            except Exception:
+                pass
             # Per-component MODEL config: the visual JUDGE may run its own model
             # (component_models.visual_judge / ENVGEN_MODEL_VISUAL_JUDGE).
             try:
@@ -5904,6 +5988,22 @@ class VisualFidelityGate:
                     elif _n not in self._best_by_screen:
                         self._best_by_screen[_n] = _sim
                 self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
+                # #1202cz: hand the budget ceiling the two signals it needs to tell a run that
+                # is still converging from one that has stalled. Recorded HERE, where plateau
+                # is decided, so the two can never disagree — a guard fed from a second
+                # derivation is how #1011 ended up with no callers and #718 with no code.
+                try:
+                    from utils.llm import note_convergence_1202cz as _note_1202cz
+                    _hist1202cz = [float(_v) for _v in (getattr(self, '_live_avg_history_1202cz', None) or [])]
+                    _cur1202cz = result.get('blocking_average_live')
+                    if isinstance(_cur1202cz, (int, float)):
+                        _hist1202cz.append(float(_cur1202cz))
+                        self._live_avg_history_1202cz = _hist1202cz
+                    _note_1202cz(self.plateau_rounds,
+                                 _hist1202cz[0] if _hist1202cz else None,
+                                 _hist1202cz[-1] if _hist1202cz else None)
+                except Exception:
+                    pass
             # FIX #558: track consecutive REAL judgments whose gating blocking_average (#542,
             # over BLOCKING screens only) cleared the min bar — the STABLE precondition for the
             # avg fast-release (a single lucky pass never triggers a release; a round below the

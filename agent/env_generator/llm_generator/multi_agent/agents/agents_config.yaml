@@ -1075,6 +1075,31 @@ profiles:
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
+      # #1202cx — THE VALIDATION LEAD DOES NOT IMPLEMENT.
+      # Same shape as Orch-F1 above, same evidence, a different role. Each
+      # action-internal stage is its OWN LLM call per round, and r42's per-phase
+      # ledger (#1202cr) shows the verifier paying $10.30 across 161 `edit_code`
+      # calls — while `agent/verifier` sits 0 commits ahead of integration with 0
+      # files different, and integration's authorship is frontend 44 / backend 15
+      # / orchestrator 1 / verifier ZERO. It has never written a line of code in
+      # this run, and the ledger says so in dollars for the first time.
+      #
+      # Orch-F1 fixed exactly one role. The mechanism was right and was applied
+      # once; this is the second role that always had the same symptom.
+      action_stages: [communicate, run_checks, delegate_team, deliver]
+      # Re-home what edit_code hosted, or the profile's granted file/project/
+      # analysis/memory tools keep their grant and lose every menu — the orphan
+      # class (granted, prompt-mandated, never offered, lane wedges on
+      # MALFORMED_FUNCTION_CALL). The verifier holds 4 of edit_code's 6
+      # categories; `image_search` and `reference` are not granted, so they are
+      # deliberately not re-homed.
+      # File/state reads go to `run_checks` — the stage where it already inspects
+      # deliverables, logs and runtime. `memory` goes to `communicate` (4
+      # categories against a limit of 8) so the Memory-Bank write its
+      # step_reminders mandate is actually offered.
+      action_stage_categories:
+        communicate: [memory]
+        run_checks: [file, project, analysis]
 
   debugger:
     name: "Debugger Agent"

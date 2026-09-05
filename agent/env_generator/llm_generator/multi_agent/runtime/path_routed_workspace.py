@@ -24,8 +24,9 @@ accept it without changes.
 from __future__ import annotations
 
 import logging as _logging
+import os as _os
 from pathlib import Path
-from typing import FrozenSet, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple, Union
 
 
 # Agents whose writes are not role-gated. ``orchestrator`` is the
@@ -768,3 +769,132 @@ class PathRoutedWorkspace:
             return True
         except ValueError:
             return False
+
+
+# ---- #1202cw ----------------------------------------------------------------
+# CLOBBERING LANE WORK MUST BE A DECLARED EXCEPTION, NOT THE DEFAULT.
+#
+# #1011 built `framework_may_write` to stop the framework overwriting lane files, citing
+# 46 deleted LoginPages in r164, and `is_lane_owned` measured the cost across all 164
+# generated projects: ~22,000 alternating overwrites in the top 25 files alone
+# (LoginPage.jsx 1162 framework / 1054 lane writes over 70 runs; App.jsx 947/940 over 93;
+# custom_routes.py 507/987 over 114). Its docstring concludes the ownership map is
+# complete and this is "purely an enforcement gap".
+#
+# Then nothing called it: grepping the tree found one hit, the warning string inside its
+# own body, while the projector modules performed 62 raw `Path.write_text` calls straight
+# to lane files. r41 is what that costs. The frontend lane wrote the exact nav the judge
+# had asked for — Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages
+# — and #520's projection replaced it with one assembled from the CAPTURE route table
+# (/browse/card-hover, /browse/rate, /profiles). Seven screens share that header; all
+# seven regressed in one round, and the run ended below its own round-3 peak.
+#
+# A handful of projectors DO overwrite lane files by design, and their tests say so
+# ("the projection must still win until that decision is made"). Those decisions are
+# preserved — but they must now be DECLARED. The default is refusal, so a projector
+# written tomorrow is safe without its author knowing this file exists, and every
+# surviving clobber names the ticket that argued for it. That inverts the failure mode:
+# forgetting the guard used to destroy lane work silently, and now it only costs a tick.
+#
+# As narrow as #1011 in what it blocks: lane-owned AND already holding content. First-run
+# scaffolding is untouched, and a file the lane emptied stays repairable.
+_LANE_CLOBBERS_1202CW: Dict[str, Dict[str, int]] = {"refused": {}, "declared": {}}
+
+
+def _app_relative_1202cw(path: Any) -> Optional[str]:
+    """``app/...``-relative form of ``path``, or None when it is outside a generated app.
+
+    Ownership is defined on that relative shape, so a projector holding an absolute
+    worktree path can be classified without a workspace instance.
+    """
+    try:
+        # normpath first: a projector composing "src/pages/../services/api.js" would
+        # otherwise be classified by the segment it passed THROUGH, and the census would
+        # key two names for one file.
+        parts = list(Path(_os.path.normpath(str(path))).parts)
+    except Exception:
+        return None
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "app":
+            return "/".join(parts[i:])
+    return None
+
+
+def path_is_lane_owned_1202cw(path: Any) -> bool:
+    """True when ``path`` belongs to a lane, by the SAME map ``is_lane_owned`` consults.
+
+    Mirrors that method exactly — prefix, then the lane-owned basename set, then the
+    lane-owned directory list. An unknown path is NOT lane-owned: this must never stop
+    the framework writing its own scaffold, the direction #1011 already errs in.
+    """
+    rel = _app_relative_1202cw(path)
+    if not rel:
+        return False
+    try:
+        from ..agents.runtime.auto_commit import (  # local: avoids an import cycle
+            _OWNERSHIP, _FRONTEND_LANE_OWNED_DIRS)
+    except Exception:
+        return False
+    try:
+        for _lane, (prefix, _fw_owned, lane_owned) in (_OWNERSHIP or {}).items():
+            if not rel.startswith(prefix):
+                continue
+            if rel.rsplit("/", 1)[-1] in (lane_owned or ()):
+                return True
+            tail = rel[len(prefix):]
+            if any(tail.startswith(d) for d in (_FRONTEND_LANE_OWNED_DIRS or ())):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
+                           encoding: str = "utf-8") -> bool:
+    """Write ``text`` to ``path``; refuse if that would clobber lane work.
+
+    ``clobber_ok`` is the ticket that argued for overwriting lane files at THIS site
+    (e.g. "#520: the lane nav did not converge across r91/r92"). Empty — the default —
+    means refuse. Returns True when written; never raises, because a projector that
+    cannot write must leave the lane's file alone and let the next tick try.
+    """
+    try:
+        p = Path(str(path))
+    except Exception:
+        return False
+    try:
+        occupied = p.is_file() and p.stat().st_size > 0
+    except Exception:
+        # #1202bd's asymmetry: refusing costs one tick, allowing costs the work
+        # permanently. An unreadable lane-owned path is treated as occupied.
+        occupied = True
+    if occupied and path_is_lane_owned_1202cw(p):
+        key = _app_relative_1202cw(p) or str(p)
+        bucket = "declared" if clobber_ok else "refused"
+        _LANE_CLOBBERS_1202CW[bucket][key] = _LANE_CLOBBERS_1202CW[bucket].get(key, 0) + 1
+        if not clobber_ok:
+            if _LANE_CLOBBERS_1202CW["refused"][key] == 1:
+                try:
+                    _logging.getLogger(__name__).warning(
+                        "#1202cw refused a framework write to lane-owned %s — the lane's "
+                        "version stands. A site that must overwrite declares why via "
+                        "clobber_ok=.", key)
+                except Exception:
+                    pass
+            return False
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding=encoding)
+        return True
+    except Exception:
+        return False
+
+
+def lane_clobbers_1202cw() -> Dict[str, Dict[str, int]]:
+    """{"refused": {path: n}, "declared": {path: n}}.
+
+    ``declared`` is not a healthy/unhealthy signal — it is the census of overwrites the
+    framework performs on purpose, which is the number #1011 measured at ~22,000 and
+    which nothing has been able to see since.
+    """
+    return {k: dict(v) for k, v in _LANE_CLOBBERS_1202CW.items()}

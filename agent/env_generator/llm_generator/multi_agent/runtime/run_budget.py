@@ -136,6 +136,32 @@ class RunBudget:
                         payload["llm_by_phase_1202cr"] = dict(list(_bl.items())[:24])
                 except Exception:
                     pass
+                # #1202cw: the census of framework writes onto lane files. `is_lane_owned`
+                # measured ~22,000 alternating overwrites across 164 projects and nothing has
+                # been able to SEE them since. "declared" is the count the projectors argue
+                # for; "refused" should stay empty — a name appearing there is a projector
+                # clobbering lane work without having said why.
+                try:
+                    from .path_routed_workspace import lane_clobbers_1202cw
+                    _lc = lane_clobbers_1202cw()
+                    if any(_lc.values()):
+                        payload["lane_clobbers_1202cw"] = {
+                            k: dict(sorted(v.items(), key=lambda kv: -kv[1])[:12])
+                            for k, v in _lc.items() if v}
+                except Exception:
+                    pass
+                # #1202cy: which stage used which tools. Capped at the 16 busiest
+                # stages and 10 tools each — enough to see an EMPTY stage, which is the
+                # question, without turning run_budget.json into a trace.
+                try:
+                    from utils.llm import stage_tools_1202cy
+                    _st = stage_tools_1202cy()
+                    if _st:
+                        payload["stage_tools_1202cy"] = {
+                            k: dict(list(v.items())[:10])
+                            for k, v in list(_st.items())[:16]}
+                except Exception:
+                    pass
                 _tb = tool_result_bytes()
                 if _tb:
                     payload["tool_result_bytes"] = dict(list(_tb.items())[:12])

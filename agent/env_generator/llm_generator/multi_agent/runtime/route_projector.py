@@ -36,6 +36,13 @@ import ast
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+try:  # #1202cw
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except ImportError:  # pragma: no cover - only when this file is loaded BY PATH (two tests)
+    def _fw_write_1202cw(_p, _text, **_kw):
+        from pathlib import Path as _P
+        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))
+        return True
 def _write_py_995(path, text, *, what: str = ""):
     """#995 guard, imported defensively.
 
@@ -46,7 +53,7 @@ def _write_py_995(path, text, *, what: str = ""):
     try:
         from .safe_code_write import write_py_if_still_parses as _w
     except Exception:
-        path.write_text(text, encoding="utf-8")
+        _fw_write_1202cw(path, text, encoding="utf-8")
         return True
     return _w(path, text, what=what)
 

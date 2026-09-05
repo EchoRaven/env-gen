@@ -771,6 +771,14 @@ class AgentStepToolingMixin:
             try:
                 from utils.llm import record_tool_result_bytes_1171
                 record_tool_result_bytes_1171(tool_name, len(result_str or ""))
+                # #1202cy: the same single point, with the STAGE that asked for it.
+                # `_active_stage` is set by `_call_stage_llm` and still holds while the
+                # response's tools execute, so this needs no new plumbing — and unlike a
+                # ContextVar it is correct here, where the LLM call has already returned.
+                from utils.llm import record_stage_tool_1202cy
+                record_stage_tool_1202cy(
+                    "%s:%s" % (getattr(self, "agent_id", "?"),
+                               getattr(self, "_active_stage", "?")), tool_name)
             except Exception:
                 pass
             # #1191: DO NOT CARRY THE SAME SNAPSHOT TWICE.

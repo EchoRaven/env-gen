@@ -102,7 +102,7 @@ def test_the_gap_fill_prefers_the_shim_over_the_baseline_body():
     from env_generator.llm_generator.multi_agent.runtime import frontend_scaffold as fs
     src = inspect.getsource(fs)
     i = src.index("#638: the gap-fill asks")
-    block = src[i:src.index("p.parent.mkdir(parents=True, exist_ok=True)\n            p.write_text(content", i)]
+    block = src[i:src.index("p.parent.mkdir(parents=True, exist_ok=True)\n            _fw_write_1202cw(p, content", i)]
     assert "_shim = _reexport_shim_638(p)" in block
     assert "if _shim is not None:" in block
 

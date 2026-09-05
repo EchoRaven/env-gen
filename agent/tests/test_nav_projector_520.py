@@ -21,7 +21,26 @@ from pathlib import Path
 from env_generator.llm_generator.multi_agent.runtime.frontend_scaffold import (
     _ref_nav_jsx, _project_nav_component_src, recover_agent_nav)
 
-_DESIGN = {"design_system": {"palette": {"bg": "#141414", "brand_red": "#e50914"}}}
+# #1202cv: this fixture used to be a palette alone — no screens, no nav component, so
+# `_ref_nav_labels` returned [] and the tests below asserted that the projection overrides
+# the lane on ZERO reference evidence. That is exactly the r41 condition: its design
+# measured no nav labels and #520 replaced a lane nav that was already correct, taking
+# seven screens down with the shared header. The projector now requires the measurement it
+# claims to project FROM, so the fixture carries one.
+_DESIGN = {"design_system": {"palette": {"bg": "#141414", "brand_red": "#e50914"}},
+           "screens": [{"components": [{
+               "id": "primary-nav-links",
+               "role": ("horizontal primary nav: Browse, Shows, Movies, Games, "
+                        "My List"),
+           }]}]}
+
+# The pre-#1202cv shape: a design that never enumerated its nav.
+_DESIGN_NO_NAV_MEASURED = {
+    "design_system": {"palette": {"bg": "#141414", "brand_red": "#e50914"}},
+    "screens": [{"components": [{
+        "id": "top-navigation-bar",
+        "role": "Header area with brand logo at left and primary horizontal navigation links.",
+    }]}]}
 
 _APP_JSX = """
 import { Routes, Route } from 'react-router-dom';
@@ -124,3 +143,15 @@ def test_recover_agent_nav_failsafe_no_design_keeps_lane_nav(tmp_path):
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+
+def test_zero_measured_nav_labels_keeps_the_lane_nav_1202cv(tmp_path):
+    """#1202cv: the gate must count the reference measurement, not App.jsx's route table.
+
+    r41 measured no nav labels, so `_filter_nav_to_ref` (gated on >=4 labels) passed its
+    input through untouched, the route-derived count cleared the bar, and the projection
+    overwrote a lane nav that already matched the reference exactly.
+    """
+    fe = _mk_frontend(tmp_path, design=_DESIGN_NO_NAV_MEASURED)
+    assert _project_nav_component_src(fe, _DESIGN_NO_NAV_MEASURED, "TopNav") is None
