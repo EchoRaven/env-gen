@@ -646,6 +646,36 @@ class AgentMessaging:
             await self._handle_issue(urgent_msg)
             return True
 
+        # #1202dr — THE SAME DEFECT ROUND-8c FIXED FOR kickoff_request, still open for
+        # the debugger. `bug_found` and `run_failed` are the debugger's ONLY work triggers
+        # (DEFAULT_SUBSCRIPTIONS["debugger"]), they are delivered correctly, and then they
+        # fall off the end of this dispatch table into the bare `return False` below —
+        # popped by get_if_urgent(), matched by nothing, dropped on the floor. Measured on
+        # netflix r44 (both the original run and its resume): 17 of 18 `bug_found` events
+        # carry recipients=['debugger'], all 38 of the debugger's inbox items are
+        # delivered=True/read=False, its resident run_loop logged "Ready to accept tasks"
+        # in both runs — and it ran ZERO agentic loops in 3.2 hours. `grep -c bug_found`
+        # over this file was 0. One of the things that passed through it and died was
+        # task_a40620a46a "Docker compose startup fails: backend container missing",
+        # assignee=debugger, claimed_by=None, status=cancelled — a release blocker routed
+        # to a lane that cannot be reached.
+        #
+        # BUSY => SKIP, not defer. The WorkHub bug task is the source of truth
+        # (bug_tools: "the bug task is the source of truth"), so a dropped WAKEUP costs
+        # nothing — the triage loop opens with bug_list_open and sees every open bug,
+        # including the ones whose wakeups were skipped. Deferring instead would rebuild
+        # exactly the livelock the kickoff comment above records, and nesting would trip
+        # the V30 re-entrancy guard.
+        if msg_type in ("bug_found", "run_failed"):
+            if self._processing_state != ProcessingState.IDLE:
+                self._logger.info(
+                    f"[{self.agent_id}] {msg_type} while busy "
+                    f"(state={self._processing_state}); skipping the wakeup — "
+                    "bug_list_open will surface it on the next triage loop")
+                return True
+            await self._handle_bug_triage(urgent_msg)
+            return True
+
         # Round-8c Fix #2 (per round-8b reviewer correction): the
         # kickoff_request urgent event was being received and logged
         # ("Handling urgent kickoff_request") but no msg_type branch
@@ -973,6 +1003,52 @@ Start by thinking about what might cause this issue.
         finally:
             self._processing_state = prev_state
             self._active_phase = prev_phase
+            await self._drain_deferred_task_ready_messages()
+
+    async def _handle_bug_triage(self, message: BaseMessage) -> None:
+        """Run ONE triage loop for a bug_found / run_failed wakeup (#1202dr).
+
+        Deliberately batch-shaped: the prompt opens with ``bug_list_open`` rather than
+        acting on this one message, so a burst of N events costs ONE loop (the rest hit
+        the busy-skip above) and no bug is missed if its wakeup was skipped.
+        """
+        msg_type = (message.metadata or {}).get("msg_type") or "bug_found"
+        payload = message.payload if isinstance(message.payload, str) else str(message.payload)
+        self._logger.info(
+            f"[{self.agent_id}] Handling {msg_type} — opening a triage loop: {payload[:160]}")
+
+        triage_prompt = f"""## Triage wakeup ({msg_type})
+
+You were woken by a `{msg_type}` event: {payload}
+
+Do NOT act on that single event. Triage the whole open set, so nothing that arrived
+while you were busy is missed.
+
+## Your Task
+
+1. `bug_list_open()` — the authoritative open-bug set (P0 first, then oldest first).
+2. For each open bug, establish the root cause from its artifacts before assigning it.
+3. Assign each to the lane that OWNS the code at fault (backend / frontend / verifier),
+   with the concrete evidence and the file/endpoint at fault in the task body. Do not
+   assign work to yourself, and do not fix it yourself — you are the triage role.
+4. If a bug is already assigned and being worked, leave it alone.
+5. `finish()` when the open set is triaged. Run ONCE — do not poll, do not loop waiting
+   for the assignees to report back; a new `{msg_type}` will wake you again.
+"""
+
+        prev_state = self._processing_state
+        self._processing_state = ProcessingState.PROCESSING_TASK
+        try:
+            system_prompt = self._compose_system_prompt()
+            await self.run_agentic_loop(
+                system_prompt=system_prompt,
+                initial_prompt=triage_prompt,
+                max_steps=30,
+            )
+        except Exception as e:
+            self._logger.error(f"[{self.agent_id}] Bug triage loop failed: {e}")
+        finally:
+            self._processing_state = prev_state
             await self._drain_deferred_task_ready_messages()
 
     async def _handle_task_ready(self, message: BaseMessage) -> None:
