@@ -4,6 +4,7 @@ import asyncio
 import difflib
 import os
 import re
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -97,6 +98,47 @@ def tool_io_rollup(top: int = 25) -> str:
     for name, (n, tot, mx) in rows:
         out.append(f"  {name:34} {n:6}  {tot:12,}  {tot // max(n, 1):9,}  {mx:10,}")
     return "\n".join(out)
+
+
+# #1202dq: the rollup above is the AUTHORITATIVE accounting for the largest single
+# context cost in a run (check_inbox alone was 46.7% of 401M chars of tool output),
+# and it was emitted exactly once, from the orchestrator's `finally`. A SIGKILL skips
+# `finally`, so every run that ended badly left no accounting at all — measured over
+# the netflix corpus, 4 of 12 run logs (r41, r43b, r44, r44-resume) have zero rollup
+# lines, and r44 died on `insufficient_quota` after 37 retries. That is exactly
+# backwards: the runs worth diagnosing are the ones that lose the diagnosis. Emitting
+# on a cadence means a killed run still leaves its last table on disk. The header text
+# is unchanged so existing corpus greps for `[tool-io] TOTAL` keep matching.
+_TOOL_IO_ROLLUP_LAST_AT: float = 0.0
+
+
+def maybe_tool_io_rollup(logger, *, force: bool = False, top: int = 25) -> bool:
+    """Emit the rollup at most every ENVGEN_TOOLIO_ROLLUP_MIN minutes (default 15).
+
+    Returns True if it emitted. `force=True` always emits (used at run exit).
+    Never raises: an accounting line must not be able to disturb a run.
+    """
+    global _TOOL_IO_ROLLUP_LAST_AT
+    try:
+        if logger is None or not _TOOL_IO_TOTALS:
+            return False
+        if not force:
+            try:
+                every_min = float(os.environ.get("ENVGEN_TOOLIO_ROLLUP_MIN", "15") or 15)
+            except (TypeError, ValueError):
+                every_min = 15.0
+            if every_min <= 0:
+                return False
+            now = time.time()
+            if _TOOL_IO_ROLLUP_LAST_AT and (now - _TOOL_IO_ROLLUP_LAST_AT) < every_min * 60.0:
+                return False
+            _TOOL_IO_ROLLUP_LAST_AT = now
+        else:
+            _TOOL_IO_ROLLUP_LAST_AT = time.time()
+        logger.info("%s", tool_io_rollup(top=top))
+        return True
+    except Exception:
+        return False
 
 
 def drop_unaccepted_kwargs(fn: Any, tool_args: Dict) -> tuple:

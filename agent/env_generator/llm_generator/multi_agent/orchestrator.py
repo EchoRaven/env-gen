@@ -1345,6 +1345,15 @@ class Orchestrator:
                         # how close a run was to that ceiling, which is the number I set the
                         # ceiling from. My own defect, introduced with #1175.
                         getattr(self, "_tick_count_1192", 0), "running")
+                    # #1202dq: piggyback the tool-io rollup on the one ticker that runs
+                    # regardless of lane state, so a run killed mid-flight still leaves its
+                    # context accounting on disk. Self-gated to ENVGEN_TOOLIO_ROLLUP_MIN
+                    # (default 15 min); returns False and costs a dict-empty check otherwise.
+                    try:
+                        from .agents.runtime.tooling import maybe_tool_io_rollup as _roll1202dq
+                        _roll1202dq(self._logger)
+                    except Exception:
+                        pass
                 except _a1175.CancelledError:
                     raise
                 except Exception:
@@ -2887,6 +2896,13 @@ class Orchestrator:
                             self._logger.warning(
                                 "FINAL-GATE CONVERGENCE RE-RUN CLEARED the gate — the prior "
                                 "failure was transient/re-runnable; delivering.")
+                # #1202dp — FINAL-GATE GRACE WHILE REMEDIATION IS IN FLIGHT.
+                # Extracted to its own method so the loop can be EXECUTED by a test rather
+                # than only asserted against its source — the same shape #139 already uses
+                # for `_final_gate_drift_waiver`. The rationale and the r44 evidence live on
+                # the method.
+                if not gate["ok"]:
+                    gate = await self._final_gate_grace_1202dp(gate)
                 if not gate["ok"]:
                     report = self._format_delivery_gate_report(gate)
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
@@ -2976,8 +2992,8 @@ class Orchestrator:
             # Print the per-tool rollup once at exit so the next reduction is aimed at
             # measured offenders instead of guesses.
             try:
-                from .agents.runtime.tooling import tool_io_rollup
-                self._logger.info("%s", tool_io_rollup())
+                from .agents.runtime.tooling import maybe_tool_io_rollup
+                maybe_tool_io_rollup(self._logger, force=True)
             except Exception:
                 pass
             # FINAL FLUSH: merge every lane's committed work into integration on
@@ -3253,6 +3269,78 @@ class Orchestrator:
     # (the 2 pures are module fns; the stateful nudge is Coordination(orch).
     # _silent_lane_nudges stays here on the orch, init/reset by run()). The run()
     # coordination-tick BLOCK stays in the spine.
+    async def _final_gate_grace_1202dp(self, gate: Dict[str, Any]) -> Dict[str, Any]:
+        """Wait, bounded, while the framework's own remediation lands. Returns the gate.
+
+        The three hatches above this call each cover a specific class (readiness race, #139
+        registry drift, #553 re-runnable chains). None covers the ordinary case: the blocking
+        checks are OWNED, the framework just dispatched their fixes, and the run still has
+        budget — so it raised anyway, five seconds after filing the work that would have
+        cleared it.
+
+        netflix r44, live: at 15:41:41 `business_response_key_noncanonical` was dispatched to
+        backend (task_c448404c80); at 15:41:44 the final gate failed its first evaluation on
+        exactly that check plus `validation_ui_evidence_failed` (verifier, task_d117dab4a9
+        in_progress); at 15:41:46 the run raised. It died with 53 of 180 wall-clock minutes and
+        144 of 200 ticks unspent, $320.50 in, and visual fidelity still IMPROVING (median
+        0.465 -> 0.610, 3 -> 4 screens over 0.65). Not converged-and-failing — converging and
+        interrupted.
+
+        ★ This CANNOT cause a bad delivery. It never assigns ``gate["ok"]`` and never touches
+        an escape path — it only defers the raise, then re-evaluates. Delivery still requires a
+        real pass. Worst case, a doomed run spends more of its already-allocated budget before
+        failing exactly as it does today.
+
+        Gated on the #1040 wedge counter rather than a second copy of the owner tables: that
+        counter is already the tested answer to "was anything dispatched at all". Non-zero means
+        NO failing check has an owner (the r174 dead end) — waiting there buys nothing.
+        """
+        wedged = getattr(self, "_gatecheck_wedged_ticks_1040", 0)
+        try:
+            rounds = int(os.environ.get("ENVGEN_FINAL_GATE_GRACE_ROUNDS", "3") or 3)
+            grace_s = float(os.environ.get("ENVGEN_FINAL_GATE_GRACE_S", "120") or 120)
+        except (TypeError, ValueError):
+            rounds, grace_s = 3, 120.0
+        n = 0
+        while (not gate["ok"] and wedged == 0 and n < rounds
+               and grace_s > 0 and self._final_gate_grace_budget_1202dp(grace_s)):
+            n += 1
+            self._logger.warning(
+                "#1202dp FINAL-GATE GRACE %s/%s: every failing check (%s) has an owner and "
+                "remediation is being dispatched; waiting %ss for it to land before giving up "
+                "(r44 raised 5s after filing the fix).",
+                n, rounds, sorted(gate.get("failed_checks") or []), int(grace_s))
+            try:
+                await asyncio.sleep(grace_s)
+            except asyncio.CancelledError:
+                raise
+            gate = self._validate_delivery_gate()
+            wedged = getattr(self, "_gatecheck_wedged_ticks_1040", 0)
+        if gate["ok"] and n:
+            self._logger.warning(
+                "#1202dp FINAL-GATE GRACE CLEARED the gate after %s round(s) — the blockers "
+                "were in-flight remediation, not a converged failure.", n)
+        return gate
+
+    def _final_gate_grace_budget_1202dp(self, need_s: float) -> bool:
+        """True while a grace round fits inside the run's wall-clock cap (#1202dp).
+
+        Deliberately conservative: it must fit the round AND leave 60s of tail, so the
+        grace can never be what pushes a run past its own ceiling. Missing/unparseable
+        origin or cap => no grace (raise as before), never an unbounded wait.
+        """
+        try:
+            if str(os.environ.get("ENVGEN_BUDGET_UNLIMITED", "")).strip().lower() in (
+                    "1", "true", "yes"):
+                return True
+            cap = float(os.environ.get("ENVGEN_MAX_WALLCLOCK_SEC", "7200") or 7200)
+            origin = getattr(self, "_loop_start_1196", None)
+            if not origin or cap <= 0:
+                return False
+            return (time.time() - float(origin)) + float(need_s) + 60.0 < cap
+        except Exception:
+            return False
+
     async def _nudge_silent_resident_lanes(self, *args, **kwargs):
         from .runtime.coordination import Coordination
         return await Coordination(self).nudge_silent_resident_lanes(*args, **kwargs)
