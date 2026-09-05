@@ -52,3 +52,7 @@ design_inputs/
 # permanently burn numbers on every suite run. The durable record of a claim stays where it was:
 # an EXPERIMENTS heading, a commit subject, or a test filename.
 .tickets
+
+# repo-wide test-suite lock (2026-09-05, cross-session contention)
+.suite.lock
+.suite.lock.info
