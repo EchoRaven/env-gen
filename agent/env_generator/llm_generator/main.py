@@ -360,8 +360,23 @@ async def main():
             if not snaps:
                 print(f'No snapshots under {output_dir}/snapshots')
             for s in snaps:
+                # #1202di: size never answered "is this worth restoring". A snapshot taken
+                # while the app could not boot has judged nothing, and restoring it resumes
+                # a run that has never scored a screen — all four of netflix-r43's were like
+                # that. `None` prints as "?" because not-measured is not zero.
+                _j = s.get("judgments")
+                _health = "judged ?" if _j is None else f"judged {_j}"
+                if _j == 0:
+                    _health += " ⚠ NOTHING SCORED"
+                if s.get("plateau"):
+                    _health += f", plateau {s['plateau']}"
+                if s.get("usd") is not None:
+                    _health += f", ${s['usd']:.0f}"
+                if s.get("ticks") is not None:
+                    _health += f", tick {s['ticks']}"
                 print(f"{s['name']:<34} {s.get('kind',''):<10} "
-                      f"{s.get('files',0):>5} files  {s.get('bytes',0)/1e6:>7.1f} MB")
+                      f"{s.get('files',0):>5} files  {s.get('bytes',0)/1e6:>7.1f} MB  "
+                      f"{_health}")
         else:
             res = restore_snapshot(output_dir, args.restore_snapshot)
             if res['ok']:

@@ -1278,6 +1278,106 @@ def _compose_failure_reason_1202dc(stderr: Any, stdout: Any) -> str:
     return text[-400:]
 
 
+def _compose_lock_1202dl(project_dir: Any, wait_sec: float = 120.0):
+    """Take the SAME exclusive lock `run_smoke_validation` uses. ``(fh, acquired)``.
+
+    #36 serialized validations against each other because two of them against one compose
+    project "tear each other down → BOTH report docker_up FAIL". The visual gate mutates the
+    same project via `_compose_up` and took no lock, so a gate boot could land inside a
+    validation's ``down -v``/``up`` — the same race, one participant short. netflix-r44 filed
+    `Frontend unreachable on port 8007 during validation` 22 times, next to the framework's
+    own note that 90 of 129 runs end this way.
+
+    Held only across the compose call. Holding it through the capture session would block
+    validations for minutes and trade this race for starvation; a teardown mid-capture is
+    already handled by the `capture_unavailable` refund path.
+    """
+    try:
+        import fcntl as _fcntl
+        cwd = Path(project_dir) / "docker"
+        cwd.mkdir(parents=True, exist_ok=True)
+        fh = open(cwd / ".smoke_validation.lock", "w")
+    except Exception:
+        # No lock is worse than a lock, but failing CLOSED here would make an unwritable
+        # directory permanently unjudgeable. Degrade to today's behavior.
+        return None, True
+    deadline = time.time() + max(0.0, wait_sec)
+    while True:
+        try:
+            _fcntl.flock(fh.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            return fh, True
+        except OSError:
+            if time.time() >= deadline:
+                return fh, False
+            time.sleep(2)
+
+
+def _release_compose_lock_1202dl(fh) -> None:
+    """Release + close; tolerant of ``None`` so the un-acquired path can call it too."""
+    if fh is None:
+        return
+    try:
+        import fcntl as _fcntl
+        _fcntl.flock(fh.fileno(), _fcntl.LOCK_UN)
+    except Exception:
+        pass
+    try:
+        fh.close()
+    except Exception:
+        pass
+
+
+def _deferred_for_compose_lock_1202dl(skipped: list) -> Dict[str, Any]:
+    """#36-bis's "defer, do not race", in the gate's vocabulary.
+
+    Routes to `capture_unavailable` — the "not a judgment" channel #1202de established — so
+    the attempt is refunded and retried rather than scoring an app that was never reachable.
+    """
+    return {"passed": False,
+            "summary": ("visual gate deferred: another validation holds the compose lock "
+                        "(#36/#1202dl) — not judged, will retry"),
+            "screens": [], "skipped": skipped,
+            "capture_unavailable": True}
+
+
+def _host_fatal_1202de(err: Any) -> str:
+    """The host-level token `_compose_failure_reason_1202dc` led with, or ``""``.
+
+    Keys on the SAME signatures #1202dc already matched, so the two cannot drift into
+    disagreeing about what counts as a host fault. A deprecation warning matches none of
+    them and therefore never qualifies — the false positive #1202dc was built to avoid.
+    """
+    low = str(err or "").lower()
+    for token, _why in _COMPOSE_FATAL_1202DC:
+        if token.lower() in low:
+            return token
+    return ""
+
+
+def _boot_failure_result_1202de(err: Any, skipped: list) -> Dict[str, Any]:
+    """The gate's result when the app could not be booted.
+
+    #1202dc named the host cause and stopped there: the dict it fed was shaped exactly
+    like "the app is broken", so a full disk and a broken Dockerfile were indistinguishable
+    downstream. netflix-r43 paid for that twice in two days — a port clash burned $400 with
+    plateau climbing to 7 on zero scored screens, and a full disk produced 39 failed
+    `docker_up`s and no judgment.
+
+    A host fault is not a verdict about the app. It goes to `capture_unavailable`, the
+    channel the gate already uses for "not a judgment — the app wasn't reachable", whose
+    handler refunds the attempt so the budget counts only REAL verdicts. An app-caused
+    compose failure keeps the old shape: that one IS the lane's to fix.
+    """
+    token = _host_fatal_1202de(err)
+    out: Dict[str, Any] = {"passed": False,
+                           "summary": f"visual gate could not boot app: {err}",
+                           "screens": [], "skipped": skipped}
+    if token:
+        out["capture_unavailable"] = True
+        out["host_fatal"] = token
+    return out
+
+
 def _compose_up(project_dir: Path,
                 timeout: int = int(os.environ.get("ENVGEN_VISUAL_COMPOSE_TIMEOUT", "900") or 900)) -> Optional[str]:
     compose_file = project_dir / "docker" / "docker-compose.yml"
@@ -2975,10 +3075,21 @@ async def run_visual_fidelity(
     # #935: same reason as shots_dir above — the no-capture handler reads it whichever branch ran.
     _cap_err935: Dict[str, str] = {}
     if capture is None:
-        err = _compose_up(project_dir)
+        # #1202dl: take the lock `run_smoke_validation` holds, so the gate cannot boot the
+        # stack while a validation is mid `down -v`/`up` — #36's race with one participant
+        # missing. Defer rather than proceed unlocked (#36-bis: "trading a hang for a race
+        # is worse"); the deferral refunds instead of scoring an unreachable app.
+        _lk1202dl, _got1202dl = _compose_lock_1202dl(project_dir)
+        try:
+            if not _got1202dl:
+                return _deferred_for_compose_lock_1202dl(skipped)
+            err = _compose_up(project_dir)
+        finally:
+            _release_compose_lock_1202dl(_lk1202dl)
         if err:
-            return {"passed": False, "summary": f"visual gate could not boot app: {err}",
-                    "screens": [], "skipped": skipped}
+            # #1202de: a host fault (full disk, taken port, dead daemon) is not a verdict
+            # about the app — it routes to the refund channel instead of burning a round.
+            return _boot_failure_result_1202de(err, skipped)
         compose_file = project_dir / "docker" / "docker-compose.yml"
         cwd = project_dir / "docker"
         # FIX #207: resolve THIS app's OWN host ports — retry within the readiness
@@ -3176,6 +3287,9 @@ async def run_visual_fidelity(
                             "the app was torn down mid-round, so this is not a judgment"),
                 "screens": [], "skipped": skipped,
                 "capture_unavailable": True,
+                # #1202dm: distinguishable so the caller can budget it apart from a
+                # possibly-broken app — see the refund branch.
+                "compose_race_1202dm": True,
                 "capture_errors": dict(_cap_err935),
                 "min_similarity": min_similarity}
     judge = judge_fn or judge_screen_pair
@@ -5483,8 +5597,13 @@ def _asset_usage_advisory(output_dir: Any, exclude: Optional[set] = None,
 try:  # FIX #75a: how many mid-rebuild blank captures to absorb before a still-blank
     # route becomes a real 0.00 verdict (so a truly-broken app can't defer forever).
     _TRANSIENT_REFUND_CAP = int(os.environ.get("ENVGEN_VISUAL_BLANK_REFUNDS", "3"))
+    # #1202dm: the compose race is a transient the FRAMEWORK inflicts (see #1202dl); it
+    # cannot be exhibited by a genuinely-down app, so it does not share that budget.
+    _COMPOSE_RACE_REFUND_CAP_1202DM = int(
+        os.environ.get("ENVGEN_VISUAL_COMPOSE_RACE_REFUNDS", "8"))
 except Exception:
     _TRANSIENT_REFUND_CAP = 3
+    _COMPOSE_RACE_REFUND_CAP_1202DM = 8
 
 
 def _apply_sticky_pass(passed_names: set, screens: List[Mapping[str, Any]]) -> bool:
@@ -5540,6 +5659,7 @@ class VisualFidelityGate:
         self.total_judgments = 0       # per-milestone real-verdict count (backstop)
         self.transient_refunds = 0     # per-milestone bounded blank-capture refunds (#75a)
         self.unreachable_refunds = 0   # #655b: same bound for capture/auth-unavailable
+        self.compose_race_refunds_1202dm = 0   # #1202dm: framework-inflicted, own bound
         self.last_result = None
         self.last_judged_sig = None
         self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
@@ -5590,6 +5710,7 @@ class VisualFidelityGate:
         self.total_judgments = 0
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
         self.unreachable_refunds = 0   # #655b: milestone-anchored, same reason
+        self.compose_race_refunds_1202dm = 0   # #1202dm: milestone-anchored, same reason
         self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
         self._seed_reminder_sent = False  # #133: re-armed per milestone
         self._best_by_screen = {}      # #138: plateau tracking is per milestone
@@ -5642,10 +5763,47 @@ class VisualFidelityGate:
     # it is the difference between re-judging an identical screenshot and not paying twice.
     _STATE_FIELDS_1202CE = (
         "sig", "attempts", "passed", "deferred_since", "total_judgments",
-        "transient_refunds", "unreachable_refunds", "plateau_rounds", "avg_pass_rounds",
+        "transient_refunds", "unreachable_refunds", "compose_race_refunds_1202dm",
+        "plateau_rounds", "avg_pass_rounds",
         "released", "app_dead_750", "_seed_reminder_sent", "last_judgment_at",
         "last_judged_sig", "_milestone_key_1202ce",
     )
+
+    def _refund_compose_race_1202dm(self, orch, result) -> None:
+        """Refund a round the FRAMEWORK broke, on a budget of its own.
+
+        #1202cc detects the sharpest transient in the gate: some screens photographed and
+        others refused the connection — "a server cannot be serving and refusing at once, so
+        the stack moved underneath us". It bounded that by `_TRANSIENT_REFUND_CAP`, reasoning
+        that a genuinely-down app "satisfies this every round, exhausts the refunds and lands
+        on a real verdict".
+
+        That cannot happen here, and #1202cc's own precondition is why: a genuinely-down app
+        photographs NOTHING and is handled by the `0 of N photographed` path. The mixed
+        evidence this branch requires is unreachable for it. So the race was spending a budget
+        sized for a failure it cannot exhibit — netflix-r44 burned 2 of 3 at ONE judgment and
+        $171, and the third would have turned a torn-down app into a real verdict: false-low
+        scores that also dispatch lane remediation for a defect the framework inflicted on
+        itself (see #1202dl, which removes the mutation half of the race).
+
+        Still bounded — a framework that raced forever must not defer forever — and persisted
+        with the other refund counters, because #664 showed an in-memory bound is no bound.
+        """
+        if self.compose_race_refunds_1202dm < _COMPOSE_RACE_REFUND_CAP_1202DM:
+            self.compose_race_refunds_1202dm += 1
+            self.attempts = max(0, self.attempts - 1)
+            orch._logger.warning(
+                "Visual fidelity: %s — attempt refunded, will retry next tick "
+                "(compose race %s/%s, #1202dm).",
+                result.get("summary") or "capture raced the compose stack",
+                self.compose_race_refunds_1202dm, _COMPOSE_RACE_REFUND_CAP_1202DM)
+        else:
+            orch._logger.warning(
+                "Visual fidelity: %s — compose-race refund cap reached (%s), NOT refunding; "
+                "the stack is being torn down under EVERY round, which is a framework "
+                "serialisation problem (see #1202dl), not the app's fault.",
+                result.get("summary") or "capture raced the compose stack",
+                _COMPOSE_RACE_REFUND_CAP_1202DM)
 
     def _state_path_1202ce(self):
         try:
@@ -5863,6 +6021,13 @@ class VisualFidelityGate:
                 #
                 # Found by cross-auditing this session's fixes against each other (the #645
                 # method); the asymmetry predates #655, which only made it easier to reach.
+                # #1202dm: the compose race has its own budget — see the handler. Kept as a
+                # CALL rather than an inline two-armed branch: #655b inspects this source
+                # region and anchors on its single fallback arm to prove the cap-reached
+                # path never refunds. A second arm here silently moves that landmark.
+                if result.get("compose_race_1202dm"):
+                    self._refund_compose_race_1202dm(orch, result)
+                    return
                 if self.unreachable_refunds < _TRANSIENT_REFUND_CAP:
                     self.unreachable_refunds += 1
                     self.attempts = max(0, self.attempts - 1)

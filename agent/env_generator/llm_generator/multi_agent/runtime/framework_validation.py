@@ -236,6 +236,51 @@ _ERR_MARKERS = (
 )
 
 
+# #1202df: the executor joins its computed hint onto the step failure with this exact
+# separator (chain_executor lines 1648/1659/1663 all open with it), and it is always the
+# LAST such clause, so `rfind` isolates it without parsing.
+_HINT_SEP_1202DF = " — "
+
+
+def _clip_keeping_guidance_1202df(out: str, cap: int) -> str:
+    """Clip to ``cap`` while KEEPING a framework-authored remediation clause.
+
+    Third face of the mistake #212 and #1119 already fixed. #212 replaced a blind prefix
+    with the salient line; #1119 wrote the rule down — extract the cause, THEN truncate —
+    for compose stderr, whose cause sits at the end. Here what lives past the cap is not
+    the cause but the REMEDY: `chain_executor._unknown_id_hint` computes exactly what the
+    lane must do about a 403 ("Create the resource as THIS actor in an earlier step and
+    `save` its id...") and APPENDS it, so a prefix slice eats precisely the actionable
+    half.
+
+    netflix-r43: every rendering of its blocking step ended mid-word at "Creat". The run
+    spent 11 framework validation attempts and carried 4 delivery-cut P0s on that one
+    step while the instruction that resolves it had been computed and thrown away.
+
+    Note the bug was a coin flip, which is how it survived: the no-marker exit returns
+    ``text[-cap:]`` — the tail — and the hint survives there intact. Only the marker exit
+    prefix-sliced. Whether a lane was told how to fix its step depended on whether an
+    unrelated error marker happened to appear in the same detail.
+
+    Keeps the cause AND the hint, dropping the middle — the part a reader can least use.
+    """
+    if len(out) <= cap:
+        return out
+    idx = out.rfind(_HINT_SEP_1202DF)
+    if idx <= 0:
+        return out[:cap]
+    hint = out[idx:].strip()
+    if len(hint) >= cap:
+        # The remedy alone overruns the cap. Spend the cap on the remedy rather than on
+        # the banner in front of it, and keep its TAIL: every hint in chain_executor
+        # states the fault first and the instruction last.
+        return hint[-cap:].strip()
+    keep = cap - len(hint) - 1
+    if keep <= 0:
+        return hint
+    return (out[:keep].rstrip() + " " + hint)[:cap]
+
+
 def _salient_error(detail: Any, cap: int = 400) -> str:
     """Surface the ACTUAL error line(s) from a (possibly long, multi-line) build/validation log,
     instead of a blind PREFIX slice. gmtiktok STUCK-aborted with "Real blocker: docker_up:
@@ -278,7 +323,7 @@ def _salient_error(detail: Any, cap: int = 400) -> str:
                 cap = max(cap, min(2000, int(_m.group(1)) + 120))
             except Exception:
                 pass
-        return _out[:cap]
+        return _clip_keeping_guidance_1202df(_out, cap)
     return text[-cap:].strip()
 
 

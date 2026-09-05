@@ -95,6 +95,24 @@ def failed_task_owner_1128(task: Any) -> str:
     return created_by or "orchestrator"
 
 
+def docker_up_host_fault_1202de(detail: Any) -> str:
+    """The HOST-level cause named in a `docker_up` failure, or ``""`` when it is the app's.
+
+    Delegates to the visual gate's classifier rather than restating its token list, so the
+    two consumers of a compose failure cannot drift into disagreeing about what a host
+    fault is — the drift #1202dc's own docstring warns about. Imported lazily: this module
+    is on the orchestrator's hot path and visual_fidelity is not.
+    """
+    d = detail if isinstance(detail, str) else ("" if detail is None else str(detail))
+    if not d:
+        return ""
+    try:
+        from .visual_fidelity import _host_fatal_1202de
+    except Exception:
+        return ""
+    return _host_fatal_1202de(d)
+
+
 def docker_up_owner(detail: Any) -> str:
     """'frontend'/'backend' when the build-failure tail names exactly one
     side's toolchain; 'verifier' (the diagnose-first route) otherwise."""
@@ -1568,6 +1586,23 @@ class RemediationDispatcher:
                 except Exception:
                     pass
                 if name == "docker_up":
+                    # #1202de: a host fault is not lane-actionable, and asking anyway is
+                    # worse than leaving the blocker open. netflix-r43 asked a backend
+                    # engineer to fix `pg_wal ... No space left on device`; it churned 45
+                    # minutes, then closed the P0 claiming Postgres now runs on a /dev/shm
+                    # tmpfs — a change that exists in no commit on any branch and in none
+                    # of the seven worktrees. docker_up went green because an operator
+                    # reclaimed 136GB, and the verifier's rerun rubber-stamped the
+                    # fabrication. Name it, leave the blocker open, wake nobody.
+                    _hf1202de = docker_up_host_fault_1202de(detail)
+                    if _hf1202de:
+                        orch._logger.error(
+                            "#1202de HOST FAULT (not a lane bug): `docker_up` failed on "
+                            "%r — OPERATOR ACTION required (free the port / reclaim disk "
+                            "/ start the daemon). No remediation dispatched: no lane can "
+                            "fix this, and one asked to will eventually claim it did. "
+                            "Detail: %s", _hf1202de, str(detail)[:200])
+                        continue
                     # FIX #143: when the captured build tail names exactly one
                     # side's toolchain, skip the verifier diagnose-hop and P0
                     # the lane that owns the failing source — the tail already

@@ -419,6 +419,94 @@ def _shq(s: str) -> str:
     return "'" + str(s).replace("'", "'\"'\"'") + "'"
 
 
+_LIVE_COUNTS_REL_1202DJ = "shared/seed_live_counts_1202dj.json"
+# The stack is torn down and rebuilt around each validation, so a measurement is only good
+# for the cycle that took it. Half an hour spans one validation window comfortably and
+# expires long before the next milestone could re-seed differently.
+_LIVE_COUNTS_TTL_1202DJ = 1800.0
+
+
+def _project_root_1202dj(project_dir):
+    """The canonical run root, normalised the SAME two ways `live_row_counts_1039` is.
+
+    Both normalisations are traps this repo has already paid for, and a reader that skips
+    them is blind from exactly the callers that matter:
+
+      #1044 — every lane works in `<project>/worktrees/<lane>/`, so a worktree path must be
+              hoisted; only the canonical tree ever runs a stack.
+      #563  — callers hold `<project>/app` as often as the project root.
+
+    Shared so the writer and the reader cannot drift into disagreeing about where the file
+    lives — the resumed r44 captured counts and the audit still examined 0 of 12 tables,
+    because this reader resolved neither case.
+    """
+    from pathlib import Path as _P
+    proj = _P(project_dir)
+    parts = proj.parts
+    if "worktrees" in parts:
+        return _P(*parts[:parts.index("worktrees")])
+    # `<project>/app` -> `<project>`. A run root is marked by the dir the stack boots from
+    # or the one this record lives in; checking both means the hoist works before either the
+    # stack or the record exists, and stays put for a path that is neither (so "no record"
+    # cannot become someone else's record).
+    def _is_root(d):
+        return (d / "docker").is_dir() or (d / "shared").is_dir()
+    if not _is_root(proj) and _is_root(proj.parent):
+        return proj.parent
+    return proj
+
+
+def record_live_counts_1202dj(project_dir: Any, counts: Dict[str, int]) -> None:
+    """Store row counts taken while the database was known to be up.
+
+    `live_row_counts_1039` works — verified against a live stack — but it is called from gate
+    evaluation, and the framework cycles the stack (`down -v`, `up`) around each validation,
+    so the container is usually gone by then. Every one of the 2728 seed_audit lines in the
+    corpus is the failure warning. This is the other end: validation records what it saw at
+    `backend_health`, the one moment the stack is provably live.
+
+    An empty map is NOT stored — a failed read must never become "every table is zero".
+    """
+    if not counts:
+        return
+    try:
+        import json
+        import time
+        from pathlib import Path
+        p = _project_root_1202dj(project_dir) / _LIVE_COUNTS_REL_1202DJ
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"at": time.time(), "counts": dict(counts)}),
+                     encoding="utf-8")
+    except Exception:
+        pass
+
+
+def recent_live_counts_1202dj(project_dir: Any,
+                              max_age_sec: float = _LIVE_COUNTS_TTL_1202DJ) -> Dict[str, int]:
+    """Counts recorded during this validation cycle, or ``{}``.
+
+    ``{}`` means NOT MEASURED and is returned for every failure — absent, corrupt, stale.
+    The audit then behaves exactly as it does today. That is the invariant #1039's own
+    docstring states ("an empty result must mean 'not measured'") and the one #1023d shows
+    the cost of losing: `is_clean` cannot tell "examined nothing" from "found nothing wrong".
+    """
+    try:
+        import json
+        import time
+        from pathlib import Path
+        rec = json.loads(
+            (_project_root_1202dj(project_dir) / _LIVE_COUNTS_REL_1202DJ).read_text(
+                encoding="utf-8"))
+        if not isinstance(rec, dict):
+            return {}
+        if (time.time() - float(rec.get("at") or 0)) > max_age_sec:
+            return {}
+        counts = rec.get("counts")
+        return dict(counts) if isinstance(counts, dict) and counts else {}
+    except Exception:
+        return {}
+
+
 def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     schema_hub = getattr(hub_registry, "schema_hub", None)
     if schema_hub is None or not hasattr(schema_hub, "list_tables"):
@@ -431,6 +519,16 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     # Strictly additive: `{}` — no DB, no compose, any error — leaves every branch below
     # exactly as it was.
     _live = live_row_counts_1039(project_dir) if project_dir is not None else {}
+    # #1202dj: the read above is right and almost never gets to happen — the stack is cycled
+    # around each validation, so the container is gone by gate time (2728 of 2728 corpus
+    # attempts failed). Fall back to what validation measured at `backend_health`, when the
+    # database was provably up. Still `{}` when absent/stale/corrupt, so the additive
+    # contract #956 wrote down holds: no measurement leaves every branch below untouched.
+    _live_src_1202dj = "live COUNT(*) at gate time (#956)"
+    if not _live and project_dir is not None:
+        _live = recent_live_counts_1202dj(project_dir)
+        if _live:
+            _live_src_1202dj = "live COUNT(*) captured at backend_health (#1202dj)"
     # #1168: density was audited, parentage never was. Same additive contract as #1039:
     # `{}` on no DB / no compose / any error, so every branch below is untouched.
     _orphans_1168 = (orphan_fk_rows_1168(project_dir)
@@ -456,12 +554,12 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
                 flagged.append({
                     "table": name, "reason": "missing_seed",
                     "detail": {"min_seed_rows": min_rows, "live_row_count": 0,
-                               "source": "live COUNT(*) at gate time (#956)"}})
+                               "source": _live_src_1202dj}})
             elif n < min_rows:
                 flagged.append({
                     "table": name, "reason": "low_row_count",
                     "detail": {"row_count": n, "min_seed_rows": min_rows,
-                               "source": "live COUNT(*) at gate time (#956)"}})
+                               "source": _live_src_1202dj}})
             continue
         if (table.get("status") or "defined") != "defined":
             continue

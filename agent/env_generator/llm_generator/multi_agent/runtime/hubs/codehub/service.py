@@ -15,6 +15,33 @@ from .stores import CodeHubStores
 log = logging.getLogger(__name__)
 
 
+def _noteworthy_dropped_1202dg(dropped):
+    """The refused paths a reader can act on — the framework's own scratch removed.
+
+    #1202aw made `auto_commit._should_stage_path` stop announcing `.openenv_trash/`: the
+    framework creates it (file_tools moves deletes there instead of unlinking) and it is
+    already gitignored, so refusing it is correct and saying so is noise. It wired the
+    suppression into ONE of the two places that refuse these paths. `codehub.commit`
+    refuses through the same filter and logs its own warning, and netflix-r42 emitted 81
+    of them — `FRAMEWORK_SCRATCH_DOTDIRS_1202AW` had a single consumer, its own module.
+
+    Refusal is unchanged; only the announcement is. A dotfile an AGENT authored is a real
+    finding and still reports. On import failure nothing is suppressed, which degrades to
+    the old, merely-noisy behavior rather than to silence.
+    """
+    try:
+        from ....agents.runtime.auto_commit import FRAMEWORK_SCRATCH_DOTDIRS_1202AW as _scratch
+    except Exception:
+        return list(dropped)
+    out = []
+    for p in dropped:
+        parts = [seg for seg in str(p).replace("\\", "/").split("/") if seg]
+        if any(seg in _scratch for seg in parts):
+            continue
+        out.append(p)
+    return out
+
+
 def _stage_paths_robust(git_ops: "GitOps", paths: List[str]) -> List[str]:
     """FIX #210: stage *paths* tolerating an individual non-matching pathspec.
 
@@ -1183,7 +1210,7 @@ class CodeHub:
                 # FIX #210: robust staging (see helper) — one bad pathspec in the
                 # caller-supplied list must not abort the batch and lose the rest.
                 _stage_paths_robust(wt_git, kept)
-            dropped = [f for f in files if f not in kept]
+            dropped = _noteworthy_dropped_1202dg([f for f in files if f not in kept])
             if dropped:
                 log.warning(
                     "codehub.commit refused dotfile paths for agent %s: %s",
@@ -1220,7 +1247,7 @@ class CodeHub:
                     if xy[0] in ("R", "C"):
                         i += 1
             kept = _filter_paths_for_staging(candidates, agent_id=agent_id)
-            dropped = [p for p in candidates if p not in kept]
+            dropped = _noteworthy_dropped_1202dg([p for p in candidates if p not in kept])
             if dropped:
                 log.warning(
                     "codehub.commit refused dotfile paths for agent %s: %s",

@@ -2394,6 +2394,38 @@ class RegistryHub:
                                 _worst, ", ".join(_shown(_e) for _e in _repeat))
                         except Exception:
                             pass
+                        # #1202dh: #1202m says the point is to "put the request where the
+                        # party who can answer it will see it" — and then writes to the
+                        # Python logger, which no agent reads. The backend still never
+                        # hears, which is why the counter keeps climbing: r42 logged 64 of
+                        # these for one endpoint, r26 reached 49 without plateauing.
+                        #
+                        # `EventHub.publish_api_requirement` is the channel this codebase
+                        # already built for it (typed, recipients=["backend"]), and this
+                        # hub is already constructed with an `eventhub`. Wiring existed;
+                        # the call did not.
+                        #
+                        # Once per endpoint, at the count where a reject becomes a loop.
+                        # Everything #664/#71 fixed stays: the rejection stands, the chain
+                        # is unchanged, no task is filed, the verifier's text is untouched.
+                        try:
+                            _tell = [_e for _e in _repeat if int(_counts.get(_e) or 0) == 2]
+                            if _tell and getattr(self, "eventhub", None) is not None:
+                                self.eventhub.publish_api_requirement(
+                                    flow_id="chain_reject_1202m",
+                                    needed_data_shape={
+                                        "unregistered_endpoints": [_shown(_e) for _e in _tell],
+                                        "why": ("the verifier authored chain steps against "
+                                                "these and the contract does not define them"),
+                                        "resolve_by": ("implement + registryhub_register_endpoint, "
+                                                       "or reply that the coverage is out of scope"),
+                                    },
+                                    agent="registryhub",
+                                    caller="registryhub",
+                                    priority="high",
+                                )
+                        except Exception:
+                            pass
                 except Exception:
                     _escalate = ""
                 # #636 — LEAD WITH THE INSTRUCTION, NOT THE CONTRACT DUMP.

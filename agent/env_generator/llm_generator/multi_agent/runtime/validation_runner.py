@@ -1091,6 +1091,27 @@ def run_smoke_validation(
             return _finalize(checks, backend_port, endpoint_results)
         _add("backend_health", True)
 
+        # #1202dj: THE one moment the database is provably up. `live_row_counts_1039` works
+        # — proven against a live stack — but it is called from gate evaluation, and the
+        # stack is cycled (`down -v`, `up`) around each validation, so by then the container
+        # is usually gone: 2728 of 2728 corpus attempts reported "DID NOT RUN". The audit
+        # then falls back to the `status == "defined"` filter, which examines 0 tables in 145
+        # of 147 runs, and `is_clean` cannot tell that from "found nothing wrong" (#1023d).
+        # Record what is true here so the seed gate finally has a number to read.
+        try:
+            from .seed_audit import live_row_counts_1039, record_live_counts_1202dj
+            _counts1202dj = live_row_counts_1039(project_dir)
+            if _counts1202dj:
+                record_live_counts_1202dj(project_dir, _counts1202dj)
+                _LOG.info("#1202dj live seed row counts captured at backend_health: %s",
+                          dict(list(_counts1202dj.items())[:12]))
+        except Exception as _e1202dj:
+            # #1201: a silent `pass` here would leave the seed gate blind for the whole run
+            # with nothing saying so — which is the exact failure #1202dj exists to end.
+            from .message_format import warn_once_1201
+            warn_once_1201("live_row_counts_1039_at_backend_health",
+                           "#1202dj live seed row-count capture", _e1202dj)
+
         # 3. Register via the embedded AS → token. FIX #33: send a COMPLETE
         #    common registration payload. username-based auth is the dominant web
         #    convention (social apps, etc.), and Pydantic ignores extra fields

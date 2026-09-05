@@ -269,8 +269,50 @@ def list_snapshots(output_dir) -> List[Dict]:
         except Exception:
             pass
         rec["name"] = d.name
+        rec.update(_snapshot_health_1202di(d))
         out.append(rec)
     return out
+
+
+def _snapshot_health_1202di(d: Path) -> Dict:
+    """Was the run healthy at this snapshot? Read from the snapshot's own files.
+
+    The listing showed name/kind/files/MB — none of which answers the only question an
+    operator has while choosing a restore point. netflix-r43 could not boot its app for an
+    entire run (first a port clash, next day a full disk), so every snapshot it took was
+    inside a poisoned window at `total_judgments: 0`, and restoring any of them continues a
+    run that has never scored a screen. Nothing said so at selection time.
+
+    Nothing new is captured: #1202cs already put `design/visual_gate` (JSON only) into the
+    snapshot and `run_budget.json` was always there.
+
+    ``None`` means NOT MEASURED and is never coerced to 0 — a snapshot taken before the gate
+    directory existed has no verdict, which is a different fact from "judged nothing". That
+    conflation is exactly how #1039's dead seed audit read as clean for 2728 attempts.
+    """
+    health: Dict = {"judgments": None, "plateau": None, "usd": None, "ticks": None}
+    try:
+        gate = json.loads(
+            (d / "design" / "visual_gate" / "gate_state.json").read_text(encoding="utf-8"))
+        if isinstance(gate, dict):
+            if gate.get("total_judgments") is not None:
+                health["judgments"] = int(gate.get("total_judgments") or 0)
+            if gate.get("plateau_rounds") is not None:
+                health["plateau"] = int(gate.get("plateau_rounds") or 0)
+    except Exception:
+        pass
+    try:
+        budget = json.loads((d / "run_budget.json").read_text(encoding="utf-8"))
+        if isinstance(budget, dict):
+            _usd = (budget.get("llm") or {}).get("usd")
+            if _usd is not None:
+                health["usd"] = float(_usd)
+            _ticks = (budget.get("usage") or {}).get("ticks")
+            if _ticks is not None:
+                health["ticks"] = int(_ticks)
+    except Exception:
+        pass
+    return health
 
 
 def restore_snapshot(output_dir, name: str) -> Dict:

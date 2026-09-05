@@ -11896,11 +11896,16 @@ function _bcIsApi(url) {
   } catch (e) { return String(url).indexOf('/api/') === 0 || String(url).includes('/api/'); }
 }
 function _bcOn401(url) {
+  // #1202do: report whether a navigation was actually started, so the fetch wrapper knows
+  // when it must withhold the response. Returns false on /login|/register|/signup, where
+  // no redirect happens and the caller MUST still get its answer.
   if (String(url).includes('/api/')
       && !['/login', '/register', '/signup'].includes(window.location.pathname)) {
     localStorage.removeItem('access_token');
     window.location.assign('/login');
+    return true;
   }
+  return false;
 }
 const _origFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
@@ -11911,7 +11916,13 @@ window.fetch = async (input, init) => {
     if (!h.has('Authorization')) { h.set('Authorization', 'Bearer ' + tok); init = Object.assign({}, init, { headers: h }); }
   }
   const res = await _origFetch(input, init);
-  if (res.status === 401) _bcOn401(url);
+  // #1202do: `location.assign` SCHEDULES a navigation, it does not stop execution. Returning
+  // the 401 here let the page run on and do what pages do with a list response —
+  // `await res.json()` then `data.items.map(...)` — against `{"detail": ...}`. That
+  // TypeError crashed /titles and was one of the two blockers that stopped netflix-r44 from
+  // delivering, on a backend whose own probes were 17/17 green. Once the redirect is
+  // underway the caller has no use for a body: never settle, so no page code can run.
+  if (res.status === 401 && _bcOn401(url)) return new Promise(function () {});
   return res;
 };
 const _origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
@@ -12115,6 +12126,12 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         import json as _json
         pj = fe / "package.json"
         if pj.exists():
+            # #1202dk: keep the text we started from so the write below can compare, the way
+            # every other write in this function already does.
+            try:
+                _pj_before_1202dk = pj.read_text(encoding="utf-8")
+            except Exception:
+                _pj_before_1202dk = None
             try:
                 data = _json.loads(pj.read_text(encoding="utf-8"))
             except Exception:
@@ -12170,8 +12187,17 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 _scripts.setdefault("dev", "vite")
                 _scripts["build"] = "vite build"
                 _scripts.setdefault("preview", "vite preview")
-                _fw_write_1202cw(pj, _json.dumps(data, indent=2) + "\n", encoding="utf-8")
-                changed.append("package.json")
+                # #1202dk: this was the one unconditional write in the function, and it
+                # appended "package.json" to `changed` whether or not a byte moved — so
+                # `pinned` (bool(changed)) was always True and r42 logged the pin warning 72
+                # times for a file nobody had touched. An identical rewrite still moves
+                # mtime, which is precisely what #1114 caught being read as progress (#1023
+                # reported a still-failing P0 as "possibly resolved" on that signal).
+                # Same pins, same forced `build` script — reported only when true.
+                _pj_text_1202dk = _json.dumps(data, indent=2) + "\n"
+                if _pj_text_1202dk != _pj_before_1202dk:
+                    _fw_write_1202cw(pj, _pj_text_1202dk, encoding="utf-8")
+                    changed.append("package.json")
         return {"pinned": bool(changed), "changed": changed}
     except Exception as exc:
         return {"pinned": False, "error": f"{type(exc).__name__}: {exc}"}

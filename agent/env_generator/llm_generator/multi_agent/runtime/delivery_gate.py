@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 
 import logging
+import re
 
 _LOG_701 = logging.getLogger(__name__)
 
@@ -31,6 +32,41 @@ _LOG_701 = logging.getLogger(__name__)
 # class: not wrong code, but code that stopped working while nothing said so — and #751/#752 were
 # switched from REPORTING to BLOCKING this session on top of two of these very helpers.
 _CHECK_ERRORS_790: List[str] = []
+
+
+# #1202dn: the extractor reads past the end of the path and hands this gate JavaScript.
+# #494 fixed the `?query` form of exactly this after it hard-blocked r65's delivery with a
+# FALSE "unregistered endpoint" for a path that WAS registered. netflix-r44 hit it again
+# through a different separator: a call helper appended to the path, e.g.
+#
+#     GET /api/titles:qs(params)
+#     GET /api/continue-watching:qs({ profile_id: getProfileId() )}
+#
+# while `GET /api/titles` and `GET /api/continue-watching` were both registered. A false
+# blocker wedges a run (#566j), and this one sat in the same report as the real failures.
+#
+# NARROW ON PURPOSE. A well-formed `${x}` is a PARAMETER, not junk — `param_agnostic` already
+# normalises it to the same `:p` the declared `/api/posts/:id` becomes, and they match. An
+# earlier, wider cut at `$` broke exactly that and manufactured a new false positive
+# (test_contract_extract_stacks). So this removes only a trailing `:helper(...)` call.
+#
+# r44's fifth case, `GET /api/genres/${requireId(id, `, is a template literal TRUNCATED
+# mid-expression and is left alone: it is an extractor defect, and reconstructing a path the
+# scanner never finished reading would mean guessing — which is how a false positive becomes
+# a false negative that hides real drift.
+_CALL_HELPER_SUFFIX_1202DN = re.compile(r":[A-Za-z_$][\w$]*\s*\(")
+
+
+def _strip_source_fragment_1202dn(mp: str) -> str:
+    """Drop a call-helper fragment the scanner appended to a path. Otherwise unchanged."""
+    s = str(mp or "")
+    method, sep, path = s.partition(" ")
+    if not sep:
+        method, path = "", s
+    m = _CALL_HELPER_SUFFIX_1202DN.search(path)
+    if m:
+        path = path[:m.start()].rstrip("/") or path[:m.start()]
+    return (method + " " + path) if method else path
 
 
 def _swallowed_790(where: str, exc: BaseException, defaulting_to: str) -> None:
@@ -56,7 +92,6 @@ def check_errors_790() -> List[str]:
 def reset_check_errors_790() -> None:
     _CHECK_ERRORS_790.clear()
 
-import re
 from typing import Any, Dict, List, Optional
 
 
@@ -1932,6 +1967,21 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
                 or _p.startswith("/oauth") or _p.startswith("/api/oauth")
                 or _p.startswith("/.well-known")):
             continue
+        # #1202dp: the same unwinnable gate #251 already fixed once, one endpoint short.
+        # netflix-r44 ended without delivering, and this check was one of its two final
+        # blockers. The ONLY endpoint it flagged was the orchestrator's own deprecated probe,
+        # `GET /__noop_orchestrator_state_check__` (provider=orchestrator, response_key=
+        # 'state'), whose `metadata` is EMPTY — so the kind test above cannot exempt it — and
+        # whose path is not /auth|/oauth|/.well-known — so #251's path test cannot either.
+        # The backend agent audited business endpoints repeatedly and correctly reported them
+        # all canonical, because the culprit was ours. #251's rule, verbatim: "exemption must
+        # not depend on a metadata field the LANE has to remember ... NO lane could fix it
+        # (the handlers are ours)".
+        #
+        # `/__` is the framework's own naming convention for internal probes; a lane's
+        # business endpoint lives under /api/ and cannot exempt itself by adopting it.
+        if _p.startswith("/__") or str(v.get("provider") or "").strip().lower() == "orchestrator":
+            continue
         if md.get("custom") or md.get("custom_route"):
             continue  # custom_routes are hand-authored, not projected
         rk = md.get("response_key") or (v.get("schema") or {}).get("response_key")
@@ -2132,7 +2182,8 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
         path = call.split(" ", 1)[1] if " " in call else call
         if any(path == pre or path.startswith(pre + "/") for pre in _EXTERNAL):
             continue
-        if declared_path_keys and _pa_path(call) not in declared_path_keys:
+        if declared_path_keys and _pa_path(
+                _strip_source_fragment_1202dn(call)) not in declared_path_keys:
             unregistered_calls.append(call)
     if unregistered_calls:
         errors.append(
@@ -3009,6 +3060,20 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # catch it at the gate instead of at the user's screen.
     noncanonical_response_keys = noncanonical_business_response_keys(hubs)
     if noncanonical_response_keys:
+        # #1202dp: NAME THE INSTANCE. This check decides delivery and logged only its own
+        # name, so r44's backend agent audited the business surface three times, correctly
+        # found it canonical, and never learned which endpoint held the gate shut. The
+        # comment on `incomplete_required_tasks` twenty lines up diagnoses this exact shape
+        # (#973/#978/#981/#983/#1009) and the per-instance logging was added there only.
+        if logger:
+            try:
+                for _nc in noncanonical_response_keys[:8]:
+                    logger.warning(
+                        "#1202dp business_response_key_noncanonical: %s declares "
+                        "response_key=%r — %s",
+                        _nc.get("endpoint"), _nc.get("response_key"), _nc.get("reason"))
+            except Exception:
+                pass
         failed_checks.append("business_response_key_noncanonical")
 
     # DELIVERY-QUALITY (user 2026-06-24): what ships must be verified by a REAL,
