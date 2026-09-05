@@ -1847,6 +1847,57 @@ async def _screenshot_with_retry_1065(page, dest) -> None:
             raise _first
 
 
+# ---- #1202cu ----------------------------------------------------------------
+# ONE PHOTO CANNOT ANSWER TWO REFERENCES.
+#
+# Several reference frames routinely map to ONE route. #718 documented the group:
+#
+#     browse_home  browse_home_rows  card_hover_preview  account_menu   -> /browse
+#
+# They are states of a single page — a scrolled view, a hovered card, an opened menu —
+# and the capture only NAVIGATES. So the identical scroll-top photo is scored against
+# both the hero reference and the rows-only reference, and the judge, doing its job on
+# what it was given, writes mutually contradictory fixes: r41's browse_home_rows got
+# "Remove the hero banner from the /browse rows state" (0.42) while browse_home was
+# graded on that same hero being present (0.69).
+#
+# #509 already established the shape of the answer for OVERLAY states: drive the
+# interaction before the shot, best-effort, never regress. Scroll is the same problem
+# with a simpler driver. Screens are scrolled by their ORDER within a route: the first
+# is the base state (offset 0, byte-identical to today), the k-th is photographed k
+# viewports down. Bounded so a long route cannot scroll into an empty footer.
+#
+# Advisory screens are excluded — advisory is #128's authoritative overlay
+# classification and those go through #509's driver instead; scrolling under an overlay
+# would photograph neither state.
+_SCROLL_STATE_MAX_1202CU = 3
+
+
+def scroll_state_index_1202cu(screens: Any) -> Dict[str, int]:
+    """{screen name -> how many viewports down to photograph it}.
+
+    Zero for every screen that does not share its route, so an app whose screens each
+    have their own route is unaffected down to the byte.
+    """
+    seen: Dict[str, int] = {}
+    out: Dict[str, int] = {}
+    try:
+        for s in screens or []:
+            if not isinstance(s, dict):
+                continue
+            name = str(s.get("name") or "")
+            route = str(s.get("route") or "")
+            if not name or not route or s.get("advisory"):
+                continue
+            k = seen.get(route, 0)
+            seen[route] = k + 1
+            if k:
+                out[name] = min(k, _SCROLL_STATE_MAX_1202CU)
+    except Exception:
+        return {}
+    return out
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -1960,6 +2011,7 @@ async def capture_route_screenshots(
                 pass  # no profile gate / discovery failed → proceed as before
             _applied_scheme: Optional[str] = None   # FIX #141 emulation state
             _storage_dirty = False                  # theme keys we set last screen
+            _scroll_1202cu = scroll_state_index_1202cu(screens)
             for screen in screens:
                 if not screen.get("route"):
                     continue
@@ -2069,6 +2121,18 @@ async def capture_route_screenshots(
                                 await page.wait_for_timeout(300)  # let the overlay settle
                         except Exception:
                             pass  # keep the plain-route shot
+                    # #1202cu: a later state of an already-photographed route is shot
+                    # that many viewports down, so the rows reference is compared against
+                    # rows. Best-effort in the #509 manner — a failure leaves the
+                    # scroll-top shot, which is exactly today's behaviour.
+                    _sk1202cu = _scroll_1202cu.get(str(screen.get("name") or ""), 0)
+                    if _sk1202cu:
+                        try:
+                            await page.evaluate(
+                                "k => window.scrollTo(0, window.innerHeight * k)", _sk1202cu)
+                            await page.wait_for_timeout(600)  # lazy rows + scroll settle
+                        except Exception:
+                            pass
                     dest = out_dir / f"{screen['name']}.png"
                     await _screenshot_with_retry_1065(page, dest)
                     shots[screen["name"]] = str(dest)
