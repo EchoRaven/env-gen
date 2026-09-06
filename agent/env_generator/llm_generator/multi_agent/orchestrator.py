@@ -2320,9 +2320,37 @@ class Orchestrator:
                             kickoff_receipt = self._kickoff_fallback_or_reconcile(
                                 self._kickoff_handle, _ls2, "driver_wedged")
                     if kickoff_receipt.get("phase") == "timeout_fallback":
+                        # #1202ed: SAY WHAT ACTUALLY HAPPENED. This raise reported every
+                        # kickoff abort as a 1200s timeout, and this string is what lands
+                        # in .checkpoint's `last_error` — the only durable record a dead
+                        # run leaves behind.
+                        #
+                        # googlemaps-r15 read: "Kickoff timed out after 1200s ...
+                        # Missing=[] last_status='validation_failed'". Three things wrong.
+                        # The mechanism: it ESCALATED (the driver's own timeout log line
+                        # never appears in that run's log at all). The duration: 1200s
+                        # was the kickoff ceiling constant, printed where a measurement
+                        # belongs — the whole run lasted 854s, so the timeout it claims to
+                        # have hit could not have elapsed. The cause: the facilitator "ended
+                        # without writing" because every LLM call was returning 429.
+                        #
+                        # So a provider-account outage was written down as a kickoff
+                        # deadlock, and the operator's post-mortem starts by hunting a
+                        # stuck facilitator that was never stuck. Same laundering as #1023
+                        # (mtime read as "content changed") and #1192b (a constant printed
+                        # where a live count belonged).
+                        _why_1202ed = str(kickoff_receipt.get("abort_reason_1202ed") or "timeout")
+                        _el_1202ed = kickoff_receipt.get("abort_elapsed_1202ed")
+                        _took_1202ed = ("%.0fs" % float(_el_1202ed)
+                                        if isinstance(_el_1202ed, (int, float))
+                                        else "an unrecorded interval")
+                        if _why_1202ed == "timeout":
+                            _lead_1202ed = "Kickoff timed out after " + _took_1202ed
+                        else:
+                            _lead_1202ed = ("Kickoff abandoned after %s (%s, not a timeout)"
+                                            % (_took_1202ed, _why_1202ed))
                         raise RuntimeError(
-                            "Kickoff timed out after "
-                            f"{run_kickoff.KICKOFF_TIMEOUT_SEC:.0f}s without "
+                            f"{_lead_1202ed} without "
                             "a ready synthesis (incl. one FIX #95 retry). Missing="
                             f"{kickoff_receipt.get('missing')} "
                             f"last_status={kickoff_receipt.get('last_status')!r}. "

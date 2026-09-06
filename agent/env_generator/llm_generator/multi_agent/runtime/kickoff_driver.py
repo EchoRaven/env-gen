@@ -38,6 +38,23 @@ def _impl_dispatch_targets_1076(agents) -> list:
         return []
 
 
+def _provider_terminal_1202ec() -> str:
+    """The latched provider-abort reason, or "" -- never raises.
+
+    #1202ec: a broken import here must not be able to break kickoff, which is what this
+    check exists to protect. It warns rather than swallowing, per #1201.
+    """
+    try:
+        from utils.llm import terminal_llm_error
+        return str(terminal_llm_error() or "")
+    except Exception as _err_1202ec:
+        from .message_format import warn_once_1201
+        warn_once_1201("kickoff_driver._provider_terminal_1202ec",
+                       "kickoff cannot tell whether the provider has gone terminal",
+                       _err_1202ec)
+        return ""
+
+
 class KickoffDriver:
     """Drives the kickoff meeting to completion + finalize/author/dispatch.
     Stateless; reads the orchestrator's collaborators live via the back-ref."""
@@ -172,6 +189,43 @@ class KickoffDriver:
                 )
                 return self._orch._kickoff_fallback_or_reconcile(
                     kickoff_handle, last_synth, "timeout",
+                )
+
+            # #1202ec: STOP WAITING FOR A SYNTHESIS THE PROVIDER CANNOT PRODUCE.
+            #
+            # `terminal_llm_error()` exists, in its own words, so "a run loop should poll
+            # this and abort instead of spinning". The orchestrator's coordination loop
+            # does poll it (#326) -- but kickoff runs BEFORE that loop, so the one phase
+            # ahead of the poller was the one phase without a poller. This file had zero
+            # references to it.
+            #
+            # googlemaps-r15: the provider latched terminal at 03:32:12 and this loop kept
+            # polling until 03:38:41 -- 389s spent waiting on a meeting whose every
+            # participant was getting HTTP 429. It then aborted with `Missing=[]
+            # last_status='validation_failed'`, a diagnostic that names nothing, because
+            # nothing had failed except every LLM call. Bad timing costs more: an outage
+            # at second 10 burns the full KICKOFF_TIMEOUT_SEC of 1200s.
+            #
+            # Aborting early loses no work. This returns down the same path as the
+            # timeout, and that path's deterministic reconcile-and-finalize needs no LLM
+            # at all -- it synthesizes from whatever WAS decided. Same outcome, sooner.
+            #
+            # This inherits #1174's grace window for free: the reason only latches once
+            # quota failure has PERSISTED past it, so r16's 57-second blip -- which killed
+            # a run sitting at one failing gate check with $262 spent -- cannot trip it.
+            _term_1202ec = _provider_terminal_1202ec()
+            if _term_1202ec:
+                try:
+                    last_synth = run_kickoff.try_synthesize(self._orch.hubs, kickoff_handle)
+                except Exception:
+                    last_synth = {"status": "unknown"}
+                self._orch._logger.error(
+                    "Kickoff abandoned after %.0fs (poll %s): the LLM provider is "
+                    "terminally unavailable, so no synthesis can arrive. %s",
+                    elapsed, poll_count, _term_1202ec,
+                )
+                return self._orch._kickoff_fallback_or_reconcile(
+                    kickoff_handle, last_synth, "provider_terminal",
                 )
 
             # Round-8g: derive the meeting's current phase from
@@ -747,12 +801,30 @@ class KickoffDriver:
         receipt = self._orch._attempt_reconciled_finalize(kickoff_handle, reason)
         if receipt is not None:
             return receipt
-        return run_kickoff.synthesize_fallback(
+        fallback = run_kickoff.synthesize_fallback(
             hubs=self._orch.hubs,
             kickoff_handle=kickoff_handle,
             last_synthesis=last_synthesis,
             agent="orchestrator",
         )
+        # #1202ed: WHICH of the nine aborts produced this fallback, and how long it
+        # really took. Every call site here passes a distinct `reason` — timeout,
+        # escalate, max_rounds, driver_wedged, consensus_not_ready, initial_stall,
+        # no_revisers, unknown_action, provider_terminal — and all nine collapse into
+        # the single phase "timeout_fallback", which the orchestrator then reports as a
+        # timeout. Only one of the nine is one. Stamped here because this is the one
+        # place every abort passes through.
+        try:
+            fallback["abort_reason_1202ed"] = str(reason)
+            _started_1202ed = kickoff_handle.get("started_at")
+            if isinstance(_started_1202ed, (int, float)):
+                fallback["abort_elapsed_1202ed"] = time.time() - float(_started_1202ed)
+        except Exception as _stamp_err_1202ed:
+            from .message_format import warn_once_1201
+            warn_once_1201("kickoff_driver._kickoff_fallback_or_reconcile",
+                           "a kickoff abort cannot say which reason produced it",
+                           _stamp_err_1202ed)
+        return fallback
 
     async def _dispatch_implementation_phase(self) -> List[str]:
         """§5-entry / D4.3 (reframed): deterministically hand the implementation
