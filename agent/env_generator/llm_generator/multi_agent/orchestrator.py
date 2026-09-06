@@ -790,6 +790,23 @@ class Orchestrator:
         # thin shims delegating here (callers in run() stay unchanged).
         from .runtime.run_budget import RunBudget
         self._budget = RunBudget(self.output_dir, self._logger)
+        # #1202eq (source fix): capture "when a lane was last alive" BEFORE anything in
+        # this process can overwrite it. #1170's early run_budget write happens near the
+        # top of run(), long before the resume block, so reading `usage.updated_at` there
+        # returned ~0s and the downtime credit returned early every time — the credit ran,
+        # measured 33 seconds of "downtime", and did nothing. Read once, here, at
+        # construction, before the first write.
+        self._prev_alive_1202eq = None
+        try:
+            import json as _j1202eq0
+            _bp = Path(self.output_dir) / "run_budget.json"
+            if _bp.is_file():
+                _u = (_j1202eq0.loads(_bp.read_text(encoding="utf-8")).get("usage")
+                      or {}).get("updated_at")
+                if isinstance(_u, (int, float)):
+                    self._prev_alive_1202eq = float(_u)
+        except Exception:
+            self._prev_alive_1202eq = None
 
         self._design_input = design_input  # Design-Prep phase input dir (Task 5); None → off
         self._reference_images = list(reference_images or [])
@@ -4078,18 +4095,18 @@ class Orchestrator:
         did not have it. So this credits through that channel rather than opening a second
         one, and it is bounded by the same accounting.
 
-        The last-alive stamp is `run_budget.json`'s `usage.updated_at`, refreshed every 30s
-        by #1175's ticker, which is the closest thing the run keeps to "when a lane last
-        existed".
+        The last-alive stamp comes from the budget ledger's `usage.updated_at`, refreshed
+        every 30s by #1175's ticker, which is the closest thing a run keeps to "when a lane
+        last existed". It is captured in __init__ and read from there, NOT re-read here:
+        #1170 writes that ledger near the top of run(), long before the resume block, so a
+        fresh read at this point measured 33 seconds against a run idle for 28 minutes and
+        the credit silently did nothing.
         """
         try:
-            import json as _j1202eq
             import time as _t1202eq
-            _p = Path(self.output_dir) / "run_budget.json"
-            if not _p.is_file():
-                return
-            _last = ((_j1202eq.loads(_p.read_text(encoding="utf-8")).get("usage") or {})
-                     .get("updated_at"))
+            # the stamp captured at construction — NOT a fresh read. #1170's early write
+            # has already refreshed the file by the time this runs.
+            _last = getattr(self, "_prev_alive_1202eq", None)
             if not isinstance(_last, (int, float)):
                 return
             _gap = _t1202eq.time() - float(_last)
