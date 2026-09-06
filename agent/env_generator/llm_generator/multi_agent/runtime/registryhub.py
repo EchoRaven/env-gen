@@ -407,6 +407,15 @@ class RegistryHub:
         if p:
             if not p.startswith("/"):
                 p = "/" + p
+            # #1202dx: collapse an interior EMPTY SEGMENT. No URL path has one, and leaving
+            # it made two spellings of one route persist as two endpoints — netflix-r44 held
+            # `GET /api/titles//episodes` beside `GET /api/titles/episodes`. The framework
+            # already disagreed with itself about it: `param_agnostic` (what the delivery gate
+            # matches on) collapses it, `_norm_route_1202h` does not, so the registry and the
+            # gates counted different surfaces. Placed before the trailing-slash strip so
+            # `/api/titles//` reduces the same way.
+            import re as _re0
+            p = _re0.sub(r"/{2,}", "/", p)
             if len(p) > 1 and p.endswith("/"):
                 p = p.rstrip("/") or "/"
             import re as _re
