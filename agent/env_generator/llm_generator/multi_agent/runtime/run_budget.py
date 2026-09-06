@@ -19,6 +19,15 @@ from pathlib import Path
 from typing import Any, Dict
 
 
+# #1202eb: the whole of a terminal provider reason, with room for phrasings we have not
+# seen. Measured, and the measurement is thin on purpose to say so: the corpus holds
+# exactly ONE distinct terminal reason (OpenAI's `429 ... insufficient_quota`, 217 chars,
+# 257 occurrences across gm-r15 and the generated/ logs). That is one provider's one
+# sentence, not a distribution — so the cap is set at ~1.8x it rather than at a quantile
+# nobody could compute. Raise it if a second provider's billing text ever gets clipped.
+_REASON_CAP_1202EB = 400
+
+
 class RunBudget:
     """Owns run_budget.json. Constructed with the run's output_dir + a logger."""
 
@@ -99,8 +108,14 @@ class RunBudget:
             return dict(env_defaults)
 
     def write(self, caps: Dict[str, Any], started_at: float,
-              elapsed: float, ticks: int, status: str) -> None:
-        """Persist caps + usage so the live monitor can show budget progress."""
+              elapsed: float, ticks: int, status: str, reason: str = "") -> None:
+        """Persist caps + usage so the live monitor can show budget progress.
+
+        #1202eb: `reason` carries WHY a run reached a non-`finished` status. The status
+        word alone repeats the mistake #1202df/#1202ea fixed elsewhere — the framework
+        knows the instance and reports only the category. Empty for a clean run, so the
+        field appears exactly when there is something to read.
+        """
         try:
             payload = {
                 "caps": {"max_wall_sec": float(caps["max_wall_sec"]), "max_ticks": int(caps["max_ticks"]),
@@ -113,6 +128,8 @@ class RunBudget:
                     "updated_at": time.time(),
                 },
             }
+            if reason:
+                payload["usage"]["terminal_reason"] = str(reason)[:_REASON_CAP_1202EB]
             # #1163: carry the SPEND beside the wall-clock and tick caps. The framework
             # had a budget abort and no budget: what a run cost only existed afterwards,
             # by grepping `prompt_tokens=` out of a log. It rides here because this file

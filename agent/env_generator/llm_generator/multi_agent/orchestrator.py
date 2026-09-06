@@ -3103,6 +3103,7 @@ class Orchestrator:
             _t1175 = getattr(self, "_budget_ticker_1175", None)
             if _t1175 is not None:
                 _t1175.cancel()
+            _abort_1202eb = self._provider_abort_reason_1202eb()
             self._budget.write(
                 self._load_run_budget_caps({
                     "max_wall_sec": float(os.environ.get("ENVGEN_MAX_WALLCLOCK_SEC", "7200")),
@@ -3115,7 +3116,22 @@ class Orchestrator:
                 # r24's resume proved it: the abort message read "aborted after 11
                 # coordination ticks" while the ledger it wrote said ticks=0.
                 time.time() - start_time.timestamp(),
-                getattr(self, "_tick_count_1192", 0), "finished")
+                # #1202eb: HOW the run ended, not merely THAT it stopped.
+                #
+                # This argument was the literal "finished" for every outcome, four lines
+                # above a `GenerationResult(success=success, ...)` that had the answer in
+                # scope. googlemaps-r15 exhausted the provider account nine seconds in,
+                # made zero LLM calls, delivered nothing — and its ledger read
+                # `status: "finished"`, the same word a clean three-milestone run gets.
+                # The reason was in the log at [E] level and nowhere in the record, so the
+                # post-mortem starts by grepping 800 retry warnings.
+                #
+                # `terminal_llm_error()` is the latched provider abort (#1159/#1174) and
+                # already exists so "a run loop should poll this and abort instead of
+                # spinning"; the ledger is the other consumer that needed it.
+                getattr(self, "_tick_count_1192", 0),
+                "aborted_provider" if _abort_1202eb else ("finished" if success else "failed"),
+                _abort_1202eb)
         except Exception:
             pass
         return GenerationResult(
@@ -5099,6 +5115,23 @@ class Orchestrator:
     # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
         return self._budget.path()
+
+    def _provider_abort_reason_1202eb(self) -> str:
+        """The latched provider-abort reason, or "" if the provider never went terminal.
+
+        #1202eb: read through a method so the final ledger write stays one expression and
+        an import failure here can never be the reason a run record fails to write — the
+        same best-effort contract #1163 states for the spend block.
+        """
+        try:
+            from utils.llm import terminal_llm_error
+            return str(terminal_llm_error() or "")
+        except Exception as _err_1202eb:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201("orchestrator._provider_abort_reason_1202eb",
+                           "the run ledger cannot say whether the provider aborted the run",
+                           _err_1202eb)
+            return ""
 
     def _load_run_budget_caps(self, env_defaults: Dict[str, Any]) -> Dict[str, Any]:
         return self._budget.load_caps(env_defaults)
