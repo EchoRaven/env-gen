@@ -2477,14 +2477,25 @@ class RegistryHub:
                                                        "or reply that the coverage is out of scope"),
                                     },
                                     agent="registryhub",
-                                    caller="registryhub",
+                                    # #1202dz: NO `caller`. eventhub's authorship gate is
+                                    # "empty-caller fallthrough only" for source_hub=eventhub
+                                    # (PHASE_4_1C_PUBLISH_SENTINELS line 111), so passing one
+                                    # raises PermissionError. It did, for the whole of r45 —
+                                    # 22 #1202m warnings, 0 events — and the `except: pass`
+                                    # below hid it. This is the only caller in the repo, so
+                                    # there was no convention to copy.
                                     priority="high",
                                 )
                                 for _e in _tell:
                                     self._chain_reject_announced_1202dh.set(
                                         str(_e), True, agent="registryhub")
-                        except Exception:
-                            pass
+                        except Exception as _e1202dz:
+                            # #1202dz / #1201: a silent `pass` here hid a PermissionError for
+                            # an entire run — the mechanism was OFF and nothing said so.
+                            from .message_format import warn_once_1201
+                            warn_once_1201("chain_reject_announce_1202dh",
+                                           "#1202dh backend api_requirement announcement",
+                                           _e1202dz)
                 except Exception:
                     _escalate = ""
                 # #636 — LEAD WITH THE INSTRUCTION, NOT THE CONTRACT DUMP.

@@ -38,6 +38,14 @@ def _noteworthy_dropped_1202dg(dropped):
         parts = [seg for seg in str(p).replace("\\", "/").split("/") if seg]
         if any(seg in _scratch for seg in parts):
             continue
+        # #1202dy: the OTHER half of what `_should_stage_path` refuses without a word —
+        # "``__pycache__/*.pyc`` files cause 'Cannot merge binary files' conflicts ... These
+        # are build artifacts, never source — refuse them unconditionally." #1202dg mirrored
+        # only the scratch dirs, so netflix-r45 logged four lines calling a compiler artifact
+        # a "dotfile path". Nobody authored it and nobody can remove it: the next import
+        # regenerates it.
+        if "__pycache__" in parts or str(p).endswith((".pyc", ".pyo", ".pyd")):
+            continue
         out.append(p)
     return out
 
