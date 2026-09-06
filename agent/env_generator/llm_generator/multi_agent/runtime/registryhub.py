@@ -169,6 +169,42 @@ def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: A
         pass
 
 
+def _is_vacuous_schema_1202ej(s: Any) -> bool:
+    """True for a schema that is structurally present but says nothing.
+
+    #1202ej: `register_endpoint` kept a lane's schema when the caller passed none, via
+    `schema or (old or {}).get("schema")`. That guard is a FALSY check, and the shape the
+    kickoff contract re-declares endpoints with -- `{"request": {}, "response": {}}` -- is
+    a non-empty dict, so it is truthy and overwrote the lane's work.
+
+    Measured on a real resume: netflix r45 restored from its tick-12 snapshot and resumed.
+    Endpoints carrying a substantive schema went 23/31 -> 9/31; 14 were emptied, including
+    POST /auth/register, POST /auth/login and GET /api/titles. Every other field on those
+    records survived -- provider, metadata, breaking_change -- and `_updated_by` flipped
+    from "backend" to "orchestrator", which is the whole story: the orchestrator
+    re-declared the contract and the backend lane's filled-in shapes went with it.
+
+    This is #1202cw's problem one layer down. That guard stops the framework overwriting a
+    lane-owned FILE; nothing stopped it overwriting a lane-owned hub RECORD.
+    """
+    if s is None:
+        return True                 # genuinely not provided -- the default
+    # Any OTHER non-dict is not vacuous: `register_endpoint` refuses it, and that refusal
+    # is correct. Calling it "absent" here would silently accept `schema="junk"`.
+    if not isinstance(s, dict):
+        return False
+    if not s:
+        return True
+    # Narrow on purpose: ONLY the structural slots the contract skeleton is made of. An
+    # unknown key -- `{"filters": {}}` -- must stay in the record even when empty, because
+    # #735's job is to say that nothing reads it. Silencing that warning to fix this bug
+    # would trade one lost message for another.
+    if not set(s).issubset({"request", "response", "query"}):
+        return False
+    # a scalar like `response_key: "item"` is substantive; `{"request": {}}` is not
+    return not any(v for v in s.values())
+
+
 def _merge_query_alias_730(schema: Any) -> Any:
     """Fold ``schema.query`` into ``schema.request`` — see #730 at the call site.
 
@@ -536,7 +572,10 @@ class RegistryHub:
             # and it recovers a declaration whichever word is chosen. `request` wins on conflict
             # — it is what every consumer already reads, so a lane sending both is taken at the
             # word the framework acts on.
-            "schema": _merge_query_alias_730(schema or (old or {}).get("schema") or {}),
+            # #1202ej: a vacuous schema is "not provided", not "provided as empty".
+            "schema": _merge_query_alias_730(
+                (None if _is_vacuous_schema_1202ej(schema) else schema)
+                or (old or {}).get("schema") or {}),
             "metadata": _tag_parked_probe_1202dw(path, {
                 **((old or {}).get("metadata") or {}), **(metadata or {})}),
             "_updated_by": agent,
