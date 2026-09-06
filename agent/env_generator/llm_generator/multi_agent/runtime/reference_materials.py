@@ -961,6 +961,40 @@ async def compile_reference_materials(
                     timeout=_ref_compile_timeout_s_871(),
                 )
             else:
+                # #1202eo: SAY SO WHEN A RECOMPILE IS ABOUT TO REPLACE A DIFFERENT SPEC.
+                #
+                # #1202ca reuses only when the inputs are byte-for-byte the ones that
+                # produced the spec on disk — correct, and it did exactly that here. What
+                # it cannot know is that DIFFERENT inputs on a RESUME almost always mean
+                # the launch was wrong, not that the design changed.
+                #
+                # googlemaps-r16: three resumes were started without DESIGN, run_validation
+                # defaulted to design_inputs/netflix (#1202eo removes that default), and
+                # this branch quietly recompiled google_maps' contract from netflix's 20
+                # images — 13 screens/18 endpoints/20 entities/8 mcp tools became
+                # 17/17/9/0. Every gate afterwards judged a google_maps app against
+                # netflix's spec, and the failures read as real defects for hours.
+                try:
+                    _prior_1202eo = Path(output_dir) / "design" / "reference_spec.json"
+                    if _prior_1202eo.is_file():
+                        import json as _j1202eo
+                        _p1202eo = _j1202eo.loads(_prior_1202eo.read_text(encoding="utf-8"))
+                        logger.warning(
+                            "#1202eo RECOMPILING OVER AN EXISTING REFERENCE SPEC. The one on "
+                            "disk describes %d screen(s)/%d endpoint(s)/%d entities/%d mcp "
+                            "tool(s); this compile runs on %d image(s)/%d doc(s), which are "
+                            "NOT the inputs that produced it. On a resume that usually means "
+                            "the wrong DESIGN was passed — every gate after this measures "
+                            "against the NEW spec.",
+                            len(_p1202eo.get("screens") or []),
+                            len(_p1202eo.get("endpoints") or []),
+                            len(_p1202eo.get("entities") or []),
+                            len(_p1202eo.get("mcp_tools") or []),
+                            len(images or []), len(docs or []))
+                except Exception as _pe_1202eo:
+                    from .message_format import warn_once_1201
+                    warn_once_1201("reference_materials._recompile_notice_1202eo",
+                                   "the recompile-over-existing-spec notice", _pe_1202eo)
                 spec, _ = await _asyncio.wait_for(
                     _asyncio.gather(
                         compile_reference_spec(llm, images, docs, raw_req),
