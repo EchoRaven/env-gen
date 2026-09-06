@@ -101,7 +101,7 @@ def test_register_endpoint_normalises():
 @pytest.mark.parametrize("run,q,r", [
     ("netflix-web-r146", 0, 10), ("netflix-web-r147", 0, 10), ("netflix-web-r148", 3, 6)])
 def test_the_two_spellings_reproduce(run, q, r):
-    root = Path(__file__).resolve().parents[1] / "generated" / run / "shared" / "hubs"
+    root = Path(__file__).resolve().parents[2] / "generated" / run / "shared" / "hubs"
     if not root.is_dir():
         pytest.skip(f"{run} not on disk")
     d = json.loads((root / "registryhub_endpoints.json").read_text())

@@ -28,7 +28,7 @@ import re
 
 import pytest
 
-_G = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_G = pathlib.Path(__file__).resolve().parents[2] / "generated"
 pytestmark = pytest.mark.skipif(not _G.is_dir(), reason="corpus not present")
 
 

@@ -41,7 +41,7 @@ from env_generator.llm_generator.multi_agent import agent_spawn_service as svc
 from env_generator.llm_generator.multi_agent.team_runtime.manager import DynamicAgentManager
 
 
-_GENERATED = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_GENERATED = pathlib.Path(__file__).resolve().parents[2] / "generated"
 
 
 def _roster():

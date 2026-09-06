@@ -114,7 +114,7 @@ def test_degenerate_input_is_safe(pages, eps):
 @pytest.mark.parametrize("run,expected", [
     ("netflix-web-r146", 3), ("netflix-web-r147", 0), ("netflix-web-r148", 2)])
 def test_it_reproduces_the_measured_counts(run, expected):
-    root = Path(__file__).resolve().parents[1] / "generated" / run / "shared" / "hubs"
+    root = Path(__file__).resolve().parents[2] / "generated" / run / "shared" / "hubs"
     if not root.is_dir():
         pytest.skip(f"{run} not on disk")
     pg = json.loads((root / "registryhub_ui_pages.json").read_text())
@@ -125,7 +125,7 @@ def test_it_reproduces_the_measured_counts(run, expected):
 def test_r147_is_the_negative_control():
     """Same framework and prompt with zero crossings — so this is avoidable, not inherent, and
     a detector that fired on every run would be measuring something else."""
-    root = Path(__file__).resolve().parents[1] / "generated" / "netflix-web-r147"
+    root = Path(__file__).resolve().parents[2] / "generated" / "netflix-web-r147"
     if not root.is_dir():
         pytest.skip("r147 not on disk")
     h = root / "shared" / "hubs"

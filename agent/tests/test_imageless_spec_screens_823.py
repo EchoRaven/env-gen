@@ -33,7 +33,7 @@ from env_generator.llm_generator.multi_agent.runtime.delivery_gate import (
     _imageless_spec_screens_unreachable_823 as check)
 
 
-_GEN = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_GEN = pathlib.Path(__file__).resolve().parents[2] / "generated"
 
 
 def _run(name):

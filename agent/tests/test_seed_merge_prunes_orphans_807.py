@@ -40,7 +40,7 @@ import pytest
 from env_generator.llm_generator.multi_agent.runtime.backend_skeleton import render_seed_data
 
 
-_GENERATED = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_GENERATED = pathlib.Path(__file__).resolve().parents[2] / "generated"
 
 
 def _merge_fn():

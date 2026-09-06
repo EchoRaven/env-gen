@@ -100,7 +100,7 @@ def test_the_whole_input_space_is_sound(body, expect):
 
 def test_the_source_claim_in_the_comment_holds():
     """The comment cites two r151 files by name; if they are present they must say what it says."""
-    gen = pathlib.Path(__file__).resolve().parents[1] / "generated" / "netflix-web-r151"
+    gen = pathlib.Path(__file__).resolve().parents[2] / "generated" / "netflix-web-r151"
     hp = gen / "app/frontend/src/components/HoverPreviewCard.jsx"
     if not hp.is_file():
         pytest.skip("r151 not present")

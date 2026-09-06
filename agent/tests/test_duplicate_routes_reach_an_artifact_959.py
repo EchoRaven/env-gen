@@ -77,7 +77,7 @@ def test_the_writer_cannot_break_the_gate():
 def test_the_corpus_premise_holds():
     """★ If #780 starts filing tasks routinely this ticket's premise is wrong and the test should
     say so rather than rot."""
-    gen = pathlib.Path(__file__).resolve().parents[1] / "generated"
+    gen = pathlib.Path(__file__).resolve().parents[2] / "generated"
     files = list(gen.glob("*/shared/hubs/workhub_tasks.json"))
     if not files:
         pytest.skip("no runs on this box")

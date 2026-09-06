@@ -29,7 +29,7 @@ from env_generator.llm_generator.multi_agent.runtime.material_prep import (
     align_dataset_id_types, model_schema_from_models_py)
 
 
-_GENERATED = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_GENERATED = pathlib.Path(__file__).resolve().parents[2] / "generated"
 
 _TEXT_PK = {"titles": {"id": {"type": "text", "nullable": False, "pk": True},
                        "name": {"type": "text", "nullable": False, "pk": False},

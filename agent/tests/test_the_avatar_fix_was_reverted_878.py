@@ -34,7 +34,7 @@ import pytest
 from env_generator.llm_generator.multi_agent.runtime import frontend_scaffold as fs
 
 
-_GENERATED = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_GENERATED = pathlib.Path(__file__).resolve().parents[2] / "generated"
 
 
 def test_the_helper_is_gone():

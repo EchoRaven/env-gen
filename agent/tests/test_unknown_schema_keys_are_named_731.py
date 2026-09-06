@@ -109,7 +109,7 @@ def test_the_known_set_is_exactly_what_the_runs_use():
     """Not a guess: the six sub-keys that appear across r146/r147/r148."""
     seen = set()
     for run in ("netflix-web-r146", "netflix-web-r147", "netflix-web-r148"):
-        h = Path(__file__).resolve().parents[1] / "generated" / run / "shared" / "hubs"
+        h = Path(__file__).resolve().parents[2] / "generated" / run / "shared" / "hubs"
         if not h.is_dir():
             pytest.skip(f"{run} not on disk")
         d = json.loads((h / "registryhub_endpoints.json").read_text())
@@ -122,7 +122,7 @@ def test_the_known_set_is_exactly_what_the_runs_use():
 @pytest.mark.parametrize("run", ["netflix-web-r146", "netflix-web-r147", "netflix-web-r148"])
 def test_no_historical_run_would_warn(run):
     """A new signal that fires on old data is noise on arrival."""
-    h = Path(__file__).resolve().parents[1] / "generated" / run / "shared" / "hubs"
+    h = Path(__file__).resolve().parents[2] / "generated" / run / "shared" / "hubs"
     if not h.is_dir():
         pytest.skip(f"{run} not on disk")
     d = json.loads((h / "registryhub_endpoints.json").read_text())

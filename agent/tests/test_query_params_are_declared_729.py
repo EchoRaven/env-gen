@@ -93,7 +93,7 @@ def test_the_convergence_reading_is_recorded():
     ("netflix-web-r146", 3), ("netflix-web-r147", 1), ("netflix-web-r148", 0)])
 def test_the_declining_counts_reproduce(run, expected):
     import json
-    root = Path(__file__).resolve().parents[1] / "generated" / run / "shared" / "hubs"
+    root = Path(__file__).resolve().parents[2] / "generated" / run / "shared" / "hubs"
     if not root.is_dir():
         pytest.skip(f"{run} not on disk")
     d = json.loads((root / "registryhub_endpoints.json").read_text())
@@ -107,7 +107,7 @@ def test_the_declining_counts_reproduce(run, expected):
 def test_the_backend_still_implements_what_the_contract_omits():
     """If the code stopped filtering too, this would be a different problem."""
     import subprocess
-    root = Path(__file__).resolve().parents[1] / "generated" / "netflix-web-r148"
+    root = Path(__file__).resolve().parents[2] / "generated" / "netflix-web-r148"
     if not root.is_dir():
         pytest.skip("r148 not on disk")
     src = subprocess.run(["git", "-C", str(root), "show",

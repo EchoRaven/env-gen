@@ -75,7 +75,7 @@ def test_endpoints_are_untouched():
 # --- against the real artifact ------------------------------------------------------------------
 
 def _r150_slice():
-    p = (pathlib.Path(__file__).resolve().parents[1] / "generated" / "netflix-web-r150"
+    p = (pathlib.Path(__file__).resolve().parents[2] / "generated" / "netflix-web-r150"
          / "shared" / "hubs" / "milestones.json")
     if not p.exists():
         pytest.skip("r150 artifacts not present")

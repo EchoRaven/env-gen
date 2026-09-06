@@ -64,7 +64,7 @@ def test_the_dead_state_is_announced_once():
 def test_the_corpus_premise_holds():
     """★ If a visual_review page ever gets created, this ticket's premise is wrong and the test
     must say so rather than rot into a stale claim."""
-    gen = pathlib.Path(__file__).resolve().parents[1] / "generated"
+    gen = pathlib.Path(__file__).resolve().parents[2] / "generated"
     files = list(gen.glob("*/shared/hubs/registryhub_ui_pages.json"))
     if not files:
         pytest.skip("no runs on this box")

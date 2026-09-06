@@ -152,7 +152,7 @@ def test_the_repair_does_not_touch_ordinary_alters():
 def test_the_shipped_artifact_is_the_motivating_case():
     """If r173's DDL is ever regenerated clean, this file's story is historical — but the
     guards above should still hold, so only this test needs revisiting."""
-    p = (Path(__file__).resolve().parents[1] / "generated" / "netflix-web-r173"
+    p = (Path(__file__).resolve().parents[2] / "generated" / "netflix-web-r173"
          / "app" / "database" / "init" / "01_init.sql")
     if not p.is_file():
         pytest.skip("r173 artifact not present")

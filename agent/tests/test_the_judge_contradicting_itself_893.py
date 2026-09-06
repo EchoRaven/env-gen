@@ -103,12 +103,12 @@ def test_a_failure_in_the_check_cannot_break_the_verdict():
     assert "except Exception" in block
 
 
-@pytest.mark.skipif(not (pathlib.Path(__file__).resolve().parents[1] / "generated").is_dir(),
+@pytest.mark.skipif(not (pathlib.Path(__file__).resolve().parents[2] / "generated").is_dir(),
                     reason="corpus not present")
 def test_the_corpus_coverage_claim_still_holds():
     """★ The number in the comment, re-derived (#880's rule). If `code_state` coverage grows past
     a handful, this check becomes validatable and the note should say so."""
-    g = pathlib.Path(__file__).resolve().parents[1] / "generated"
+    g = pathlib.Path(__file__).resolve().parents[2] / "generated"
     total = stamped = 0
     for r in sorted(g.glob("netflix-web-r*")):
         vg = r / "design/visual_gate"

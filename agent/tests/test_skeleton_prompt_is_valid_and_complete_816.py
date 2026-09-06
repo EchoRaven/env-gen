@@ -36,7 +36,7 @@ from env_generator.llm_generator.multi_agent.runtime.design_prep import (
     _skeleton_for_prompt_816)
 
 
-_GENERATED = pathlib.Path(__file__).resolve().parents[1] / "generated"
+_GENERATED = pathlib.Path(__file__).resolve().parents[2] / "generated"
 
 
 def _r151():

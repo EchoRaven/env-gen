@@ -70,7 +70,7 @@ def test_it_matches_what_compose_up_uses():
 
 def test_the_corpus_layout_is_what_this_claims():
     """Non-vacuity against the real tree, so the premise cannot rot silently."""
-    gen = pathlib.Path(__file__).resolve().parents[1] / "generated"
+    gen = pathlib.Path(__file__).resolve().parents[2] / "generated"
     runs = [d for d in gen.glob("netflix-web-r1*") if (d / "docker").is_dir()][:6]
     if not runs:
         pytest.skip("no generated runs on this box")
