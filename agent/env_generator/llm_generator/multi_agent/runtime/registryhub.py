@@ -195,6 +195,38 @@ def _merge_query_alias_730(schema: Any) -> Any:
         return schema
 
 
+
+def _tag_parked_probe_1202dw(path, metadata):
+    """Tag a parked `__`-probe registration as `infra` where it ENTERS the registry.
+
+    An agent parks these; `validation_runner` recorded it in netflix-local-r6 ("an agent
+    parked `GET /__noop__` at status=deprecated") and noted that both delivered artifacts
+    still carried the registration, so it is structural rather than a one-run accident.
+
+    They can never reach `implemented` — nobody should implement them — so every gate that
+    looks for "registered but not implemented" flags them forever. netflix-r44 carried two,
+    the ONLY two of its 37 endpoints that were not implemented, and they cost it: the
+    response_key gate blocked delivery on one (#1202ds), the seed audit flagged the matching
+    probe table (#1202du), and the orchestrator agent authored a P0 telling backend to write
+    "real DB-backed state/check logic" for `GET /__noop_orchestrator_state_check__`, which the
+    lane then went grepping `app/backend` for, across runs.
+
+    Every one of those gates ALREADY exempts `metadata.kind` in FIXED_ENDPOINT_KINDS. The
+    exemption could not fire because the parked registration carried `metadata: {}`. Setting
+    the kind here makes the exemption they already implement start working, and any gate added
+    later inherits it. #1202ds's path check stays as defence in depth.
+
+    A caller that states its own kind keeps it, and the convention is a LEADING `__` segment:
+    `/api/__x` is app surface and is left alone.
+    """
+    md = dict(metadata or {})
+    if not str(md.get("kind") or "").strip():
+        seg = str(path or "").lstrip("/").split("/", 1)[0]
+        if seg.startswith("__"):
+            md["kind"] = "infra"
+    return md
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -496,7 +528,8 @@ class RegistryHub:
             # — it is what every consumer already reads, so a lane sending both is taken at the
             # word the framework acts on.
             "schema": _merge_query_alias_730(schema or (old or {}).get("schema") or {}),
-            "metadata": {**((old or {}).get("metadata") or {}), **(metadata or {})},
+            "metadata": _tag_parked_probe_1202dw(path, {
+                **((old or {}).get("metadata") or {}), **(metadata or {})}),
             "_updated_by": agent,
             "_updated_at": now,
         }

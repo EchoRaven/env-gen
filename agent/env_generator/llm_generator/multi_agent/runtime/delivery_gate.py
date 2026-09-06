@@ -1971,6 +1971,12 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
         # #1202dp — the final-gate grace in orchestrator.py — and its two handoff
         # documents already reference that number, so this one yielded).
         # The same unwinnable gate #251 already fixed once, one endpoint short.
+        # #1202dw CORRECTION: an AGENT parks these registrations, the framework does not
+        # emit them — validation_runner records it ("an agent parked `GET /__noop__` at
+        # status=deprecated", and both delivered artifacts still carry it). Saying
+        # "framework-registered" would send the next reader looking for emitting code that
+        # does not exist. #1202dw now tags them `kind=infra` at registration, so the
+        # kind test above fires on its own and this path check is defence in depth.
         # netflix-r44 ended without delivering, and this check was one of its two final
         # blockers. The ONLY endpoint it flagged was the orchestrator's own deprecated probe,
         # `GET /__noop_orchestrator_state_check__` (provider=orchestrator, response_key=

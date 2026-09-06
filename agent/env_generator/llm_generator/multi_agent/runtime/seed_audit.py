@@ -538,7 +538,8 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     flagged: List[dict] = []
     _examined_956 = 0
     for name, table in tables.items():
-        # #1202du: the framework registers its own probe tables (`__noop_orchestrator_probe__`,
+        # #1202du: parked probe tables (#1202dw CORRECTION: an AGENT parks them, the
+        # framework does not emit them — see validation_runner's netflix-local-r6 note) (`__noop_orchestrator_probe__`,
         # `__noop_orchestrator_state_check__`). r44's registry holds both, and the audit flagged
         # the second `missing_seed` — sending the backend lane to grep `app/backend` for
         # something the FRAMEWORK registered and nowhere in its scope. #251's rule, a third time
