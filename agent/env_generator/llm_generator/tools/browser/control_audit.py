@@ -92,9 +92,20 @@ class BrowserExerciseControlsTool(BaseTool):
             evals.append(v)
         report = aggregate_control_report(path_from_url(url) or url, path_from_url(url), evals)
         # Surface the raw per-control records too so the agent can judge sound-but-ambiguous ones.
+        #
+        # #1202ei: `console_errors` belongs in that list. `evaluate_control` can classify a
+        # control's effect as "console_error" -- the agent is told clicking it broke
+        # something and not WHAT, though `exercise_controls` captured the message and
+        # carries it on the same record this projection is built from. The text was
+        # dropped HERE, at the boundary, so it reached nothing: inside control_exercise it
+        # is read once, as a boolean, to pick that very effect label.
+        #
+        # Reporting the category and withholding the instance is the shape of #973, #978,
+        # #1202df, #1202ea and #1202ee. Bounded like every other list in this report.
         report["records"] = [
             {"label": r.get("label"), "effect": ev["effect"], "navigated_to": r.get("navigated_to"),
              "network": r.get("network"), "off_contract": r.get("off_contract"),
-             "dom_changed": r.get("dom_changed")}
+             "dom_changed": r.get("dom_changed"),
+             "console_errors": r.get("console_errors") or []}
             for r, ev in zip(records, evals)]
         return ToolResult.ok(report)
