@@ -2494,6 +2494,16 @@ class Orchestrator:
                         # whichever writer touched it last.
                         self._loop_start_1196 = loop_start
                         self._write_run_budget(caps, loop_start, elapsed, tick_count, "running")
+                        # #1202dv: land the milestone-scoped stuck/grace budgets EVERY tick.
+                        # They were saved only inside the snapshot block — up to ~15 minutes
+                        # apart, and skipped entirely when the snapshot raised, since the save
+                        # sat after it in the same `try`. A resume then refilled every bounded
+                        # breaker. The write is change-guarded, so a quiet tick costs nothing.
+                        try:
+                            from .runtime.milestone_resume import save_gate_counters_1202ce
+                            save_gate_counters_1202ce(self, _mkey)
+                        except Exception:
+                            pass
                         if not caps.get("unlimited"):  # admins run with no budget ceiling
                             if elapsed > caps["max_wall_sec"]:
                                 budget_exceeded = f"wall-clock {elapsed:.0f}s exceeded cap {caps['max_wall_sec']:.0f}s"

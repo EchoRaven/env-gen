@@ -110,6 +110,42 @@ _GATE_FIELDS_1202CE = (
 )
 
 
+# #1202dv: the seventeen the milestone-boundary reset block ALSO clears, which #1202ce's list
+# does not reach. Every one is a bounded budget or the signature a breaker compares against:
+# `attempt N/6`, the stuck-loop breakers, #230's per-milestone grace, the abort grace. A
+# resume mid-milestone refilled all of them, so the breaker that exists to end a stall
+# started over instead. The block resets them per MILESTONE because "a new milestone's
+# failures are genuinely new work, not a continuation of the prior stall" — re-entering the
+# SAME milestone is the opposite case, and is what this restores.
+_FWGATE_FIELDS_1202DV = (
+    "_project_delivered",
+    "_framework_validation_attempts", "_fwval_last_attempt_ts", "_fwval_healed_sig",
+    "_fwval_failure_set", "_fwval_stuck_count", "_fwval_stuck_blocker",
+    "_fwdeliver_stuck_count", "_fwdeliver_stuck_key", "_fwdeliver_first_decline_ts",
+    "_fwdeliver_grace_count", "_fwdeliver_prev_failed", "_fwdeliver_last_shrink_ts",
+    "_fwval_abort_grace_used", "_fwval_abort_deliver_reason", "_fwval_abort_progress_sig",
+    "_silent_lane_nudges",
+)
+
+# Type-aware, because `json.dumps(..., default=str)` turns a set into the STRING "{'a', 'b'}".
+# It round-trips without error and then breaks every `==` / `in` the breakers do against it —
+# a silent wrong answer, which is worse than a failed restore.
+_SET_FIELDS_1202DV = {"_fwdeliver_prev_failed": set, "_fwval_failure_set": frozenset}
+
+
+def _encode_1202dv(name, value):
+    if name in _SET_FIELDS_1202DV and isinstance(value, (set, frozenset)):
+        return sorted(str(v) for v in value)
+    return value
+
+
+def _decode_1202dv(name, value):
+    ctor = _SET_FIELDS_1202DV.get(name)
+    if ctor is not None and isinstance(value, list):
+        return ctor(value)
+    return value
+
+
 def _gate_state_path_1202ce(output_dir):
     from pathlib import Path as _P
     return _P(output_dir) / "design" / _GATE_STATE_1202CE
@@ -125,9 +161,20 @@ def save_gate_counters_1202ce(orch, milestone_key) -> None:
         blob = {"milestone": milestone_key}
         for f in _GATE_FIELDS_1202CE:
             blob[f] = getattr(orch, f, None)
+        for f in _FWGATE_FIELDS_1202DV:      # #1202dv
+            blob[f] = _encode_1202dv(f, getattr(orch, f, None))
         p.parent.mkdir(parents=True, exist_ok=True)
+        _text = json.dumps(blob, indent=2, default=str)
+        # #1202dv: this is now called every tick rather than only on the snapshot cadence, so
+        # guard the write. An identical rewrite is the #1202dk/#1114 hazard — it burns I/O and
+        # moves mtime, which this repo has already had read as "the content changed".
+        try:
+            if p.is_file() and p.read_text(encoding="utf-8") == _text:
+                return
+        except Exception:
+            pass
         tmp = p.with_suffix(p.suffix + f".{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(blob, indent=2, default=str), encoding="utf-8")
+        tmp.write_text(_text, encoding="utf-8")
         os.replace(tmp, p)          # atomic, like JsonStore._save_raw
     except Exception:
         try:
@@ -154,6 +201,9 @@ def restore_gate_counters_1202ce(orch, milestone_key) -> bool:
         for f in _GATE_FIELDS_1202CE:
             if f in blob:
                 setattr(orch, f, blob[f])
+        for f in _FWGATE_FIELDS_1202DV:      # #1202dv
+            if f in blob:
+                setattr(orch, f, _decode_1202dv(f, blob[f]))
         return True
     except Exception:
         return False
