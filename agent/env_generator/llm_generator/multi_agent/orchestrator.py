@@ -1975,6 +1975,8 @@ class Orchestrator:
                     if not _restored_1202ce:
                         self._pages_gate_deferred_since = None
                         self._pages_gate_attempts = 0
+                    else:
+                        self._credit_downtime_1202eq()
                     # Per-milestone TEST-USER SQUAD gate state (§3.5). Unlike the visual
                     # gate, this runs EVERY milestone (the verify->fix loop the user's flow
                     # diagram puts inside each milestone), bounded by squad_release_decision.
@@ -4045,6 +4047,56 @@ class Orchestrator:
             return max(0.0, min(live, room))
         except Exception:
             return 0.0
+
+    def _credit_downtime_1202eq(self) -> None:
+        """Give back the wall clock that passed while this run was NOT RUNNING.
+
+        #1202eq: the no-convergence fail-fast calls its budget "lane time":
+
+            (now - self._fwdeliver_first_decline_ts - live_credit) > FWVAL_NO_DELIVER_ABORT_S
+
+        but `_fwdeliver_first_decline_ts` is a wall-clock stamp, it is PERSISTED, and
+        nothing subtracts the hours a run spends stopped. So the clock keeps running while
+        no lane exists to spend it.
+
+        Measured on googlemaps-r16: its first gate decline was stamped 09:45. Resumed at
+        17:03 — after roughly thirty minutes of actual work spread over the day — it
+        aborted immediately with "delivery never SUCCEEDED in 437min of lane time". The
+        default ceiling is 5400s, so ANY run picked up more than ninety minutes later is
+        dead on arrival, however little of that time it was alive. That is the direct
+        opposite of resuming from a good checkpoint to save money.
+
+        #1133 already exists for precisely this shape of correction — "give back the time
+        the FRAMEWORK spent deferring delivery" — and downtime is the same claim: the lanes
+        did not have it. So this credits through that channel rather than opening a second
+        one, and it is bounded by the same accounting.
+
+        The last-alive stamp is `run_budget.json`'s `usage.updated_at`, refreshed every 30s
+        by #1175's ticker, which is the closest thing the run keeps to "when a lane last
+        existed".
+        """
+        try:
+            import json as _j1202eq
+            import time as _t1202eq
+            _p = Path(self.output_dir) / "run_budget.json"
+            if not _p.is_file():
+                return
+            _last = ((_j1202eq.loads(_p.read_text(encoding="utf-8")).get("usage") or {})
+                     .get("updated_at"))
+            if not isinstance(_last, (int, float)):
+                return
+            _gap = _t1202eq.time() - float(_last)
+            if _gap <= 60:
+                return                      # a fast relaunch is not downtime
+            self._credit_framework_deferral_1133(_gap, "resume downtime (#1202eq)")
+            self._logger.warning(
+                "#1202eq credited %.0fs of downtime back to the delivery clock — the run "
+                "was stopped for that long and no lane could spend it. Without this a run "
+                "resumed the next day aborts on 'lane time' it never had.", _gap)
+        except Exception as _dt_1202eq:
+            self._logger.error(
+                "#1202eq could not credit resume downtime (%s) — the no-convergence "
+                "fail-fast may abort this resume on wall clock it did not use.", _dt_1202eq)
 
     def _credit_framework_deferral_1133(self, deferred_s, source: str) -> None:
         """#1133: give back the time the FRAMEWORK spent deferring delivery.

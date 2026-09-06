@@ -118,12 +118,19 @@ class ItIsActuallyWiredIn(unittest.TestCase):
     def test_every_deferral_release_site_credits(self):
         src = (ROOT / "env_generator" / "llm_generator" / "multi_agent"
                / "orchestrator.py").read_text(encoding="utf-8")
-        self.assertEqual(src.count("_credit_framework_deferral_1133"), 5,
-                         "expected 1 definition + 4 release sites (#1133b added the squad)")
+        self.assertEqual(src.count("_credit_framework_deferral_1133"), 6,
+                         "expected 1 definition + 5 credit sites (#1133b added the squad; "
+                         "#1202eq added resume downtime)")
         for label in ("page-build", "visual (fast-release)", "visual (escape)",
                       "test-user squad"):
             self.assertIn(f'_credit_framework_deferral_1133(_now - ', src)
             self.assertIn(f'"{label}")', src)
+        # #1202eq: downtime is the fifth claim on this clock, and the only one that is not a
+        # deferral RELEASE — the run was stopped, so no lane could spend the time either.
+        # It credits through this channel rather than opening a second accounting path.
+        # r16 measured the cost of not doing it: a first decline stamped at 09:45 and a
+        # resume at 17:03 aborted at once on "437min of lane time" that no lane ever had.
+        self.assertIn("resume downtime (#1202eq)", src)
 
     def test_the_abort_no_longer_claims_the_gate_never_went_green(self):
         src = (ROOT / "env_generator" / "llm_generator" / "multi_agent"
