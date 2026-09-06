@@ -157,6 +157,9 @@ def _gate_state_path_1202ce(output_dir):
     return _P(output_dir) / "design" / _GATE_STATE_1202CE
 
 
+_MISSING_1202EL = object()   # #1202el: "attribute absent", distinct from a stored None
+
+
 def save_gate_counters_1202ce(orch, milestone_key) -> None:
     """Land the page-build and squad deferral counters. Best-effort: failing costs a resume
     the progress it would otherwise have inherited, never the run."""
@@ -165,10 +168,33 @@ def save_gate_counters_1202ce(orch, milestone_key) -> None:
     try:
         p = _gate_state_path_1202ce(orch.output_dir)
         blob = {"milestone": milestone_key}
+        # #1202el: DO NOT PERSIST AN ATTRIBUTE THAT WAS NEVER SET.
+        #
+        # `getattr(orch, f, None)` cannot tell "the run set this to None" from "the run
+        # never touched it", and stored None for both. Restore then wrote that None back
+        # over the value a fresh milestone had just initialised — so a counter that is an
+        # int everywhere in the code came back as None, and the next comparison raised.
+        #
+        # Caught live on googlemaps-r16: `_fwdeliver_stuck_count` persisted as null, and
+        # after the resume `framework delivery raised (non-fatal): '>=' not supported
+        # between instances of 'NoneType' and 'int'` fired four times — from
+        # `self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER`. Zero occurrences in the
+        # same run BEFORE the resume, and zero in r44/r45/r96, which is the signature of a
+        # resume-only defect.
+        #
+        # A sentinel, not a None-check: `_pages_gate_deferred_since` and
+        # `_tu_squad_deferred_since` are LEGITIMATELY None (it means "not deferred"), and
+        # skipping those on restore would lose real state.
         for f in _GATE_FIELDS_1202CE:
-            blob[f] = getattr(orch, f, None)
+            _v = getattr(orch, f, _MISSING_1202EL)
+            if _v is _MISSING_1202EL:
+                continue
+            blob[f] = _v
         for f in _FWGATE_FIELDS_1202DV:      # #1202dv
-            blob[f] = _encode_1202dv(f, getattr(orch, f, None))
+            _v = getattr(orch, f, _MISSING_1202EL)
+            if _v is _MISSING_1202EL:
+                continue
+            blob[f] = _encode_1202dv(f, _v)
         p.parent.mkdir(parents=True, exist_ok=True)
         _text = json.dumps(blob, indent=2, default=str)
         # #1202dv: this is now called every tick rather than only on the snapshot cadence, so

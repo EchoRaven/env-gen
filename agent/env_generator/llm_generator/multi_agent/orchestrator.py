@@ -4980,7 +4980,15 @@ class Orchestrator:
                 release_tag,
             )
         except Exception as exc:  # never break the coordination loop
-            self._logger.error("framework delivery raised (non-fatal): %s", exc)
+            # #1202el: WITH the traceback. This handler wraps ~900 lines, so the message
+            # alone ("'>=' not supported between instances of 'NoneType' and 'int'") names
+            # a type error and no line. googlemaps-r16 raised it four times after a resume
+            # and I could not pin the site from the log -- the same category-without-the-
+            # instance shape as #1202ea/#1202ee, in the one handler whose comment says it
+            # exists so a failure here never stops the run. Non-fatal must not mean
+            # unfindable.
+            self._logger.error("framework delivery raised (non-fatal): %s", exc,
+                               exc_info=True)
 
     def _write_preview_config(self, release_tag: str) -> None:
         """Write the Env Forge UI's preview pointer at ``<output_dir>/config.yaml``.
