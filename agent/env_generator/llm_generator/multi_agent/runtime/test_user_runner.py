@@ -93,6 +93,56 @@ _LOGIN_AFFORDANCE_JS = """() => {
 }"""
 
 
+
+def _console_entry_1202ea(msg) -> str:
+    """A console error WITH the location Playwright already handed us.
+
+    tiktok-web-r96 returned twelve blank pages and one error — "TypeError: (void 0) is not a
+    function" — with no file and no line, so an app-wide render crash was undiagnosable. The
+    walk's own handler kept only `m.text` while `browser/_manager.py::_on_console` records
+    `msg.location` beside it. Same shape as #973/#978/#1202df: hold the detail that localises
+    the fault, then report the failure without it.
+    """
+    text = str(getattr(msg, "text", "") or "")
+    loc = getattr(msg, "location", None) or {}
+    try:
+        url = str(loc.get("url") or "").strip()
+        if not url:
+            return text
+        line = loc.get("lineNumber")
+        col = loc.get("columnNumber")
+        where = url.rsplit("/", 1)[-1] or url
+        if line is not None:
+            where += ":%s" % line
+            if col is not None:
+                where += ":%s" % col
+        return "%s (%s)" % (text, where)
+    except Exception:
+        return text
+
+
+# Bounded PER ENTRY, not across the joined list: `"; ".join(errors)[:120]` showed the first
+# error and half of the second, and five are collected.
+#
+# #1202ea: measured over the 135 console.error lines in this repo's 33 run logs —
+# p50 330, p75 397, p90 450, p99 630, max 710 characters. The old 120 cut the MEDIAN error
+# in half before the join even mattered. 480 keeps p90 whole (the tail past it is 10% of
+# errors, and what is lost there is the end of a stack-ish string, not the type or the
+# location this ticket exists to preserve). NOT tuned by feel: raising it to p99 would
+# quadruple a five-error flag for the last 9% of cases.
+_CONSOLE_ENTRY_CAP_1202EA = 480
+# Not a new constant — mirrors the collection size upstream (`rec["console_errors"] =
+# list(cerr)[:5]`), so the flag can render everything that was actually kept.
+_CONSOLE_ENTRIES_CAP_1202EA = 5
+
+
+def _console_flag_1202ea(errors) -> str:
+    """The `console errors: ...` flag, with every collected entry legible."""
+    items = [str(e)[:_CONSOLE_ENTRY_CAP_1202EA]
+             for e in (errors or [])[:_CONSOLE_ENTRIES_CAP_1202EA] if str(e).strip()]
+    return ("console errors: " + "; ".join(items)) if items else ""
+
+
 def _landed_in_the_app_1126(path: str, entry_path: str, login_affordance: bool) -> bool:
     """#1126: did the login take the user INTO the app, or merely off the login page?
 
@@ -553,7 +603,9 @@ async def run_browser_test_user(
                 ctx = await browser.new_context(viewport=_VIEWPORT)
                 page = await ctx.new_page()
                 cerr: List[str] = []
-                page.on("console", lambda m: cerr.append(m.text) if m.type == "error" else None)
+                page.on("console",
+                        lambda m: cerr.append(_console_entry_1202ea(m))
+                        if m.type == "error" else None)  # #1202ea: keep the location
                 report["ran"] = True
 
                 # READINESS GATE (#27): don't test a frontend that's mid container-restart —
@@ -1065,7 +1117,9 @@ def format_feedback(report: Mapping[str, Any]) -> str:
         if p.get("redirected_to_login"):
             flags.append("REDIRECTED TO LOGIN (session not restored — protected page shows the auth form)")
         if p.get("console_errors"):
-            flags.append("console errors: " + "; ".join(p["console_errors"])[:120])
+            _cf1202ea = _console_flag_1202ea(p["console_errors"])
+            if _cf1202ea:
+                flags.append(_cf1202ea)
         if flags:
             lines.append(f"  [{p['route']}] " + " · ".join(flags))
         vis = p.get("visual")
