@@ -280,7 +280,25 @@ def rank_tool_names(
     - keep a small top-k visible to the LLM
     """
     preferred_categories = set(preferred_categories or set())
-    always_include = [name for name in (always_include or []) if name in set(candidate_names)]
+    # #1202ep: ALWAYS-INCLUDE MEANS ALWAYS. Filtering it by `candidate_names` denies the
+    # guarantee exactly when it is needed — when the candidate pool has already been
+    # narrowed and the tool is missing from it.
+    #
+    # That is the root cause of the resume blocker. The kickoff decision tools
+    # (`workhub_add_meeting_decision`, `kickoff_declare_predicate`) live in ONE stage
+    # allowlist, `kickoff:action`. The lookup is keyed `f"{phase}:{stage_name}"`, so a lane
+    # only gets them while the run's phase IS kickoff. A RESUME re-enters at
+    # `phase=implement` and re-runs kickoff anyway, so the pool comes from
+    # `implement:action`, the tools are not candidates, this line dropped them from
+    # always_include, and the lane answered the kickoff request with "the required kickoff
+    # decision/declaration tool is not available in this step" — its own words, in the
+    # meeting doc. Kickoff then stalled: 243s, 309s and 301s on the three resumes measured,
+    # each followed by tick=0 and a delivery-gate abort.
+    #
+    # The filter's real job is to refuse a name no tool answers to. That is what
+    # `tool_instances` says; `candidate_names` is a ranking pool, not an existence check.
+    _pool_1202ep = set(tool_instances or {}) or set(candidate_names)
+    always_include = [name for name in (always_include or []) if name in _pool_1202ep]
     query_tokens = _tokenize(query_text)
 
     scored: List[Tuple[float, str]] = []
