@@ -243,6 +243,10 @@ class RegistryHub:
         # only accumulated while one RegistryHub instance happened to handle both rejects.
         # Measured over 249 run logs: 4928 chain rejections, 4 escalations (0.08%).
         self._chain_rejects = JsonStore(self.hub_dir / "registryhub_chain_reject_counts.json")
+        # #1202dh: which endpoints have already been ANNOUNCED to the backend. Persisted for
+        # #664's reason — an in-memory marker resets and "once" becomes "once per instance".
+        self._chain_reject_announced_1202dh = JsonStore(
+            self.hub_dir / "registryhub_chain_reject_announced_1202dh.json")
         self._consumers = JsonStore(self.hub_dir / "registryhub_consumers.json")
         self._api_reviews = JsonStore(self.hub_dir / "registryhub_reviews.json")
         self._breaking_changes = JsonStore(self.hub_dir / "registryhub_breaking_changes.json")
@@ -2409,7 +2413,17 @@ class RegistryHub:
                         # Everything #664/#71 fixed stays: the rejection stands, the chain
                         # is unchanged, no task is filed, the verifier's text is untouched.
                         try:
-                            _tell = [_e for _e in _repeat if int(_counts.get(_e) or 0) == 2]
+                            # #1202dh: key on "has this been announced", not on `count == 2`.
+                            # #664 PERSISTS the counter across processes, so netflix-r44 carried
+                            # `PUT /api/profiles/{}` in at 17-19 from its first process and the
+                            # equality could never hold again — r44-resume2 logged #1202m twice
+                            # and published ZERO events. That matters because a resume WIPES
+                            # agent context (LLM `messages` restarts at 5), so the backend lane
+                            # has no memory of being told and, under the old key, no way to be
+                            # told. Still exactly once per endpoint, ever.
+                            _seen1202dh = dict(self._chain_reject_announced_1202dh.value() or {})
+                            _tell = [_e for _e in _repeat
+                                     if int(_counts.get(_e) or 0) >= 2 and not _seen1202dh.get(str(_e))]
                             if _tell and getattr(self, "eventhub", None) is not None:
                                 self.eventhub.publish_api_requirement(
                                     flow_id="chain_reject_1202m",
@@ -2424,6 +2438,9 @@ class RegistryHub:
                                     caller="registryhub",
                                     priority="high",
                                 )
+                                for _e in _tell:
+                                    self._chain_reject_announced_1202dh.set(
+                                        str(_e), True, agent="registryhub")
                         except Exception:
                             pass
                 except Exception:

@@ -538,6 +538,15 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     flagged: List[dict] = []
     _examined_956 = 0
     for name, table in tables.items():
+        # #1202du: the framework registers its own probe tables (`__noop_orchestrator_probe__`,
+        # `__noop_orchestrator_state_check__`). r44's registry holds both, and the audit flagged
+        # the second `missing_seed` — sending the backend lane to grep `app/backend` for
+        # something the FRAMEWORK registered and nowhere in its scope. #251's rule, a third time
+        # after #1202ds: the exemption cannot depend on metadata a lane must set, and `provider`
+        # here reads "backend", so only our own naming convention identifies it. Ahead of BOTH
+        # paths: the `_live` branch consults `_spine`, the legacy branch consults nothing.
+        if str(name).startswith("__"):
+            continue
         if _live:
             if name in _spine or name not in _live:
                 # framework-owned, or the DB does not have this table at all (declared but
