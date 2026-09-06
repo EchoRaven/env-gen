@@ -4187,7 +4187,7 @@ class Orchestrator:
                 _progress = self._deliver_progress_sig()
                 _stuck_key = (tuple(_failed), _progress)
                 if _progress is not None and _stuck_key == getattr(self, "_fwdeliver_stuck_key", None):
-                    self._fwdeliver_stuck_count = getattr(self, "_fwdeliver_stuck_count", 0) + 1
+                    self._fwdeliver_stuck_count = (getattr(self, "_fwdeliver_stuck_count", 0) or 0) + 1
                 else:
                     self._fwdeliver_stuck_key = _stuck_key
                     self._fwdeliver_stuck_count = 1
@@ -4304,10 +4304,12 @@ class Orchestrator:
                     _grace = convergence_grace(
                         failed_count=len(_cur_failed_set),
                         last_shrink_age_s=(_now2 - _shrink_ts) if _shrink_ts else 1e9,
-                        grace_used=getattr(self, "_fwdeliver_grace_count", 0))
+                        # #1202em: `or 0` — a restored None makes the attribute PRESENT,
+                        # so the getattr default never applies.
+                        grace_used=(getattr(self, "_fwdeliver_grace_count", 0) or 0))
                     if _grace > 0:
-                        self._fwdeliver_grace_count = getattr(
-                            self, "_fwdeliver_grace_count", 0) + 1
+                        self._fwdeliver_grace_count = (getattr(
+                            self, "_fwdeliver_grace_count", 0) or 0) + 1
                         self._fwdeliver_first_decline_ts += _grace
                         self._logger.warning(
                             "DELIVERY-GATE CONVERGING-GRACE #%d: failing set is small "
@@ -4371,7 +4373,7 @@ class Orchestrator:
                 # idempotent within each re-arm window.
                 _uw = any("ui_page_unwired" in str(c) for c in gate.get("failed_checks") or [])
                 if _uw:
-                    _n = getattr(self, "_unwired_persist_count", 0) + 1
+                    _n = (getattr(self, "_unwired_persist_count", 0) or 0) + 1
                     self._unwired_persist_count = _n
                     if _n % 8 == 0:
                         self._unwired_ui_pages_dispatched = None  # re-arm the one-shot guard
@@ -4685,7 +4687,7 @@ class Orchestrator:
                             "attempt", _tu_result.get("reason"))
                         return
                     else:  # 'defect' — squad ran and filed P0s: burn an attempt and defer
-                        self._tu_squad_attempts = getattr(self, "_tu_squad_attempts", 0) + 1
+                        self._tu_squad_attempts = (getattr(self, "_tu_squad_attempts", 0) or 0) + 1
                         self._logger.warning(
                             "DELIVERY DEFERRED: test-user squad found %d P0 defect(s) "
                             "(attempt %s, %ss deferred) — filed to the debugger/owning lane; "
@@ -4762,7 +4764,7 @@ class Orchestrator:
                     # shipping a dead app (run-4: 401'd every core page yet escaped after
                     # 7 attempts). ENVGEN_TESTUSER_HARD_GATE=0 disables.
                     _bg_decision = browser_gate_decision(_bg_report, _bg_decision)
-                    self._tu_browser_attempts = getattr(self, "_tu_browser_attempts", 0) + 1
+                    self._tu_browser_attempts = (getattr(self, "_tu_browser_attempts", 0) or 0) + 1
                     if _bg_decision == "defer":
                         # #572: name the signals that ACTUALLY fired, derived from the
                         # predicate itself. The old hand-listed subset omitted
@@ -4819,7 +4821,7 @@ class Orchestrator:
                         self._rc_deferred_since = _rc_now
                     _rc_decision = squad_release_decision(
                         self._rc_deferred_since, getattr(self, "_rc_attempts", 0), _rc_now)
-                    self._rc_attempts = getattr(self, "_rc_attempts", 0) + 1
+                    self._rc_attempts = (getattr(self, "_rc_attempts", 0) or 0) + 1
                     if _rc_decision == "defer":
                         self._logger.warning(
                             "DELIVERY DEFERRED: contract has %d version-variant DUPLICATE "
@@ -4989,6 +4991,32 @@ class Orchestrator:
             # unfindable.
             self._logger.error("framework delivery raised (non-fatal): %s", exc,
                                exc_info=True)
+            # #1202em: "non-fatal" was not. This handler wraps ~900 lines, and the
+            # remediation dispatch that routes every failing gate check back to the lane
+            # that owns it sits near the END of them. A raise anywhere earlier skipped it
+            # silently -- so on googlemaps-r16's resumes, where a restored None made
+            # `convergence_grace` throw at the top of the block, the dispatcher fired 0-1
+            # times against 41 in the uninterrupted run. Nobody was told what to fix, the
+            # failing set stopped shrinking, and the run burned budget oscillating until
+            # the no-convergence fail-fast killed it.
+            #
+            # The exception is still swallowed -- the coordination loop must not break --
+            # but the one piece of work that tells the lanes anything is retried on its own.
+            try:
+                _g_fc = (gate or {}).get("failed_checks")
+            except (NameError, AttributeError, TypeError):
+                _g_fc = None          # raised before the gate was even evaluated
+            if _g_fc:
+                try:
+                    from .runtime.remediation_dispatcher import RemediationDispatcher
+                    await RemediationDispatcher(self).dispatch_gate_level_checks(_g_fc)
+                    self._logger.warning(
+                        "#1202em: delivery raised before the gate-check dispatch; "
+                        "re-ran it so the lanes still hear what is failing (%s).",
+                        ", ".join(sorted(_g_fc))[:200])
+                except Exception as _redisp_exc:
+                    self._logger.error(
+                        "#1202em fallback dispatch also failed: %s", _redisp_exc)
 
     def _write_preview_config(self, release_tag: str) -> None:
         """Write the Env Forge UI's preview pointer at ``<output_dir>/config.yaml``.

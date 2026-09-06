@@ -106,11 +106,32 @@ def test_it_reports_a_plausible_next_number():
     assert _top < int(out) <= _top + 10, f"implausible next ticket: {out} (highest={_top})"
 
 
-@pytest.mark.parametrize("n", ["817", "820", "822", "823"])
-def test_the_real_collisions_are_reported_taken(n):
-    """The four numbers that actually collided this session."""
+def _a_ticket_this_repo_actually_carries():
+    """A number the repo demonstrably uses, discovered rather than remembered.
+
+    #1202em: this test hardcoded ["817", "820", "822", "823"] -- "the four numbers that
+    actually collided this session" -- and that session ended. Which numbers are claimed
+    moves as files are added, renamed and removed: on the run that exposed this, 817 was
+    reported FREE inside the suite and TAKEN a minute later, while 820 had gone the other
+    way. A snapshot of someone else's session is not a fixture; it is a slow leak that
+    spends a 12-minute suite run to tell you the repo changed.
+    """
+    import re
+    for f in sorted((_ROOT / "agent" / "tests").glob("test_*_[0-9][0-9][0-9].py")):
+        m = re.search(r"_(\d{3})\.py$", f.name)
+        if m:
+            return m.group(1)
+    return None
+
+
+def test_a_number_the_repo_carries_is_reported_taken():
+    """The behaviour under test -- 'an id already in use must be refused' -- asserted
+    against a number this checkout really uses."""
+    n = _a_ticket_this_repo_actually_carries()
+    if not n:
+        pytest.skip("no numbered ticket tests in this checkout")
     r = _run(n)
-    assert r.returncode == 1, r.stdout
+    assert r.returncode == 1, f"#{n} is used by agent/tests but was not refused: {r.stdout}"
     assert "TAKEN" in r.stdout
 
 

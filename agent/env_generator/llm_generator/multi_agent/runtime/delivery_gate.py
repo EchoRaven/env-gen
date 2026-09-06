@@ -2247,7 +2247,14 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
     converging, not livelocking), grant a bounded extension: up to
     ``max_grace`` × ``grace_s``. Returns 0 when not converging — the fail-fast
     keeps its teeth for genuine livelocks (many gates, or no recent shrink)."""
-    if grace_used >= max_grace:
+    # #1202em: `or 0` because a RESTORED counter can be None, not merely absent.
+    # #1202el stopped the save side from writing new nulls; a milestone_gates.json written
+    # before that fix still holds them, and restore puts them back. googlemaps-r16's second
+    # resume raised here eight times — pinned in one shot by the traceback #1202el added:
+    #   delivery_gate.py:2250 in convergence_grace / `if grace_used >= max_grace`
+    # from orchestrator.py:4307 `grace_used=getattr(self, "_fwdeliver_grace_count", 0)`,
+    # whose default never fires because the attribute EXISTS and holds None.
+    if (grace_used or 0) >= max_grace:
         return 0.0
     if failed_count <= 0 or failed_count > max_failed:
         return 0.0
