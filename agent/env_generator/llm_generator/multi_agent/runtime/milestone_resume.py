@@ -124,8 +124,14 @@ _FWGATE_FIELDS_1202DV = (
     "_fwdeliver_stuck_count", "_fwdeliver_stuck_key", "_fwdeliver_first_decline_ts",
     "_fwdeliver_grace_count", "_fwdeliver_prev_failed", "_fwdeliver_last_shrink_ts",
     "_fwval_abort_grace_used", "_fwval_abort_deliver_reason", "_fwval_abort_progress_sig",
-    "_silent_lane_nudges",
 )
+# DELIBERATELY NOT PERSISTED — `_silent_lane_nudges`. It sits in the milestone-reset block,
+# so it looked milestone-scoped, but `run()` ALSO resets it at the implementation dispatch
+# (orchestrator.py, right after `_dispatch_implementation_phase()`), and orchestrator's own
+# note says "init/reset by run()". A resume re-spawns the lanes, so "how long has this lane
+# been silent" legitimately restarts. Verified on netflix-r45: restored at the milestone
+# entry and clobbered ~400 lines later by that reset, i.e. persisting it stored a value that
+# could never survive — a dead field, which is the shape this batch exists to remove.
 
 # Type-aware, because `json.dumps(..., default=str)` turns a set into the STRING "{'a', 'b'}".
 # It round-trips without error and then breaks every `==` / `in` the breakers do against it —
