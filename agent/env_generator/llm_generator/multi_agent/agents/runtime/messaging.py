@@ -1390,6 +1390,29 @@ while you were busy is missed.
             for _attempt in range(2):
                 if self._has_substantive_section(meeting_id, expected_section):
                     break
+                # #1202er: DO NOT SPEND CORRECTIVE TURNS RE-DECLARING A CONTRACT THAT EXISTS.
+                #
+                # These turns exist because a lane sometimes drops or empties its section.
+                # On a RESUME the section is missing for a different reason: the contract
+                # was settled by the earlier process and the lane has nothing new to
+                # declare. googlemaps-r16's resumes were rejected with "section='backend'
+                # has no substantive endpoint + data-model/table decisions" while
+                # RegistryHub already held 50 endpoints and 27 tables. Two corrective turns
+                # per attendee, ~250s of kickoff, on every resume, to rediscover that.
+                #
+                # This does NOT widen what counts as substantive. It skips straight to the
+                # terminal path the code already takes when the turns are exhausted — the
+                # deferred stub, whose own note says "the deterministic reconcile fills
+                # this section's gaps FROM THE CONTRACT". When the contract is complete the
+                # reconcile has everything; the turns can only rediscover that at LLM
+                # prices. A fresh run with an incomplete contract still gets corrected.
+                if self._contract_already_complete_1202er():
+                    self._logger.warning(
+                        "[%s] kickoff section is missing but the contract is already "
+                        "complete in RegistryHub — skipping the corrective turns and "
+                        "letting the deterministic reconcile fill it (#1202er). This is "
+                        "the resume case, not a dropped section.", self.agent_id)
+                    break
                 # AUTHORING DEADLINE (2026-06-11, round 16 post-mortem): the
                 # reject/retry dance must end WELL before the kickoff driver's
                 # 1200s timeout — the terminal stub landed 1s late and the
@@ -1440,6 +1463,24 @@ while you were busy is missed.
                 milestone_index=milestone_index,
                 expected_section=expected_section,
             )
+
+    def _contract_already_complete_1202er(self) -> bool:
+        """True when RegistryHub already holds a contract worth reconciling from.
+
+        #1202er: deliberately narrow. Both endpoints AND tables must be non-empty — a
+        half-built contract is exactly the case the corrective turns are for, and this must
+        not become a way for an empty kickoff to advance. Any failure answers False, which
+        keeps today's behaviour.
+        """
+        try:
+            rh = getattr(getattr(self, "_hubs", None), "registryhub", None)
+            if rh is None:
+                return False
+            eps = rh.get_endpoints() or {}
+            tbls = rh.list_tables() or {}
+            return bool(eps) and bool(tbls)
+        except Exception:
+            return False
 
     def _has_substantive_section(self, meeting_id, section: str) -> bool:
         """True iff THIS agent already recorded a substantive section decision
