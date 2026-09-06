@@ -98,9 +98,21 @@ def test_only_error_level_console_is_kept():
 
 
 def test_the_sink_is_bounded():
+    """Both bounds still hold: at most 5 distinct messages PER KIND, each bounded in length.
+
+    #1202eh made the count budget per-kind: a page whose bundle 404s emits several failed
+    requests, and one shared budget would let those crowd out the uncaught exception.
+
+    #1202ee replaced the literal 300 with the measured, shared CONSOLE_ERROR_CAP_1202EE
+    (480) -- 300 sat BELOW the median console error (p50 330 over 135 errors in 33 runs),
+    and this cut is at CAPTURE, so it was the one truncation nothing downstream could
+    undo. The property this test guards is that a bound exists, not its value.
+    """
     c = _cap()
-    assert "len(_b) < 5" in c
-    assert "[:300]" in c
+    assert "_KIND_BUDGET_1202EH" in c, "the per-screen message bound is gone"
+    assert "[:_CONSOLE_ERROR_CAP_1202EE]" in c, "the per-message bound is gone"
+    from multi_agent.runtime.message_format import CONSOLE_ERROR_CAP_1202EE as CAP
+    assert 0 < CAP <= 4000, "a page looping an error could flood the verdict"
 
 
 def test_errors_are_attributed_to_the_screen_being_captured():
