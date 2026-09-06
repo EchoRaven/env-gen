@@ -1750,6 +1750,29 @@ _PROFILE_DISCOVER_JS = """async (token) => {
 }"""
 
 
+# #1202eg: STORAGE ACCESS MUST NOT THROW INTO THE APP'S CONSOLE.
+#
+# `add_init_script` runs on EVERY document the context loads -- about:blank and any
+# opaque-origin document included -- and on those, merely touching `window.localStorage`
+# raises. Chrome words it "Failed to read the 'localStorage' property from 'Window':
+# Access is denied for this document" even for a setItem, because reading the PROPERTY is
+# the denied act.
+#
+# That throw is uncaught, so #740 records it as a page error against whichever screen was
+# being captured, and the deviation handed to the lane reads "The browser reported: Failed
+# to read the 'localStorage' property ... - fix THAT, it is the reason the shell is empty".
+# tiktok-web-r96 shows it on exactly the three screens that need auth -- messages_dm_empty,
+# notifications_activity, profile_own -- because that is where the token and profile
+# scripts are injected. The framework was manufacturing an error and then dispatching a
+# lane to fix it.
+#
+# `_theme_storage_js` has carried this guard since it was written; the token and profile
+# injections never got it. Same shape, same wrapper.
+def _storage_guard_1202eg(body: str) -> str:
+    """Wrap storage-touching init JS so a denied origin cannot throw into the app."""
+    return "try { " + body + " } catch (e) {}" if body else ""
+
+
 def _profile_select_init_js(profile_id: str) -> str:
     """A JS init-script that establishes ``profile_id`` as the ACTIVE profile
     under every alias in ``_PROFILE_KEY_ALIASES`` in BOTH localStorage and
@@ -1760,10 +1783,10 @@ def _profile_select_init_js(profile_id: str) -> str:
     if not profile_id:
         return ""
     _pid_js = json.dumps(str(profile_id))
-    return ";".join(
+    return _storage_guard_1202eg(";".join(          # #1202eg
         f"localStorage.setItem('{k}', {_pid_js});"
         f"sessionStorage.setItem('{k}', {_pid_js})"
-        for k in _PROFILE_KEY_ALIASES) + ";"
+        for k in _PROFILE_KEY_ALIASES) + ";")
 
 
 # ---------------------------------------------------------------------------
@@ -2097,10 +2120,10 @@ async def capture_route_screenshots(
                 _tok_js = json.dumps(token)
                 _aliases = ("token", "access_token", "auth_token",
                             "authToken", "accessToken", "jwt")
-                await ctx.add_init_script(";".join(
+                await ctx.add_init_script(_storage_guard_1202eg(";".join(  # #1202eg
                     f"localStorage.setItem('{k}', {_tok_js});"
                     f"sessionStorage.setItem('{k}', {_tok_js})"
-                    for k in _aliases) + ";")
+                    for k in _aliases) + ";"))
             page = await ctx.new_page()
             # #740: KEEP THE UNCAUGHT ERROR. The capture drives a real browser to every
             # declared route, every remediation round, and threw away the single most
