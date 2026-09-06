@@ -3124,7 +3124,42 @@ class Orchestrator:
                 self._logger.error(f"Message bus shutdown failed: {bus_err}")
 
         duration = (datetime.now() - start_time).total_seconds()
-        
+
+        # #1202en: A FAILED RUN MUST NOT HOLD THE PORTS THE NEXT ONE NEEDS.
+        #
+        # The framework refuses to start when its ports are bound ("REFUSING: host port(s)
+        # 3001 8005 8006 are already bound by a running container") — correctly, and that
+        # guard is what stops two runs of one env from colliding. But nothing tears the
+        # stack down when a run ABORTS, so a failed run blocks every later one until
+        # someone runs `docker compose down` by hand. This session hit it twice: a
+        # fail-fast left googlemaps-r16-database-1 on 8006, and the next launch was
+        # refused. validation_runner already ADVISES the operator to "stop the finished
+        # runs' stacks"; nothing does it.
+        #
+        # Only on failure. A DELIVERED run's stack is the artifact — you open the app on
+        # those ports to check what shipped — so success leaves it up, unchanged.
+        if not success:
+            try:
+                _cf_1202en = Path(self.output_dir) / "docker" / "docker-compose.yml"
+                if _cf_1202en.is_file():
+                    import subprocess as _sp_1202en
+                    # #936b: the host may be podman — never hardcode the binary.
+                    from .runtime.container_runtime import runtime_bin as _rt_1202en
+                    _r_1202en = _sp_1202en.run(
+                        [_rt_1202en(), "compose", "-f", str(_cf_1202en), "down",
+                         "--remove-orphans"],
+                        capture_output=True, text=True, timeout=180)
+                    self._logger.warning(
+                        "#1202en: run did not succeed — tore its own stack down so the "
+                        "ports do not block the next run (rc=%s). A delivered run keeps "
+                        "its stack; a failed one has no app to inspect.",
+                        _r_1202en.returncode)
+            except Exception as _dn_1202en:
+                self._logger.error(
+                    "#1202en: could not tear down this run's stack (%s) — the next run on "
+                    "these ports will be REFUSED until it is stopped by hand.",
+                    _dn_1202en)
+
         # #1175: stop the refresher and take one FINAL reading, so the record on disk
         # matches the summary printed below instead of trailing it by a tick.
         try:
