@@ -1553,6 +1553,12 @@ def screen_color_scheme(screen: Mapping[str, Any]) -> Optional[str]:
     return m.group(1).lower() if m else None
 
 
+# #1202eh: resource types whose failure can leave a blank shell. An image or font 404
+# degrades the page; a document/script/stylesheet/xhr/fetch failure can end it.
+_BLANKING_TYPES_1202EH = frozenset(
+    ("document", "script", "stylesheet", "xhr", "fetch"))
+
+
 def _theme_storage_js(scheme: Optional[str]) -> str:
     """JS that pre-sets (or, scheme=None, clears) the common theme storage
     keys so the app boots in the wanted theme after a reload."""
@@ -2147,6 +2153,11 @@ async def capture_route_screenshots(
             # byte-identical to before.
             _cur740 = {"name": "(startup)"}
 
+            # #1202eh: the budget is PER KIND, not per list. A page whose bundle 404s can
+            # emit several failed requests, and with one shared budget those would crowd
+            # out the uncaught exception -- which is the more diagnostic of the two.
+            _KIND_BUDGET_1202EH = 5
+
             def _rec740(kind: str, text: Any) -> None:
                 if console_errors is None:
                     return
@@ -2161,7 +2172,8 @@ async def capture_route_screenshots(
                     # .js:252:30568\n at $l (http://localhost:8005/assets/ind" -- the
                     # second frame cut mid-URL, in the one field that localises the crash.
                     _m = f"{kind}: {str(text)[:_CONSOLE_ERROR_CAP_1202EE]}"
-                    if _m not in _b and len(_b) < 5:
+                    _same = sum(1 for _x in _b if _x.startswith(kind + ":"))
+                    if _m not in _b and _same < _KIND_BUDGET_1202EH:
                         _b.append(_m)
                 except Exception:
                     pass
@@ -2170,6 +2182,25 @@ async def capture_route_screenshots(
                 page.on("pageerror", lambda e: _rec740("uncaught", e))
                 page.on("console", lambda m: (
                     _rec740("console.error", m.text) if m.type == "error" else None))
+                # #1202eh: WHICH resource 404'd. The console says only "Failed to load
+                # resource: the server responded with a status of 404 (Not Found)" -- no
+                # URL, because Playwright's console text has none. tiktok-web-r96 recorded
+                # exactly that on its startup screen and the URL is nowhere in the run.
+                #
+                # `browser/_manager.py` and `control_exercise.py` both listen for
+                # responses; the VISUAL GATE -- the one capture that produces the verdict
+                # and the deviations a lane is told to fix -- listened for neither. Routed
+                # into the same sink so it inherits #740's grouping, the blank-screen
+                # deviation and the per-screen record, rather than becoming a fifth
+                # out-parameter nothing reads.
+                #
+                # Only the types that can blank a page; an image 404 is cosmetic here and
+                # would spend the budget.
+                page.on("response", lambda r: (
+                    _rec740("http", "%d %s %s" % (r.status, r.request.method, r.url))
+                    if (r.status >= 400
+                        and r.request.resource_type in _BLANKING_TYPES_1202EH)
+                    else None))
             # #491 (netflix r63) — POST-LOGIN PROFILE GATE. A token alone does not
             # pass <RequireProfile>: catalog routes redirect to /profiles until an
             # ACTIVE profile is selected, collapsing every catalog shot to the
