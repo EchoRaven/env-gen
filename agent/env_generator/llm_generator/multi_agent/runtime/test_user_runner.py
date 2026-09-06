@@ -130,7 +130,11 @@ def _console_entry_1202ea(msg) -> str:
 # errors, and what is lost there is the end of a stack-ish string, not the type or the
 # location this ticket exists to preserve). NOT tuned by feel: raising it to p99 would
 # quadruple a five-error flag for the last 9% of cases.
-_CONSOLE_ENTRY_CAP_1202EA = 480
+from .message_format import CONSOLE_ERROR_CAP_1202EE as _CONSOLE_ERROR_CAP_1202EE  # #1202ee
+# #1202ee: one measured number for "a console error line", shared with the visual
+# gate, which reads the same console of the same browser. The measurement (135 errors
+# across 33 runs, p50 330 / p90 450 / p99 630 / max 710) lives with the constant.
+_CONSOLE_ENTRY_CAP_1202EA = _CONSOLE_ERROR_CAP_1202EE
 # Not a new constant — mirrors the collection size upstream (`rec["console_errors"] =
 # list(cerr)[:5]`), so the flag can render everything that was actually kept.
 _CONSOLE_ENTRIES_CAP_1202EA = 5

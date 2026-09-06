@@ -11293,7 +11293,21 @@ function safeIconImports() {
 export default defineConfig({
   plugins: [safeIconImports()],
   esbuild: { jsx: 'automatic', jsxImportSource: 'react' },
-  build: { outDir: 'dist' },
+  // #1202ef: a JS crash here must name a place someone can go. `sourcemap` appeared
+  // ZERO times in this repo, so every generated app minified its bundle and every
+  // runtime error was reported at a position nobody could resolve. tiktok-web-r96
+  // crashed all twelve of its routes and the record read
+  // `TypeError: (void 0) is not a function at $l (.../index-CA-T_HGA.js:252:30568)`;
+  // its lane worked that bug from 02:08 to the end of the run and never landed it.
+  //
+  // `minify: false` is the half that reaches the reader: a lane has `read` and `grep`,
+  // not a sourcemap resolver, and Playwright hands us the RAW stack -- so unminified is
+  // what turns `$l` into a real component name and line 252 into readable code.
+  // `sourcemap: true` is the cheap complement for anything that can consume a .map.
+  //
+  // The cost is bundle size and load time in a LOCAL SANDBOX built to be debugged by
+  // agents, which is the trade this environment exists to make.
+  build: { outDir: 'dist', sourcemap: true, minify: false },
 })
 """
 

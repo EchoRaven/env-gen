@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
 from .validation_runner import _service_host_port
 from .message_format import join_capped  # #1034
+from .message_format import CONSOLE_ERROR_CAP_1202EE as _CONSOLE_ERROR_CAP_1202EE  # #1202ee
 
 
 def _resolve_app_port(resolver, service_names):
@@ -2115,8 +2116,9 @@ async def capture_route_screenshots(
             # signature in their task store and **all 14 released**, 9 of them with the crash
             # task still open.
             #
-            # Collected per screen, bounded (5 distinct messages each, 300 chars) so a page
-            # looping an error cannot flood the verdict. Console `error` level and uncaught
+            # Collected per screen, bounded (5 distinct messages each,
+            # CONSOLE_ERROR_CAP_1202EE chars) so a page looping an error cannot flood the
+            # verdict. Console `error` level and uncaught
             # exceptions only — warnings and logs are noise here. Purely additive: nothing
             # reads this yet except the blank deviation text, and a screen with no errors is
             # byte-identical to before.
@@ -2127,7 +2129,15 @@ async def capture_route_screenshots(
                     return
                 try:
                     _b = console_errors.setdefault(_cur740["name"], [])
-                    _m = f"{kind}: {str(text)[:300]}"
+                    # #1202ee: 300 was BELOW the measured median console error (p50 330),
+                    # and this cut is at CAPTURE -- everything downstream, the #740 log
+                    # line and each screen's persisted deviation alike, inherits whatever
+                    # is lost here and cannot get it back. tiktok-web-r96 crashed every
+                    # one of its twelve routes and the record of it reads
+                    # "TypeError: (void 0) is not a function\n at http://.../index-CA-T_HGA
+                    # .js:252:30568\n at $l (http://localhost:8005/assets/ind" -- the
+                    # second frame cut mid-URL, in the one field that localises the crash.
+                    _m = f"{kind}: {str(text)[:_CONSOLE_ERROR_CAP_1202EE]}"
                     if _m not in _b and len(_b) < 5:
                         _b.append(_m)
                 except Exception:
@@ -3558,7 +3568,10 @@ async def run_visual_fidelity(
             # #1034: BOTH lists here were silently capped — the distinct errors (outer) and
             # the screens each was seen on (inner), each printed beside its own full count.
             join_capped(
-                [f"{_m740[:160]} (on {len(_ns740)} screen(s): "
+                # #1202ee: 160 truncated r96's stack mid-URL in the very message whose
+                # comment says the cause "had to be rediscovered by whoever drove a browser
+                # next". A display cap under the capture cap throws the rest away twice.
+                [f"{_m740[:_CONSOLE_ERROR_CAP_1202EE]} (on {len(_ns740)} screen(s): "
                  f"{join_capped(sorted(_ns740), len(_ns740), cap=4, sep=', ')})"
                  for _m740, _ns740 in sorted(
                      _by740.items(), key=lambda kv: -len(kv[1]))],

@@ -18,6 +18,21 @@ from typing import Any, Dict, Iterable, Optional
 __all__ = ["join_capped"]
 
 
+# #1202ee: how much of ONE browser console error survives being written down.
+#
+# Measured on the same payload this bounds -- 135 console errors across 33 run logs:
+# p50 330, p90 450, p99 630, max 710. The capture site in visual_fidelity.py bounded
+# each message at 300, i.e. BELOW THE MEDIAN, and that cut happened at CAPTURE, so no
+# downstream reporter could restore what it removed. #1202ea measured this for the
+# test-user walk; the visual gate reads the same console of the same browser, so there
+# is one number and both use it.
+#
+# It buys the frames, not prose: "TypeError: (void 0) is not a function" is 37 chars and
+# each stack frame with a full bundle URL is ~60-90 more. 300 held the message and one
+# frame; 480 holds the message and roughly four.
+CONSOLE_ERROR_CAP_1202EE = 480
+
+
 def join_capped(items: Iterable[Any], total: Optional[Any] = None, cap: int = 6,
                 sep: str = "; ") -> str:
     """Join at most ``cap`` items and declare the remainder.
