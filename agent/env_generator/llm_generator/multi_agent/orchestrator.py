@@ -1512,6 +1512,14 @@ class Orchestrator:
                 self._logger.info(
                     f"Resuming from checkpoint (phase={summary.get('current_phase')}, resumes={summary.get('resume_count', 0) + 1})"
                 )
+                # #1202eq (placement fix): credit downtime HERE, where a resume is first
+                # known — not inside the milestone loop, which is where I first put it.
+                # Neither of the two resumes I measured ever reached that call: one died in
+                # kickoff (`Kickoff timed out (missing=['backend','frontend','verifier'])`)
+                # and the other delivered at tick=0 through the final-gate path. A credit
+                # the resume path does not execute is not a credit; it is the "wired but
+                # never reached" shape this repo keeps paying for.
+                self._credit_downtime_1202eq()
         else:
             self.checkpoint.start_generation(name=self.context.name, description=goal, domain_type="web_app")
         
@@ -1975,8 +1983,7 @@ class Orchestrator:
                     if not _restored_1202ce:
                         self._pages_gate_deferred_since = None
                         self._pages_gate_attempts = 0
-                    else:
-                        self._credit_downtime_1202eq()
+
                     # Per-milestone TEST-USER SQUAD gate state (§3.5). Unlike the visual
                     # gate, this runs EVERY milestone (the verify->fix loop the user's flow
                     # diagram puts inside each milestone), bounded by squad_release_decision.

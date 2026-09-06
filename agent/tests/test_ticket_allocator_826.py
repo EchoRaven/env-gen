@@ -171,10 +171,19 @@ def test_an_allocated_number_reads_as_taken(ledger):
 
 
 def test_it_says_where_a_taken_number_was_claimed():
-    """'Taken' without a location sends the reader looking — #798's rule."""
-    out = _run("820").stdout
-    assert "claimed in" in out
-    assert "EXPERIMENTS" in out or "#820" in out
+    """'Taken' without a location sends the reader looking — #798's rule.
+
+    #1202eq: the number is DISCOVERED, not remembered. This hardcoded 820, which read TAKEN
+    when the test was written and FREE by the time the repo had moved on — the same drift
+    that broke its sibling above. Which ids are claimed changes as files are added and
+    removed; a snapshot of one session's collisions is not a fixture.
+    """
+    n = _a_ticket_this_repo_actually_carries()
+    if not n:
+        pytest.skip("no numbered ticket tests in this checkout")
+    out = _run(n).stdout
+    assert "claimed in" in out, out
+    assert f"#{n}" in out, out
 
 
 if __name__ == "__main__":  # pragma: no cover
