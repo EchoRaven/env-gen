@@ -248,7 +248,25 @@ _SPEC_LIST_KEYS = ("screens", "endpoints", "entities", "mcp_tools", "acceptance"
 # criterion. Same rule, new maximum: 5100 clears 4,079 with ~25% margin. This constant is a
 # TREADMILL by construction — each richer app resets the maximum — so the paired corpus test is
 # the tripwire that forces the re-measurement rather than letting the drop go quiet.
-_ACCEPTANCE_BUDGET_818 = 5100
+# #1202ek: THE TRIPWIRE WAS NEVER CONNECTED, so the treadmill ran unattended.
+#
+# The paired corpus test reads `Path(__file__).parents[1] / "generated"` — from a file in
+# agent/tests/ that is agent/generated/, which holds one stale `youtube` directory. The
+# corpus is at the REPO ROOT (parents[2]): 135 runs, 122 with acceptance criteria. So the
+# test skipped on every run of the suite and the re-measurement it exists to force was
+# never forced. Four specs have silently dropped criteria against the 5,100 budget since
+# it was set: netflix-local-r1 (5,596), r30 (5,236), r43 (5,197 — one day ago) and
+# tiktok-web-r41 (15,757 / 108 criteria).
+#
+# Re-measured at 122 specs: p50 2,353, p90 4,244, p99 5,596, max 15,757.
+# Same rule as #818/#965 — clear the observed maximum with ~25% margin: 15,757 -> 19,700.
+#
+# I first set this to 7,000 by excluding r41 as an outlier, reasoning that sizing for it
+# would inflate the briefing every lane reads on every run. That reasoning was wrong and
+# the reconnected tripwire caught it within a minute: this is a CAP, not an allocation —
+# `if len(out) <= BUDGET: return out` — so a 2,353-char spec still costs 2,353. Raising it
+# costs nothing for a normal run and only stops a rich one from losing criteria.
+_ACCEPTANCE_BUDGET_818 = 19700
 
 
 def _acceptance_line_818(acceptance) -> str:
