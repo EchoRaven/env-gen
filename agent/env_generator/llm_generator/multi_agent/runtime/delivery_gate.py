@@ -597,6 +597,34 @@ _DRIVER_GONE_RE_1199 = re.compile(
     r"(?i)(\bdriver\b[^.\n]{0,40}\bclos|\bclos\w+[^.\n]{0,20}\bthe driver\b)")
 
 
+def _build_validated_at_1202fs(validation_results: Any) -> float:
+    """#1202fs -- #401's own clock, via #401's own implementation, so the two readers of the
+    ui_flow evidence cannot disagree about what "stale" means. 0.0 disables staleness, i.e.
+    the previous behaviour exactly."""
+    try:
+        from .flow_coverage import _latest_build_validation_time
+    except Exception as _e1202fs:
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.build_validated_at_1202fs",
+                       "the staleness clock (#1202fs) — a failing UI record from before the "
+                       "current build stays counted, so validation_ui_evidence_failed can "
+                       "latch on evidence a later pass already answered", _e1202fs)
+        return 0.0
+
+    class _Shim:                      # #401 reads one method off the hub
+        def get_validation_results(self, limit=1000):
+            return validation_results or []
+
+    try:
+        return float(_latest_build_validation_time(_Shim()) or 0.0)
+    except Exception as _e1202fs:
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.build_validated_at_1202fs.run",
+                       "the staleness clock (#1202fs) — see above; the gate is reading every "
+                       "failing UI record as current", _e1202fs)
+        return 0.0
+
+
 def _page_by_route_1202fq(hubs) -> Dict[str, str]:
     """#1202fq -- {route: registered ui_page name}, via #1202fo's single implementation so
     the two readers of the ui_flow evidence cannot drift apart. Best-effort: {} means the
@@ -618,7 +646,8 @@ def _page_by_route_1202fq(hubs) -> Dict[str, str]:
 
 
 def _ui_evidence_breadth_739(validation_results: Any,
-                             page_by_route: Any = None) -> Dict[str, Any]:
+                             page_by_route: Any = None,
+                             stale_before: float = 0.0) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
     `_ui_smoke_pass` is existential — ONE passing UI record satisfies it, and a FAILING UI
@@ -701,6 +730,33 @@ def _ui_evidence_breadth_739(validation_results: Any,
         _prev = _latest757.get(_key)
         if _prev is None or _ts757(r) >= _ts757(_prev):
             _latest757[_key] = r
+    # #1202fs -- THE OTHER HALF OF #401, WHICH ONLY flow_coverage EVER GOT.
+    #
+    # #401 drops a FAILED ui_flow record older than the newest api_smoke — the moment the
+    # current build was last validated end to end — so "a flow the frontend has since FIXED
+    # keeps its old FAILURE record for the rest of the run, false-failing the delivery gate".
+    # That reasoning is about the evidence, not about one consumer, but only
+    # flow_coverage._index_ui_flow_records applied it; this function, which decides
+    # `validation_ui_evidence_failed`, had no notion of age at all. So the two readers of one
+    # store disagreed by construction — the same shape as #1202fn/#1202fp/#1202fq.
+    #
+    # tiktok-r96 resume #5 is what it costs: every one of the 8 records blocking at the abort
+    # was 28h+ old, from before two resumes, while every fresh walk that run had PASSED, and
+    # `validation_ui_evidence_failed` was the only failing check left. #757 calls this exact
+    # outcome out — "that is not a gate, it is a latch".
+    #
+    # A stale failure becomes ABSENT, not passed: the flow then reads as needing
+    # re-verification (flow_coverage's ui_flow_missing, which a walk can clear) instead of a
+    # verdict nothing can retire. Passing records are never dropped — the regression direction
+    # #357 protects is untouched — and stale_before <= 0 keeps the previous behaviour exactly.
+    if stale_before and stale_before > 0:
+        for _k, _r in list(_latest757.items()):
+            if str(_r.get("status") or "").strip().lower() not in (
+                    "failed", "failure", "error"):
+                continue
+            _at = _ts757(_r)
+            if _at and _at < stale_before:
+                del _latest757[_k]
     passed: List[str] = []
     failed: List[str] = []
     for r in _latest757.values():
@@ -2702,7 +2758,8 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # on, because "ui_smoke_pass=True" alongside failing UI records reads as app-wide UI health
     # and in r148 meant two unauthenticated pages out of fourteen.
     _breadth739 = _ui_evidence_breadth_739(
-        validation_results, page_by_route=_page_by_route_1202fq(hubs))
+        validation_results, page_by_route=_page_by_route_1202fq(hubs),
+        stale_before=_build_validated_at_1202fs(validation_results))
     # #752 (user-approved) — CONTRADICTED UI EVIDENCE BLOCKS; MISSING UI EVIDENCE DOES NOT.
     #
     # #739 showed `ui_smoke_pass` is existential: one passing record satisfies the whole UI
