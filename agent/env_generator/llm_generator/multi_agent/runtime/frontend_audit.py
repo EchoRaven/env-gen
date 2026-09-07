@@ -130,6 +130,24 @@ def _has_real_api_call(text: str) -> bool:
         # property read (`feed.length`) still doesn't count as a call.
         if re.search(r"\b" + re.escape(n) + r"\s*(?:\(|\.\s*\w+\s*\()", text):
             return True
+        # #1202gk: HANDING THE HELPER TO SOMETHING THAT CALLS IT IS USING IT.
+        #
+        # The two forms above both require the helper to be INVOKED syntactically in this
+        # file. React's other idiom passes it instead -- `useApiList(getVideos, [])` -- and
+        # the hook does the fetching. tiktok-r98's ExploreGridPage imports `getVideos` from
+        # services/api, hands it to `useApiList`, and renders `videos.items`; it is a real
+        # page that really loads data, and ui_page_unwired called it "a STATIC MOCK (no api
+        # call)" and blocked delivery on it, together with /live and /messages.
+        #
+        # This is the same widening the service-object case above already records ("the
+        # direct-call-only check false-flagged every page using it as a placeholder stub"),
+        # for the third syntactic shape of one behaviour. Measured over the 1922 page files
+        # on this machine: 766 read as call-less today, and 20 of those (4 runs) pass an
+        # imported service helper into a call. Narrow by construction -- the name must be
+        # imported from services/api AND appear as an ARGUMENT, so a bare mention or a
+        # property read still does not count.
+        if re.search(r"\w+\s*\([^)]*\b" + re.escape(n) + r"\b", text):
+            return True
     return False
 
 
