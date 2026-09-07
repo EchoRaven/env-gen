@@ -344,6 +344,37 @@ def load_screen_classifications(project_dir: Any) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+_APP_ROUTE_RE_1202GJ = re.compile(
+    r"""<Route\s+[^>]*?path=["']([^"']+)["'][^>]*?element=\{?\s*<?\s*([A-Za-z_][\w]*)""")
+
+
+def _routes_from_app_jsx_1202gj(project_dir: Any) -> Dict[str, str]:
+    """#1202gj -- {ComponentName: route} as App.jsx actually wires them.
+
+    A ui_page registration can carry `route: ""` while the router serves that very page.
+    tiktok-r98 registered `home_page` with an empty route and a real file
+    (app/frontend/src/pages/HomePage.jsx) while App.jsx declares
+    `<Route path="/home" element={<HomePage/>} />`. `load_ui_pages` drops a route-less
+    entry, so the framework could not see a page the app was serving -- it never became a
+    visual screen, and no walk could reach it by route.
+
+    Measured over the 115 kept runs with an App.jsx: 2111 registered pages, 843 of them
+    (39.9%) route-less, and 255 of those (30%) wired in App.jsx after all -- 12% of every
+    page ever registered, invisible for want of a field the router already states.
+
+    Read-only and best-effort: the registration is never rewritten, and a page whose
+    component App.jsx does not mention is left exactly as it was.
+    """
+    try:
+        app = Path(str(project_dir)) / "app" / "frontend" / "src" / "App.jsx"
+        if not app.is_file():
+            return {}
+        return {comp: path for path, comp in
+                _APP_ROUTE_RE_1202GJ.findall(app.read_text(encoding="utf-8", errors="ignore"))}
+    except Exception:
+        return {}
+
+
 def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
     """FIX #416 — the app's REGISTERED ui_pages (shared/hubs/registryhub_ui_pages.json)
     as [{name, route, component}] for every page carrying a real route. This is the
@@ -369,6 +400,11 @@ def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
             # below is on the STEM.
             items = [{"name": v.get("name") or k, "route": v.get("route"),
                       "component": v.get("component"),
+                      # #1202gj: KEEP `path`. This projection dropped it at the door, and it
+                      # is the only thing that names the component file for a page whose
+                      # `component` field is empty — which is every route-less page in the
+                      # corpus. #747 lost `metadata` here the same way.
+                      "path": v.get("path"),
                       "reference_image": ((v.get("metadata") or {}).get("reference_image")
                                           if isinstance(v.get("metadata"), Mapping) else None)}
                      for k, v in raw.items()
@@ -377,8 +413,16 @@ def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
             items = [v for v in raw if isinstance(v, Mapping)]
         else:
             items = []
+        _wired1202gj = None
         for v in items:
             route = str(v.get("route") or "").strip()
+            if not route:
+                # #1202gj: the registration omitted the route; ask the router.
+                if _wired1202gj is None:
+                    _wired1202gj = _routes_from_app_jsx_1202gj(project_dir)
+                _comp = str(v.get("component") or "").strip() \
+                    or Path(str(v.get("path") or "")).stem
+                route = str(_wired1202gj.get(_comp) or "").strip()
             if not route:
                 continue
             # #747: read from EITHER shape. The dict branch above already lifted it out of
