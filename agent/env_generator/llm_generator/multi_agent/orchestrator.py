@@ -4173,7 +4173,7 @@ class Orchestrator:
             _spent = self._lane_time_1202fk(max(0.0, time.time() - _decl))
             if _spent <= float(FWVAL_NO_DELIVER_ABORT_S):
                 return
-            self.logger.warning(
+            self._logger.warning(
                 "#1202fw this run has ALREADY spent %d min of lane time since its first "
                 "declined delivery, past the %d min no-convergence abort. The abort also "
                 "needs a DECLINED delivery, so this resume gets exactly ONE attempt: if the "
