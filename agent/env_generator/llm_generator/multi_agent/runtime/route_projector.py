@@ -1138,6 +1138,27 @@ _IMAGEISH_1202FH = ("poster", "backdrop", "image", "thumb", "avatar", "cover",
                     "photo", "banner", "art", "still", "logo")
 
 
+def _joinable_types_1202fh(fk_type, id_type) -> bool:
+    """True only when an `fk IN (ids)` comparison is type-safe on the database.
+
+    tiktok-r96 mixes them: `videos.id` is Text (a uuid default) while `author_id` and
+    `sounds.id` are Integer. Postgres answers a mismatched comparison with
+    `UndefinedFunction: operator does not exist: text = integer` -- a 500 on a
+    FRAMEWORK-PROJECTED route, which no lane can repair.
+
+    Unknown on either side refuses. The asymmetry is #1202bd's: a missing expansion leaves
+    the page exactly as it was, while a wrong one is a 500 that blocks delivery outright.
+    """
+    _INT = ("integer", "bigint", "smallint", "int")
+    _TXT = ("text", "string", "varchar", "char", "unicode", "uuid")
+    a, b = str(fk_type or "").lower(), str(id_type or "").lower()
+    ai, bi = any(k in a for k in _INT), any(k in b for k in _INT)
+    at, bt = any(k in a for k in _TXT), any(k in b for k in _TXT)
+    if not (ai or at) or not (bi or bt):
+        return False                      # unrecognised on either side -> refuse
+    return (ai and bi) or (at and bt)
+
+
 def _expandable_fks_1202fh(cols, models, table):
     """[(fk_col, target_cls, target_cols)] worth folding into an owner-scoped list read.
 
@@ -1156,6 +1177,10 @@ def _expandable_fks_1202fh(cols, models, table):
             tcols = list(tmeta.get("cols") or [])
             if not tcls or not tcols:
                 continue                      # #568 degenerate model
+            _ftypes = ((models or {}).get(table) or {}).get("types") or {}
+            _ttypes = tmeta.get("types") or {}
+            if not _joinable_types_1202fh(_ftypes.get(c), _ttypes.get("id")):
+                continue                  # mismatched or unknown join types -> 500 risk
             if "id" not in tcols:
                 # The emitted map is keyed by the target's `id`. Without one every key is
                 # None, every row resolves to None, and the expansion fails SILENTLY --
