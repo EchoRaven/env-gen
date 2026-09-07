@@ -742,6 +742,79 @@ _DEGRADED_FLOW_COVERAGE = {
 }
 
 
+def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
+    """#1202fr -- name the CONTRACT reason a failed UI flow 401s.
+
+    `#320` already names this class in backend_skeleton: an explicit ``auth_required:
+    false`` is "the lane's deliberate 'this read is public' declaration (r88/r89's
+    PUBLIC-FEED WEDGE)". The declaration exists; what is missing is anything that says the
+    wedge has happened. In tiktok-r96 the backend lane set ``auth_required: true`` on
+    ``GET /api/videos`` — the only feed endpoint — and the framework projected it
+    faithfully, so the logged-out landing page could never render:
+
+        ui_flow:fyp_feed_logged_out  "/ loads but GET /api/videos returns 401 while logged out"
+        ui_flow:fyp_feed_page        same
+        ui_flow:settings_more_menu   "/more calls protected GET /api/users/... while logged out (401)"
+
+    4 of that run's 12 failing flows, rediscovered by browser walk each time, reported as
+    "the page did not work" — and the route is FRAMEWORK-PROJECTED, so the lane cannot fix
+    it in code; only the contract can change. Nothing pointed at the contract.
+
+    This REPORTS, it never blocks: an app whose entry point is a login screen legitimately
+    serves an authenticated feed, and deciding that from a route shape would be a guess.
+    The note is attached only to flows that ALREADY failed, so the evidence comes from the
+    run, not from a policy about what an app should be.
+    """
+    try:
+        reg = getattr(hub_registry, "registryhub", None)
+        wanted = {str(f) for f in (failed_flows or [])}
+        if reg is None or not wanted:
+            return ""
+        pages = reg.list_ui_pages() or {}
+        endpoints = reg.get_endpoints() or {}
+    except Exception as exc:
+        _gate_absent_792("_auth_wedge_note_1202fr", exc, "run")
+        return ""
+
+    def _needs_auth(ep) -> bool:
+        if not isinstance(ep, dict):
+            return False
+        for src in (ep, ep.get("schema"), ep.get("metadata")):
+            if isinstance(src, dict) and src.get("auth_required") is True:
+                return True
+        return False
+
+    authed = set()
+    for key, ep in (endpoints.items() if isinstance(endpoints, dict) else []):
+        if not _needs_auth(ep):
+            continue
+        authed.add(str(key))
+        if isinstance(ep, dict) and ep.get("method") and ep.get("path"):
+            authed.add(f"{ep['method']} {ep['path']}")
+
+    hits = []
+    for key, pg in (pages.items() if isinstance(pages, dict) else []):
+        if not isinstance(pg, dict):
+            continue
+        name = str(pg.get("name") or key)
+        if name not in wanted:
+            continue
+        bad = [str(a) for a in (pg.get("apis_used") or []) if str(a) in authed]
+        if bad:
+            hits.append(f"{name} -> {bad[0]}")
+    if not hits:
+        return ""
+    # #1114/#1023: report the CONDITION, do not assert the verdict. A flow that
+    # authenticates first never sees the 401, so this is what the contract says an
+    # anonymous visitor would get -- evidence for the reader, not a diagnosis.
+    return (" Contract note — these failing flows declare an endpoint the contract marks "
+            "auth_required, which returns 401 to an anonymous visitor: "
+            + join_capped(hits, len(hits), cap=4, sep="; ")
+            + ". If the flow is meant to run logged out, the route is framework-projected "
+              "so it is fixed in the CONTRACT rather than the page: declare "
+              "auth_required=false for a read that is meant to be public (#320).")
+
+
 def _flow_coverage_summary(hub_registry, app_root) -> Tuple[Dict[str, Any], List[str]]:
     """Wrap ``flow_coverage.compute_flow_coverage`` so an import or
     runtime fault never propagates into the deliverability gate.
@@ -782,6 +855,10 @@ def _flow_coverage_summary(hub_registry, app_root) -> Tuple[Dict[str, Any], List
         blockers.append(
             f"{len(report.failed)} critical UI flow(s) failed: "
             + join_capped(report.failed, len(report.failed), cap=10, sep=", ")
+            # #1202fr: append the contract reason when there is one. The anchored prefix
+            # above is what orchestrator._validate_delivery_gate canonicalises on, and this
+            # text is added AFTER the names and contains neither anchor phrase.
+            + _auth_wedge_note_1202fr(hub_registry, report.failed)
         )
     if report.source == "critical_flows_invalid":
         # Designer wrote ``critical_flows: [...]`` but every entry was
