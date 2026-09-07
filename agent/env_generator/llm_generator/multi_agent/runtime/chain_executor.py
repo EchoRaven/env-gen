@@ -3451,8 +3451,9 @@ def run_chains(base: str, project_dir: Any,
     # budget in.
     _currency_1202ex = build_currency_1202ex(project_dir)
     if _currency_1202ex.get("verdict") == "changed":
-        _LOGC952.warning("#1202ex: chains are about to judge an app whose image may not be "
-                         "the source on disk -- %s", _currency_1202ex.get("detail"))
+        __import__("logging").getLogger(__name__).warning(
+            "#1202ex: chains are about to judge an app whose image may not be the source "
+            "on disk -- %s", _currency_1202ex.get("detail"))
     results = [execute_chain(base, ch, seed_ids=_seed_ids,
                           endpoints=list(business_endpoints or []),
                           projected=_projected)
@@ -3474,6 +3475,17 @@ def run_chains(base: str, project_dir: Any,
     # re-registration whose status is already passing — so naming it is the whole difference
     # between an actionable report and a search problem.
     broken = [f"[{r['name']}] {b}" for r in results for b in r["broken"]]
+    # #1202ex WIRING: the verdict has to reach the reader who acts on it. Put beside it in
+    # a dict, it would go the way of `declared_but_unmounted_952` -- a key nothing outside
+    # this file ever reads. `broken` is what the gate reports and the lane is handed, so a
+    # run that cannot vouch for what it tested says so THERE, once, at the head of the list.
+    # Only when there is something to explain: a green run needs no caveat, and a `current`
+    # verdict is the good news that needs no line either.
+    if broken and _currency_1202ex.get("verdict") == "changed":
+        broken.insert(0, "[build currency #1202ex] These verdicts may not be about the code "
+                         "on disk: " + str(_currency_1202ex.get("detail")) + ". Rebuild and "
+                         "recreate the stack, then re-run the chains BEFORE treating any "
+                         "failure below as an app defect.")
     framework_defects = [f"[{r['name']}] {b}"
                          for r in results for b in r.get("framework_defects", [])]
     total = sum(len(r["steps"]) for r in results)
