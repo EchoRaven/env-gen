@@ -416,7 +416,8 @@ def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
         NO_DELIVER time backstop bounds it regardless).
     Keyed on the STABLE progress signature, NEVER the counter-bearing reason string (which
     increments every cycle and would defer forever → livelock). Pure + side-effect-free."""
-    if not is_deliver_stuck or grace_used >= grace_max:
+    # #1202es: same shape — `_fwval_abort_grace_used` is persisted and sits as null.
+    if not is_deliver_stuck or (grace_used or 0) >= grace_max:
         return False
     if sig_at_latch is None or sig_now is None:
         return False
@@ -2681,7 +2682,7 @@ class Orchestrator:
                                 and _abort == getattr(self, "_fwval_abort_deliver_reason", None))
                             if _abort_grace_should_defer(
                                     _is_deliver_stuck,
-                                    getattr(self, "_fwval_abort_grace_used", 0),
+                                    (getattr(self, "_fwval_abort_grace_used", 0) or 0),
                                     getattr(self, "_fwval_abort_progress_sig", None),
                                     self._deliver_progress_sig()):
                                 self._fwval_abort_grace_used = getattr(
@@ -4590,7 +4591,7 @@ class Orchestrator:
                     _now = time.time()
                     _pb_decision = pages_release_decision(
                         self._pages_gate_deferred_since,
-                        getattr(self, "_pages_gate_attempts", 0),
+                        (getattr(self, "_pages_gate_attempts", 0) or 0),
                         _now,
                         has_referenced_unbuilt=bool(_ref_unbuilt),
                     )
@@ -4615,7 +4616,7 @@ class Orchestrator:
                         "Page-build deferral RELEASED (escape after %ss / %s attempts) "
                         "— delivering with the framework fallback for: %s",
                         int(_now - self._pages_gate_deferred_since),
-                        getattr(self, "_pages_gate_attempts", 0), ", ".join(_unbuilt))
+                        (getattr(self, "_pages_gate_attempts", 0) or 0), ", ".join(_unbuilt))
                     # #1133: that wait was the framework's, not the lanes' — give it back.
                     self._credit_framework_deferral_1133(_now - self._pages_gate_deferred_since, "page-build")
             # VISUAL-FIDELITY BLOCKING (2026-06-11, user goal: UI must be
@@ -4743,7 +4744,7 @@ class Orchestrator:
                     self._tu_squad_deferred_since = _now
                 _tu_decision = squad_release_decision(
                     self._tu_squad_deferred_since,
-                    getattr(self, "_tu_squad_attempts", 0), _now)
+                    (getattr(self, "_tu_squad_attempts", 0) or 0), _now)
                 if _tu_decision == "defer":
                     # #532: run the squad in the BACKGROUND (single-flight) — NEVER inline.
                     # The squad is ~42min of work (12 browser agents in 3 sequential waves);
@@ -4868,7 +4869,7 @@ class Orchestrator:
                         self._tu_browser_deferred_since = _bg_now
                     _bg_decision = squad_release_decision(
                         self._tu_browser_deferred_since,
-                        getattr(self, "_tu_browser_attempts", 0), _bg_now)
+                        (getattr(self, "_tu_browser_attempts", 0) or 0), _bg_now)
                     # FIX #152: a HARD-unusable app (login broken / login-wall hollow) NEVER
                     # escape-releases — the bounded escape only applies to SOFT defects. A
                     # release nobody can log into is worthless; hold to FAIL-FAST instead of
@@ -4931,7 +4932,7 @@ class Orchestrator:
                     if getattr(self, "_rc_deferred_since", None) is None:
                         self._rc_deferred_since = _rc_now
                     _rc_decision = squad_release_decision(
-                        self._rc_deferred_since, getattr(self, "_rc_attempts", 0), _rc_now)
+                        self._rc_deferred_since, (getattr(self, "_rc_attempts", 0) or 0), _rc_now)
                     self._rc_attempts = (getattr(self, "_rc_attempts", 0) or 0) + 1
                     if _rc_decision == "defer":
                         self._logger.warning(

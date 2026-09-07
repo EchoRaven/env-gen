@@ -723,7 +723,11 @@ def squad_release_decision(deferred_since: Optional[float], attempts: int, now: 
     deferring (re-dispatch fixes, re-test next cycle) until either the per-milestone attempt cap
     or the wall-clock anchored to the FIRST defer is hit — then release anyway (never deadlock).
     """
-    if attempts >= max_attempts:
+    # #1202es: `or 0` because a RESTORED counter is None, not absent — `_rc_attempts` and
+    # `_tu_browser_attempts` are both persisted and both sit as null in a
+    # milestone_gates.json written before #1202el. #1202em hardened the `+ 1` increments and
+    # missed the reads that feed this comparison.
+    if (attempts or 0) >= max_attempts:
         return "release"
     if deferred_since is not None and (now - deferred_since) >= wall_s:
         return "release"
