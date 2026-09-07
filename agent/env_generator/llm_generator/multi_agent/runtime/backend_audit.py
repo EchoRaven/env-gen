@@ -563,11 +563,26 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
             if not (_is_per_user_sub_entity_fk(meta, fk, models)
                     or _is_user_content_relation(meta, fk)):
                 continue                      # ambiguous ownership -- the projector leaves it too
+            # #1202gc: SAY WHETHER THERE IS A CALLER AT ALL. This said "to any
+            # authenticated caller" unconditionally, which was true while every such read
+            # projected behind Depends(get_current_user). Once #1202ga made the lane's
+            # `auth_required: false` effective, a flagged read can be served with NO auth --
+            # and the message then understates the exposure in the one direction that
+            # matters, reading as "logged-in users see too much" when it is "anyone does".
+            # The reader also needs to know the reach is a CONTRACT decision, because the
+            # handler is framework-projected and the lane cannot add the filter itself.
+            _authed_1202gc = "get_current_user" in body
             out.append(
-                "%s: GET %s returns every row of `%s` to any authenticated caller -- the table is "
+                "%s: GET %s returns every row of `%s` to %s -- the table is "
                 "owned via `%s` and the handler applies no owner filter, while its paired write "
-                "refuses a foreign owner. Scope the read to the caller (#919)."
-                % (_OWNED_READ_919, paths[0], cls2tbl.get(model or "", "?"), fk))
+                "refuses a foreign owner. Scope the read to the caller (#919)%s."
+                % (_OWNED_READ_919, paths[0], cls2tbl.get(model or "", "?"),
+                   "any authenticated caller" if _authed_1202gc
+                   else "ANY caller -- the handler is UNAUTHENTICATED",
+                   fk,
+                   "" if _authed_1202gc else
+                   "; if this read is genuinely public the projected route follows the "
+                   "CONTRACT, so `auth_required` is where it is decided, not the handler"))
     except Exception as _e1202af:
         # #1202af: this feeds a DELIVERY BLOCKER, so an empty return is read as "nothing
         # wrong" whether it checked or died. #1202ae found the same shape in three detectors
