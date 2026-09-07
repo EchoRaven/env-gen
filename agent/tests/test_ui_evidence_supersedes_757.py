@@ -34,7 +34,7 @@ from env_generator.llm_generator.multi_agent.runtime import delivery_gate as dg
 def _rec(name, status, ts, check="ui_flow", **meta):
     m = {"check": check}
     m.update(meta)
-    return {"name": name, "status": status, "updated_at": ts, "metadata": m}
+    return {"name": name, "status": status, "recorded_at": ts, "metadata": m}
 
 
 # --- superseding -------------------------------------------------------------------------------

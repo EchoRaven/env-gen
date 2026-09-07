@@ -192,9 +192,9 @@ def test_the_r148_shape_now_blocks():
     """Two passing (landing, login) against six failing ui_flow records."""
     # Named per flow, as real records are — #757 supersedes by name, and the original
     # `[_rec(...)] * 6` was six references to ONE object, which is one flow, not six.
-    recs = ([{"name": f"validation:ui_smoke:{p}", "status": "passed", "updated_at": 1,
+    recs = ([{"name": f"validation:ui_smoke:{p}", "status": "passed", "recorded_at": 1,
               "metadata": {"check": "ui_smoke"}} for p in ("landing", "login")]
-            + [{"name": f"validation:ui_flow:{p}", "status": "failed", "updated_at": 2,
+            + [{"name": f"validation:ui_flow:{p}", "status": "failed", "recorded_at": 2,
                 "metadata": {"check": "ui_flow"}}
                for p in ("browse_home", "games", "movies", "my_list", "new", "shows")])
     b = dg._ui_evidence_breadth_739(recs)

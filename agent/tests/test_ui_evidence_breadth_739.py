@@ -115,14 +115,14 @@ def test_repeats_of_ONE_flow_collapse_to_its_latest():
     REFERENCES to one object — and the old code counted them as three records. Real records
     carry a `name` (`validation:ui_flow:landing`) and three writes of one flow are one flow's
     history, not three flows. Distinct pages still count distinctly, below."""
-    recs = [{"name": "validation:ui_smoke:landing", "status": "passed", "updated_at": t,
+    recs = [{"name": "validation:ui_smoke:landing", "status": "passed", "recorded_at": t,
              "metadata": {"check": "ui_smoke", "page": "landing"}} for t in (1, 2, 3)]
     b = dg._ui_evidence_breadth_739(recs)
     assert b["passed_records"] == 1 and b["pages_passed"] == ["landing"]
 
 
 def test_distinct_flows_are_still_counted_separately():
-    recs = [{"name": f"validation:ui_smoke:p{i}", "status": "passed", "updated_at": i,
+    recs = [{"name": f"validation:ui_smoke:p{i}", "status": "passed", "recorded_at": i,
              "metadata": {"check": "ui_smoke"}} for i in range(3)]
     assert dg._ui_evidence_breadth_739(recs)["passed_records"] == 3
 

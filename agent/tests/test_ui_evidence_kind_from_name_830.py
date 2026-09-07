@@ -30,7 +30,7 @@ from env_generator.llm_generator.multi_agent.runtime.delivery_gate import (
 
 def _rec(name, status, check=None):
     return {"name": name, "status": status,
-            "metadata": ({"check": check} if check else {}), "updated_at": 1}
+            "metadata": ({"check": check} if check else {}), "recorded_at": 1}
 
 
 def test_the_kind_is_read_from_metadata_when_present():
