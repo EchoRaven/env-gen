@@ -82,16 +82,80 @@ def _resolve_ui_flow(reg: Any, target_key: str) -> str:
         results = reg.get_validation_results(limit=500)
     except Exception:
         results = []
+    # #1202ft -- THREE DEFECTS, EACH OF WHICH ALONE MAKES THIS RESOLVER SAY NOTHING.
+    #
+    # 1. TWO VOCABULARIES CONFLATED. This function's OUTPUT alphabet is
+    #    "pass"/"fail"/"evidence_pending"; a validation RECORD's status is never either of
+    #    the first two. `get_validation_results` canonicalises to "passed"/"failed" and the
+    #    raw store carries "success"/"failure" (#752 counted 1198/310/252 of the three
+    #    spellings). So `status == "pass"` could not match a single row, and the resolver
+    #    returned "evidence_pending" unconditionally. Measured on tiktok-r96's ledger: 23
+    #    ui_flow records, 17 passed and 6 failed, and every flow -- including one that was
+    #    never recorded at all -- resolved identically to "evidence_pending". A flow with 17
+    #    passing records was indistinguishable from a flow nobody ever ran.
+    #    The sibling resolvers are NOT wrong in the same way and show why: _resolve_api_smoke
+    #    reads a PROBE's `verdict`, where "pass"/"fail" is the real vocabulary, and its
+    #    docstring already says "``verdict`` field ... (NOT ``status``)". This one reads
+    #    `status` and kept the comparison that belongs to `verdict`.
+    #
+    # 2. THE PREDICATE MATCHED ANY ui_flow ROW. `check == "ui_flow" OR flow == flow OR ...`
+    #    is true for every ui_flow record in the store, so the FIRST one encountered would
+    #    have answered for every flow. It has to be "is a ui_flow record" AND "is about THIS
+    #    flow".
+    #
+    # 3. FIRST-MATCH-WINS. The other two readers of this same store both take the newest
+    #    record (#357 in flow_coverage, #757 in delivery_gate) because the store is a
+    #    HISTORY. Returning on the first row let a stale failure outrank a later pass.
+    #
+    # 4. AND, HAVING FIXED THOSE, THE SAME TWO RULES THE OTHER READERS CARRY. This store has
+    #    three consumers and each had implemented a different subset -- the shape that cost
+    #    #1202fn/#1202fp/#1202fq/#1202fs. Rather than leave a fourth subset here, reuse the
+    #    other readers' own functions: #1202fo's route attribution (a re-walk names the
+    #    record after the route it browsed, so `/live` passing as `live_page` is evidence
+    #    about the page registered there) and #401's staleness (a FAILURE predating the
+    #    current build's validation means re-verify, never "passed").
+    from .hub_registry import _canon_validation_status as _canon1202ft
+    try:
+        from .flow_coverage import (_page_name_by_route_1202fo, _route_of_url_1202fo,
+                                    _latest_build_validation_time)
+        _routes1202ft = _page_name_by_route_1202fo(reg) or {}
+        _stale1202ft = float(_latest_build_validation_time(reg) or 0.0)
+    except Exception:
+        _routes1202ft, _stale1202ft = {}, 0.0
+        _route_of_url_1202fo = lambda _u: ""
+    _best = None
+    _best_at = None
     for r in results or []:
+        if not isinstance(r, dict):
+            continue
         meta = r.get("metadata") or {}
-        if (meta.get("check") == "ui_flow"
-                or meta.get("flow") == flow
-                or r.get("name", "").endswith(f":ui_flow:{flow}")):
-            status = r.get("status")
-            if status == "pass":
-                return "pass"
-            if status == "fail":
-                return "fail"
+        if meta.get("check") != "ui_flow" and not str(
+                r.get("name") or "").startswith("validation:ui_flow:"):
+            continue
+        _same = (meta.get("flow") == flow
+                 or str(r.get("name") or "").endswith(f":ui_flow:{flow}"))
+        if not _same and _routes1202ft:
+            # #1202fo: attribute by the URL the record says it validated.
+            _same = _routes1202ft.get(_route_of_url_1202fo(meta.get("url"))) == flow
+        if not _same:
+            continue
+        try:
+            _at = float(r.get("recorded_at") or 0) or None
+        except (TypeError, ValueError):
+            _at = None
+        if _best is None or (_at is not None and (_best_at is None or _at >= _best_at)):
+            _best, _best_at = r, _at
+    if _best is None:
+        return "evidence_pending"
+    _canon = _canon1202ft(_best.get("status"))
+    if _canon == "passed":
+        return "pass"
+    if _canon in ("failed", "error"):
+        # #401: a failure recorded against an EARLIER build is a re-verify, not a verdict.
+        # Never the other direction -- a passing record is never aged out.
+        if _stale1202ft > 0 and _best_at is not None and _best_at < _stale1202ft:
+            return "evidence_pending"
+        return "fail"
     return "evidence_pending"
 
 
