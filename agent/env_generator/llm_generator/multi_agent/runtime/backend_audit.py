@@ -28,8 +28,10 @@ worktree). Mirrors ``frontend_audit.sync_ui_page_statuses``.
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Set, Tuple
 
@@ -506,6 +508,85 @@ def _models_919(backend_dir: Any) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, 
     return models, cls2tbl
 
 
+def _declared_public_1202gd(backend_dir, table: str) -> bool:
+    """#1202gd -- TWO INDEPENDENT STATEMENTS that this table's rows are published content.
+
+    Measured over the 116 delivered backends on this machine, `_is_user_content_relation`
+    fires on 267 tables, and no structural rule separates the public ones from the private:
+    a non-key-column threshold exempts `notifications` (4 columns, genuinely private); a
+    content-payload test keeps `messages`, which also carries `text`; and #633 does not
+    separate `my_list` from `videos`. The distinction is SEMANTIC -- `videos(author_id, ...)`
+    and `saved_items(user_id, ...)` have the same shape -- so the schema cannot decide it and
+    the materials have to say.
+
+    So the exemption needs the reference spec's `entities[].visibility == "public"`, compiled
+    from the product's own screenshots and docs, AND the contract's explicit
+    `auth_required is False` for the collection read. Requiring both is what makes this safe
+    to relax at all: exempting on the contract alone releases 33 tables in the corpus and one
+    of them is a real `my_list` -- the r141 leak shape, where a lane declared a per-user list
+    public by mistake and this audit was the last thing that noticed.
+
+    Absent `visibility` (every spec in the corpus today) this returns False and the check
+    behaves exactly as before, so the relaxation is opt-in per environment and no existing
+    run changes verdict.
+    """
+    try:
+        root = Path(str(backend_dir)).parents[1]
+        spec_path = root / "design" / "reference_spec.json"
+        if not spec_path.is_file():
+            return False              # no spec: nothing declared, stay strict. Not a fault.
+    except Exception as _e1202gd:
+        # #1201/#1202ah: this returns False on the way to a DELIVERY BLOCKER, so a fault
+        # here is indistinguishable from "nothing was declared" -- and that is exactly how
+        # the first draft of this function shipped dead: `json` and `Mapping` were not
+        # imported, every call raised NameError, the except swallowed it, and a corpus run
+        # reported "zero behaviour change" because the exemption could never fire.
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.declared_public_1202gd.locate",
+                       "the public-content declaration (#1202gd) — every owned-table read "
+                       "will be reported as unscoped even where the materials say the rows "
+                       "are published", _e1202gd)
+        return False
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        ents = spec.get("entities") if isinstance(spec, dict) else None
+        vis = ""
+        for e in (ents or []):
+            if isinstance(e, Mapping) and str(e.get("name") or "").strip() == table:
+                vis = str(e.get("visibility") or "").strip().lower()
+                break
+        if vis != "public":
+            return False
+    except Exception as _e1202gd:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.declared_public_1202gd.spec",
+                       "the public-content declaration (#1202gd) — the reference spec could "
+                       "not be read, so a declared-public collection still reports as an "
+                       "unscoped owner read", _e1202gd)
+        return False
+    try:
+        eps = json.loads((root / "shared" / "hubs"
+                          / "registryhub_endpoints.json").read_text(encoding="utf-8"))
+    except Exception:
+        return False                      # no contract to corroborate -> stay strict
+    for _k, ep in (eps.items() if isinstance(eps, dict) else []):
+        if not isinstance(ep, Mapping) or str(ep.get("method") or "").upper() != "GET":
+            continue
+        path = str(ep.get("path") or "").rstrip("/")
+        if not (path.endswith("/" + table) or path.endswith("/" + table.replace("_", "-"))):
+            continue
+        stated = ep.get("auth_required")
+        if stated is None:
+            stated = (ep.get("schema") or {}).get("auth_required") \
+                if isinstance(ep.get("schema"), Mapping) else None
+        if stated is None:
+            stated = (ep.get("metadata") or {}).get("auth_required") \
+                if isinstance(ep.get("metadata"), Mapping) else None
+        if stated is False:
+            return True
+    return False
+
+
 def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
     """#919: a served GET that returns rows of an OWNED table without filtering by the caller.
 
@@ -563,6 +644,11 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
             if not (_is_per_user_sub_entity_fk(meta, fk, models)
                     or _is_user_content_relation(meta, fk)):
                 continue                      # ambiguous ownership -- the projector leaves it too
+            # #1202gd: ...unless the materials AND the contract both say the rows are
+            # published content. Structure cannot tell a feed from a saved list; this is
+            # the only signal that can, and it takes two independent ones.
+            if _declared_public_1202gd(backend_dir, cls2tbl.get(model or "", "")):
+                continue
             # #1202gc: SAY WHETHER THERE IS A CALLER AT ALL. This said "to any
             # authenticated caller" unconditionally, which was true while every such read
             # projected behind Depends(get_current_user). Once #1202ga made the lane's

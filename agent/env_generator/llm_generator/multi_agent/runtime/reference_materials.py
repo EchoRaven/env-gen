@@ -210,13 +210,28 @@ actually support — do not invent. Respond with ONLY a JSON object:
 {
   "screens":   [{"name": "<snake_case>", "route_hint": "/<path>", "must_have": ["<visible component/feature>", ...]}, ...],
   "endpoints": [{"method": "GET|POST|PUT|PATCH|DELETE", "path": "/api/...", "purpose": "<one line>"}, ...],
-  "entities":  [{"name": "<table_snake_case>", "fields": ["<column>", ...]}, ...],
+  "entities":  [{"name": "<table_snake_case>", "fields": ["<column>", ...],
+                 "visibility": "public|owner"}, ...],
   "mcp_tools": [{"name": "<tool_name>", "purpose": "<one line>", "endpoint": "<METHOD /api/... — the endpoint (from your endpoints list) this tool wraps>"}, ...],
   "acceptance": ["<machine-checkable acceptance criterion>", ...]
 }
 Rules: endpoint paths start with /api/ (auth endpoints with /auth/); screens
 must be real screens depicted or described; mcp_tools ONLY if the materials
-document MCP tools; keep every list deduplicated."""
+document MCP tools; keep every list deduplicated.
+
+`visibility` (#1202gd) answers ONE question about a table that carries a user
+column: WHO IS A ROW FOR? Answer it from the materials, and omit the field
+entirely when they do not say.
+  "public" — every row is content PUBLISHED for all users to read: a feed of
+             posts or videos, a catalogue, public comments or reviews. A reader
+             who is not the author still sees the row, and seeing it is the point.
+  "owner"  — a row is PRIVATE to the user it belongs to: a saved/watch list, a
+             direct message, a notification, a per-user progress or rating record.
+             Another user seeing it would be a leak.
+The two are not distinguishable from the columns alone — `videos(author_id, ...)`
+and `saved_items(user_id, ...)` have the same shape — which is why the materials
+have to say. When unsure, OMIT it: an absent value is read as "not stated" and the
+framework keeps its own stricter default."""
 
 
 def _parse_spec(text: str) -> Dict[str, Any]:
