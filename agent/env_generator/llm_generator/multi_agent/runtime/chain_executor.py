@@ -257,6 +257,57 @@ except Exception:  # pragma: no cover — keep chain_executor importable in isol
 _WHOLE_PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 
 
+# #1202ew: the body a step actually SENT was never recorded -- 8847 of 8847 stored POST
+# steps carry `body: null`, and the field is the request's, not the response's. In the live
+# era 30 of 49 failing chain steps are a dispute between what the chain sent and what the
+# handler expected (400 "a create needs at least one field", 422 "email and password are
+# required", 409 duplicate), and NOBODY on either side can see the body: not the lane, not
+# the dispatcher that routes the fix, not a post-mortem. #682 already found this from the
+# other end -- "the step's own request body holds the answer and the line never quoted it" --
+# and quoted it for one narrow case. Recording it answers the whole family.
+#
+# On FAILING steps only. A passing step's body is not evidence of anything, and the corpus
+# holds 2842 passing chains whose bodies would bloat every hub file that stores them.
+#
+# Cap measured, not guessed: across 7351 authored chain bodies the largest is 592 bytes
+# (p99.9 = 254). 1024 stores every body the corpus has ever carried, with headroom.
+_SENT_BODY_CAP_1202EW = 1024
+
+# Keys whose VALUE is a credential. The shape is kept and the value is not: diagnosing a
+# body dispute needs to know the field was present and what type/length it had, never what
+# the secret was. Redacting the value outright would hide the failure mode where a
+# credential arrives mangled or empty, which is one of the disputes this exists to settle.
+_SECRET_KEYS_1202EW = ("password", "secret", "token", "authorization", "api_key", "apikey")
+
+
+def _sent_body_1202ew(body: Any) -> Any:
+    """The request body as sent, safe to store: secrets reduced to their shape, size capped."""
+    def _walk(v, depth=0):
+        if depth > 6:
+            return "<deep>"
+        if isinstance(v, Mapping):
+            out = {}
+            for k, val in v.items():
+                if any(t in str(k).lower() for t in _SECRET_KEYS_1202EW) and not isinstance(val, (Mapping, list)):
+                    out[k] = "<%s:%d>" % (type(val).__name__, len(str(val)))
+                else:
+                    out[k] = _walk(val, depth + 1)
+            return out
+        if isinstance(v, list):
+            return [_walk(x, depth + 1) for x in v[:20]]
+        return v
+    try:
+        if body is None or isinstance(body, (str, bytes)):
+            # A non-JSON body is itself a finding -- the handler reads `body: dict = None`,
+            # so a string arrives as no body at all and every field silently disappears.
+            return body if body is None else str(body)[:_SENT_BODY_CAP_1202EW]
+        safe = _walk(body)
+        text = json.dumps(safe, default=str)
+        return safe if len(text) <= _SENT_BODY_CAP_1202EW else text[:_SENT_BODY_CAP_1202EW] + "...(truncated)"
+    except Exception:
+        return "<unserialisable %s>" % type(body).__name__
+
+
 def _drop_unresolved_owner_fks(body: Any) -> tuple:
     """#575 — a body OWNER-FK whose ``${var}`` never resolved must be OMITTED, not guessed.
 
@@ -3045,6 +3096,9 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                  "note": note}
         if expect:
             entry["expect"] = list(expect)  # #188: the broken line shows intent
+        if not ok:
+            # #1202ew: what went out, so the dispute is settleable. Failing steps only.
+            entry["sent_body"] = _sent_body_1202ew(body)
         if autofilled:
             entry["autofilled"] = autofilled
         recorded.append(entry)
