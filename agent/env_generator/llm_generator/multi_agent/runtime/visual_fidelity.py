@@ -6435,8 +6435,31 @@ class VisualFidelityGate:
                                  "rows?), the route's handler precedence, and whether the "
                                  "endpoint returns [] for a valid session. Only add seed rows "
                                  "if you first confirm the backing table is genuinely empty.")
+                    # #1202ff: the TITLE must carry the same verdict the body just reached.
+                    # It was the literal "seed the missing rows" whatever the audit found, so
+                    # on the common branch it says the opposite of its own description: r45's
+                    # task reads "seed the missing rows" over a body that says "the seed audit
+                    # flags NO table as under-seeded, so this is probably NOT a seeding problem
+                    # ... Only add seed rows if you first confirm the backing table is
+                    # genuinely empty."
+                    #
+                    # That branch IS the common one. Across every recent run with live counts,
+                    # the only tables ending at 0 rows are oauth_clients and
+                    # oauth_authorization_codes -- infrastructure that is supposed to be empty
+                    # -- while 1-10 screens per run are flagged empty_state. So the screens
+                    # render empty over POPULATED tables, and the title told the lane to do the
+                    # one thing #661's own body warns "burns a round on the wrong lane".
+                    #
+                    # Titles are not decoration here: `workhub_list_tasks` returns them and is
+                    # the most-called tool in the corpus, so a lane triaging its queue sees the
+                    # title long before the description.
+                    _title_1202ff = (
+                        "Visual gate: screen(s) render an EMPTY state — seed the missing rows"
+                        if _thin else
+                        "Visual gate: screen(s) render an EMPTY state over POPULATED tables — "
+                        "read-path bug (filters/owner-scoping), NOT seeding")
                     _bt = orch.hubs.workhub.create_task(
-                        title="Visual gate: screen(s) render an EMPTY state — seed the missing rows",
+                        title=_title_1202ff,
                         description=(
                             "The visual-fidelity judge flagged these screens as EMPTY-state: "
                             + ", ".join(_empty) + ". Their reference design only renders when "
