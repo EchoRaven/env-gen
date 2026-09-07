@@ -2007,6 +2007,15 @@ class Orchestrator:
                     try:
                         from .runtime.milestone_resume import restore_gate_counters_1202ce
                         _restored_1202ce = restore_gate_counters_1202ce(self, _mkey)
+                        # #1202fd: NOW the clocks exist. Shift them by the downtime #1202eq
+                        # measured, so a stopped run earns no deferral progress toward an
+                        # escape that means DELIVER ANYWAY. Consumed once -- a later
+                        # milestone restore must not re-apply the same gap.
+                        if _restored_1202ce:
+                            _gap_1202fd = getattr(self, "_downtime_gap_1202fd", None)
+                            if isinstance(_gap_1202fd, (int, float)) and _gap_1202fd > 0:
+                                self._shift_deferral_clocks_1202fd(_gap_1202fd)
+                                self._downtime_gap_1202fd = None
                     except Exception:
                         _restored_1202ce = False
                     if not _restored_1202ce:
@@ -4190,7 +4199,12 @@ class Orchestrator:
             if _gap <= 60:
                 return                      # a fast relaunch is not downtime
             self._credit_framework_deferral_1133(_gap, "resume downtime (#1202eq)")
-            self._shift_deferral_clocks_1202fd(_gap)
+            # #1202fd (ordering): the deferral clocks do not exist yet -- #1202ce restores
+            # them ~450 lines later, from milestone_gates.json. Shifting here found nothing
+            # to shift and logged nothing, which netflix-r41's third resume showed within
+            # minutes: "#1202eq credited 1562s" with no "#1202fd shifted" beside it. Record
+            # the gap; the shift runs where the clocks are.
+            self._downtime_gap_1202fd = _gap
             self._logger.warning(
                 "#1202eq credited %.0fs of downtime back to the delivery clock — the run "
                 "was stopped for that long and no lane could spend it. Without this a run "
