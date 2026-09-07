@@ -597,7 +597,28 @@ _DRIVER_GONE_RE_1199 = re.compile(
     r"(?i)(\bdriver\b[^.\n]{0,40}\bclos|\bclos\w+[^.\n]{0,20}\bthe driver\b)")
 
 
-def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
+def _page_by_route_1202fq(hubs) -> Dict[str, str]:
+    """#1202fq -- {route: registered ui_page name}, via #1202fo's single implementation so
+    the two readers of the ui_flow evidence cannot drift apart. Best-effort: {} means the
+    supersede key falls back to the record name, i.e. the previous behaviour exactly."""
+    try:
+        from .flow_coverage import _page_name_by_route_1202fo
+        return _page_name_by_route_1202fo(hubs) or {}
+    except Exception as _e1202fq:
+        # #1201/#1202ah: an EMPTY map is not a neutral default here -- it silently
+        # restores the exact latch #1202fq removes (stale failures under a name no
+        # re-walk ever reproduces). Say so rather than degrading quietly.
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.page_by_route_1202fq",
+                       "the route->page map (#1202fq) — a re-walk recorded under the "
+                       "route's own name can NOT retire the registered page's stale "
+                       "failure, so validation_ui_evidence_failed may latch",
+                       _e1202fq)
+        return {}
+
+
+def _ui_evidence_breadth_739(validation_results: Any,
+                             page_by_route: Any = None) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
     `_ui_smoke_pass` is existential — ONE passing UI record satisfies it, and a FAILING UI
@@ -651,6 +672,32 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
         if _kind830 not in _UI_SMOKE_EVIDENCE_CHECKS:
             continue
         _key = str(r.get("name") or r.get("task_id") or id(r))
+        # #1202fq: SUPERSEDE BY THE PAGE, NOT BY THE SPELLING.
+        #
+        # #757 retires a failure once a later pass answers the same flow, and says so:
+        # "a failure that a later pass has answered does not [block]". It keys that by the
+        # record's NAME, so it only works when both records spell the flow identically --
+        # and a verifier re-walking a page names the record after the route it browsed.
+        # tiktok-r96: `/live` was walked afresh and PASSED as `ui_flow:live_page`, while
+        # `ui_flow:live_discover` -- the page registered on `/live` -- still held a
+        # 28-hour-old failure from before two resumes. Two keys, both kept, the stale one
+        # still "the newest word on its flow". All 8 records blocking
+        # validation_ui_evidence_failed at that point were 28h+ old and every fresh walk
+        # this run had passed; the check had become the latch #757 exists to prevent.
+        #
+        # The record already carries the URL it validated and routes are unique per page,
+        # so keying by the registered page needs no guessing. Same map as #1202fo uses in
+        # flow_coverage -- deliberately the SAME function, because this whole batch has
+        # been finding one evidence store read by two consumers that each implemented half
+        # the rules.
+        if page_by_route:
+            try:
+                from .flow_coverage import _route_of_url_1202fo as _rt1202fq
+                _pg = page_by_route.get(_rt1202fq((r.get("metadata") or {}).get("url")))
+                if _pg:
+                    _key = f"validation:ui_flow:{_pg}"
+            except Exception:
+                pass
         _prev = _latest757.get(_key)
         if _prev is None or _ts757(r) >= _ts757(_prev):
             _latest757[_key] = r
@@ -2654,7 +2701,8 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # #739: make the thinness audible. The verdict is unchanged — this only says what it rests
     # on, because "ui_smoke_pass=True" alongside failing UI records reads as app-wide UI health
     # and in r148 meant two unauthenticated pages out of fourteen.
-    _breadth739 = _ui_evidence_breadth_739(validation_results)
+    _breadth739 = _ui_evidence_breadth_739(
+        validation_results, page_by_route=_page_by_route_1202fq(hubs))
     # #752 (user-approved) — CONTRADICTED UI EVIDENCE BLOCKS; MISSING UI EVIDENCE DOES NOT.
     #
     # #739 showed `ui_smoke_pass` is existential: one passing record satisfies the whole UI
