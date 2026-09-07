@@ -209,6 +209,23 @@ class RunBudget:
         except Exception:
             return "error"
 
+    def write_process_wall_1202ez(self, seconds: float) -> None:
+        """Stash the run's TOTAL process wall clock for the next write to carry.
+
+        `usage.started_at` means "the origin the wall-clock cap is measured from" (#1196),
+        which excludes design-prep and kickoff -- ~60 minutes of it in netflix-r26. Making
+        the terminal write agree with that meaning (#1202ez) is right, but it would leave
+        nowhere to read how long the run actually took. One field cannot answer both
+        questions; that is the mistake #1196 named. So: two fields.
+
+        Set just before the write that should carry it. Held rather than written directly
+        so the value lands inside the same atomic payload as the status it belongs to.
+        """
+        try:
+            self._process_wall_1202ez = float(seconds)
+        except Exception:
+            pass
+
     def write(self, caps: Dict[str, Any], started_at: float,
               elapsed: float, ticks: int, status: str, reason: str = "") -> None:
         """Persist caps + usage so the live monitor can show budget progress.
@@ -233,6 +250,12 @@ class RunBudget:
                     "pid_started": _proc_started_1202ev(os.getpid()),
                 },
             }
+            _pw = getattr(self, "_process_wall_1202ez", None)
+            if isinstance(_pw, (int, float)):
+                # #1202ez: total wall clock INCLUDING design-prep and kickoff, beside the
+                # capped window. Absent when nobody set it, so it never claims a
+                # measurement that was not taken.
+                payload["usage"]["process_wall_sec_1202ez"] = round(float(_pw), 1)
             if reason:
                 payload["usage"]["terminal_reason"] = str(reason)[:_REASON_CAP_1202EB]
             # #1163: carry the SPEND beside the wall-clock and tick caps. The framework

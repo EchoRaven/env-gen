@@ -813,9 +813,12 @@ class Orchestrator:
         # says `running`. Say so now, while the file it left is still readable -- this
         # process's first write rebuilds the payload and the evidence is gone.
         try:
-            self._seal_1202ev = self._budget.seal_abandoned_predecessor_1202ev()
+            # The return value is for the tests; the run learns about a seal from the
+            # warning the method logs. Storing it on self would be a written-and-never-read
+            # attribute, which is the shape #1202ex's wiring commit was about.
+            self._budget.seal_abandoned_predecessor_1202ev()
         except Exception:
-            self._seal_1202ev = "error"
+            pass
 
         self._design_input = design_input  # Design-Prep phase input dir (Task 5); None → off
         self._reference_images = list(reference_images or [])
@@ -3202,18 +3205,37 @@ class Orchestrator:
             if _t1175 is not None:
                 _t1175.cancel()
             _abort_1202eb = self._provider_abort_reason_1202eb()
+            # #1202ez: one origin, used for both arguments below.
+            _origin_1202ez = (getattr(self, "_loop_start_1196", None)
+                              or start_time.timestamp())
+            # …and the run's TOTAL wall clock beside it, so making the field consistent
+            # does not delete the other question. design-prep and kickoff took ~60 minutes
+            # in netflix-r26; a post-mortem that can only see the loop cannot see that.
+            self._budget.write_process_wall_1202ez(time.time() - start_time.timestamp())
             self._budget.write(
                 self._load_run_budget_caps({
                     "max_wall_sec": float(os.environ.get("ENVGEN_MAX_WALLCLOCK_SEC", "7200")),
                     "max_ticks": int(os.environ.get("ENVGEN_MAX_TICKS", "240")),
                     "unlimited": False,
                 }),
-                start_time.timestamp(),
+                # #1202ez: the SAME origin the cap is measured from, which is what #1196
+                # made this field mean -- and then set on the periodic ticker only. This
+                # writer runs LAST and overwrites everything, so a finished run's ledger
+                # reported one clock while every live reading during it reported another:
+                # exactly the "One field, two meanings, whichever writer touched it last"
+                # #1196 names. The precedent is one argument below: #1192 fixed `ticks` on
+                # the ticker and left this same site, and #1192b had to come back for it.
+                #
+                # Measured on r43 (live): started_at moved from 22:38:5x to 22:44:26 inside
+                # ONE process when the coordination loop began -- correct per #1196 -- and
+                # the terminal write would have moved it back. A run that dies in kickoff
+                # has no loop origin, and its process clock is the honest number there.
+                _origin_1202ez,
                 # #1192b: the live count, NOT 0. The first pass fixed only the periodic
                 # ticker and left this one, which runs LAST and overwrites everything —
                 # r24's resume proved it: the abort message read "aborted after 11
                 # coordination ticks" while the ledger it wrote said ticks=0.
-                time.time() - start_time.timestamp(),
+                time.time() - _origin_1202ez,
                 # #1202eb: HOW the run ended, not merely THAT it stopped.
                 #
                 # This argument was the literal "finished" for every outcome, four lines
