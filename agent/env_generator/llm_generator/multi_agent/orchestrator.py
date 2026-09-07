@@ -4103,6 +4103,52 @@ class Orchestrator:
         except Exception:
             return 0.0
 
+    def _shift_deferral_clocks_1202fd(self, gap: float) -> None:
+        """Move every persisted `*_deferred_since` forward by the downtime.
+
+        #1202ce persists these clocks deliberately, so "a run most of the way to an escape"
+        keeps what it earned. They are ABSOLUTE timestamps, though, and every release
+        decision escapes on `(now - deferred_since) > escape_s` -- so a run that was DEAD
+        between the two processes is credited with that death as deferral progress.
+
+        netflix-r41, live: killed 09-04, resumed 09-06, and its visual gate released with
+        "escape after 196153s deferred / 1 attempts" -- 54.5 hours, most of it a stopped
+        process. plateau was 0 and attempts 1, so neither of the other two escapes fired:
+        the wall-clock one did, on time nobody spent. An escape means DELIVER ANYWAY,
+        below threshold, so this direction is permissive -- it ships work the gate never
+        actually finished deferring on.
+
+        #1202eq already measures the gap and shifts the delivery clock by it
+        (`_fwdeliver_first_decline_ts += _grant`). This is the same shift for the clocks
+        #1202ce restores; the two mechanisms only ever worked separately.
+
+        The visual gate keeps its own `deferred_since` on `_vf_gate`, so it is shifted
+        there rather than through the attribute list.
+        """
+        try:
+            _fields = ("_pages_gate_deferred_since", "_tu_squad_deferred_since",
+                       "_rc_deferred_since", "_tu_browser_deferred_since")
+            _moved = []
+            for _f in _fields:
+                _v = getattr(self, _f, None)
+                if isinstance(_v, (int, float)):
+                    setattr(self, _f, float(_v) + gap)
+                    _moved.append(_f)
+            _vf = getattr(self, "_vf_gate", None)
+            _ds = getattr(_vf, "deferred_since", None) if _vf is not None else None
+            if isinstance(_ds, (int, float)):
+                _vf.deferred_since = float(_ds) + gap
+                _moved.append("visual_gate.deferred_since")
+            if _moved:
+                self._logger.warning(
+                    "#1202fd shifted %d deferral clock(s) forward by %.0fs of downtime "
+                    "(%s) — a stopped run earns no deferral progress, and the wall-clock "
+                    "escape means DELIVER ANYWAY, so counting it would ship below "
+                    "threshold on time nobody spent.",
+                    len(_moved), gap, ", ".join(_moved))
+        except Exception:
+            pass
+
     def _credit_downtime_1202eq(self) -> None:
         """Give back the wall clock that passed while this run was NOT RUNNING.
 
@@ -4144,6 +4190,7 @@ class Orchestrator:
             if _gap <= 60:
                 return                      # a fast relaunch is not downtime
             self._credit_framework_deferral_1133(_gap, "resume downtime (#1202eq)")
+            self._shift_deferral_clocks_1202fd(_gap)
             self._logger.warning(
                 "#1202eq credited %.0fs of downtime back to the delivery clock — the run "
                 "was stopped for that long and no lane could spend it. Without this a run "
