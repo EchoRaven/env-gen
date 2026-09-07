@@ -849,6 +849,34 @@ def path_is_lane_owned_1202cw(path: Any) -> bool:
     return False
 
 
+def _calling_site_1202fc() -> str:
+    """`module:function:line` of the framework code that attempted the write.
+
+    #1202cw's own note says the `refused` bucket "should stay empty — a name appearing there
+    is a projector clobbering lane work without having said why". netflix-r41 (live) put
+    seven page files in it, and the line named every FILE and no ACTOR, so acting on the
+    alarm meant reading 52 call sites in frontend_scaffold alone (only 20 of which declare
+    `clobber_ok=`) and guessing which one it was.
+
+    Naming the target and not the actor is the same shape as reporting a category without
+    its instance, which this repo has removed in a dozen places -- arriving from one step
+    further out.
+
+    Walks past this module so the answer is the projector, not the guard. Best-effort: a
+    diagnostic must never be the reason a write path raises.
+    """
+    try:
+        import inspect
+        _here = __name__
+        for fr in inspect.stack()[1:8]:
+            mod = fr.frame.f_globals.get("__name__", "")
+            if mod and mod != _here:
+                return "%s:%s:%d" % (mod.rsplit(".", 1)[-1], fr.function, fr.lineno)
+    except Exception:
+        pass
+    return "an unidentified site"
+
+
 def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
                            encoding: str = "utf-8") -> bool:
     """Write ``text`` to ``path``; refuse if that would clobber lane work.
@@ -876,9 +904,9 @@ def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
             if _LANE_CLOBBERS_1202CW["refused"][key] == 1:
                 try:
                     _logging.getLogger(__name__).warning(
-                        "#1202cw refused a framework write to lane-owned %s — the lane's "
-                        "version stands. A site that must overwrite declares why via "
-                        "clobber_ok=.", key)
+                        "#1202cw refused a framework write to lane-owned %s from %s — the "
+                        "lane's version stands. A site that must overwrite declares why via "
+                        "clobber_ok=.", key, _calling_site_1202fc())
                 except Exception:
                     pass
             return False
