@@ -164,6 +164,125 @@ def _spine_tables_1039() -> frozenset:
     return frozenset(base | {"_seed_meta", "alembic_version"})
 
 
+def schema_currency_1202fj(project_dir: Any) -> Dict[str, Any]:
+    """Is the RUNNING database's schema the one these ORM models describe?
+
+    {"verdict": "current"|"drifted"|"unknown", "detail": str}. Same contract as
+    #1202ex's build currency, and for the same reason: a projected route that 500s is
+    reported as an application defect, so the framework has to be able to say whether it
+    was judging what it built.
+
+    Only the MATCH is exact. A drift lists the columns the models declare and the live
+    table lacks -- which is the direction that 500s (`SELECT` of a missing column). Extra
+    live columns are not reported: an older column the models dropped harms nothing.
+
+    Never raises; an unreadable database says so rather than claiming either verdict.
+    """
+    try:
+        live = live_schema_1202fj(project_dir)
+        if not live:
+            return {"verdict": "unknown", "detail": "the live schema could not be read"}
+        from .route_projector import _orm_models
+        from pathlib import Path as _P
+        proj = _P(str(project_dir))
+        backend = proj / "app" / "backend"
+        if not backend.is_dir():
+            return {"verdict": "unknown", "detail": "no app/backend to read models from"}
+        models = _orm_models(backend) or {}
+        if not models:
+            return {"verdict": "unknown", "detail": "no ORM models parsed"}
+        missing = []
+        for table, meta in models.items():
+            have = live.get(table)
+            if have is None:
+                continue          # table absent entirely is #952's territory, not this
+            for col in (meta.get("cols") or []):
+                if col not in have:
+                    missing.append("%s.%s" % (table, col))
+        if not missing:
+            return {"verdict": "current",
+                    "detail": "every modelled column exists in the running database"}
+        return {"verdict": "drifted",
+                "detail": ("the running database is older than these models -- %d modelled "
+                           "column(s) do not exist in it (%s%s). A projected read of any of "
+                           "them 500s with UndefinedColumn. Recreate the stack "
+                           "(compose down -v && up) before trusting these results."
+                           % (len(missing), ", ".join(sorted(missing)[:8]),
+                              ", ..." if len(missing) > 8 else ""))}
+    except Exception as exc:
+        return {"verdict": "unknown", "detail": "%s: %s" % (type(exc).__name__, exc)}
+
+
+def live_schema_1202fj(project_dir: Any, *, timeout: int = 30) -> Dict[str, set]:
+    """{table: {column, ...}} as the RUNNING database actually has it, or {} when unreadable.
+
+    The compose file mounts `app/database/init/01_init.sql` at
+    /docker-entrypoint-initdb.d, and Postgres runs those scripts ONLY on an empty volume --
+    with `CREATE TABLE IF NOT EXISTS` besides. So when the ORM models change after a stack
+    is up, the DDL is regenerated and written, the live tables do not move, and the
+    projected handlers -- built from the CURRENT models -- SELECT columns that do not
+    exist:
+
+        (psycopg.errors.UndefinedColumn) column "actor_name" does not exist
+
+    tiktok-r96 died on that twice. It reads as an application defect on a route tagged
+    FRAMEWORK-PROJECTED, and it sent me chasing a type-mismatch regression that was not
+    there (see the correction on a5030b03).
+
+    The drift is a WINDOW, not a state: measured directly against r96's live database right
+    after a `down -v && up`, models and schema agreed exactly. It opens when the models move
+    after the stack is up and closes at the next recreate.
+
+    Same shape as #1202ex, which measures whether the IMAGE is the source on disk; this
+    measures whether the SCHEMA is the models. Reuses this module's container resolution and
+    psql pattern rather than opening a second way to reach the database.
+    """
+    out: Dict[str, set] = {}
+    try:
+        from pathlib import Path        # module-local, as the other probes here do
+        proj = Path(str(project_dir))
+        compose = None
+        for cand in (proj / "docker" / "docker-compose.yml",
+                     proj.parent / "docker" / "docker-compose.yml",
+                     proj / "docker-compose.yml"):
+            if cand.exists():
+                compose = cand
+                break
+        if compose is None:
+            return {}
+        from .container_runtime import runtime_bin
+        cid = _db_container_1039(compose, timeout)
+        if not cid:
+            return {}
+        import subprocess
+        q = ("SELECT table_name, column_name FROM information_schema.columns "
+             "WHERE table_schema = 'public'")
+        res = subprocess.run(
+            [runtime_bin(), "exec", cid, "sh", "-c",
+             'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAF"\t" -c ' + _shq(q)],
+            capture_output=True, text=True, timeout=timeout)
+        if res.returncode != 0:
+            return {}
+        for line in (res.stdout or "").splitlines():
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            out.setdefault(parts[0].strip(), set()).add(parts[1].strip())
+    except Exception as exc:
+        # Not silent: an empty result here reads as "the schema matched" to any caller
+        # that does not know the difference, which is #883's failure mode. It also hid a
+        # NameError in this function's first draft -- `Path` is imported per-probe in this
+        # module and I had left it out, so every call returned {} and looked like a clean
+        # measurement. Say which it was.
+        from .message_format import state_changed_1202ad
+        if state_changed_1202ad("live_schema_1202fj", "%s: %s" % (type(exc).__name__, exc)):
+            logging.getLogger(__name__).warning(
+                "#1202fj live schema read FAILED (%s: %s) — schema currency is NOT CHECKED, "
+                "not clean.", type(exc).__name__, str(exc)[:160])
+        return {}
+    return out
+
+
 def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, int]:
     """Exact `COUNT(*)` per public table from the RUNNING database, or `{}`.
 

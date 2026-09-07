@@ -3450,6 +3450,26 @@ def run_chains(base: str, project_dir: Any,
     # a failure fake -- it makes it unattributable, which is the state r16 spent its
     # budget in.
     _currency_1202ex = build_currency_1202ex(project_dir)
+    # #1202fj: the same question one layer down. #1202ex asks whether the IMAGE is the
+    # source; this asks whether the SCHEMA is the models. tiktok-r96 died twice on
+    # `UndefinedColumn: column "actor_name" does not exist` -- the init SQL runs only on an
+    # empty volume, so models that move after a stack is up leave the live tables behind,
+    # and the projected read SELECTs a column that is not there. It reports as an app
+    # defect on a FRAMEWORK-PROJECTED route; it sent me chasing a regression that was not
+    # there.
+    # Imported here, not at module scope: three tests compile this file STANDALONE into a
+    # synthetic module, where a package-relative import raises ModuleNotFoundError and takes
+    # the whole collection with it. route_projector records the same constraint.
+    try:
+        from .seed_audit import schema_currency_1202fj as _sc1202fj
+    except Exception:
+        _sc1202fj = lambda _p: {"verdict": "unknown",
+                                "detail": "schema probe unavailable in this context"}
+    _schema_1202fj = _sc1202fj(project_dir)
+    if _schema_1202fj.get("verdict") == "drifted":
+        __import__("logging").getLogger(__name__).warning(
+            "#1202fj chains are about to judge an app whose DATABASE is older than its "
+            "models -- %s", _schema_1202fj.get("detail"))
     if _currency_1202ex.get("verdict") == "changed":
         __import__("logging").getLogger(__name__).warning(
             "#1202ex: chains are about to judge an app whose image may not be the source "
@@ -3481,6 +3501,10 @@ def run_chains(base: str, project_dir: Any,
     # run that cannot vouch for what it tested says so THERE, once, at the head of the list.
     # Only when there is something to explain: a green run needs no caveat, and a `current`
     # verdict is the good news that needs no line either.
+    if broken and _schema_1202fj.get("verdict") == "drifted":
+        # Ahead of the build-currency line: a missing COLUMN 500s every read of it, which
+        # is a louder and more specific cause than an image that may be stale.
+        broken.insert(0, "[schema currency #1202fj] " + str(_schema_1202fj.get("detail")))
     if broken and _currency_1202ex.get("verdict") == "changed":
         broken.insert(0, "[build currency #1202ex] These verdicts may not be about the code "
                          "on disk: " + str(_currency_1202ex.get("detail")) + ". Rebuild and "
@@ -3562,4 +3586,5 @@ def run_chains(base: str, project_dir: Any,
     return {"source": "verifier", "chains": results, "broken": broken,
             "framework_defects": framework_defects, "total_steps": total,
             "declared_but_unmounted_952": _unmounted952,
-            "build_currency_1202ex": _currency_1202ex}
+            "build_currency_1202ex": _currency_1202ex,
+            "schema_currency_1202fj": _schema_1202fj}
