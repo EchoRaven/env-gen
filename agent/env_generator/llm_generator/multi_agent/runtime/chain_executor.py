@@ -280,6 +280,52 @@ _SENT_BODY_CAP_1202EW = 1024
 _SECRET_KEYS_1202EW = ("password", "secret", "token", "authorization", "api_key", "apikey")
 
 
+_INTEGRITY_BODY_1202GB = "invalid field value"
+
+
+def _integrity_detail_1202gb(project_dir, method, path, body, _cache={}) -> str:
+    """#1202gb -- THE SERVER ALREADY DIAGNOSED THIS 400; nothing carried the diagnosis out.
+
+    The generated app maps every SQLAlchemy DataError to ``400 {"detail": "invalid field
+    value"}`` -- deliberately, because a real API does not leak SQL to its callers -- and
+    logs the real cause beside it: ``DataError on GET /api/videos -> 400: orig=...``. The
+    chain only ever sees the response, so a step fails with a message naming no field, no
+    value and no table.
+
+    tiktok-r97 measured the cost. Once #1202ga removed the auth wall the requests finally
+    reached the handlers and hit this instead, on /api/videos, /api/explore and /api/messages
+    at once; the seed stores TikTok counters as display strings ("25.5M", "251.3K") in TEXT
+    columns, so a raw ``::bigint`` blows up. The lane reverse-engineered that from the bare
+    string and wrote the finding into a docstring in custom_routes.py -- work the server had
+    already done and thrown away.
+
+    ``_backend_logs_tail`` has existed in validation_runner all along; it was simply never
+    wired to this. Cached per (project, tail) so a chain of failing steps costs one
+    ``compose logs``, and silent-by-return only when the logs genuinely say nothing about
+    this path -- an empty string is "no line matched", not "the probe broke".
+    """
+    if _INTEGRITY_BODY_1202GB not in str(body or ""):
+        return ""
+    key = str(project_dir)
+    if key not in _cache:
+        try:
+            from pathlib import Path as _P
+            from .validation_runner import _backend_logs_tail
+            _compose = _P(str(project_dir)) / "docker" / "docker-compose.yml"
+            _cache[key] = _backend_logs_tail(_compose, _compose.parent) if _compose.is_file() else ""
+        except Exception:
+            _cache[key] = ""
+    logs = _cache.get(key) or ""
+    if not logs:
+        return ""
+    want = f"{str(method or '').upper()} {path}"
+    hits = [ln.strip() for ln in logs.splitlines()
+            if "integrity" in ln.lower() or "DataError on" in ln]
+    exact = [ln for ln in hits if want in ln]
+    chosen = (exact or hits)[-1:] if (exact or hits) else []
+    return chosen[0][:400] if chosen else ""
+
+
 def _sent_body_1202ew(body: Any) -> Any:
     """The request body as sent, safe to store: secrets reduced to their shape, size capped."""
     def _walk(v, depth=0):
@@ -2337,7 +2383,8 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
 def execute_chain(base: str, chain: Mapping[str, Any],
                   seed_ids: Optional[Mapping[str, Any]] = None,
                   endpoints: Optional[List[Mapping[str, Any]]] = None,
-                  projected: Optional[set] = None) -> Dict[str, Any]:
+                  projected: Optional[set] = None,
+                  project_dir: Any = None) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises. ``seed_ids`` (#144): {resource →
     known-present id from seed_data.json}, a recovery rung for literal-id
@@ -3099,6 +3146,11 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         if not ok:
             # #1202ew: what went out, so the dispute is settleable. Failing steps only.
             entry["sent_body"] = _sent_body_1202ew(body)
+            # #1202gb: and, for the framework's deliberately-opaque integrity 400, the
+            # line the server already logged about it.
+            _det1202gb = _integrity_detail_1202gb(project_dir, method, path, note)
+            if _det1202gb:
+                entry["server_detail"] = _det1202gb
         if autofilled:
             entry["autofilled"] = autofilled
         recorded.append(entry)
@@ -3476,7 +3528,10 @@ def run_chains(base: str, project_dir: Any,
             "on disk -- %s", _currency_1202ex.get("detail"))
     results = [execute_chain(base, ch, seed_ids=_seed_ids,
                           endpoints=list(business_endpoints or []),
-                          projected=_projected)
+                          projected=_projected,
+                          # #1202gb: so a failing step can carry the line the server
+                          # already logged about its opaque integrity 400.
+                          project_dir=project_dir)
                for ch in chains]
     # #683: KEEP THE CHAIN NAME. `r["name"]` is right here and the flatten dropped it, so every
     # downstream report named the STEP and not the chain that owns it. What the verifier actually
