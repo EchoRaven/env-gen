@@ -10,6 +10,8 @@ import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+import json
+from collections.abc import Mapping
 from pathlib import Path
 from .message_format import join_capped  # #1034
 
@@ -742,6 +744,30 @@ _DEGRADED_FLOW_COVERAGE = {
 }
 
 
+def _root_spec_entities_1202gl(hub_registry) -> list:
+    """#1202gl -- the reference spec's entities, for the note above. Best-effort: an empty
+    list simply drops the extra sentence, never blocks."""
+    try:
+        for attr in ("output_dir", "root", "base_root", "project_dir"):
+            _r = getattr(hub_registry, attr, None)
+            if _r:
+                _p = Path(str(_r)) / "design" / "reference_spec.json"
+                if _p.is_file():
+                    return json.loads(_p.read_text(encoding="utf-8")).get("entities") or []
+    except Exception as _e1202gl:
+        # #883/#1201: an empty list here silently drops the one sentence that stops the
+        # lane trading the 401 for an unscoped-read blocker and back again. Losing it is
+        # not "nothing declared" -- it is the reassurance going missing, so say so.
+        from .message_format import warn_once_1201
+        warn_once_1201("deliverability.root_spec_entities_1202gl",
+                       "the public-collection reassurance (#1202gl) — the contract note will "
+                       "tell a lane to declare the read public without saying the "
+                       "unscoped-read audit exempts it, which is the revert loop r98 ran",
+                       _e1202gl)
+        return []
+    return []                      # no spec on disk: nothing declared, not a fault
+
+
 def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
     """#1202fr -- name the CONTRACT reason a failed UI flow 401s.
 
@@ -807,12 +833,38 @@ def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
     # #1114/#1023: report the CONDITION, do not assert the verdict. A flow that
     # authenticates first never sees the 401, so this is what the contract says an
     # anonymous visitor would get -- evidence for the reader, not a diagnosis.
+    # #1202gl: SAY THAT THE OTHER GATE WILL NOT BITE. Told only "declare auth_required
+    # false", a lane does it, watches `unscoped owner read: returns every row of X to ANY
+    # caller` appear, and reverts -- trading one blocker for another and landing back on the
+    # 401 it started from. tiktok-r98 went round that loop: the contract was made public
+    # after this note, then set back to auth_required=true.
+    #
+    # #1202gd's exemption already resolves it, but silently: when the materials declare the
+    # collection public, the unscoped-read audit exempts a public read of it. The lane has
+    # no way to know that from the blocker alone, so the note has to say it.
+    # No inner guard: `_root_spec_entities_1202gl` already fails soft AND audibly, and a
+    # second silent except here would only hide a real fault behind a missing sentence
+    # (#883's shape, which its ratchet caught on the first draft of this).
+    _pub1202gl = ""
+    _spec = _root_spec_entities_1202gl(hub_registry)
+    _named = {t.split("->")[0].strip() for t in hits}
+    _tables = sorted({str(e.get("name") or "") for e in _spec
+                      if isinstance(e, Mapping)
+                      and str(e.get("visibility") or "").strip().lower() == "public"})
+    if _tables:
+        _pub1202gl = (
+            " The materials already declare "
+            + join_capped(_tables, len(_tables), cap=4, sep=", ")
+            + " as PUBLIC content, so making the contract match does NOT trade this for "
+              "an unscoped-owner-read blocker — that audit exempts a public read the "
+              "materials and the contract agree on (#1202gd).")
     return (" Contract note — these failing flows declare an endpoint the contract marks "
             "auth_required, which returns 401 to an anonymous visitor: "
             + join_capped(hits, len(hits), cap=4, sep="; ")
             + ". If the flow is meant to run logged out, the route is framework-projected "
               "so it is fixed in the CONTRACT rather than the page: declare "
-              "auth_required=false for a read that is meant to be public (#320).")
+              "auth_required=false for a read that is meant to be public (#320)."
+            + _pub1202gl)
 
 
 def _flow_coverage_summary(hub_registry, app_root) -> Tuple[Dict[str, Any], List[str]]:
