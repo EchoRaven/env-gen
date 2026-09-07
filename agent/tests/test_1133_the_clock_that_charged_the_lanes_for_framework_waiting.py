@@ -118,19 +118,26 @@ class ItIsActuallyWiredIn(unittest.TestCase):
     def test_every_deferral_release_site_credits(self):
         src = (ROOT / "env_generator" / "llm_generator" / "multi_agent"
                / "orchestrator.py").read_text(encoding="utf-8")
-        self.assertEqual(src.count("_credit_framework_deferral_1133"), 6,
-                         "expected 1 definition + 5 credit sites (#1133b added the squad; "
-                         "#1202eq added resume downtime)")
+        self.assertEqual(src.count("_credit_framework_deferral_1133"), 5,
+                         "expected 1 definition + 4 deferral-release sites (#1133b added "
+                         "the squad; #1202fi REMOVED resume downtime — see below)")
         for label in ("page-build", "visual (fast-release)", "visual (escape)",
                       "test-user squad"):
             self.assertIn(f'_credit_framework_deferral_1133(_now - ', src)
             self.assertIn(f'"{label}")', src)
-        # #1202eq: downtime is the fifth claim on this clock, and the only one that is not a
-        # deferral RELEASE — the run was stopped, so no lane could spend the time either.
-        # It credits through this channel rather than opening a second accounting path.
-        # r16 measured the cost of not doing it: a first decline stamped at 09:45 and a
-        # resume at 17:03 aborted at once on "437min of lane time" that no lane ever had.
-        self.assertIn("resume downtime (#1202eq)", src)
+        # #1202fi REVERSED #1202eq's routing, and this assertion with it.
+        #
+        # #1202eq made downtime the fifth claim on this clock, reasoning that it credits
+        # through one channel rather than opening a second accounting path. That was wrong
+        # in a way only a live run showed: this channel caps its TOTAL at
+        # FWVAL_NO_DELIVER_ABORT_S, because the FRAMEWORK must not defer past the ceiling.
+        # A stopped process is a different claim -- no lane existed -- and every overnight
+        # resume exceeds that cap by construction, so the credit was useless for exactly
+        # the runs it was written for. tiktok-r96: stopped 23.5h, credited the capped 90min,
+        # aborted one tick in on "1474min of lane time". r41's third resume died the same
+        # way. Downtime now shifts the stamp directly and in full.
+        self.assertNotIn("resume downtime (#1202eq)", src)
+        self.assertIn("self._fwdeliver_first_decline_ts += _gap", src)
 
     def test_the_abort_no_longer_claims_the_gate_never_went_green(self):
         src = (ROOT / "env_generator" / "llm_generator" / "multi_agent"

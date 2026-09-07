@@ -4198,7 +4198,27 @@ class Orchestrator:
             _gap = _t1202eq.time() - float(_last)
             if _gap <= 60:
                 return                      # a fast relaunch is not downtime
-            self._credit_framework_deferral_1133(_gap, "resume downtime (#1202eq)")
+            # #1202fi: downtime is NOT deferral, and routing it through #1133's channel
+            # made the credit useless for exactly the runs it was written for. That channel
+            # is capped at FWVAL_NO_DELIVER_ABORT_S in total, because the FRAMEWORK must not
+            # be able to defer past the ceiling. A stopped process is a different claim: no
+            # lane existed, so none of that time is lane time, and the ceiling has nothing
+            # to protect against.
+            #
+            # tiktok-r96, live: stopped for 84767s (23.5h), credited the capped 5400s, and
+            # aborted one tick in with "delivery never SUCCEEDED in 1474min of lane time" --
+            # 1474 minus the 90 credited minutes, against a 90-minute ceiling. Every
+            # overnight resume is over that gap by construction, so every one of them was
+            # dead on arrival. r41's third resume died the same way at $11, this one at $25.
+            #
+            # So: shift the stamp by the FULL gap, directly, and leave #1133's accounting to
+            # the deferral it actually governs. The abort still fires on 90 minutes of real
+            # lane time -- it just stops counting the hours the run did not exist.
+            self._fwdeliver_first_decline_ts += _gap
+            self._logger.warning(
+                "#1202fi shifted the no-convergence stamp by the FULL %.0fs of downtime "
+                "(not #1133's capped credit) — a stopped process spent no lane time, and "
+                "the cap exists to bound framework DEFERRAL, which this is not.", _gap)
             # #1202fd (ordering): the deferral clocks do not exist yet -- #1202ce restores
             # them ~450 lines later, from milestone_gates.json. Shifting here found nothing
             # to shift and logged nothing, which netflix-r41's third resume showed within

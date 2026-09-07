@@ -1156,6 +1156,12 @@ def _expandable_fks_1202fh(cols, models, table):
             tcols = list(tmeta.get("cols") or [])
             if not tcls or not tcols:
                 continue                      # #568 degenerate model
+            if "id" not in tcols:
+                # The emitted map is keyed by the target's `id`. Without one every key is
+                # None, every row resolves to None, and the expansion fails SILENTLY --
+                # the page looks exactly as broken as before while the payload claims to
+                # carry the entity. Refuse instead: no join key, no expansion.
+                continue
             keep = [x for x in tcols
                     if x in _LABEL_COLS_803
                     or any(k in str(x).lower() for k in _IMAGEISH_1202FH)]
