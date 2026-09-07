@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
@@ -53,6 +54,29 @@ def _provider_terminal_1202ec() -> str:
                        "kickoff cannot tell whether the provider has gone terminal",
                        _err_1202ec)
         return ""
+
+
+def _lane_log_activity_1202fg(output_dir: Any) -> dict:
+    """{lane: bytes written to its .agent_logs} — the evidence #862's line asked for.
+
+    Best-effort: an unreadable tree returns {} and the caller says it could not look,
+    which is the honest answer and never "never started".
+    """
+    out = {}
+    try:
+        root = Path(output_dir) / ".agent_logs"
+        if not root.is_dir():
+            return {}
+        for d in sorted(root.iterdir()):
+            if not d.is_dir():
+                continue
+            try:
+                out[d.name] = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            except Exception:
+                continue
+    except Exception:
+        return {}
+    return out
 
 
 class KickoffDriver:
@@ -300,10 +324,9 @@ class KickoffDriver:
                     self._said_silent_862 = True
                     self._orch._logger.warning(
                         "Kickoff: NO attendee has recorded anything after %.0fs — missing %s "
-                        "(of %s expected). This is the shape of a lane that never started "
-                        "rather than one that is slow; check .agent_logs for empty per-agent "
-                        "directories. The stall escape cannot act before %.0fs (#862).",
+                        "(of %s expected). %s The stall escape cannot act before %.0fs (#862).",
                         elapsed, _names, len(expected_attendees),
+                        self._lane_activity_1202fg(),
                         run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC,
                     )
                 self._orch._logger.info(
@@ -911,6 +934,38 @@ class KickoffDriver:
             ", ".join(dispatched) or "none",
         )
         return dispatched
+
+    def _lane_activity_1202fg(self) -> str:
+        """Say what the agent logs SHOW, instead of asserting which of two causes it is.
+
+        #862's line read "This is the shape of a lane that never started rather than one
+        that is slow; check .agent_logs for empty per-agent directories" -- it names the
+        distinguishing evidence and then does not look at it. netflix-r41's third resume
+        died on that sentence being wrong: the lanes had made 151 tool calls between them
+        (verifier 74, orchestrator 62, backend 7, frontend 2) and the log still said they
+        never started, so the run's own record points at the wrong repair.
+
+        The two causes need different fixes -- a lane that never spawned is an orchestration
+        failure, a lane that is working but has not recorded a SECTION is a meeting-protocol
+        one -- which is exactly why #1114/#1023's rule applies here: report the evidence,
+        never assert the verdict.
+        """
+        try:
+            act = _lane_log_activity_1202fg(getattr(self._orch, "output_dir", ""))
+            if not act:
+                return ("No .agent_logs to read, so which of the two causes this is cannot "
+                        "be told from here (#1202fg).")
+            live = {k: v for k, v in act.items() if v > 0}
+            if not live:
+                return ("Every per-agent .agent_logs directory is EMPTY — the lanes never "
+                        "started, which is an orchestration failure, not a slow meeting.")
+            return ("But the lanes ARE running: %s. They started and have not recorded a "
+                    "SECTION, which is a meeting-protocol failure and needs a different "
+                    "repair than a lane that never spawned (#1202fg)."
+                    % ", ".join("%s %.0fKB" % (k, v / 1024.0)
+                                for k, v in sorted(live.items())))
+        except Exception:
+            return "Could not read .agent_logs to tell the two causes apart (#1202fg)."
 
     def _author_kickoff_docs(
         self, synthesis: Dict[str, Any],
