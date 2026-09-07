@@ -251,10 +251,40 @@ def _bundle_observability_tools(builder: ToolPoolBuilder, context: ToolAssemblyC
     builder.add(create_observability_tools(), "observability")
 
 
+def _audit_root_1202fp(context):
+    """#1202fp -- the root the coverage/deliverability audits must read: the SHARED
+    project tree, never the calling agent's worktree.
+
+    The workspace's plain ``root`` attribute is documented as the agent's CODE root,
+    "because most tree-walking tools care about the agent's own changeable files, not the
+    shared base" -- true for Glob and project_structure, wrong for an audit (the named
+    accessors ``base_root`` / ``code_root`` are what a caller wanting a specific directory
+    is told to use, and an audit wants the shared one). What ships is the ROOT tree checked out
+    on ``integration``: docker-compose builds ``../app/backend`` and ``../app/frontend``,
+    and no lane worktree is ever a build context.
+
+    ``coverage_audit_check`` is orchestrator-only, and the orchestrator's worktree does not
+    carry the frontend lane's files. Measured on tiktok-r96: 0 page files in
+    ``worktrees/orchestrator/app/frontend/src/pages`` while every other worktree and the
+    shipped tree had 21. So the audit reported all 19 declared pages as missing -- a real
+    count of the wrong tree -- and deliverability published it as a delivery blocker the
+    frontend lane could never satisfy, because the files it was asked for were already
+    there in the tree that ships.
+    """
+    ws = getattr(context, "workspace", None)
+    # base_root first (the shared tree an audit must read); code_root is the named
+    # worktree accessor; the bare attribute is a last resort for plainer workspaces.
+    for attr in ("base_root", "code_root", "root"):
+        val = getattr(ws, attr, None) if ws is not None else None
+        if val:
+            return val
+    return getattr(context, "workspace_path", None)
+
+
 def _bundle_coverage_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
     app_root = getattr(context, "app_root", None)
-    if app_root is None and getattr(context, "workspace", None) is not None:
-        app_root = getattr(context.workspace, "root", None)
+    if app_root is None:
+        app_root = _audit_root_1202fp(context)
     builder.add(
         create_coverage_tools(
             hub_registry=context.hub_workspace,
@@ -279,10 +309,8 @@ def _bundle_seed_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -
 
 def _bundle_deliverability_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
     app_root = getattr(context, "app_root", None)
-    if app_root is None and getattr(context, "workspace", None) is not None:
-        app_root = getattr(context.workspace, "root", None)
     if app_root is None:
-        app_root = getattr(context, "workspace_path", None)
+        app_root = _audit_root_1202fp(context)   # #1202fp: the shared tree, not the lane's
     # #563: the app tree (backend/, frontend/, seed_data.json) always lives under
     # <root>/app in this framework (cf. orchestrator deliver: self.output_dir / "app").
     # When app_root resolves to a worktree/output ROOT (the fallbacks above yield the
