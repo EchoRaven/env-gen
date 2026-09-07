@@ -119,8 +119,31 @@ def _ui_smoke_pass(validation_results: Any) -> bool:
 
 
 def _ts757(rec: Any) -> float:
-    """#757: a validation record's recency, for superseding an answered failure by name."""
-    for k in ("updated_at", "_updated_at", "created_at", "at"):
+    """#757: a validation record's recency, for superseding an answered failure by name.
+
+    #1202fu -- ``recorded_at`` WAS MISSING, AND IT IS THE ONLY FIELD PRODUCTION RECORDS
+    CARRY. `HubRegistry.get_validation_results` builds every row as
+    ``"recorded_at": check.get("updated_at", 0)`` — it renames the field — so none of the
+    four keys this looked for existed on a real record and it returned 0.0 for all of them.
+
+    That made #757 itself inert since it landed, not just a detail: with every timestamp
+    0.0 the ``_ts757(r) >= _ts757(_prev)`` comparison is ``0 >= 0``, always true, so the
+    "latest" record is whichever the iteration happened to reach last. The mechanism written
+    to stop `validation_ui_evidence_failed` latching ("that is not a gate, it is a latch")
+    was picking an arbitrary record the whole time, and #1202fs's staleness — which needs a
+    real timestamp to compare — could never drop anything either.
+
+    tiktok-r96 resume #6 is how it surfaced: the gate reported 6 failing records with
+    stale_before set to a moment AFTER all six, i.e. every one should have been dropped.
+    The offline fixture that said otherwise carried BOTH ``recorded_at`` and ``updated_at``;
+    production carries only the first. A fixture the producer would never emit tests a world
+    that does not exist.
+
+    flow_coverage._index_ui_flow_records reads ``recorded_at`` and was always right — the
+    same one-store-two-readers split as #1202fn/#1202fp/#1202fq/#1202fs/#1202ft, this time
+    in the field NAME.
+    """
+    for k in ("recorded_at", "updated_at", "_updated_at", "created_at", "at"):
         v = (rec or {}).get(k) if isinstance(rec, dict) else None
         if isinstance(v, (int, float)):
             return float(v)
