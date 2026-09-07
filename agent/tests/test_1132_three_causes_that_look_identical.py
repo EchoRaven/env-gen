@@ -10,7 +10,9 @@ way to establish. Three situations are indistinguishable from there:
     2. main.py's custom-routes duplicate filter DROPPED the route, logging its refusal to the
        `custom_routes` logger INSIDE the container, where no lane can see it (#1102 measured
        98 legitimate lane routes dropped across 57 runs, "invisible for hours");
-    3. the running container predates the handler — nothing here measures build currency.
+    3. the running container predates the handler — build currency, which #1202ex now
+       measures and this message now reports (a MATCHING fingerprint rules (3) out
+       outright; a mismatch downgrades it from "ruled out" to "possible").
 
 netflix-local-r1: 112 of these over 1h38m, all for one handler
 (DELETE /api/v1/tenants/{tenant_id}). It entered custom_routes.py at 13:29:13, a build
@@ -89,8 +91,12 @@ class TheMessageNoLongerPicksOneCause(unittest.TestCase):
         """Cause (2)'s refusal is logged only inside the container — say so, or it is lost."""
         self.assertIn("container log", self.msg)
 
-    def test_it_admits_what_it_cannot_measure(self):
-        self.assertIn("build currency", self.msg)
+    def test_it_reports_the_build_currency_it_now_measures(self):
+        """Was: "admits what it cannot measure". #1202ex measures it, so the message
+        must now carry the VERDICT -- an admission would understate what is known."""
+        self.assertIn("BUILD CURRENCY", self.msg)
+        self.assertIn("_currency_1202ex", self.src)
+        self.assertNotIn("cannot be ruled out", self.msg)
 
 
 if __name__ == "__main__":

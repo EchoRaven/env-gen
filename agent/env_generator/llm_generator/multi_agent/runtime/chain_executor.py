@@ -3392,6 +3392,49 @@ def _declared_but_unmounted_952(project_dir: Any, missing_steps: List[Mapping[st
         return []
 
 
+def build_currency_1202ex(project_dir: Any) -> Dict[str, Any]:
+    """Was the app under test built from the source now on disk?
+
+    #952 lists three causes for a declared-but-unmounted route, says their fixes differ,
+    and ends: "Nothing here measures build currency, so (3) cannot be ruled out from this
+    line." (3) is "the running container predates this handler". This measures it.
+
+    Only the MATCH is exact. The fingerprint covers app/ entire -- backend, frontend and
+    compose -- so a match proves the running image was built from precisely this source and
+    rules (3) out for good. A mismatch proves only that something under app/ changed since
+    the build, which MAY be a frontend edit that cannot affect a chain; it downgrades (3)
+    from "ruled out" to "possible", which is the honest verdict and the one #952 wanted.
+
+    googlemaps-r16 is the case: 12 chain steps died on a projected create whose handler,
+    run against the authored body, passes. Its image fingerprint does not match its source.
+    Nothing in the run said so, and the run spent its remaining budget on the app.
+
+    Returns {"verdict": "current"|"changed"|"unknown", "detail": str}. Never raises: a
+    diagnostic that can fail the thing it diagnoses is worse than no diagnostic.
+    """
+    try:
+        from .validation_runner import _app_source_fingerprint, _read_build_fingerprint
+        compose = Path(project_dir) / "docker" / "docker-compose.yml"
+        if not compose.is_file():
+            return {"verdict": "unknown", "detail": "no compose file at %s" % compose}
+        src = _app_source_fingerprint(compose)
+        built = _read_build_fingerprint(compose.parent)
+        if src is None or not built:
+            return {"verdict": "unknown",
+                    "detail": "no %s to compare" % ("source fingerprint" if src is None
+                                                    else "recorded build")}
+        if src == built:
+            return {"verdict": "current",
+                    "detail": "the running image was built from this exact source"}
+        return {"verdict": "changed",
+                "detail": ("app/ has changed since the image was built (source %s, built "
+                           "%s) -- the container may predate the handler under test; "
+                           "rebuild AND recreate the stack before trusting these results"
+                           % (src[:12], built[:12]))}
+    except Exception as exc:
+        return {"verdict": "unknown", "detail": "%s: %s" % (type(exc).__name__, exc)}
+
+
 def run_chains(base: str, project_dir: Any,
                business_endpoints: List[Mapping[str, Any]]) -> Dict[str, Any]:
     """Execute the verifier's chains. No chains → the gate FAILS with the
@@ -3402,6 +3445,14 @@ def run_chains(base: str, project_dir: Any,
                 "broken": [AUTHORING_INSTRUCTIONS], "total_steps": 0}
     _seed_ids = load_seed_ids(project_dir)  # #144: literal-id recovery rung
     _projected = projected_routes(project_dir)      # #587
+    # #1202ex: measured ONCE, before any chain is judged, so every verdict below can say
+    # whether it was measured against the code on disk. A `changed` reading does not make
+    # a failure fake -- it makes it unattributable, which is the state r16 spent its
+    # budget in.
+    _currency_1202ex = build_currency_1202ex(project_dir)
+    if _currency_1202ex.get("verdict") == "changed":
+        _LOGC952.warning("#1202ex: chains are about to judge an app whose image may not be "
+                         "the source on disk -- %s", _currency_1202ex.get("detail"))
     results = [execute_chain(base, ch, seed_ids=_seed_ids,
                           endpoints=list(business_endpoints or []),
                           projected=_projected)
@@ -3493,9 +3544,10 @@ def run_chains(base: str, project_dir: Any,
                 "(2) main.py's custom-routes duplicate filter DROPPED it, and it logs that "
                 "refusal to the `custom_routes` logger INSIDE the container — read the backend "
                 "container log first; (3) the running container predates this handler — rebuild "
-                "AND recreate the stack, then re-check. Nothing here measures build currency, so "
-                "(3) cannot be ruled out from this line.",
-                _u["method"], _u["path"], _u["declared_in"], _u["declared_as"])
+                "AND recreate the stack, then re-check. BUILD CURRENCY (#1202ex): %s",
+                _u["method"], _u["path"], _u["declared_in"], _u["declared_as"],
+                _currency_1202ex.get("detail"))
     return {"source": "verifier", "chains": results, "broken": broken,
             "framework_defects": framework_defects, "total_steps": total,
-            "declared_but_unmounted_952": _unmounted952}
+            "declared_but_unmounted_952": _unmounted952,
+            "build_currency_1202ex": _currency_1202ex}
