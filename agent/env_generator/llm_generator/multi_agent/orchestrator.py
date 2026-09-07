@@ -2016,6 +2016,7 @@ class Orchestrator:
                             if isinstance(_gap_1202fd, (int, float)) and _gap_1202fd > 0:
                                 self._shift_deferral_clocks_1202fd(_gap_1202fd)
                                 self._downtime_gap_1202fd = None
+                            self._warn_spent_lane_time_1202fw()
                     except Exception:
                         _restored_1202ce = False
                     if not _restored_1202ce:
@@ -4147,6 +4148,46 @@ class Orchestrator:
             return min(float(raw_seconds), float(_alive))
         except Exception:
             return raw_seconds
+
+    def _warn_spent_lane_time_1202fw(self) -> None:
+        """#1202fw -- say, AT RESUME, when this run has already spent its whole
+        no-convergence budget, because nothing did and the money is spent before anyone
+        finds out.
+
+        The abort needs two things: lane time over FWVAL_NO_DELIVER_ABORT_S *and* a
+        DECLINED delivery. So a resume past the threshold is not hopeless -- if the very
+        first gate evaluation passes, the run delivers and never reaches the check. It has
+        exactly one attempt, and that is worth knowing BEFORE paying for it: tiktok-r96 was
+        resumed twice past the line (102 min, then 113 min), aborted at tick 1 both times
+        having done no useful work, and each attempt still cost ~$20 of provider spend.
+
+        A warning, not a refusal: the one-shot path is legitimate, and this run's own
+        operator may be resuming precisely because a fix should now make the first
+        evaluation green. Refusing would remove a real option; saying nothing removes an
+        informed choice.
+        """
+        try:
+            _decl = getattr(self, "_fwdeliver_first_decline_ts", None)
+            if not isinstance(_decl, (int, float)) or _decl <= 0:
+                return                     # never declined yet: the budget is untouched
+            _spent = self._lane_time_1202fk(max(0.0, time.time() - _decl))
+            if _spent <= float(FWVAL_NO_DELIVER_ABORT_S):
+                return
+            self.logger.warning(
+                "#1202fw this run has ALREADY spent %d min of lane time since its first "
+                "declined delivery, past the %d min no-convergence abort. The abort also "
+                "needs a DECLINED delivery, so this resume gets exactly ONE attempt: if the "
+                "first gate evaluation is not green it aborts at tick 1 having done no "
+                "useful work. Resume only if a change since the last attempt should make "
+                "that first evaluation pass; otherwise a fresh run is the cheaper option.",
+                int(_spent / 60), int(FWVAL_NO_DELIVER_ABORT_S / 60))
+        except Exception as _e1202fw:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201("orchestrator.spent_lane_time_1202fw",
+                           "the resume-cost warning (#1202fw) — a resume that can only "
+                           "abort at tick 1 will look like an ordinary one",
+                           _e1202fw)
+
 
     def _shift_deferral_clocks_1202fd(self, gap: float) -> None:
         """Move every persisted `*_deferred_since` forward by the downtime.
