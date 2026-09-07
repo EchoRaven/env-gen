@@ -116,11 +116,18 @@ class RunBudget:
         """
         if self._carry_1202cg is None:
             prior_total, prior_calls, runs, first = 0.0, 0, 0, started_at
+            prior_alive = 0.0
             try:
                 old = json.loads(self.path().read_text(encoding="utf-8"))
                 prev_cum = old.get("cumulative_1202cg") or {}
                 same_process = float((old.get("usage") or {}).get("started_at") or 0.0) == float(started_at)
                 prior_total = float(prev_cum.get("usd_before_this_run") or 0.0)
+                # #1202fk: seconds this project's processes were actually ALIVE. The
+                # no-convergence abort calls its budget "lane time" and computes it as a
+                # wall-clock difference, so a run stopped overnight is billed for the night.
+                # Lane time cannot exceed the time a process existed to spend it, and this
+                # is that bound.
+                prior_alive = float(prev_cum.get("alive_before_this_run") or 0.0)
                 prior_calls = int(prev_cum.get("calls_before_this_run") or 0)
                 runs = int(prev_cum.get("runs") or 0)
                 first = float(prev_cum.get("first_started_at") or started_at)
@@ -128,6 +135,13 @@ class RunBudget:
                     # A previous process's totals become part of the carry.
                     prior_total += float((old.get("llm") or {}).get("usd") or 0.0)
                     prior_calls += int((old.get("llm") or {}).get("calls") or 0)
+                    # The larger of the two clocks the previous run left: the process wall
+                    # (#1202ez) when it wrote a terminal record, else the loop elapsed. A
+                    # generous estimate is the safe direction -- it loosens the bound, so a
+                    # run that genuinely churns is still caught.
+                    _u_old = old.get("usage") or {}
+                    prior_alive += max(float(_u_old.get("process_wall_sec_1202ez") or 0.0),
+                                       float(_u_old.get("elapsed_sec") or 0.0))
                     runs += 1
             except Exception:
                 pass
@@ -136,6 +150,7 @@ class RunBudget:
                 "calls_before_this_run": prior_calls,
                 "runs": max(1, runs + (0 if runs else 1)),
                 "first_started_at": first,
+                "alive_before_this_run": round(prior_alive, 1),
             }
         out = dict(self._carry_1202cg)
         try:
@@ -143,6 +158,9 @@ class RunBudget:
                                      + float((payload.get("llm") or {}).get("usd") or 0.0), 4)
             out["calls_total"] = (out["calls_before_this_run"]
                                   + int((payload.get("llm") or {}).get("calls") or 0))
+            out["alive_total"] = round(
+                out["alive_before_this_run"]
+                + float((payload.get("usage") or {}).get("elapsed_sec") or 0.0), 1)
         except Exception:
             pass
         return out

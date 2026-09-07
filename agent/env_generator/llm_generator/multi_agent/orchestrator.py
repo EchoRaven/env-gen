@@ -4112,6 +4112,42 @@ class Orchestrator:
         except Exception:
             return 0.0
 
+    def _lane_time_1202fk(self, raw_seconds: float) -> float:
+        """`raw_seconds` bounded by how long this project's processes have actually existed.
+
+        The no-convergence abort calls its budget "lane time" and computes it as
+        `now - first_decline_ts`, a WALL-CLOCK difference over a PERSISTED stamp. A run
+        stopped overnight is therefore billed for the night. #1202eq/#1202fi credit each
+        resume's own downtime, but only from the moment they started working -- a stamp
+        carrying gaps from before that fix is never repaid, and tiktok-r96 proved it: with
+        the credit finally applied it still aborted on "1540min of lane time", because the
+        debt predates the credit. r41 and r96 became unresumable that way.
+
+        The invariant fixes it without touching the stamp at all: lane time cannot exceed
+        the seconds a process existed to spend it. `alive_total` (#1202fk, in the budget
+        ledger's cumulative record) is that number, summed across every run over this
+        output dir, and it is read from a file rather than from restored state -- so this
+        carries none of the ordering hazard that made #1202fd and #1202fi ship inert.
+
+        A run that genuinely churns for 90 minutes is still caught: its alive time is the
+        same 90 minutes. Only time nobody was alive to spend comes off. Returns
+        `raw_seconds` unchanged whenever the bound cannot be read -- refusing to abort on
+        an unreadable ledger would disarm the backstop.
+        """
+        try:
+            import json as _j1202fk
+            _p = self._budget.path()
+            if not _p.is_file():
+                return raw_seconds
+            _cum = (_j1202fk.loads(_p.read_text(encoding="utf-8"))
+                    .get("cumulative_1202cg") or {})
+            _alive = _cum.get("alive_total", _cum.get("alive_before_this_run"))
+            if not isinstance(_alive, (int, float)) or _alive <= 0:
+                return raw_seconds
+            return min(float(raw_seconds), float(_alive))
+        except Exception:
+            return raw_seconds
+
     def _shift_deferral_clocks_1202fd(self, gap: float) -> None:
         """Move every persisted `*_deferred_since` forward by the downtime.
 
@@ -4524,7 +4560,9 @@ class Orchestrator:
                 # so `is not None` on those would credit time that already ended — the same
                 # class of wrong answer this file has paid for before.
                 _live1133c = self._live_deferral_credit_1133c(_now2)
-                if ((_now2 - self._fwdeliver_first_decline_ts - _live1133c) > FWVAL_NO_DELIVER_ABORT_S
+                _lane1202fk = self._lane_time_1202fk(
+                    _now2 - self._fwdeliver_first_decline_ts - _live1133c)
+                if (_lane1202fk > FWVAL_NO_DELIVER_ABORT_S
                         and not getattr(self, "_fwval_abort_reason", None)):
                     # #228 (r20: the verifier cleared the LAST gate 36s after the
                     # abort fired): a small, recently-shrinking failing set gets a
@@ -4557,7 +4595,7 @@ class Orchestrator:
                         _cred1133 = int(getattr(self, "_fwdeliver_deferral_credit_1133", 0.0))
                         self._fwval_abort_reason = (
                             f"delivery never SUCCEEDED in "
-                            f"{int((_now2 - self._fwdeliver_first_decline_ts)/60)}min of lane time "
+                            f"{int(_lane1202fk/60)}min of lane time "
                             f"since the contract built (now failing {_failed}"
                             + (f"; {_cred1133}s of framework deferral already credited back "
                                "under #1133" if _cred1133 else "")
