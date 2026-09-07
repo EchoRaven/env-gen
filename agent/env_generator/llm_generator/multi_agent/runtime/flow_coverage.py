@@ -399,6 +399,65 @@ def _flow_key(name: str) -> str:
     return n
 
 
+def _route_of_url_1202fo(url) -> str:
+    """#1202fo -- the route part of a ui_flow record's ``url`` evidence."""
+    t = str(url or "").strip()
+    if not t:
+        return ""
+    if "://" in t:
+        t = t.split("://", 1)[1]
+        t = t[t.index("/"):] if "/" in t else "/"
+    for sep in ("?", "#"):
+        t = t.split(sep, 1)[0]
+    if not t.startswith("/"):
+        return ""
+    return t.rstrip("/") or "/"
+
+
+def _page_name_by_route_1202fo(hub_registry) -> Dict[str, str]:
+    """#1202fo -- ``{route: registered ui_page name}``, ambiguous routes dropped.
+
+    The gate counts required flows by the REGISTERED page name, but a verifier that
+    re-validates a page names the record after what it browsed. In tiktok-r96 it walked
+    ``http://localhost:8081/live``, saw it pass, and recorded
+    ``validation:ui_flow:live_page`` -- while the page registered for ``/live`` is
+    ``live_discover``, still holding a 27-hour-old failure from before two resumes. The
+    fresh evidence landed on a key nothing reads, and the flow stayed uncleared no matter
+    how many walks ran (r96 ran three). The same mismatch also lets an invented name ADD a
+    blocker of its own instead of superseding the page's record.
+
+    The record already carries the URL it validated, and routes are unique per page, so
+    the record can be attributed without guessing. #237 already aliases by SUFFIX
+    (``explore_page`` satisfies ``explore``); that cannot bridge ``live_page`` ->
+    ``live_discover``, which shares no stem -- only the route does.
+    """
+    reg = getattr(hub_registry, "registryhub", None)
+    if reg is None:
+        return {}
+    try:
+        pages = reg.list_ui_pages() or {}
+    except Exception:
+        return {}
+    if not isinstance(pages, dict):
+        return {}
+    out: Dict[str, str] = {}
+    ambiguous = set()
+    for key, pg in pages.items():
+        if not isinstance(pg, dict):
+            continue
+        route = _route_of_url_1202fo(pg.get("route"))
+        name = str(pg.get("name") or key or "").strip()
+        if not route or not name:
+            continue
+        if route in out and out[route] != name:
+            ambiguous.add(route)      # two pages on one route: never guess
+            continue
+        out[route] = name
+    for r in ambiguous:
+        out.pop(r, None)
+    return out
+
+
 _UI_FLOW_NAME_PREFIX = "validation:ui_flow:"
 
 
@@ -440,6 +499,7 @@ def _index_ui_flow_records(hub_registry, stale_before: float = 0.0) -> Dict[str,
 
     by_flow: Dict[str, str] = {}
     seen_at: Dict[str, float] = {}   # #357: newest recorded_at seen per flow
+    route_names = _page_name_by_route_1202fo(hub_registry)   # #1202fo
     for r in results:
         if not isinstance(r, dict):
             continue
@@ -467,29 +527,39 @@ def _index_ui_flow_records(hub_registry, stale_before: float = 0.0) -> Dict[str,
         if not flow:
             continue
         status = r.get("status", "error")
-        prev = by_flow.get(flow)
-        # #357: the ratchet ITSELF lived here — `if prev == "passed": continue`
-        # short-circuited every record after the first success, so no later
-        # failure could ever be seen. Ordering is decided below instead.
-        _at = r.get("recorded_at")
-        try:
-            _at = float(_at) if _at not in (None, "") else None
-        except Exception:
-            _at = None
-        _prev_at = seen_at.get(flow)
-        if _at is not None:
-            # A timestamped record outranks any untimed one, and later wins.
-            if _prev_at is None or _at >= _prev_at:
-                by_flow[flow] = status
-                seen_at[flow] = _at
-        elif _prev_at is None and prev != "passed":
-            # Untimed: preserve the historical passed-wins collapse exactly.
-            if status == "passed":
-                by_flow[flow] = "passed"
-            elif status in {"failed", "error"} and prev != "failed":
-                by_flow[flow] = "failed"
-            elif prev is None:
-                by_flow[flow] = status
+        # #1202fo: the record says which URL it validated -- attribute it to the page
+        # registered on that route as well, so re-validation reaches the key the gate
+        # counts. Both keys go through the SAME latest-wins/staleness rules below, so a
+        # newer failure supersedes an older pass here exactly as it does anywhere else.
+        _flows = [flow]
+        if route_names and isinstance(meta, dict):
+            _alias = route_names.get(_route_of_url_1202fo(meta.get("url")), "")
+            if _alias and _alias != flow:
+                _flows.append(_alias)
+        for flow in _flows:
+            prev = by_flow.get(flow)
+            # #357: the ratchet ITSELF lived here — `if prev == "passed": continue`
+            # short-circuited every record after the first success, so no later
+            # failure could ever be seen. Ordering is decided below instead.
+            _at = r.get("recorded_at")
+            try:
+                _at = float(_at) if _at not in (None, "") else None
+            except Exception:
+                _at = None
+            _prev_at = seen_at.get(flow)
+            if _at is not None:
+                # A timestamped record outranks any untimed one, and later wins.
+                if _prev_at is None or _at >= _prev_at:
+                    by_flow[flow] = status
+                    seen_at[flow] = _at
+            elif _prev_at is None and prev != "passed":
+                # Untimed: preserve the historical passed-wins collapse exactly.
+                if status == "passed":
+                    by_flow[flow] = "passed"
+                elif status in {"failed", "error"} and prev != "failed":
+                    by_flow[flow] = "failed"
+                elif prev is None:
+                    by_flow[flow] = status
     # #401: drop stale FAILURE records (older than the latest build validation) so a flow the
     # frontend has since fixed re-reads as MISSING (re-verify) instead of a permanent hard-fail.
     if stale_before and stale_before > 0:
