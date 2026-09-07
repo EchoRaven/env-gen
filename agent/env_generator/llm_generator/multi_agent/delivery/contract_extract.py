@@ -197,6 +197,71 @@ def extract_backend_routes(backend_dir: Path) -> set:
     return _extract_fastapi_routes(backend_dir) | _extract_express_routes(backend_dir)
 
 
+_CALL_HEAD_1202ge = re.compile(r"\b(?:request|fetch)\(\s*([`\'\"])(/)")
+
+
+def _template_path_1202ge(text: str, start: int, quote: str) -> str:
+    """#1202ge -- read a call's path literal WITHOUT stopping inside a `${...}`.
+
+    The old pattern was ``(/[^`'\"]+)``: a path is "anything that is not a quote". A
+    template literal whose interpolation contains a NESTED template breaks that, and the
+    generated api.js writes exactly one::
+
+        fetch(`/api/search${qs ? `?${qs}` : ''}`)
+
+    The capture stopped at the inner backtick and yielded ``/api/search${qs ? `` -- half an
+    expression, offered to the delivery gate as a path. r97 delivered its milestone and then
+    failed the final gate on it: "Frontend calls unregistered endpoint(s): GET
+    /api/search${qs ? ", which nobody can register because it is not a path.
+
+    #1202dn ruled on the consumer side of this and the ruling stands: reconstructing a
+    truncated path there would be guessing, and a guess that happens to match a registered
+    prefix turns a false positive into a false NEGATIVE that hides real drift. "The defect
+    belongs to the extractor." This is the extractor: track `${` depth so the literal is read
+    whole, and let the caller see what was actually written.
+    """
+    depth = 0
+    i = start
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2
+            continue
+        if text.startswith("${", i):
+            depth += 1
+            i += 2
+            continue
+        if c == "}" and depth:
+            depth -= 1
+            i += 1
+            continue
+        if c == quote and depth == 0:
+            return text[start:i]
+        i += 1
+    return ""            # unterminated literal: read nothing rather than half of it
+
+
+def _path_before_computed_1202ge(raw: str) -> str:
+    """#1202ge -- keep the path, drop a computed SUFFIX.
+
+    An interpolation that fills a whole segment is a path param (``/api/users/${id}/follow``
+    -> param_agnostic makes it ``/api/users/:p/follow``). One GLUED to a literal
+    (``/api/search${qs ...}``) is not part of the path at all -- in the generated code it
+    builds a query string, and #494 already established that a query does not define a new
+    endpoint. Cut there, keeping the literal prefix.
+    """
+    i = raw.find("${")
+    while i > 0:
+        if raw[i - 1] != "/":                 # glued to a literal -> computed suffix
+            return raw[:i].rstrip("/") or raw[:i]
+        j = raw.find("}", i)
+        if j < 0:
+            return raw[:i].rstrip("/") or raw[:i]
+        i = raw.find("${", j)
+    return raw
+
+
 def extract_frontend_calls(frontend_dir: Path) -> Set[str]:
     """METHOD+path API calls extracted from generated frontend source.
 
@@ -216,9 +281,19 @@ def extract_frontend_calls(frontend_dir: Path) -> Set[str]:
             if "node_modules" in str(path):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
-            for raw_path, opts in call_re.findall(text):
-                m = method_re.search(opts or "")
+            # #1202ge: read each literal with `${}` depth tracking so a nested template
+            # cannot truncate it mid-expression; then look up the options object the old
+            # single regex used to capture in the same pass.
+            for hm in _CALL_HEAD_1202ge.finditer(text):
+                quote = hm.group(1)
+                raw_path = _template_path_1202ge(text, hm.end(1), quote)
+                if not raw_path.startswith("/"):
+                    continue
+                tail = text[hm.end(1) + len(raw_path):hm.end(1) + len(raw_path) + 200]
+                om = re.match(r"[`'\"]\s*,\s*\{([^{}]*)\}", tail)
+                m = method_re.search(om.group(1) if om else "")
                 method = (m.group(1) if m else "GET").upper()
+                raw_path = _path_before_computed_1202ge(raw_path)
                 p = re.sub(r"\$\{([^}]+)\}", r":\1", raw_path)   # ${id} -> :id (param_agnostic normalizes at match)
                 calls.add(f"{method} {normalize_api_path(p)}")
     return calls
