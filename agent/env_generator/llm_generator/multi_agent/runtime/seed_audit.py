@@ -350,10 +350,30 @@ def _not_measured_1039(why: str) -> Dict[str, int]:
     feeds would be circular.
     """
     try:
-        logging.getLogger(__name__).warning(
-            "#1039 live seed row-count DID NOT RUN (%s) — falling back to the "
-            "`status == 'defined'` filter, which examines 0 tables in 145 of 147 runs. The "
-            "audit's verdict below is therefore NOT CHECKED, not clean.", why)
+        # #1202fb: state, not heartbeat. netflix-r43 (live) printed this 57 times in one run
+        # against 9 successful counts of the same measurement, and the successes are quiet --
+        # so the log says "NOT CHECKED, not clean" 57 times about an audit that DID run. It
+        # misread that way to me while mining, which is the whole failure mode #883 exists to
+        # prevent, arriving from the other direction: not a silent empty, a deafening one.
+        #
+        # The repeats are legitimate and transient -- the audit is called between validations
+        # while the stack is down -- so `warn_once_1201` is the wrong shape twice over: it
+        # would drop the count, and its wording ("the mechanism being OFF, not a transient")
+        # would be false here.
+        #
+        # #1202ad's helper is the right one and this is its SIXTH site; its own table lists
+        # `#1202v seed audit "0 of N"` -- this same file, already fixed once for the same
+        # noise, at a different line. A reason that CHANGES still prints in full, and so does
+        # a return to a reason already seen, which is what keeps #883's rule intact.
+        from .message_format import state_changed_1202ad
+        if state_changed_1202ad("seed_audit:not_measured_1039", str(why)):
+            logging.getLogger(__name__).warning(
+                "#1039 live seed row-count DID NOT RUN (%s) — falling back to the "
+                "`status == 'defined'` filter, which examines 0 tables in 145 of 147 runs. The "
+                "audit's verdict below is therefore NOT CHECKED, not clean.", why)
+        else:
+            logging.getLogger(__name__).debug(
+                "#1039 live seed row-count still not running (%s)", why)
     except Exception:
         pass
     return {}
