@@ -2662,11 +2662,38 @@ class RegistryHub:
         rec = self._verification_chains.value().get(str(name))
         if not isinstance(rec, dict):
             return {"error": f"chain not found: {name}"}
+        _status = "passing" if not result.get("broken") else "failing"
+        # #1202fa: a chain that fails and then passes leaves NO trace of the failure.
+        # `last_result` is overwritten unconditionally, so the next passing run destroys
+        # the evidence -- including the request body #1202ew records on failing steps,
+        # which exists precisely to settle what the failure was about.
+        #
+        # That is why oscillation has only ever been diagnosable by reconstructing it from
+        # logs: across recent runs business_chain_failing flips verdict 115 times over 18
+        # runs, the largest oscillator in the corpus, and each flip erases its own cause.
+        #
+        # Two fields, both cheap. `last_failure_1202fa` keeps the FAILING steps only (not
+        # the whole run -- the passing steps are not evidence and are what would make this
+        # large), and is never cleared by a pass. `flips_1202fa` turns "this check keeps
+        # flip-flopping" from a log-mining exercise into a number on the record.
+        _prev = str(rec.get("status") or "")
+        _fa = dict(rec.get("last_failure_1202fa") or {})
+        _flips = int(rec.get("flips_1202fa") or 0)
+        if _prev in ("passing", "failing") and _prev != _status:
+            _flips += 1
+        if _status == "failing":
+            _fa = {"broken": result.get("broken") or [],
+                   "failed_steps": [st for st in (result.get("steps") or [])
+                                    if isinstance(st, dict) and st.get("ok") is False],
+                   "at": time.time()}
         rec = {**rec,
-               "status": "passing" if not result.get("broken") else "failing",
+               "status": _status,
                "last_result": {"broken": result.get("broken") or [],
                                "steps": result.get("steps") or []},
-               "last_run_at": time.time()}
+               "last_run_at": time.time(),
+               "flips_1202fa": _flips}
+        if _fa:
+            rec["last_failure_1202fa"] = _fa
         self._verification_chains.update(
             lambda m: m.set(str(name), rec, actor), change_info={"agent": actor})
         return rec
