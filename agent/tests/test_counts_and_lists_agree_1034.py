@@ -63,6 +63,7 @@ same gate. That is the silent-truncation defect with a feedback loop attached.
 `delivery_gate.py:1473` was already correct before this fix (`+N more`); it is the proof the
 others are a deviation from this file's own practice rather than a house style.
 """
+import pathlib
 import ast
 import glob
 import inspect
@@ -147,7 +148,7 @@ def test_future_imports_stay_first_everywhere_in_runtime():
     bad = []
     for f in sorted(glob.glob(os.path.join(_RUNTIME, "*.py"))):
         try:
-            tree = ast.parse(open(f, encoding="utf-8", errors="ignore").read())
+            tree = ast.parse(pathlib.Path(f).read_text(encoding="utf-8", errors="ignore"))
         except SyntaxError:
             bad.append(f"{os.path.basename(f)}: does not parse")
             continue
@@ -191,7 +192,7 @@ def _joins_of_a_sliced_list(path):
     on an md5 prefix (`_h713[:12]`) and missed every `+`-concatenated site.
     """
     try:
-        tree = ast.parse(open(path, encoding="utf-8", errors="ignore").read())
+        tree = ast.parse(pathlib.Path(path).read_text(encoding="utf-8", errors="ignore"))
     except SyntaxError:
         return []
     def _capped(node):
@@ -232,7 +233,7 @@ def _capped_lists(with_count):
     """
     out = []
     for f in sorted(glob.glob(os.path.join(_RUNTIME, "*.py"))):
-        lines = open(f, encoding="utf-8", errors="ignore").read().splitlines()
+        lines = pathlib.Path(f).read_text(encoding="utf-8", errors="ignore").splitlines()
         for lineno, text in _joins_of_a_sliced_list(f):
             window = " ".join(lines[max(0, lineno - 4):lineno + 4])
             if "more" in window or "…" in window or "..." in window:

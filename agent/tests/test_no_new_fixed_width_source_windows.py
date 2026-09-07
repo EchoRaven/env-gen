@@ -22,6 +22,7 @@ The fix for any new assertion is a semantic boundary:
     i = src.index("#620 — NAME THE SCREENS")          # a unique heading, not a bare "#620"
     block = src[i:src.index("elif check:", i)]        # end at the next construct
 """
+import pathlib
 import glob
 import os
 import re
@@ -63,7 +64,7 @@ def _counts():
         name = os.path.basename(path)
         if name == os.path.basename(__file__):
             continue
-        src = open(path, encoding="utf-8").read()
+        src = pathlib.Path(path).read_text(encoding="utf-8")   # #1202eu: open().read() leaked one FD per file (1593 each)
         if "getsource" not in src:
             continue
         # ★ Skip lines occupied by STRING literals. This counted the regex's own shape wherever

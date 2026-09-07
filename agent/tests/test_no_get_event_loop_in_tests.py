@@ -19,6 +19,7 @@ order. Removing the deprecated call is the fix that holds. (`get_event_loop()` i
 Use `asyncio.run(coro())`. A bare `asyncio.get_event_loop()` for inspection is still allowed —
 what is banned is driving a coroutine with it.
 """
+import pathlib
 import glob
 import os
 import re
@@ -35,7 +36,7 @@ def _offenders():
         name = os.path.basename(path)
         if name == os.path.basename(__file__):
             continue
-        src = open(path, encoding="utf-8").read()
+        src = pathlib.Path(path).read_text(encoding="utf-8")   # #1202eu: open().read() leaked one FD per file (1593 each)
         n = len(_BANNED.findall(src))
         if n:
             out[name] = n

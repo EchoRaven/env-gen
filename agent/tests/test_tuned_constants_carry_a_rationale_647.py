@@ -21,6 +21,7 @@ To satisfy this for a new constant, put the measurement above it:
     # #NNN: median 12 rows/table over 43 runs, p10 = 5 — only 3% fall below.
     _DEFAULT_MIN_ROWS = 5
 """
+import pathlib
 import glob
 import os
 import re
@@ -51,7 +52,7 @@ def _unexplained():
     out = {}
     for root in _ROOTS:
         for path in sorted(glob.glob(os.path.join(base, root, "*.py"))):
-            lines = open(path, encoding="utf-8", errors="ignore").read().splitlines()
+            lines = pathlib.Path(path).read_text(encoding="utf-8", errors="ignore").splitlines()
             n = 0
             for i, line in enumerate(lines):
                 m = _CONST.match(line)
