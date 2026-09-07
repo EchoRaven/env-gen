@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 import logging
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 
 _ENTRY_POINT_BASENAMES = {
@@ -629,15 +629,56 @@ def scan_empty_mcp_servers(hub_registry) -> List[dict]:
     return out
 
 
+def _coverage_bases_1202fn(app_root: Path) -> Tuple[Path, Path]:
+    """#1202fn -- return ``(tree_root, decl_root)``: the two DIFFERENT bases the scans
+    below need, derived from whichever one the caller happened to hand us.
+
+    ``compute_coverage`` took a single ``app_root`` and gave it to both scans, but they
+    do not want the same directory:
+
+    * ``scan_dead_files`` walks a tree, so it wants the APP TREE. Given the output root
+      it also walks ``worktrees/`` -- five lane copies of the same app.
+    * ``scan_pages_without_files`` resolves ui_page ``path`` values, and those are
+      declared relative to the OUTPUT ROOT (``app/frontend/src/pages/X.jsx``). Given the
+      app dir it joins the ``app/`` segment twice.
+
+    So each of the two callers was correct about one scan and wrong about the other, and
+    neither could fix it from its side. Measured on tiktok-r96, same hub, same tree:
+
+        base                    pages_without_files      dead_files
+        <root>      (coverage)            0  correct     50  (25 phantoms in worktrees/)
+        <root>/app  (delivery)           19  ALL FALSE   25  correct
+
+    The 19 was not cosmetic: ``deliverability_check`` publishes it as a delivery blocker,
+    so the gate reported "N pages_without_files for the declared app/frontend/src/pages/*"
+    against pages whose files were all present -- permanently, since re-running the scan
+    reproduces it. r96 spent its last ticks being told delivery was blocked by this while
+    ``coverage_audit_check`` -- the same scan over the same hub, from the other caller --
+    reported clean in the very same message.
+
+    Ambiguous input (neither layout recognisable, e.g. a bare tmp dir in a unit test)
+    returns the argument for both, i.e. exactly the previous behaviour: we only ever
+    override a base we can positively identify.
+    """
+    p = Path(app_root)
+    _is_tree = lambda d: (d / "backend").is_dir() or (d / "frontend").is_dir()
+    cand = p / "app"
+    if cand.is_dir() and _is_tree(cand):        # given the OUTPUT ROOT
+        return cand, p
+    if p.name == "app" and _is_tree(p):         # given the APP TREE
+        return p, p.parent
+    return p, p
+
+
 def compute_coverage(hub_registry, app_root) -> CoverageReport:
-    app_root = Path(app_root)
+    tree_root, decl_root = _coverage_bases_1202fn(Path(app_root))
     return CoverageReport(
         dead_endpoints=scan_dead_endpoints(hub_registry),
         dead_tables=[],   # #1199: detection removed; see the note above
-        dead_files=scan_dead_files(app_root),
+        dead_files=scan_dead_files(tree_root),
         dead_mcp_tools=scan_dead_mcp_tools(hub_registry),
         empty_mcp_servers=scan_empty_mcp_servers(hub_registry),
-        pages_without_files=scan_pages_without_files(hub_registry, app_root),
+        pages_without_files=scan_pages_without_files(hub_registry, decl_root),
     )
 
 

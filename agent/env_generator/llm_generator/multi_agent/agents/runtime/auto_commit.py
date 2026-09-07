@@ -325,6 +325,22 @@ def _lane_of_worktree(wt: Path) -> str:
     return br.split("/", 1)[1] if br.startswith("agent/") else ""
 
 
+def _conflict_stages_1202fl(repo: Path, path: str) -> set:
+    """#1202fl -- which merge stages the index holds for ``path``: 1=base, 2=ours,
+    3=theirs. ``git checkout --ours/--theirs -- <path>`` READS one of those stages, so a
+    MISSING stage is precisely the case where that checkout cannot work and never will:
+    a modify/delete conflict, where one side's version of the file is its ABSENCE."""
+    rc, out, _e = _run_git(["ls-files", "-u", "--", path], cwd=repo)
+    if rc != 0:
+        return set()
+    stages = set()
+    for line in out.splitlines():
+        head = line.split("\t", 1)[0].split()      # "<mode> <sha> <stage>\t<path>"
+        if len(head) >= 3 and head[2].isdigit():
+            stages.add(int(head[2]))
+    return stages
+
+
 def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
                                    framework_side: str,
                                    superseded_out: Optional[List[str]] = None) -> Tuple[bool, str]:
@@ -411,7 +427,34 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
                 return False, f"conflict path outside {lane}-owned set: {p}"
             rcc, _o, ec = _run_git(["checkout", side, "--", p], cwd=repo)
             if rcc != 0:
-                return False, f"checkout {side} {p} failed: {ec.strip()}"
+                # #1202fl -- MODIFY/DELETE. The docstring above assumed the index always
+                # carries both stages; it does for content conflicts and add/add, but not
+                # when one side DELETED the path -- there is no stage to check out, so
+                # ``checkout --ours/--theirs`` fails with "does not have their version"
+                # and the whole resolution aborts. Since the conflict recurs identically
+                # on every retry, that abort is permanent: in r96 the frontend lane could
+                # not merge into integration for the final 18 minutes of the run, and the
+                # delivery gate stayed red on UI-flow checks downstream of it.
+                # Ownership already decided WHICH side wins; for that side this file's
+                # version simply IS its absence, so we express the same verdict the way
+                # git expresses a deletion. No new policy, no guessing.
+                _want = 2 if side == "--ours" else 3
+                _stages = _conflict_stages_1202fl(repo, p)
+                if _stages and _want not in _stages:
+                    rcr, _ro, ecr = _run_git(["rm", "-f", "--", p], cwd=repo)
+                    if rcr != 0:
+                        return False, (
+                            f"{side} side of {p} is a deletion (index stages "
+                            f"{sorted(_stages)}) but git rm failed: {ecr.strip()}")
+                    resolved.append(f"{p}→{who} (deleted)")
+                    if who in ("framework", "other-lane-territory") and (
+                            superseded_out is not None):
+                        superseded_out.append(p)
+                    continue
+                # Stage present but checkout still failed, or git named no stages at all:
+                # genuinely unexpected -- keep aborting, and say what the index held.
+                return False, (f"checkout {side} {p} failed: {ec.strip()}"
+                               f" (index stages {sorted(_stages) or 'none'})")
             _run_git(["add", "--", p], cwd=repo)
             resolved.append(f"{p}→{who}")
             # PROPOSAL #26 N2: surface the paths where the LANE's edit was SUPERSEDED
@@ -827,8 +870,26 @@ def resolve_merge_conflict_via_strategy(
     if mc != 0:
         # Even with -X strategy, true tree-level conflicts (add/add of
         # different file content with both as binary, etc.) can fail.
+        # #1202fm -- git writes its CONFLICT lines to STDOUT, not stderr, and the
+        # ``merge --abort`` below erases the index that names the paths. Reporting
+        # ``me`` after aborting therefore handed the caller "still conflicts: " with
+        # NOTHING after the colon (r96: six identical empty failures over 18 min, so
+        # neither the orchestrator nor the lane could act on any of them). Collect the
+        # unmerged paths FIRST, and fall back to git's own CONFLICT lines from stdout.
+        _uc, _uo, _ue = _run_git(
+            ["diff", "--name-only", "--diff-filter=U"], cwd=repo)
+        _upaths = [x.strip() for x in _uo.splitlines() if x.strip()] if _uc == 0 else []
+        _detail = (me or "").strip() or "; ".join(
+            ln.strip() for ln in (_mo or "").splitlines()
+            if ln.strip().startswith("CONFLICT"))
         _run_git(["merge", "--abort"], cwd=repo)
-        return False, f"strategic merge still conflicts: {me.strip()}"
+        if _upaths:
+            _msg = f"{len(_upaths)} conflicted path(s): " + ", ".join(_upaths)
+            if _detail:
+                _msg += f" [{_detail}]"
+        else:
+            _msg = _detail or "git reported a conflict but named no path"
+        return False, f"strategic merge still conflicts: {_msg}"
 
     author = agent_id or agent_branch.split("/")[-1]
     author_email = f"{author}@env-gen.local"
