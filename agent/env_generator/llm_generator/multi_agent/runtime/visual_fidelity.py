@@ -535,11 +535,45 @@ def map_reference_screens(
         # extension mismatch (`landing.png` declared, `landing.jpg` staged), and a declaration
         # that is right about WHICH screen should not be discarded over a file suffix.
         #
-        # Placed ahead of #416 and subject to exactly the same two exclusions — an overlay or
-        # transient-state name is still never given a page route (#128/#542a own those, and a
-        # declaration must not be able to promote a dropdown into a blocking screen).
+        # Placed ahead of #416. #1202gg SPLITS the two exclusions it used to share, because
+        # they are not the same kind of evidence:
+        #
+        #   * TRANSIENT (hover/preview/ad) stays excluded. #542a's reason is physical — "a
+        #     static route capture can NEVER reproduce it" — and no declaration changes that.
+        #   * OVERLAY-BY-NAME no longer vetoes a DECLARATION. It is a regex on the filename,
+        #     and #747's own title is "A DECLARATION BEATS A NAME MATCH"; letting the weaker
+        #     signal overrule the stronger one contradicts the rule it is attached to.
+        #
+        # #747's invariant is UNCHANGED and still deliberate: a declaration must not be able
+        # to promote a dropdown into a blocking screen. It used to hold because such a screen
+        # could not reach a ui_page at all; it now holds explicitly, at the `advisory`
+        # decision below, which keeps an overlay-named screen advisory however it resolved.
+        # What changes is only whether the screen is SEEN — mapped, captured and counted in
+        # coverage — not whether it can block a release.
+        #
+        # tiktok-r97 is what that cost. The lane registered both screens as routed pages AND
+        # declared the link:
+        #
+        #     login_modal         route=/login   reference_image=login_modal.png
+        #     settings_more_menu  route=/more    reference_image=settings_more_menu.png
+        #
+        # `modal` and `menu` match _OVERLAY_NAME_RE, so the declaration was never read, the
+        # screens got no route, and the gate reported "judged 9/11 ... NOT judged:
+        # ['login_modal', 'settings_more_menu'] — an unmapped screen is skipped". 18% of the
+        # reference went unexamined while the app served both routes.
+        #
+        # design_prep already learned this exact lesson and says so: "`kind` follows
+        # REACHABILITY, not the filename ... the previous name-regex rule demoted r92's
+        # login_modal (route_hint `/login`) to advisory and left the visual gate's blocking
+        # set empty." Same lesson, the other module.
+        #
+        # #128 is untouched for an UNDECLARED dropdown: `_guessed_page` below still excludes
+        # on the name, so only a page the lane explicitly bound to this screen is reached.
+        # And the screen stays ADVISORY (the classification branch below still reads
+        # `_overlay_by_name`), so this restores COVERAGE without quietly enlarging the
+        # blocking set — a declaration still cannot promote a dropdown into a gate.
         _declared_page = None
-        if not (_overlay_by_name or _transient_by_name):
+        if not _transient_by_name:
             for _pg in pages:
                 _ri = str(_pg.get("reference_image") or "").strip()
                 if not _ri:
@@ -656,7 +690,15 @@ def map_reference_screens(
             # overrides the overlay label; a genuine overlay with no dedicated page
             # (account_menu, *_dropdown) never matches a ui_page, so #128 holds and
             # it stays advisory.
-            advisory = False
+            #
+            # #1202gg: that last sentence used to be guaranteed by the RESOLUTION gate --
+            # an overlay-named screen could never reach a ui_page at all. Now a DECLARED one
+            # can (the lane bound `settings_more_menu` to the page it built at /more), so the
+            # guarantee has to be restated here instead of assumed. Such a screen becomes
+            # MAPPED -- captured, judged, counted in coverage -- but stays ADVISORY.
+            # Restoring coverage is what #1202gg set out to do; enlarging the BLOCKING set is
+            # a different decision with a different risk, and not this one to make silently.
+            advisory = bool(_overlay_by_name)
         elif _transient_by_name:
             # #542a: a transient interaction-STATE name (hover/preview/ad) is authoritative —
             # such a screen has no navigable route of its own (it is a popover/card/ad slot
