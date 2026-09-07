@@ -50,7 +50,24 @@ _STATE_DIRS = ("shared/hubs",)
 # The state that cannot be re-derived is 472KB of JSON. Disk has been this project's
 # binding constraint, and `_KEEP` multiplies every snapshot, so copying the images would
 # trade one lost-work bug for a full disk.
-_STATE_DIRS_JSON_ONLY_1202CS = ("design/visual_gate",)
+# #1202ey: the JSON-only rule now covers `design` ENTIRE, not just its visual_gate subdir.
+# Naming one subdirectory made the capture list a hand-maintained inventory, and an
+# inventory is missing whatever was added after it was written: `design/milestone_gates.json`
+# -- the orchestrator's gate counters (`_fwval_stuck_count`, `_tu_squad_attempts`,
+# `_framework_validation_attempts`, `_pages_gate_deferred_since`) -- was never captured. Those
+# counters are BOUNDS. Restoring a snapshot rewound the hubs to time T while the bounds stayed
+# at whatever the abandoned attempt had spent, so the restored run inherited exhausted budgets
+# its own work state had never used. A restore point that is a blend of two moments is exactly
+# what take_snapshot's own suffix logic exists to prevent, and this was that blend.
+#
+# `design/lane_page_exposure_946.json` and `design/reference_spec.json` come along, which
+# matters for the second one: a resume RECOMPILES the reference spec (#1202eo), so a snapshot
+# is now the way to undo a bad recompile.
+#
+# Still JSON-only, and the reason is unchanged and re-measured: across 47 runs design/ holds
+# 0.34MB of JSON at the median and 1.28MB at the most, against 170-265MB of images beside it.
+# The rule keeps #1202cs's saving while removing the inventory.
+_STATE_DIRS_JSON_ONLY_1202CS = ("design", "test_user_reports")
 _JSON_SUFFIXES_1202CS = (".json", ".jsonl")
 
 # Copied individually. design_system.json is here because it is the single most expensive
@@ -60,6 +77,10 @@ _STATE_FILES = (
     ".checkpoint",
     "run_budget.json",
     "project.json",
+    # #1202ey: `.user_gates.json` is a top-level dotfile, so no directory rule reaches it.
+    ".user_gates.json",
+    # Both design files are now also covered by the `design` rule above. Kept named so a
+    # future narrowing of that rule cannot silently drop the run's most expensive artifact.
     "design/design_system.json",
     "design/.design_prep_input.json",
 )

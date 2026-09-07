@@ -382,6 +382,15 @@ async def main():
             if res['ok']:
                 print(f"Restored {len(res['restored'])} files from "
                       f"{args.restore_snapshot}; previous state saved to {res['backup']}")
+                # #1202ey: say what a restore does NOT rewind. `app/` and `worktrees/` are
+                # git and are deliberately left alone -- rewinding them would discard real
+                # work, and the history is append-only so nothing is lost by not touching
+                # it. But an operator restoring to escape a wedge reasonably reads
+                # "Restored N files" as "the run went back", and then finds the wedged code
+                # still there. Saying it costs one line; the same silence has already cost
+                # this project several investigations that began from the wrong premise.
+                print('Coordination state only: app/ and worktrees/ are git and are NOT '
+                      'rewound, so the code stays as the abandoned attempt left it.')
                 print('Continue with: --resume')
             else:
                 print(f"Restore FAILED: {res['error']}")
