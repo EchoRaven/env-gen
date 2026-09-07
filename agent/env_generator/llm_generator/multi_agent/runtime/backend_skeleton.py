@@ -483,6 +483,11 @@ def _render_column(col: Dict[str, Any],
         # CONSTRUCTION. Integer PKs keep SQLAlchemy autoincrement (untouched).
         if _fk_type_category(col.get("type")) in ("text", "uuid"):
             kw.append("default=lambda: str(_uuid.uuid4())")
+        # #1202gm: the caller marks the one Integer PK of a COMPOSITE key that must keep
+        # generating ids; SQLAlchemy switches autoincrement off for composite keys unless
+        # exactly one column asks for it explicitly.
+        if col.get("_autoincrement_1202gm"):
+            kw.append("autoincrement=True")
     if col.get("nullable") is False or col.get("not_null"):
         kw.append("nullable=False")
     if col.get("unique"):
@@ -788,6 +793,35 @@ def render_models(tables: Dict[str, Any]) -> str:
                 real = [{**c, "primary_key": True} if c is idc else c for c in real]
             else:
                 real = [{"name": "id", "type": "integer", "primary_key": True}] + real
+        # #1202gm: A COMPOSITE PK TURNS OFF AUTOINCREMENT, AND THE PROJECTED CREATE NEEDS IT.
+        #
+        # SQLAlchemy only auto-generates a single-column Integer PK. When a join table
+        # declares its natural key alongside the surrogate one --
+        # `Like(id, user_id, video_id)`, all three primary_key=True -- `id` stops
+        # autoincrementing, the projected `Model(**valid)` insert leaves it NULL, and the
+        # commit/refresh that follows fails: tiktok-r98 answered every
+        # `POST /api/videos/{id}/like` with
+        #     500 create failed: Could not refresh instance '<Like at 0x...>'
+        # and the video_engagement chain stayed red. The route is framework-PROJECTED and
+        # models.py is framework-WRITTEN, so nothing the lane could reach was at fault.
+        #
+        # Exactly the shape the text/uuid branch in _render_column already fixes one step
+        # over ("a TEXT/UUID primary key has NO auto-generator ... so EVERY POST create
+        # 500'd"), and fixed the same way: name the generator BY CONSTRUCTION rather than
+        # hope the insert supplies it.
+        #
+        # The composite key is KEPT -- `likes(user_id, video_id)` unique is real product
+        # meaning (one like per user per video) and dropping it to make `id` sole PK would
+        # silently allow duplicates. SQLAlchemy accepts an explicit autoincrement on one
+        # Integer column of a composite PK; that is all this adds.
+        _pks_gm = [c for c in real if c.get("primary_key") or c.get("pk")]
+        if len(_pks_gm) > 1:
+            _idc_gm = next((c for c in _pks_gm
+                            if str(c.get("name", "")).lower() == "id"
+                            and _fk_type_category(c.get("type")) not in ("text", "uuid")), None)
+            if _idc_gm is not None:
+                real = [{**c, "_autoincrement_1202gm": True} if c is _idc_gm else c
+                        for c in real]
         lines = [c for c in (
             _render_column(col, _infer_tables_1162 if infer_fks else None)
             for col in real) if c]
