@@ -105,6 +105,21 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
         except Exception:
             registered = {}
         for name, page in registered.items():
+            # #1202gi: `list_ui_pages()` returns the RAW JsonStore value, and every store
+            # carries its own `_meta` = {version, last_modified_by, last_modified_at}. That
+            # is a dict, so it passed the isinstance check and became a page named `_meta`;
+            # it has no `route` key, and #243 deliberately keeps a route-less entry REQUIRED
+            # ("an entry with NO route key at all is an older spec shape"). The result is a
+            # required UI flow that no browser walk can ever record, so
+            # deliverability_ui_flow_missing cannot clear while the page-derived path is in
+            # use. Measured over the 137 kept ui_page stores on this machine: `_meta` becomes
+            # a required flow in 137 of them — all of them.
+            #
+            # Store bookkeeping, not content: filtered by KEY, so a page legitimately named
+            # with a leading underscore is not what this drops (no such page exists in the
+            # corpus, and the store reserves the prefix for itself).
+            if str(name).startswith("_"):
+                continue
             if isinstance(page, dict):
                 pages.append({**page, "name": page.get("name") or name})
 
