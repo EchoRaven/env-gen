@@ -809,6 +809,14 @@ class Orchestrator:
         except Exception:
             self._prev_alive_1202eq = None
 
+        # #1202ev: if the previous process over this dir was killed, its ledger still
+        # says `running`. Say so now, while the file it left is still readable -- this
+        # process's first write rebuilds the payload and the evidence is gone.
+        try:
+            self._seal_1202ev = self._budget.seal_abandoned_predecessor_1202ev()
+        except Exception:
+            self._seal_1202ev = "error"
+
         self._design_input = design_input  # Design-Prep phase input dir (Task 5); None → off
         self._reference_images = list(reference_images or [])
         # Merge in any reference images the UI (or a prior step) already dropped

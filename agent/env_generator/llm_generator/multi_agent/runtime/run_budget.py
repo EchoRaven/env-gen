@@ -28,6 +28,59 @@ from typing import Any, Dict
 _REASON_CAP_1202EB = 400
 
 
+# #1202ev: `usage.status` alone cannot tell a killed run from a live one. 40 of the
+# 104 undelivered runs in the corpus carry `status="running"` with no terminal reason --
+# every one of them a process someone killed, and on disk indistinguishable from a run
+# still working. Recording WHICH process wrote the ledger makes the question answerable
+# by anyone reading the file, during the run or years later.
+#
+# The pid alone is not enough: pids are reused, so a dead run whose number was recycled
+# would read as alive. Pairing it with the process start time from /proc settles that --
+# a recycled pid has a different start time.
+_STARTTIME_FIELD_1202EV = 22   # `starttime`, per proc(5) -- 1-based field number
+
+
+def _proc_started_1202ev(pid):
+    """Boot-relative start time of `pid`, or None when it cannot be determined.
+
+    None means "cannot tell", never "dead": on a platform without /proc, or for a
+    process owned by someone else, the honest answer is that liveness is unknown and
+    the caller must not claim the run was abandoned.
+    """
+    try:
+        raw = Path("/proc/%d/stat" % int(pid)).read_text(encoding="utf-8")
+        # `comm` is parenthesised and may itself contain spaces and parens, so the
+        # fixed-width fields start after the LAST ')'. tail[0] is then field 3.
+        tail = raw[raw.rindex(")") + 2:].split()
+        return float(tail[_STARTTIME_FIELD_1202EV - 3])
+    except Exception:
+        return None
+
+
+def process_liveness_1202ev(usage):
+    """"alive" | "gone" | "unknown" for the process that wrote this `usage` block.
+
+    Public because the ledger's readers -- the live monitor, and any post-mortem over
+    the run corpus -- need the same answer the resume path needs, and re-deriving it
+    per reader is how two readers come to disagree about whether a run is running.
+    """
+    try:
+        pid = (usage or {}).get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return "unknown"          # written before #1202ev, or by another platform
+        started = (usage or {}).get("pid_started")
+        now = _proc_started_1202ev(pid)
+        if now is None:
+            # No such process. That is only proof of death if we can read /proc at all;
+            # otherwise every run on the box would read as gone.
+            return "gone" if Path("/proc/self/stat").exists() else "unknown"
+        if not isinstance(started, (int, float)):
+            return "unknown"          # a pid we cannot pin to a start time proves nothing
+        return "alive" if abs(float(started) - now) < 1.0 else "gone"
+    except Exception:
+        return "unknown"
+
+
 class RunBudget:
     """Owns run_budget.json. Constructed with the run's output_dir + a logger."""
 
@@ -107,6 +160,55 @@ class RunBudget:
         except Exception:
             return dict(env_defaults)
 
+    def seal_abandoned_predecessor_1202ev(self) -> str:
+        """Retire a `running` ledger left by a process that is gone. Returns what it did.
+
+        A killed run leaves `status="running"` forever, because the code that would
+        have written a terminal status is exactly the code the kill prevented from
+        running. The next process over this output dir is the first thing in a position
+        to notice, so it says so before it starts overwriting the evidence.
+
+        Only a PROVEN death seals. A ledger whose writer cannot be identified (written
+        before #1202ev, or on a platform with no /proc) stays untouched: mislabelling a
+        live run as abandoned would invent the same kind of false certainty this fixes.
+
+        The status and reason are patched in place. Rebuilding the payload would drop
+        the predecessor's spend, which _carry_1202cg_for reads on this process's first
+        write to keep cumulative cost honest across a resume.
+        """
+        try:
+            path = self.path()
+            if not path.is_file():
+                return "no ledger"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            usage = data.get("usage")
+            if not isinstance(usage, dict) or str(usage.get("status")) != "running":
+                return "not running"
+            live = process_liveness_1202ev(usage)
+            if live != "gone":
+                # "alive" -> a concurrent run, or our own earlier write; "unknown" -> a
+                # writer we cannot identify. Neither may be sealed. The pid is compared
+                # only AFTER liveness: a bare `pid == os.getpid()` short-circuit would
+                # call a ledger ours on the strength of a recycled number alone.
+                if live == "alive" and usage.get("pid") == os.getpid():
+                    return "ours"
+                return live
+            usage["status"] = "abandoned"
+            usage["terminal_reason"] = (
+                "process %s exited without recording an outcome; sealed by pid %d taking "
+                "over this output dir" % (usage.get("pid"), os.getpid()))[:_REASON_CAP_1202EB]
+            usage["sealed_at_1202ev"] = time.time()
+            tmp = path.with_suffix(".json.1202ev")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp.replace(path)
+            if self._logger:
+                self._logger.warning("#1202ev: predecessor pid %s left this run marked "
+                                     "`running` and is gone -- sealed as `abandoned`",
+                                     usage.get("pid"))
+            return "sealed"
+        except Exception:
+            return "error"
+
     def write(self, caps: Dict[str, Any], started_at: float,
               elapsed: float, ticks: int, status: str, reason: str = "") -> None:
         """Persist caps + usage so the live monitor can show budget progress.
@@ -126,6 +228,9 @@ class RunBudget:
                     "ticks": int(ticks),
                     "status": status,
                     "updated_at": time.time(),
+                    # #1202ev: who wrote this. See process_liveness_1202ev.
+                    "pid": os.getpid(),
+                    "pid_started": _proc_started_1202ev(os.getpid()),
                 },
             }
             if reason:
