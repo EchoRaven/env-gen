@@ -2709,8 +2709,12 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                                join_capped(_names1017, len(_names1017), cap=12)
                                or "<unnamed records>")
             except Exception as _e:
-                logger.warning("#1017 could not name the failed UI records: %s",
-                               type(_e).__name__)
+                # #1202et: WITH the message. This block exists to NAME the failed UI
+                # records; reporting only "KeyError" tells the reader that naming failed
+                # and not which name it choked on — the category-without-the-instance shape
+                # this batch has been removing everywhere else.
+                logger.warning("#1017 could not name the failed UI records: %s: %s",
+                               type(_e).__name__, _e)
         failed_checks.append("validation_ui_evidence_failed")
     # #1154: say when a UI record was discounted as unreachable-origin rather than product
     # evidence. Discounting silently would be the #691/#790 mistake — a correct decision that

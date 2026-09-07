@@ -141,8 +141,12 @@ def compose_provider(*, timeout: int = 20) -> Dict[str, Any]:
                            capture_output=True, text=True, timeout=timeout)
         text = ((r.stdout or "") + " " + (r.stderr or "")).strip()
     except Exception as exc:
+        # #1202et: the message too. This decides the compose provider and then says
+        # "assuming v2"; a reader who only learns "TimeoutExpired" cannot tell a slow host
+        # from a missing binary from a permission error, and the assumption rides on it.
         return {"provider": "unknown", "service_ps": True,
-                "message": f"{rt} compose version failed ({type(exc).__name__}) — assuming v2"}
+                "message": (f"{rt} compose version failed "
+                            f"({type(exc).__name__}: {exc}) — assuming v2")}
     low = text.lower()
     if "podman-compose" in low:
         return {"provider": text.splitlines()[0].strip()[:60] if text else "podman-compose",
