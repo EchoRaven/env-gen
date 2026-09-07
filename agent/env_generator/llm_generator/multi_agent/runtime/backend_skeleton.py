@@ -2226,8 +2226,13 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         #         `continue_watching`) → force it back on.
         # Applying only one half, or a path-shape heuristic of this module's own, is how the
         # two emitters drift — #1096 is what that costs.
-        _explicit_public_1097 = (ep.get("auth_required") is False) or (
-            isinstance(emeta, Mapping) and emeta.get("auth_required") is False)
+        # #1202ga: the schema is the contract (see resolve_endpoint_auth) -- a lane that
+        # declares a read public writes it THERE, and this emitter saw only the top level
+        # and the registration-time metadata mirror.
+        _explicit_public_1097 = (
+            (ep.get("auth_required") is False)
+            or (isinstance(_eschema, Mapping) and _eschema.get("auth_required") is False)
+            or (isinstance(emeta, Mapping) and emeta.get("auth_required") is False))
         if _explicit_public_1097 and _owner_scoped:
             _owner_scoped = False
         try:

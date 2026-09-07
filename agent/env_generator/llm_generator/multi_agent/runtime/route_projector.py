@@ -623,7 +623,27 @@ def resolve_endpoint_auth(method, path, ep, meta=None):
     read — so public reads (a feed, an explore grid) stay open. An explicit True/False in
     the contract or metadata always wins.
     """
+    # #1202ga -- THE SCHEMA IS THE CONTRACT; metadata is a MIRROR of it taken at
+    # registration. This read the mirror and the top level but never the schema, so a lane
+    # that updated its contract had no effect at all.
+    #
+    # tiktok-r97, end to end: the verifier correctly relayed six "unauthenticated API
+    # returns 401" bugs to backend; backend correctly applied #320's public-read
+    # declaration -- `schema.auth_required = False` on /api/videos/{id}, its comments and
+    # /api/live -- and truthfully marked them completed. Every one of those endpoints still
+    # carried `metadata.auth_required = True` from the original registration, so this
+    # resolver read True, the routes kept projecting Depends(get_current_user), and the
+    # logged-out flow kept failing on the same 401 for the rest of the run. The lane did the
+    # right thing six times and the framework ignored it.
+    #
+    # The schema wins because it is what `register_endpoint(schema=...)` writes -- the
+    # lane's own statement of the contract. Metadata stays as the fallback for records whose
+    # schema does not state it, so nothing that only ever set the mirror starts reading
+    # differently.
     stated = ep.get("auth_required")
+    _sch1202ga = ep.get("schema")
+    if stated is None and isinstance(_sch1202ga, Mapping):
+        stated = _sch1202ga.get("auth_required")
     if stated is None and isinstance(meta, Mapping):
         stated = meta.get("auth_required")
     if stated is not None:
