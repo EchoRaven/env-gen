@@ -987,7 +987,15 @@ def _bug_reference_time_1023(task) -> float:
     best = 0.0
     try:
         meta = task.get("metadata") or {}
-        for v in (task.get("claimed_at"), task.get("created_at"), task.get("updated_at")):
+        # #1202fy: `updated_at` DOES NOT EXIST ON A TASK -- 0 of 542 carry it on r96's
+        # ledger; WorkHub writes the last-modification stamp as `_updated_at`. The read was
+        # dead, and because the max() also sees claimed_at/created_at (present on all 542)
+        # it failed silently instead of returning nothing. Measured cost: 76 of 542 tasks
+        # have `_updated_at` NEWER than what this computed, 24 of them by over 5 minutes and
+        # one by 26.5 HOURS -- so a bug's evidence read as older than it was, and #1114/#1023
+        # use exactly this to decide whether the evidence predates a content change.
+        for v in (task.get("claimed_at"), task.get("created_at"),
+                  task.get("_updated_at"), task.get("updated_at")):
             if isinstance(v, (int, float)):
                 best = max(best, float(v))
         for h in (meta.get("triage_history") or []):
