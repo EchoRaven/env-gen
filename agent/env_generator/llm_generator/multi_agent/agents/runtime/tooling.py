@@ -1003,7 +1003,23 @@ class AgentTooling:
                         f"causes merge conflicts. Author your business logic in "
                         f"custom_routes.py (backend) or src/pages/*.jsx + App.jsx (frontend); "
                         f"to change models/schemas/main, register the contract via the "
-                        f"registryhub_* tools and the framework regenerates them."
+                        f"registryhub_* tools and the framework regenerates them. "
+                        # #1202fe: name the SEED destination too. The message listed every
+                        # alternative except the one the framework itself asks for most: #661's
+                        # empty-state reminder tells the backend, verbatim, to "Add realistic
+                        # seed rows (>=3) ... to app/backend/seed_data.json" -- and netflix-r41
+                        # (live) shows the lane trying to obey by editing seed_data.PY, which is
+                        # framework-owned, getting denied, and being redirected to
+                        # custom_routes.py, where seed rows do not go.
+                        #
+                        # That closes a loop the run cannot escape: thin seeds are what #661
+                        # blames for empty-state screens (17% of failing visual judgments in the
+                        # current corpus, none of which has ever cleared the bar), so the one
+                        # instruction the lane most needs to act on is the one this refusal
+                        # answers with the wrong file. seed_data.json is lane-owned and writable
+                        # -- the answer existed, in another module, unsaid here.
+                        f"Seed ROWS are not framework-owned: add them to "
+                        f"app/backend/seed_data.json, which is yours."
                         + _tw_hint + _escalate_678
                     ),
                 )
