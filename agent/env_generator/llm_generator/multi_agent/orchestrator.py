@@ -4143,6 +4143,14 @@ class Orchestrator:
                 if isinstance(_v, (int, float)):
                     setattr(self, _f, float(_v) + gap)
                     _moved.append(_f)
+            # #1202fi: the no-convergence stamp is restored by the same #1202ce/#1202dv
+            # pass, so it is shifted here too -- by the FULL gap, not #1133's capped
+            # credit. tiktok-r96 died one tick in on "1474min of lane time" that was
+            # 23.5 hours of stopped process.
+            _fd = getattr(self, "_fwdeliver_first_decline_ts", None)
+            if isinstance(_fd, (int, float)) and _fd:
+                self._fwdeliver_first_decline_ts = float(_fd) + gap
+                _moved.append("fwdeliver_first_decline_ts")
             _vf = getattr(self, "_vf_gate", None)
             _ds = getattr(_vf, "deferred_since", None) if _vf is not None else None
             if isinstance(_ds, (int, float)):
@@ -4214,11 +4222,10 @@ class Orchestrator:
             # So: shift the stamp by the FULL gap, directly, and leave #1133's accounting to
             # the deferral it actually governs. The abort still fires on 90 minutes of real
             # lane time -- it just stops counting the hours the run did not exist.
-            self._fwdeliver_first_decline_ts += _gap
-            self._logger.warning(
-                "#1202fi shifted the no-convergence stamp by the FULL %.0fs of downtime "
-                "(not #1133's capped credit) — a stopped process spent no lane time, and "
-                "the cap exists to bound framework DEFERRAL, which this is not.", _gap)
+            # The stamp does not exist yet: #1202dv restores it with the other fwgate
+            # fields ~450 lines below, so touching it here raised AttributeError and the
+            # credit was swallowed ("could not credit resume downtime"). Same ordering
+            # mistake #1202fd made; the shift now happens where the fields are.
             # #1202fd (ordering): the deferral clocks do not exist yet -- #1202ce restores
             # them ~450 lines later, from milestone_gates.json. Shifting here found nothing
             # to shift and logged nothing, which netflix-r41's third resume showed within

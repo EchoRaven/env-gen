@@ -137,7 +137,7 @@ class ItIsActuallyWiredIn(unittest.TestCase):
         # aborted one tick in on "1474min of lane time". r41's third resume died the same
         # way. Downtime now shifts the stamp directly and in full.
         self.assertNotIn("resume downtime (#1202eq)", src)
-        self.assertIn("self._fwdeliver_first_decline_ts += _gap", src)
+        self.assertIn("self._fwdeliver_first_decline_ts = float(_fd) + gap", src)
 
     def test_the_abort_no_longer_claims_the_gate_never_went_green(self):
         src = (ROOT / "env_generator" / "llm_generator" / "multi_agent"
