@@ -2165,6 +2165,25 @@ class HealPipeline:
                      ":(exclude)**/__pycache__/**", ":(exclude)**/*.py[cod]"],
                     cwd=repo)
                 staged_any = staged_any or (rc == 0)
+            # #1202gf: THE GATE'S OTHER REQUIRED ARTIFACT NEVER SHIPPED. `required_files`
+            # in delivery_gate is ["docker/docker-compose.yml", "design/README.md"], and
+            # only the first is under a directory this loop stages. Measured across the 136
+            # kept repos: 113 have design/README.md in the working tree and **2** have it
+            # committed to integration -- so in 111 of 113 the gate passes on a file the
+            # release does not carry. It is consumer-facing (the app's name, its whole API
+            # surface, and the `docker compose up` line), which is exactly what someone
+            # receiving the environment needs.
+            #
+            # Staged as a single FILE, never as `design/`: that directory also holds the
+            # reference images and screenshots, 170-265 MB of them, and #1202cs exists
+            # because they must not enter the run's git history.
+            try:
+                if (repo / "design" / "README.md").is_file():
+                    _rc_gf, _o_gf, _e_gf = _run_git(
+                        ["add", "-A", "--", "design/README.md"], cwd=repo)
+                    staged_any = staged_any or (_rc_gf == 0)
+            except Exception as _exc_gf:
+                orch._logger.debug("#1202gf README stage skipped: %s", _exc_gf)
             if not staged_any:
                 return
             # #1014: name the lane-owned files this phase is about to commit.
