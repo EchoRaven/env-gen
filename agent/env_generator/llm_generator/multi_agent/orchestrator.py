@@ -186,6 +186,11 @@ FWVAL_SLOW_INTERVAL_S = 300  # past the cap, retry at most once per this interva
 FWVAL_STUCK_REDISPATCH_AFTER = 2   # validations on the same failure set (past cap) → re-dispatch owner
 FWVAL_STUCK_TERMINAL_AFTER = 4     # validations on the same failure set (past cap) → surface stuck signal
 FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500"))  # 75min
+
+# #1202go: the median gap from run start to the first delivery-gate evaluation, measured
+# over 39 runs on this machine (p50 8.6 min, p75 19.6, p90 28.9, max 52.6). A resume holding
+# less no-convergence budget than this cannot reach the one evaluation it needs.
+_TIME_TO_FIRST_GATE_S_1202GO = 9 * 60
 #   convergence backstop: the exact-stuck FWVAL ladder resets on ANY churn (file/chain
 #   changes), so a run that stays active but OSCILLATES among delivery-gate checks without
 #   ever clearing them (run v18: ~76min cycling business_chain_failing ↔ api_coverage ↔
@@ -4171,7 +4176,29 @@ class Orchestrator:
             if not isinstance(_decl, (int, float)) or _decl <= 0:
                 return                     # never declined yet: the budget is untouched
             _spent = self._lane_time_1202fk(max(0.0, time.time() - _decl))
-            if _spent <= float(FWVAL_NO_DELIVER_ABORT_S):
+            _left = float(FWVAL_NO_DELIVER_ABORT_S) - _spent
+            if _left > _TIME_TO_FIRST_GATE_S_1202GO:
+                return
+            if _left > 0:
+                # #1202go: NEARLY spent is spent. #1202fw only spoke once the budget was
+                # gone, so a resume that starts with minutes left says nothing, runs, and
+                # aborts anyway -- tiktok-r98's second resume began with about 7 minutes of
+                # budget, cost $62.61, and hit the 90-minute abort 22 minutes in.
+                #
+                # The threshold is measured, not picked: across 39 runs on this machine the
+                # gap from start to the FIRST delivery-gate evaluation is p50 8.6 min,
+                # p75 19.6, p90 28.9. A resume holding less than the median cannot reach the
+                # one gate evaluation it needs, so it is over budget before it is asked.
+                self._logger.warning(
+                    "#1202go this resume starts with only %d min of no-convergence budget "
+                    "left (%d of %d min already spent). Reaching the first delivery-gate "
+                    "evaluation takes a median of %d min across 39 runs, so this attempt is "
+                    "likely to abort before it is ever asked to deliver. Resume only if a "
+                    "change since the last attempt makes that first evaluation green; "
+                    "otherwise a fresh run costs less than this one will.",
+                    int(_left / 60), int(_spent / 60),
+                    int(FWVAL_NO_DELIVER_ABORT_S / 60),
+                    int(_TIME_TO_FIRST_GATE_S_1202GO / 60))
                 return
             self._logger.warning(
                 "#1202fw this run has ALREADY spent %d min of lane time since its first "
