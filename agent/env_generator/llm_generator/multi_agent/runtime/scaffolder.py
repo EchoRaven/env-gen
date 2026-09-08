@@ -93,6 +93,58 @@ PY
 '''
 
 
+def _loop_page_advice_1202gq(names, pages=None) -> str:
+    """How to keep a page the projector keeps clobbering — the rule that ACTUALLY governs it.
+
+    #1202at states one exit for every looping page: "#914/#1020 KEEPS a page that imports
+    `../components/`". That is `_imports_own_components` and it is right for an ordinary page.
+    An AUTH page is decided elsewhere: `scaffold_pages_from_contract`'s auth branch asks
+    `_lane_auth_page_is_live_1197` — wired AND drivable AND persists, over the page's whole
+    depth-2 import bundle — so for a login/signup page the component rule is neither
+    sufficient (a component-based login that never calls /auth/* is still replaced) nor
+    necessary (a self-contained one that logs in is kept). r97 filed this task naming
+    `LoginPage` SEVEN times; #1197's own comment records 87 clobbers of LoginPage in r26.
+    The lane kept doing what it was told and kept losing the page.
+
+    Split by the SAME predicate the projector uses (`_is_auth_page`), so the two can never
+    drift into disagreeing about which page is which (#906).
+    """
+    from .frontend_scaffold import _is_auth_page
+    from .message_format import join_capped
+    pages = pages or {}
+    names = [str(n) for n in (names or [])]
+    auth = [n for n in names if _is_auth_page(n, pages.get(n) or {})]
+    plain = [n for n in names if n not in auth]
+
+    head = ("The framework has re-projected these pages after you rewrote them, 3+ times each "
+            "this run, so none of that work reaches a screenshot: %s. This is not a verdict on "
+            "your code — the projector replaces any page it cannot tell apart from a stub."
+            % join_capped(names, total=len(names), cap=6))
+    parts = [head]
+    if plain:
+        parts.append(
+            "How to keep %s: the projector KEEPS a page that imports from `../components/` "
+            "and REPLACES one that does not (#914/#1020). Move the page body into a component "
+            "under `src/components/` and have the page import and render it. The same content "
+            "then survives every later scaffold pass."
+            % join_capped(plain, total=len(plain), cap=6))
+    if auth:
+        parts.append(
+            "How to keep %s: an AUTH page is judged by a different rule (#1197) — importing "
+            "`../components/` does NOT protect it. The page is kept only when it is all three, "
+            "counted across the files it imports (2 hops), so a component may carry any of "
+            "them:\n"
+            "  * WIRED — it calls `/auth/login` or `/auth/register` (the framework owns those "
+            "endpoints), or it drives useAuth/AuthContext with a login()/register() call;\n"
+            "  * DRIVABLE — a NAMED input plus a <form> or type=\"submit\", so the ui_flow "
+            "walkthrough can type and submit;\n"
+            "  * PERSISTS — it stores the returned token.\n"
+            "A page missing any one of them reads as a dead login and is replaced, however "
+            "much of it lives in components."
+            % join_capped(auth, total=len(auth), cap=6))
+    return "\n\n".join(parts)
+
+
 def ensure_base_gitignore(output_dir: Path) -> list:
     """Keep everything that is NOT deliverable code out of git. Returns the rel-paths to commit.
 
@@ -1008,17 +1060,9 @@ volumes:
                         orch.hubs.workhub.create_task(
                             title=("Keep %d page(s) the projector keeps overwriting"
                                    % len(_names))[:180],
-                            description=(
-                                "The framework has re-projected these pages after you rewrote "
-                                "them, 3+ times each this run, so none of that work reaches a "
-                                "screenshot: %s. This is not a verdict on your code — the "
-                                "projector replaces any page it cannot tell apart from a stub.\n\n"
-                                "How to keep it: the projector KEEPS a page that imports from "
-                                "`../components/` and REPLACES one that does not (#914/#1020). "
-                                "Move the page body into a component under `src/components/` "
-                                "and have the page import and render it. The same content then "
-                                "survives every later scaffold pass."
-                                % join_capped(_names, total=len(_names), cap=6)),
+                            description=_loop_page_advice_1202gq(
+                                _names, {str(p.get("name") or ""): p
+                                         for p in (ui_pages or []) if isinstance(p, dict)}),
                             assignee="frontend", agent="scaffolder", priority="P1",
                             kind="fidelity")
             except Exception as _t1202at:

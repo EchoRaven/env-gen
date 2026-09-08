@@ -424,6 +424,65 @@ def _has_timestamp(cols: List[str]) -> bool:
     return any(c in _FEED_TS_COLS or c.endswith("_at") for c in cols)
 
 
+def _feed_shaped_model_288(models: Dict[str, Dict[str, Any]]):
+    """The pre-#1202gp chooser — timestamp ladder only — kept for #288's parent-filter EXEMPTION.
+
+    #1202gp widened `_primary_content_model` with an ATTACHMENT rung, which is right for
+    picking what a feed/search route SERVES but must not decide who gets owner-scoped. The
+    ratchet in `test_route_projector_nested_isolation` proves why: `projects(user_id)` with
+    `tasks(user_id, project_id)` hanging off it is structurally IDENTICAL to `videos(author_id)`
+    with `video_likes(user_id, video_id)`, so the attachment winner in a project tracker is the
+    PRIVATE container — and exempting it drops the cross-user isolation #288's filter exists
+    for (GET /api/projects/{otherId}/tasks → 200, another user's tasks).
+
+    That separation is SEMANTIC, not structural — the same conclusion #1202gd reached over 116
+    backends and 267 firing tables. The exemption therefore stays on the narrow, conservative
+    predicate until the reference spec's declared `visibility` (#1202gd) is threaded down to
+    the projector; widening it on shape alone would trade a 404 for a leak.
+    """
+    candidates: List[Tuple[int, int, str, Dict[str, Any]]] = []
+    for table, meta in models.items():
+        if _is_spine_table(table):
+            continue
+        cols = meta.get("cols", [])
+        if not _has_timestamp(cols):
+            continue
+        candidates.append((2 if _owner_fk(meta) else 1, len(cols), table, meta))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (-c[0], -c[1], c[2]))
+    _, _, table, meta = candidates[0]
+    return (table, meta)
+
+
+def _attachments_1202gp(models: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
+    """How many OTHER non-spine tables hang off each table by a ``<singular>_id`` column.
+
+    Column NAMES, not the ``fks`` map: the producer (`_models_meta`) leaves ``fks`` EMPTY for
+    exactly the content tables this has to rank — r98's `videos`, `comments`, `video_likes`
+    and `video_saves` all carry ``fks={}`` while their columns say `video_id` plainly. A
+    table's own OWNER fk never counts as an attachment; otherwise every user-owned table
+    would "attach" to `users` and the spine would win every app.
+    """
+    out: Dict[str, int] = {}
+    nonspine = [t for t in models if not _is_spine_table(t)]
+    for target in nonspine:
+        singular = target[:-1] if target.endswith("s") else target
+        col = (singular + "_id").lower()
+        n = 0
+        for other in nonspine:
+            if other == target:
+                continue
+            other_meta = models.get(other) or {}
+            names = {str(c.get("name") if isinstance(c, Mapping) else c).lower()
+                     for c in (other_meta.get("cols") or [])}
+            if col in names and col != str(_owner_fk(other_meta) or "").lower():
+                n += 1
+        if n:
+            out[target] = n
+    return out
+
+
 def _primary_content_model(
     models: Dict[str, Dict[str, Any]]
 ) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -432,7 +491,31 @@ def _primary_content_model(
     timestamp column (time-ordered) and, preferably, an owner FK to users
     (authored). Among candidates, prefer feed-item shape, then the richest table,
     then alphabetical (deterministic). Returns None when nothing is feed-shaped,
-    so the projector never guesses a wrong table."""
+    so the projector never guesses a wrong table.
+
+    #1202gp (tiktok r96/r97/r98, live): the timestamp REQUIREMENT is the flaw — a generated
+    content table often carries none. r98's `videos` has 13 columns and not one is
+    time-shaped, so this returned `messages` (r98) / `suggested_creators` (r96) / None (r97)
+    and #288's exemption never reached the content model. The projected consequence, verbatim
+    from r98's main.py at three call sites:
+
+        _parent = db.query(Video).filter(getattr(Video, "id") == id).filter(
+            getattr(Video, "author_id") == _fw_owner_val(Video, "author_id", user)).first()
+
+    — "you may only like / save / comment on videos YOU authored" — 404 on a working app,
+    19 of that run's 34 chain failures, in code the lane cannot edit.
+
+    ATTACHMENT is the signal that survives across domains: the primary content is what the
+    other tables hang off by a `<singular>_id` column (comments.video_id, video_likes.video_id
+    ...). Measured over the corpus: tiktok `videos` 19/22 runs, netflix `titles` ~41/45,
+    instagram `posts` 18/18, googlemaps `places`. It is a rung ABOVE the timestamp ladder,
+    never a replacement — where the old ladder already answered correctly (instagram) the two
+    AGREE, and with nothing attached anywhere the ladder below is reached untouched."""
+    _attached = _attachments_1202gp(models)
+    if _attached:
+        _best = sorted(_attached.items(),
+                       key=lambda kv: (-kv[1], -len(models[kv[0]].get("cols", [])), kv[0]))[0][0]
+        return (_best, models[_best])
     candidates: List[Tuple[int, int, str, Dict[str, Any]]] = []
     for table, meta in models.items():
         if _is_spine_table(table):
@@ -1376,7 +1459,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         # shape-derived) — mirroring #279 (the login wall is on interaction, not on the content).
         # A genuinely private container (not the feed's content model) still scopes its parent,
         # preserving the cross-user leak protection the filter was added for.
-        _pc = _primary_content_model(models)
+        _pc = _feed_shaped_model_288(models)
         _pc_table = _pc[0] if _pc else None
         if (auth and owner_scoped_tables and parent_table in set(owner_scoped_tables)
                 and parent_table != _pc_table):
