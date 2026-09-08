@@ -93,6 +93,49 @@ PY
 '''
 
 
+def _public_content_task_body_1202hf(tables) -> str:
+    """The #1202gv task body, with the one thing r103 showed the lane could not know.
+
+    r103, live: the lane received this task, closed it without fixing it, got it re-filed by
+    #1202hd, and then set `auth_required = false` on the endpoints while leaving
+    `owner_scoped_reads: true` on the tables. That is INERT — `backend_skeleton` computes
+    `auth = auth or _owner_scoped`, because you cannot filter by the caller without a caller,
+    so the projected read kept `Depends(get_current_user)` and the owner filter and the feed
+    stayed empty.
+
+    The lane conflated two questions the message had not separated: "must you log in"
+    (`auth_required`) and "do you see other people's rows" (`owner_scoped_reads`). Naming both,
+    and saying that clearing the first alone changes nothing, is the fact it was missing.
+    """
+    from .message_format import join_capped as _jc
+    try:
+        names = [str(t) for t in (tables or [])]
+    except Exception:
+        names = []
+    listed = _jc(names, total=len(names), cap=6) if names else "these table(s)"
+    return (
+        "The reference materials declare %s as PUBLIC content — in the compile instructions' "
+        "words, \"every row is content PUBLISHED for all users to read ... a reader who is not "
+        "the author still sees the row, and seeing it is the point\". The contract sets "
+        "`owner_scoped_reads: true` on the same table(s), so the projected read is "
+        "`WHERE <owner> = <caller>` and a reader who is not the author sees NOTHING.\n\n"
+        "TWO SEPARATE FLAGS, and clearing the wrong one does nothing:\n"
+        "  * `auth_required` answers MUST YOU LOG IN.\n"
+        "  * `owner_scoped_reads` answers DO YOU SEE OTHER PEOPLE'S ROWS.\n"
+        "Setting `auth_required=false` ON ITS OWN is inert here: the skeleton computes "
+        "`auth = auth or owner_scoped`, because a read cannot filter by the caller without a "
+        "caller, so the handler keeps `Depends(get_current_user)` and the owner filter, and "
+        "the feed stays empty. To make this content readable by everyone you must clear "
+        "`owner_scoped_reads` for %s.\n\n"
+        "One of the two statements is wrong and only you can settle it. If these rows really "
+        "are published content, clear `owner_scoped_reads`; if they are per-user after all, "
+        "the materials' declaration is what should change.\n\n"
+        "Worth settling EARLY because the symptom appears far away: an owner-scoped feed "
+        "answers `{\"items\": []}` to a fresh actor, so a chain step that captures "
+        "`items.0.id` saves nothing and every later step 404s on a substituted id."
+        % (listed, listed))
+
+
 def _refile_after_completion_1202hd(orch_or_hubs, title: str) -> bool:
     """Should a still-standing finding be re-filed because its last task was CLOSED?
 
@@ -120,6 +163,14 @@ def _refile_after_completion_1202hd(orch_or_hubs, title: str) -> bool:
                 return float(t.get("_updated_at") or 0)
             except Exception:
                 return 0.0
+        # #1202hg: BOUNDED. Re-filing once after a false completion is the correction;
+        # re-filing forever is the flood #1202bn exists to prevent, and I introduced it — r103
+        # produced five tasks and four empty completions inside thirty minutes, each costing a
+        # lane tick and changing nothing. After two completions the finding stands on its own
+        # in the gate rather than in a task nobody acts on. Counts COMPLETIONS, not tasks: a
+        # cancelled one is not a claim of having fixed anything and does not spend the budget.
+        if sum(1 for t in matches if str(t.get("status") or "") == "completed") >= 2:
+            return False
         latest = sorted(matches, key=_key)[-1]
         return str(latest.get("status") or "") == "completed"
     except Exception:
@@ -643,23 +694,7 @@ volumes:
                 if _gv and (_hd or _changed1202gv):
                     orch.hubs.workhub.create_task(
                         title=_title1202gv,
-                        description=(
-                            "The reference materials declare %s as PUBLIC content — in "
-                            "the compile instructions' words, \"every row is content "
-                            "PUBLISHED for all users to read ... a reader who is not the "
-                            "author still sees the row, and seeing it is the point\". "
-                            "The contract sets `owner_scoped_reads: true` on the same "
-                            "table(s), so the projected read is `WHERE <owner> = "
-                            "<caller>` and a reader who is not the author sees NOTHING.\n\n"
-                            "One of the two is wrong and only you can settle it. If these "
-                            "rows really are published content, clear "
-                            "`owner_scoped_reads` for them; if they are per-user after "
-                            "all, the materials' declaration is what should change.\n\n"
-                            "This is worth settling EARLY because the symptom appears far "
-                            "away: an owner-scoped feed answers `{\"items\": []}` to a "
-                            "fresh actor, so a chain step that captures `items.0.id` "
-                            "saves nothing and every later step 404s on a substituted id."
-                            % _jc1202gv(_gv, total=len(_gv), cap=6)),
+                        description=_public_content_task_body_1202hf(_gv),
                         assignee="backend", agent="scaffolder", priority="P1",
                         kind="contract")
             except Exception as _e1202gv:
