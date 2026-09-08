@@ -93,6 +93,39 @@ PY
 '''
 
 
+def _refile_after_completion_1202hd(orch_or_hubs, title: str) -> bool:
+    """Should a still-standing finding be re-filed because its last task was CLOSED?
+
+    #1202bn's dedupe keeps a finding from filing twice, which is right while the task is open.
+    r102, live: backend marked #1202gv's task `completed` while `videos` and `comments` still
+    carried `owner_scoped_reads: true` -- the exact disagreement the task named -- and the
+    dedupe then kept the framework silent, because the FINDING had not changed. A lane can
+    close the one message naming a root cause without touching it and nothing notices.
+
+    Narrow: only when the LATEST task with this title is `completed`. An open task is left
+    alone, a cancelled one does not count as a claim of having fixed it, and no prior task at
+    all leaves the ordinary dedupe in charge. Never raises -- on any fault it answers False,
+    which is the pre-#1202hd behaviour.
+    """
+    try:
+        wh = getattr(orch_or_hubs, "workhub", None) or getattr(
+            getattr(orch_or_hubs, "hubs", None), "workhub", None)
+        rows = (wh.stores.tasks.value() or {}) if wh is not None else {}
+        matches = [t for t in rows.values()
+                   if isinstance(t, dict) and str(t.get("title") or "") == str(title)]
+        if not matches:
+            return False
+        def _key(t):
+            try:
+                return float(t.get("_updated_at") or 0)
+            except Exception:
+                return 0.0
+        latest = sorted(matches, key=_key)[-1]
+        return str(latest.get("status") or "") == "completed"
+    except Exception:
+        return False
+
+
 def _loop_page_advice_1202gq(names, pages=None) -> str:
     """How to keep a page the projector keeps clobbering — the rule that ACTUALLY governs it.
 
@@ -596,11 +629,15 @@ volumes:
                     _spec1202gv = _j1202gv.loads(_sp1202gv.read_text(encoding="utf-8"))
                 _gv = public_content_scoped_away_1202gv(_spec1202gv, tables)
                   # answered `{"items": []}` to a fresh actor, the videoId save captured
-                if _gv and _sc1202gv("task:public_content_scoped_away",
-                                     tuple(sorted(map(str, _gv)))):
+                _title1202gv = ("Reconcile %d table(s) the materials call public with "
+                                "the contract that owner-scopes them" % len(_gv))[:180]
+                # #1202hd: the ordinary dedupe is right while the task is OPEN; it is wrong
+                # once a lane has CLOSED it with the disagreement still standing.
+                _hd = _refile_after_completion_1202hd(orch, _title1202gv)
+                if _gv and (_hd or _sc1202gv("task:public_content_scoped_away",
+                                             tuple(sorted(map(str, _gv))))):
                     orch.hubs.workhub.create_task(
-                        title=("Reconcile %d table(s) the materials call public with "
-                               "the contract that owner-scopes them" % len(_gv))[:180],
+                        title=_title1202gv,
                         description=(
                             "The reference materials declare %s as PUBLIC content — in "
                             "the compile instructions' words, \"every row is content "
