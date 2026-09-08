@@ -611,6 +611,7 @@ def _table_has_owner_fk(table: Mapping[str, Any]) -> bool:
 
 def _build_contract(
     drafts: Mapping[str, Mapping[str, Any]], description: str = "",
+    public_tables: Any = None,
 ) -> Dict[str, Any]:
     """Synthesize the contract block roadmap_validator expects.
 
@@ -777,7 +778,17 @@ def _build_contract(
             # EXPLICIT lane decision (true OR false) is always respected — this never
             # overrides, only fills the gap. High-precision goal match → no public-feed
             # false-positive (a public feed's goal matches none of the private phrases).
+            # #1202ha: ...unless the MATERIALS declare this table PUBLIC content. The goal
+            # phrase that arms this backstop is about SOME rows -- tiktok's says "only its own
+            # likes, saves and following list" -- but the backstop applied it to EVERY owned
+            # table, so `videos` (author_id) and `comments` (user_id) were owner-scoped too.
+            # That is where the contradiction four runs died on is BORN; #1202gv only reports
+            # it afterwards. Narrow on purpose (#647): an explicit `public` declaration only.
+            # Absent one, this behaves exactly as before, which is what keeps protecting the
+            # per-user tables the backstop exists for.
+            _pub1202ha = public_tables if isinstance(public_tables, (set, frozenset)) else frozenset()
             if ("owner_scoped_reads" not in _t
+                    and str(_t.get("name") or "") not in _pub1202ha
                     and _table_has_owner_fk(_t)
                     and _goal_implies_per_user_private(description)):
                 _t = dict(_t)
@@ -804,6 +815,7 @@ def _build_roadmap(
     milestone_index: int,
     description: str = "",
     registered_endpoints: Optional[Iterable[Mapping[str, Any]]] = None,
+    public_tables: Any = None,
 ) -> Dict[str, Any]:
     """Assemble the validator-shaped roadmap snapshot from agent drafts.
 
@@ -827,7 +839,7 @@ def _build_roadmap(
     backend = drafts.get("backend") or {}
     frontend = drafts.get("frontend") or {}
     verifier = drafts.get("verifier") or {}
-    contract = _build_contract(drafts, description)
+    contract = _build_contract(drafts, description, public_tables)
     task_tree = list(frontend.get("task_tree") or [])
     if not task_tree:
         task_tree = _synthesize_task_tree(contract)
@@ -1691,9 +1703,30 @@ def try_synthesize(
     # FIX #561: pass the CUMULATIVE registered contract so a no-new-endpoint M2+
     # slice with no net-new verifier predicates derives its acceptance predicates
     # from the endpoints M1..M(i-1) already built (see _build_roadmap).
+    # #1202ha: the materials' own per-table verdict, so the read-visibility backstop below
+    # does not owner-scope content they call public. `hubs` is the HubRegistry and its
+    # `base_dir` is `<project>/shared`, the same derivation #1202gn uses.
+    _pub1202ha = frozenset()
+    try:
+        import json as _j1202ha
+        from pathlib import Path as _P1202ha
+        _sp1202ha = _P1202ha(str(hubs.base_dir)).parent / "design" / "reference_spec.json"
+        if _sp1202ha.is_file():
+            _ents1202ha = (_j1202ha.loads(_sp1202ha.read_text(encoding="utf-8")) or {}).get("entities")
+            if isinstance(_ents1202ha, list):
+                _pub1202ha = frozenset(
+                    str(e.get("name") or "") for e in _ents1202ha
+                    if isinstance(e, Mapping)
+                    and str(e.get("visibility") or "").strip().lower() == "public")
+    except Exception as _e1202ha:
+        from ..message_format import warn_once_1201 as _w1202ha
+        _w1202ha("kickoff.public_tables_1202ha",
+                 "the materials' visibility declarations (#1202ha) -- the backstop falls back "
+                 "to owner-scoping every owned table, which is the pre-#1202ha behaviour",
+                 _e1202ha)
     roadmap = _build_roadmap(
         drafts, milestone_index, _kickoff_description,
-        registered_endpoints=registered,
+        registered_endpoints=registered, public_tables=_pub1202ha,
     )
     validation = validate_roadmap(roadmap, milestone_index)
     if not validation.get("ok", False):

@@ -508,7 +508,7 @@ def _models_919(backend_dir: Any) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, 
     return models, cls2tbl
 
 
-def _declared_public_1202gd(backend_dir, table: str) -> bool:
+def _declared_public_1202gd(backend_dir, table: str, path: str = "") -> bool:
     """#1202gd -- TWO INDEPENDENT STATEMENTS that this table's rows are published content.
 
     Measured over the 116 delivered backends on this machine, `_is_user_content_relation`
@@ -569,11 +569,23 @@ def _declared_public_1202gd(backend_dir, table: str) -> bool:
                           / "registryhub_endpoints.json").read_text(encoding="utf-8"))
     except Exception:
         return False                      # no contract to corroborate -> stay strict
+    # #1202gy: the endpoint the FINDING is about settles it, when the caller names one. The
+    # audit resolves the served table from the CODE, so it flags `GET /api/explore` for
+    # returning every row of `videos`; this loop only ever considered endpoints whose PATH is
+    # named after the table, so `/api/explore` -- the very read the lane was told to declare
+    # public -- was skipped, and only `/api/videos` was consulted. r101, live: #1202gt said
+    # "publicness is decided in the CONTRACT", the lane set `/api/explore` auth_required=false
+    # exactly as instructed, and the blocker stayed up because a sibling was still authed.
+    _want = str(path or "").rstrip("/")
     for _k, ep in (eps.items() if isinstance(eps, dict) else []):
         if not isinstance(ep, Mapping) or str(ep.get("method") or "").upper() != "GET":
             continue
-        path = str(ep.get("path") or "").rstrip("/")
-        if not (path.endswith("/" + table) or path.endswith("/" + table.replace("_", "-"))):
+        _p = str(ep.get("path") or "").rstrip("/")
+        if _want:
+            if _p != _want:
+                continue
+        elif not (_p.endswith("/" + table)
+                  or _p.endswith("/" + table.replace("_", "-"))):
             continue
         stated = ep.get("auth_required")
         if stated is None:
@@ -737,7 +749,7 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
             # #1202gd: ...unless the materials AND the contract both say the rows are
             # published content. Structure cannot tell a feed from a saved list; this is
             # the only signal that can, and it takes two independent ones.
-            if _declared_public_1202gd(backend_dir, cls2tbl.get(model or "", "")):
+            if _declared_public_1202gd(backend_dir, cls2tbl.get(model or "", ""), paths[0]):
                 continue
             # #1202gc: SAY WHETHER THERE IS A CALLER AT ALL. This said "to any
             # authenticated caller" unconditionally, which was true while every such read

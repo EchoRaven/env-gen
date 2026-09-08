@@ -263,6 +263,47 @@ def _tag_parked_probe_1202dw(path, metadata):
     return md
 
 
+def _breaking_task_is_new_1202gz(store, endpoint_id, breaking, consumer_agent) -> bool:
+    """Has this exact breaking finding already been filed at this consumer, in THIS registry?
+
+    `_record_breaking_change` is the one filer in this codebase that opens a P0 per pass with
+    no duplicate check; every other one routes through `state_changed_1202ad`, and #1202bn's
+    comment records why -- "of 838 cancelled tasks, 462 (55%, across 79 of 144 runs) were
+    cancelled as duplicates". r101, live: four `Fix breaking change in GET /api/videos` P0s
+    inside 75 seconds while the lane flipped `auth_required` back and forth. Corpus-wide, 549
+    of 2220 breaking tasks (25%) across 82 runs are verbatim duplicates.
+
+    The seen-set belongs to the REGISTRY, not to the module: a new HubRegistry is a new run and
+    must start clean. A module global also leaks between tests, which is how the first cut of
+    this broke `test_breaking_change_auto_creates_workhub_task_per_consumer` — a fresh temp-dir
+    registry inherited another test's key.
+
+    Keyed on what makes a task DIFFERENT: the endpoint, the breaking payload, and the consumer
+    being told. A payload that changes files again (the shape moved -- that is news); a second
+    consumer gets its own copy (the fix differs per caller).
+    """
+    try:
+        import json as _j
+        key = (str(endpoint_id), str(consumer_agent),
+               _j.dumps(breaking, sort_keys=True, default=str))
+    except Exception as _e1202gz:
+        # #1202be: returning the affirmative on a fault means "file it", which only ever
+        # OVER-files -- but a check that crashed must still say so, or a broken key silently
+        # restores the duplicate flood this exists to stop.
+        from .message_format import warn_once_1201
+        warn_once_1201("registryhub.breaking_task_is_new_1202gz",
+                       "#1202gz could not key the breaking-change dedupe (%s: %s) -- filing "
+                       "anyway, which is the pre-#1202gz behaviour."
+                       % (type(_e1202gz).__name__, str(_e1202gz)[:110]))
+        return True
+    if not isinstance(store, set):
+        return True
+    if key in store:
+        return False
+    store.add(key)
+    return True
+
+
 def _framework_auth_surface_1202gr(path) -> bool:
     """Is this a path the FRAMEWORK serves, where requiring auth is a contradiction?
 
@@ -1332,6 +1373,10 @@ class RegistryHub:
                     c.get("file_path") for c in consumers
                     if c.get("agent") == consumer_agent
                 ]
+                _seen1202gz = self.__dict__.setdefault("_breaking_filed_1202gz", set())
+                if not _breaking_task_is_new_1202gz(_seen1202gz, endpoint_id, breaking,
+                                                    consumer_agent):
+                    continue          # #1202gz: identical finding, already on this desk
                 try:
                     workhub.create_task(
                         title=f"Fix breaking change in {endpoint_id}",
