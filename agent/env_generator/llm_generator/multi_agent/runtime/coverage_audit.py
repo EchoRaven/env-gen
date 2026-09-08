@@ -545,6 +545,43 @@ def scan_dead_mcp_tools(hub_registry) -> List[dict]:
     return out
 
 
+def _page_file_exists_1202hc(app_root, rel) -> bool:
+    """Does a ui_page's declared `path` point at a real file under EITHER base?
+
+    #1202fn had to pick one base for this scan and chose the OUTPUT ROOT, which is right for
+    most of the corpus and wrong for the rest. Measured over every registered page on this
+    machine: 1757 resolve under the output root only, 101 under the app tree only, 8 under
+    both, and 80 under neither. r102 is entirely in the 101 -- every page registered as
+    `frontend/src/pages/X.jsx`, every file at `app/frontend/src/pages/X.jsx` -- so all eleven
+    read as missing and the lane was told to MOVE files that were already correct.
+
+    Both conventions are present in the data, so accepting either is not a guess. A page is
+    still reported when it resolves under NEITHER, which is the 80 genuine cases.
+    """
+    try:
+        rel_p = Path(str(rel))
+    except Exception:
+        return False
+    if not str(rel or "").strip():
+        return False
+    exts = (".tsx", ".jsx", ".ts", ".js", ".vue", ".svelte")
+    roots = [Path(app_root)]
+    _app = Path(app_root) / "app"
+    if _app.is_dir():
+        roots.append(_app)
+    for root in roots:
+        cand = rel_p if rel_p.is_absolute() else (root / rel_p)
+        try:
+            if cand.exists():
+                return True
+            for ext in exts:
+                if cand.with_suffix(ext).exists():
+                    return True
+        except Exception:
+            continue
+    return False
+
+
 def scan_pages_without_files(hub_registry, app_root) -> List[dict]:
     """Return RegistryHub ui_pages whose declared ``path`` does not point at
     an existing file under ``app_root``.
@@ -576,6 +613,9 @@ def scan_pages_without_files(hub_registry, app_root) -> List[dict]:
         # path-with-each-source-extension as acceptable (covers the
         # frontend convention of registering ``Login`` and shipping
         # ``Login.tsx``).
+        # #1202hc: try the app tree as well as the output root -- both conventions exist.
+        if _page_file_exists_1202hc(app_root, path):
+            continue
         p_abs = Path(path)
         if not p_abs.is_absolute():
             p_abs = app_root / p_abs
