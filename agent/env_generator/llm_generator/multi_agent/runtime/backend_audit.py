@@ -765,17 +765,22 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                    # the MATERIALS declare this table public, whatever the handler currently
                    # does -- and only then, so a genuinely per-user table (the r141 `my_list`
                    # leak shape) still gets the flat instruction (#647).
-                   ("; if this read is genuinely public the projected route follows the "
-                    "CONTRACT, so `auth_required` is where it is decided, not the handler"
-                    if not _authed_1202gc else
-                    (("; the MATERIALS declare `%s` PUBLIC content, so scoping it to the "
-                      "caller breaks the logged-out view of it -- the projected route "
-                      "follows the CONTRACT, so set `auth_required=false` there instead, "
-                      "and #1202gd's audit then exempts a public read the materials and "
-                      "the contract agree on"
-                      % cls2tbl.get(model or "", "?"))
-                     if _declared_public_materials_1202gt(
-                         backend_dir, cls2tbl.get(model or "", "")) else ""))))
+                   (("; if this read is genuinely public the projected route follows the "
+                     "CONTRACT, so `auth_required` is where it is decided, not the handler"
+                     if not _authed_1202gc else "")
+                    # #1202gt: the materials fact belongs in BOTH branches. The first cut
+                    # attached it only to the authed one, and r100's resume was in the other:
+                    # the lane had made the feed public, the blocker fired UNAUTHENTICATED,
+                    # and all it got was the generic pointer -- no word that the materials
+                    # already declare this table public, nor that #1202gd exempts such a read.
+                    # That pair is what stops it scoping the feed back.
+                    + ((". The MATERIALS declare `%s` PUBLIC content, so scoping it to the "
+                        "caller breaks the logged-out view of it: publicness is decided in "
+                        "the CONTRACT (`auth_required=false`), and #1202gd's audit then "
+                        "exempts a public read the materials and the contract agree on"
+                        % cls2tbl.get(model or "", "?"))
+                       if _declared_public_materials_1202gt(
+                           backend_dir, cls2tbl.get(model or "", "")) else ""))))
     except Exception as _e1202af:
         # #1202af: this feeds a DELIVERY BLOCKER, so an empty return is read as "nothing
         # wrong" whether it checked or died. #1202ae found the same shape in three detectors

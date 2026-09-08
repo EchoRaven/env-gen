@@ -573,47 +573,47 @@ volumes:
                                   "lookup 404ing on an id the list endpoint just returned, for one."
                                   % _jc1202az(_us1202az, total=len(_us1202az), cap=6)),
                               assignee="backend", agent="scaffolder", priority="P1", kind="contract")
-                      # #1202gv: the materials say a row is for EVERYONE and the contract
-                      # scopes its read to the author. Nothing compared those two before, so
-                      # the disagreement only ever surfaced three surfaces away — r100's feed
-                      # answered `{"items": []}` to a fresh actor, the videoId save captured
-                      # nothing, and 38 of 73 chain steps 404'd behind a substituted id.
-                      # Every other reader of `visibility` is reactive; this one speaks first.
-                      from .backend_audit import public_content_scoped_away_1202gv
+                  # #1202gv: the materials say a row is for EVERYONE and the contract
+                  # scopes its read to the author. Nothing compared those two before, so
+                  # the disagreement only ever surfaced three surfaces away — r100's feed
+                  # answered `{"items": []}` to a fresh actor, the videoId save captured
+                  # nothing, and 38 of 73 chain steps 404'd behind a substituted id.
+                  # Every other reader of `visibility` is reactive; this one speaks first.
+                  from .backend_audit import public_content_scoped_away_1202gv
+                  _spec1202gv = {}
+                  try:
+                      import json as _j1202gv
+                      _sp1202gv = _Path1202az(out_dir) / "design" / "reference_spec.json"
+                      if _sp1202gv.is_file():
+                          _spec1202gv = _j1202gv.loads(
+                              _sp1202gv.read_text(encoding="utf-8"))
+                  except Exception:
                       _spec1202gv = {}
-                      try:
-                          import json as _j1202gv
-                          _sp1202gv = _Path1202az(out_dir) / "design" / "reference_spec.json"
-                          if _sp1202gv.is_file():
-                              _spec1202gv = _j1202gv.loads(
-                                  _sp1202gv.read_text(encoding="utf-8"))
-                      except Exception:
-                          _spec1202gv = {}
-                      _gv = public_content_scoped_away_1202gv(_spec1202gv, tables)
-                      if _gv and _sc1202az("task:public_content_scoped_away",
-                                           tuple(sorted(map(str, _gv)))):
-                          orch.hubs.workhub.create_task(
-                              title=("Reconcile %d table(s) the materials call public with "
-                                     "the contract that owner-scopes them" % len(_gv))[:180],
-                              description=(
-                                  "The reference materials declare %s as PUBLIC content — in "
-                                  "the compile instructions' words, \"every row is content "
-                                  "PUBLISHED for all users to read ... a reader who is not the "
-                                  "author still sees the row, and seeing it is the point\". "
-                                  "The contract sets `owner_scoped_reads: true` on the same "
-                                  "table(s), so the projected read is `WHERE <owner> = "
-                                  "<caller>` and a reader who is not the author sees NOTHING.\n\n"
-                                  "One of the two is wrong and only you can settle it. If these "
-                                  "rows really are published content, clear "
-                                  "`owner_scoped_reads` for them; if they are per-user after "
-                                  "all, the materials' declaration is what should change.\n\n"
-                                  "This is worth settling EARLY because the symptom appears far "
-                                  "away: an owner-scoped feed answers `{\"items\": []}` to a "
-                                  "fresh actor, so a chain step that captures `items.0.id` "
-                                  "saves nothing and every later step 404s on a substituted id."
-                                  % _jc1202az(_gv, total=len(_gv), cap=6)),
-                              assignee="backend", agent="scaffolder", priority="P1",
-                              kind="contract")
+                  _gv = public_content_scoped_away_1202gv(_spec1202gv, tables)
+                  if _gv and _sc1202az("task:public_content_scoped_away",
+                                       tuple(sorted(map(str, _gv)))):
+                      orch.hubs.workhub.create_task(
+                          title=("Reconcile %d table(s) the materials call public with "
+                                 "the contract that owner-scopes them" % len(_gv))[:180],
+                          description=(
+                              "The reference materials declare %s as PUBLIC content — in "
+                              "the compile instructions' words, \"every row is content "
+                              "PUBLISHED for all users to read ... a reader who is not the "
+                              "author still sees the row, and seeing it is the point\". "
+                              "The contract sets `owner_scoped_reads: true` on the same "
+                              "table(s), so the projected read is `WHERE <owner> = "
+                              "<caller>` and a reader who is not the author sees NOTHING.\n\n"
+                              "One of the two is wrong and only you can settle it. If these "
+                              "rows really are published content, clear "
+                              "`owner_scoped_reads` for them; if they are per-user after "
+                              "all, the materials' declaration is what should change.\n\n"
+                              "This is worth settling EARLY because the symptom appears far "
+                              "away: an owner-scoped feed answers `{\"items\": []}` to a "
+                              "fresh actor, so a chain step that captures `items.0.id` "
+                              "saves nothing and every later step 404s on a substituted id."
+                              % _jc1202az(_gv, total=len(_gv), cap=6)),
+                          assignee="backend", agent="scaffolder", priority="P1",
+                          kind="contract")
               except Exception as _e1202az:
                   from .message_format import warn_once_1201 as _w1202az
                   _w1202az("underspecified_tables_1202az",
