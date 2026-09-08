@@ -67,10 +67,22 @@ def _default_runner(args: List[str], cwd: Optional[str] = None, timeout: float =
     # missing, which on this host (Docker 20.10.8 + kernel 5.11) hits the
     # spike's BuildKit fork/exec failures. Pinning classic via env var is
     # content-neutral — does not change Dockerfile or compose semantics.
-    cp = subprocess.run(
-        args, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-        env={**os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
-    )
+    # #1202hn: the other half of the r105 race. `validation_runner` drives the same compose
+    # project from its own subprocess; when its `up -d --remove-orphans` overlapped the `up`
+    # started here, a container this call had just created was removed under it and the run
+    # recorded `aborted` with `No such container` — a delivery blocker
+    # (`deliverability_no_successful_run`) over a stack that was actually healthy. Both
+    # spawn sites take the same per-project lock; lifecycle verbs only.
+    from ...compose_mutex import compose_mutex_1202hn, is_lifecycle_op_1202hn
+    from contextlib import nullcontext as _nullctx1202hn
+    _guard1202hn = (compose_mutex_1202hn(cwd or ".", " ".join(str(a) for a in args),
+                                         timeout_s=float(timeout))
+                    if is_lifecycle_op_1202hn(args) else _nullctx1202hn())
+    with _guard1202hn:
+        cp = subprocess.run(
+            args, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+            env={**os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
+        )
     return ComposeResult(returncode=cp.returncode, stdout=cp.stdout, stderr=cp.stderr)
 
 

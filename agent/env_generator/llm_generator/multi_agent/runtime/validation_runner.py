@@ -115,12 +115,24 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
     _verb = " ".join(args) or "(no args)"
     _LOG.info("compose spawn: %s %s (timeout=%ss, cwd=%s)", _bin, _verb, timeout, cwd)
     _t0 = time.monotonic()
+    # #1202hn: serialize the container-LIFECYCLE verbs against RunHub, which drives the SAME
+    # compose project from its own subprocess with no coordination. r105: this function's
+    # `up -d --remove-orphans` landed inside RunHub's in-flight `up` and removed a container
+    # it had just created, so RunHub recorded `aborted` (`No such container`) while the stack
+    # was in fact healthy -- seven seconds later the run read live seed counts off it. That
+    # false `aborted` is what `deliverability_no_successful_run` reports, and no lane can
+    # touch it. `build` is deliberately NOT serialized (see compose_mutex).
+    from contextlib import nullcontext as _nullctx1202hn
+    from .compose_mutex import compose_mutex_1202hn, is_lifecycle_op_1202hn
+    _guard1202hn = (compose_mutex_1202hn(cwd, _verb, timeout_s=float(timeout))
+                    if is_lifecycle_op_1202hn(args) else _nullctx1202hn())
     try:
-        cp = subprocess.run(
-            [_bin, "compose", "-f", str(compose_file), *args],
-            cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
-            env={**_os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
-        )
+        with _guard1202hn:
+            cp = subprocess.run(
+                [_bin, "compose", "-f", str(compose_file), *args],
+                cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
+                env={**_os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
+            )
     except subprocess.TimeoutExpired:
         _LOG.warning("compose spawn: %s %s TIMED OUT after %.0fs (cap %ss)",
                      _bin, _verb, time.monotonic() - _t0, timeout)
