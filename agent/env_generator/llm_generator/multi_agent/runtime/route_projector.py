@@ -694,6 +694,40 @@ _SELF_READ_MARKERS = ("/me", "/me/", "feed/following", "feed/friends",
 _AUTH_CONTROL_PREFIXES = ("/auth/", "/api/auth/", "/oauth", "/api/oauth", "/.well-known")
 
 
+def _stated_auth_1202hi(ep: Any, meta: Any = None) -> Optional[bool]:
+    """#1202hi -- the ONE reader of the three places an endpoint can state its auth.
+
+    A record carries the flag in up to three copies: the top level, `schema` (what
+    `register_endpoint(schema=...)` stores -- the lane's own contract) and `metadata` (a
+    MIRROR taken at registration, which keeps its original value forever). #1202ga worked
+    out the precedence and taught it to `resolve_endpoint_auth`, but #320's public-feed
+    exemption kept its own two-copy test in each emitter, and the two disagreed: the
+    projector never looked at the schema at all.
+
+    Measured over the 142 runs here -- 3636 endpoints state auth, 1518 carry both copies,
+    220 of them `schema=False, metadata=True`: the lane declared a public read and the
+    projector could not see it (r103: 20 of 80, `/api/videos/{id}`, `/api/explore`,
+    `/api/search`, `/api/live` -- the logged-out surface #320 exists to keep open). The 41
+    in the other direction resolve to auth-required, which TIGHTENS rather than opens.
+
+    Returns None when nothing states it, so callers keep their own shape-based default.
+    """
+    if not isinstance(ep, Mapping):
+        return None
+    stated = ep.get("auth_required")
+    if stated is None:
+        _sch = ep.get("schema")
+        if isinstance(_sch, Mapping):
+            stated = _sch.get("auth_required")
+    if stated is None and isinstance(meta, Mapping):
+        stated = meta.get("auth_required")
+    if stated is None:
+        _emeta = ep.get("metadata")
+        if isinstance(_emeta, Mapping):
+            stated = _emeta.get("auth_required")
+    return None if stated is None else bool(stated)
+
+
 def resolve_endpoint_auth(method, path, ep, meta=None):
     """True if this endpoint must project with Depends(get_current_user).
 
@@ -723,12 +757,7 @@ def resolve_endpoint_auth(method, path, ep, meta=None):
     # lane's own statement of the contract. Metadata stays as the fallback for records whose
     # schema does not state it, so nothing that only ever set the mirror starts reading
     # differently.
-    stated = ep.get("auth_required")
-    _sch1202ga = ep.get("schema")
-    if stated is None and isinstance(_sch1202ga, Mapping):
-        stated = _sch1202ga.get("auth_required")
-    if stated is None and isinstance(meta, Mapping):
-        stated = meta.get("auth_required")
+    stated = _stated_auth_1202hi(ep, meta)   # #1202hi: one reader for all three copies
     if stated is not None:
         return bool(stated)
     p = str(path or "").lower()
@@ -1004,6 +1033,27 @@ def _is_per_user_sub_entity_fk(child_meta: Dict[str, Any], owner_fk: str,
         return True
     # #908: the parent's own user link is just as likely to be an unadorned Column.
     return any(c in (parent.get("cols") or []) for c in _DIRECT_OWNER_FK_NAMES)
+
+
+def _declared_public_content_1202hh(meta: Dict[str, Any]) -> bool:
+    """#1202hh -- do the MATERIALS declare this table's rows published?
+
+    `_models_meta` carries `entities[].visibility` from the reference spec (compiled at
+    design time from the product's screenshots and docs, before any lane runs) onto every
+    model. #1202gd measured why this has to be semantic: across 116 delivered backends
+    `_is_user_content_relation` fires on 267 tables and NO structural rule separates the
+    public ones -- `videos(author_id, sound_id, ...)` and `saved_items(user_id, item_id)`
+    are the same shape. So the two structural signals must yield to an explicit declaration,
+    while the CONTRACT's `owner_scoped_reads` still wins over both: releasing a read needs
+    the materials AND the contract to agree, which is what keeps the r141 leak shape closed.
+
+    One predicate for both readers on purpose. The r103 defect was this exact fact reaching
+    `backend_audit` and neither emitter; a second copy here would rebuild it.
+    """
+    try:
+        return str((meta or {}).get("visibility") or "").strip().lower() == "public"
+    except Exception:
+        return False
 
 
 def _is_user_content_relation(meta: Dict[str, Any], owner_fk: str) -> bool:
@@ -1431,6 +1481,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # else's content does not.
     read_scoped = bool(owner_fk) and (bool(owner_scoped_reads) or owner_sub_entity
                                       or owner_user_content)
+    # #1202hh: …and the SHAPE-derived half of that stands down when the materials declare the
+    # rows published. Kept as its own statement, not folded into the expression above, because
+    # #908/#598's ratchets read that line verbatim to prove each signal still participates —
+    # and because the precedence is the point: the CONTRACT's own flag is untouched here, so
+    # releasing a read needs the materials and the contract to agree. r103: the lane cleared
+    # `owner_scoped_reads` on a spec-declared-public `videos` and `owner_user_content`
+    # (author_id + sound_id) put the owner filter straight back, so 39 seeded videos stayed
+    # invisible to every caller and every feed-backed flow failed.
+    if read_scoped and not owner_scoped_reads and _declared_public_content_1202hh(meta):
+        read_scoped = False
     # #777: the column a READ filters on — the narrowest owner the table declares.
     read_owner_fk = _read_owner_fk_777(meta, owner_fk) if read_scoped else owner_fk
 
@@ -2121,6 +2181,16 @@ def _structurally_private_resource_633(method: str, path: str,
         if not res:
             return False
         _table, meta = res
+        # #1202hh — the materials' verdict OUTRANKS the shape, on #1202gd's measured
+        # rationale: the schema provably cannot separate a published feed from a private
+        # list, so `entities[].visibility` (compiled from the product's screenshots and
+        # docs at design time, before any lane runs) is the only thing that can. This does
+        # NOT release the read on its own: the caller's `_owner_scoped` still carries the
+        # contract's `owner_scoped_reads`, so a lane that marks the table private keeps it
+        # scoped and the r141 leak shape (a per-user list declared public by mistake) needs
+        # BOTH signals to be wrong, exactly as #1202gd requires of the audit.
+        if _declared_public_content_1202hh(meta):
+            return False
         fk = _owner_fk(meta)
         if not fk:
             return False
@@ -2198,8 +2268,8 @@ def project_missing_routes(
         # owner-scoped table still force-auth + owner-scope (r58/#315 leak protection: a
         # private table's unstated read must NOT default open — a strong model marks a
         # genuinely-private list private and only sets =False on a real public feed).
-        _explicit_public = (ep.get("auth_required") is False) or (
-            isinstance(meta, Mapping) and meta.get("auth_required") is False)
+        # #1202hi: through the shared reader, so this sees the copy the LANE writes.
+        _explicit_public = _stated_auth_1202hi(ep, meta) is False
         if _explicit_public and _owner_scoped:
             _owner_scoped = False   # deliberate public read → all rows, no owner filter
         # #633: …but a table that is per-user-private BY CONSTRUCTION is private whatever the

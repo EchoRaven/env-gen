@@ -583,6 +583,21 @@ volumes:
                     _rec = dict(_rec)
                     _rec["metadata"] = _md
                     tables[_t] = _rec
+            # #1202hh: and the MATERIALS' own verdict on each table's rows, which no probe
+            # above can supply -- #1202gd measured that `videos(author_id, sound_id, ...)`
+            # and `saved_items(user_id, item_id)` are structurally identical, so only the
+            # reference spec separates a published feed from a private list. Backfilled here
+            # because a RESUME skips kickoff: r103's lane finally cleared `owner_scoped_reads`
+            # on a spec-declared-public `videos`, main.py was re-projected 37s later, and
+            # #633 put the owner filter straight back from the shape -- 39 seeded videos
+            # stayed invisible to every caller and every feed-backed flow kept failing.
+            try:
+                from .backend_skeleton import _apply_spec_visibility_1202hh
+                _apply_spec_visibility_1202hh(tables, Path(out_dir) / "shared")
+            except Exception as _e1202hh:
+                from .message_format import warn_once_1201
+                warn_once_1201("scaffolder.spec_visibility_1202hh",
+                               "the materials' visibility backfill (#1202hh)", _e1202hh)
             res = write_backend_skeleton(out_dir, endpoints, tables)
             # #1202h: report routes the app serves that the contract never declared — they are
             # ungated BY CONSTRUCTION, since every gate reads the registry. Own try (#1201).

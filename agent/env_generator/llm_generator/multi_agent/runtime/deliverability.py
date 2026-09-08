@@ -812,12 +812,15 @@ def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
         return ""
 
     def _needs_auth(ep) -> bool:
-        if not isinstance(ep, dict):
-            return False
-        for src in (ep, ep.get("schema"), ep.get("metadata")):
-            if isinstance(src, dict) and src.get("auth_required") is True:
-                return True
-        return False
+        # #1202hi: the CONTRACT's verdict, not "any copy says True". `metadata` is a mirror
+        # taken at registration and never updated, so a lane that declared the read public
+        # (`schema.auth_required = False`, the copy #1202ga showed it actually writes) still
+        # has `metadata.auth_required = True` -- 220 of the 1518 two-copy endpoints in the
+        # corpus. Reading any-says-True reports those pages as auth-wedged AFTER the lane
+        # fixed them and after the projector (also #1202hi) started serving them public,
+        # which is the "chase a blocker that is already resolved" loop #1202gl describes.
+        from .route_projector import _stated_auth_1202hi
+        return _stated_auth_1202hi(ep) is True
 
     authed = set()
     for key, ep in (endpoints.items() if isinstance(endpoints, dict) else []):

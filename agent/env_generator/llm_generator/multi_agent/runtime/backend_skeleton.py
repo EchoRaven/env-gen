@@ -975,14 +975,108 @@ def get_db():
 '''
 
 
+def _spec_visibility_1202hh(base_dir: Any) -> Dict[str, str]:
+    """#1202hh -- the materials' per-entity `visibility`, read ONCE for the whole kickoff.
+
+    `hubs.base_dir` is `<project>/shared`, so the design-time spec sits beside it (the same
+    derivation #1202gn uses). Two callers need this map and they must not disagree: the
+    roadmap backstop (#1202ha, which must not owner-scope a published table) and table
+    registration (which stamps the verdict so the EMITTERS can see it). r103 is why the
+    second one exists -- the spec said `videos` was public, only `backend_audit` ever knew,
+    and both projectors kept re-imposing an owner filter from the table's shape.
+
+    Returns {} when there is no spec (every environment before r103), so nothing changes for
+    a run whose materials never declared anything.
+    """
+    import json as _json1202hh
+    out: Dict[str, str] = {}
+    try:
+        spec_path = Path(str(base_dir)).parent / "design" / "reference_spec.json"
+        if not spec_path.is_file():
+            return out
+        ents = (_json1202hh.loads(spec_path.read_text(encoding="utf-8")) or {}).get("entities")
+        for e in (ents if isinstance(ents, list) else []):
+            if not isinstance(e, Mapping):
+                continue
+            name = str(e.get("name") or "").strip()
+            vis = str(e.get("visibility") or "").strip().lower()
+            if name and vis:
+                out[name] = vis
+    except Exception as _e1202hh:
+        from .message_format import warn_once_1201 as _w1202hh
+        _w1202hh("kickoff.spec_visibility_1202hh",
+                 "the materials' visibility declarations (#1202hh) -- the backstop falls back "
+                 "to owner-scoping every owned table AND the projectors lose the only signal "
+                 "that separates a published feed from a private list",
+                 _e1202hh)
+    return out
+
+
+
+def _apply_spec_visibility_1202hh(tables: Dict[str, Any], shared_dir: Any) -> None:
+    """#1202hh -- stamp the materials' verdict onto an in-memory table dict, in place.
+
+    `finalize_kickoff` writes this onto the LEDGER, but a resume skips kickoff, so every run
+    generated before #1202hh (r103 included -- the run that proved the defect) would carry a
+    ledger with `owner_scoped_reads` and nothing else, and the exemption could never fire.
+
+    Called where the scaffolder already unions the probed owner-scoping signals into the
+    local dict just before rendering: a local stamp, no hub write and no `table_registered`
+    event (`register_table` re-emits, and re-emits `table_implemented` for an implemented
+    table, which would re-cascade task completion for a metadata touch-up).
+
+    BACKFILL ONLY -- a record that already carries `visibility` is left alone, so the ledger
+    stays authoritative wherever kickoff did stamp it.
+    """
+    try:
+        vis = _spec_visibility_1202hh(shared_dir)
+        if not vis:
+            return
+        for name, rec in list((tables or {}).items()):
+            if not isinstance(rec, dict):
+                continue
+            declared = vis.get(str(name)) or vis.get(str(name).strip())
+            if not declared:
+                continue
+            meta = dict(rec.get("metadata") or {})
+            if str(meta.get("visibility") or "").strip():
+                continue
+            meta["visibility"] = declared
+            rec = dict(rec)
+            rec["metadata"] = meta
+            tables[name] = rec
+    except Exception as _e1202hh:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_skeleton.apply_spec_visibility_1202hh",
+                       "the materials' visibility backfill (#1202hh) -- a resumed run keeps "
+                       "the pre-#1202hh ledger, so #633 re-imposes an owner filter on tables "
+                       "the materials declare published",
+                       _e1202hh)
+
+
 def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Build the ``route_projector._orm_models``-shaped dict
     (``{table: {cls, cols, fks}}``) DIRECTLY from the contract, so handler projection
     needs no models.py round-trip."""
     by_name: Dict[str, List[Dict[str, Any]]] = {}
+    # #1202hh: the materials' per-entity `visibility`, carried alongside the columns because
+    # BOTH emitters read this dict and nothing else. #1202gd established (over 116 backends,
+    # 267 `_is_user_content_relation` tables) that no structural rule separates a published
+    # `videos(author_id, sound_id, ...)` from a private `saved_items(user_id, item_id)` — the
+    # distinction is semantic, so the materials have to say. It said so in `backend_audit`
+    # alone: r103's spec declared `videos` public, the lane cleared `owner_scoped_reads`, and
+    # `main.py` re-projected 37s later STILL filtered by owner, because #633 re-imposed it
+    # from the shape and this dict never carried the declaration to it.
+    # Absent (every spec in the corpus before r103) stays "" and every verdict is unchanged.
+    _vis1202hh: Dict[str, str] = {}
     for name, table in (tables or {}).items():
         if isinstance(table, dict):
             by_name[str(name).lower()] = _columns_of(table)
+            _tmeta1202hh = table.get("metadata")
+            _v1202hh = (_tmeta1202hh.get("visibility")
+                        if isinstance(_tmeta1202hh, Mapping) else None)
+            if isinstance(_v1202hh, str) and _v1202hh.strip():
+                _vis1202hh[str(name).lower()] = _v1202hh.strip().lower()
     # #1096: ONE mapping for the whole table set, shared by both emitters — see
     # _class_names_1096. Includes the spine names, which are emitted here too.
     _cls_map_1096 = _class_names_1096(set(by_name) | {"tenants", "users"})
@@ -1032,7 +1126,8 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         meta[table] = {"cls": _cls_map_1096.get(table) or _class_name(table),
                        "cols": names, "fks": fks,
                        "pk": pk_name, "pk_type": pk_type, "types": types,
-                       "unique": uniq, "required": required}
+                       "unique": uniq, "required": required,
+                       "visibility": _vis1202hh.get(table, "")}   # #1202hh
 
     add("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
     add("users", _merge_cols(_SPINE_USER_COLS, by_name.get("users", [])))
@@ -2263,10 +2358,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         # #1202ga: the schema is the contract (see resolve_endpoint_auth) -- a lane that
         # declares a read public writes it THERE, and this emitter saw only the top level
         # and the registration-time metadata mirror.
-        _explicit_public_1097 = (
-            (ep.get("auth_required") is False)
-            or (isinstance(_eschema, Mapping) and _eschema.get("auth_required") is False)
-            or (isinstance(emeta, Mapping) and emeta.get("auth_required") is False))
+        # #1202hi: the same reader the projector uses. This emitter checked all three
+        # copies with an any-says-False rule; that agrees with the precedence everywhere
+        # except the 41 corpus endpoints whose schema says auth and whose stale mirror says
+        # public, where the contract must win.
+        from .route_projector import _stated_auth_1202hi
+        _explicit_public_1097 = _stated_auth_1202hi(ep, emeta) is False
         if _explicit_public_1097 and _owner_scoped:
             _owner_scoped = False
         try:

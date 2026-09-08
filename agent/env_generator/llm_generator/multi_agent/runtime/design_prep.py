@@ -21,6 +21,7 @@ _LOG_813 = logging.getLogger(__name__)
 
 import json
 import os
+import shutil   # #1202hj
 from pathlib import Path
 from typing import Mapping, Dict, List, Optional
 from .message_format import join_capped  # #1034
@@ -1419,6 +1420,80 @@ def design_prep_reusable_1202bv(output_dir, design_input, resolved) -> bool:
         prior = json.loads(p.read_text(encoding="utf-8"))
         return prior == _design_input_fingerprint_1202bv(design_input, resolved)
     except Exception:
+        return False
+
+
+def design_prep_donor_1202hj(output_dir, design_input, resolved):
+    """#1202hj -- a PRIOR RUN whose measured design system this fresh run may adopt.
+
+    #1202bv made a `--resume` inherit the enriched doc already in its OWN output dir; r103's
+    resume spent 13 seconds on design-prep instead of 10-15 minutes plus a spawned analyst
+    bounded at 1800s. A FRESH run of the same environment starts with an empty dir, so there
+    is nothing to inherit and the same references are measured from scratch again -- r102 and
+    r103 both paid for `design_inputs/tiktok` on the same day.
+
+    The bar is #1202bv's, unchanged and not re-implemented: each candidate is handed to
+    `design_prep_reusable_1202bv` itself, so a donor must carry a doc that passes
+    `design_system_is_enriched` AND a recorded fingerprint matching the design input resolved
+    NOW. A second copy of that rule here is exactly how the two would drift.
+
+    Newest matching run wins (by the doc's mtime -- run NAMES are not chronological: r99
+    sorts after r103). Returns None when nothing matches, which is the pre-#1202hj path.
+    """
+    if os.environ.get("ENVGEN_DESIGN_PREP_REUSE", "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        return None            # deliberate opt-out: re-measure these references from scratch
+    try:
+        me = Path(output_dir).resolve()
+        root = me.parent
+        if not root.is_dir():
+            return None
+        best = None
+        for d in sorted(root.iterdir()):
+            if not d.is_dir() or d.resolve() == me:
+                continue
+            doc = d / "design" / "design_system.json"
+            if not doc.is_file():
+                continue
+            if not design_prep_reusable_1202bv(d, design_input, resolved):
+                continue
+            key = (doc.stat().st_mtime, d.name)
+            if best is None or key > best[0]:
+                best = (key, d)
+        return None if best is None else best[1]
+    except Exception as _e1202hj:
+        from .message_format import warn_once_1201
+        warn_once_1201("design_prep.donor_1202hj",
+                       "the cross-run design-prep donor scan (#1202hj) -- a fresh run "
+                       "re-measures references a previous run already paid an analyst for",
+                       _e1202hj)
+        return None
+
+
+def adopt_design_prep_1202hj(donor, output_dir, design_input, resolved) -> bool:
+    """#1202hj -- take the donor's measured doc and record the fingerprint as our own.
+
+    Only `design_system.json` travels: it is the analyst's product and the one thing a fresh
+    run cannot re-derive cheaply. Everything else under `design/` (staged assets, crops,
+    dataset) is re-staged deterministically from the SAME design input the fingerprint just
+    matched, so copying it would duplicate 220MB to no effect.
+
+    The fingerprint is recorded here too, so this run can itself become a donor and so a
+    later `--resume` of it takes #1202bv's in-place path.
+    """
+    try:
+        src = Path(donor) / "design" / "design_system.json"
+        dst = Path(output_dir) / "design" / "design_system.json"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        record_design_prep_input_1202bv(output_dir, design_input, resolved)
+        return True
+    except Exception as _e1202hj2:
+        from .message_format import warn_once_1201
+        warn_once_1201("design_prep.adopt_1202hj",
+                       "adopting a prior run's measured design system (#1202hj) -- this run "
+                       "falls back to spawning its own design_analyst",
+                       _e1202hj2)
         return False
 
 

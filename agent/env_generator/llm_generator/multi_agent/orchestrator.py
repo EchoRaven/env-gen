@@ -3630,7 +3630,8 @@ class Orchestrator:
                     resolve_design_input, write_skeleton_design_system, run_design_prep,
                     load_valid_design_system, complete_design_system,
                     design_system_is_enriched, design_system_summary_for_requirements,
-                    design_prep_reusable_1202bv, record_design_prep_input_1202bv)
+                    design_prep_reusable_1202bv, record_design_prep_input_1202bv,
+                    design_prep_donor_1202hj, adopt_design_prep_1202hj)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
                 dsp = self.output_dir / "design" / "design_system.json"
@@ -3648,9 +3649,25 @@ class Orchestrator:
                         "design_analyst spawn")
                 else:
                     write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
-                    agent_done = await self._spawn_design_analyst(resolved)
-                    record_design_prep_input_1202bv(
+                    # #1202hj: #1202bv only inherits within THIS run's own output dir, so a
+                    # fresh run of an environment whose references have not changed pays the
+                    # analyst again — r102 and r103 each measured `design_inputs/tiktok` from
+                    # scratch on the same day. Adopt a prior run's doc when it clears the SAME
+                    # bar #1202bv demands (enriched + fingerprint match on the design input).
+                    _donor1202hj = design_prep_donor_1202hj(
                         self.output_dir, self._design_input, resolved)
+                    if _donor1202hj is not None and adopt_design_prep_1202hj(
+                            _donor1202hj, self.output_dir, self._design_input, resolved):
+                        agent_done = True
+                        self._logger.info(
+                            "#1202hj Design-Prep: adopting the ENRICHED design_system.json "
+                            "measured by %s (same design input) — skipping the design_analyst "
+                            "spawn. ENVGEN_DESIGN_PREP_REUSE=0 re-measures instead.",
+                            _donor1202hj.name)
+                    else:
+                        agent_done = await self._spawn_design_analyst(resolved)
+                        record_design_prep_input_1202bv(
+                            self.output_dir, self._design_input, resolved)
                 # Validate the agent's output: parseable AND a design doc. A spawned LLM that wrote
                 # MALFORMED JSON must not discard the whole phase — rebuild via the single-shot
                 # enrich (which re-lays a valid skeleton + doc) instead.

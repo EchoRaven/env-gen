@@ -609,6 +609,17 @@ def _table_has_owner_fk(table: Mapping[str, Any]) -> bool:
     return False
 
 
+def _spec_visibility_1202hh_lazy():
+    """#1202hh -- the reader lives in `backend_skeleton`, beside its consumer (`_models_meta`)
+    and the scaffolder's write-time backfill; imported lazily so kickoff keeps no import-time
+    edge to it. ONE reader on purpose: kickoff stamps the ledger, the scaffolder backfills a
+    ledger written before #1202hh, and both take the map from here so they cannot disagree --
+    the r103 defect was this fact having three readers and reaching only one of them.
+    """
+    from ..backend_skeleton import _spec_visibility_1202hh
+    return _spec_visibility_1202hh
+
+
 def _build_contract(
     drafts: Mapping[str, Mapping[str, Any]], description: str = "",
     public_tables: Any = None,
@@ -1706,24 +1717,9 @@ def try_synthesize(
     # #1202ha: the materials' own per-table verdict, so the read-visibility backstop below
     # does not owner-scope content they call public. `hubs` is the HubRegistry and its
     # `base_dir` is `<project>/shared`, the same derivation #1202gn uses.
-    _pub1202ha = frozenset()
-    try:
-        import json as _j1202ha
-        from pathlib import Path as _P1202ha
-        _sp1202ha = _P1202ha(str(hubs.base_dir)).parent / "design" / "reference_spec.json"
-        if _sp1202ha.is_file():
-            _ents1202ha = (_j1202ha.loads(_sp1202ha.read_text(encoding="utf-8")) or {}).get("entities")
-            if isinstance(_ents1202ha, list):
-                _pub1202ha = frozenset(
-                    str(e.get("name") or "") for e in _ents1202ha
-                    if isinstance(e, Mapping)
-                    and str(e.get("visibility") or "").strip().lower() == "public")
-    except Exception as _e1202ha:
-        from ..message_format import warn_once_1201 as _w1202ha
-        _w1202ha("kickoff.public_tables_1202ha",
-                 "the materials' visibility declarations (#1202ha) -- the backstop falls back "
-                 "to owner-scoping every owned table, which is the pre-#1202ha behaviour",
-                 _e1202ha)
+    _pub1202ha = frozenset(
+        t for t, v in _spec_visibility_1202hh_lazy()(getattr(hubs, "base_dir", "")).items()
+        if v == "public")
     roadmap = _build_roadmap(
         drafts, milestone_index, _kickoff_description,
         registered_endpoints=registered, public_tables=_pub1202ha,
@@ -2130,6 +2126,8 @@ def finalize_kickoff(
         n_endpoints += 1
 
     # Step 2: register each declared table via schema_hub. Fail-fast.
+    # #1202hh: read the materials' verdict once, outside the loop, so every table carries it.
+    _vis1202hh = _spec_visibility_1202hh_lazy()(getattr(hubs, "base_dir", ""))
     for tbl in tables:
         if not isinstance(tbl, Mapping):
             continue
@@ -2149,6 +2147,13 @@ def finalize_kickoff(
             table_meta["owner_scoped_reads"] = (
                 _osr if isinstance(_osr, bool)
                 else str(_osr).strip().lower() in {"true", "1", "yes", "y", "on"})
+        # #1202hh: and the materials' own verdict on the rows, which the SHAPE cannot supply
+        # (#1202gd measured this over 116 backends: `videos(author_id, sound_id, ...)` and
+        # `saved_items(user_id, item_id)` are indistinguishable structurally). Stamped only
+        # when declared, so an environment whose spec says nothing registers byte-identically.
+        _v1202hh = _vis1202hh.get(name) or _vis1202hh.get(str(name).strip())
+        if _v1202hh:
+            table_meta["visibility"] = _v1202hh
         try:
             result = hubs.schema_hub.register_table(
                 name=name,
