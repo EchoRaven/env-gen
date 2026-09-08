@@ -587,6 +587,44 @@ def _declared_public_1202gd(backend_dir, table: str) -> bool:
     return False
 
 
+def _declared_public_materials_1202gt(backend_dir, table: str) -> bool:
+    """Do the MATERIALS alone call this table published content? (#1202gd's first signal.)
+
+    #1202gd requires both signals before it EXEMPTS a read, and that is right: exempting on
+    the contract alone released a real `my_list` in the corpus. But the blocker's WORDING is
+    not an exemption, and it needs the materials half by itself — a table the screenshots and
+    docs describe as a public feed must never be told, flatly, to scope itself to the caller.
+
+    Same file and key #1202gd reads, so the two cannot disagree about what was declared.
+    """
+    try:
+        import json
+        from collections.abc import Mapping as _M
+        from pathlib import Path as _P
+        spec_path = _P(str(backend_dir)).parents[1] / "design" / "reference_spec.json"
+        if not spec_path.is_file():
+            return False
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        ents = (spec or {}).get("entities") if isinstance(spec, _M) else None
+        if not isinstance(ents, list):
+            return False
+        want = str(table or "").strip().lower()
+        for e in ents:
+            if not isinstance(e, _M):
+                continue
+            if str(e.get("name") or "").strip().lower() == want:
+                return str(e.get("visibility") or "").strip().lower() == "public"
+        return False
+    except Exception as _e1202gt:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.declared_public_materials_1202gt",
+                       "#1202gt could not read the reference spec (%s: %s) -- the blocker "
+                       "falls back to the flat 'scope it' wording, which is the pre-#1202gt "
+                       "behaviour and the direction that never weakens a leak finding."
+                       % (type(_e1202gt).__name__, str(_e1202gt)[:110]))
+        return False
+
+
 def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
     """#919: a served GET that returns rows of an OWNED table without filtering by the caller.
 
@@ -666,9 +704,26 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                    "any authenticated caller" if _authed_1202gc
                    else "ANY caller -- the handler is UNAUTHENTICATED",
                    fk,
-                   "" if _authed_1202gc else
-                   "; if this read is genuinely public the projected route follows the "
-                   "CONTRACT, so `auth_required` is where it is decided, not the handler"))
+                   # #1202gt: this alternative used to appear ONLY while the handler was
+                   # still unauthenticated -- so the moment a lane followed "scope the read
+                   # to the caller", the handler gained get_current_user and the sentence
+                   # that could undo it stopped printing. The hint was switched off by the
+                   # mistake it exists to prevent, and r97/r98/r99 each rode that ratchet
+                   # into a feed that shows only your own rows. It now also appears whenever
+                   # the MATERIALS declare this table public, whatever the handler currently
+                   # does -- and only then, so a genuinely per-user table (the r141 `my_list`
+                   # leak shape) still gets the flat instruction (#647).
+                   ("; if this read is genuinely public the projected route follows the "
+                    "CONTRACT, so `auth_required` is where it is decided, not the handler"
+                    if not _authed_1202gc else
+                    (("; the MATERIALS declare `%s` PUBLIC content, so scoping it to the "
+                      "caller breaks the logged-out view of it -- the projected route "
+                      "follows the CONTRACT, so set `auth_required=false` there instead, "
+                      "and #1202gd's audit then exempts a public read the materials and "
+                      "the contract agree on"
+                      % cls2tbl.get(model or "", "?"))
+                     if _declared_public_materials_1202gt(
+                         backend_dir, cls2tbl.get(model or "", "")) else ""))))
     except Exception as _e1202af:
         # #1202af: this feeds a DELIVERY BLOCKER, so an empty return is read as "nothing
         # wrong" whether it checked or died. #1202ae found the same shape in three detectors
