@@ -323,7 +323,10 @@ def _integrity_detail_1202gb(project_dir, method, path, body, _cache={}) -> str:
             if "integrity" in ln.lower() or "DataError on" in ln]
     exact = [ln for ln in hits if want in ln]
     chosen = (exact or hits)[-1:] if (exact or hits) else []
-    return chosen[0][:400] if chosen else ""
+    # #1202hb: `compose logs` prefixes every line with `<service>-<n>  | `. #1202gw learned
+    # this for the traceback path; r102 showed this one still handing the reader
+    # `backend-1  | DataError on GET /api/explore -> 400: ...`, repeating the plumbing.
+    return _strip_stream_prefix_1202gw(chosen[0])[:400] if chosen else ""
 
 
 def _sent_body_1202ew(body: Any) -> Any:
@@ -1925,6 +1928,26 @@ def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
     return out
 
 
+def _sf_hint_1202hb(var: str, step_action: str, why: str = "") -> str:
+    """The causal note a STARVING step carries when its variable was never captured.
+
+    #1202gu taught the SAVE step's own note to say whether the collection came back EMPTY or
+    the path was genuinely absent -- different defects with different owners. This sentence,
+    the one a reader actually meets on the downstream 404, kept the original wording, so r102
+    showed `GET /api/sounds/296 -> 404` with "fix that capture, not this endpoint" while the
+    upstream read had simply returned no rows for this actor. Two emitters, one fact; the same
+    shape as #1202gt's first cut.
+    """
+    base = " NOTE: ${" + str(var) + "} save failed at step '" + str(step_action) + "'"
+    reason = str(why or "").strip()
+    if reason and "EMPTY" in reason:
+        return (base + " -- " + reason
+                + ". The ladder then sent an UNRELATED id, which is why THIS step failed.")
+    if reason:
+        return base + " -- " + reason + " -- fix that capture, not this read."
+    return base + " (response lacked the save path) -- fix that capture, not this read."
+
+
 def _save_miss_reason_1202gu(payload, dotted: str) -> str:
     """Why `dotted` captured nothing: an EMPTY collection, or a path that is not there.
 
@@ -2566,6 +2589,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     # silent-capture-failure class behind the "GET x → 200 marked failed" triage
     # confusion (225x across logs): the 200 step LOOKED fine, downstream broke.
     save_failed_by_var: Dict[str, str] = {}
+    save_failed_why_1202hb: Dict[str, str] = {}   # #1202hb: var -> #1202gu's verdict
     # #59c: STORED chains (registered by an older framework, or hand-edited) can
     # carry the auth-save clobber in their persisted steps — normalize-time
     # guarding alone can't reach them, so guard the runtime copy too.
@@ -2711,10 +2735,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             _sf_hint = ""
             for _uv in re.findall(r"\$\{(\w+)\}", str(path)):
                 if save_failed_by_var.get(_uv):
-                    _sf_hint = (" NOTE: ${" + _uv + "} save failed at step '"
-                                + save_failed_by_var[_uv]
-                                + "' (response lacked the save path) — fix that "
-                                "capture, not this read.")
+                    # #1202hb: carry #1202gu's verdict here too — this is the sentence the
+                    # reader meets on the downstream failure.
+                    _sf_hint = _sf_hint_1202hb(_uv, save_failed_by_var[_uv],
+                                               save_failed_why_1202hb.get(_uv, ""))
                     break
             recorded.append({
                 "action": str(step.get("action") or step.get("path") or ""),
@@ -3423,6 +3447,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     _save_failed.append(f"{var}<-{dotted}")
                     save_failed_by_var[str(var)] = str(
                         step.get("action") or step.get("path") or "")
+                    # #1202hb: keep WHY, so the starving step downstream can say it too.
+                    save_failed_why_1202hb[str(var)] = _save_miss_reason_1202gu(payload, dotted)
             if _save_failed:
                 entry["save_failed"] = [f.split("<-", 1)[0] for f in _save_failed]
                 # #1202gu: say WHICH failure this is. An empty collection and an absent path
