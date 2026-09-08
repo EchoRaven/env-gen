@@ -468,6 +468,14 @@ def extract_contract_from_description(description: str) -> Dict[str, Any]:
     return {"endpoints": endpoints, "tables": tables}
 
 
+# #1202hk: tables the FRAMEWORK owns end to end — their DDL is the fixed tenancy/identity
+# spine, so a lane cannot add a column to them and the materials' extra fields would be lost.
+# `tenants` is pure infrastructure with no counterpart in any product's materials; `users` is
+# the one spine table that is also a product entity, which is why it is the one that loses
+# fields. oauth_* are never declared by a draft.
+_SPINE_OWNED_TABLES_1202HK = frozenset({"users"})
+
+
 # Infra/spine tables that aren't user-facing list pages.
 _FRONTEND_SKIP_TABLES = {
     "users", "user", "tenants", "tenant", "sessions", "session", "tokens", "token",
@@ -2154,6 +2162,35 @@ def finalize_kickoff(
         _v1202hh = _vis1202hh.get(name) or _vis1202hh.get(str(name).strip())
         if _v1202hh:
             table_meta["visibility"] = _v1202hh
+        # #1202hk: a SPINE table's shape is fixed by the framework, so the fields the
+        # materials declare for it have nowhere to live and are silently lost. r103: the spec
+        # describes `users` with 11 fields and the registered table has the tenancy/identity
+        # 6 — `username`, `display_name`, `avatar`, `bio`, `followers`, `following`, `likes`
+        # and `verified` all dropped, while every other entity in that run lost nothing
+        # (videos 13/13, notifications 7/7, ...). The lane is handed the materials too, and a
+        # video card cannot render without an @handle and an avatar, so it wrote
+        # `SELECT * FROM users WHERE lower(username) = :username` and got
+        # `UndefinedColumn` — in that run's final gate as `business_chain_failing`, and
+        # unfixable by any lane because the framework owns this table.
+        # Additive only: the spine's own columns are never touched (the OAuth AS keys on
+        # them), and `render_schema_sql` already emits ALTER TABLE ... ADD COLUMN IF NOT
+        # EXISTS for every registered `users` column beyond the spine while `render_models`
+        # merges them onto the ORM — both halves were built and had nothing to add.
+        if str(name).strip().lower() in _SPINE_OWNED_TABLES_1202HK:
+            _cols1202hk = schema.get("columns")
+            if isinstance(_cols1202hk, list):
+                from ..backend_skeleton import _spec_entity_fields_1202hk
+                _cols1202hk = list(_cols1202hk)
+                _have1202hk = {str(c.get("name") or "").strip().lower()
+                               for c in _cols1202hk if isinstance(c, Mapping)}
+                for _f1202hk in _spec_entity_fields_1202hk(
+                        getattr(hubs, "base_dir", ""), name):
+                    if _f1202hk.strip().lower() in _have1202hk:
+                        continue
+                    _cols1202hk.append({"name": _f1202hk,
+                                        "type": _infer_sql_type(_f1202hk)})
+                    _have1202hk.add(_f1202hk.strip().lower())
+                schema = dict(schema, columns=_cols1202hk)
         try:
             result = hubs.schema_hub.register_table(
                 name=name,

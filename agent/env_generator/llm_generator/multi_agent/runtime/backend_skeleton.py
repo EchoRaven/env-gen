@@ -1013,6 +1013,37 @@ def _spec_visibility_1202hh(base_dir: Any) -> Dict[str, str]:
 
 
 
+def _spec_entity_fields_1202hk(shared_dir: Any, table: str) -> List[str]:
+    """#1202hk -- the fields the MATERIALS declare for one entity, in declared order.
+
+    Reads the same `design/reference_spec.json` `_spec_visibility_1202hh` reads, one entity's
+    `fields` instead of its `visibility`. Kept beside it deliberately: this file is the single
+    place the spec is opened for the emitters, and a second opener elsewhere is how the
+    visibility declaration ended up reaching only `backend_audit` (#1202hh).
+
+    Empty when the spec, the entity or its `fields` are absent -- which is every environment
+    whose materials do not describe the entity, and is the pre-#1202hk behaviour.
+    """
+    try:
+        import json as _json1202hk
+        spec_path = Path(str(shared_dir)).parent / "design" / "reference_spec.json"
+        if not spec_path.is_file():
+            return []
+        ents = (_json1202hk.loads(spec_path.read_text(encoding="utf-8")) or {}).get("entities")
+        for e in (ents if isinstance(ents, list) else []):
+            if isinstance(e, Mapping) and str(e.get("name") or "").strip() == str(table):
+                return [str(f).strip() for f in (e.get("fields") or [])
+                        if isinstance(f, (str, int)) and str(f).strip()]
+    except Exception as _e1202hk:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_skeleton.spec_entity_fields_1202hk",
+                       "the materials' declared fields for a framework-owned table (#1202hk) "
+                       "-- the spine keeps only its own columns and a lane that follows the "
+                       "materials writes SQL against columns that do not exist",
+                       _e1202hk)
+    return []
+
+
 def _apply_spec_visibility_1202hh(tables: Dict[str, Any], shared_dir: Any) -> None:
     """#1202hh -- stamp the materials' verdict onto an in-memory table dict, in place.
 
