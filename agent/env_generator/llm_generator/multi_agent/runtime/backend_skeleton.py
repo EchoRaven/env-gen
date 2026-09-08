@@ -975,11 +975,17 @@ def get_db():
 '''
 
 
-def _spec_visibility_1202hh(base_dir: Any) -> Dict[str, str]:
+def _spec_visibility_1202hh(project_root: Any) -> Dict[str, str]:
     """#1202hh -- the materials' per-entity `visibility`, read ONCE for the whole kickoff.
 
-    `hubs.base_dir` is `<project>/shared`, so the design-time spec sits beside it (the same
-    derivation #1202gn uses). Two callers need this map and they must not disagree: the
+    Takes the RUN ROOT. `HubRegistry(self.output_dir, ...)` stores `self.base_dir =
+    Path(base_dir)`, so `hubs.base_dir` IS the run root -- not `<project>/shared`, which is
+    what #1202ha's comment claimed and what the first draft of this function copied. That
+    derivation resolves to `generated/design/reference_spec.json`, which never exists, so
+    #1202ha has been dead since it shipped and both stamps below inherited it. Proven against
+    a live run (tiktok-web-r104): the registered `users` had the 6 spine columns and not one
+    table carried `visibility`, while the spec on disk had all 11 fields and 8 declarations.
+    Two callers need this map and they must not disagree: the
     roadmap backstop (#1202ha, which must not owner-scope a published table) and table
     registration (which stamps the verdict so the EMITTERS can see it). r103 is why the
     second one exists -- the spec said `videos` was public, only `backend_audit` ever knew,
@@ -991,7 +997,7 @@ def _spec_visibility_1202hh(base_dir: Any) -> Dict[str, str]:
     import json as _json1202hh
     out: Dict[str, str] = {}
     try:
-        spec_path = Path(str(base_dir)).parent / "design" / "reference_spec.json"
+        spec_path = Path(str(project_root)) / "design" / "reference_spec.json"
         if not spec_path.is_file():
             return out
         ents = (_json1202hh.loads(spec_path.read_text(encoding="utf-8")) or {}).get("entities")
@@ -1013,7 +1019,7 @@ def _spec_visibility_1202hh(base_dir: Any) -> Dict[str, str]:
 
 
 
-def _spec_entity_fields_1202hk(shared_dir: Any, table: str) -> List[str]:
+def _spec_entity_fields_1202hk(project_root: Any, table: str) -> List[str]:
     """#1202hk -- the fields the MATERIALS declare for one entity, in declared order.
 
     Reads the same `design/reference_spec.json` `_spec_visibility_1202hh` reads, one entity's
@@ -1026,7 +1032,7 @@ def _spec_entity_fields_1202hk(shared_dir: Any, table: str) -> List[str]:
     """
     try:
         import json as _json1202hk
-        spec_path = Path(str(shared_dir)).parent / "design" / "reference_spec.json"
+        spec_path = Path(str(project_root)) / "design" / "reference_spec.json"
         if not spec_path.is_file():
             return []
         ents = (_json1202hk.loads(spec_path.read_text(encoding="utf-8")) or {}).get("entities")
@@ -1044,7 +1050,7 @@ def _spec_entity_fields_1202hk(shared_dir: Any, table: str) -> List[str]:
     return []
 
 
-def _apply_spec_visibility_1202hh(tables: Dict[str, Any], shared_dir: Any) -> None:
+def _apply_spec_visibility_1202hh(tables: Dict[str, Any], project_root: Any) -> None:
     """#1202hh -- stamp the materials' verdict onto an in-memory table dict, in place.
 
     `finalize_kickoff` writes this onto the LEDGER, but a resume skips kickoff, so every run
@@ -1060,7 +1066,7 @@ def _apply_spec_visibility_1202hh(tables: Dict[str, Any], shared_dir: Any) -> No
     stays authoritative wherever kickoff did stamp it.
     """
     try:
-        vis = _spec_visibility_1202hh(shared_dir)
+        vis = _spec_visibility_1202hh(project_root)
         if not vis:
             return
         for name, rec in list((tables or {}).items()):

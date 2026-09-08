@@ -593,7 +593,7 @@ volumes:
             # stayed invisible to every caller and every feed-backed flow kept failing.
             try:
                 from .backend_skeleton import _apply_spec_visibility_1202hh
-                _apply_spec_visibility_1202hh(tables, Path(out_dir) / "shared")
+                _apply_spec_visibility_1202hh(tables, out_dir)
             except Exception as _e1202hh:
                 from .message_format import warn_once_1201
                 warn_once_1201("scaffolder.spec_visibility_1202hh",
