@@ -634,8 +634,13 @@ volumes:
                 # #1202hd: the ordinary dedupe is right while the task is OPEN; it is wrong
                 # once a lane has CLOSED it with the disagreement still standing.
                 _hd = _refile_after_completion_1202hd(orch, _title1202gv)
-                if _gv and (_hd or _sc1202gv("task:public_content_scoped_away",
-                                             tuple(sorted(map(str, _gv))))):
+                # #1202he: evaluate the dedupe FIRST and keep its answer. `_hd or _sc(...)`
+                # short-circuits, so a re-file never RECORDED the finding, and the next pass —
+                # with the task now open and `_hd` false — filed it again as if for the first
+                # time. r102's resume showed exactly two filings five minutes apart.
+                _changed1202gv = _sc1202gv("task:public_content_scoped_away",
+                                           tuple(sorted(map(str, _gv))))
+                if _gv and (_hd or _changed1202gv):
                     orch.hubs.workhub.create_task(
                         title=_title1202gv,
                         description=(

@@ -459,7 +459,14 @@ def _scan_py_imports(text: str) -> List[tuple]:
 
 
 def scan_dead_files(app_root: Path) -> List[dict]:
-    app_root = Path(app_root)
+    # #1202he: resolve the ROOT, because `file_set` below is built from resolved paths while
+    # the import candidates are built on this one. A relative root breaks every edge of the
+    # graph, so each imported module reads as dead — a relative call on r102 reported
+    # oauth_routes, auth_dependency, custom_routes, seed_data, jwt_manager and oauth_store,
+    # all imported by main.py at startup. No production caller passes a relative path today,
+    # so nothing was mis-reported; this closes the footgun, whose failure mode is telling the
+    # lane to delete files the app needs.
+    app_root = Path(app_root).resolve()
     if not app_root.exists() or not app_root.is_dir():
         return []
     files = _collect_source_files(app_root)
