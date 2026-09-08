@@ -564,39 +564,38 @@ def _declared_public_1202gd(backend_dir, table: str, path: str = "") -> bool:
                        "not be read, so a declared-public collection still reports as an "
                        "unscoped owner read", _e1202gd)
         return False
+    # #1202hm: the corroborating signal is the TABLE's `owner_scoped_reads`, not any
+    # endpoint's `auth_required`. Those answer different questions -- `auth_required` is
+    # "must you log in", `owner_scoped_reads` is "do you see other people's rows" -- and
+    # #1202hf exists precisely because a lane conflated them. Corroborating publicness with
+    # the login flag is a category error, and it put this audit permanently at odds with the
+    # projector: #1202hh releases the owner filter on (materials public AND the table is not
+    # owner-scoped), so r105 served `GET /api/videos` unfiltered exactly as designed and this
+    # audit still called it a leak -- a blocker no lane could clear without re-breaking the
+    # feed. Both readers now ask the same two questions.
+    #
+    # Measured over the 9 runs whose materials carry declarations (29 public-declared tables):
+    # the endpoint rule exempted 15, this one exempts 14 -- same magnitude. The difference is
+    # where it matters: 15 instances have the materials calling a table public while the
+    # CONTRACT marks it owner-scoped. This rule refuses every one of them (the contract wins);
+    # the endpoint rule could release them on an unrelated sibling's auth_required=False.
+    #
+    # `path` is no longer read. #1202gy needed it because the endpoint that named the table
+    # was not always the endpoint the finding was about; a table-level flag has no such
+    # ambiguity, which removes that whole class of near-miss.
     try:
-        eps = json.loads((root / "shared" / "hubs"
-                          / "registryhub_endpoints.json").read_text(encoding="utf-8"))
-    except Exception:
+        tbls = json.loads((root / "shared" / "hubs"
+                           / "registryhub_tables.json").read_text(encoding="utf-8"))
+    except Exception as _e1202hm:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.declared_public_1202hm",
+                       "the contract half of the public-content exemption (#1202hm) -- a "
+                       "declared-public collection still reports as an unscoped owner read",
+                       _e1202hm)
         return False                      # no contract to corroborate -> stay strict
-    # #1202gy: the endpoint the FINDING is about settles it, when the caller names one. The
-    # audit resolves the served table from the CODE, so it flags `GET /api/explore` for
-    # returning every row of `videos`; this loop only ever considered endpoints whose PATH is
-    # named after the table, so `/api/explore` -- the very read the lane was told to declare
-    # public -- was skipped, and only `/api/videos` was consulted. r101, live: #1202gt said
-    # "publicness is decided in the CONTRACT", the lane set `/api/explore` auth_required=false
-    # exactly as instructed, and the blocker stayed up because a sibling was still authed.
-    _want = str(path or "").rstrip("/")
-    for _k, ep in (eps.items() if isinstance(eps, dict) else []):
-        if not isinstance(ep, Mapping) or str(ep.get("method") or "").upper() != "GET":
-            continue
-        _p = str(ep.get("path") or "").rstrip("/")
-        if _want:
-            if _p != _want:
-                continue
-        elif not (_p.endswith("/" + table)
-                  or _p.endswith("/" + table.replace("_", "-"))):
-            continue
-        stated = ep.get("auth_required")
-        if stated is None:
-            stated = (ep.get("schema") or {}).get("auth_required") \
-                if isinstance(ep.get("schema"), Mapping) else None
-        if stated is None:
-            stated = (ep.get("metadata") or {}).get("auth_required") \
-                if isinstance(ep.get("metadata"), Mapping) else None
-        if stated is False:
-            return True
-    return False
+    rec = tbls.get(table) if isinstance(tbls, dict) else None
+    md = (rec.get("metadata") or {}) if isinstance(rec, Mapping) else {}
+    return md.get("owner_scoped_reads") is not True
 
 
 def public_content_scoped_away_1202gv(spec, tables) -> List[str]:
