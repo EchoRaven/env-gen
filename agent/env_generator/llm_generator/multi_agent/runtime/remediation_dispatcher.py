@@ -628,6 +628,13 @@ def auth_contradiction_1176(orch, pages: Sequence[Any]) -> str:
         for rec in _walk_records_1176(eps, lambda d: "path" in d and "method" in d):
             stated = rec.get("auth_required")
             if stated is None:
+                # #1202gr: `schema` is what the LANE writes and #1202ga made it win; this
+                # reader skipped straight from the top level to the `metadata` mirror, so a
+                # lane that had already made the endpoint public still read as authed here.
+                _sch = rec.get("schema")
+                if isinstance(_sch, Mapping):
+                    stated = _sch.get("auth_required")
+            if stated is None:
                 stated = (rec.get("metadata") or {}).get("auth_required")
             if stated is None:
                 continue

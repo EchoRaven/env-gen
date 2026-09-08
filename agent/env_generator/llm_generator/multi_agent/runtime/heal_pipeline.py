@@ -700,6 +700,7 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                 if not missing:
                     continue
                 schema["request"] = {**existing_req, **missing}
+                from .registryhub import _resolved_auth_1202gr
                 registryhub.register_endpoint(
                     method=_rec.get("method"), path=path,
                     schema=schema,
@@ -708,8 +709,14 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                     status=_rec.get("status") or "defined",
                     response_key=(_rec.get("metadata") or {}).get("response_key")
                     or schema.get("response_key") or "item",
-                    auth_required=bool((_rec.get("metadata") or {}).get("auth_required")
-                                       or schema.get("auth_required")))
+                    # #1202gr: this was `bool(metadata or schema)` — an OR, not the
+                    # precedence #1202ga established, so a STALE mirror True beat the lane's
+                    # fresh schema False and was WRITTEN BACK here as the current value. It
+                    # fired 3x in r98 / 4x in r97 / 4x in r96 on exactly the endpoints those
+                    # runs' chains failed against (/api/videos/{id}/comments, .../like,
+                    # .../save, /api/users/{id}/follow), and re-registering with a flipped
+                    # auth is what then read as `auth_added` downstream.
+                    auth_required=_resolved_auth_1202gr(_rec))
                 healed.append({"path": path, "added": sorted(missing.keys())})
                 if logger is not None:
                     try:

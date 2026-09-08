@@ -1819,6 +1819,88 @@ def _denial_scope_verdict_663(sent_body, body_text) -> str:
     return ""
 
 
+_TB_HEAD_1202GS = "Traceback (most recent call last):"
+_APP_FRAME_1202GS = re.compile(r'^\s*File "(/app/[^"]+|[^"]*/(?:app|backend)/[^"]+)", line (\d+), in (\S+)')
+_EXC_LINE_1202GS = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Warning)):?(.*)$")
+
+
+def _last_exception_1202gs(log_text) -> str:
+    """The most recent traceback in a container log, reduced to what the lane can act on.
+
+    Keeps the APP frames (``/app/...``) and the final exception line; drops uvicorn,
+    starlette and every other site-packages frame, which are the call stack of the server,
+    not of the defect. Returns "" when the log holds no traceback — a log with nothing in it
+    must read as NOTHING, never as an invented cause (#883/#1202ah).
+    """
+    text = log_text or ""
+    if not isinstance(text, str) or _TB_HEAD_1202GS not in text:
+        return ""
+    block = text[text.rindex(_TB_HEAD_1202GS):]          # most recent wins
+    frames, exc = [], ""
+    for line in block.split("\n")[1:]:
+        m = _APP_FRAME_1202GS.match(line)
+        if m:
+            frames.append("%s:%s in %s" % (m.group(1), m.group(2), m.group(3)))
+            continue
+        stripped = line.strip()
+        e = _EXC_LINE_1202GS.match(stripped)
+        if e and not stripped.startswith("File "):
+            exc = stripped
+            break
+    if not exc:
+        return ""
+    return (" <- ".join(reversed(frames)) + " -- " + exc) if frames else exc
+
+
+def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
+    """The backend's OWN account of a 5xx, for the step note. "" when there isn't one.
+
+    r99's only remaining gate failure was `business_chain_failing`, and every broken step
+    said `500 Internal Server Error` and no more. The cause -- `custom_routes.py:97 ...
+    TypeError: Object of type datetime is not JSON serializable` -- was in the container log
+    the entire time. `classify_endpoint_failure` looks for a traceback in the RESPONSE BODY,
+    but FastAPI in production answers a bare string and logs the traceback to stderr, so the
+    one fact naming the file, the line and the exception never reached the lane.
+
+    Only for 5xx: a 404 or 422 is the server ANSWERING, and reading a container log for those
+    would spend a subprocess per probe on nothing (#647 -- no wider than its evidence).
+    Cached per project so a chain of failing steps costs one read, not one per step.
+    """
+    try:
+        code = int(status)
+    except (TypeError, ValueError):
+        return ""
+    if code < 500:
+        return ""
+    key = str(project_dir)
+    if key in _cache:
+        return _cache[key]
+    out = ""
+    try:
+        from pathlib import Path as _P
+        import subprocess as _sp
+        from .container_runtime import runtime_bin as _rb
+        proj = _P(str(project_dir))
+        _parts = proj.parts
+        if "worktrees" in _parts:                 # #1044: only the canonical tree runs a stack
+            proj = _P(*_parts[:_parts.index("worktrees")])
+        compose = None
+        for cand in (proj / "docker" / "docker-compose.yml",
+                     proj.parent / "docker" / "docker-compose.yml"):
+            if cand.exists():
+                compose = cand
+                break
+        if compose is not None:
+            r = _sp.run([_rb(), "compose", "-f", str(compose), "logs", "--no-color",
+                         "--tail", "120", "backend"],
+                        cwd=str(compose.parent), capture_output=True, text=True, timeout=25)
+            out = _last_exception_1202gs((r.stdout or "") + (r.stderr or ""))
+    except Exception:
+        out = ""
+    _cache[key] = out
+    return out
+
+
 def classify_endpoint_failure(status, body_text):
     """``"ok"`` | ``"framework_defect"`` | ``"broken"`` for one endpoint probe result."""
     try:
@@ -3151,6 +3233,13 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             _det1202gb = _integrity_detail_1202gb(project_dir, method, path, note)
             if _det1202gb:
                 entry["server_detail"] = _det1202gb
+            # #1202gs: a 5xx answers with a bare "Internal Server Error" in production, so the
+            # file/line/exception the lane needs lives only in the container log. r99 died with
+            # `business_chain_failing` as its ONE remaining gate failure and every broken step
+            # said nothing more than that.
+            _tb1202gs = _backend_traceback_1202gs(project_dir, status)
+            if _tb1202gs:
+                entry["server_traceback"] = _tb1202gs
         if autofilled:
             entry["autofilled"] = autofilled
         recorded.append(entry)

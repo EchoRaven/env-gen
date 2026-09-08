@@ -263,6 +263,38 @@ def _tag_parked_probe_1202dw(path, metadata):
     return md
 
 
+def _framework_auth_surface_1202gr(path) -> bool:
+    """Is this a path the FRAMEWORK serves, where requiring auth is a contradiction?
+
+    Same net as `lifecycle.is_business`'s auth exclusion, asked from the other side; imported
+    rather than re-listed so the two cannot drift (#906).
+    """
+    p = str(path or "")
+    return p.startswith(("/auth/", "/oauth/", "/api/auth/", "/api/oauth/"))
+
+
+def _resolved_auth_1202gr(rec) -> bool:
+    """This endpoint's auth, through the ONE precedence #1202ga established.
+
+    An endpoint record carries `auth_required` in up to three places. `schema` is what the
+    LANE writes, so it wins; `metadata` is a mirror that goes stale the moment the lane
+    corrects the contract. r98 is the shape: `schema.auth_required=False` (the lane's fix,
+    made six times) beside `metadata.auth_required=True` (the mirror nobody updated).
+
+    Delegates rather than re-deciding — a second copy of the precedence is how the two copies
+    of the DATUM came to disagree in the first place (#906). Falls back to the mirror only if
+    the projector cannot be imported, which keeps this readable as "unchanged" rather than
+    "silently permissive".
+    """
+    rec = rec or {}
+    try:
+        from .route_projector import resolve_endpoint_auth
+    except Exception:
+        return bool((rec.get("metadata") or {}).get("auth_required"))
+    return bool(resolve_endpoint_auth(
+        rec.get("method"), rec.get("path"), rec, rec.get("metadata")))
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -620,14 +652,14 @@ class RegistryHub:
             "method": (old or {}).get("method"),
             "path": (old or {}).get("path"),
             "response_key": ((old or {}).get("metadata") or {}).get("response_key"),
-            "auth_required": ((old or {}).get("metadata") or {}).get("auth_required"),
+            "auth_required": _resolved_auth_1202gr(old),
         }
         new_full = {
             **endpoint["schema"],
             "method": endpoint.get("method"),
             "path": endpoint.get("path"),
             "response_key": (endpoint.get("metadata") or {}).get("response_key"),
-            "auth_required": (endpoint.get("metadata") or {}).get("auth_required"),
+            "auth_required": _resolved_auth_1202gr(endpoint),
         }
         breaking = self.detect_breaking_change(old_full, new_full)
         if breaking["is_breaking"]:
@@ -1247,6 +1279,16 @@ class RegistryHub:
             and (old_schema.get("response_key") is not None or new_schema.get("response_key") is not None)
         )
         auth_added = bool(new_schema.get("auth_required") and not old_schema.get("auth_required"))
+        if auth_added and _framework_auth_surface_1202gr(new_schema.get("path")
+                                                         or old_schema.get("path")):
+            # #1202gr: "auth was added to POST /auth/register" says you must be logged in in
+            # order to log in. The framework's own OAuth2 AS serves /auth/* and /oauth/* and
+            # the middleware enforces auth on /api/ business routes ONLY, so the generated app
+            # never behaves this way whatever the contract mirror says. 147 /auth/* breaking
+            # P0s across 29 runs on this machine, 34 with auth_added as the ONLY signal, every
+            # one filed at a lane that does not own the endpoint. Narrow on purpose (#647):
+            # the auth surface only — a real auth change on a business route still reports.
+            auth_added = False
 
         is_breaking = any([
             removed_response_fields, type_changed_fields,
