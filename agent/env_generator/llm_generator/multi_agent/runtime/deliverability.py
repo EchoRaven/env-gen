@@ -747,13 +747,22 @@ _DEGRADED_FLOW_COVERAGE = {
 def _root_spec_entities_1202gl(hub_registry) -> list:
     """#1202gl -- the reference spec's entities, for the note above. Best-effort: an empty
     list simply drops the extra sentence, never blocks."""
+    # The real HubRegistry exposes `base_dir` and nothing else path-like — the first cut of
+    # this guessed output_dir/root/base_root/project_dir, found none of them, and returned []
+    # on every production call: the sentence below never once fired. Third time this batch
+    # (#1202gd's unimported names, #1202fw's self.logger), so this one is anchored on the
+    # attribute the class actually defines and walks UP to the project root, because
+    # `base_dir` points at `<project>/shared` where the hubs live.
     try:
-        for attr in ("output_dir", "root", "base_root", "project_dir"):
-            _r = getattr(hub_registry, attr, None)
-            if _r:
-                _p = Path(str(_r)) / "design" / "reference_spec.json"
-                if _p.is_file():
-                    return json.loads(_p.read_text(encoding="utf-8")).get("entities") or []
+        _b = getattr(hub_registry, "base_dir", None)
+        _cands = []
+        if _b:
+            _bp = Path(str(_b))
+            _cands = [_bp, _bp.parent, _bp.parent.parent]
+        for _r in _cands:
+            _p = Path(_r) / "design" / "reference_spec.json"
+            if _p.is_file():
+                return json.loads(_p.read_text(encoding="utf-8")).get("entities") or []
     except Exception as _e1202gl:
         # #883/#1201: an empty list here silently drops the one sentence that stops the
         # lane trading the 401 for an unscoped-read blocker and back again. Losing it is
