@@ -205,6 +205,10 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         try:
             _low = (_full or "").lower()
             _host = next((m for k, m in _HOST_LEVEL_1202CN.items() if k in _low), None)
+            # #1202hr: no known wording matched — so go and MEASURE the one host condition
+            # that reliably surfaces as something else entirely.
+            if not _host:
+                _host = low_docker_disk_1202hr()
             if _host:
                 _LOG.error(
                     "#1202cn this is a HOST failure, not the app's: %s. No lane can fix "
@@ -213,6 +217,66 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         except Exception:
             pass
     return cp
+
+
+def low_docker_disk_1202hr(usage=None, root=None, floor_gb: float = 10.0):
+    """#1202hr — is the filesystem docker stores images on out of room? MEASURED, not matched.
+
+    tiktok-web-r106: the root filesystem holding /var/lib/docker was at 100% with 5.0G left
+    (1035 dangling images, 176GB reclaimable). What the run reported was
+    `Error processing tar file(exit status 1): unexpected EOF`, then `/health` never becoming
+    healthy ("server disconnected without sending a response after 31 attempts"), then
+    `ERR_CONNECTION_REFUSED` on every page — and the orchestrator filed a backend P0 "to
+    restore healthcheck/startup". A host fault laundered into a lane defect, which this
+    repo has paid for before: a lane once spent 45 minutes on one and then fabricated a fix.
+
+    `_HOST_LEVEL_1202CN` exists to stop exactly that and could not fire: it matches the
+    daemon's WORDING, and disk exhaustion never said "no space left on device". A condition
+    that can be measured must not be inferred from text.
+
+    The path matters as much as the check. The launcher's own preflight reads the filesystem
+    the REPO sits on and printed `free=102G` while / had 5.0G, so it passed a doomed run;
+    this asks docker where it actually writes.
+
+    Returns None when there is room, when docker cannot be asked, or when the read fails —
+    "could not tell" is not a verdict in either direction (#883), and this annotates a
+    failure that has already happened, so silence costs nothing.
+    """
+    import shutil as _sh1202hr
+    try:
+        _root = (root or _docker_root_dir_1202hr)()
+        if not _root:
+            return None
+        du = (usage or _sh1202hr.disk_usage)(_root)
+        free_gb = float(getattr(du, "free", 0)) / (1024.0 ** 3)
+    except Exception:
+        return None
+    if free_gb >= float(floor_gb):
+        return None
+    return ("docker's storage filesystem (%s) has only %.1fG free — a compose build writes "
+            "hundreds of MB of layers plus the tar context, and r106 failed at 5.0G with "
+            "`unexpected EOF` rather than any disk error. Reclaim space before retrying: "
+            "`docker image prune -f` (dangling layers only, touches no running container; it "
+            "recovered 176GB there), then `docker builder prune -f`"
+            % (_root, free_gb))
+
+
+def _docker_root_dir_1202hr():
+    """Where the daemon stores images. Asked, not assumed — a host may relocate it."""
+    try:
+        from .container_runtime import runtime_bin as _rb
+        _bin = _rb()
+    except Exception:
+        _bin = "docker"
+    try:
+        cp = subprocess.run([_bin, "info", "--format", "{{.DockerRootDir}}"],
+                            capture_output=True, text=True, timeout=15)
+        out = (cp.stdout or "").strip()
+        if cp.returncode == 0 and out:
+            return out
+    except Exception:
+        pass
+    return "/var/lib/docker"
 
 
 # #1202cn: compose failures the HOST owns. Keyed on the daemon's own wording, lowercased.

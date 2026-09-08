@@ -869,7 +869,9 @@ def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
             + join_capped(_tables, len(_tables), cap=4, sep=", ")
             + " as PUBLIC content, so making the contract match does NOT trade this for "
               "an unscoped-owner-read blocker — that audit exempts a public read the "
-              "materials and the contract agree on (#1202gd).")
+              "materials and the contract agree on (#1202gd), PROVIDED the table is not "
+              "marked `owner_scoped_reads` (#1202hm moved the corroborating signal there "
+              "from `auth_required`, so setting that flag is what would re-block it).")
     return (" Contract note — these failing flows declare an endpoint the contract marks "
             "auth_required, which returns 401 to an anonymous visitor: "
             + join_capped(hits, len(hits), cap=4, sep="; ")

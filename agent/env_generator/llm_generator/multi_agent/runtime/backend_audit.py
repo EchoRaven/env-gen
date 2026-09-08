@@ -776,8 +776,13 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                    # the MATERIALS declare this table public, whatever the handler currently
                    # does -- and only then, so a genuinely per-user table (the r141 `my_list`
                    # leak shape) still gets the flat instruction (#647).
+                   # #1202hq: this half named `auth_required` too, so after the materials
+                   # clause below was corrected the SAME message pointed at two different
+                   # switches, two sentences apart. It says the same true thing — the route
+                   # is projected from the CONTRACT, not editable in the handler — without
+                   # naming a flag that does not govern row visibility.
                    (("; if this read is genuinely public the projected route follows the "
-                     "CONTRACT, so `auth_required` is where it is decided, not the handler"
+                     "CONTRACT, so it is fixed by changing the contract, not the handler"
                      if not _authed_1202gc else "")
                     # #1202gt: the materials fact belongs in BOTH branches. The first cut
                     # attached it only to the authed one, and r100's resume was in the other:
@@ -785,11 +790,23 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                     # and all it got was the generic pointer -- no word that the materials
                     # already declare this table public, nor that #1202gd exempts such a read.
                     # That pair is what stops it scoping the feed back.
+                    # #1202hq: this sentence used to name `auth_required=false` as the
+                    # switch, which #1202hm moved -- the exemption now reads the TABLE's
+                    # `owner_scoped_reads`, exactly because the login flag answers a
+                    # different question. r106 followed the stale wording: it made the read
+                    # anonymous, the blocker stayed, and then it set
+                    # `owner_scoped_reads: True` on `videos` -- the one action that re-imposes
+                    # the owner filter and empties the feed. Both questions are named here so
+                    # the conflation #1202hf documents cannot be re-taught by this message.
                     + ((". The MATERIALS declare `%s` PUBLIC content, so scoping it to the "
-                        "caller breaks the logged-out view of it: publicness is decided in "
-                        "the CONTRACT (`auth_required=false`), and #1202gd's audit then "
-                        "exempts a public read the materials and the contract agree on"
-                        % cls2tbl.get(model or "", "?"))
+                        "caller breaks the logged-out view of it. Two different switches: "
+                        "`auth_required` decides whether you must log in, and the table's "
+                        "`owner_scoped_reads` decides whether you see other people's rows. "
+                        "For published rows do NOT set `owner_scoped_reads` on `%s` (clear it "
+                        "if it is set) -- that alone is what releases this read, and #1202gd's "
+                        "audit then exempts it. Clearing `auth_required` by itself does not, "
+                        "and setting `owner_scoped_reads` re-imposes the filter"
+                        % (cls2tbl.get(model or "", "?"), cls2tbl.get(model or "", "?")))
                        if _declared_public_materials_1202gt(
                            backend_dir, cls2tbl.get(model or "", "")) else ""))))
     except Exception as _e1202af:

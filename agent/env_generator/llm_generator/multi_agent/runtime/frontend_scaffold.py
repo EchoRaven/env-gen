@@ -10337,6 +10337,55 @@ def _count_overwrite_939(frontend_dir: Any, comp: str, replaced: str = "") -> in
         return 0
 
 
+def drop_sentinel_pages_1202hp(ui_pages):
+    """Drop ui_page records that are framework/agent PROBE artifacts, before projection.
+
+    tiktok-web-r106's ledger carried, beside its 13 real pages, a record keyed
+    `__noop_monitor_do_not_use__` with `route=""`, `component=""` and
+    `metadata: {"notes": "noop? no"}` — the orchestrator AGENT probing its own registration
+    tool. The framework took it literally: the page projector wrote
+    `src/pages/NoopMonitorDoNotUse.jsx` and routed it as `/noop-monitor-do-not-use`,
+    `deliverability_frontend_fallback_page` blocked delivery on it, `deliverability_other`
+    blocked again on the same file as a placeholder route, `ui_page_unwired` counted it first
+    of eight, and a P0 went to the frontend lane telling it to author a real page — for a
+    record whose own name says DO NOT USE. The lane cannot win that.
+
+    The framework already knows this class on the ENDPOINT side: `_tag_parked_probe_1202dw`
+    tags `__`-prefixed paths as infra, and its docstring records the same damage there ("the
+    orchestrator agent authored a P0 telling backend to write real DB-backed state/check
+    logic for `GET /__noop_orchestrator_state_check__`, which the lane then went grepping
+    app/backend for, across runs"). Its stated convention is a LEADING `__` segment. This is
+    that convention, applied to the half that never got it.
+
+    Measured over the 145 runs with hub stores here: 41 (28%) carry `__`-prefixed probe
+    ENDPOINTS, so agents exercise these tools constantly; 2 carry a probe UI PAGE
+    (netflix-local-r14's `noop_should_not_register`, r106's). Rare on this side, and an
+    unwinnable blocker when it lands.
+
+    Dropped at the PRODUCER rather than exempted in each gate: with no file and no route,
+    the three checks above have nothing to disagree about and none of them needs touching.
+
+    Best-effort — any fault returns the input unchanged, because this sits in the path that
+    gives the app its pages (#1087's own rule).
+    """
+    try:
+        if not isinstance(ui_pages, dict):
+            return ui_pages
+        out = {}
+        for key, rec in ui_pages.items():
+            name = key
+            if isinstance(rec, dict) and str(rec.get("name") or "").strip():
+                name = str(rec.get("name")).strip()
+            # The marker is a LEADING `__` on the page's own name. A single leading
+            # underscore is a naming style, and `my__weird__name` is not a probe.
+            if str(name).startswith("__"):
+                continue
+            out[key] = rec
+        return out
+    except Exception:
+        return ui_pages
+
+
 def drop_component_page_twins_1087(ui_pages, registryhub):
     """Drop the blank-route ui_page records that are ALSO registered as ui_components.
 

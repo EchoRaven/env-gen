@@ -29,6 +29,26 @@ _LANE_DEST = {
 }
 
 
+# #1202ho: naming the lane's file is not the same as telling it the file is LOADED. r105's
+# backend shipped `sitecustomize.py` whose docstring states the fear exactly -- "the framework
+# owns main.py and may regenerate it without an explicit include_router(custom_routes.router)"
+# -- and the delivery gate then blocked on it as a dead artifact, correctly, with the lane
+# having no way to know it was redundant. Measured over the 145 backends here: 5 carry such a
+# hook, across TWO environments, so it is a pattern rather than one lane's quirk. And the
+# belief is a REASONABLE inference: 22 main.py files lack the import and every one of them is
+# the 1591-byte bootstrap stub, so a lane that reads main.py before the skeleton runs sees
+# precisely what it feared. Among runs that reached skeleton generation the mount is present
+# 123 of 123 -- the guarantee is real, it was simply never stated.
+_LANE_GUARANTEE_1202HO = {
+    "backend": (
+        " custom_routes.py is imported and mounted by the generated main.py BY CONSTRUCTION,"
+        " so you never need a loader hook — no sitecustomize.py, no .pth file, no"
+        " include_router of your own; such a file is dead weight and the delivery gate"
+        " reports it as a dead artifact. If you read main.py and the import is missing, you"
+        " are looking at the bootstrap stub the framework has not replaced yet."),
+}
+
+
 def _conflict_message(lane: str, paths: List[str]) -> str:
     dest = _LANE_DEST.get(lane, "your lane-owned files")
     shown = ", ".join(paths[:6]) + ("…" if len(paths) > 6 else "")
@@ -51,10 +71,14 @@ def _scaffold_message(lane: str, paths: List[str]) -> str:
 
 
 def build_message(kind: str, lane: str, paths: List[str]) -> str:
+    # #1202ho: the per-lane guarantee rides on BOTH message kinds. Both are sent when the
+    # framework has just rewritten a file the lane touched, which is the exact moment a lane
+    # starts looking for a way to attach its own code without editing framework-owned files.
+    tail = _LANE_GUARANTEE_1202HO.get(lane, "")
     if kind == "conflict_resolved":
-        return _conflict_message(lane, paths)
+        return _conflict_message(lane, paths) + tail
     if kind == "framework_scaffolded":
-        return _scaffold_message(lane, paths)
+        return _scaffold_message(lane, paths) + tail
     return f"framework_decision({kind}): {', '.join(paths)}"
 
 

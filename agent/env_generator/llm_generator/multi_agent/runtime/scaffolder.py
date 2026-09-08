@@ -1173,6 +1173,10 @@ volumes:
             fe = _P(out_dir) / "app" / "frontend"
             # #1087: a name registered as a ui_COMPONENT is a component — do not project a
             # page stub for its blank-route page twin (see the helper for the measurement).
+            # #1202hp: probe registrations first — a `__`-named record must not become
+            # a page, a route, or three delivery blockers (see drop_sentinel_pages).
+            from .frontend_scaffold import drop_sentinel_pages_1202hp
+            ui_pages = drop_sentinel_pages_1202hp(ui_pages)
             ui_pages = drop_component_page_twins_1087(ui_pages, registryhub)
             rep = scaffold_pages_from_contract(fe, ui_pages)
             # #1202at: #951 detects the projector/lane tug-of-war, calls it "waste either

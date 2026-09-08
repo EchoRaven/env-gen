@@ -3496,6 +3496,11 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         except Exception:
             return ""
 
+    # #1202hs: the paths the LANE's own router claims, so the ownership note below stops
+    # telling a lane it cannot edit a handler it wrote (r106: `GET /api/search` was annotated
+    # "the lane cannot edit it" while the traceback read `custom_routes.py:493 in search`).
+    _lane_1202hs = _lane_routes_1202hs(project_dir)
+
     # #188: broken lines carry the authored expectation — "GET x → 200 ({body})"
     # with a hidden expect [401] read as nonsense in 225x of triage lines.
     def _fmt(s):
@@ -3503,7 +3508,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
                    else f"({s['note']})")
                 + _route_ran_note_1052(s)
-                + _projected_owner_note(projected, s.get("method"), s.get("path")))
+                + _projected_owner_note(projected, s.get("method"), s.get("path"),
+                                       lane=_lane_1202hs))
     broken = [_fmt(s) for s in recorded if s["kind"] == "broken"]
     # #272: framework-projected defects are reported SEPARATELY so the gate can surface them
     # as framework work, not fold them into `broken` where a lane would be dispatched to fix
@@ -3553,13 +3559,46 @@ def projected_routes(project_dir: Any) -> set:
     return {(m.group(1).upper(), m.group(2)) for m in _PROJECTED_ROUTE_RE.finditer(src)}
 
 
-def _projected_owner_note(proj: set, method: Any, path: Any) -> str:
+_LANE_ROUTE_RE_1202HS = re.compile(
+    r'@(?:router|app)\.(get|post|put|patch|delete)\(\s*[\'"]([^\'"]+)', re.I)
+
+
+def _lane_routes_1202hs(project_dir: Any) -> set:
+    """The (method, path) pairs the LANE declares in its own router.
+
+    r106's last blocker was `GET /api/search → 500` annotated "the lane cannot edit it",
+    while the captured traceback read `custom_routes.py:493 in search`. main.py decides per
+    route whether a duplicate lane route is dropped in the projector's favour
+    (`_custom_route_overrides_projected`, plus #1166's startup restore of ones nothing else
+    serves), so which side serves is a runtime outcome — but the mere EXISTENCE of a lane
+    route for the path is enough to stop asserting the opposite. Measured over the 120 runs
+    with a `custom_routes.py`: 115 declare at least one such path, 1536 in total.
+
+    Best-effort: an unreadable or absent file is an empty set, which restores the previous
+    wording rather than inventing a different claim."""
+    try:
+        cr = Path(project_dir) / "app" / "backend" / "custom_routes.py"
+        src = cr.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return set()
+    return {(m.group(1).upper(), m.group(2)) for m in _LANE_ROUTE_RE_1202HS.finditer(src)}
+
+
+def _projected_owner_note(proj: set, method: Any, path: Any,
+                          lane: Any = None) -> str:
     """#587 — ' [framework-projected route: …]' when this route is served by projected code."""
     if not proj:
         return ""
     p = str(path or "").split("?", 1)[0]
     m = str(method or "GET").upper()
     if (m, p) in proj:
+        # #1202hs: only assert sole framework ownership when no lane route claims this path.
+        if lane and (m, p) in lane:
+            return (" [BOTH a _projected_ handler in main.py and a lane route in "
+                    "custom_routes.py declare this path — main.py decides per route which "
+                    "one serves, so check the traceback: if it names custom_routes.py the "
+                    "fix is there, and only if it names a _projected_ handler is this the "
+                    "projector's or the contract's]")
         return (" [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
                 "the lane cannot edit it, fix the projector/contract]")
     # a by-id shape: /api/x/7 vs the emitted /api/x/{id}
