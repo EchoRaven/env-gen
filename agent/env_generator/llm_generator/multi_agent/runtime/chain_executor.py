@@ -1824,6 +1824,24 @@ _APP_FRAME_1202GS = re.compile(r'^\s*File "(/app/[^"]+|[^"]*/(?:app|backend)/[^"
 _EXC_LINE_1202GS = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Warning)):?(.*)$")
 
 
+_COMPOSE_PREFIX_1202GW = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:-\d+)?\s+\|\s?")
+
+
+def _strip_stream_prefix_1202gw(line: str) -> str:
+    """Drop `compose logs`' per-line `<service>-<n>  | ` prefix, if this line carries one.
+
+    #1202gs read the container log through `compose logs`, which prefixes EVERY line, but its
+    fixture came from `docker logs <container>`, which prefixes none. So its frame regex
+    (anchored on File at line start) matched nothing in production and every 5xx recorded an
+    empty traceback --
+    the mechanism was dead from the first commit and its own tests all passed.
+
+    Anchored at line start and shaped like a service name, so a pipe INSIDE a message
+    (`ValueError: bad value: a|b`) is left alone; an unprefixed log passes through unchanged.
+    """
+    return _COMPOSE_PREFIX_1202GW.sub("", line or "", count=1)
+
+
 def _last_exception_1202gs(log_text) -> str:
     """The most recent traceback in a container log, reduced to what the lane can act on.
 
@@ -1837,7 +1855,8 @@ def _last_exception_1202gs(log_text) -> str:
         return ""
     block = text[text.rindex(_TB_HEAD_1202GS):]          # most recent wins
     frames, exc = [], ""
-    for line in block.split("\n")[1:]:
+    for _raw in block.split("\n")[1:]:
+        line = _strip_stream_prefix_1202gw(_raw)          # #1202gw
         m = _APP_FRAME_1202GS.match(line)
         if m:
             frames.append("%s:%s in %s" % (m.group(1), m.group(2), m.group(3)))
@@ -1880,7 +1899,12 @@ def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
         from pathlib import Path as _P
         import subprocess as _sp
         from .container_runtime import runtime_bin as _rb
-        proj = _P(str(project_dir))
+        # #1202gw: ABSOLUTE, because the call below sets cwd to the compose directory and a
+        # relative `-f` would then double against it (`.../docker/.../docker/...`) and resolve
+        # to nothing. validation_runner records the same trap in one line of its own:
+        # "absolute -> -f path can't double against cwd". The failure is silent: compose exits
+        # non-zero, the except swallows it, and every 5xx records an empty traceback.
+        proj = _P(str(project_dir)).resolve()
         _parts = proj.parts
         if "worktrees" in _parts:                 # #1044: only the canonical tree runs a stack
             proj = _P(*_parts[:_parts.index("worktrees")])
@@ -1899,6 +1923,52 @@ def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
         out = ""
     _cache[key] = out
     return out
+
+
+def _save_miss_reason_1202gu(payload, dotted: str) -> str:
+    """Why `dotted` captured nothing: an EMPTY collection, or a path that is not there.
+
+    r100 (live): 38 of 73 chain steps 404'd behind one note — "save failed ... (response
+    lacked the save path) - fix that capture". The capture was correct. `save: {videoId:
+    "items.0.id"}` sat on a step that returned 200 over `{"items": [...]}`; the projected read
+    was owner-scoped, the verifier's fresh actor owned no rows, and `items` came back EMPTY.
+    "Fix that capture" sends the lane to re-author a chain that is already right.
+
+    The two cases have different owners -- an empty collection is a data/scoping question for
+    the backend, a missing path is an envelope question for whoever wrote the chain -- so the
+    note names which one it is. Best-effort: any fault returns the neutral wording, never a
+    guess, because this text ROUTES work.
+    """
+    try:
+        parts = [p for p in str(dotted or "").split(".") if p != ""]
+        if not parts:
+            return "the response lacks the save path"
+        cur = payload
+        walked = []
+        for i, seg in enumerate(parts):
+            if seg.isdigit():
+                # the container we were about to index into is the interesting one
+                name = ".".join(walked) or "the response"
+                if isinstance(cur, (list, tuple)) and len(cur) == 0:
+                    return ("`%s` came back EMPTY (0 rows), so `%s` had nothing to read -- "
+                            "the capture is correct; the READ returned no data for this "
+                            "actor, which is a scoping/seed question, not a chain one"
+                            % (name, dotted))
+                if not isinstance(cur, (list, tuple)):
+                    return "the response lacks the save path `%s`" % dotted
+                idx = int(seg)
+                if idx >= len(cur):
+                    return ("`%s` has %d row(s), so index %d in `%s` is out of range"
+                            % (name, len(cur), idx, dotted))
+                cur = cur[idx]
+            else:
+                walked.append(seg)
+                if not isinstance(cur, Mapping) or seg not in cur:
+                    return "the response lacks the save path `%s`" % dotted
+                cur = cur[seg]
+        return "the response lacks the save path `%s`" % dotted
+    except Exception:
+        return "the response lacks the save path"
 
 
 def classify_endpoint_failure(status, body_text):
@@ -3355,9 +3425,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                         step.get("action") or step.get("path") or "")
             if _save_failed:
                 entry["save_failed"] = [f.split("<-", 1)[0] for f in _save_failed]
+                # #1202gu: say WHICH failure this is. An empty collection and an absent path
+                # are different defects with different owners, and "fix that capture" on an
+                # empty feed routes the work to re-authoring a correct chain.
+                _why1202gu = "; ".join(sorted({
+                    _save_miss_reason_1202gu(payload, _f.split("<-", 1)[1])
+                    for _f in _save_failed if "<-" in _f}))
                 entry["note"] = ((entry["note"] + " | ") if entry["note"] else "") + (
-                    "save FAILED (response lacks the path): "
-                    + ", ".join(_save_failed))
+                    "save FAILED for " + ", ".join(_save_failed)
+                    + ((" -- " + _why1202gu) if _why1202gu else ""))
         if kind == "broken":
             # Don't abort — just mark the vars this step was supposed to provide as
             # unsatisfied, so ONLY its dependents are skipped; independent steps run on.

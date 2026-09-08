@@ -255,6 +255,34 @@ def _passing_endpoint_index_1135(chains) -> dict:
     return idx
 
 
+def _step_is_actionable_1202gx(st) -> bool:
+    """Is this recorded step something the verifier can and should act on?
+
+    #78 clears the recurring false leak -- a cross-user denial probe that answered 2xx because
+    it ran under a stale/owner-colliding token -- by re-running it with a guaranteed-fresh
+    intruder. When that intruder is DENIED it marks the row `kind="skipped"` and rewrites the
+    note to say so, but leaves `ok=False`. #798 built the "fix THESE" list on `ok` alone, so
+    every row #78 had just cleared came back as work.
+
+    r100: four chains carried one (PUT /api/videos/42, 46, 47, 50), all already re-verified as
+    DENIED, all listed in the remediation the verifier was holding while `business_chain_failing`
+    was the run's last blocker. Those chains' own `broken` lists were 0 -- so this misdirects
+    attention rather than failing a gate, and it does it on the one check that mattered.
+
+    Narrow on purpose (#647): only the rows #78 itself cleared, identified by the note it
+    writes. A step skipped for any OTHER reason is still unexplained and still reported --
+    swallowing those would hide the starvation class #188 exists to surface.
+    """
+    if not isinstance(st, Mapping):
+        return False
+    if st.get("ok") is True:
+        return False
+    if (str(st.get("kind") or "") == "skipped"
+            and "re-verified with a FRESH intruder" in str(st.get("note") or "")):
+        return False
+    return True
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -289,7 +317,7 @@ def _chain_broken_detail_798(orch) -> List[str]:
                 continue
             lr = rec.get("last_result") or {}
             for st in (lr.get("steps") or []):
-                if not isinstance(st, Mapping) or st.get("ok") is True:
+                if not _step_is_actionable_1202gx(st):   # #1202gx
                     continue
                 got = st.get("status")
                 exp = st.get("expect")

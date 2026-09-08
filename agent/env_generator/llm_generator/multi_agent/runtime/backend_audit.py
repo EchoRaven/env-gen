@@ -587,6 +587,58 @@ def _declared_public_1202gd(backend_dir, table: str) -> bool:
     return False
 
 
+def public_content_scoped_away_1202gv(spec, tables) -> List[str]:
+    """Tables the MATERIALS call published content while the CONTRACT owner-scopes their read.
+
+    `visibility` answers one question, in the compile instructions' own words: "WHO IS A ROW
+    FOR? ... `public` -- every row is content PUBLISHED for all users to read ... A reader who
+    is not the author still sees the row, and seeing it is the point." `owner_scoped_reads`
+    projects `WHERE <owner_fk> = <caller>`, so the reader who is not the author sees NOTHING.
+    Direct opposites, and until now nothing compared them.
+
+    Every run on this machine that carries a `visibility` declaration has the contradiction --
+    r98, r99 and r100 each declare `videos` and `comments` public while the contract
+    owner-scopes both -- and the cost is always paid three surfaces away. r100: the feed
+    returned `{"items": []}` to a fresh actor, `save: {videoId: "items.0.id"}` captured
+    nothing, and 38 of 73 chain steps 404'd behind a substituted id.
+
+    Deliberately NOT `auth_required` (#647): "every logged-in user sees every row" and "you
+    must log in" are compatible, so that pair is a conflation, not a contradiction. Only
+    owner-scoping contradicts the declaration.
+
+    Silent on an absent declaration -- the materials said nothing, which is #1202gd's rule for
+    staying strict, not an invitation to guess.
+    """
+    out: List[str] = []
+    try:
+        ents = (spec or {}).get("entities") if isinstance(spec, Mapping) else None
+        if not isinstance(ents, list) or not isinstance(tables, Mapping):
+            return []
+        public = {str(e.get("name") or "").strip().lower()
+                  for e in ents
+                  if isinstance(e, Mapping)
+                  and str(e.get("visibility") or "").strip().lower() == "public"}
+        if not public:
+            return []
+        for name, rec in tables.items():
+            t = str(name or "")
+            if t.startswith("_") or t.lower() not in public:
+                continue          # #1202gi: `_meta` is a ledger row, not a table
+            if not isinstance(rec, Mapping):
+                continue
+            meta = rec.get("metadata")
+            if isinstance(meta, Mapping) and meta.get("owner_scoped_reads") is True:
+                out.append(t)
+        return sorted(out)
+    except Exception as _e1202gv:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.public_content_scoped_away_1202gv",
+                       "#1202gv could not compare the declared visibility with the contract "
+                       "(%s: %s) -- the disagreement stays invisible, which is the state this "
+                       "exists to end." % (type(_e1202gv).__name__, str(_e1202gv)[:110]))
+        return []
+
+
 def _declared_public_materials_1202gt(backend_dir, table: str) -> bool:
     """Do the MATERIALS alone call this table published content? (#1202gd's first signal.)
 
