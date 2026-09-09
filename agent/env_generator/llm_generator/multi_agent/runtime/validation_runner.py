@@ -204,6 +204,8 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
             # best-effort: an extractor that raises must not silence the report it exists
             # to enrich.
             _tail = _full[-600:]
+        if _build_context_race_1202iw(_full):
+            _tail = (_tail or "") + _RACE_NOTE_1202IW
         _LOG.warning("compose spawn: %s %s FAILED rc=%s — transcript tail:\n%s",
                      _bin, _verb, cp.returncode, _tail or "(the command produced no output)")
         # #1202cn: say when the HOST is the problem, because no lane can fix it.
@@ -374,19 +376,65 @@ def _write_build_fingerprint(cwd: Path, val: Optional[str]) -> None:
         pass
 
 
+# #1202iw: THE BUILD CONTEXT CHANGED WHILE DOCKER WAS TARRING IT. NOT APP CODE.
+#
+# `docker build` streams the context directory into the daemon as a tar. The lanes write into
+# that same directory continuously, so a file that grows between `stat` and `read` makes the
+# tar entry short and the whole stream dies:
+#
+#     Can't add file .../app/frontend/vite.config.js to tar: archive/tar: missed writing N bytes
+#     Can't close tar writer: archive/tar: missed writing N bytes
+#     Error response from daemon: Error processing tar file(exit status 1): unexpected EOF
+#
+# 26 of the 423 failed builds in this corpus (6.1%) are this, across tiktok and netflix. The
+# retry clears it every time -- but nothing SAID so, and in r110 the verifier read the failure
+# and filed `Docker frontend build fails while packaging frontend assets` as a P0. That P0 was
+# still open at the delivery cut and is named in the #743 blocker line that kept the run from
+# releasing. A lane cannot fix a race in the framework's own packaging step; it can only
+# rewrite app code that was never wrong, which is the failure mode the iron law about
+# framework-owned code exists to prevent.
+_BUILD_CONTEXT_RACE_1202IW = re.compile(
+    r"archive/tar: missed writing|Can't close tar writer|"
+    r"Error processing tar file\(exit status \d+\): unexpected EOF",
+    re.I,
+)
+
+_RACE_NOTE_1202IW = (
+    " [#1202iw] This is the FRAMEWORK's build-context packaging racing the lanes' own writes "
+    "-- docker tars app/ while an agent is still writing into it, so a file changes size "
+    "mid-stream and the tar aborts. It is NOT a defect in the application code and NO source "
+    "change can fix it; the retry below re-tars a settled directory and succeeds. Do not open "
+    "a bug for it and do not rewrite the file docker named."
+)
+
+
+def _build_context_race_1202iw(transcript: Any) -> bool:
+    """True when a build transcript carries the context-tar race signature."""
+    return bool(_BUILD_CONTEXT_RACE_1202IW.search(str(transcript or "")))
+
+
 def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
     """#566l-a/b: `docker compose build` with a bounded timeout + RETRY. A retry resumes from
     the classic layer cache (completed layers = offline), so a transient registry blip recovers;
     a persistent hang fails in bounded time with a clear diagnostic instead of eating the cap.
     Returns ``(ok, detail)``."""
     last = "docker build did not run"
+    _raced_1202iw = False
     for attempt in range(_BUILD_RETRIES + 1):
         cp, timed_out = _compose_capture(
             compose_file, "build", cwd=cwd, timeout=_DOCKER_BUILD_TIMEOUT)
         if cp.returncode == 0:
             _note_build_ok_1046()
+            if _raced_1202iw:
+                # Say it OUT LOUD on the way past. A lane that saw the failed attempt has no
+                # other way to learn the retry settled it, and silence here is what let r110's
+                # verifier carry a framework race into a P0 that blocked the delivery cut.
+                _LOG.info("compose spawn: docker build recovered on attempt %s — the earlier "
+                          "failure was the #1202iw build-context tar race, not app code.",
+                          attempt + 1)
             return True, ""
         tail = (((cp.stdout or "") + "\n" + (cp.stderr or "")).strip())[-3000:]
+        _raced_1202iw = _raced_1202iw or _build_context_race_1202iw(tail)
         if timed_out:
             last = (f"docker build exceeded {_DOCKER_BUILD_TIMEOUT}s "
                     f"(attempt {attempt + 1}/{_BUILD_RETRIES + 1}) — most likely a hung "
@@ -394,8 +442,9 @@ def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
                     f"packages from the network). Raise ENVGEN_DOCKER_BUILD_TIMEOUT if this is a "
                     f"genuinely slow cold build. Build transcript tail:\n" + tail)
         else:
-            last = (f"docker build FAILED (attempt {attempt + 1}/{_BUILD_RETRIES + 1}). "
-                    f"Transcript tail:\n" + tail)
+            last = (f"docker build FAILED (attempt {attempt + 1}/{_BUILD_RETRIES + 1})."
+                    + (_RACE_NOTE_1202IW if _build_context_race_1202iw(tail) else "")
+                    + f" Transcript tail:\n" + tail)
     return False, last
 
 

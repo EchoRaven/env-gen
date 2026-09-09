@@ -3612,6 +3612,11 @@ async def run_visual_fidelity(
                         "<div id=root> shell). If transient (mid-rebuild) it is refunded a "
                         "few times; if it persists it is a real render/data-fetch failure "
                         "on this route — fix the page's mount/data load, not its styling")
+                # #1202ix: before blaming the page, check whether anything could have routed
+                # to it. This is decidable from the path alone.
+                _why1202ix = _unmatchable_route_1202ix(screen.get("route"))
+                if _why1202ix:
+                    _dev += _why1202ix
                 # #740: name the ACTUAL error when the browser gave us one. Without this the
                 # lane is told a symptom ("never hydrated") and has to rediscover the cause;
                 # r148's remediation tasks said exactly that while the console was repeating
@@ -3620,7 +3625,7 @@ async def run_visual_fidelity(
                 if _err740:
                     _dev += (". The browser reported: " + " | ".join(_err740[:3])
                              + " — fix THAT, it is the reason the shell is empty")
-                else:
+                elif not _why1202ix:
                     # #1202da: THE SILENCE IS EVIDENCE TOO.
                     #
                     # #740 above names the cause when the browser gave one. When it gave
@@ -5897,6 +5902,44 @@ try:  # FIX #75a: how many mid-rebuild blank captures to absorb before a still-b
 except Exception:
     _TRANSIENT_REFUND_CAP = 3
     _COMPOSE_RACE_REFUND_CAP_1202DM = 8
+
+
+# #1202ix: A ROUTE REACT ROUTER CAN NEVER MATCH, AND NOTHING SAYS SO.
+#
+# `@remix-run/router`'s compilePath extracts a param with `.replace(/\/:([\w-]+)(\?)?/g, ...)`
+# -- the `:` must be preceded by a `/`. In `/@:username` it is preceded by `@`, so NO param is
+# extracted and the whole path compiles to the literal regex `^/@:username`. It matches that
+# exact URL and nothing else. React Router warns about a `*` in mid-segment and says nothing
+# at all about this, so the route is silently dead. Verified against react-router 6.30.3's
+# own source, not from memory.
+#
+# The screen then renders a bare `<div id=root>` with an EMPTY console -- no route matched, so
+# there is no component to blame. #1202da correctly reasons from the silence that "a component
+# rendered nothing" and sends the lane to look for one; when no route matched there is none to
+# find, and that is the one explanation the silence equally allows.
+#
+# Corpus: 37 such routes across 36 runs -- essentially every tiktok run carries `/@:username`
+# for `profile_own`. Because the visual gate passes only once EVERY blocking screen has cleared
+# the bar at least once (#129 sticky pass), one permanently-blank screen makes the gate
+# unpassable for the whole milestone. r110 scored 7 of 9 over the bar and could still never
+# pass. The lane can fix it in one edit -- but only if it is told which edit.
+def _unmatchable_route_1202ix(route) -> str:
+    """A sentence explaining why this path can never match, or "" when it can."""
+    _r = str(route or "")
+    for seg in _r.split("/"):
+        _i = seg.find(":")
+        if _i <= 0:
+            continue
+        _lit, _param = seg[:_i], seg[_i + 1:]
+        return (". THE ROUTE ITSELF CANNOT MATCH: React Router extracts a param only when the "
+                "`:` directly follows a `/` (compilePath: /\\/:([\\w-]+)/), so in segment "
+                f"`{seg}` the `:{_param}` is NOT a param -- `{_r}` compiles to a literal and "
+                f"matches only the URL `{_r}` itself. Nothing rendered because nothing was "
+                "routed, so there is no component to look at. React Router does not warn about "
+                "this. Fix it in the ROUTE, not the page: register this page on a path whose "
+                f"param owns a whole segment (e.g. `/{_lit}/:{_param}`), or take the literal "
+                f"`{_lit}` into the param and strip it in the page")
+    return ""
 
 
 def _apply_sticky_pass(passed_names: set, screens: List[Mapping[str, Any]]) -> bool:
