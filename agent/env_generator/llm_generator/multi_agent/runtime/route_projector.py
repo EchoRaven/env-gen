@@ -886,6 +886,21 @@ def _fk_target_by_name_908(col: str, models: Dict[str, Any]) -> Optional[str]:
 # leak, the #569 class, shipped by a rule whose own coverage metric reads 100%. So membership is
 # decided by what the FK POINTS AT, never by its name: #784 learned that the hard way when a
 # name-based guard missed `recipient_id` precisely because it was not on the list.
+# #1202jb: columns an actor row must not show to anyone who is not that actor. A DENYLIST,
+# because the safe allowlist (#1202ir's display set) is too narrow for a profile page that
+# legitimately renders follower counts. Exact membership, never substring: `_IMAGEISH_1202FH`
+# matching "art" inside `partner_email` is the trap this file already carries once.
+_PRIVATE_ACTOR_COLS_1202JB = frozenset((
+    "email", "email_address", "secondary_email", "recovery_email",
+    "phone", "phone_number", "mobile", "telephone",
+    "password", "password_hash", "password_digest", "hashed_password", "salt",
+    "token", "api_key", "api_secret", "secret", "access_token", "refresh_token",
+    "reset_token", "verification_code", "otp", "two_factor_secret", "mfa_secret",
+    "ssn", "national_id", "tax_id", "dob", "date_of_birth", "birthdate",
+    "address", "street", "postal_code", "zip", "zipcode",
+    "ip", "ip_address", "last_login_ip", "stripe_customer_id", "payment_method_id",
+))
+
 _ACTOR_TABLES_803 = ("users", "user", "profiles", "profile", "accounts", "account",
                      "members", "member", "customers", "customer", "tenants", "tenant")
 _LABEL_COLS_803 = ("name", "title", "label", "slug", "code")
@@ -1654,6 +1669,50 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         read_scoped = True
     # #777: the column a READ filters on — the narrowest owner the table declares.
     read_owner_fk = _read_owner_fk_777(meta, owner_fk) if read_scoped else owner_fk
+
+    # #1202jb: a projected read of SOMEONE ELSE'S actor row must not carry their contact and
+    # credential columns.
+    #
+    # `_serialize_expr` emits the MODEL's columns and has never consulted the contract's
+    # declared response shape, so a lane that removes `email` from the schema still gets it in
+    # the payload -- it cannot fix this from its side, and #528 gives the projected read
+    # precedence over any GET it writes itself. `password_hash` was the only column the
+    # projector had been taught to withhold; this extends that same rule, at the same emitter,
+    # to the rest of the class.
+    #
+    # Measured over the last 30 runs: 18 UNAUTHENTICATED projected reads return `email` --
+    # `/api/users/{username}` 14 times, `/api/search` once, and `/api/suggested-creators`
+    # THREE times, which is a list: one anonymous request for every suggested creator's
+    # address. The contract itself declares it (`auth_required: false` with `email` in the
+    # response), so nothing downstream flags it as wrong.
+    #
+    # A DENYLIST, not the #1202ir allowlist, and deliberately: r110's profile page renders
+    # `user.followers`, `user.following` and `user.likes`, none of which are display-identity
+    # columns, so an allowlist narrow enough to be safe breaks a page that works. This is the
+    # `password_hash` rule widened, which is a pattern already in production and tested.
+    #
+    # Exempted: `/me` -- DEFENSIVE ONLY and verified so: removing that clause leaves every
+    # test green, because the `/me` branch resolves `_ucols` through `_me_user_model` and never
+    # reads `cols` at all. It stays as a guard against a future branch that does, and is
+    # recorded here as not load-bearing rather than left to read as protection. Also any
+    # owner-scoped read (the handler filters to the caller's own row, so the address is their
+    # own), and every non-GET — `POST /auth/register` needs `email` in its response.
+    # Keyed on REACH, not on the table name. `/api/suggested-creators` resolves to its own
+    # `suggested_creators` table -- the lane copied the user fields into it -- so an
+    # actor-table test misses the worst instance in the corpus, a LIST of addresses served to
+    # anonymous callers. A private column is private wherever it lives.
+    #
+    # Unauthenticated reads of ANY table, plus reads of an ACTOR table even when
+    # authenticated, since reading someone ELSE's user row should not hand over their address
+    # either. #1202gc already draws exactly this line for the unscoped-read finding: "any
+    # authenticated caller" and "ANY caller -- the handler is UNAUTHENTICATED" are different
+    # exposures and it says which.
+    if (str(method).upper() == "GET" and not read_scoped
+            and ((not auth) or table in _ACTOR_TABLES_803)
+            and not str(path).rstrip("/").endswith("/me")):
+        _kept = [c for c in cols if str(c).lower() not in _PRIVATE_ACTOR_COLS_1202JB]
+        if _kept != cols and _kept:
+            cols = _kept
 
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
