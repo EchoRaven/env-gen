@@ -201,10 +201,12 @@ def test_only_allowlisted_actor_columns_come_along(tmp_path):
 
 
 def test_the_substring_image_rule_is_not_used_on_an_actor_table(tmp_path):
-    """`_IMAGEISH_1202FH` matches by SUBSTRING, and "art" is one of its keys -- so
-    `partner_email` and `cart_token` both match it. That is harmless on a table whose every
-    column is already public and a leak on an actor table, which is why #1202ir switched
-    actors to exact membership. Without that split this test hands out a token."""
+    """`_IMAGEISH_1202FH` is calibrated for picking artwork, not for deciding what an actor
+    may show. When this was written it matched by raw SUBSTRING -- "art" is one of its keys,
+    so `partner_email` and `cart_token` both matched -- which is why #1202ir gave actors their
+    own exact-membership allowlist. #1202jc has since narrowed that rule to a token PREFIX,
+    so those two no longer match it either; the split still stands, because the two lists
+    answer different questions. Without it this test hands out a token."""
     models_py = _MODELS_PY.replace(
         '    password_hash = Column(String)',
         '    password_hash = Column(String)\n    cart_token = Column(String)\n'

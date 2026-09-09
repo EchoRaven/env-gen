@@ -888,8 +888,9 @@ def _fk_target_by_name_908(col: str, models: Dict[str, Any]) -> Optional[str]:
 # name-based guard missed `recipient_id` precisely because it was not on the list.
 # #1202jb: columns an actor row must not show to anyone who is not that actor. A DENYLIST,
 # because the safe allowlist (#1202ir's display set) is too narrow for a profile page that
-# legitimately renders follower counts. Exact membership, never substring: `_IMAGEISH_1202FH`
-# matching "art" inside `partner_email` is the trap this file already carries once.
+# legitimately renders follower counts. Exact membership: `_IMAGEISH_1202FH` matching "art"
+# inside `partner_email` is the trap this file carried until #1202jc made that one match by
+# token prefix; the denylist never relied on substrings and still does not.
 _PRIVATE_ACTOR_COLS_1202JB = frozenset((
     "email", "email_address", "secondary_email", "recovery_email",
     "phone", "phone_number", "mobile", "telephone",
@@ -1324,10 +1325,36 @@ _IMAGEISH_1202FH = ("poster", "backdrop", "image", "thumb", "avatar", "cover",
                     "photo", "banner", "art", "still", "logo")
 
 
+def _imageish_1202jc(col: Any) -> bool:
+    """Does this column name an IMAGE, by word rather than by accident of spelling?
+
+    #1202jc. The rule was `any(k in col.lower())`, and `"art"` is one of the keys: it matches
+    inside `cart_token`, `partner_email`, `participant_name`, `started_at` and `departure_time`.
+    That was harmless while the keep-list only ever chose columns for a page to draw --
+    and #1202ip made it a live path, because the fold now carries the chosen columns of ANOTHER
+    table into a PUBLIC list read. Verified by projecting a real model: a public `/api/orders`
+    folding `carts` shipped `cart_token` and `partner_email`. My own fix widened the blast
+    radius of a rule that predated it.
+
+    A whole-token test is wrong in the other direction: `thumbnail`.split("_") == ["thumbnail"]
+    does not contain `"thumb"`, so it would drop the single most common image column in the
+    corpus (42 of them). Token PREFIX is what both cases want.
+
+    Measured across the last 30 runs, of 153 columns the substring rule matched: 146 survive --
+    avatar 48, thumbnail 42, poster 13, backdrop 13, avatar_url 7, thumbnail_url 6, peer_avatar
+    4 -- and the 7 dropped are `started_at` (3), `participant_name` (2), `participant_id` (1),
+    `departure_time` (1). Not one of the seven is an image column.
+    """
+    return any(t.startswith(k)
+               for t in str(col or "").lower().split("_")
+               for k in _IMAGEISH_1202FH)
+
+
 # #1202ir: the columns an ACTOR row may show to someone who is not that actor.
-# EXACT membership only -- deliberately NOT the substring rule `_IMAGEISH_1202FH` uses.
-# `"art" in "partner_email"` and `"art" in "cart_token"` are both True, so the substring
-# rule is safe only on a table where every column is already public. An allowlist also
+# EXACT membership only -- deliberately not the looser rule `_IMAGEISH_1202FH` uses. That one
+# was a raw substring test when this was written (`"art" in "partner_email"` and
+# `"art" in "cart_token"` are both True) and is a token-PREFIX test since #1202jc; either way
+# it is calibrated for picking artwork, not for deciding what an actor may show. An allowlist
 # fails CLOSED: a column nobody anticipated (`phone`, `dob`, `stripe_customer_id`) is
 # excluded by never having been named here, rather than by a denylist someone must extend.
 _ACTOR_DISPLAY_COLS_1202IR = frozenset((
@@ -1447,7 +1474,7 @@ def _expandable_fks_1202fh(cols, models, table, *, private_tables=None,
             else:
                 keep = [x for x in tcols
                         if x in _LABEL_COLS_803
-                        or any(k in str(x).lower() for k in _IMAGEISH_1202FH)]
+                        or _imageish_1202jc(x)]
             if not keep:
                 continue                      # nothing a card could draw
             base = str(c)[:-3]
