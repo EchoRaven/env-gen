@@ -233,7 +233,40 @@ _ERR_MARKERS = (
     # value. On a full stderr captured live it turns a 500-char noise window into the one
     # causal line.
     "oci runtime",
+    # #1202iv: the JS bundler shapes. Vite/Rollup say "Rollup failed to resolve import" and
+    # "Could not resolve" -- `failed to solve` above is BuildKit's, one letter apart and a
+    # different tool. esbuild says "Transform failed with N errors". None of them matched,
+    # so a frontend build failure fell through to whatever line did.
+    "failed to resolve", "could not resolve", "transform failed",
 )
+
+
+# #1202iv: hits that say ONLY that something failed, never why.
+#
+# The extractor's own contract is "if none match, return the TAIL (never the misleading
+# prefix)". A content-free hit is worse than no hit: it SUPPRESSES that fallback and hands
+# the lane a line with no fact in it. Vite prints `x Build failed in 1.33s` and puts the
+# cause on the lines around it, and `build failed` is a marker -- so the summary won and the
+# cause was dropped.
+#
+# Measured across every run log here: 73 of 642 failure reports (11.4%) carry a tail that is
+# entirely one of these. r110 alone dispatched three of them to the frontend lane.
+_VOID_HIT_1202IV = re.compile(
+    r"^(?:\x1b\[[0-9;]*m)?\s*[x\u00d7\u2717]?\s*(?:"
+    r"build failed(?: in [\d.]+\s*m?s)?"
+    r"|error during build:?"
+    r"|exit code:?\s*\d*"
+    r"|exited with code \d+"
+    r"|.*returned a non-zero code:?\s*\d+"
+    r")\s*$",
+    re.I,
+)
+
+
+def _is_void_hit_1202iv(line: str) -> bool:
+    """True when `line` states failure and nothing else. ANSI-stripped first: vite colours
+    its summary, and a raw escape prefix would defeat an anchored match."""
+    return bool(_VOID_HIT_1202IV.match(re.sub(r"\x1b\[[0-9;]*m", "", str(line or "")).strip()))
 
 
 # #1202df: the executor joins its computed hint onto the step failure with this exact
@@ -309,6 +342,10 @@ def _salient_error(detail: Any, cap: int = 400) -> str:
         nxt = lines[i + 1] if i + 1 < len(lines) else ""
         if "statement:" in nxt.lower() and nxt not in hits:
             hits.append(nxt)
+    if hits and all(_is_void_hit_1202iv(h) for h in hits):
+        # #1202iv: every hit is a "it failed" line. Drop them so the tail below -- which is
+        # what this function does when NOTHING matches -- gets its chance to carry the cause.
+        hits = []
     if hits:
         _out = " | ".join(hits[-3:])
         # #987: a postgres error that says "at character N" needs at least N characters of
