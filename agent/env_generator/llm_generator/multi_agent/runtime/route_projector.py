@@ -2064,7 +2064,9 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "        # captures {id} from the create bind nothing, so ${...} reached the",
             "        # next step (→ 422), and hid the real cause (e.g. a null-PK / NOT",
             "        # NULL violation). A 500 lets the gate + the owning lane see it.",
-            "        raise HTTPException(status_code=500, detail=f\"create failed: {_exc}\")",
+            # #1202ie: the psycopg text names ONE of the two types it is about.
+            f'        raise HTTPException(status_code=500, detail=f"create failed: '
+            f'{{_exc}}" + _fw_type_mismatch_hint_1202ie({cls}, valid, _exc))',
         ]
         sig_params += "body: dict = None, " if "body: dict" not in sig_params else ""
     else:
@@ -2223,6 +2225,68 @@ def _structurally_private_resource_633(method: str, path: str,
         return False
 
 
+def _retype_projected_params_1202ic(src: str, models: Dict[str, Dict[str, Any]]):
+    """Re-type path params on handlers the FRAMEWORK projected, when the schema moved.
+
+    #1202ic: `project_missing_routes` appends a handler for every declared endpoint that
+    has NO route, and counts the rest as `already`. Correct for what it is, and it means a
+    handler emitted once is never revisited -- so the param type it was born with outlives
+    the column it was derived from.
+
+    tiktok-r107, live while this was written. `models.py` git history:
+
+        faf536f  videos.id  Integer -> Text
+        68a25b2             Text -> Integer
+        1f19c23             Integer -> Text
+
+    The lane is oscillating on the PK type, and it is doing so BECAUSE of this: the seven
+    projected `/api/videos/{id}...` handlers were all born `id: int`, so every request
+    carrying a real uuid ("48663848-36cc-...") is rejected by FastAPI with
+    `int_parsing` 422 before the handler body runs. 34 such 422s across the corpus. The
+    lane sees "not a valid integer", changes the column, nothing improves, changes it back.
+    `_param_column_type` asked against the CURRENT models.py answers `str` -- the right
+    answer was available the whole time, to a caller that never asked again.
+
+    Only `_projected_*` functions are touched, and only the annotation: that prefix is
+    stamped by `_generate_handler` and nothing a lane writes carries it, so lane-authored
+    code is out of reach by construction.
+    """
+    changed: List[str] = []
+    try:
+        tree = ast.parse(src)
+    except Exception:
+        return src, changed
+    lines = src.splitlines(keepends=True)
+    edits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("_projected_"):
+            continue
+        route = ""
+        for dec in node.decorator_list:
+            if (isinstance(dec, ast.Call) and dec.args
+                    and isinstance(dec.args[0], ast.Constant)
+                    and isinstance(dec.args[0].value, str)):
+                route = dec.args[0].value
+                break
+        if not route or "{" not in route:
+            continue
+        for arg in list(node.args.args) + list(node.args.kwonlyargs):
+            ann = arg.annotation
+            if not (isinstance(ann, ast.Name) and ann.id in ("int", "str")):
+                continue
+            want = _param_column_type(arg.arg, _express_to_fastapi(route), models)
+            if want == ann.id:
+                continue
+            edits.append((ann.lineno - 1, f"{arg.arg}: {ann.id}", f"{arg.arg}: {want}"))
+            changed.append(f"{node.name}({arg.arg}: {ann.id} -> {want})")
+    for ln, old, new in edits:
+        if 0 <= ln < len(lines) and old in lines[ln]:
+            lines[ln] = lines[ln].replace(old, new, 1)
+    return ("".join(lines) if edits else src), changed
+
+
 def project_missing_routes(
     backend_dir: Any,
     declared_endpoints: List[Mapping[str, Any]],
@@ -2245,6 +2309,9 @@ def project_missing_routes(
     src = main_py.read_text(encoding="utf-8")
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
+    # #1202ic: a handler projected earlier keeps the param type it was born with, even
+    # after the lane moves the column. Re-derive before anything else reads `src`.
+    src, _retyped_1202ic = _retype_projected_params_1202ic(src, models)
 
     # Per-RESOURCE read-visibility: a resource is read-isolated if ANY of its
     # declared endpoints carries the owner_scoped_reads signal (the contract may
@@ -2356,7 +2423,12 @@ def project_missing_routes(
                 + "\n\n\n".join(param_blocks))
         _write_py_995(main_py, new_src, what="project_missing_routes")
 
-    return {"projected": projected, "already": len(existing) - len(projected)}
+    elif _retyped_1202ic:
+        # Nothing was missing, so the block above never wrote -- but the types moved.
+        _write_py_995(main_py, src, what="retype_projected_params_1202ic")
+
+    return {"projected": projected, "already": len(existing) - len(projected),
+            "retyped_1202ic": _retyped_1202ic}
 
 
 # ---------------------------------------------------------------------------

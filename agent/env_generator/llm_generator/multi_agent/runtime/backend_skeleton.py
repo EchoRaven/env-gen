@@ -1258,6 +1258,48 @@ except Exception:          # pragma: no cover - contextvars is stdlib since 3.7
     _FW_PROFILE_CTX_1190 = None
 
 
+def _fw_type_mismatch_hint_1202ie(cls, valid, exc):
+    """#1202ie: say which two types a DatatypeMismatch is actually about.
+
+    A projected create that binds an un-coercible owner value raises deep in psycopg, and
+    the handler surfaces it verbatim: `create failed: (psycopg.errors.DatatypeMismatch)
+    column "author_id" is of type integer but expression is of type character varying`.
+    That names one type and hides the other, and the note beside it says "the lane cannot
+    edit it, fix the projector/contract" — so a lane reading it has an opaque database dump
+    and an instruction it cannot act on.
+
+    tiktok-r107, live: 8 of its 12 failing chains were 500s on projected routes, three of
+    them this exact insert. The cause is upstream of the handler — `_fw_uid` returns the
+    caller's id as-is when it will not int(), `_fw_owner_val` returns it as-is when the
+    column type is known but the value cannot be coerced, and the rows were created while
+    `users.id` was Text during the PK oscillation #1202ic documents.
+
+    This only enriches the message. It never changes a status, and it must never raise:
+    a hint that breaks the error path would hide the error it exists to explain.
+    """
+    try:
+        import re as _re1202ie
+        _txt = str(exc)
+        _m = _re1202ie.search('column "([^"]+)" is of type ([A-Za-z]+)', _txt)
+        if not _m:
+            return ""
+        _col, _dbty = _m.group(1), _m.group(2)
+        _val = (valid or {}).get(_col)
+        try:
+            _pt = getattr(cls, _col).type.python_type.__name__
+        except Exception:
+            _pt = "unknown"
+        return (" — `%s.%s` is %s in the LIVE DATABASE and %s in the model, and the value "
+                "bound was %r (a %s). Nothing in this handler chose that value: it is the "
+                "caller's own id, passed through because it could not be coerced. The live "
+                "rows predate the current model, so fix the model's id type (or recreate "
+                "the volume) — re-writing this endpoint cannot help."
+                % (getattr(cls, "__tablename__", "?"), _col, _dbty, _pt, _val,
+                   type(_val).__name__))
+    except Exception:
+        return ""
+
+
 def _fw_owner_val(cls, col, user):
     """FIX #134 (instagram run-57, live): _fw_uid coerced to THIS owner column's TYPE.
     _fw_uid int-coerces a digit sub (the run-39 fix for INTEGER owner columns) — but a

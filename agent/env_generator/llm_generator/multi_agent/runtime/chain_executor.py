@@ -1768,6 +1768,154 @@ def _unknown_id_hint_682(status, body, note) -> str:
         return ""
 
 
+def _match_endpoint_template_1202id(method: str, path: str, endpoints) -> Optional[Mapping]:
+    """The declared endpoint whose TEMPLATE this concrete request matches, or None.
+
+    One matcher for #1202ib and #1202id. The first draft of #1202id reused
+    `_resource_from_path`, which returns the trailing SEGMENT VALUE -- 'liampatel' for
+    /api/users/liampatel -- and so answered a question nobody asked. The table a request
+    addresses is a property of the TEMPLATE (`/api/users/{username}` -> users), never of
+    the value substituted into it.
+    """
+    try:
+        want = str(method or "GET").upper()
+        segs_got = [x for x in str(path or "").rstrip("/").split("/") if x]
+        for ep in endpoints or []:
+            if not isinstance(ep, Mapping):
+                continue
+            if str(ep.get("method") or "GET").upper() != want:
+                continue
+            segs = [x for x in str(ep.get("path") or "").rstrip("/").split("/") if x]
+            if len(segs) != len(segs_got):
+                continue
+            if all(a.startswith("{") or a == b for a, b in zip(segs, segs_got)):
+                return ep
+    except Exception:
+        return None
+    return None
+
+
+def _template_resource_1202id(ep: Mapping) -> Optional[str]:
+    """The table an endpoint template addresses: its last STATIC segment."""
+    try:
+        segs = [x for x in str(ep.get("path") or "").rstrip("/").split("/") if x]
+        for seg in reversed(segs):
+            if not seg.startswith("{") and seg.lower() != "api":
+                return seg
+    except Exception:
+        return None
+    return None
+
+
+def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
+                            seed_ids: Any, endpoints: Any) -> str:
+    """#1202id: a bare 404 does not say whether the ROW is wrong or the TABLE is empty.
+
+    210 failing steps across this corpus are a 404 on a path whose id is a LITERAL the
+    chain hardcoded -- against 25 already attributed to a capture failure by #592. Those
+    210 say only `{"detail":"not found"}`, and a lane reading that has no way to tell
+    apart two completely different problems:
+
+        GET /api/transit-stops/1 -> 404   the table HAS rows; id 1 is not one of them
+        POST /api/videos/{id}/save -> 404 the `saves` table has ZERO rows; nothing was
+                                          seeded, so NO id could ever succeed
+
+    The first is a mis-authored step. The second is a seeding defect, and chasing it as an
+    endpoint bug is how a lane spends a milestone rewriting a handler that was correct.
+
+    The evidence is recorded and was going unread: #1202dj stores live per-table row counts
+    at `backend_health`, the one moment the stack is provably up. Measured on r107 while
+    this was written -- `saves` 0, `likes` 0, against `users` 9 and `sounds` 8.
+
+    Text only. It never changes a verdict; #1202ib carries the same rule for auth.
+    """
+    try:
+        from .seed_audit import recent_live_counts_1202dj
+    except Exception:
+        return ""
+    try:
+        ep = _match_endpoint_template_1202id(method, path, endpoints)
+        res = _template_resource_1202id(ep) if ep else None
+        if not res:
+            return ""
+        counts = recent_live_counts_1202dj(project_dir) or {}
+        if not counts:
+            return ""                      # NOT MEASURED is not "the table is empty"
+        key = None
+        for cand in (res, res.rstrip("s"), res + "s", res.replace("-", "_")):
+            if cand in counts:
+                key = cand
+                break
+        if key is None:
+            return ""
+        n = counts.get(key)
+        if not isinstance(n, int):
+            return ""
+        if n == 0:
+            return (f"TABLE `{key}` HAS 0 LIVE ROWS — nothing was seeded for it, so no id "
+                    "can be found here. This is a SEED defect, not this endpoint. ")
+        seeded = None
+        try:
+            if isinstance(seed_ids, Mapping):
+                seeded = seed_ids.get(key) or seed_ids.get(res)
+        except Exception:
+            seeded = None
+        return (f"TABLE `{key}` HAS {n} LIVE ROW(S)"
+                + (f" (a seeded id is {seeded!r})" if seeded is not None else "")
+                + " — the table is populated, so the id this step names is the thing that "
+                  "does not exist. ")
+    except Exception:
+        return ""
+
+
+def _contract_public_note_1202ib(method: str, path: str, endpoints) -> str:
+    """#1202ib: resolve the denial-probe ambiguity for READS, using the contract.
+
+    #188 made the note honest -- "an auth/isolation hole, OR a mis-authored probe" -- and
+    #663 resolved it for WRITES by comparing the id sent against the id stored. A GET
+    carries no body, so #663 returns "" and the ambiguity stands. It stood on 12 of the 14
+    DENIAL-PROBE failures measured across the last seven days' runs (r96/r99/r100/r102/
+    r103/r41), and every one of those 12 was on a FRAMEWORK-PROJECTED route -- the note
+    itself says the lane cannot change it, so the step failed forever with nothing anyone
+    could act on.
+
+    The evidence was in hand and unread: the endpoint's own contract. r103, live --
+    `GET /api/sounds/{id}` and `GET /api/messages` carry `schema.auth_required=False`
+    (written by the backend lane) beside `metadata.auth_required=True` (the registration
+    mirror #1202ga documented as never being refreshed). The projector reads
+    `_stated_auth_1202hi`, sees False, and emits a handler with no guard -- so 200 is what
+    that route is BUILT to answer, and the probe expecting 401 can never pass.
+
+    This ONLY writes a sentence. It never sets `ok`, never touches `expect`, and waives
+    nothing: the three existing waivers above are each scoped with an argument for why
+    they cannot mask a leak, and the control-plane one says in so many words that a denial
+    probe on a real BUSINESS endpoint "keeps its teeth". A lane that wrongly declared a
+    private endpoint public would still fail here, loudly, which is correct -- the
+    contradiction is then between the materials and the contract, and #1202hh routes that
+    verdict separately.
+
+    Reuses `_stated_auth_1202hi`, the projector's own reader, so this sentence and the
+    generated handler can never disagree about what the contract says.
+    """
+    try:
+        from .route_projector import _stated_auth_1202hi
+    except Exception:
+        return ""
+    try:
+        ep = _match_endpoint_template_1202id(method, path, endpoints)
+        if ep is not None:
+            if _stated_auth_1202hi(ep) is False:
+                who = str(ep.get("_updated_by") or "a lane")
+                return ("CONTRACT SAYS PUBLIC: this endpoint states auth_required=False "
+                        f"(last written by {who}), so the projected handler carries no "
+                        "guard and a 2xx is what it is BUILT to answer — this probe is "
+                        "probably mis-authored. If the endpoint really must deny, change "
+                        "the CONTRACT first; the handler follows it. ")
+    except Exception:
+        return ""
+    return ""
+
+
 def _denial_scope_verdict_663(sent_body, body_text) -> str:
     """#663: a denial probe that SUCCEEDED — did the write cross an ownership boundary?
 
@@ -3213,6 +3361,9 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 note = ("DENIAL-PROBE got success — the request was NOT rejected "
                         f"(expected denial {expect}). "                       # #663
                         + _denial_scope_verdict_663(body, res.get("body_text"))
+                        # #1202ib: #663 decides WRITES from the body; a read has none, so
+                        # ask the contract instead of leaving the ambiguity standing.
+                        + _contract_public_note_1202ib(method, path, endpoints)
                         + note)
             # FIX #188 causality: the request went out with unresolved variables —
             # name each one and (when known) the upstream step whose save failed,
@@ -3233,6 +3384,12 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     f"lacked the save path) — the ladder sent an UNRELATED id"
                     for _v in _ladder_filled) +
                     " — fix that capture, not this endpoint. " + note)
+            # #1202id: a 404 whose id was NOT substituted by the ladder is a literal the
+            # chain chose. Say whether the table is empty or merely lacks that row —
+            # #592 already covers the substituted case, so this must not double up.
+            if (status == 404 and not _ladder_filled and not _unres_vars):
+                note = _seed_shape_note_1202id(
+                    method, path, project_dir, seed_ids, endpoints) + note
             if status in (404, 405):
                 # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
                 # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
