@@ -26,18 +26,25 @@ import pytest
 from env_generator.llm_generator.multi_agent.runtime import run_snapshot as RS
 
 
-def _snap(root: Path, name: str, alive_before=None) -> Path:
+def _snap(root: Path, name: str, alive_before=None, elapsed=None,
+          alive_total=None) -> Path:
     d = root / name
     d.mkdir(parents=True, exist_ok=True)
-    if alive_before is not None:
+    if alive_before is not None or elapsed is not None or alive_total is not None:
+        cum = {}
+        if alive_before is not None:
+            cum["alive_before_this_run"] = alive_before
+        if alive_total is not None:
+            cum["alive_total"] = alive_total
         (d / "run_budget.json").write_text(json.dumps(
-            {"cumulative_1202cg": {"alive_before_this_run": alive_before}}))
+            {"cumulative_1202cg": cum,
+             "usage": {} if elapsed is None else {"elapsed_sec": elapsed}}))
     return d
 
 
 def test_it_reports_the_budget_that_is_left(tmp_path, monkeypatch):
     monkeypatch.setenv("ENVGEN_NO_DELIVER_ABORT_S", "5400")
-    q = RS._snapshot_budget_1202ia(_snap(tmp_path, "a", alive_before=4773.2))
+    q = RS._snapshot_budget_1202ia(_snap(tmp_path, "a", alive_total=4773.2))
     assert q["budget_cap_s"] == 5400.0
     assert q["budget_left_s"] == pytest.approx(626.8, abs=0.1)   # r106: 10.4 min
 
@@ -45,7 +52,7 @@ def test_it_reports_the_budget_that_is_left(tmp_path, monkeypatch):
 def test_an_exhausted_budget_reports_negative_not_zero(tmp_path, monkeypatch):
     """r97 ran 110 minutes past it and delivered; clamping would hide how far past."""
     monkeypatch.setenv("ENVGEN_NO_DELIVER_ABORT_S", "5400")
-    q = RS._snapshot_budget_1202ia(_snap(tmp_path, "b", alive_before=12042.0))
+    q = RS._snapshot_budget_1202ia(_snap(tmp_path, "b", alive_total=12042.0))
     assert q["budget_left_s"] < 0
 
 
@@ -70,7 +77,7 @@ def test_the_cap_follows_the_env_the_orchestrator_reads(monkeypatch):
 def test_the_listing_carries_it(tmp_path, monkeypatch):
     monkeypatch.setenv("ENVGEN_NO_DELIVER_ABORT_S", "5400")
     root = tmp_path / "snapshots"
-    _snap(root, "20260101-000000-interval-t1", alive_before=600.0)
+    _snap(root, "20260101-000000-interval-t1", alive_total=600.0)
     recs = RS.list_snapshots(tmp_path)
     assert recs and recs[0]["budget_left_s"] == pytest.approx(4800.0)
 
@@ -99,3 +106,37 @@ def test_the_counterexample_is_recorded_next_to_the_code():
     seg = src[i:src.index("def best_snapshot_1202hx", i)]
     assert "r97" in seg and "NEGATIVE" in seg
     assert "not a calibration" in seg
+
+
+# --- the bug the framework's own warning caught -------------------------------------
+
+def test_a_never_resumed_run_is_not_reported_as_untouched(tmp_path, monkeypatch):
+    """#1202ig: the first cut read `alive_before_this_run`, which is the time PREVIOUS
+    processes spent and is 0 for a run that has never been resumed.
+
+    Every one of tiktok-r107's snapshots was reported "budget 90min left" while the run
+    had been alive 124 minutes, and the framework said so itself the moment a resume
+    started: "#1202fw this run has ALREADY spent 124 min of lane time ... past the 90
+    min". A tool built to stop a doomed resume was recommending one.
+    """
+    monkeypatch.setenv("ENVGEN_NO_DELIVER_ABORT_S", "5400")
+    d = _snap(tmp_path, "r107", alive_before=0.0, elapsed=7471.0, alive_total=7470.6)
+    q = RS._snapshot_budget_1202ia(d)
+    assert q["budget_left_s"] < 0, "a run 35 minutes past its cap must not read as fresh"
+
+
+def test_it_falls_back_to_before_plus_elapsed(tmp_path, monkeypatch):
+    """Ledgers written before `alive_total` existed still have both halves."""
+    monkeypatch.setenv("ENVGEN_NO_DELIVER_ABORT_S", "5400")
+    q = RS._snapshot_budget_1202ia(
+        _snap(tmp_path, "old", alive_before=1200.0, elapsed=1200.0))
+    assert q["budget_left_s"] == pytest.approx(3000.0)
+
+
+def test_it_matches_what_the_abort_bounds_by():
+    """`_lane_time_1202fk` bounds lane time by alive_total; reading anything else here
+    guarantees the listing and the abort disagree."""
+    import inspect
+    src = inspect.getsource(RS._snapshot_budget_1202ia)
+    i = src.index("spent = ")
+    assert 'cum.get("alive_total")' in src[i:i + 60]

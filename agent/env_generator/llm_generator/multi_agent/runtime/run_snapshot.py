@@ -471,11 +471,27 @@ def _snapshot_budget_1202ia(d: Path) -> Dict:
     """Lane-time budget left at this restore point. `None` when it cannot be read."""
     out: Dict = {"budget_left_s": None, "budget_cap_s": None}
     try:
-        cum = (json.loads((d / "run_budget.json").read_text(encoding="utf-8"))
-               .get("cumulative_1202cg") or {})
-        spent = cum.get("alive_before_this_run")
+        _led = json.loads((d / "run_budget.json").read_text(encoding="utf-8"))
+        cum = _led.get("cumulative_1202cg") or {}
+        # #1202ig: `alive_total`, NOT `alive_before_this_run`.
+        #
+        # The first cut of this read the "before" figure, which is the time PREVIOUS
+        # processes spent and is 0 for a run that has never been resumed. So every one of
+        # r107's snapshots was reported "budget 90min left" while the run had been alive
+        # 124 minutes — and the framework said so itself the moment a resume started:
+        # "#1202fw this run has ALREADY spent 124 min of lane time ... past the 90 min".
+        # A tool built to stop a doomed resume was recommending one.
+        #
+        # `alive_total` (= before + this run's own elapsed) is the quantity the abort
+        # actually bounds lane time by, in `_lane_time_1202fk`. Reading anything else here
+        # guarantees the listing and the abort disagree.
+        spent = cum.get("alive_total")
         if spent is None:
-            return out
+            _before = cum.get("alive_before_this_run")
+            _elapsed = (_led.get("usage") or {}).get("elapsed_sec")
+            if _before is None and _elapsed is None:
+                return out
+            spent = float(_before or 0.0) + float(_elapsed or 0.0)
         cap = _abort_budget_s_1202ia()
         out["budget_cap_s"] = cap
         out["budget_left_s"] = round(cap - float(spent), 1)

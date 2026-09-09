@@ -43,6 +43,27 @@ from .message_format import join_capped  # #1034
 
 _LOG = logging.getLogger(__name__)
 
+
+def pick_auth_probe_endpoint_1202ih(gets):
+    """The GET whose CONTRACT promises a denial, or None when none does.
+
+    #1202ih. Module-level and named so a test can exercise THIS, not a copy of it: the
+    first draft of the test file re-implemented the selection inline, so reverting the
+    production code to the blind first-GET left every case green. Two of three
+    counter-proofs passed on a stand-in.
+    """
+    try:
+        from .route_projector import _stated_auth_1202hi
+    except Exception:
+        return None
+    for _e in gets or []:
+        try:
+            if _stated_auth_1202hi(_e) is True:
+                return _e
+        except Exception:
+            continue
+    return None
+
 # A cold docker build for a heavy app (React npm-install+build + backend + postgres + staged assets)
 # can exceed the old 300s cut-off mid-`up --build` (r6: 6/6 api_smoke attempts timed out at 300s →
 # validation never ran → the visual gate never ran → no delivery). Reliability > speed: let the
@@ -1360,12 +1381,41 @@ def run_smoke_validation(
         _add("business_writes_persist", persist_ok, persist_detail)
 
         # 5. Auth enforced: a business endpoint without a token → 401.
-        get_ep = next((e for e in (business_endpoints or []) if str(e.get("method", "GET")).upper() == "GET"), None)
+        #
+        # #1202ih: IT MUST BE AN ENDPOINT THE CONTRACT SAYS NEEDS AUTH.
+        #
+        # This took the FIRST GET in the list and demanded 401 from it, whatever the
+        # contract said. On tiktok the first GET is `/api/videos`, which the backend lane
+        # declared PUBLIC (`schema.auth_required=false`) and which the projector therefore
+        # built with no guard — so the framework demanded a denial from a route it had
+        # itself constructed to answer 200. No lane can satisfy both halves.
+        #
+        # r107 resume2, live: this wedged the run for four post-cap validation cycles and
+        # then killed it. The debugger lane — awake since #1202dr — diagnosed it exactly:
+        # "run_validation auth_enforced_401 uses stale metadata for public GET
+        # /api/videos ... schema.auth_required=false but metadata.auth_required=true ...
+        # Registered public_video_metadata_drift_guard chain and diagnostic contract test
+        # passed, but run_validation still fails auth_enforced_401." The lane did
+        # everything right and could not clear a check that reads a copy it cannot reach.
+        #
+        # Pick through `_stated_auth_1202hi`, the projector's own single reader, so the
+        # endpoint probed for a denial is the same one the handler was built to deny.
+        # When NO GET requires auth, there is nothing here to prove — an app whose reads
+        # are all public is a legitimate contract (the logged-out surface #320 exists to
+        # keep open), and asserting a denial anyway invents a failure.
+        _gets_1202ih = [e for e in (business_endpoints or [])
+                        if str(e.get("method", "GET")).upper() == "GET"]
+        get_ep = pick_auth_probe_endpoint_1202ih(_gets_1202ih)
         if get_ep:
             url = base + _path_with_params(str(get_ep.get("path")))
             noauth = _http("GET", url)
             _add("auth_enforced_401", noauth["status"] == 401,
                  "" if noauth["status"] == 401 else f"GET {get_ep.get('path')} no-token → {noauth['status']} (expected 401)")
+        elif _gets_1202ih:
+            _LOG.info("#1202ih auth_enforced_401 skipped: none of the %d GET endpoint(s) "
+                      "states auth_required=true, so there is no declared denial to "
+                      "verify. Probing a contract-public read for a 401 is the wedge this "
+                      "replaced.", len(_gets_1202ih))
 
         # 5.5 VERIFIER CHAIN TEST (user decision 2026-06-11): real API-chain
         # coverage belongs to the VERIFIER's validation, not post-release
