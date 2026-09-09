@@ -313,20 +313,51 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
             return 0
         by_name = {c.get("name"): (c.get("status") == "pass")
                    for c in (report.get("checks") or []) if c.get("name")}
+        # #1202iz: the DETAIL each check already carries. `_add(name, ok, detail)` in
+        # validation_runner writes it -- `backend_health` failure carries "/health not 200
+        # within timeout" plus 1200 characters of the backend container's own logs, fetched
+        # by a `docker logs --tail 30 backend` the framework runs for exactly this purpose.
+        # This function read only the boolean and recorded `evidence={"source":
+        # "run_validation"}`, so the CodeHub record was `status=failure, details=None`.
+        #
+        # That record is what blocks delivery. r110's last gate evaluation before the
+        # watchdog fired was `verification_checklist_not_ready — observed {'sql_syntax':
+        # 'success', 'docker_build': 'success', 'npm_install': 'success', 'backend_start':
+        # 'failure'}`, and the reason for that one failure sat one function away. What the
+        # lane got instead was "FAILED: backend_health" with the suggested fix "Run and
+        # record verification/build checks until checklist is ready for delivery" -- the
+        # blocker restated, not a cause.
+        by_detail = {c.get("name"): str(c.get("detail") or "")
+                     for c in (report.get("checks") or []) if c.get("name")}
         docker_ok = by_name.get("docker_up", False)
-        mapping = {
-            "build:docker": docker_ok,
-            "build:backend": by_name.get("backend_health", docker_ok),
-            "build:frontend": by_name.get("frontend_reachable", docker_ok),
-            "build:database": by_name.get("business_writes_persist", docker_ok),
+        # component -> the check it is derived FROM, so the record can say which.
+        sources = {
+            "build:docker": "docker_up",
+            "build:backend": "backend_health",
+            "build:frontend": "frontend_reachable",
+            "build:database": "business_writes_persist",
         }
         n = 0
-        for name, ok in mapping.items():
+        for name, src in sources.items():
+            # #1202iz: `by_name.get(src, docker_ok)` silently substitutes docker_up when the
+            # source check is ABSENT -- a second ambiguity the old record could not express.
+            # A reader could not tell "backend_health failed" from "backend_health never ran
+            # and docker_up failed", which are different repairs.
+            derived = src not in by_name
+            ok = docker_ok if derived else by_name[src]
+            _detail = by_detail.get(src) or (by_detail.get("docker_up") or "" if derived else "")
             try:
                 codehub.record_check(
                     pr_id="main", name=name,
                     status="success" if ok else "failure",
-                    evidence={"source": "run_validation"}, agent="")
+                    evidence={
+                        "source": "run_validation",
+                        "from_check": src,
+                        "derived_from_docker_up": derived,
+                        # only on a failure: a success needs no reason and the detail of a
+                        # passing check is empty anyway.
+                        **({"detail": _detail[:2000]} if (not ok and _detail) else {}),
+                    }, agent="")
                 n += 1
             except Exception:
                 continue
