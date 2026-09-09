@@ -1684,6 +1684,90 @@ def _theme_class_js(scheme: str) -> str:
 _ROUTE_PARAM_RE = re.compile(r":[A-Za-z_]\w*|\{[^}/]+\}")
 
 
+def _seeded_param_value_1202im(route: str, project_dir: Any) -> Optional[str]:
+    """A REAL seeded value for this route's first param, or None.
+
+    #1202im: `_concrete_capture_route` fills every param with the literal "1". That is
+    right for an integer PK -- `/title/:id` -> `/title/1` loads a real title -- and wrong
+    for every text key. `/@:username` becomes `/@1`, and no user is called "1", so the
+    capture photographs an empty profile and the judge scores that emptiness against a
+    real profile reference.
+
+    Measured over the corpus by anchoring each param on its route's preceding static
+    segment and reading that table's first seeded row: 65 routes where "1" is correct, 11
+    where it cannot be (`/users/:username` -> `ava.chen`, `/video/:id` -> `vid_maya_
+    morning_01`, `/sound/:id` -> `snd_flowers_miley`), and 134 undecidable. tiktok-r108's
+    `/@:username` is not even in the 11 -- it has no preceding static segment -- so 11 is
+    a floor, not a count.
+
+    #1202il demotes a screen that shared another screen's capture; it cannot help here,
+    because an empty profile page is a DISTINCT image. It scores low on its own and blocks.
+
+    Returns None whenever the answer is not known, so the caller keeps "1" and behaviour
+    is unchanged wherever this cannot improve on it.
+    """
+    try:
+        import re as _re1202im
+        _m = _ROUTE_PARAM_RE.search(str(route or ""))
+        if not _m:
+            return None
+        param = _m.group(0).lstrip("/:{").rstrip("}").lower()
+        segs = [x for x in str(route).split("/")
+                if x and not x.startswith((":", "{")) and not x.startswith("@")]
+        # `/@:username` leaves no static segment; fall back to the param's own stem
+        # (`username` -> `users`), which is how the spine table is named.
+        stems = ([segs[-1].lower()] if segs else []) + [param.replace("_id", "")]
+        seed = json.loads((Path(project_dir) / "app" / "backend" / "seed_data.json")
+                          .read_text(encoding="utf-8"))
+        if not isinstance(seed, dict):
+            return None
+        # (a) anchored on the route's own resource — precise when the route names one.
+        for stem in stems:
+            for cand in (stem, stem + "s", stem.rstrip("s")):
+                rows = seed.get(cand)
+                if not (isinstance(rows, list) and rows and isinstance(rows[0], dict)):
+                    continue
+                row = rows[0]
+                for col in (param, param.replace("_id", ""), "id"):
+                    if col in row and row[col] not in (None, ""):
+                        return str(row[col])
+        # (b) no resource segment to anchor on (`/@:username` is the whole route). The
+        # param NAME is the column name by convention, so ask the data instead of guessing
+        # a table: the first seeded table carrying a column of that name answers it. This
+        # is why the first draft still produced `/@1` — it tried `username`/`usernames` as
+        # TABLE names and the table is `users`.
+        for rows in seed.values():
+            if not (isinstance(rows, list) and rows and isinstance(rows[0], dict)):
+                continue
+            row = rows[0]
+            if param in row and row[param] not in (None, ""):
+                return str(row[param])
+    except Exception:
+        return None
+    return None
+
+
+def _capture_route_1202im(route: str, project_dir: Any) -> str:
+    """`_concrete_capture_route`, but preferring a value that actually exists.
+
+    Every exit coerces `route` to str first: the fallback is `_concrete_capture_route`,
+    which does `_ROUTE_PARAM_RE.sub(...)` on whatever it is given and raises TypeError on
+    a non-str. A fallback that can raise where the primary path cannot is worse than none,
+    and this file's own test caught it.
+    """
+    _r = str(route or "")
+    try:
+        val = _seeded_param_value_1202im(_r, project_dir)
+        if val is None:
+            return _concrete_capture_route(_r)
+        return _ROUTE_PARAM_RE.sub(val, _r, count=1)
+    except Exception:
+        try:
+            return _concrete_capture_route(_r)
+        except Exception:
+            return _r
+
+
 def _concrete_capture_route(route: str) -> str:
     """Fill param segments of an app route with a real seeded id so the captured
     page loads CONTENT, not its empty-state (#418). ``/title/:id`` → ``/title/1``,
@@ -2327,7 +2411,7 @@ async def capture_route_screenshots(
                         await page.emulate_media(color_scheme=_want)
                         _applied_scheme = _want
                     _cur740["name"] = str(screen["name"])   # #740: attribute to THIS screen
-                    await page.goto(base_url + _concrete_capture_route(screen["route"]),
+                    await page.goto(base_url + (screen.get("capture_route") or _concrete_capture_route(screen["route"])),
                                     wait_until="networkidle", timeout=20000)
                     if _scheme or _storage_dirty:
                         await page.evaluate(_theme_storage_js(_scheme))
@@ -2362,7 +2446,7 @@ async def capture_route_screenshots(
                             await _ensure_profile_selected(page, ctx, token)
                             try:
                                 await page.goto(
-                                    base_url + _concrete_capture_route(screen["route"]),
+                                    base_url + (screen.get("capture_route") or _concrete_capture_route(screen["route"])),
                                     wait_until="networkidle", timeout=20000)
                                 await page.wait_for_timeout(1200)
                             except Exception:
@@ -3341,6 +3425,17 @@ async def run_visual_fidelity(
         _console740: Dict[str, List[str]] = {}   # #740
 
         async def capture(scr):  # noqa: F811 — default capture closes over the boot
+            # #1202im: resolve param routes against the SEED here, where `project_dir` is
+            # in scope (this closure has it from `run_visual_fidelity`). The capture
+            # function itself only receives `out_dir`, and deriving a project root from
+            # that is the path assumption #1202hl caught being wrong for months.
+            for _s1202im in (scr or []):
+                try:
+                    _r = _s1202im.get("route") if isinstance(_s1202im, dict) else None
+                    if _r and _ROUTE_PARAM_RE.search(str(_r)):
+                        _s1202im["capture_route"] = _capture_route_1202im(_r, project_dir)
+                except Exception:
+                    continue
             return await capture_route_screenshots(
                 base_url, scr, token, shots_dir, auth_redirected=_auth_bounced,
                 blank_screens=_blank_screens, picker_screens=_picker_screens,

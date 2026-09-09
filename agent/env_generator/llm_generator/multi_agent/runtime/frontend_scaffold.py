@@ -1854,8 +1854,35 @@ def normalize_frontend_token_key(frontend_dir) -> Dict[str, object]:
                 continue
             new = _LS_KEY_RE.sub(_sub, text)
             if new != text:
-                _fw_write_1202cw(f, new, encoding="utf-8")
-                changed.append(str(f.relative_to(fe)))
+                # #1202in: DECLARE THE EXCEPTION, AND REPORT WHAT ACTUALLY HAPPENED.
+                #
+                # `framework_write_1202cw` refuses by default and takes `clobber_ok` — "the
+                # ticket that argued for overwriting lane files at THIS site". This call
+                # passed nothing, so #317 was refused on every file it ever wanted to fix.
+                # tiktok-r108: twelve refusals in one second at 09:55:56, all from this
+                # line. The heal has never applied.
+                #
+                # It qualifies for the exception on #1202cw's own terms. The key is not a
+                # lane decision: the framework prompt states it is fixed (`access_token`),
+                # #317 exists because r85 and r86 both wedged when api.js read one key and
+                # the pages wrote another, and the rewrite is surgical (one localStorage
+                # key, refresh/user/tenant/csrf explicitly spared) and idempotent (the
+                # canonical key is not an alias, so a converged file is never touched —
+                # which is why this only fires when a real mismatch exists).
+                #
+                # And the second half: `changed.append` ran unconditionally, so the result
+                # reported files as normalized that were never written. That is why the
+                # heal being inert was invisible — it said `normalized: [12 files]` while
+                # writing none of them.
+                if _fw_write_1202cw(
+                        f, new, encoding="utf-8",
+                        clobber_ok=("#317: the auth-token localStorage key is stated fixed "
+                                    "by the framework prompt; r85/r86 both wedged "
+                                    "deliverability_ui_flow on api.js and the pages "
+                                    "disagreeing about it")):
+                    changed.append(str(f.relative_to(fe)))
+                else:
+                    result.setdefault("refused", []).append(str(f.relative_to(fe)))
         result["normalized"] = sorted(changed)
     except Exception as exc:  # never break generation/validation
         result["error"] = f"{type(exc).__name__}: {exc}"
