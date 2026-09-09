@@ -1076,9 +1076,45 @@ def _apply_spec_visibility_1202hh(tables: Dict[str, Any], project_root: Any) -> 
             if not declared:
                 continue
             meta = dict(rec.get("metadata") or {})
-            if str(meta.get("visibility") or "").strip():
+            _changed = False
+            if not str(meta.get("visibility") or "").strip():
+                meta["visibility"] = declared
+                _changed = True
+            # #1202ij: RECORDING THE VERDICT IS NOT HONOURING IT.
+            #
+            # This stamped `visibility` and stopped, while the probes a few lines up in
+            # scaffolder.py had just set `owner_scoped_reads = True` from table SHAPE. The
+            # two halves of the #1202gd exemption were then written by different code and
+            # contradicted each other: `public_content_scoped_away_1202gv` says in its own
+            # words that they are "direct opposites" -- `public` means "a reader who is not
+            # the author still sees the row, and seeing it is the point", while
+            # `owner_scoped_reads` projects `WHERE owner = caller`. The audit's
+            # corroboration (backend_audit `md.get("owner_scoped_reads") is not True`) then
+            # refuses the exemption and `unscoped owner read` stands forever.
+            #
+            # tiktok-r107, from its own ledger and event stream: the backend lane registered
+            # `owner_scoped_reads=false` on `videos` SIX times between 08:37:24 and 08:39:28,
+            # and the record read `visibility: public, owner_scoped_reads: True,
+            # _updated_by: orchestrator` afterwards. The lane cleared it and the framework
+            # put it back on the next scaffold, every time, for four runs.
+            #
+            # The early `continue` above is why the backfill guard could not save it either:
+            # a record that already carries `visibility` was skipped whole, so a table whose
+            # verdict was recorded correctly was exactly the table this never looked at.
+            if declared == "public" and meta.get("owner_scoped_reads") is True:
+                meta["owner_scoped_reads"] = False
+                _changed = True
+                try:
+                    import logging as _lg1202ij
+                    _lg1202ij.getLogger(__name__).warning(
+                        "#1202ij `%s` is declared PUBLIC by the materials; clearing the "
+                        "owner_scoped_reads the shape probes set. Recording the verdict "
+                        "and then filtering by owner anyway is the contradiction #1202gv "
+                        "reports.", name)
+                except Exception:
+                    pass
+            if not _changed:
                 continue
-            meta["visibility"] = declared
             rec = dict(rec)
             rec["metadata"] = meta
             tables[name] = rec

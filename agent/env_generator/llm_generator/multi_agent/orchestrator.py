@@ -2772,9 +2772,18 @@ class Orchestrator:
                                 stuck_abort_reason = _abort
                                 self._logger.error(
                                     "FAIL-FAST: aborting the run early — %s", _abort)
+                                # #1202ik: the other half of #1202if. The sentence is on
+                                # the line above — "delivery never SUCCEEDED in 243min of
+                                # lane time since the contract built (now failing [...])" —
+                                # and the ledger recorded `status: "failed",
+                                # terminal_reason: null` for it, so r107's fourth resume
+                                # looked identical on disk to a run that simply stopped.
+                                # #1202if fixed the wall-clock/tick path and this one kept
+                                # the habit.
+                                self._budget_stop_1202if = str(_abort)
                                 self._write_run_budget(
                                     caps, loop_start, time.time() - loop_start, tick_count,
-                                    "stuck_abort")
+                                    "stuck_abort", str(_abort))
                                 break
                         # Deterministic delivery: the orchestrator LLM drifts — it
                         # checks deliverability repeatedly without ever firing
@@ -3314,7 +3323,7 @@ class Orchestrator:
                 # "failed" erased the one sentence that explained the run.
                 (self._abort_status_1202hv(_abort_1202eb) if _abort_1202eb
                  else ("finished" if success
-                       else ("budget_exceeded"
+                       else (self._stop_status_1202ik()
                              if getattr(self, "_budget_stop_1202if", "") else "failed"))),
                 _abort_1202eb or getattr(self, "_budget_stop_1202if", ""))
         except Exception:
@@ -5582,6 +5591,19 @@ class Orchestrator:
     # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
         return self._budget.path()
+
+    def _stop_status_1202ik(self) -> str:
+        """`budget_exceeded` for a cap, `stuck_abort` for a no-convergence stop.
+
+        #1202ik: #1202if gave the ledger the sentence; two different stops were still
+        sharing one name. A cap says "raise it or accept it"; a no-convergence abort says
+        "nothing converged in the time you gave it" — opposite advice from the same word.
+        """
+        try:
+            _r = str(getattr(self, "_budget_stop_1202if", "") or "")
+            return "stuck_abort" if "never SUCCEEDED" in _r else "budget_exceeded"
+        except Exception:
+            return "budget_exceeded"
 
     @staticmethod
     def _abort_status_1202hv(reason: str) -> str:

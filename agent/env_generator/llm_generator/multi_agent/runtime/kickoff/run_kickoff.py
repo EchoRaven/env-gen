@@ -2162,6 +2162,30 @@ def finalize_kickoff(
         _v1202hh = _vis1202hh.get(name) or _vis1202hh.get(str(name).strip())
         if _v1202hh:
             table_meta["visibility"] = _v1202hh
+            # #1202ij: THE SAME EMITTER PAIR, AT BIRTH.
+            #
+            # The lines just above lift a declared `owner_scoped_reads` into `table_meta`,
+            # and this stamps the materials' verdict beside it — so a table the materials
+            # call PUBLIC could be registered owner-scoped in the very same dict, and the
+            # #1202gd exemption (which requires `owner_scoped_reads is not True`) can never
+            # fire for it. `public_content_scoped_away_1202gv` calls the pair "direct
+            # opposites"; writing both is writing a contradiction.
+            #
+            # The scaffolder half of this was fixed first, on the resume path where kickoff
+            # is skipped. Fixing only that one would have left a FRESH run reproducing the
+            # contradiction from its first registration — the shape #1202hh's own docstring
+            # warns about, one emitter at a time.
+            if (str(_v1202hh).strip().lower() == "public"
+                    and table_meta.get("owner_scoped_reads") is True):
+                table_meta["owner_scoped_reads"] = False
+                try:
+                    import logging as _lg1202ij
+                    _lg1202ij.getLogger(__name__).warning(
+                        "#1202ij `%s` is declared PUBLIC by the materials; not registering "
+                        "it owner-scoped. The declaration and the flag are direct opposites "
+                        "and the delivery gate reads both.", name)
+                except Exception:
+                    pass
         # #1202hk: a SPINE table's shape is fixed by the framework, so the fields the
         # materials declare for it have nowhere to live and are silently lost. r103: the spec
         # describes `users` with 11 fields and the registered table has the tenancy/identity
