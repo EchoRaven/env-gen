@@ -2659,7 +2659,15 @@ class Orchestrator:
                                 "Run budget exceeded (%s) before delivery; aborting generation.",
                                 budget_exceeded,
                             )
-                            self._write_run_budget(caps, loop_start, elapsed, tick_count, "budget_exceeded")
+                            # #1202if: the sentence exists here and existed nowhere else.
+                            # r107 ended `status: "failed", terminal_reason: null` while the
+                            # log carried "wall-clock 10811s exceeded cap 10800s ... Adjust
+                            # via ENVGEN_MAX_WALLCLOCK_SEC" -- so reading the ledger meant
+                            # grepping the log to learn the run had simply run out of clock
+                            # with $510 of its $900 and 22 of its 200 ticks unspent.
+                            self._budget_stop_1202if = str(budget_exceeded)
+                            self._write_run_budget(caps, loop_start, elapsed, tick_count,
+                                                   "budget_exceeded", str(budget_exceeded))
                             break
 
                         # Round 8h Patch B v2: wall-clock stall escalation.
@@ -3301,9 +3309,14 @@ class Orchestrator:
                 getattr(self, "_tick_count_1192", 0),
                 # #1202hv: name the stop the ledger actually saw. 6 of 6 records
                 # reading `aborted_provider` on this corpus were our own cap.
+                # #1202if: a wall-clock / tick stop is neither the provider nor our
+                # spend cap, so #1202hv's two names do not cover it and the generic
+                # "failed" erased the one sentence that explained the run.
                 (self._abort_status_1202hv(_abort_1202eb) if _abort_1202eb
-                 else ("finished" if success else "failed")),
-                _abort_1202eb)
+                 else ("finished" if success
+                       else ("budget_exceeded"
+                             if getattr(self, "_budget_stop_1202if", "") else "failed"))),
+                _abort_1202eb or getattr(self, "_budget_stop_1202if", ""))
         except Exception:
             pass
         return GenerationResult(
@@ -5605,8 +5618,12 @@ class Orchestrator:
         return self._budget.load_caps(env_defaults)
 
     def _write_run_budget(self, caps: Dict[str, Any], started_at: float,
-                          elapsed: float, ticks: int, status: str) -> None:
-        self._budget.write(caps, started_at, elapsed, ticks, status)
+                          elapsed: float, ticks: int, status: str,
+                          reason: str = "") -> None:
+        # #1202if: `RunBudget.write` has carried a `reason` since #1202eb -- "WHY a run
+        # reached a non-`finished` status" -- and this wrapper dropped it on the floor,
+        # so every caller that HAD the sentence could not pass it on.
+        self._budget.write(caps, started_at, elapsed, ticks, status, reason)
 
     def _format_delivery_gate_report(self, gate: Dict[str, Any]) -> str:
         # PROPOSAL #8 Tier-1a: pure report formatters extracted to runtime/delivery_gate.py.
