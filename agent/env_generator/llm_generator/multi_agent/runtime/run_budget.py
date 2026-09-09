@@ -165,16 +165,47 @@ class RunBudget:
             pass
         return out
 
+    _CAP_ENV_1202II = {"max_wall_sec": "ENVGEN_MAX_WALLCLOCK_SEC",
+                       "max_ticks": "ENVGEN_MAX_TICKS"}
+
     def load_caps(self, env_defaults: Dict[str, Any]) -> Dict[str, Any]:
-        """Caps from run_budget.json if present (UI can raise them live), else env."""
+        """Caps from run_budget.json if present (a UI can raise them live), else env.
+
+        #1202ii: AN EXPLICIT ENV VAR IS AN INSTRUCTION, NOT A DEFAULT.
+
+        The persisted caps winning is right for the case the docstring names -- a UI
+        raising a cap mid-run, which this process then re-reads. It is wrong for the case
+        an operator actually hits: `--resume` inherits the ORIGINAL run's caps forever, so
+        `ENVGEN_MAX_WALLCLOCK_SEC=18000 ... --resume` was obeyed by nothing and reported by
+        nobody. tiktok-r107 was launched that way twice and stopped both times at "wall-clock
+        exceeded cap 10800s" -- the number from its first process, hours earlier.
+
+        So: a cap the operator SET in the environment (present, not merely defaulted) beats
+        the stored one, and the override is logged. A UI raise still wins whenever the env
+        says nothing, which is every launch that does not name the variable.
+        """
         try:
             data = json.loads(self.path().read_text(encoding="utf-8"))
             caps = data.get("caps") or {}
-            return {
+            out = {
                 "max_wall_sec": float(caps.get("max_wall_sec", env_defaults["max_wall_sec"])),
                 "max_ticks": int(caps.get("max_ticks", env_defaults["max_ticks"])),
                 "unlimited": bool(caps.get("unlimited", env_defaults.get("unlimited", False))),
             }
+            for key, var in self._CAP_ENV_1202II.items():
+                if os.environ.get(var) is None or key not in env_defaults:
+                    continue
+                stored, asked = out[key], env_defaults[key]
+                if stored == asked:
+                    continue
+                out[key] = type(stored)(asked)
+                if self._logger:
+                    self._logger.warning(
+                        "#1202ii %s=%s overrides the cap stored in run_budget.json (%s). "
+                        "A resume inherits the first process's caps, so without this the "
+                        "value you set would have been ignored silently.",
+                        var, asked, stored)
+            return out
         except Exception:
             return dict(env_defaults)
 
