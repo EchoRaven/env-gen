@@ -2610,7 +2610,10 @@ class Orchestrator:
                                 # immediately) before the number in the message settled it.
                                 # Advice that names the one knob and says it will not help is
                                 # worse than no advice.
-                                if "ENVGEN_MAX_SPEND_USD" in str(_term):
+                                # #1202hv: the shared predicate, so this site and the
+                                # ledger and kickoff can never drift apart again.
+                                from utils.llm import terminal_stop_is_own_budget_1202hv
+                                if terminal_stop_is_own_budget_1202hv(_term):
                                     budget_exceeded = (
                                         "this run's OWN spend ceiling stopped it — the "
                                         "provider is fine. Raise ENVGEN_MAX_SPEND_USD (or "
@@ -3265,7 +3268,10 @@ class Orchestrator:
                 # already exists so "a run loop should poll this and abort instead of
                 # spinning"; the ledger is the other consumer that needed it.
                 getattr(self, "_tick_count_1192", 0),
-                "aborted_provider" if _abort_1202eb else ("finished" if success else "failed"),
+                # #1202hv: name the stop the ledger actually saw. 6 of 6 records
+                # reading `aborted_provider` on this corpus were our own cap.
+                (self._abort_status_1202hv(_abort_1202eb) if _abort_1202eb
+                 else ("finished" if success else "failed")),
                 _abort_1202eb)
         except Exception:
             pass
@@ -5532,6 +5538,20 @@ class Orchestrator:
     # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
         return self._budget.path()
+
+    @staticmethod
+    def _abort_status_1202hv(reason: str) -> str:
+        """`aborted_budget` for our own ceiling, `aborted_provider` for the provider.
+
+        #1202hv. Best-effort like every other ledger input: an import failure here must
+        not be why a run record fails to write, so it degrades to the old literal.
+        """
+        try:
+            from utils.llm import terminal_stop_is_own_budget_1202hv
+            return "aborted_budget" if terminal_stop_is_own_budget_1202hv(reason) \
+                else "aborted_provider"
+        except Exception:
+            return "aborted_provider"
 
     def _provider_abort_reason_1202eb(self) -> str:
         """The latched provider-abort reason, or "" if the provider never went terminal.

@@ -243,11 +243,34 @@ class KickoffDriver:
                     last_synth = run_kickoff.try_synthesize(self._orch.hubs, kickoff_handle)
                 except Exception:
                     last_synth = {"status": "unknown"}
+                # #1202hv: the latch is shared with our OWN ENVGEN_MAX_SPEND_USD guard
+                # (#1163), so "the provider is terminally unavailable" was the wrong
+                # sentence for every budget stop -- and it points at a fresh key rather
+                # than at the one knob that would help.
+                try:
+                    from utils.llm import terminal_stop_is_own_budget_1202hv
+                    _own_cap = terminal_stop_is_own_budget_1202hv(_term_1202ec)
+                except Exception:
+                    _own_cap = False
                 self._orch._logger.error(
-                    "Kickoff abandoned after %.0fs (poll %s): the LLM provider is "
-                    "terminally unavailable, so no synthesis can arrive. %s",
-                    elapsed, poll_count, _term_1202ec,
+                    "Kickoff abandoned after %.0fs (poll %s): %s, so no synthesis can "
+                    "arrive. %s",
+                    elapsed, poll_count,
+                    ("this run's OWN spend ceiling stopped it (the provider is fine) — "
+                     "raise ENVGEN_MAX_SPEND_USD or unset it" if _own_cap
+                     else "the LLM provider is terminally unavailable"),
+                    _term_1202ec,
                 )
+                # Two calls, each with a LITERAL reason, rather than one call with a
+                # conditional: #1202ed guards the abort vocabulary by scanning for the
+                # first quoted reason per call site, so a ternary here hides whichever
+                # branch it puts second -- and `provider_terminal` was the one that
+                # vanished from `test_all_nine_reasons_still_reach_the_stamp`. The
+                # duplication is the price of keeping that check able to see both.
+                if _own_cap:
+                    return self._orch._kickoff_fallback_or_reconcile(
+                        kickoff_handle, last_synth, "own_budget_cap",
+                    )
                 return self._orch._kickoff_fallback_or_reconcile(
                     kickoff_handle, last_synth, "provider_terminal",
                 )

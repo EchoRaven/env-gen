@@ -1206,6 +1206,7 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
     # is the one already verified on live runs (r17: 2h50m -> 272s).
     try:
         cap = _price_env_1163("ENVGEN_MAX_SPEND_USD")
+        _warn_if_cap_cannot_finish_1202hw(cap)
         if cap > 0 and not _TERMINAL_LLM_ERROR["reason"]:
             u = llm_usage()
             # #1183: once the gate has passed there is nothing left to protect — stopping
@@ -1229,6 +1230,56 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
                     "after %d calls (uncached-in %d, cached-in %d, out %d)"
                     % (u["usd"], cap, _extra, u["calls"], u["uncached"], u["cached"],
                        u["completion"]))
+    except Exception:
+        return
+
+
+# #1202hw: A CAP BELOW THE COST OF FINISHING BUYS A TRUNCATED RUN, NOT A CHEAP ONE.
+#
+# The guard below is correct and does exactly what it says. What nothing said was that
+# the number it enforces was, on six consecutive runs, far under what reaching a verdict
+# costs -- so each run stopped mid-flight and the ledger recorded a failure that was
+# really a budget the run was never going to fit inside.
+#
+# Measured on this corpus (2026-09-08), every one spending within a dollar of its cap:
+#
+#     r99  cap $90  -> $90.62      r102 cap $60  -> $60.71
+#     r100 cap $70  -> $70.88      r103 cap $45  -> $45.61
+#     r101 cap $150 -> $150.32     r106 cap $80  -> $80.54
+#
+# All six stopped at tick 5-12 of 200 -- 3-6% of the coordination budget -- for $498.67
+# together and no verdict from any of them. Against that, the 22 runs that actually
+# reached `status=finished` cost a MEDIAN of $355 (min $25, max $931).
+#
+# So this warns, once, when the cap is under the observed cost of finishing. It never
+# refuses: a deliberate $50 smoke test is a legitimate thing to ask for, and #1202fw
+# already set the precedent that the framework says what it knows before the money is
+# spent and then does as it is told.
+_CAP_WARNED_1202HW = {"done": False}
+_TYPICAL_FINISH_USD_1202HW = 355.0
+
+
+def _warn_if_cap_cannot_finish_1202hw(cap: float) -> None:
+    """Say once, before the money goes, that this cap is below the cost of a verdict."""
+    try:
+        if _CAP_WARNED_1202HW["done"] or not cap or cap <= 0:
+            return
+        _CAP_WARNED_1202HW["done"] = True
+        try:
+            typical = float(os.environ.get("ENVGEN_TYPICAL_FINISH_USD",
+                                           _TYPICAL_FINISH_USD_1202HW) or 0)
+        except (TypeError, ValueError):
+            typical = _TYPICAL_FINISH_USD_1202HW
+        if typical <= 0 or cap >= typical:
+            return
+        logging.getLogger("LLM.budget").warning(
+            "#1202hw ENVGEN_MAX_SPEND_USD=$%.2f is below $%.0f, the median spend of the "
+            "runs that actually reached a verdict on this corpus. Six runs capped at "
+            "$45-$150 each stopped at tick 5-12 of 200 and produced no verdict between "
+            "them. This is a warning, not a refusal -- if a short probe is what you want, "
+            "this is what it will look like; if you wanted a delivery, raise the cap or "
+            "unset it (ENVGEN_TYPICAL_FINISH_USD retunes this line).",
+            cap, typical)
     except Exception:
         return
 
@@ -1312,6 +1363,36 @@ def _is_terminal_llm_error(error: Exception) -> bool:
     if isinstance(status, int) and status in (401, 403, 402):
         return True
     return False
+
+
+def terminal_stop_is_own_budget_1202hv(reason: Optional[str] = None) -> bool:
+    """True when the latched stop is OUR OWN spend ceiling, not the provider's.
+
+    #1202hv: ONE FACT, THREE EMITTERS -- and #1180 fixed exactly one of them.
+
+    `_TERMINAL_LLM_ERROR` is deliberately shared: #1163 routed our own
+    ENVGEN_MAX_SPEND_USD guard (line ~1227) through the same latch #1159 uses for a
+    provider that has genuinely gone terminal, because both mean "stop the run". That
+    is fine as a mechanism and wrong as a LABEL, and each consumer decided the label
+    for itself:
+
+      orchestrator run loop   -- #1180 branched on "ENVGEN_MAX_SPEND_USD" in the string
+                                 and says "the provider is fine". CORRECT.
+      orchestrator ledger     -- writes the literal "aborted_provider" for anything in
+                                 the latch. WRONG for every budget stop.
+      kickoff_driver          -- logs "the LLM provider is terminally unavailable" and
+                                 returns reason "provider_terminal". WRONG likewise.
+
+    Measured on this corpus: 6 of 6 runs whose ledger says `aborted_provider`
+    (r99/r100/r101/r102/r103/r106, $498.67) were stopped by their OWN cap -- zero were
+    the provider. #1180's own comment records being sent to check whether the API key
+    had died, "it had not -- a probe answered 200 immediately"; the ledger kept sending
+    the next reader down that same path, and did so again today.
+
+    So: one predicate, and every emitter asks it rather than re-deciding.
+    """
+    r = str(reason if reason is not None else (_TERMINAL_LLM_ERROR["reason"] or ""))
+    return "ENVGEN_MAX_SPEND_USD" in r or r.lstrip().startswith("[BudgetExceeded]")
 
 
 def terminal_llm_error() -> Optional[str]:
