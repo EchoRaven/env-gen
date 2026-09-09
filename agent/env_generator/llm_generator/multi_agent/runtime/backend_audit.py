@@ -802,10 +802,14 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                         "caller breaks the logged-out view of it. Two different switches: "
                         "`auth_required` decides whether you must log in, and the table's "
                         "`owner_scoped_reads` decides whether you see other people's rows. "
-                        "For published rows do NOT set `owner_scoped_reads` on `%s` (clear it "
-                        "if it is set) -- that alone is what releases this read, and #1202gd's "
-                        "audit then exempts it. Clearing `auth_required` by itself does not, "
-                        "and setting `owner_scoped_reads` re-imposes the filter"
+                        "For published rows `owner_scoped_reads` must be FALSE on `%s` -- "
+                        "that alone is what releases this read, and #1202gd's audit then "
+                        "exempts it. Clearing `auth_required` by itself does not, and setting "
+                        "`owner_scoped_reads` re-imposes the filter. #1202hu: to clear it you "
+                        "must register the table with `owner_scoped_reads=False` EXPLICITLY -- "
+                        "registration MERGES metadata, so re-registering without the key keeps "
+                        "the old True and reports success while nothing changes (r106 did that "
+                        "twice and spent its budget on it)"
                         % (cls2tbl.get(model or "", "?"), cls2tbl.get(model or "", "?")))
                        if _declared_public_materials_1202gt(
                            backend_dir, cls2tbl.get(model or "", "")) else ""))))
