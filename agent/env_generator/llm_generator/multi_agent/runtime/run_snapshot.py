@@ -366,6 +366,7 @@ def list_snapshots(output_dir) -> List[Dict]:
         rec["name"] = d.name
         rec.update(_snapshot_health_1202di(d))
         rec.update(_snapshot_quality_1202hx(d))
+        rec.update(_snapshot_budget_1202ia(d))
         out.append(rec)
     return out
 
@@ -424,6 +425,63 @@ def _snapshot_quality_1202hx(d: Path) -> Dict:
     except Exception:
         pass
     return q
+
+
+# #1202ia: A RESTORE POINT IS ONLY WORTH ANYTHING IF THE RUN CAN STILL REACH A GATE.
+#
+# #1202hx ranks restore points by how good the run LOOKED. It said nothing about whether
+# resuming from one can still pay off, and those are different questions: the
+# no-convergence abort spends a budget (`ENVGEN_NO_DELIVER_ABORT_S`, lane time since the
+# contract was built) that is CUMULATIVE ACROSS EVERY PROCESS over the output dir and is
+# carried, correctly, into every snapshot's own ledger.
+#
+# That accounting is right and must not be "fixed": those minutes were really spent by
+# processes that really failed to deliver, and zeroing them would disable the backstop
+# that exists because r15 spent 2h50m and r37 spent $371 doing exactly that.
+#
+# What was missing is saying so at SELECTION time. tiktok-r106: every one of its restore
+# points, including the best one #1202hx named, was taken when 79.6 of the run's 90
+# minutes were already gone. Restoring the best of them and resuming cost $70.27 and died
+# on NO-CONVERGENCE 21 minutes later without reaching a single gate evaluation. The number
+# that predicted it was already inside the snapshot -- `cumulative_1202cg.alive_before_
+# this_run`, beside the screens the listing was happy to print.
+#
+# #1202hz warns once the run is under way. This shows the same fact one decision earlier,
+# at selection time.
+#
+# ★ It is a NUMBER, deliberately NOT a verdict. The first draft of this printed "DO NOT
+#   RESUME" when the budget was gone, and validating it against the run that DELIVERED
+#   killed that idea outright: tiktok-r97 cut release 1.0.0 at 14:11 with its budget
+#   already about 52 minutes NEGATIVE, and ran on to -110 without ever aborting. The
+#   abort needs BOTH an exhausted budget AND a DECLINED delivery, and r97's deliveries
+#   were progressing (4/9 -> 5/9 screens), so the decline stamp kept resetting.
+#
+#   One death (r106) and one survival (r97) is not a calibration. Print what is known and
+#   let the operator judge; a confident wrong verdict here would have talked someone out
+#   of the only run on this corpus that ever shipped.
+def _abort_budget_s_1202ia() -> float:
+    """The no-convergence budget a run gets, as the orchestrator reads it."""
+    try:
+        return float(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500") or 4500)
+    except (TypeError, ValueError):
+        return 4500.0
+
+
+def _snapshot_budget_1202ia(d: Path) -> Dict:
+    """Lane-time budget left at this restore point. `None` when it cannot be read."""
+    out: Dict = {"budget_left_s": None, "budget_cap_s": None}
+    try:
+        cum = (json.loads((d / "run_budget.json").read_text(encoding="utf-8"))
+               .get("cumulative_1202cg") or {})
+        spent = cum.get("alive_before_this_run")
+        if spent is None:
+            return out
+        cap = _abort_budget_s_1202ia()
+        out["budget_cap_s"] = cap
+        out["budget_left_s"] = round(cap - float(spent), 1)
+    except Exception:
+        pass
+    return out
 
 
 def best_snapshot_1202hx(snaps: List[Dict]) -> Optional[str]:

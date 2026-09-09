@@ -379,6 +379,8 @@ async def main():
                 if s.get("ticks") is not None:
                     _health += f", tick {s['ticks']}"
                 # #1202hx: the quality that decides whether restoring is ahead or behind.
+                if s.get("budget_left_s") is not None:
+                    _health += f", budget {s['budget_left_s']/60:.0f}min left"
                 if s.get("screens_total"):
                     _health += (f", screens {s['screens_pass']}/{s['screens_total']}"
                                 f" med {s.get('visual_med') or 0:.2f}")
