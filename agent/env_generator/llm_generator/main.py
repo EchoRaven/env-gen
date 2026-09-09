@@ -326,6 +326,8 @@ async def main():
     parser.add_argument("--restore-snapshot", dest="restore_snapshot", default=None,
                        help="Rewind the run directory to the named snapshot and exit "
                             "(the current state is copied to snapshots/.pre-restore-*). "
+                            "Pass the literal 'best' to let #1202hx pick the highest-quality "
+                            "restore point -- the newest is routinely not it. "
                             "Follow with --resume to continue from it.")
     parser.add_argument("--reference-images", nargs="*", default=[], 
                        help="Reference screenshot paths for design (e.g., screenshot/expedia.png)")
@@ -395,12 +397,27 @@ async def main():
                       f"{'   <-- BEST STATE TO RESUME FROM' if s['name'] == _best_1202hx else ''}")
             if _best_1202hx:
                 print(f"\n#1202hx best restore point: {_best_1202hx}\n"
-                      f"  --restore-snapshot {_best_1202hx}   then re-run with --resume")
+                      f"  --restore-snapshot best   then re-run with --resume"
+                      f"   (literal 'best' resolves to {_best_1202hx}; #1202it)")
         else:
-            res = restore_snapshot(output_dir, args.restore_snapshot)
+            # #1202it: `--restore-snapshot best` resolves to #1202hx's ranking instead of
+            # making the operator read a listing and copy a timestamp back in. The ranking
+            # already existed and was only ever PRINTED -- so the one step that decides
+            # whether a resume starts ahead or behind was the one step left manual, and the
+            # newest snapshot (the obvious guess) is routinely the worst: r106's last
+            # interval held 1 of 9 screens at a 0.34 median.
+            _want = args.restore_snapshot
+            if str(_want).strip().lower() == "best":
+                _want = best_snapshot_1202hx(list_snapshots(output_dir))
+                if not _want:
+                    print("No snapshot to restore: nothing under "
+                          f"{output_dir}/snapshots has a readable ledger.")
+                    return 1
+                print(f"#1202hx picked {_want} as the best restore point.")
+            res = restore_snapshot(output_dir, _want)
             if res['ok']:
                 print(f"Restored {len(res['restored'])} files from "
-                      f"{args.restore_snapshot}; previous state saved to {res['backup']}")
+                      f"{_want}; previous state saved to {res['backup']}")
                 # #1202ey: say what a restore does NOT rewind. `app/` and `worktrees/` are
                 # git and are deliberately left alone -- rewinding them would discard real
                 # work, and the history is append-only so nothing is lost by not touching

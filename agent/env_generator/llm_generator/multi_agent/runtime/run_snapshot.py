@@ -505,18 +505,33 @@ def best_snapshot_1202hx(snaps: List[Dict]) -> Optional[str]:
 
     Ordered by what actually decides whether a restart is ahead or behind: screens over
     threshold, then the median (a run can hold its count while every screen improves),
-    then FEWER blocking framework-validation checks, then the later one. A snapshot that
-    scored nothing is never "best" -- restoring it resumes a run with no visual evidence
-    at all, which is exactly the trap #1202di was written about.
+    then FEWER blocking framework-validation checks, then MORE budget left, then the later
+    one. A snapshot that scored nothing is never "best" -- restoring it resumes a run with
+    no visual evidence at all, which is exactly the trap #1202di was written about.
+
+    #1202iu: `budget_left_s` was computed, printed in the listing, and described in its own
+    call site as "the quality that decides whether restoring is ahead or behind" -- and then
+    left out of this key, so the last tiebreaker was "the later one". On r109's real
+    snapshots that picked `135712-interval-gate5`: same 0/9 screens, same 0.36 median and
+    same single blocking check as `125512-interval-t14`, but $58 further spent and **32
+    minutes past the wall** instead of 30 minutes short of it. Restoring it is pure loss --
+    identical state, less runway. Evidence recorded and not used is the dominant defect
+    shape in this pipeline, and this one was mine.
+
+    Unknown budget ranks at 0.0, the line between ahead and behind: it must not beat a
+    measured positive nor lose to a measured negative. Reading a missing value as zero is
+    the mistake #902/#907/#566y all were, so it is stated rather than left to `or 0`.
     """
     ranked = [s for s in snaps if s.get("screens_pass") is not None
               and (s.get("judgments") or 0) > 0]
     if not ranked:
         return None
     def key(s: Dict):
+        _b = s.get("budget_left_s")
         return (s.get("screens_pass") or 0,
                 s.get("visual_med") or 0.0,
                 -len(s.get("fwval_failed") or []),
+                0.0 if _b is None else float(_b),
                 s.get("epoch") or 0.0)
     return max(ranked, key=key).get("name")
 
