@@ -117,20 +117,48 @@ class RunBudget:
         if self._carry_1202cg is None:
             prior_total, prior_calls, runs, first = 0.0, 0, 0, started_at
             prior_alive = 0.0
+            # #1202ja: read each carried field on its own, and SAY which ones did not read.
+            #
+            # Every field was assigned inside one `try` whose `except` was a bare `pass`, so a
+            # single unreadable value abandoned the rest: demonstrated against the real class,
+            # a ledger whose `alive_before_this_run` is not float()-able kept
+            # `usd_before_this_run=300.0` but dropped `alive_before_this_run` to 0.0 and `runs`
+            # to 1 -- silently. `alive_before_this_run` is what bounds lane time (#1202fk) and
+            # what `_snapshot_budget_1202ia` reads, so the run believed it had runway it spent.
+            #
+            # Per-field, NOT all-or-nothing. The first draft of this fix adopted the carry only
+            # when every field read, which threw away a `usd_before_this_run` that WAS correct
+            # and left the spend cap looser than before -- worse, on the path that governs money.
+            # These are independent accumulators; one being unreadable does not make another
+            # wrong, so each keeps whatever it could read.
+            #
+            # NOT observed in the corpus: the seven ledgers with `usd_before>0, alive=0` that
+            # look like this fingerprint are version skew, written 09-05..09-07 before #1202fk
+            # added the field, with `runs` intact. Latent, cheap, and audible now.
+            _failed_1202ja = []
+
+            def _read_1202ja(src, key, cast, default):
+                try:
+                    v = src.get(key)
+                    return default if v is None else cast(v)
+                except Exception as _e:
+                    _failed_1202ja.append(f"{key} ({type(_e).__name__})")
+                    return default
+
             try:
                 old = json.loads(self.path().read_text(encoding="utf-8"))
                 prev_cum = old.get("cumulative_1202cg") or {}
                 same_process = float((old.get("usage") or {}).get("started_at") or 0.0) == float(started_at)
-                prior_total = float(prev_cum.get("usd_before_this_run") or 0.0)
+                prior_total = _read_1202ja(prev_cum, "usd_before_this_run", float, 0.0)
                 # #1202fk: seconds this project's processes were actually ALIVE. The
                 # no-convergence abort calls its budget "lane time" and computes it as a
                 # wall-clock difference, so a run stopped overnight is billed for the night.
                 # Lane time cannot exceed the time a process existed to spend it, and this
                 # is that bound.
-                prior_alive = float(prev_cum.get("alive_before_this_run") or 0.0)
-                prior_calls = int(prev_cum.get("calls_before_this_run") or 0)
-                runs = int(prev_cum.get("runs") or 0)
-                first = float(prev_cum.get("first_started_at") or started_at)
+                prior_alive = _read_1202ja(prev_cum, "alive_before_this_run", float, 0.0)
+                prior_calls = _read_1202ja(prev_cum, "calls_before_this_run", int, 0)
+                runs = _read_1202ja(prev_cum, "runs", int, 0)
+                first = _read_1202ja(prev_cum, "first_started_at", float, started_at)
                 if not same_process:
                     # A previous process's totals become part of the carry.
                     prior_total += float((old.get("llm") or {}).get("usd") or 0.0)
@@ -143,8 +171,21 @@ class RunBudget:
                     prior_alive += max(float(_u_old.get("process_wall_sec_1202ez") or 0.0),
                                        float(_u_old.get("elapsed_sec") or 0.0))
                     runs += 1
-            except Exception:
-                pass
+            except Exception as _exc1202ja:
+                _failed_1202ja.append(f"<whole ledger> ({type(_exc1202ja).__name__})")
+            if _failed_1202ja:
+                # #1202ja: this was `pass`. An unreadable carry looked exactly like a first
+                # run, and the difference between those two is whether the caps have anything
+                # to enforce.
+                try:
+                    self._logger.warning(
+                        "#1202ja carry fields did not read from %s: %s — each fell back to its "
+                        "zero, so ENVGEN_MAX_SPEND_USD and the lane-time bound (#1202fk) are "
+                        "that much looser for this run. The ledger on disk is untouched; only "
+                        "this process's carry is short.",
+                        self.path(), ", ".join(_failed_1202ja[:6]))
+                except Exception:
+                    pass
             self._carry_1202cg = {
                 "usd_before_this_run": round(prior_total, 4),
                 "calls_before_this_run": prior_calls,
