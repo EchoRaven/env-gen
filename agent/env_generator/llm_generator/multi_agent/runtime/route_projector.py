@@ -1309,6 +1309,47 @@ _IMAGEISH_1202FH = ("poster", "backdrop", "image", "thumb", "avatar", "cover",
                     "photo", "banner", "art", "still", "logo")
 
 
+# #1202ir: the columns an ACTOR row may show to someone who is not that actor.
+# EXACT membership only -- deliberately NOT the substring rule `_IMAGEISH_1202FH` uses.
+# `"art" in "partner_email"` and `"art" in "cart_token"` are both True, so the substring
+# rule is safe only on a table where every column is already public. An allowlist also
+# fails CLOSED: a column nobody anticipated (`phone`, `dob`, `stripe_customer_id`) is
+# excluded by never having been named here, rather than by a denylist someone must extend.
+_ACTOR_DISPLAY_COLS_1202IR = frozenset((
+    "username", "handle", "nickname", "display_name", "displayname", "name",
+    "full_name", "avatar", "avatar_url", "profile_image", "profile_picture",
+    "image", "image_url", "photo_url", "bio", "verified", "is_verified",
+))
+
+
+def _public_actor_tables_1202ir(endpoints, models) -> set:
+    """Actor tables this app already serves to an ANONYMOUS caller.
+
+    This is what makes the fold provably zero-new-exposure: every column it carries is
+    already retrievable, one request per row, from a projected read the contract declares
+    public. r109 really does serve `GET /api/users/{username}` unauthenticated, returning
+    username / display_name / avatar / bio / followers / verified (and `email`, which the
+    allowlist above deliberately does NOT carry -- the fold is a strict subset of what is
+    already public, never a superset).
+
+    Auth is read through `_stated_auth_1202hi`, the one reader of the three places an
+    endpoint can state it (#1202hi/#1202ga), so this does not become a fourth opinion.
+    """
+    out = set()
+    try:
+        for ep in (endpoints or []):
+            if str((ep or {}).get("method", "")).upper() != "GET":
+                continue
+            if _stated_auth_1202hi(ep) is not False:
+                continue                      # unstated or required -> not proven public
+            res = _resource_model(str((ep or {}).get("path", "")), models)
+            if res and res[0] in _ACTOR_TABLES_803:
+                out.add(res[0])
+    except Exception:
+        return set()
+    return out
+
+
 def _joinable_types_1202fh(fk_type, id_type) -> bool:
     """True only when an `fk IN (ids)` comparison is type-safe on the database.
 
@@ -1330,19 +1371,47 @@ def _joinable_types_1202fh(fk_type, id_type) -> bool:
     return (ai and bi) or (at and bt)
 
 
-def _expandable_fks_1202fh(cols, models, table):
-    """[(fk_col, target_cls, target_cols)] worth folding into an owner-scoped list read.
+def _expandable_fks_1202fh(cols, models, table, *, private_tables=None,
+                           public_actor_tables=None):
+    """[(fk_col, target_cls, target_cols)] worth folding into a projected list read.
 
     Empty whenever anything is uncertain: an unresolvable FK, an actor target, a degenerate
     model, or a name that would shadow a column the row already carries.
+
+    #1202ip: `private_tables` refuses any target the app itself serves owner-scoped. #1202fh
+    argued its own safety from the READ ("the caller is reading THEIR OWN rows"); once the
+    fold also runs on a public read that argument is gone and has to be replaced by one about
+    the TARGET -- the folded entity must be something this app already serves to anyone.
+    Without it a public `orders` list could fold `payment_methods` in. Passed on BOTH branches
+    so the two reads answer the same question, rather than one of them being half-right
+    (#1202io's lesson: an inconsistent guard misdirects worse than a consistently absent one).
     """
     out = []
+    _private = {str(t) for t in (private_tables or ())}
+    _pub_actors = {str(t) for t in (public_actor_tables or ())}   # #1202ir, empty by default
     try:
         own = set(cols or [])
+        _declared = ((models or {}).get(table) or {}).get("fks") or {}
         for c in list(cols or []):
-            tgt = _fk_target_by_name_908(c, models)
-            if not tgt or tgt == table or tgt in _ACTOR_TABLES_803:
+            # #1202iq: ask the DECLARED ForeignKey first, and only then fall back to the
+            # name heuristic -- the order `_owner_scoped_child_566y` already uses at the other
+            # `_fk_target_by_name_908` call site. Name-only resolution answered None for 76 of
+            # 396 declared FKs across 24 corpus runs (19.2%), every one of them because the
+            # column is not named after its table: `videos.author_id -> users`,
+            # `routes.origin_place_id -> places`, `videos.category_id -> categories`. A missed
+            # FK is not an error anywhere -- the expansion is simply skipped and the page keeps
+            # rendering the bare id -- so nothing ever pointed at it.
+            tgt = _declared.get(c) or _fk_target_by_name_908(c, models)
+            if not tgt or tgt == table:
                 continue
+            _actor = tgt in _ACTOR_TABLES_803
+            if _actor and tgt not in _pub_actors:
+                # #569/#803's ban, unchanged wherever the app does not already publish the
+                # actor. #1202iq made these targets resolvable for the first time, so this
+                # is now the guard that actually fires rather than the keep-list below.
+                continue
+            if tgt in _private:
+                continue                      # #1202ip: not public -> never folded in
             tmeta = (models or {}).get(tgt) or {}
             tcls = tmeta.get("cls")
             tcols = list(tmeta.get("cols") or [])
@@ -1358,9 +1427,12 @@ def _expandable_fks_1202fh(cols, models, table):
                 # the page looks exactly as broken as before while the payload claims to
                 # carry the entity. Refuse instead: no join key, no expansion.
                 continue
-            keep = [x for x in tcols
-                    if x in _LABEL_COLS_803
-                    or any(k in str(x).lower() for k in _IMAGEISH_1202FH)]
+            if _actor:
+                keep = [x for x in tcols if str(x).lower() in _ACTOR_DISPLAY_COLS_1202IR]
+            else:
+                keep = [x for x in tcols
+                        if x in _LABEL_COLS_803
+                        or any(k in str(x).lower() for k in _IMAGEISH_1202FH)]
             if not keep:
                 continue                      # nothing a card could draw
             base = str(c)[:-3]
@@ -1370,6 +1442,41 @@ def _expandable_fks_1202fh(cols, models, table):
     except Exception:
         return []
     return out
+
+
+def _expansion_lines_1202ip(exp, cols: List[str], row_var: str = "r"):
+    """``(prep_lines, item_expr)`` folding `exp` into a projected LIST read.
+
+    Lifted verbatim out of #1202fh's owner-scoped branch so the PUBLIC collection branch
+    can use the SAME mechanism instead of a second copy that would drift.
+
+    #1202ip: the public branch never had it. 123 of 232 public projected list reads in the
+    corpus (53%, across tiktok / netflix / googlemaps) answer with bare foreign keys --
+    `/api/videos` returns `sound_id` and nothing about the sound, so the card the lane wrote
+    (`sound?.name || video.sound_name || video.sound_id`) renders the raw id. The lane cannot
+    repair it: #528 gives the projected read precedence over its own joined GET, and r109's
+    `custom_routes.py` really does define a richer `GET /api/videos` that never serves a
+    request. #528's stated trade-off was "lane-added filtering/sorting on PUBLIC lists"; the
+    joined display fields were not part of that bargain.
+
+    An empty `exp` returns the plain serialisation, so a read with nothing to fold emits
+    exactly what it emitted before this helper existed.
+    """
+    prep: List[str] = []
+    for _fk, _tcls, _tcols in (exp or []):
+        _b = _fk[:-3]
+        prep += [
+            f'    _ids_{_b} = [i for i in (getattr({row_var}, "{_fk}", None) for {row_var} in rows) if i is not None]',
+            f'    _m_{_b} = {{}}',
+            f'    if _ids_{_b}:',
+            f'        _m_{_b} = {{getattr(t, "id", None): {_serialize_expr("t", _tcols)} for t in db.query({_tcls}).filter(getattr({_tcls}, "id").in_(_ids_{_b})).all()}}',
+        ]
+    if not exp:
+        return prep, _serialize_expr(row_var, cols)
+    merge = "".join(
+        f', "{_fk[:-3]}": _m_{_fk[:-3]}.get(getattr({row_var}, "{_fk}", None))'
+        for _fk, _, _ in exp)
+    return prep, f"{{**{_serialize_expr(row_var, cols)}{merge}}}"
 
 
 def _serialize_expr(var: str, cols: List[str]) -> str:
@@ -1423,7 +1530,8 @@ def _me_user_model(models: Dict[str, Dict[str, Any]]):
     return None
 
 
-def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "", owner_scoped_reads: bool = False, owner_scoped_tables: Optional[Iterable[str]] = None) -> str:
+def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "", owner_scoped_reads: bool = False, owner_scoped_tables: Optional[Iterable[str]] = None,
+                       public_actor_tables: Optional[Iterable[str]] = None) -> str:
     """Project a FastAPI handler. Functional for recognised CRUD + nested-resource
     patterns over a resolvable model; valid-shape stub otherwise. Never 404s.
 
@@ -1778,34 +1886,37 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             ]
             # #1202fh: fold the referenced entities in, one batched query per FK, so the
             # page has something to draw. N+1 would be 100 queries on a 100-row page.
-            _exp1202fh = _expandable_fks_1202fh(cols, models, table)
-            for _fk1202fh, _tcls1202fh, _tcols1202fh in _exp1202fh:
-                _b = _fk1202fh[:-3]
-                body_lines += [
-                    f'    _ids_{_b} = [i for i in (getattr(r, "{_fk1202fh}", None) for r in rows) if i is not None]',
-                    f'    _m_{_b} = {{}}',
-                    f'    if _ids_{_b}:',
-                    f'        _m_{_b} = {{getattr(t, "id", None): {_serialize_expr("t", _tcols1202fh)} for t in db.query({_tcls1202fh}).filter(getattr({_tcls1202fh}, "id").in_(_ids_{_b})).all()}}',
-                ]
-            _merge1202fh = "".join(
-                f', "{_fk[:-3]}": _m_{_fk[:-3]}.get(getattr(r, "{_fk}", None))'
-                for _fk, _, _ in _exp1202fh)
+            _prep1202fh, _item1202fh = _expansion_lines_1202ip(
+                _expandable_fks_1202fh(cols, models, table,
+                                       private_tables=owner_scoped_tables,
+                                       public_actor_tables=public_actor_tables), cols)
+            body_lines += _prep1202fh
             body_lines.append(
-                f"    return {{\"items\": [{{**{_serialize_expr('r', cols)}{_merge1202fh}}} for r in rows], \"total\": len(rows)}}"
+                f"    return {{\"items\": [{_item1202fh} for r in rows], \"total\": len(rows)}}"
             )
         else:
+            # #1202ip: a PUBLIC list gets the same batched fold as the owner-scoped one.
+            # `_expandable_fks_1202fh` still refuses every ACTOR target, so this adds no
+            # principal's data to a public payload -- only the public entity the row already
+            # names by id (a sound, a category, a place).
+            _prep1202ip, _item1202ip = _expansion_lines_1202ip(
+                _expandable_fks_1202fh(cols, models, table,
+                                       private_tables=owner_scoped_tables,
+                                       public_actor_tables=public_actor_tables), cols)
             _rank1155 = _ranked_collection_1155(path, cols, table)
             if _rank1155:
                 _rcol, _rlim, _rdesc = _rank1155
                 _ord = f'getattr({cls}, "{_rcol}")' + ('.desc()' if _rdesc else '')
                 body_lines = [
                     f'    rows = db.query({cls}).filter(getattr({cls}, "{_rcol}").isnot(None)).order_by({_ord}).limit({_rlim}).all()',
-                    f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
+                ] + _prep1202ip + [
+                    f"    return {{\"items\": [{_item1202ip} for r in rows], \"total\": len(rows)}}",
                 ]
             else:
                 body_lines = [
                     f"    rows = db.query({cls}).limit(100).all()",
-                    f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
+                ] + _prep1202ip + [
+                    f"    return {{\"items\": [{_item1202ip} for r in rows], \"total\": len(rows)}}",
                 ]
     elif cls and m in ("POST", "PUT", "PATCH"):
         # DB mutations are wrapped: a relational create the projector can't fully
@@ -2309,6 +2420,10 @@ def project_missing_routes(
     src = main_py.read_text(encoding="utf-8")
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
+    # #1202ir: actor tables the CONTRACT itself declares publicly readable. Computed once
+    # from the same endpoint list the handlers are projected from, so the fold can never
+    # publish an actor this app keeps behind auth.
+    _pub_actors_1202ir = _public_actor_tables_1202ir(declared_endpoints, models)
     # #1202ic: a handler projected earlier keeps the param type it was born with, even
     # after the lane moves the column. Re-derive before anything else reads `src`.
     src, _retyped_1202ic = _retype_projected_params_1202ic(src, models)
@@ -2391,7 +2506,7 @@ def project_missing_routes(
             or meta.get("response_key")
             or ""
         ).strip()
-        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)))
+        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables, public_actor_tables=_pub_actors_1202ir)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
 
