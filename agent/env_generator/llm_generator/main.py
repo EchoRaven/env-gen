@@ -354,11 +354,15 @@ async def main():
     # the --fresh reset below — which would otherwise delete the very snapshots asked for.
     if args.list_snapshots or args.restore_snapshot:
         from env_generator.llm_generator.multi_agent.runtime.run_snapshot import (
-            list_snapshots, restore_snapshot)
+            list_snapshots, restore_snapshot, best_snapshot_1202hx)
         if args.list_snapshots:
             snaps = list_snapshots(output_dir)
             if not snaps:
                 print(f'No snapshots under {output_dir}/snapshots')
+            # #1202hx: name the one worth restarting from. The listing was ordered by
+            # time, and the newest is not the best -- r106's last interval held 1 of 9
+            # screens at a 0.34 median.
+            _best_1202hx = best_snapshot_1202hx(snaps)
             for s in snaps:
                 # #1202di: size never answered "is this worth restoring". A snapshot taken
                 # while the app could not boot has judged nothing, and restoring it resumes
@@ -374,9 +378,22 @@ async def main():
                     _health += f", ${s['usd']:.0f}"
                 if s.get("ticks") is not None:
                     _health += f", tick {s['ticks']}"
+                # #1202hx: the quality that decides whether restoring is ahead or behind.
+                if s.get("screens_total"):
+                    _health += (f", screens {s['screens_pass']}/{s['screens_total']}"
+                                f" med {s.get('visual_med') or 0:.2f}")
+                _fw = s.get("fwval_failed")
+                if _fw:
+                    _health += f", blocked on {','.join(_fw[:3])}"
+                elif _fw == []:
+                    _health += ", no blocking checks"
                 print(f"{s['name']:<34} {s.get('kind',''):<10} "
                       f"{s.get('files',0):>5} files  {s.get('bytes',0)/1e6:>7.1f} MB  "
-                      f"{_health}")
+                      f"{_health}"
+                      f"{'   <-- BEST STATE TO RESUME FROM' if s['name'] == _best_1202hx else ''}")
+            if _best_1202hx:
+                print(f"\n#1202hx best restore point: {_best_1202hx}\n"
+                      f"  --restore-snapshot {_best_1202hx}   then re-run with --resume")
         else:
             res = restore_snapshot(output_dir, args.restore_snapshot)
             if res['ok']:

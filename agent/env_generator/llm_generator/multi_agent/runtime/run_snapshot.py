@@ -27,6 +27,7 @@ Cadence (all optional, read at call time so a live run can be retuned by restart
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import time
@@ -258,6 +259,7 @@ def maybe_snapshot(output_dir, kind: str = _KIND_INTERVAL,
     if kind == _KIND_MILESTONE:
         if _env_int("ENVGEN_SNAPSHOT_ON_MILESTONE", 1) <= 0:
             return None
+        _warn_if_nothing_scored_1202hy(output_dir, _LOG_1202HY)
         return take_snapshot(output_dir, kind, label)
 
     every = _env_int("ENVGEN_SNAPSHOT_EVERY_MIN", 20)
@@ -272,7 +274,79 @@ def maybe_snapshot(output_dir, kind: str = _KIND_INTERVAL,
         return None
     if (time.time() - last) < every * 60:
         return None
+    _warn_if_nothing_scored_1202hy(output_dir, _LOG_1202HY)
     return take_snapshot(output_dir, kind, label)
+
+
+# #1202hy: SPENDING WITH NOTHING SCORED, SAID WHILE IT IS STILL HAPPENING.
+#
+# #1202di put "⚠ NOTHING SCORED" in the snapshot listing, which is read AFTER the run is
+# over and someone is choosing what to rewind to. Nothing said it during the run, so the
+# spend kept going: across seven runs on this corpus, $814 accumulated in states where
+# the visual gate had never judged a single screen.
+#
+# Validated against the run that DELIVERED before being believed, because "no screens yet"
+# could simply be what the first minutes of any run look like:
+#
+#     r97 (delivered)   first snapshot ALREADY judged=1 at $43; no zero-judgment snapshot
+#     r106              judged=0 through $165 before the first score
+#     r102              judged=0 at EVERY snapshot -- it never scored anything at all
+#
+# It discriminates, so the threshold is anchored on r97: a healthy run has judged
+# something by roughly $50. Warning only -- a run legitimately builds before it can be
+# photographed, and the operator is the one who decides whether to keep paying.
+_LOG_1202HY = logging.getLogger("multi_agent.runtime.run_snapshot")
+_NOTHING_SCORED_WARNED_1202HY: Dict[str, bool] = {}
+
+
+def _warn_if_nothing_scored_1202hy(output_dir, logger=None) -> Optional[str]:
+    """Say once that this run is paying without having judged a screen. Returns the text.
+
+    Reads the LIVE ledger and gate rather than the snapshot just taken: milestone
+    snapshots record usd=0 (the ledger is rewritten around that boundary), so a threshold
+    read out of one would never fire on exactly the runs it is meant to catch.
+    """
+    try:
+        key = str(Path(output_dir))
+        if _NOTHING_SCORED_WARNED_1202HY.get(key):
+            return None
+        try:
+            floor = float(os.environ.get("ENVGEN_NOTHING_SCORED_WARN_USD", "50") or 0)
+        except (TypeError, ValueError):
+            floor = 50.0
+        if floor <= 0:
+            return None
+        root = Path(output_dir)
+        usd = None
+        try:
+            usd = float((json.loads((root / "run_budget.json").read_text(encoding="utf-8"))
+                         .get("llm") or {}).get("usd"))
+        except Exception:
+            return None
+        if usd is None or usd < floor:
+            return None
+        # NOT MEASURED is not the same as judged nothing: a gate file that does not exist
+        # yet means the gate has not run, which this must not report as a stalled run.
+        try:
+            gate = json.loads((root / "design" / "visual_gate" / "gate_state.json")
+                              .read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        judged = (gate or {}).get("total_judgments")
+        if judged is None or int(judged or 0) > 0:
+            return None
+        _NOTHING_SCORED_WARNED_1202HY[key] = True
+        msg = ("#1202hy this run has spent $%.0f and the visual gate has judged ZERO "
+               "screens. The one run that delivered on this corpus had already judged a "
+               "screen by $43; two that did not (r102, r106) look exactly like this and "
+               "spent $122 and $165 here. Check whether the app boots -- backend_health "
+               "and business_endpoints_reachable are the usual reason -- before paying "
+               "for more of the same. Warning only; set ENVGEN_NOTHING_SCORED_WARN_USD=0 "
+               "to silence." % usd)
+        (logger.warning(msg) if logger else None)
+        return msg
+    except Exception:
+        return None
 
 
 def list_snapshots(output_dir) -> List[Dict]:
@@ -291,8 +365,86 @@ def list_snapshots(output_dir) -> List[Dict]:
             pass
         rec["name"] = d.name
         rec.update(_snapshot_health_1202di(d))
+        rec.update(_snapshot_quality_1202hx(d))
         out.append(rec)
     return out
+
+
+# #1202hx: "WHICH ONE WAS THE GOOD STATE?"
+#
+# #1202bw stores many restore points and #1202di says whether each one had judged
+# anything -- which separates a snapshot of a run that could not boot from one that
+# could, and stops there. Neither says which of the ones that DID score is the best
+# place to restart, so `--restore-snapshot` is chosen by reading timestamps, and the
+# newest is not the best: r106's last interval scored 1 of 9 screens at a 0.34 median
+# while an earlier milestone of the same run had judged the same set no worse.
+#
+# Both numbers are already INSIDE every snapshot -- #1202cs put design/ (JSON only)
+# there, which carries visual_gate/gate_state.json and milestone_gates.json. Nothing
+# new is captured; the listing simply stops throwing the answer away.
+#
+# `None` means NOT MEASURED throughout, never coerced to 0, for the same reason #1202di
+# gives: a snapshot older than the gate directory has no verdict, which is a different
+# fact from "scored nothing".
+_VISUAL_PASS_1202HX = 0.65
+
+
+def _snapshot_quality_1202hx(d: Path) -> Dict:
+    """How GOOD was the run here — screens over threshold, median, blocking checks."""
+    q: Dict = {"screens_pass": None, "screens_total": None, "visual_med": None,
+               "fwval_failed": None, "deliver_stuck": None}
+    try:
+        gate = json.loads((d / "design" / "visual_gate" / "gate_state.json")
+                          .read_text(encoding="utf-8"))
+        best = (gate or {}).get("_best_by_screen")
+        if isinstance(best, dict) and best:
+            scores = []
+            for v in best.values():
+                sc = v.get("score") if isinstance(v, dict) else v
+                try:
+                    scores.append(float(sc))
+                except (TypeError, ValueError):
+                    continue
+            if scores:
+                scores.sort()
+                q["screens_total"] = len(scores)
+                q["screens_pass"] = sum(1 for x in scores if x >= _VISUAL_PASS_1202HX)
+                q["visual_med"] = scores[len(scores) // 2]
+    except Exception:
+        pass
+    try:
+        mg = json.loads((d / "design" / "milestone_gates.json").read_text(encoding="utf-8"))
+        if isinstance(mg, dict):
+            fs = mg.get("_fwval_failure_set")
+            if isinstance(fs, list):
+                q["fwval_failed"] = [str(x) for x in fs]
+            ds = mg.get("_fwdeliver_stuck_count")
+            if ds is not None:
+                q["deliver_stuck"] = int(ds or 0)
+    except Exception:
+        pass
+    return q
+
+
+def best_snapshot_1202hx(snaps: List[Dict]) -> Optional[str]:
+    """Name of the snapshot worth restarting from, or None if none can be ranked.
+
+    Ordered by what actually decides whether a restart is ahead or behind: screens over
+    threshold, then the median (a run can hold its count while every screen improves),
+    then FEWER blocking framework-validation checks, then the later one. A snapshot that
+    scored nothing is never "best" -- restoring it resumes a run with no visual evidence
+    at all, which is exactly the trap #1202di was written about.
+    """
+    ranked = [s for s in snaps if s.get("screens_pass") is not None
+              and (s.get("judgments") or 0) > 0]
+    if not ranked:
+        return None
+    def key(s: Dict):
+        return (s.get("screens_pass") or 0,
+                s.get("visual_med") or 0.0,
+                -len(s.get("fwval_failed") or []),
+                s.get("epoch") or 0.0)
+    return max(ranked, key=key).get("name")
 
 
 def _snapshot_health_1202di(d: Path) -> Dict:
