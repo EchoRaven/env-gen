@@ -4579,6 +4579,51 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     len(_names713), _h713[:12], ", ".join(sorted(_names713)))
                 _verdict.setdefault("identical_captures_713", []).append(
                     {"md5": _h713, "screens": sorted(_names713)})
+                # #1202il: AND STOP THE SCORE FROM BLOCKING ON A PAGE IT DID NOT PHOTOGRAPH.
+                #
+                # #713 says it in its own warning above — "their similarity scores measure
+                # that page, not those screens" — and #714 already stops the phantom
+                # REMEDIATION from reaching the lane. The SCORE was left driving the
+                # blocking criterion anyway.
+                #
+                # `_demote_duplicate_route_screens` is the right treatment and cannot reach
+                # this case: it groups by the RESOLVED route and skips a screen that has
+                # none (`if not r: continue`), while a missing route is exactly why the
+                # browser fell through to a common page. Route-intent de-duplication cannot
+                # see a duplicate created by the absence of route intent; only the capture
+                # hash can, and that is what this loop just computed.
+                #
+                # tiktok-r108, live: `profile_own` and `fyp_feed_logged_out` share one md5.
+                # The app serves its profile at `/@:username`, which no filename-derived
+                # candidate matches, so `profile_own` was photographed as the logged-out
+                # feed and judged 0.20 against a profile reference — the lowest score of
+                # the run, counted as blocking, and describing a page the capture never
+                # visited.
+                #
+                # Canonical member keeps its score (one of them did photograph its page);
+                # the rest go ADVISORY — still judged, still reported, out of the blocking
+                # criterion. Same disposition #128 gives an overlay, for the same reason.
+                try:
+                    _grp713 = [r for r in (results or [])
+                               if str(r.get("name") or "") in _names713]
+                    if len(_grp713) > 1:
+                        _canon713 = min(_grp713, key=lambda r: (
+                            1 if r.get("advisory") else 0,
+                            1 if _screen_is_transient(r) else 0,
+                            str(r.get("name") or "")))
+                        for _r in _grp713:
+                            if _r is not _canon713 and not _r.get("advisory"):
+                                _r["advisory"] = True
+                                _LOG.warning(
+                                    "#1202il `%s` shares a capture with `%s` — it did not "
+                                    "photograph its own page, so its score is advisory, "
+                                    "not blocking.",
+                                    _r.get("name"), _canon713.get("name"))
+                except Exception as _e1202il:
+                    from .message_format import warn_once_1201
+                    warn_once_1201("visual_fidelity.duplicate_capture_advisory_1202il",
+                                   "a screen that photographed another screen's page is "
+                                   "still blocking the visual gate", _e1202il)
                 # #714: and STOP THE PHANTOM REMEDIATION. Detection alone still leaves the
                 # lane a to-do list about a page that was never photographed. Measured over the
                 # corpus: screens inside a duplicate group carry 17.5 deviations each against
