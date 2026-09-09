@@ -231,3 +231,62 @@ def test_a_public_actor_that_the_app_serves_owner_scoped_is_still_refused(tmp_pa
                              {"users"}, public_actor_tables=pub)
     src = h if isinstance(h, str) else h[0]
     assert "_m_author" not in src, src
+
+
+# --------------------------------------------------------------------------------------
+# #1202is: the item read of the same entity folds the same things the list read does.
+# --------------------------------------------------------------------------------------
+
+def _detail(tmp_path, endpoints=_PUBLIC_USER_EP, scoped=()):
+    models = _models(tmp_path)
+    pub = RP._public_actor_tables_1202ir(endpoints, models)
+    h = RP._generate_handler("GET", "/api/videos/{id}", False, models, 0, None, False,
+                             set(scoped), public_actor_tables=pub)
+    return h if isinstance(h, str) else h[0]
+
+
+def test_the_item_read_carries_the_entity_too(tmp_path):
+    """30 of 53 projected detail reads in the corpus answered with bare foreign keys.
+    `/api/videos/{id}` is a registered SCREEN in every tiktok run."""
+    src = _detail(tmp_path)
+    assert '_fkexp["sound"]' in src, src
+    assert '_fkexp["author"]' in src, src
+    assert "**_fkexp" in src, src
+
+
+def test_the_list_and_the_item_read_agree_on_what_they_fold(tmp_path):
+    """The reason this is one ticket and not two. A page written against the feed's shape
+    breaks on the detail route when the two disagree -- and a HALF-applied fix turns a
+    consistent gap into an inconsistent one, which misdirects worse than the gap did
+    (#1202io/#1202ij, learned live)."""
+    import re
+    models = _models(tmp_path)
+    pub = RP._public_actor_tables_1202ir(_PUBLIC_USER_EP, models)
+    lh = RP._generate_handler("GET", "/api/videos", False, models, 0, None, False, set(),
+                              public_actor_tables=pub)
+    list_src = lh if isinstance(lh, str) else lh[0]
+    list_keys = sorted(re.findall(r'"(\w+)": _m_\w+\.get', list_src))
+    item_keys = sorted(re.findall(r'_fkexp\["(\w+)"\]', _detail(tmp_path)))
+    assert list_keys == item_keys, (list_keys, item_keys)
+    # named explicitly so "they agree" cannot be satisfied by both folding NOTHING
+    assert list_keys == ["author", "category", "sound"], list_keys
+
+
+def test_the_item_read_obeys_the_same_guards(tmp_path):
+    """`_expandable_fks_1202fh` is the single decider, so every guard proven above applies
+    here without being restated -- asserted rather than assumed."""
+    assert "_fkt_author" not in _detail(tmp_path, endpoints=_PRIVATE_USER_EP)
+    assert "_fkt_author" not in _detail(tmp_path, scoped=("users",))
+
+
+def test_an_item_read_with_nothing_to_fold_is_byte_identical(tmp_path):
+    """#803's discipline: a table with no relations emits what it emitted before."""
+    models = _models(tmp_path)
+    h = RP._generate_handler("GET", "/api/sounds/{id}", False, models, 0, None, False, set())
+    src = h if isinstance(h, str) else h[0]
+    assert "_fkexp" not in src, src
+    assert "{**" not in src, src
+
+
+def test_the_emitted_item_handler_parses(tmp_path):
+    ast.parse(_detail(tmp_path).split("\n", 1)[1])

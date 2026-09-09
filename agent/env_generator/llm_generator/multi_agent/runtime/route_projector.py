@@ -1479,6 +1479,36 @@ def _expansion_lines_1202ip(exp, cols: List[str], row_var: str = "r"):
     return prep, f"{{**{_serialize_expr(row_var, cols)}{merge}}}"
 
 
+def _detail_expansion_1202is(exp, obj_var: str = "obj"):
+    """``(lines, merge_fragment)`` folding `exp` into a projected DETAIL read.
+
+    #1202is: the list half of this (#1202ip) left the item half bare, and 30 of 53 projected
+    detail reads in the corpus (56.6%) answer with bare foreign keys -- `/api/videos/{id}`
+    is a registered SCREEN in every tiktok run and could name neither its author nor its
+    sound. Two reads of the SAME entity disagreeing about what it carries is worse than both
+    being bare: the page written against the feed's shape breaks on the detail route.
+
+    One row, so one `db.get` per FK rather than #1202ip's batched `in_` -- and the same
+    `_expandable_fks_1202fh` decides WHICH, so the actor ban, the contract-auth gate, the
+    private-target gate and the type-safety check are shared, not restated.
+
+    Empty `exp` emits nothing, exactly as #803 does when a table has no label relations.
+    """
+    if not exp:
+        return [], ""
+    lines = ["    _fkexp = {}"]
+    for _fk, _tcls, _tcols in exp:
+        _b = _fk[:-3]
+        lines += [
+            f'    _fkv_{_b} = getattr({obj_var}, "{_fk}", None)',
+            f'    if _fkv_{_b} is not None:',
+            f'        _fkt_{_b} = db.get({_tcls}, _fkv_{_b})',
+            f'        if _fkt_{_b} is not None:',
+            f'            _fkexp["{_b}"] = {_serialize_expr(f"_fkt_{_b}", _tcols)}',
+        ]
+    return lines, ", **_fkexp"
+
+
 def _serialize_expr(var: str, cols: List[str]) -> str:
     """Build a dict literal serialising an ORM instance's columns (ISO datetimes)."""
     if not cols:
@@ -1720,6 +1750,12 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             ]
         # #803: fold normalised label relations into the item payload. When there are none the
         # emitted handler is byte-identical to before.
+        # #1202is: the same fold the LIST read got, on the item read.
+        _fkl1202is, _fkm1202is = _detail_expansion_1202is(
+            _expandable_fks_1202fh(cols, models, table,
+                                   private_tables=owner_scoped_tables,
+                                   public_actor_tables=public_actor_tables) if table else [])
+        body_lines += _fkl1202is
         _links803 = _link_label_reads_803(table, models) if table else []
         if _links803:
             body_lines.append("    _labels = {}")
@@ -1735,7 +1771,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     f"        _labels[\"{_rel['field']}\"] = []",
                 ]
             body_lines += [
-                f"    return {{\"item\": {{**{_serialize_expr('obj', cols)}, **_labels}}}}",
+                f"    return {{\"item\": {{**{_serialize_expr('obj', cols)}, **_labels{_fkm1202is}}}}}",
+            ]
+        elif _fkm1202is:
+            body_lines += [
+                f"    return {{\"item\": {{**{_serialize_expr('obj', cols)}{_fkm1202is}}}}}",
             ]
         else:
             body_lines += [
