@@ -2330,6 +2330,27 @@ if __name__ == "__main__":
 '''
 
 
+def _declared_owner_private_1202ht(tables: Dict[str, Any], meta: Any, path: Any) -> bool:
+    """#1202ht — do the MATERIALS declare this endpoint's table per-user-private?
+
+    Only the materials answer here. The contract's own `owner_scoped_reads` cannot: #320's
+    case is a table that carries it for write ownership while its FEED is public, so with the
+    materials silent the two are indistinguishable and refusing would re-open r88/r89's wedge
+    for every spec written before `visibility` existed.
+    """
+    try:
+        from .route_projector import _resource_model
+        res = _resource_model(str(path or ""), meta or {})
+        table = (res[0] if res else "") or ""
+        if not table:
+            return False
+        rec = (tables or {}).get(table) or (tables or {}).get(str(table).lower()) or {}
+        md = rec.get("metadata") if isinstance(rec, Mapping) else None
+        return str((md or {}).get("visibility") or "").strip().lower() == "owner"
+    except Exception:
+        return False
+
+
 def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, Any]) -> str:
     """Render the full ``main.py``: fixed skeleton + auth-enforcement middleware + ALL
     business handlers projected from the contract (static routes before param routes)."""
@@ -2351,7 +2372,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         for name, t in (tables or {}).items()
         if isinstance(t, Mapping) and (
             _truthy((t.get("metadata") or {}).get("owner_scoped_reads"))
-            or _truthy(t.get("owner_scoped_reads")))
+            or _truthy(t.get("owner_scoped_reads"))
+            # #1202ht: the MATERIALS' own per-user verdict, for a table whose contract flag
+            # the lane never set. Symmetric with #1202hh, which lets a `public` declaration
+            # stand a shape heuristic down; this direction only ever TIGHTENS.
+            or str(((t.get("metadata") or {}).get("visibility")) or "").strip().lower()
+            == "owner")
     }
     seen: set = set()
     static_blocks: List[str] = []
@@ -2401,6 +2427,16 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         # public, where the contract must win.
         from .route_projector import _stated_auth_1202hi
         _explicit_public_1097 = _stated_auth_1202hi(ep, emeta) is False
+        # #1202ht: …but an endpoint flag cannot publish a table the MATERIALS call per-user.
+        # r106 shipped `GET /api/notifications` as `db.query(Notification).limit(100).all()`
+        # with no actor, on a table carrying BOTH `owner_scoped_reads: True` and
+        # `visibility: owner` — an unauthenticated dump of every user's notifications, out of
+        # a projected handler no lane can edit. #320 states its premise ("a strong model ...
+        # only sets =False on a real public feed"); that lane was clearing a run of unscoped-
+        # read blockers on `videos` and set it here too. Where the materials are SILENT #320's
+        # bargain is unchanged — see the test that pins that limit.
+        if _explicit_public_1097 and _declared_owner_private_1202ht(tables, meta, path):
+            _explicit_public_1097 = False
         if _explicit_public_1097 and _owner_scoped:
             _owner_scoped = False
         try:

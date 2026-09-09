@@ -1035,6 +1035,24 @@ def _is_per_user_sub_entity_fk(child_meta: Dict[str, Any], owner_fk: str,
     return any(c in (parent.get("cols") or []) for c in _DIRECT_OWNER_FK_NAMES)
 
 
+def _declared_owner_private_1202ht(meta: Dict[str, Any]) -> bool:
+    """#1202ht -- do the MATERIALS declare this table's rows per-user-private?
+
+    The mirror of `_declared_public_content_1202hh`, carried on the same model meta. r106
+    projected `GET /api/notifications` as an unauthenticated `db.query(Notification).all()`
+    on a table declaring BOTH `owner_scoped_reads: True` and `visibility: owner`, because an
+    endpoint's `auth_required: false` cleared the scoping (#320). A declaration that the rows
+    are per-user must outrank a flag that answers whether you have to log in.
+
+    Only ever TIGHTENS, so it needs no second signal: releasing a read requires agreement,
+    refusing one does not.
+    """
+    try:
+        return str((meta or {}).get("visibility") or "").strip().lower() == "owner"
+    except Exception:
+        return False
+
+
 def _declared_public_content_1202hh(meta: Dict[str, Any]) -> bool:
     """#1202hh -- do the MATERIALS declare this table's rows published?
 
@@ -1491,6 +1509,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # invisible to every caller and every feed-backed flow failed.
     if read_scoped and not owner_scoped_reads and _declared_public_content_1202hh(meta):
         read_scoped = False
+    # #1202ht: …and the materials' PRIVATE verdict restores it, for the read whose endpoint
+    # flag talked the caller out of scoping. Both emitters funnel through here, so the two
+    # cannot drift the way #1202hi found them drifting on the auth copies.
+    if not read_scoped and bool(owner_fk) and _declared_owner_private_1202ht(meta):
+        read_scoped = True
     # #777: the column a READ filters on — the narrowest owner the table declares.
     read_owner_fk = _read_owner_fk_777(meta, owner_fk) if read_scoped else owner_fk
 
@@ -2270,6 +2293,9 @@ def project_missing_routes(
         # genuinely-private list private and only sets =False on a real public feed).
         # #1202hi: through the shared reader, so this sees the copy the LANE writes.
         _explicit_public = _stated_auth_1202hi(ep, meta) is False
+        # #1202ht: an endpoint flag cannot publish a table the materials call per-user.
+        if _explicit_public and _rm_cur and _declared_owner_private_1202ht(_rm_cur[1]):
+            _explicit_public = False
         if _explicit_public and _owner_scoped:
             _owner_scoped = False   # deliberate public read → all rows, no owner filter
         # #633: …but a table that is per-user-private BY CONSTRUCTION is private whatever the
