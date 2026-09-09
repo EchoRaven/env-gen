@@ -1581,6 +1581,54 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        # #1202io: REFUSE THE CONTRADICTION AT THE WRITE BOUNDARY.
+        #
+        # `owner_scoped_reads` projects `WHERE owner = caller`; the materials' `public`
+        # means "a reader who is not the author still sees the row, and seeing it is the
+        # point". `public_content_scoped_away_1202gv` calls them direct opposites, and a
+        # record holding both makes the projector and the audit permanently disagree:
+        # #1202hm aligned them on "materials public AND not owner-scoped", so whoever
+        # writes the True wins and the public feed stays filtered.
+        #
+        # This is where that happens. r109, live: `videos` carries `visibility: public`
+        # and `owner_scoped_reads: True` with `_updated_by: backend` — the LANE wrote it.
+        # r107 showed the other direction: the lane cleared it SIX times and it came back.
+        # Neither side can win a fight it has to keep re-winning.
+        #
+        # #1202ij fixed the two places that STAMP the verdict (kickoff, and the scaffolder
+        # for a resume). It could not fix this one, and clearing only in the scaffolder's
+        # in-memory dict made it worse for one run: the projector stopped filtering while
+        # the audit still read `True` from the ledger, so r109 reported `unscoped owner
+        # read` seven times where r108 reported none. The value has to be right in the
+        # RECORD, not in one reader's copy of it.
+        #
+        # Normalising here follows this function's own precedent ("NORMALIZE AT THE WRITE
+        # BOUNDARY" above) and is narrow: only when the materials explicitly say `public`,
+        # and only on the flag they contradict. A table the materials call `owner` keeps
+        # its filter, and a table they say nothing about is untouched — #1202gd's rule for
+        # staying strict.
+        try:
+            _md1202io = table.get("metadata") or {}
+            if _md1202io.get("owner_scoped_reads") is True and str(
+                    _md1202io.get("visibility") or "").strip().lower() == "public":
+                _md1202io = dict(_md1202io)
+                _md1202io["owner_scoped_reads"] = False
+                _md1202io["owner_scoped_reads_cleared_by_1202io"] = str(agent or "?")
+                table["metadata"] = _md1202io
+                import logging as _lg1202io
+                _lg1202io.getLogger(__name__).warning(
+                    "#1202io `%s` was registered owner-scoped by %s while the materials "
+                    "declare it PUBLIC; storing owner_scoped_reads=False. The two are "
+                    "direct opposites and every reader of this record must see one "
+                    "answer — change the materials if the rows really are private.",
+                    table_id, agent or "?")
+        except Exception as _e1202io:
+            from .message_format import warn_once_1201
+            warn_once_1201("registryhub.public_owner_scope_1202io",
+                           "the materials/contract contradiction is stored as-is, so the "
+                           "projector and the audit will disagree about this table",
+                           _e1202io)
+
         new_status = (table.get("status") or "").lower()
         self._tables.update(
             lambda m: m.set(table_id, table, actor),

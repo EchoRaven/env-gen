@@ -42,29 +42,23 @@ def _rec(**md):
     return {"name": "t", "metadata": dict(md)}
 
 
-def test_a_public_table_loses_the_probe_s_owner_filter(tmp_path):
-    """The r107 case: materials public, probe said owner-scoped."""
+def test_the_stamp_only_records_the_verdict(tmp_path):
+    """#1202ij's scaffolder half CLEARED `owner_scoped_reads` here. #1202io moved that to
+    the write boundary and this copy went with it — r109 proved why.
+
+    Clearing here fixed only the projector's view: the audit reads
+    `registryhub_tables.json`, still saw `True`, and reported `unscoped owner read` seven
+    times against a projector that had correctly stopped filtering, where r108 reported
+    none. #1202hm had aligned both readers on "materials public AND not owner-scoped";
+    correcting one reader's copy broke that alignment instead of resolving anything.
+    """
     _spec(tmp_path, [{"name": "videos", "visibility": "public"}])
     tables = {"videos": _rec(owner_scoped_reads=True)}
     apply_vis(tables, tmp_path)
-    assert tables["videos"]["metadata"]["owner_scoped_reads"] is False
-    assert tables["videos"]["metadata"]["visibility"] == "public"
-
-
-def test_it_still_fires_when_visibility_was_already_stamped(tmp_path):
-    """The early `continue` skipped exactly the records that mattered."""
-    _spec(tmp_path, [{"name": "videos", "visibility": "public"}])
-    tables = {"videos": _rec(visibility="public", owner_scoped_reads=True)}
-    apply_vis(tables, tmp_path)
-    assert tables["videos"]["metadata"]["owner_scoped_reads"] is False
-
-
-def test_an_owner_declared_table_keeps_its_filter(tmp_path):
-    """The teeth. `video_likes` is per-user and must stay scoped."""
-    _spec(tmp_path, [{"name": "video_likes", "visibility": "owner"}])
-    tables = {"video_likes": _rec(visibility="owner", owner_scoped_reads=True)}
-    apply_vis(tables, tmp_path)
-    assert tables["video_likes"]["metadata"]["owner_scoped_reads"] is True
+    md = tables["videos"]["metadata"]
+    assert md["visibility"] == "public", "the verdict must still be recorded"
+    assert md["owner_scoped_reads"] is True, (
+        "the stamp must not correct one reader's copy — #1202io normalises the record")
 
 
 def test_an_undeclared_table_is_untouched(tmp_path):
@@ -72,15 +66,7 @@ def test_an_undeclared_table_is_untouched(tmp_path):
     _spec(tmp_path, [{"name": "videos", "visibility": "public"}])
     tables = {"secrets": _rec(owner_scoped_reads=True)}
     apply_vis(tables, tmp_path)
-    assert tables["secrets"]["metadata"]["owner_scoped_reads"] is True
-
-
-def test_a_public_table_without_the_flag_is_not_given_one(tmp_path):
-    """It clears a filter the probes imposed; it does not invent a False from nothing."""
-    _spec(tmp_path, [{"name": "videos", "visibility": "public"}])
-    tables = {"videos": _rec()}
-    apply_vis(tables, tmp_path)
-    assert "owner_scoped_reads" not in tables["videos"]["metadata"]
+    assert "visibility" not in tables["secrets"]["metadata"]
 
 
 def test_no_spec_changes_nothing(tmp_path):
@@ -94,32 +80,6 @@ def test_it_never_raises(tmp_path):
     _spec(tmp_path, [{"name": "videos", "visibility": "public"}])
     for tables in ({}, {"videos": None}, {"videos": "x"}, None):
         apply_vis(tables, tmp_path)          # must not raise
-
-
-def test_the_clearing_is_announced(tmp_path, caplog):
-    """It overrides a probe; a silent override is how the two halves drifted apart."""
-    import logging
-    _spec(tmp_path, [{"name": "videos", "visibility": "public"}])
-    tables = {"videos": _rec(visibility="public", owner_scoped_reads=True)}
-    with caplog.at_level(logging.WARNING):
-        apply_vis(tables, tmp_path)
-    assert any("#1202ij" in r.getMessage() for r in caplog.records)
-
-
-# --- against r107's own ledger --------------------------------------------------------
-
-def test_r107s_videos_would_be_released_and_its_likes_would_not():
-    root = Path(__file__).resolve().parents[2]
-    led = root / "generated/tiktok-web-r107/shared/hubs/registryhub_tables.json"
-    if not led.is_file():
-        pytest.skip("r107 corpus not on this machine")
-    raw = json.loads(led.read_text())
-    tables = {k: v for k, v in raw.items() if k != "_meta"}
-    assert (tables["videos"]["metadata"] or {}).get("owner_scoped_reads") is True, \
-        "premise: the ledger still carries the flag the lane cleared six times"
-    apply_vis(tables, root / "generated/tiktok-web-r107")
-    assert tables["videos"]["metadata"]["owner_scoped_reads"] is False
-    assert tables["video_likes"]["metadata"]["owner_scoped_reads"] is True
 
 
 # --- the OTHER emitter: kickoff, where a fresh run writes the record ------------------
