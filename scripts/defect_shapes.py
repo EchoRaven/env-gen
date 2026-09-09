@@ -104,17 +104,50 @@ _EXCL_FLAGS_D5 = ('advisory', 'blank', 'deleted', 'skipped', 'stale', 'disabled'
                   'dead', 'pending')
 
 
-def _excl_flags_d5(node):
-    out = set()
-    for n in ast.walk(node):
-        if isinstance(n, ast.Call) and getattr(n.func, 'attr', None) == 'get' and n.args:
-            a = n.args[0]
+def _flag_reads_d5(node):
+    """The exclusion flags this node reads, and whether each read EXCLUDES on it.
+
+    Third correction. Reading the flag is not honouring it: `blanked = [r for r in blocking
+    if r.get("blank") is True]` SELECTS the blanks to count them (visual_fidelity's blackout
+    detector) — the opposite of excluding them — and counting that as "honours `blank`" made
+    every sibling loop look inconsistent with it. Only a NEGATIVE context excludes.
+    """
+    excl = set()
+    def _flag_of(x):
+        if isinstance(x, ast.Call) and getattr(x.func, 'attr', None) == 'get' and x.args:
+            a = x.args[0]
             if isinstance(a, ast.Constant) and a.value in _EXCL_FLAGS_D5:
-                out.add(a.value)
-        elif isinstance(n, ast.Subscript) and isinstance(getattr(n, 'slice', None), ast.Constant) \
-                and n.slice.value in _EXCL_FLAGS_D5:
-            out.add(n.slice.value)
-    return out
+                return a.value
+        if isinstance(x, ast.Subscript) and isinstance(getattr(x, 'slice', None), ast.Constant) \
+                and x.slice.value in _EXCL_FLAGS_D5:
+            return x.slice.value
+        return None
+    sel = set()
+    for n in ast.walk(node):
+        # `not X.get(flag)`
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.Not):
+            f = _flag_of(n.operand)
+            if f:
+                excl.add(f)
+        # `X.get(flag) is not True` / `!= True`
+        elif isinstance(n, ast.Compare) and n.ops and isinstance(n.ops[0], (ast.IsNot, ast.NotEq)):
+            f = _flag_of(n.left)
+            if f:
+                excl.add(f)
+        # `if X.get(flag): continue`
+        elif isinstance(n, ast.If):
+            f = _flag_of(n.test)
+            if f and any(isinstance(b, ast.Continue) for b in n.body):
+                excl.add(f)
+        # positive SELECTION on the flag -- `[s for s in xs if s.get(flag)]`. Fourth
+        # correction: `blocking = [s for s in routed if not s.get("advisory")]` beside
+        # `advisory = [s for s in routed if s.get("advisory")]` is a PARTITION, deliberately
+        # complementary. Counting the second half as "ignores the flag" reported a pair whose
+        # whole purpose is to split on it.
+        f2 = _flag_of(n)
+        if f2:
+            sel.add(f2)
+    return excl, (sel - excl)
 
 
 def d5_groups(tree):
@@ -130,21 +163,48 @@ def d5_groups(tree):
         it_ = it.values[0] if (isinstance(it, ast.BoolOp) and it.values) else it
         if not isinstance(it_, ast.Name):
             continue
-        g.setdefault(it_.id, []).append((n.lineno, _excl_flags_d5(body)))
+        _e, _s = _flag_reads_d5(body)
+        g.setdefault(it_.id, []).append((n.lineno, _e, _s))
     return g
+
+
+def _inherited_d5(tree):
+    """{name: {flags its defining comprehension already excluded}}.
+
+    Second correction. `_blk = [s for s in screens if not s.get("advisory")]` and then
+    `_demote = [s for s in _blk ...]` -- the second loop does not re-check `advisory` because
+    it cannot see one. Flagging it as inconsistent with the first was the largest source of
+    false positives: the exclusion happened one step earlier, which is the correct place.
+    """
+    out = {}
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Assign) or len(n.targets) != 1:
+            continue
+        t = n.targets[0]
+        if not isinstance(t, ast.Name):
+            continue
+        if isinstance(n.value, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
+            f, _ = _flag_reads_d5(n.value)
+            if f:
+                out.setdefault(t.id, set()).update(f)
+    return out
 
 
 def d5(path, tree, src):
     hits = []
+    inherited = _inherited_d5(tree)
     for nm, lst in sorted(d5_groups(tree).items()):
         if len(lst) < 2:
             continue
-        for flag in sorted(set().union(*[f for _, f in lst])):
-            uses = sorted(ln for ln, f in lst if flag in f)
-            miss = sorted(ln for ln, f in lst if flag not in f)
+        already = inherited.get(nm) or set()
+        for flag in sorted(set().union(*[f for _, f, _ in lst])):
+            if flag in already:
+                continue            # the list was filtered where it was built
+            uses = sorted(ln for ln, f, _ in lst if flag in f)
+            miss = sorted(ln for ln, f, sel in lst if flag not in f and flag not in sel)
             if uses and miss:
-                hits.append((uses[0], f"`{nm}` honours `{flag}` at {uses}",
-                             f"and ignores it at {miss[:8]}"))
+                hits.append((uses[0], f"`{nm}` excludes on `{flag}` at {uses}",
+                             f"and does not at {miss[:8]}"))
     return hits
 
 
@@ -210,7 +270,7 @@ if SELFTEST:
     _vf = ROOT / "llm_generator/multi_agent/runtime/visual_fidelity.py"
     _d5 = d5_groups(ast.parse(_vf.read_text(errors="ignore"))) if _vf.is_file() else {}
     _scr = _d5.get("screens") or []
-    assert any("blank" in f for _, f in _scr) and any("blank" not in f for _, f in _scr), (
+    assert any("blank" in f for _, f, _ in _scr) and any("blank" not in f for _, f, _ in _scr), (
         "D5' no longer sees visual_fidelity's `screens` split on `blank` (#619's average "
         "excludes it, `_best_by_screen` does not) — its seed case")
     assert _seed_seen, ("D1 no longer finds the instance it was built from "
