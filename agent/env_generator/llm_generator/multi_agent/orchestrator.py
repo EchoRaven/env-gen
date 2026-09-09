@@ -187,10 +187,41 @@ FWVAL_STUCK_REDISPATCH_AFTER = 2   # validations on the same failure set (past c
 FWVAL_STUCK_TERMINAL_AFTER = 4     # validations on the same failure set (past cap) → surface stuck signal
 FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500"))  # 75min
 
-# #1202go: the median gap from run start to the first delivery-gate evaluation, measured
-# over 39 runs on this machine (p50 8.6 min, p75 19.6, p90 28.9, max 52.6). A resume holding
+def _time_to_first_gate_s_1202hz() -> int:
+    """The threshold, tunable, and never a reason the orchestrator cannot be imported.
+
+    A bare `int(os.environ[...])` here raises on a typo at MODULE level, which takes the
+    whole orchestrator with it -- a strictly worse failure than the mis-tuned warning
+    this fix is about.
+    """
+    try:
+        return int(os.environ.get("ENVGEN_TIME_TO_FIRST_GATE_S") or (29 * 60))
+    except (TypeError, ValueError):
+        return 29 * 60
+
+
+# #1202go: the gap from run start to the first delivery-gate evaluation, measured over
+# 39 runs on this machine (p50 8.6 min, p75 19.6, p90 28.9, max 52.6). A resume holding
 # less no-convergence budget than this cannot reach the one evaluation it needs.
-_TIME_TO_FIRST_GATE_S_1202GO = 9 * 60
+#
+# #1202hz: THE MEDIAN IS THE WRONG PERCENTILE FOR A WARNING.
+#
+# This gates `_warn_spent_lane_time_1202fw`, whose whole job is to say "this resume will
+# probably abort before it is ever asked to deliver" BEFORE the money is spent. Set to the
+# p50, it is silent for half the resumes it exists to warn about -- by construction.
+#
+# tiktok-r106's third resume is the case. It restored to the best snapshot #1202hx could
+# name, began with 79.6 of its 90 minutes of lane time already spent, and had ~9.45 minutes
+# left against a 9.00-minute threshold: silent by 27 seconds. It then took 21 minutes to
+# reach the evaluation -- p75 territory, and nowhere near the p50 this constant assumed --
+# and died on NO-CONVERGENCE having spent $70 and produced nothing.
+#
+# The loss is asymmetric and known: a warning that fires needlessly costs a log line, one
+# that stays silent costs a whole resume ($70 here; r41 and r96 became permanently
+# unresumable the same way). So take the conservative percentile the same measurement
+# already recorded -- stay silent only when 90% of runs would have reached a gate in the
+# budget that is left. It is a warning, not a refusal; the one-shot path stays open.
+_TIME_TO_FIRST_GATE_S_1202GO = _time_to_first_gate_s_1202hz()
 #   convergence backstop: the exact-stuck FWVAL ladder resets on ANY churn (file/chain
 #   changes), so a run that stays active but OSCILLATES among delivery-gate checks without
 #   ever clearing them (run v18: ~76min cycling business_chain_failing ↔ api_coverage ↔
