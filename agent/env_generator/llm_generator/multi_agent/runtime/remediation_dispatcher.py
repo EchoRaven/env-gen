@@ -22,6 +22,29 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .message_format import join_capped  # #1034
 
+def _matchable_route_1202iy(route):
+    """The route as React Router can MATCH it, for text handed to a lane.
+
+    Telling a lane to wire `<Route path="/@:username">` verbatim produces a route that
+    compiles to a literal and never fires -- the same dead wiring these instructions exist to
+    repair. Same normalisation the projector applies (#1202iy), asked of the one owner rather
+    than restated here, so the emitted App.jsx and the advice cannot drift.
+
+    Audible on failure: a silent fallback would leave the advice quietly wrong, which is the
+    shape #1201 exists to stop.
+    """
+    try:
+        from .frontend_scaffold import _router_matchable_route_1202iy as _rm
+        return _rm(route)
+    except Exception as _exc1202iy:
+        from .message_format import warn_once_1201
+        warn_once_1201("remediation_dispatcher.matchable_route_1202iy",
+                       "the React-Router route normalisation (#1202iy) — a lane may be told "
+                       "to wire a path that compiles to a literal and never matches",
+                       _exc1202iy)
+        return route
+
+
 def _swallowed_1152(where: str, exc: BaseException, defaulting_to: str) -> None:
     """#1152: SAY WHEN A REMEDIATION DETECTOR COULD NOT RUN.
 
@@ -1365,7 +1388,8 @@ class RemediationDispatcher:
             for name, pg in (pages.items() if isinstance(pages, dict) else []):
                 if not isinstance(pg, dict):
                     continue
-                route = pg.get("route") or pg.get("path") or "?"
+                route = _matchable_route_1202iy(
+                    pg.get("route") or pg.get("path") or "?")
                 comp = pg.get("component") or name or "?"
                 apis = ", ".join(pg.get("apis_used") or []) or "(its declared apis_used)"
                 lines.append(
@@ -1715,7 +1739,8 @@ class RemediationDispatcher:
                 _b = next((str(b) for b in blockers if ("`%s`" % name) in str(b)), None)
                 if _b is None:
                     continue
-                route = pg.get("route") or pg.get("path") or "?"
+                route = _matchable_route_1202iy(
+                    pg.get("route") or pg.get("path") or "?")
                 comp = pg.get("component") or "?"
                 apis = ", ".join(pg.get("apis_used") or []) or "(its declared apis_used)"
                 # "declared but unusable" is the generic prefix on EVERY blocker — the
@@ -1818,7 +1843,8 @@ class RemediationDispatcher:
             lines: List[str] = []
             for comp in comps:
                 pg = _by_comp.get(comp, {})
-                route = pg.get("route") or pg.get("path") or "?"
+                route = _matchable_route_1202iy(
+                    pg.get("route") or pg.get("path") or "?")
                 apis = ", ".join(pg.get("apis_used") or []) or "(its declared apis_used)"
                 ref = pg.get("reference_image") or pg.get("reference") or ""
                 ref_hint = f" Match the reference screenshot {ref} (view_image it first)." if ref else \

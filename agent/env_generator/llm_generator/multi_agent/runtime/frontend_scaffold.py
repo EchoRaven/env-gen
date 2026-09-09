@@ -9504,6 +9504,45 @@ def _safe_import_alias(comp: str) -> str:
     return f"{comp}Page" if comp in _RESERVED_APP_IDENTS else comp
 
 
+def _router_matchable_route_1202iy(route: str) -> str:
+    """A `<Route path>` React Router can actually match.
+
+    `@remix-run/router`'s compilePath takes a param only via `.replace(/\\/:([\\w-]+)(\\?)?/g,...)`
+    -- the `:` must directly follow a `/`. In `/@:username` it follows `@`, so NO param is
+    extracted and the path compiles to the literal `^/@:username`: it matches that exact URL
+    and nothing else. React Router warns for a mid-segment `*` and is silent about this.
+    Verified against react-router 6.30.3's own source (#1202ix).
+
+    The literal moves INTO the param, so the URL is unchanged -- `/@bob` still routes, and the
+    param now carries `@bob`. Nothing that matched before stops matching: these paths matched
+    only their own literal spelling, which nobody navigates to. 37 such routes across 36 runs,
+    all of them dead, essentially every tiktok run's `profile_own`.
+
+    Why the framework may do this without asking the route contract: the page is not the
+    problem. r110's `ProfileScreen` reads `window.location.pathname` directly and even guards
+    `!pathUsername.startsWith(':')` -- the lane had already seen the literal URL and worked
+    around the router. The component could always render `/@bts_official_bighit`; nothing ever
+    mounted it. A page reading `useParams()` instead gets `@bob` where it previously got
+    nothing, which is strictly better in both directions.
+
+    Safe against the two audits that could false-positive: #146 accepts a wired route whose
+    path drifted from the declaration as long as the component is rendered somewhere ("the app
+    is the authority on where its screens live"), and `duplicate_route_content_groups` walks
+    ui_page RECORDS, not `<Route>` elements.
+    """
+    _r = str(route or "")
+    segs = _r.split("/")
+    out, changed = [], False
+    for seg in segs:
+        i = seg.find(":")
+        if i > 0:
+            out.append(seg[i:])
+            changed = True
+        else:
+            out.append(seg)
+    return "/".join(out) if changed else _r
+
+
 def _render_routed_app(entries: List[tuple]) -> str:
     """Generic React-Router App over the declared pages. DOMAIN-AGNOSTIC — no
     feed/login assumptions (unlike the social-shaped _BASELINE_APP_JSX it
@@ -9511,7 +9550,7 @@ def _render_routed_app(entries: List[tuple]) -> str:
     imports = "\n".join(
         f"import {_safe_import_alias(c)} from './pages/{c}.jsx';" for c, _ in entries)
     routes = "\n".join(
-        f'          <Route path="{r}" element={{<{_safe_import_alias(c)} />}} />'
+        f'          <Route path="{_router_matchable_route_1202iy(r)}" element={{<{_safe_import_alias(c)} />}} />'
         for c, r in entries)
     return (
         f"{_ROUTES_MARKER}\n"
@@ -9879,7 +9918,9 @@ def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
             local = _safe_import_alias(comp)  # avoid colliding with App.jsx's own idents
             inner = f"<{local} />"
             elem = f"<{wrapper}>{inner}</{wrapper}>" if wrapper else inner
-            new_routes.append(f'        <Route path="{route}" element={{{elem}}} />')
+            new_routes.append(
+                f'        <Route path="{_router_matchable_route_1202iy(route)}" '
+                f'element={{{elem}}} />')
             if not re.search(r"import\s+" + re.escape(local) + r"\s+from", app_jsx):
                 new_imports.append(f"import {local} from './pages/{comp}';")
             injected.append(route)
