@@ -1543,6 +1543,21 @@ class RegistryHub:
         # DDL, every other column silently dropped on re-registered tables).
         # Collapse to ONE canonical shape here so the store holds a single
         # representation every downstream reader already understands.
+        # #1202kg: LIFT the table-level policy a lane nested inside `schema` into `metadata`,
+        # which is the only place #1202io (below), #633, `_apply_spec_visibility_1202hh` and
+        # `backend_audit` ever look. See `split_table_policy_1202kg` for r114's live case: four
+        # registrations in eleven seconds carrying `visibility: public` inside `schema`, none of
+        # which reached the record, and a lane message saying so. An EXPLICIT kwarg still wins,
+        # because passing `owner_scoped_reads=` by name is the more deliberate statement.
+        from .database_scaffold import split_table_policy_1202kg as _split1202kg
+        schema, _policy_1202kg = _split1202kg(schema)
+        if _policy_1202kg:
+            metadata = {**_policy_1202kg, **(metadata or {})}
+            import logging as _lg1202kg
+            _lg1202kg.getLogger(__name__).info(
+                "#1202kg `%s`: lifted %s out of `schema` into `metadata` — table-level policy "
+                "nested in the schema reaches no policy reader, and in the flat-map dialect "
+                "becomes a column.", table_id, sorted(_policy_1202kg))
         _wiped_by: str = ""
         if schema is not None:
             from .database_scaffold import normalize_table_schema

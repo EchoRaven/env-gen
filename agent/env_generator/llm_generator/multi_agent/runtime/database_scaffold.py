@@ -302,6 +302,48 @@ def _column_from_flat(name: str, type_spec: Any) -> Dict[str, Any]:
     return _promote_inline_modifiers({"name": str(name), "type": str(type_spec or "").strip()})
 
 
+# #1202kg: table-level POLICY, not columns. `register_table` accepts these as **metadata
+# kwargs, but the tool advertises `schema` as "the table's shape" and a lane that reads it that
+# way nests them INSIDE the schema instead -- where two things then go wrong at once: the flat
+# map turns each into a column, and the policy never reaches `metadata`, which is the only
+# place #1202io, #633, `_apply_spec_visibility_1202hh` and `backend_audit` look.
+#
+# tiktok-r114, live: the backend lane called
+#     register_table(name='videos', schema={'columns': [...],
+#                                           'owner_scoped_reads': False, 'visibility': 'public'})
+# four times in eleven seconds and then reported, correctly, "RegistryHub retains legacy
+# metadata.owner_scoped_reads=true for videos despite schema owner_scoped_reads=false". The
+# ledger kept `owner_scoped_reads: True` with NO `visibility`, so #1202io -- which fires only
+# when the same record says `visibility: public` -- could never see the contradiction, #633
+# re-imposed the owner filter on the FYP feed, and the logged-out landing page 401'd. That is
+# r114's `deliverability_ui_flow_failed: fyp_feed_logged_out_page` blocker.
+#
+# The contrast is exact: r111's lane passed `visibility` as a KWARG, and #1202io fired on the
+# very first registration (`owner_scoped_reads_cleared_by_1202io: backend` is in the record).
+# Same framework, same lane role, same table -- only the dialect differed.
+#
+# The corpus also shows the column half: r110, r111 and r114 all carry a literal
+# `{"name": "owner_scoped_reads", "type": "false"}` column on `videos`, which becomes
+# `owner_scoped_reads = Column(String)` in models.py and is projected into every feed response.
+#
+# Same shape as #843's spec dialects: the framework must read the dialect its own agents write.
+TABLE_POLICY_KEYS_1202KG = ("owner_scoped_reads", "visibility", "framework_provisioned")
+
+
+def split_table_policy_1202kg(schema: Any) -> tuple:
+    """Return ``(schema_without_policy, policy_dict)``.
+
+    Non-destructive: the input is not mutated, and a schema carrying no policy key is
+    returned as the SAME object so the common path is byte-identical.
+    """
+    if not isinstance(schema, dict):
+        return schema, {}
+    policy = {k: schema[k] for k in TABLE_POLICY_KEYS_1202KG if k in schema}
+    if not policy:
+        return schema, {}
+    return {k: v for k, v in schema.items() if k not in policy}, policy
+
+
 def normalize_columns(schema: Any) -> List[Any]:
     """Coerce ANY accepted table-schema shape to a canonical column LIST:
       * a ``{"columns": [...]}`` dict           → its ``columns`` list (as-is)
@@ -320,7 +362,11 @@ def normalize_columns(schema: Any) -> List[Any]:
         if isinstance(cols, list):
             return [_promote_inline_modifiers(c) if isinstance(c, dict) else c for c in cols]
         # Flat map {column_name: "type string"} — the contract-tool shape.
-        return [_column_from_flat(k, v) for k, v in schema.items()]
+        # #1202kg: a table-level policy key in this position is NOT a column. Left in, r114's
+        # `owner_scoped_reads: False` became `{"name": "owner_scoped_reads", "type": "false"}`
+        # and then `Column(String)` in models.py.
+        return [_column_from_flat(k, v) for k, v in schema.items()
+                if k not in TABLE_POLICY_KEYS_1202KG]
     return []
 
 
@@ -331,7 +377,11 @@ def normalize_table_schema(schema: Any) -> Dict[str, Any]:
     already understands. Idempotent: a canonical ``{"columns":[…]}`` input is
     returned structurally unchanged."""
     if isinstance(schema, dict) and isinstance(schema.get("columns"), list):
-        return schema
+        # #1202kg: drop a policy key riding alongside `columns` too -- it is not part of the
+        # shape, and leaving it in `schema` is how it stayed invisible to every policy reader.
+        # `register_table` lifts it into `metadata` before calling this.
+        _clean, _pol = split_table_policy_1202kg(schema)
+        return _clean if _pol else schema
     return {"columns": normalize_columns(schema)}
 
 
