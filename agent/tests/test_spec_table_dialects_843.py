@@ -123,10 +123,16 @@ def test_every_marked_slice_now_parses():
         single-milestone runs:  3 of 58 yield no tables  (5%)
         multi-milestone runs:  54 of 75 yield no tables  (72%)
 
-    -- so FIX #42's promise ("the contract can then never be empty") has been absent for the
+    -- so FIX #42's promise ("the contract can then never be empty") looked absent for the
     majority of runs, and the recency window was hiding it: the last 30 days happened to be
-    single-milestone until r113. That gap is real and is covered by #1202ka, which backfills
-    the contract from RegistryHub, where the tables actually are.
+    single-milestone until r113.
+
+    #1202kb CORRECTS THAT DIAGNOSIS. The slices were not missing a data model; the parser
+    could not read the dialect they wrote it in. With the square-bracket form taught, the same
+    measurement reads **14%** for multi-milestone against 5% for single, and every one of the
+    11 stragglers is a July run (newest 2026-07-24) — nothing from the current era, which is
+    39 runs since 09-01. r114 is the live confirmation: four milestone slices, 11 tables each,
+    where r113's three yielded zero.
 
     The invariant here is the PARSER's, so it is asserted on the parser's own input: a slice
     that CONTAINS a data-model section must yield tables. Whether the generator emits one is a

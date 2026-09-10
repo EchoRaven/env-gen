@@ -220,7 +220,20 @@ def _eval_mcp_tool_exists(params: dict, reg, workspace: Path) -> dict:
 
 def _eval_visual_similarity(params: dict, reg, workspace: Path) -> dict:
     page_id = (params.get("page_id") or "").strip()
-    min_sim = float(params.get("min_similarity") or 0.0)
+    # #1202kc: `or 0.0` made a gate with no threshold pass ANY score. `_validate` requires
+    # `min_similarity`, so reaching this fallback means the spec bypassed validation or
+    # predates it — and a gate whose bar is unknown must fail CLOSED, not wave everything
+    # through. An explicit 0.0 is still honoured; only absence is refused.
+    _ms_1202kc = params.get("min_similarity")
+    if _ms_1202kc is None:
+        return {"passed": False,
+                "message": ("visual_similarity gate has no min_similarity — refusing to pass "
+                            "a page against an unknown bar (#1202kc)")}
+    try:
+        min_sim = float(_ms_1202kc)
+    except (TypeError, ValueError):
+        return {"passed": False,
+                "message": f"visual_similarity min_similarity is not a number: {_ms_1202kc!r}"}
     gate = getattr(reg, "gate_registry", None)
     review = gate.get_visual_review(page_id) if gate is not None else None
     if not review:

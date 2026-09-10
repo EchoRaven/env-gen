@@ -310,11 +310,28 @@ def _warn_if_nothing_scored_1202hy(output_dir, logger=None) -> Optional[str]:
         key = str(Path(output_dir))
         if _NOTHING_SCORED_WARNED_1202HY.get(key):
             return None
-        try:
-            floor = float(os.environ.get("ENVGEN_NOTHING_SCORED_WARN_USD", "50") or 0)
-        except (TypeError, ValueError):
+        # #1202kc: an EMPTY value is not a zero. `os.environ.get(name, "50") or 0` returns 0
+        # for `ENVGEN_NOTHING_SCORED_WARN_USD=` — which a shell writes whenever the variable
+        # it expands is itself unset — and `floor <= 0` then disables this warning for the
+        # whole run, silently. Disabling it is a legitimate choice; making it by typo is not,
+        # and nothing distinguished the two. Blank now means "use the default"; only an
+        # explicit number turns it off, and turning it off says so once.
+        _raw_1202kc = os.environ.get("ENVGEN_NOTHING_SCORED_WARN_USD")
+        if _raw_1202kc is None or not str(_raw_1202kc).strip():
             floor = 50.0
+        else:
+            try:
+                floor = float(str(_raw_1202kc).strip())
+            except (TypeError, ValueError):
+                _LOG_1202HY.warning(
+                    "#1202kc ENVGEN_NOTHING_SCORED_WARN_USD=%r is not a number — using the "
+                    "$50 default rather than silently dropping the guard.", _raw_1202kc)
+                floor = 50.0
         if floor <= 0:
+            _LOG_1202HY.warning(
+                "#1202kc the 'paying without judging a screen' warning is DISABLED "
+                "(ENVGEN_NOTHING_SCORED_WARN_USD=%r). This run can spend without ever "
+                "scoring a screen and nothing will say so.", _raw_1202kc)
             return None
         root = Path(output_dir)
         usd = None

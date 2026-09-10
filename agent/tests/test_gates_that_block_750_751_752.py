@@ -95,7 +95,10 @@ def test_the_latch_is_set_only_with_BOTH_conditions():
     """A blackout alone must not veto — that is #75a's business and can be the harness."""
     src = inspect.getsource(vf.VisualFidelityGate.maybe_run)
     i = src.index("#750 (user-approved)")
-    blk = src[i:src.index("_improved = False", i)]
+    # #1202kd re-anchor: the plateau loop that used to open with `_improved = False` now lives
+    # in the module-level helper `_plateau_reading_1202kd`, so the end of the #750 block is the
+    # call to it. Landmark, not a byte window (#943).
+    blk = src[i:src.index("_plateau_reading_1202kd(", i)]
     assert "self.transient_refunds >= _TRANSIENT_REFUND_CAP and _errs750" in blk
 
 

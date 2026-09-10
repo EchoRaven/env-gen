@@ -6031,6 +6031,49 @@ def _apply_sticky_pass(passed_names: set, screens: List[Mapping[str, Any]]) -> b
     return bool(blocking) and all(s.get("name") in passed_names for s in blocking)
 
 
+def _plateau_reading_1202kd(screens, best_by_screen):
+    """Which screens this round is allowed to say "no improvement" about, and did any improve.
+
+    Returns ``(improved, scored)``. ``best_by_screen`` is updated in place with the new
+    high-water marks, exactly as the inline loop this replaces did.
+
+    #1202kd: a screen nobody photographed is not evidence the run has stalled. #737 already
+    says this for a WHOLESALE blackout -- "the capture produced no rendered page, so its 0.00s
+    are not evidence the app has flatlined" -- and holds the round out of the plateau count.
+    The same sentence is true one level down, and there it was not applied: in a PARTIALLY
+    blank round ``capture_transient`` is False, so each blank screen still entered
+    ``best_by_screen`` at 0.00 and contributed "no improvement" -- the signal the #138 plateau
+    escape releases on.
+
+    That is r148's mechanism, written out in ``maybe_run``'s own comment: ten of twelve screens
+    blank for eight rounds, plateau climbed to five, release cut while a P0 titled "SPA crashes
+    on ALL routes" was open -- "the blackout was the truest signal in the run, and it was
+    consumed as evidence of stability". Measured: 14 of the 29 recent final verdicts are
+    partially blank, so #737's wholesale exemption misses about half of them.
+
+    Deliberately narrow. The blank screen keeps its 0.00 everywhere else: it still blocks, it
+    still shrinks the #542a blocking average, it still appears in the summary. Only the PLATEAU
+    reading skips it, because plateau means "more rounds are not helping" and a round that never
+    photographed this screen has not tested that. Nor is a blank seeded as a 0.00 baseline the
+    next real capture then has to beat.
+    """
+    improved = False
+    scored = 0
+    for s in screens or []:
+        if s.get("advisory"):
+            continue
+        if s.get("blank") is True or s.get("blank_live") is True:
+            continue
+        name, sim = str(s.get("name")), float(s.get("similarity") or 0.0)
+        scored += 1
+        if sim > best_by_screen.get(name, 0.0) + 0.02:
+            best_by_screen[name] = sim
+            improved = True
+        elif name not in best_by_screen:
+            best_by_screen[name] = sim
+    return improved, scored
+
+
 class VisualFidelityGate:
     """Stateful visual-fidelity gate extracted from the Orchestrator (PROPOSAL
     #8 — VisualFidelity slice B). Owns the per-source judging budget + pass
@@ -6538,17 +6581,20 @@ class VisualFidelityGate:
                         "#750 veto CLEARED — this capture rendered, so the app is no longer "
                         "demonstrably dead and the release escapes apply again.")
                     self.app_dead_750 = False
-                _improved = False
-                for _s in screens:
-                    if _s.get("advisory"):
-                        continue
-                    _n, _sim = str(_s.get("name")), float(_s.get("similarity") or 0.0)
-                    if _sim > self._best_by_screen.get(_n, 0.0) + 0.02:
-                        self._best_by_screen[_n] = _sim
-                        _improved = True
-                    elif _n not in self._best_by_screen:
-                        self._best_by_screen[_n] = _sim
-                self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
+                _improved, _scored_1202kd = _plateau_reading_1202kd(
+                    screens, self._best_by_screen)
+                if not _scored_1202kd:
+                    # #1202kd: every screen was blank but `capture_transient` was False, so
+                    # #737's wholesale hold above did not fire. Nothing was photographed, so
+                    # this round says nothing about whether the app has plateaued -- hold the
+                    # counter rather than climbing it on zero evidence. Without this the skip
+                    # inside the helper would REPLACE the false "no improvement" with an
+                    # identical one.
+                    orch._logger.warning(
+                        "#1202kd plateau HELD at %s: every scored screen came back blank, so "
+                        "this round carries no evidence about improvement.", self.plateau_rounds)
+                else:
+                    self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
                 # #1202cz: hand the budget ceiling the two signals it needs to tell a run that
                 # is still converging from one that has stalled. Recorded HERE, where plateau
                 # is decided, so the two can never disagree — a guard fed from a second
