@@ -111,15 +111,55 @@ class CoverageReport:
         }
 
 
+def _framework_fixed_1202kf() -> set:
+    """(METHOD, path) of every endpoint the FRAMEWORK implements and projects itself.
+
+    The endpoint equivalent of `_is_framework_owned_1088`, which already exempts framework-
+    written FILES from `scan_dead_files` for the same reason: "remove or wire up the dead
+    artifact" is not an instruction any lane can carry out about framework code.
+
+    These can NEVER acquire a consumer. `oauth_scaffold`'s own docstring says so — the auth
+    and oauth endpoints are fixed-spec with heterogeneous shapes (a 302 redirect, an
+    {access_token}, a JWKS doc), so "the frontend's response_key-keyed api.js generator MUST
+    SKIP them", and the AS's own login page — not the app — drives /oauth/authorize. The
+    control surface is likewise harness-driven, not UI-driven. So the consumer index the
+    deadness test reads is empty for them by construction, exactly the shape #1199 removed
+    `scan_dead_tables` for.
+
+    They only reach the test at all once something re-registers them at status='defined' --
+    `scaffolder.register_fixed_contract_surface` registers them 'implemented', and the kickoff
+    registration of a draft that re-declares them demotes them (see #1202ke, same root).
+
+    Measured over the 153 runs with an endpoints ledger: 37 of the 155 dead-endpoint findings
+    (24%) are these, and of the 45 runs whose FINAL ledger carries a dead-endpoint blocker, 16
+    are made ENTIRELY of them -- a delivery blocker with nothing actionable in it. That is a
+    floor, not an estimate: a lane that re-registers the endpoint clears the record, so r114
+    showed 7 in its gate log and 0 in the ledger twenty minutes later.
+
+    Read from the framework's own two declarations via the single `fixed_surface_1202ke`
+    helper, never a copied literal -- a build without the OAuth AS contributes nothing here.
+    """
+    try:
+        from .kickoff.contract import fixed_surface_1202ke
+        return set(fixed_surface_1202ke())
+    except Exception:  # pragma: no cover — an audit must never break the run
+        return set()
+
+
 def scan_dead_endpoints(hub_registry) -> List[dict]:
     registryhub = getattr(hub_registry, "registryhub", None)
     if registryhub is None or not hasattr(registryhub, "get_endpoints"):
         return []
     eps = registryhub.get_endpoints() or {}
+    fixed_1202kf = _framework_fixed_1202kf()
     out = []
     for ep_id, ep in eps.items():
         if (ep.get("status") or "defined") != "defined":
             continue  # deprecated/draft don't count as dead
+        # #1202kf: the framework's own endpoints are not the lane's dead code.
+        if (str(ep.get("method") or "").upper(),
+                str(ep.get("path") or "").rstrip("/") or "/") in fixed_1202kf:
+            continue
         consumers = registryhub.get_consumers(ep_id) if hasattr(registryhub, "get_consumers") else []
         if not consumers:
             out.append({
