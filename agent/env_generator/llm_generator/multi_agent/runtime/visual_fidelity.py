@@ -4097,6 +4097,18 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 merged.append({**p, "similarity_live": _sim(s),
                                "capture_missing_live": s.get("capture_missing"),
                                "capture_error_live": s.get("capture_error"),
+                               # #1202jl: and the field that actually EXPLAINS a live zero.
+                               # #950 carried the two that were absent for its case and left
+                               # this one behind, so r111's comments_panel record reads
+                               # `similarity_live: 0.0` beside `capture_missing_live: False`,
+                               # `capture_error_live: None` and `blank: None` — three fields
+                               # saying nothing went wrong. What happened is in the third:
+                               # the DOM probe found the page empty after three re-polls, so
+                               # NO shot was taken and none was judged (the verdict cache has
+                               # 0.46/0.54/0.61/0.62 for this screen and no 0.0 at all). The
+                               # summary line says it, reading `_blank_screens` directly; the
+                               # per-screen record a reader opens did not.
+                               "blank_live": s.get("blank"),
                                "similarity_live_note": (
                                    "this capture scored lower; `similarity` is the best-of-"
                                    "captures merge (#500), `similarity_live` is what the "
@@ -4112,8 +4124,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                    # against the stale list — the harm is to a human reader.)
                                    "dimensions/deviations/fixes/screenshot on this record "
                                    "describe the RECORDED capture; `similarity_live`, "
-                                   "`capture_missing_live` and `capture_error_live` describe "
-                                   "THIS one (#950)")})
+                                   "`capture_missing_live`, `capture_error_live` and "
+                                   "`blank_live` describe THIS one (#950/#1202jl)")})
             else:
                 # #930: this capture won, so ARCHIVE the image that earned the score before the
                 # next round overwrites it. `screenshot` is a stable path
@@ -4132,7 +4144,7 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 # #928: and a screen this round never photographed must not keep a
                 # `similarity_live` earned in some earlier round — that is the same lie one
                 # level down. Say it was not captured instead.
-                merged.append({**p, "similarity_live": None,
+                merged.append({**p, "similarity_live": None, "blank_live": None,
                                "similarity_live_note": (
                                    "not captured in this round; `similarity` is a previous "
                                    "capture's score (#500/#928)")})
