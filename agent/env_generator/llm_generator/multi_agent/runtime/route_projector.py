@@ -2757,7 +2757,10 @@ def project_missing_routes(
         ).strip()
         # #1202kh: same `auth` the handler is built with, so the middleware's public set and
         # this handler can never disagree — see `refresh_public_api_1202kh`.
-        if (not auth) and path.startswith("/api/") and not path.startswith("/api/v1/"):
+        # #1202kh: reads only — see `render_skeleton_main`'s note for why writes keep the
+        # blanket rule. Both emitters apply the SAME filter, or the two sets would disagree.
+        if ((not auth) and str(method).upper() in ("GET", "HEAD")
+                and path.startswith("/api/") and not path.startswith("/api/v1/")):
             _public_1202kh.append((str(method).upper(), str(path)))
         block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables, public_actor_tables=_pub_actors_1202ir)))
         projected.append(f"{method} {path}")

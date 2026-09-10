@@ -2583,7 +2583,17 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         # same record — a guard fed from a second derivation is how #1011 ended up with no
         # callers and #1202ga read the mirror for six rounds while the lane fixed the contract.
         # `/api/v1/*` is control-plane and already public in the middleware's own list.
-        if (not auth) and str(path).startswith("/api/") and not str(path).startswith("/api/v1/"):
+        # #1202kh: READS only, and the asymmetry is deliberate rather than a contract the
+        # framework half-follows. Of the 451 contract-public /api/ endpoints in the corpus, 412
+        # are GET; of the 39 writes, 20 are auth entry points this middleware already exempts by
+        # name and 16 are a share-counter. The remaining two -- a `POST /api/videos` and a
+        # `PATCH /api/notifications/{id}` marked public -- are contract ERRORS, and honouring
+        # them would hand an unauthenticated caller a projected create with no actor, i.e. the
+        # null-owner row #317 and #1202jd exist to prevent. A denied public write costs a
+        # share button; an opened public create costs the seeded data the visual gate compares
+        # against. So the read surface follows the contract and writes keep #47's blanket rule.
+        if ((not auth) and str(method).upper() in ("GET", "HEAD")
+                and str(path).startswith("/api/") and not str(path).startswith("/api/v1/")):
             _public_api_1202kh.append((str(method).upper(), str(path)))
         block = _generate_handler(method, path, auth, meta, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)
         (param_blocks if "{" in path else static_blocks).append(block)

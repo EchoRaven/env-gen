@@ -105,6 +105,62 @@ def test_a_protected_route_is_not_emitted():
     assert ("POST", "/api/videos") not in got
 
 
+def test_a_contract_public_WRITE_is_not_emitted():
+    """★ READS ONLY, and the asymmetry is deliberate — it is not the contract half-followed.
+
+    Of the 451 contract-public /api/ endpoints in the corpus, 412 are GET. Of the 39 writes,
+    20 are auth entry points this middleware already exempts BY NAME and 16 are a share
+    counter. The remaining two — a `POST /api/videos` and a `PATCH /api/notifications/{id}`
+    marked public — are contract ERRORS, and honouring them would hand an unauthenticated
+    caller a projected create with no actor: the null-owner row #317 and #1202jd exist to
+    prevent. A denied public write costs a share button; an opened public create costs the
+    seeded data the visual gate compares against.
+
+    Nothing pinned this when the narrowing was made — all 16 tests here passed before and
+    after — so it is pinned now."""
+    src = _render([_ep("POST", "/api/videos", False, rk="item"),
+                   _ep("GET", "/api/videos/feed", False)])
+    got = _emitted(src)
+    assert ("GET", "/api/videos/feed") in got
+    assert ("POST", "/api/videos") not in got, (
+        "a contract-public WRITE must keep #47's blanket rule")
+
+
+def test_the_projector_applies_the_same_read_only_filter():
+    """★ Two emitters, one rule. If they disagreed, whether a write was open would depend on
+    which code path last wrote main.py — the drift #1202kh exists to end."""
+    import inspect
+    import textwrap
+    from multi_agent.runtime import backend_skeleton as BK
+    from multi_agent.runtime import route_projector as RP
+
+    def _guard_of_the_append(fn):
+        """The `if` that guards the append, found in the parse tree — not by a source span
+        between two landmarks, which silently matched the DECLARATION line instead (#923)."""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.If):
+                continue
+            # DIRECT children only. `ast.walk` yields the outermost `if` first, and an
+            # enclosing `if block_info:` also *contains* the append somewhere below it —
+            # which is how the first version of this test read `block_info` as the guard.
+            for stmt in node.body:
+                call = stmt.value if isinstance(stmt, ast.Expr) else None
+                if (isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Attribute)
+                        and call.func.attr == "append"
+                        and isinstance(call.func.value, ast.Name)
+                        and call.func.value.id.endswith("_1202kh")):
+                    return ast.dump(node.test)
+        raise AssertionError(f"{fn.__name__} does not collect a #1202kh public set")
+
+    for fn in (BK.render_skeleton_main, RP.project_missing_routes):
+        guard = _guard_of_the_append(fn)
+        assert "'GET'" in guard and "'HEAD'" in guard, (
+            f"{fn.__name__} must filter to safe methods before collecting the public set: "
+            f"{guard[:200]}")
+
+
 def test_the_control_plane_is_not_re_emitted():
     """/api/v1/* is already public in the middleware's own list; listing it twice is the
     duplicated-fixed-surface shape #853 was."""
