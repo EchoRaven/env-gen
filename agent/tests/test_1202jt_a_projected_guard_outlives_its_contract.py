@@ -129,3 +129,31 @@ def test_it_does_not_decide_auth_itself():
         assert rule not in body, (
             f"{rule} belongs to the projection loop; recomputing it here would make two "
             "places decide auth and they would drift")
+
+
+# --- the delete-without-rebuild hole --------------------------------------------------
+
+def test_a_drop_is_never_written_without_its_rebuild(tmp_path):
+    """★ `project_missing_routes` has two write paths. The second one — "nothing was missing
+    but the types moved" — would carry the drops with no re-projection beside them, i.e. it
+    would DELETE the endpoints instead of refreshing them.
+
+    Under the loop's current skips (only `/api/` and `existing`, both accounted for) a drop
+    always produces a re-projection, so that branch is unreachable with drops pending. An
+    implicit invariant guarding a delete is the shape that bites; this pins the explicit
+    fallback instead.
+    """
+    src = inspect.getsource(RP.project_missing_routes)
+    i = src.index('what="retype_projected_params_1202ic"')
+    head = src[src.index("elif _retyped_1202ic:"):i]
+    assert "_src_predrop_1202jt" in head, (
+        "the types-only write must fall back to the source as it stood BEFORE the drops")
+    assert "if _reauth_1202jt else src" in head, (
+        "and only when drops actually happened, so the no-drop path stays byte-identical")
+
+
+def test_the_predrop_source_is_captured_before_the_drop():
+    src = inspect.getsource(RP.project_missing_routes)
+    assert (src.index("_src_predrop_1202jt = src")
+            < src.index("_reproject_stale_auth_1202jt(src")), (
+        "capturing it after the drop would make the fallback a no-op")

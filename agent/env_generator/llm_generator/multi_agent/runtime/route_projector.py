@@ -2631,6 +2631,7 @@ def project_missing_routes(
     # #1202jt: BEFORE `existing` is taken — a projected handler whose auth contract moved
     # since it was emitted is dropped here so the loop below rebuilds it from the contract as
     # it stands now. #1202ic does the same thing for param types; the guard had no such pass.
+    _src_predrop_1202jt = src
     src, _reauth_1202jt = _reproject_stale_auth_1202jt(src, declared_endpoints)
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
@@ -2754,7 +2755,18 @@ def project_missing_routes(
 
     elif _retyped_1202ic:
         # Nothing was missing, so the block above never wrote -- but the types moved.
-        _write_py_995(main_py, src, what="retype_projected_params_1202ic")
+        #
+        # #1202jt: and this branch must NOT carry the drops. `src` here has stale handlers
+        # REMOVED and, with `block_info` empty, nothing put back — writing it would delete
+        # endpoints rather than refresh them. Under the loop's current skips (only `/api/`
+        # and `existing`, both accounted for) a drop always produces a re-projection and this
+        # branch is unreachable with drops pending. That is an implicit invariant, and an
+        # implicit invariant guarding a DELETE is the shape that bites; fall back explicitly.
+        _write_py_995(
+            main_py,
+            _retype_projected_params_1202ic(_src_predrop_1202jt, models)[0]
+            if _reauth_1202jt else src,
+            what="retype_projected_params_1202ic")
 
     return {"projected": projected, "already": len(existing) - len(projected),
             "reauth_reprojected_1202jt": _reauth_1202jt,
