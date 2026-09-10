@@ -1870,19 +1870,63 @@ def _match_endpoint_template_1202id(method: str, path: str, endpoints) -> Option
 
 
 def _template_resource_1202id(ep: Mapping) -> Optional[str]:
-    """The table an endpoint template addresses: its last STATIC segment."""
+    """The table that owns the ID THIS PATH CARRIES.
+
+    #1202jk: this was "the last STATIC segment", which names the resource being CREATED
+    rather than the one the path's id belongs to. On a nested action the two differ, and
+    #1202id's note then points a lane at a table that is not the problem:
+
+        POST /api/videos/{video_id}/like -> 404 {"detail":"parent resource not found"}
+          was: TABLE `likes` HAS 6 LIVE ROW(S) (a seeded id is 1) — ... the id this step
+               names is the thing that does not exist.
+          is:  TABLE `videos` HAS 39 LIVE ROW(S) ...
+
+    The old text contradicted itself twice over: it offered `likes` id 1 as seeded while
+    the step naming id 1 had just 404'd, and the response said **parent** in so many words.
+    A POST that CREATES a like cannot 404 because `likes` is empty; it 404s because the
+    video is missing. #1202id's own docstring carries that misconception in its second
+    example, written when r107 had `likes` 0 and `saves` 0 -- so "table empty" read as a
+    seed defect and nobody looked further. r111 has both at 6 and the same 40 steps still
+    404, which is what made the wrong table visible.
+
+    The id lives in the last `{param}`, so the table is the static segment before it; with
+    no param at all the old rule was already right and stays as the fallback.
+    """
     try:
         segs = [x for x in str(ep.get("path") or "").rstrip("/").split("/") if x]
-        for seg in reversed(segs):
-            if not seg.startswith("{") and seg.lower() != "api":
-                return seg
+        _last = max((i for i, x in enumerate(segs) if x.startswith("{")), default=-1)
+        for head in ((segs[:_last] if _last > 0 else []), segs):
+            for seg in reversed(head):
+                if not seg.startswith("{") and seg.lower() != "api":
+                    return seg
     except Exception:
         return None
     return None
 
 
+def _parent_probe_path_1202jk(method: str, path: str, ep: Any) -> Optional[str]:
+    """For a NESTED path, the strict prefix that addresses the parent row — or None.
+
+    `POST /api/videos/1/like` -> `/api/videos/1`. A flat `GET /api/transit-stops/1` returns
+    None on purpose: there the failing request IS the id check, so #1202id's claim is already
+    proven by the 404 in hand and no probe can add anything.
+    """
+    try:
+        tsegs = [x for x in str((ep or {}).get("path") or "").rstrip("/").split("/") if x]
+        rsegs = [x for x in str(path or "").split("?", 1)[0].rstrip("/").split("/") if x]
+        if not tsegs or len(tsegs) != len(rsegs):
+            return None
+        first = next((i for i, x in enumerate(tsegs) if x.startswith("{")), -1)
+        if first < 0 or first >= len(rsegs) - 1:
+            return None
+        return "/" + "/".join(rsegs[:first + 1])
+    except Exception:
+        return None
+
+
 def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
-                            seed_ids: Any, endpoints: Any) -> str:
+                            seed_ids: Any, endpoints: Any,
+                            base: Any = None, token: Any = None) -> str:
     """#1202id: a bare 404 does not say whether the ROW is wrong or the TABLE is empty.
 
     210 failing steps across this corpus are a 404 on a path whose id is a LITERAL the
@@ -1893,6 +1937,11 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
         GET /api/transit-stops/1 -> 404   the table HAS rows; id 1 is not one of them
         POST /api/videos/{id}/save -> 404 the `saves` table has ZERO rows; nothing was
                                           seeded, so NO id could ever succeed
+
+    #1202jk CORRECTS the second example, which was this docstring's own misconception: a POST
+    that CREATES a save cannot 404 because `saves` is empty. It 404s because the VIDEO is
+    missing. The table named is now the one whose id the path carries, and the "id does not
+    exist" verdict is only stated where something actually established it.
 
     The first is a mis-authored step. The second is a seeding defect, and chasing it as an
     endpoint bug is how a lane spends a milestone rewriting a handler that was correct.
@@ -1928,6 +1977,34 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
         if n == 0:
             return (f"TABLE `{key}` HAS 0 LIVE ROWS — nothing was seeded for it, so no id "
                     "can be found here. This is a SEED defect, not this endpoint. ")
+        # #1202jk: ASK, do not assume. On a NESTED path this 404 came from the handler's own
+        # parent lookup, so the failing request establishes nothing about the parent -- unlike
+        # a flat by-id 404, which IS that lookup. The sentence below was stated either way.
+        #
+        # 181 of the corpus' 409 nested-action 404s read the parent successfully SOMEWHERE in
+        # the same run, so for those it is at least unproven. It is deliberately not claimed
+        # to be backwards: r111 is one of the 181 and its ordering says otherwise -- video 1
+        # answered 200/201 while the chains that used it passed, and every 404 is timestamped
+        # AFTER that, monotonically, from 1788998843 on. The id went away mid-run. Both
+        # projected handlers agree by construction (`Video.id` IS the primary key, so
+        # `db.get(Video, id)` and `filter(Video.id == id)` cannot disagree at one instant), so
+        # a same-RUN success is not a same-INSTANT one and cannot settle this.
+        #
+        # Which is the whole argument for probing rather than mining the ledger: only a read
+        # taken at the moment of the failure separates "wrong id" from "broken handler".
+        _probe = _parent_probe_path_1202jk(method, path, ep) if base else None
+        _verified_missing = _probe is None      # flat by-id: this very 404 is the id check
+        if _probe:
+            try:
+                _pr = _http("GET", str(base) + _probe, token=token, body=None)
+                _pst = _pr.get("status")
+            except Exception:
+                _pst = None
+            if isinstance(_pst, int) and 200 <= _pst < 300:
+                return (f"PARENT EXISTS: `GET {_probe}` answers {_pst} right now, so neither "
+                        f"the id this step names nor the seed is the problem — the 404 comes "
+                        f"from THIS handler's own lookup. Fix this endpoint. ")
+            _verified_missing = _pst == 404
         seeded = None
         try:
             if isinstance(seed_ids, Mapping):
@@ -1936,8 +2013,10 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
             seeded = None
         return (f"TABLE `{key}` HAS {n} LIVE ROW(S)"
                 + (f" (a seeded id is {seeded!r})" if seeded is not None else "")
-                + " — the table is populated, so the id this step names is the thing that "
-                  "does not exist. ")
+                + (" — the table is populated, so the id this step names is the thing that "
+                   "does not exist. " if _verified_missing else
+                   " — the table is populated; the parent read could not be confirmed either "
+                   "way, so this 404 is EITHER a wrong id OR this handler's lookup. "))
     except Exception:
         return ""
 
@@ -3463,7 +3542,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             # #592 already covers the substituted case, so this must not double up.
             if (status == 404 and not _ladder_filled and not _unres_vars):
                 note = _seed_shape_note_1202id(
-                    method, path, project_dir, seed_ids, endpoints) + note
+                    method, path, project_dir, seed_ids, endpoints,
+                    base=base, token=token) + note
             if status in (404, 405):
                 # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
                 # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404

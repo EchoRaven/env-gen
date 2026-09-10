@@ -26,19 +26,27 @@ EPS = [
     {"method": "POST", "path": "/api/videos/{id}/save"},
     {"method": "GET", "path": "/api/users/{username}"},
     {"method": "GET", "path": "/api/sounds/{id}"},
-]
+    {"method": "GET", "path": "/api/oauth-clients/{id}"},   # #1202jk: an empty table a
+]                                                           # read actually addresses
 
 
 @pytest.fixture
 def counts(monkeypatch):
-    data = {"saves": 0, "users": 9, "sounds": 8}
+    data = {"saves": 0, "users": 9, "sounds": 8, "videos": 39, "oauth_clients": 0}
     import env_generator.llm_generator.multi_agent.runtime.seed_audit as SA
     monkeypatch.setattr(SA, "recent_live_counts_1202dj", lambda *a, **k: dict(data))
     return data
 
 
 def test_an_empty_table_is_named_as_a_seed_defect(counts):
-    n = CE._seed_shape_note_1202id("POST", "/api/videos/1/save", ".", {}, EPS)
+    """#1202jk re-pointed this at the PARENT table, and the old expectation was the bug.
+
+    This asserted that `POST /api/videos/1/save` reports `saves` as empty -- #1202id's own
+    motivating example. A POST that CREATES a save cannot 404 because `saves` is empty; the
+    thing that can be missing is the video. `oauth_clients` is empty in the same fixture and
+    keeps the empty-table branch under test on a path that actually READS it.
+    """
+    n = CE._seed_shape_note_1202id("GET", "/api/oauth-clients/1", ".", {}, EPS)
     assert "0 LIVE ROWS" in n and "SEED defect" in n
     assert "not this endpoint" in n
 
@@ -82,7 +90,8 @@ def test_the_resource_comes_from_the_TEMPLATE_not_the_value():
 
 
 def test_the_template_resource_skips_param_and_api_segments():
-    assert CE._template_resource_1202id({"path": "/api/videos/{id}/save"}) == "save"
+    # #1202jk: `save` was the resource being CREATED, not the one the path's id belongs to.
+    assert CE._template_resource_1202id({"path": "/api/videos/{id}/save"}) == "videos"
     assert CE._template_resource_1202id({"path": "/api/{id}"}) is None
 
 
