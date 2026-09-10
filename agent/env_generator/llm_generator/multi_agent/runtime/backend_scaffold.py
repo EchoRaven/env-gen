@@ -409,8 +409,39 @@ _AUTH_MIDDLEWARE = '''
 # RS256 bearer token on every /api/ business route (the AS mints them); /auth/*, /api/v1/*
 # infra, health/docs, and the OAuth/JWKS surface stay public. Handlers that ALSO depend on
 # get_current_user are unaffected (the inner check just re-validates).
+#
+# #1202kh: ...EXCEPT the routes the CONTRACT declares public. #47's blanket rule predates the
+# per-endpoint `auth_required` the rest of the framework now runs on, and the three layers had
+# drifted apart: the projector builds a contract-public handler with NO guard, #1202ih stopped
+# the validator demanding a 401 from one, and this middleware denied it anyway. On tiktok-r114
+# the feed endpoint was registered auth_required=false and projected with no user dependency,
+# and an unauthenticated request to the running container still came back 401 -- so the
+# logged-out landing page never loaded. 77 of the 153 corpus runs declare at least one public
+# /api/ endpoint (451 in total, 412 of them GET) and every one was denied here. That is the
+# mechanism behind the top ui_flow failure signature (401, 21 of 54 recent failures).
+#
+# FAIL CLOSED: the list below is emitted by the skeleton from the SAME auth decision the
+# handler was built with, so it holds only routes projected with no actor. Absent -- including
+# a main.py the skeleton did not render (the repair_auth_enforcement_middleware heal path) --
+# leaves the set empty and this guard exactly as #47 wrote it.
 import jwt as _fw_jwt
+import re as _fw_re
 from fastapi.responses import JSONResponse as _FWJSONResponse
+
+try:
+    _FW_PUBLIC_API_1202KH
+except NameError:
+    _FW_PUBLIC_API_1202KH = []
+_FW_PUBLIC_RE_1202KH = [
+    (str(_m).upper(),
+     _fw_re.compile("^" + _fw_re.sub(r"\\\\{[^}]*\\\\}", "[^/]+", _fw_re.escape(str(_p).rstrip("/") or "/")) + "/?$"))
+    for _m, _p in _FW_PUBLIC_API_1202KH]
+
+
+def _fw_contract_public_1202kh(method, path):
+    """The CONTRACT says this exact (method, path) needs no token."""
+    m = str(method).upper()
+    return any(m == _m and _rx.match(path) for _m, _rx in _FW_PUBLIC_RE_1202KH)
 try:
     from jwt_manager import JWTManager as _FWJM, ALGORITHM as _FWALG
     _fw_pp = _FWJM().public_pem
@@ -454,6 +485,10 @@ async def _framework_auth_guard(request, call_next):
         or (p.startswith("/api/auth/") and p.rstrip("/").rsplit("/", 1)[-1] in (
             "login", "register", "signup", "signin", "token", "refresh", "logout"))
     )
+    # #1202kh: the contract's own answer, checked here so the guard cannot contradict the
+    # handler the framework built from the same record.
+    if not public and _fw_contract_public_1202kh(request.method, p):
+        public = True
     if p.startswith("/api/") and not public and request.method != "OPTIONS":
         ok = False
         auth = request.headers.get("authorization", "")

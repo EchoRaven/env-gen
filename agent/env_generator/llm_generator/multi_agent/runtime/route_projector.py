@@ -728,6 +728,39 @@ def _stated_auth_1202hi(ep: Any, meta: Any = None) -> Optional[bool]:
     return None if stated is None else bool(stated)
 
 
+_PUBLIC_LITERAL_RE_1202KH = re.compile(
+    r"^_FW_PUBLIC_API_1202KH = \[.*?^\]", re.M | re.S)
+
+
+def refresh_public_api_1202kh(src: str, public: "List[Tuple[str, str]]") -> str:
+    """Rewrite main.py's `_FW_PUBLIC_API_1202KH` literal to the CURRENT public set.
+
+    #1202kh's list is emitted by `render_skeleton_main`, which runs ONCE.
+    `project_missing_routes` then inserts handlers into that same file every cycle, so an
+    endpoint a lane registers mid-run gets a no-actor handler and stays absent from the list --
+    and the blanket guard denies a route the framework has just built to answer. Same staleness
+    as #1202ju and #1202ic one artefact over: a deterministic projection is only deterministic
+    if it is re-run when its input moves.
+
+    UNION, never replace: this projector only sees the endpoints it is projecting THIS cycle,
+    so overwriting would drop the skeleton's own entries and re-deny them. Returns `src`
+    unchanged when the literal is absent (a main.py the skeleton did not render -- #47's
+    blanket rule stands, which is the fail-closed default) or when nothing was added.
+    """
+    m = _PUBLIC_LITERAL_RE_1202KH.search(src)
+    if m is None:
+        return src
+    try:
+        have = [tuple(x) for x in ast.literal_eval(m.group(0).split("=", 1)[1].strip())]
+    except Exception:
+        return src
+    merged = list(have) + [t for t in public if t not in have]
+    if len(merged) == len(have):
+        return src
+    body = "".join("    (%r, %r),\n" % (mm, pp) for mm, pp in merged)
+    return src[:m.start()] + "_FW_PUBLIC_API_1202KH = [\n" + body + "]" + src[m.end():]
+
+
 def resolve_endpoint_auth(method, path, ep, meta=None):
     """True if this endpoint must project with Depends(get_current_user).
 
@@ -2659,6 +2692,7 @@ def project_missing_routes(
 
     projected: List[str] = []
     block_info: List[Tuple[str, str]] = []  # (path, handler source)
+    _public_1202kh: List[Tuple[str, str]] = []  # (METHOD, path) projected with no actor
     for i, ep in enumerate(declared_endpoints):
         method = str(ep.get("method", "")).upper()
         # Normalise Express-style ``:id`` → FastAPI ``{id}`` before anything reads the
@@ -2721,6 +2755,10 @@ def project_missing_routes(
             or meta.get("response_key")
             or ""
         ).strip()
+        # #1202kh: same `auth` the handler is built with, so the middleware's public set and
+        # this handler can never disagree — see `refresh_public_api_1202kh`.
+        if (not auth) and path.startswith("/api/") and not path.startswith("/api/v1/"):
+            _public_1202kh.append((str(method).upper(), str(path)))
         block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables, public_actor_tables=_pub_actors_1202ir)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
@@ -2744,6 +2782,9 @@ def project_missing_routes(
                "# guarded deps, before the lane's catch-all param routes.\n"
                + guard
                + ("\n" + "\n\n\n".join(static_blocks) if static_blocks else ""))
+        # #1202kh: refresh the middleware's public set BEFORE the handlers go in, so the
+        # guard and the routes land in the same write.
+        new_src = refresh_public_api_1202kh(new_src, _public_1202kh)
         new_src = _insert_before_first_route(new_src, top)
         if param_blocks:
             new_src = _insert_before_main_guard(

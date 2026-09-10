@@ -2417,6 +2417,8 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
                                   _owner_fk, _TARGET_FK_NAMES)
     from .backend_scaffold import _AUTH_MIDDLEWARE, _INTEGRITY_HANDLER
 
+    # #1202kh: (METHOD, path) of every route projected WITHOUT an actor — see below.
+    _public_api_1202kh: List[tuple] = []
     meta = _models_meta(tables)
     # Per-user-PRIVATE tables (owner_scoped_reads in the contract metadata): their reads
     # are owner-scoped BY CONSTRUCTION here, exactly as route_projector + heal_pipeline do.
@@ -2511,12 +2513,28 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         # unauthenticated"). route_projector has carried this as `resolve_endpoint_auth(...) or
         # _owner_scoped` all along; this emitter did not.
         auth = auth or _owner_scoped
+        # #1202kh: a route projected with NO actor is one the framework has decided needs no
+        # token. Collected HERE, from the very variable `_generate_handler` is about to be
+        # given, so the blanket auth middleware cannot contradict the handler built from the
+        # same record — a guard fed from a second derivation is how #1011 ended up with no
+        # callers and #1202ga read the mirror for six rounds while the lane fixed the contract.
+        # `/api/v1/*` is control-plane and already public in the middleware's own list.
+        if (not auth) and str(path).startswith("/api/") and not str(path).startswith("/api/v1/"):
+            _public_api_1202kh.append((str(method).upper(), str(path)))
         block = _generate_handler(method, path, auth, meta, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)
         (param_blocks if "{" in path else static_blocks).append(block)
 
     # _AUTH_MIDDLEWARE references ``app`` + imports jwt/JSONResponse/jwt_manager; it is
     # inserted after the app is constructed and before the routes (static-first).
-    mid = _AUTH_MIDDLEWARE.strip("\n")
+    # #1202kh: the contract-public set is emitted immediately ABOVE the middleware, which
+    # reads it through a `try/except NameError` so a main.py this skeleton did not render
+    # (the `repair_auth_enforcement_middleware` heal path) keeps the blanket rule unchanged.
+    mid = ("# #1202kh: routes the CONTRACT declares public — projected with no actor, so the\n"
+           "# blanket guard below must not deny them. Derived from the same `auth` value\n"
+           "# `_generate_handler` was given; an empty list restores #47's original behaviour.\n"
+           "_FW_PUBLIC_API_1202KH = [\n"
+           + "".join("    (%r, %r),\n" % (m, pth) for m, pth in _public_api_1202kh)
+           + "]\n\n" + _AUTH_MIDDLEWARE.strip("\n"))
     # Inject the registered resource names so the custom-route override filter can tell a
     # nested child-RESOURCE route (projector-handled → projected wins) from a nested ACTION
     # verb (lane custom wins). Names + singular/plural variants to match a path segment.
