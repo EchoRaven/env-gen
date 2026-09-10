@@ -95,6 +95,24 @@ def test_a_healthy_read_stays_quiet(tmp_path, caplog):
     assert not [r for r in caplog.records if "#1202ja" in r.getMessage()]
 
 
+def test_a_fresh_run_with_no_ledger_at_all_is_silent(tmp_path, caplog):
+    """Caught by r111's FIRST MINUTE: a `--fresh` run has no `run_budget.json` yet, and the
+    first draft of this fix warned on the resulting FileNotFoundError — so every fresh run
+    opened with a budget warning. "No previous run" is the same fact a missing KEY carries,
+    and the test below already pins that as not-a-failure; the file-level case had been
+    missed. A warning that fires on the normal path is the cry-wolf this fix exists to avoid.
+    """
+    rb = RunBudget(tmp_path, logging.getLogger("t1202ja"))
+    rb.path().parent.mkdir(parents=True, exist_ok=True)      # directory, but NO ledger
+    rb._carry_1202cg = None
+    with caplog.at_level(logging.WARNING):
+        c = rb._carry_1202cg_for(999.0, {"llm": {"usd": 5.0, "calls": 2},
+                                         "usage": {"elapsed_sec": 60}})
+    assert c["usd_before_this_run"] == 0.0
+    assert not [r for r in caplog.records if "#1202ja" in r.getMessage()], \
+        [r.getMessage() for r in caplog.records]
+
+
 def test_a_missing_field_is_not_a_failure(tmp_path, caplog):
     """An ABSENT key is a first run or an older ledger, not a fault — #1202fk added
     `alive_before_this_run` on 09-07 and every ledger written before it lacks the key.

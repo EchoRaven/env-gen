@@ -171,6 +171,13 @@ class RunBudget:
                     prior_alive += max(float(_u_old.get("process_wall_sec_1202ez") or 0.0),
                                        float(_u_old.get("elapsed_sec") or 0.0))
                     runs += 1
+            except FileNotFoundError:
+                # #1202ja, corrected by r111's first minute: a `--fresh` run has no ledger yet,
+                # and "no previous run" is the same fact a MISSING KEY carries -- the case the
+                # test below already pins as not-a-failure. The first draft warned on it, so
+                # EVERY fresh run opened with a budget warning, which is the cry-wolf this fix
+                # exists to avoid. Only a ledger that EXISTS and cannot be read is a fault.
+                pass
             except Exception as _exc1202ja:
                 _failed_1202ja.append(f"<whole ledger> ({type(_exc1202ja).__name__})")
             if _failed_1202ja:
