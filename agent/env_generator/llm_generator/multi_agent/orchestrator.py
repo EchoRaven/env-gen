@@ -5627,6 +5627,31 @@ class Orchestrator:
             _ds = int(getattr(self, "_fwdeliver_stuck_count", 0) or 0)
             if _ds:
                 bits.append("the delivery gate declined %d time(s)" % _ds)
+            # #1202jf: the failure set can OUTLIVE the evidence under it. r111 wrote
+            # `['business_chain']` at 23:20:57; the verifier's own run_validation finished at
+            # 23:26:17 recording all 30 chains `passing`; the run stopped at 23:28:09 still
+            # holding the older verdict, because no framework validation ran in between.
+            # Measured: of the 17 corpus runs whose final failure set names business_chain,
+            # FOUR have every authored chain `passing` in the ledger -- three of them written
+            # after the gate's own record.
+            #
+            # This changes what the reader should do. "business_chain failing" sends a
+            # verifier to re-author chains; "business_chain failing while every chain on
+            # record passed" says re-VALIDATE, and re-authoring is the one move that can
+            # break what is already green (#1054/#327's oscillation).
+            if any("business_chain" in str(x) for x in _fs):
+                try:
+                    _rh = getattr(getattr(self, "hubs", None), "registryhub", None)
+                    _ch = (_rh._verification_chains.value() or {}) if _rh is not None else {}
+                    _authored = [v for v in _ch.values() if isinstance(v, dict)
+                                 and v.get("steps") and v.get("name") != "_framework_coverage"]
+                    if _authored and all(str(v.get("status")) == "passing" for v in _authored):
+                        bits.append(
+                            "BUT all %d authored chains are `passing` on the ledger -- the "
+                            "failure set is older than the evidence under it, so this needs a "
+                            "re-VALIDATION, not a re-authored chain" % len(_authored))
+                except Exception:
+                    pass
             if not bits:
                 return ("the coordination loop exited without a delivery, an abort or a cap, "
                         "and no framework-validation failure was on record when it stopped")

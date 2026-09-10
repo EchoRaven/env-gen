@@ -84,3 +84,87 @@ def test_a_successful_run_gets_no_stop_reason():
     src = (_AGENT / "env_generator" / "llm_generator" / "multi_agent"
            / "orchestrator.py").read_text(encoding="utf-8")
     assert '"" if success else self._generic_stop_reason_1202je()' in src
+
+
+# --------------------------------------------------------------------------------------
+# #1202jf: the failure set can OUTLIVE the evidence under it.
+# --------------------------------------------------------------------------------------
+
+import types  # noqa: E402
+
+
+class _Store:
+    def __init__(self, v):
+        self._v = v
+
+    def value(self):
+        return self._v
+
+
+def _orch_with_chains(chains, fset=("business_chain",)):
+    o = Orchestrator.__new__(Orchestrator)
+    o._fwval_failure_set = frozenset(fset)
+    o.hubs = types.SimpleNamespace(
+        registryhub=types.SimpleNamespace(_verification_chains=_Store(chains)))
+    return o
+
+
+_ALL_PASSING = {
+    "a": {"name": "x", "steps": [1], "status": "passing"},
+    "b": {"name": "y", "steps": [1], "status": "passing"},
+    # the synthetic coverage marker is not an authored chain and must not be counted
+    "cov": {"name": "_framework_coverage", "steps": [1], "status": "coverage"},
+}
+_ONE_FAILING = {
+    "a": {"name": "x", "steps": [1], "status": "passing"},
+    "b": {"name": "y", "steps": [1], "status": "failing"},
+}
+
+
+def test_it_names_the_contradiction_r111_ended_on():
+    """r111 wrote `['business_chain']` at 23:20:57; the verifier's own run_validation finished
+    at 23:26:17 recording all 30 chains `passing`; the run stopped at 23:28:09 still holding
+    the older verdict. Four of the 17 corpus runs whose final failure set names business_chain
+    have every authored chain passing on the ledger."""
+    r = _orch_with_chains(_ALL_PASSING)._generic_stop_reason_1202je()
+    assert "all 2 authored chains are `passing`" in r, r
+    assert "re-VALIDATION, not a re-authored chain" in r, r
+
+
+def test_the_advice_is_the_point_not_the_observation():
+    """"business_chain failing" sends a verifier to re-author chains; re-authoring is the one
+    move that can break what is already green (#1054/#327's oscillation). The sentence exists
+    to redirect that."""
+    r = _orch_with_chains(_ALL_PASSING)._generic_stop_reason_1202je()
+    assert "re-VALIDATION" in r and "not a re-authored chain" in r, r
+
+
+def test_a_genuinely_failing_chain_is_not_called_stale():
+    """When the ledger agrees with the failure set there is no contradiction to report, and
+    claiming one would send the reader away from a real defect."""
+    r = _orch_with_chains(_ONE_FAILING)._generic_stop_reason_1202je()
+    assert "passing` on the ledger" not in r, r
+
+
+def test_it_only_speaks_when_business_chain_is_the_verdict():
+    """A failure set about docker_up says nothing about chain freshness."""
+    r = _orch_with_chains(_ALL_PASSING, fset=("docker_up",))._generic_stop_reason_1202je()
+    assert "authored chains" not in r, r
+
+
+def test_an_empty_ledger_claims_nothing():
+    """No chains on record is not the same as all chains passing."""
+    r = _orch_with_chains({})._generic_stop_reason_1202je()
+    assert "authored chains" not in r, r
+
+
+def test_a_broken_hub_does_not_break_the_record():
+    class _Boom:
+        def value(self):
+            raise RuntimeError("boom")
+    o = Orchestrator.__new__(Orchestrator)
+    o._fwval_failure_set = frozenset({"business_chain"})
+    o.hubs = types.SimpleNamespace(
+        registryhub=types.SimpleNamespace(_verification_chains=_Boom()))
+    r = o._generic_stop_reason_1202je()
+    assert "business_chain" in r, r          # the rest of the sentence survives
