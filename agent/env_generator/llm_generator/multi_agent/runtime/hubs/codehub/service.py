@@ -1146,6 +1146,44 @@ class CodeHub:
         """Return all PRs that are in 'conflict' status (need resolution)."""
         return [p for p in self.stores.pull_requests.value().values() if p.get("status") == "conflict"]
 
+    def _visual_state_1202jr(self) -> dict:
+        """The visual verdict as it stands right now, or an explicit "not recorded".
+
+        Best-effort and never raises: a release must not fail because a verdict is missing.
+        The absent case says so rather than defaulting to False — "not measured" and "measured
+        and failing" are different facts about a delivery, and #1039's invariant is that an
+        empty result must never read as a clean one.
+        """
+        out = {"visual_passed": None, "visual_blocking_average_live": None,
+               "visual_screens_below": None, "visual_code_state": None,
+               "visual_verdict_source": "not recorded"}
+        try:
+            import json as _json
+            v = self.hub_dir.parent.parent / "design" / "visual_gate" / "verdict.json"
+            d = _json.loads(v.read_text(encoding="utf-8"))
+            if not isinstance(d, dict):
+                return out
+            bar = d.get("min_similarity")
+            below = []
+            for sc in (d.get("screens") or []):
+                if not isinstance(sc, dict) or sc.get("advisory"):
+                    continue
+                val = sc.get("similarity_live")
+                if not isinstance(val, (int, float)):
+                    val = sc.get("similarity")
+                if isinstance(val, (int, float)) and isinstance(bar, (int, float)) and val < bar:
+                    below.append(str(sc.get("name")))
+            out.update({
+                "visual_passed": bool(d.get("passed")),
+                "visual_blocking_average_live": d.get("blocking_average_live"),
+                "visual_screens_below": sorted(below),
+                "visual_code_state": d.get("code_state"),
+                "visual_verdict_source": str(v),
+            })
+        except Exception:
+            return out
+        return out
+
     def create_release(self, tag: str, source: str = "main", notes: str = "", agent: str = "codehub") -> dict:
         # Releases are an integrator-only action (the run-render/functional gate is
         # enforced at the tool layer, which can reach RunHub).
@@ -1175,6 +1213,20 @@ class CodeHub:
             "created_at": now,
             "_updated_by": agent,
             "_updated_at": now,
+            # #1202jr: what the app LOOKED LIKE when this was cut. Measured over this corpus:
+            # 51 runs cut a release and only 3 ever recorded a passing visual verdict — 50 of
+            # the 51 went out through an escape (wall-clock, plateau, attempts, #558) with the
+            # gate never satisfied. The record said none of it; r43's notes read "Final
+            # delivery: delivery gate fully clear", which is true of the gate it names and
+            # silent about this one, so a reader of codehub_releases.json cannot tell whether
+            # the delivered app rendered.
+            #
+            # Stamped HERE rather than at the call sites because there are three of them —
+            # orchestrator's two plus the `create_release` TOOL a lane can call with notes of
+            # its own — and #706b records what hooking one of them costs: "#706 hooked the
+            # api_smoke-validated cut further down this file and missed this one, which is the
+            # path r147 actually took". One writer, one stamp.
+            **self._visual_state_1202jr(),
         }
         self.stores.releases.update(
             lambda m: m.set(tag, release, agent),
