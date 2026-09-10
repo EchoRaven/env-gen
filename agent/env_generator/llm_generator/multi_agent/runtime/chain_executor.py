@@ -2176,6 +2176,27 @@ def _last_exception_1202gs(log_text) -> str:
     return (" <- ".join(reversed(frames)) + " -- " + exc) if frames else exc
 
 
+# #1202jy: the window a container-log read stays valid for.
+#
+# MEASURED (recent corpus, googlemaps-r16 excluded as #1202jw contaminated): 57 chain steps
+# answered 5xx. 46 of them carry NO traceback and 11 carry one — and all 11 are in a single
+# run, tiktok-r103, where they are the SAME traceback: one read at the first 5xx, replayed as
+# the cause of ten later ones minutes apart, `GET /api/messages` and
+# `POST /api/videos/{uuid}/comments` both blamed on `_public_video_direct_middleware`.
+#
+# So the distribution has two modes and no middle: reads inside one chain's burst (seconds
+# apart, same failure) and reads separated by whole remediation cycles (minutes apart,
+# different failures). 15s sits between them — it covers the burst #1202gs's cache exists to
+# serve, and expires long before the next chain runs. The negative window is 4s because a ""
+# is not a fact about the app, only about when we looked, and 46/57 says a cached one blinds
+# most of a run.
+_TTL_1202JY = 15.0
+# The empty-read window, separately: 46 of the 57 measured 5xx steps carry no traceback at all,
+# which is what one cached "" looks like from outside. 4s is short enough that a transient miss
+# costs one step rather than the run, and still absorbs a burst of retries within a chain.
+_NEG_TTL_1202JY = 4.0
+
+
 def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
     """The backend's OWN account of a 5xx, for the step note. "" when there isn't one.
 
@@ -2189,7 +2210,22 @@ def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
     Only for 5xx: a 404 or 422 is the server ANSWERING, and reading a container log for those
     would spend a subprocess per probe on nothing (#647 -- no wider than its evidence).
     Cached per project so a chain of failing steps costs one read, not one per step.
+
+    #1202jy: that cache had NO EXPIRY, and a run outlives its container log twice over. Both
+    directions were wrong and the second is worse:
+
+      * a "" cached from the first 5xx blinded every later one. 46 of the 57 recent 5xx steps
+        carry no traceback at all, which is what that looks like from the outside.
+      * a HIT cached from the first 5xx was then attributed to every later one. tiktok-r103's
+        eleven 5xx steps all carry the SAME traceback -- `GET /api/messages` and
+        `POST /api/videos/{uuid}/comments` are both blamed on `_public_video_direct_middleware`,
+        the cause of a different failure minutes earlier. Ten false attributions from one read.
+
+    The stated purpose -- "a chain of failing steps costs one read" -- is a burst measured in
+    seconds, so a short TTL serves it exactly and expires long before the next chain. The
+    negative TTL is shorter still: a transient empty read must not decide the rest of the run.
     """
+    import time as _t1202jy
     try:
         code = int(status)
     except (TypeError, ValueError):
@@ -2197,8 +2233,12 @@ def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
     if code < 500:
         return ""
     key = str(project_dir)
-    if key in _cache:
-        return _cache[key]
+    _now = _t1202jy.monotonic()
+    _hit = _cache.get(key)
+    if _hit is not None:
+        _ts, _val = _hit
+        if (_now - _ts) < (_TTL_1202JY if _val else _NEG_TTL_1202JY):
+            return _val
     out = ""
     try:
         from pathlib import Path as _P
@@ -2226,7 +2266,7 @@ def _backend_traceback_1202gs(project_dir, status, _cache={}) -> str:
             out = _last_exception_1202gs((r.stdout or "") + (r.stderr or ""))
     except Exception:
         out = ""
-    _cache[key] = out
+    _cache[key] = (_now, out)
     return out
 
 
@@ -3646,6 +3686,17 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             _tb1202gs = _backend_traceback_1202gs(project_dir, status)
             if _tb1202gs:
                 entry["server_traceback"] = _tb1202gs
+                # #1202jy: SAY WHAT IT IS. This is the backend's most recent logged exception
+                # when this step failed — the container log's tail, not a trace captured for
+                # THIS request. Before the TTL above, one read was attributed to every 5xx in
+                # the run: tiktok-r103's eleven all carry the same one, so `GET /api/messages`
+                # and `POST /api/videos/{uuid}/comments` were both blamed on
+                # `_public_video_direct_middleware`. The window is narrow now, but "narrow" is
+                # not "this request", and a reader pairing a path with a trace will believe it.
+                entry["server_traceback_is"] = (
+                    "the backend's most recent logged exception at the time of this step "
+                    "(container log tail, shared by any 5xx within seconds of it) — NOT a "
+                    "trace captured for this request")
         if autofilled:
             entry["autofilled"] = autofilled
         recorded.append(entry)
