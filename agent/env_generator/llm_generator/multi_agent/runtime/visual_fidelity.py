@@ -4109,6 +4109,16 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                # summary line says it, reading `_blank_screens` directly; the
                                # per-screen record a reader opens did not.
                                "blank_live": s.get("blank"),
+                               # #1202jm: and the console from THIS capture, which is where a
+                               # blank route says WHY. r111's comments_panel record persisted
+                               # `console_errors: []` -- the kept 0.62 capture's, truthfully --
+                               # while the live capture carried an uncaught error whose stack
+                               # reads `at CommentMedia (.../index-DGbcM8dN.js:9821:54)`. One
+                               # route blanked and eight rendered, so the crash IS the repair,
+                               # and the durable record was the one artefact without it.
+                               # Empty list rather than None, matching #771b: a reader can then
+                               # tell "checked, none" from "not recorded".
+                               "console_errors_live": s.get("console_errors") or [],
                                "similarity_live_note": (
                                    "this capture scored lower; `similarity` is the best-of-"
                                    "captures merge (#500), `similarity_live` is what the "
@@ -4124,8 +4134,9 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                    # against the stale list — the harm is to a human reader.)
                                    "dimensions/deviations/fixes/screenshot on this record "
                                    "describe the RECORDED capture; `similarity_live`, "
-                                   "`capture_missing_live`, `capture_error_live` and "
-                                   "`blank_live` describe THIS one (#950/#1202jl)")})
+                                   "`capture_missing_live`, `capture_error_live`, "
+                                   "`blank_live` and `console_errors_live` describe THIS one "
+                                   "(#950/#1202jl/#1202jm)")})
             else:
                 # #930: this capture won, so ARCHIVE the image that earned the score before the
                 # next round overwrites it. `screenshot` is a stable path
@@ -4145,6 +4156,7 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 # `similarity_live` earned in some earlier round — that is the same lie one
                 # level down. Say it was not captured instead.
                 merged.append({**p, "similarity_live": None, "blank_live": None,
+                               "console_errors_live": None,
                                "similarity_live_note": (
                                    "not captured in this round; `similarity` is a previous "
                                    "capture's score (#500/#928)")})
