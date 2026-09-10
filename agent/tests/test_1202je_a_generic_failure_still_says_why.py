@@ -168,3 +168,63 @@ def test_a_broken_hub_does_not_break_the_record():
         registryhub=types.SimpleNamespace(_verification_chains=_Boom()))
     r = o._generic_stop_reason_1202je()
     assert "business_chain" in r, r          # the rest of the sentence survives
+
+
+# --------------------------------------------------------------------------------------
+# #1202jg: a run that CUT A RELEASE delivered, whatever happened afterwards.
+# --------------------------------------------------------------------------------------
+
+def _orch_with_releases(rel):
+    o = Orchestrator.__new__(Orchestrator)
+    o.hubs = types.SimpleNamespace(
+        codehub=types.SimpleNamespace(stores=types.SimpleNamespace(releases=_Store(rel))))
+    return o
+
+
+def test_a_tagged_release_is_a_delivery():
+    """51 corpus runs hold a release record carrying a tag; only 26 said `delivered`.
+    tiktok-r97 — the first tiktok delivery, tag 1.0.0 on branch release-v1.0.0 — is recorded
+    as `failed`, and seven runs that shipped read `stuck_abort`."""
+    assert _orch_with_releases(
+        {"_meta": {"version": 3},
+         "1.0.0": {"version": "1.0.0", "tag": "1.0.0",
+                   "branch": "release-v1.0.0"}})._released_1202jg()
+
+
+def test_the_meta_counter_is_not_a_release():
+    """`_meta` is the store's revision counter. It carries a `version` and never a `tag` —
+    the distinction pipeline_health.sh documents because I once read it as a release and
+    reported a delivery that had not happened."""
+    assert not _orch_with_releases({"_meta": {"version": 7}})._released_1202jg()
+    assert not _orch_with_releases({})._released_1202jg()
+
+
+def test_a_record_without_a_tag_is_not_a_release():
+    assert not _orch_with_releases(
+        {"draft": {"version": "1.0.0", "branch": "wip"}})._released_1202jg()
+
+
+def test_a_broken_hub_is_not_a_delivery():
+    """Reading the ledger must never turn an unreleased run into a delivered one."""
+    class _Boom:
+        def value(self):
+            raise RuntimeError("boom")
+    o = Orchestrator.__new__(Orchestrator)
+    o.hubs = types.SimpleNamespace(
+        codehub=types.SimpleNamespace(stores=types.SimpleNamespace(releases=_Boom())))
+    assert o._released_1202jg() is False
+    o2 = Orchestrator.__new__(Orchestrator)
+    o2.hubs = None
+    assert o2._released_1202jg() is False
+
+
+def test_delivered_outranks_every_stop_word_but_the_stop_still_gets_said():
+    """The mid-loop `delivered` write is overwritten by the terminal one (#1192b's shape:
+    "this one runs LAST and overwrites everything"). Delivery now wins the STATUS; the stop
+    keeps the `reason`, so nothing is traded away."""
+    src = (_AGENT / "env_generator" / "llm_generator" / "multi_agent"
+           / "orchestrator.py").read_text(encoding="utf-8")
+    i = src.index("#1202jg: a run that CUT A RELEASE delivered")
+    frag = src[i:src.index("_abort_1202eb or getattr", i)]
+    assert '"delivered" if self._released_1202jg()' in frag, frag
+    assert "_abort_status_1202hv" in frag, frag        # the stop words are still below it

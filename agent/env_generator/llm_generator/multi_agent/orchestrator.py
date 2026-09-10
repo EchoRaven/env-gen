@@ -3321,10 +3321,15 @@ class Orchestrator:
                 # #1202if: a wall-clock / tick stop is neither the provider nor our
                 # spend cap, so #1202hv's two names do not cover it and the generic
                 # "failed" erased the one sentence that explained the run.
-                (self._abort_status_1202hv(_abort_1202eb) if _abort_1202eb
-                 else ("finished" if success
-                       else (self._stop_status_1202ik()
-                             if getattr(self, "_budget_stop_1202if", "") else "failed"))),
+                # #1202jg: a run that CUT A RELEASE delivered, whatever happened afterwards.
+                # The mid-loop `delivered` write is overwritten here, so 25 of the 51 released
+                # runs on this corpus carry another word -- including seven `stuck_abort`.
+                # The stop still gets said: it rides the `reason` argument below.
+                ("delivered" if self._released_1202jg()
+                 else (self._abort_status_1202hv(_abort_1202eb) if _abort_1202eb
+                       else ("finished" if success
+                             else (self._stop_status_1202ik()
+                                   if getattr(self, "_budget_stop_1202if", "") else "failed")))),
                 # #1202je: the two named stops carry their own sentence; the generic
                 # `failed` had none, so fill it from what this object knows right here.
                 (_abort_1202eb or getattr(self, "_budget_stop_1202if", "")
@@ -5594,6 +5599,40 @@ class Orchestrator:
     # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
         return self._budget.path()
+
+    def _released_1202jg(self) -> bool:
+        """Did this run cut a real release? Read from the release ledger, not a flag.
+
+        `run()` writes `"delivered"` mid-loop when a milestone releases (line ~2927) and then
+        writes the terminal status at its very end -- `"finished" if success else ...` --
+        which OVERWRITES it. #1192b already caught the same shape one field over: "this one
+        runs LAST and overwrites everything".
+
+        Measured on this corpus: 51 runs hold a release record carrying a tag, and only 26 of
+        them say `delivered`. The other 25 read `finished` (13), `stuck_abort` (7), `running`
+        (4) and `failed` (1). tiktok-r97 -- the first tiktok delivery, tag 1.0.0 on branch
+        release-v1.0.0 -- is recorded as `failed`, and seven runs that shipped are recorded as
+        having aborted for lack of convergence, which is the opposite of what happened. Any
+        delivery rate read off this field undercounts by half; my own count of "0 delivered
+        among the finished runs" was this artifact.
+
+        The LEDGER, not the mid-loop flag: that write means "a milestone delivered", which in
+        a multi-milestone run is not the same as "the run delivered". A record with a `tag` is
+        the thing that exists on disk afterwards. `_meta` is the store's revision counter and
+        carries a `version` but never a `tag` -- the distinction pipeline_health.sh documents
+        after I misread it as a release once.
+
+        The `k != "_meta"` filter is DEFENSIVE ONLY and verified so: removing it leaves every
+        test green, because the `tag` requirement already excludes `_meta`. It stays to say
+        what the key is, and is recorded here as not load-bearing rather than left to read as
+        protection.
+        """
+        try:
+            rel = self.hubs.codehub.stores.releases.value() or {}
+            return any(isinstance(v, dict) and v.get("tag")
+                       for k, v in rel.items() if k != "_meta")
+        except Exception:
+            return False
 
     def _generic_stop_reason_1202je(self) -> str:
         """Why a run that fell through to the generic `failed` stopped.
