@@ -911,11 +911,33 @@ def _placeholder_ref(public_dir: Path, url: str, avatarish: bool) -> str:
     return f"/assets/{_PLACEHOLDER_DIRNAME}/{name}"
 
 
-def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str]) -> str:
+def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str],
+                   tally: Optional[Dict[str, int]] = None) -> str:
+    """#1202jq: SAY WHICH BRANCH. This chooses silently between a real staged asset and a
+    generated placeholder glyph, and the two produce very different apps — yet both callers
+    reported only WHICH FILES were touched, so a run whose content imagery localized 100% to
+    placeholders looked exactly like one that matched real media every time.
+
+    tiktok-r109 is the instance: every `videos.thumbnail` became
+    `/assets/placeholders/ph-img-0.svg`, its explore grid rendered a wall of landscape
+    glyphs, and the visual gate scored the wound — nine of nine screens below the bar, mean
+    0.30, $339 spent. The adjacent r110 matched real media and averaged 0.69 on the same env.
+    Nothing in between said "the pictures are not here", so the fidelity gap read as something
+    a lane could fix, and no lane can fix an image that was never staged.
+
+    HONEST LIMIT: this is one clear instance, not a corpus law. Over 49 runs the correlation
+    is weak (content imagery >=50% placeholder: mean 0.35 over n=3, against 0.43 for the rest,
+    and one of those three scored 0.61). So this reports a condition rather than diagnosing
+    one, which is why it is a count and a warning and changes no verdict.
+    """
     hit = _match_staged_asset(url, field, assets)
     if hit:
+        if tally is not None:
+            tally["staged"] = tally.get("staged", 0) + 1
         return f"/assets/{hit}"
     avatarish = bool(_AVATAR_CTX_RE.search(field or "") or _AVATAR_CTX_RE.search(url))
+    if tally is not None:
+        tally["placeholder"] = tally.get("placeholder", 0) + 1
     return _placeholder_ref(public_dir, url, avatarish)
 
 
@@ -923,7 +945,8 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
     """Rewrite image-signaled EXTERNAL URLs in frontend source to local /assets/ refs
     (staged real asset by token match, else deterministic placeholder SVG). Best-effort,
     idempotent, never raises. See the FIX #111 block comment for the safety rails."""
-    result: Dict[str, object] = {"localized": []}
+    result: Dict[str, object] = {"localized": [], "staged": 0, "placeholder": 0}
+    _tally: Dict[str, int] = {}
     try:
         fe = Path(frontend_dir)
         src_dir = fe / "src"
@@ -946,7 +969,7 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
                 if _is_map_tile_url(m.group(3)):
                     return m.group(0)  # F3: never localize a map-tile URL
                 return (m.group(1)
-                        + _local_ref_for(m.group(3), "", public_dir, assets)
+                        + _local_ref_for(m.group(3), "", public_dir, assets, _tally)
                         + m.group(4))
 
             def _prop_repl(m):
@@ -954,7 +977,7 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
                 if not _is_image_signaled(url, field=field):
                     return m.group(0)
                 return (m.group(1)
-                        + _local_ref_for(url, field, public_dir, assets)
+                        + _local_ref_for(url, field, public_dir, assets, _tally)
                         + m.group(5))
 
             def _tpl_repl(m):
@@ -965,14 +988,14 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
                     return m.group(0)
                 if not _is_image_signaled(body):
                     return m.group(0)  # e.g. `https://api.example.com/v1/${id}` — keep
-                return '"' + _local_ref_for(body, "", public_dir, assets) + '"'
+                return '"' + _local_ref_for(body, "", public_dir, assets, _tally) + '"'
 
             def _bare_repl(m):
                 url = m.group(2)
                 if not _is_image_signaled(url):        # URL-alone signal: ext/stock host
                     return m.group(0)
                 return (m.group(1)
-                        + _local_ref_for(url, "", public_dir, assets)
+                        + _local_ref_for(url, "", public_dir, assets, _tally)
                         + m.group(1))
 
             new = _IMG_ATTR_RE.sub(_attr_repl, txt)   # <img src>/<source src>/poster=
@@ -988,6 +1011,9 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
         result["localized"] = sorted(touched)
     except Exception as exc:  # never break generation/validation
         result["error"] = f"{type(exc).__name__}: {exc}"
+    finally:                          # #1202jq: report the split even on a partial pass
+        result["staged"] = _tally.get("staged", 0)
+        result["placeholder"] = _tally.get("placeholder", 0)
     return result
 
 
@@ -996,7 +1022,8 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
     — seed rows render as <img src> at runtime and break identically offline. The seed
     fingerprint changes with the content, so the loader re-seeds on next boot (#99).
     Best-effort, idempotent, never raises."""
-    result: Dict[str, object] = {"localized": 0}
+    result: Dict[str, object] = {"localized": 0, "staged": 0, "placeholder": 0}
+    _tally: Dict[str, int] = {}
     try:
         seed = Path(backend_dir) / "seed_data.json"
         public_dir = Path(frontend_dir) / "public"
@@ -1012,7 +1039,7 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
                 for k, v in node.items():
                     if (isinstance(v, str) and v.startswith(("http://", "https://"))
                             and _is_image_signaled(v, field=str(k))):
-                        node[k] = _local_ref_for(v, str(k), public_dir, assets)
+                        node[k] = _local_ref_for(v, str(k), public_dir, assets, _tally)
                         count += 1
                     else:
                         _walk(v)
@@ -1028,6 +1055,9 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
         result["localized"] = count
     except Exception as exc:  # never break generation/validation
         result["error"] = f"{type(exc).__name__}: {exc}"
+    finally:                          # #1202jq
+        result["staged"] = _tally.get("staged", 0)
+        result["placeholder"] = _tally.get("placeholder", 0)
     return result
 
 

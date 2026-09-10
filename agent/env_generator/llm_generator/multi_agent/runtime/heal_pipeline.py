@@ -1613,6 +1613,20 @@ class HealPipeline:
                         "Seed-data external image URLs localized to /assets/ (%s fields; "
                         "seed fingerprint changes → loader re-seeds on next boot)",
                         _ls.get("localized"))
+                # #1202jq: which BRANCH each of those took. A staged real asset and a
+                # generated glyph are very different apps, and only the file list was ever
+                # reported — so a run whose imagery went entirely to placeholders looked
+                # like one that matched real media every time. tiktok-r109 is the instance.
+                _ph = int(_li.get("placeholder") or 0) + int(_ls.get("placeholder") or 0)
+                _st = int(_li.get("staged") or 0) + int(_ls.get("staged") or 0)
+                if _ph:
+                    orch._logger.warning(
+                        "IMAGE LOCALIZATION: %d ref(s) matched a STAGED asset, %d fell back "
+                        "to a generated PLACEHOLDER glyph (%.0f%%). A placeholder renders as "
+                        "a landscape/person glyph, so the visual gate scores it as a fidelity "
+                        "failure that NO lane can fix — the picture was never staged. If this "
+                        "share is high, the repair is material staging, not the frontend.",
+                        _st, _ph, 100.0 * _ph / max(1, _ph + _st))
             except Exception as _lie:
                 orch._logger.debug("external-image localization skipped: %s", _lie)
             # CJS→ESM FIRST: a lane authors api.js in CommonJS (`module.exports = api`)
