@@ -1881,7 +1881,21 @@ def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Di
         src = Path(frontend_dir) / "src"
         if not src.is_dir():
             return out
-        # concatenate all frontend source once (small; deterministic)
+        # #1202js: the test is GLOBAL — every frontend file concatenated — while the report
+        # below is PER SCREEN, and that mismatch is deliberate rather than the #1202fn shape
+        # it resembles (one base feeding two consumers that need different ones).
+        #
+        # A React page composes SHARED components, so an asset rendered in `TikTokChrome.jsx`
+        # is rendered on every screen that mounts the chrome; a page-file-scoped test would
+        # not see it. Measured: 81-96% of the pairs skipped here are absent from any file whose
+        # NAME matches the screen (r111 48/50, r43 343/424, gmaps 38/42) — most of that is the
+        # shared-component case this comment describes, and resolving which is which needs the
+        # import graph, not a filename.
+        #
+        # The error direction is what settles it. `_screen_asset_fix_lines` MANDATES rendering
+        # ("do NOT draw an approximation"), so a false "you never used this" tells a lane to
+        # render something it already renders through a shared component. Under-reporting is
+        # the safe failure here and over-mandating is not, which is why this stays global.
         blob_parts: List[str] = []
         for p in src.rglob("*"):
             if p.is_file() and p.suffix.lower() in (
