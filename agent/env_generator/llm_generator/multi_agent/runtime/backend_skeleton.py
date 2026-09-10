@@ -2999,20 +2999,33 @@ _OWNER_FK_SYNONYMS = frozenset({
     "member", "assignee", "host", "organizer"})
 
 
+# #1202jv: the fallback for `_owner_fk_vocabulary`, named so a test can compare it against
+# the imported source of truth. Inline it again and the drift becomes invisible again.
+_OWNER_FK_VOCAB_FALLBACK_1202JV = frozenset({
+    "user_id", "author_id", "owner_id", "creator_id", "created_by",
+    "follower_id", "sender_id", "from_user_id", "actor_id", "uploaded_by",
+    "posted_by", "account_id", "following_id", "followee_id", "followed_id",
+    "recipient_id", "to_user_id", "target_user_id", "addressee_id", "profile_id"})
+
+
 def _owner_fk_vocabulary() -> frozenset:
     """The EXACT set of column names the READ side treats as the row's actor/owner or a
     user-target (route_projector._OWNER_FK_NAMES + _TARGET_FK_NAMES) — the single source
     of truth, imported so seed + owner-scoped reads can never drift apart. Falls back to
-    a local copy only if the import fails (keeps seeding robust in isolation)."""
+    a local copy only if the import fails (keeps seeding robust in isolation).
+
+    #1202jv: "can never drift apart" was a claim about the IMPORT, and the fallback beneath
+    it had already drifted — it was missing `profile_id`, which the read side gained with the
+    multi-profile work (#548/#1190). Production never noticed because the import succeeds
+    there; on the isolated path the seed would not have filled `profile_id`, owner-scoped
+    reads would have matched nothing, and this docstring's own failure ("every authenticated
+    page renders blank") would follow. Synced, and a test now pins the two sets EQUAL so the
+    next divergence is a red test instead of a latent one."""
     try:
         from .route_projector import _OWNER_FK_NAMES, _TARGET_FK_NAMES
         return frozenset(_OWNER_FK_NAMES) | frozenset(_TARGET_FK_NAMES)
     except Exception:
-        return frozenset({
-            "user_id", "author_id", "owner_id", "creator_id", "created_by",
-            "follower_id", "sender_id", "from_user_id", "actor_id", "uploaded_by",
-            "posted_by", "account_id", "following_id", "followee_id", "followed_id",
-            "recipient_id", "to_user_id", "target_user_id", "addressee_id"})
+        return _OWNER_FK_VOCAB_FALLBACK_1202JV
 
 
 def _seed_infer_fk(col: str, known_tables) -> Optional[str]:
