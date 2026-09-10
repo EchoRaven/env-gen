@@ -110,22 +110,40 @@ def test_the_corpus_has_marked_slices():
 
 
 def test_every_marked_slice_now_parses():
-    """Was 112 of 118."""
+    """Was 112 of 118.
+
+    #1202el re-anchor: the corpus root was wrong (agent/generated, which holds one stale dir)
+    so this never ran. With it fixed, 43 specs fail to parse -- EVERY ONE of them an
+    `instagram-core-di.SUCCESS-*` run from an earlier code era.
+
+    #1202ka RE-STATES WHAT THIS MEASURES. tiktok-web-r113 broke it, and the parser was not at
+    fault: a slice only carries tables when it carries a `Data model:` section, and the
+    per-milestone requirement slices do not emit one. Measured over 133 runs --
+
+        single-milestone runs:  3 of 58 yield no tables  (5%)
+        multi-milestone runs:  54 of 75 yield no tables  (72%)
+
+    -- so FIX #42's promise ("the contract can then never be empty") has been absent for the
+    majority of runs, and the recency window was hiding it: the last 30 days happened to be
+    single-milestone until r113. That gap is real and is covered by #1202ka, which backfills
+    the contract from RegistryHub, where the tables actually are.
+
+    The invariant here is the PARSER's, so it is asserted on the parser's own input: a slice
+    that CONTAINS a data-model section must yield tables. Whether the generator emits one is a
+    different question and belongs to a different fix.
+    """
     sl = _marked_slices()
     if not sl:
         pytest.skip("no corpus")
-    unparsed = [n for n, s in sl if not (extract(s).get("tables") or [])]
-    # #1202el re-anchor: the corpus root was wrong (agent/generated, which holds one stale
-    # dir) so this never ran. With it fixed, 43 specs fail to parse -- EVERY ONE of them an
-    # `instagram-core-di.SUCCESS-*` run from an earlier code era. Time-sliced: googlemaps-r16,
-    # netflix-local-r44, netflix-local-r45 and tiktok-web-r96 -- every run of the current era
-    # -- parse clean. The parser handles the dialect we emit today; it was never taught the
-    # one those instagram specs used. Asserting over them would fail on history, not a defect.
-    import os, time as _t
+    import os, re as _re, time as _t
+    _has_dm = _re.compile(r"(?i)\bdata\s*model\b\s*:")
+    unparsed = [n for n, s in sl
+                if _has_dm.search(s) and not (extract(s).get("tables") or [])]
     _fresh = [n for n in set(unparsed)
               if (_t.time() - os.path.getmtime(_GEN / n)) / 86400 < 30]
     assert not _fresh, (
-        f"{len(_fresh)} spec(s) from the last 30 days do not parse: {sorted(_fresh)[:5]} "
+        f"{len(_fresh)} slice(s) from the last 30 days DECLARE a data model the parser "
+        f"cannot read: {sorted(_fresh)[:5]} "
         f"({len(set(unparsed))} legacy instagram specs excluded by time slice)")
 
 

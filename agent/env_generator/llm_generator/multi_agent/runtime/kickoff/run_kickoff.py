@@ -376,9 +376,21 @@ _DESC_ENDPOINT_RE = re.compile(
 # and drops out of #774's measurement entirely — neither numerator nor denominator. #773 taught
 # this pattern an optional  prefix; the bracket dialect was never seen because the only
 # runs using it produced no tables and therefore no evidence that anything was missing.
+#
+# #1202kb: that last sentence predicted its own third dialect, and tiktok-r113 supplied it —
+# SQUARE brackets, which this accepted for neither open nor close:
+#
+#     - users[id, username, display_name, avatar_url, bio, ...]
+#
+# It stayed invisible exactly as #843 describes: a slice in it yields zero tables, which is
+# indistinguishable from a slice that declares none, so nothing ever said the parser had
+# missed something. r113 made it visible only by DYING on `contract.data_model.tables MUST be
+# a non-empty list` — the FIX #42 backstop had nothing to backstop with. Measured over the
+# corpus: 295 table entries in the square-bracket dialect across 10 runs that use it
+# exclusively, against 617 in the colon form.
 _DESC_TABLE_RE = re.compile(
     r"^\s*[-*]\s+(?:table\s*:\s*)?([a-zA-Z_][a-zA-Z0-9_]*)"
-    r"(?:\s*:\s*|\s*\()(.+?)\)?\s*$", re.MULTILINE
+    r"(?:\s*:\s*|\s*[\(\[])(.+?)[\)\]]?\s*$", re.MULTILINE
 )
 
 
@@ -1226,6 +1238,108 @@ def _derive_response_key(path: Any) -> str:
     return segs[-1] if segs else "data"
 
 
+def _backfill_drafts_from_registry_1202ka(hubs: Any, drafts: Any):
+    """When a section's draft is EMPTY but the lanes REGISTERED the thing, use the registry.
+
+    The contract lives in two places and the synthesizer reads only one. `try_synthesize`'s own
+    first line says so — "synthesize the contract from the meeting's decisions" — while the
+    lanes register endpoints, tables and pages into RegistryHub, which is the durable record
+    and the thing every later phase actually reads.
+
+    Two runs died on that gap within an hour of each other, both salvageable:
+
+      * r113 aborted with `contract.endpoints MUST be a non-empty list`,
+        `contract.data_model.tables MUST be a non-empty list`, `task_tree MUST be a non-empty
+        list` — while its RegistryHub held 15 endpoints, 4 tables and 9 ui_pages.
+      * r112 aborted with `Missing=['backend']` while the backend lane was, in the same second,
+        calling `registryhub_register_table` for `live_streams`, `dm_conversations`,
+        `direct_messages` and `notifications`. It did the work and never wrote the meeting
+        decision the gate waits on.
+
+    The same shape appears three more times in the corpus (googlemaps-r15, netflix-r43,
+    tiktok-r104), so it is not a two-run fluke; netflix-r43 survived it and delivered, which
+    says the contract was fine and only its transcription was missing.
+
+    FILLS EMPTY SECTIONS ONLY, never overrides a draft the lanes wrote. The records are those
+    same lanes' own registrations, so this changes WHERE the synthesizer looks, not whose
+    decision it honours — and only on the reconcile path, which exists precisely to converge
+    deterministically before a hard abort.
+
+    Emits minimal shapes on purpose: `_normalize_backend_endpoints_for_reconcile` runs right
+    after and already fills `response_key`/`auth_required` with the defaults it documents.
+    Deriving them here would be a fourth reading of a fact that already has one.
+    """
+    notes: List[str] = []
+    try:
+        rh = getattr(hubs, "registryhub", None)
+        if rh is None:
+            return drafts, notes
+        out = {k: dict(v) if isinstance(v, Mapping) else v for k, v in (drafts or {}).items()}
+        backend = dict(out.get("backend") or {})
+        frontend = dict(out.get("frontend") or {})
+
+        if not (backend.get("api_endpoints") or backend.get("endpoints")):
+            eps = []
+            for rec in (rh.get_endpoints() or {}).values():
+                if not isinstance(rec, Mapping):
+                    continue
+                m, path = rec.get("method"), rec.get("path")
+                if not (m and path):
+                    continue
+                ep = {"method": str(m).upper(), "path": str(path)}
+                _sch = rec.get("schema") if isinstance(rec.get("schema"), Mapping) else {}
+                for _k in ("response_key", "auth_required"):
+                    _v = rec.get(_k)
+                    if _v is None:
+                        _v = _sch.get(_k)
+                    if _v is not None:
+                        ep[_k] = _v
+                eps.append(ep)
+            if eps:
+                backend["endpoints"] = eps
+                notes.append("endpoints<-registry:%d" % len(eps))
+
+        _dm = backend.get("data_model") if isinstance(backend.get("data_model"), Mapping) else {}
+        if not (_dm.get("tables") if isinstance(_dm, Mapping) else None):
+            tables = []
+            for rec in (rh.list_tables() or {}).values():
+                if not isinstance(rec, Mapping):
+                    continue
+                nm = rec.get("name")
+                if not nm:
+                    continue
+                _sch = rec.get("schema") if isinstance(rec.get("schema"), Mapping) else {}
+                cols = [c for c in (_sch.get("columns") or []) if isinstance(c, Mapping)]
+                tables.append({"name": str(nm), "columns": cols})
+            if tables:
+                backend["data_model"] = dict(_dm or {}, tables=tables)
+                notes.append("tables<-registry:%d" % len(tables))
+
+        if not (frontend.get("ui_pages") or frontend.get("screens")):
+            pages = []
+            for rec in (rh.list_ui_pages() or {}).values():
+                if not isinstance(rec, Mapping):
+                    continue
+                nm = rec.get("name")
+                if not nm:
+                    continue
+                pg = {"id": str(rec.get("id") or nm), "name": str(nm)}
+                for _k in ("route", "component", "apis_used", "components"):
+                    if rec.get(_k) is not None:
+                        pg[_k] = rec.get(_k)
+                pages.append(pg)
+            if pages:
+                frontend["ui_pages"] = pages
+                notes.append("ui_pages<-registry:%d" % len(pages))
+
+        if notes:
+            out["backend"], out["frontend"] = backend, frontend
+            return out, notes
+    except Exception:
+        return drafts, []
+    return drafts, notes
+
+
 def _normalize_backend_endpoints_for_reconcile(
     drafts: Mapping[str, Mapping[str, Any]],
 ) -> "tuple[Dict[str, Mapping[str, Any]], List[str]]":
@@ -1667,6 +1781,15 @@ def try_synthesize(
     added_endpoints: List[str] = []
     normalized_notes: List[str] = []
     if reconcile:
+        # #1202ka: FIRST, fill any section the lanes REGISTERED but never transcribed into the
+        # meeting. r113 died on "contract.endpoints MUST be a non-empty list" with 15 endpoints
+        # in its RegistryHub; r112 died on Missing=['backend'] while that lane was registering
+        # tables in the same second. Runs before the normalizer so the registry's records go
+        # through exactly the same shape defaults a lane's draft does.
+        drafts, _reg_notes_1202ka = _backfill_drafts_from_registry_1202ka(hubs, drafts)
+        if _reg_notes_1202ka:
+            normalized_notes = list(normalized_notes) + [
+                "registry-backfill(" + ",".join(_reg_notes_1202ka) + ")"]
         # 1. Normalize endpoint shape (default response_key/auth_required, drop
         #    method/path-less junk) so a slightly-malformed big contract still
         #    passes validate_roadmap (FIX #20). Done BEFORE pruning so dangling

@@ -62,9 +62,16 @@ def test_r113s_shape_end_to_end():
 def test_prose_still_yields_nothing():
     """Non-vacuity in the other direction: the widening must not invent tables from prose.
 
-    A sentence with a bracketed aside is exactly what a looser pattern would swallow.
+    WHAT ACTUALLY PROTECTS THIS is the plausibility rule two lines below the pattern —
+    ">=2 columns and an 'id'" — not the pattern's tightness. Found by counter-proof: widening
+    the regex to `.*?[\(\[]` left every test here green, which is how a guard that does not
+    discriminate announces itself. So this pins the rule that does the work, and the second
+    case is the one the regex alone would let through.
     """
     assert _tables("- Build the shared sidebar [For You, Explore, Following] first") == []
+    assert _tables("- sidebar[For You, Explore, Following]") == [], (
+        "a bracketed list with no `id` column is prose, whatever the pattern matched")
+    assert _tables("- users[id]") == [], "one column is not a table"
 
 
 def test_a_bare_word_is_not_a_table():
