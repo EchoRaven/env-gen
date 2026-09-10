@@ -83,11 +83,23 @@ def test_it_says_what_the_reader_should_do_with_it():
 
 
 def test_the_honest_limit_is_recorded_at_the_site():
-    """★ The measurement that says this cannot be validated yet belongs next to the code, not only
-    in a note — otherwise the next reader treats a silent detector as a clean bill of health."""
+    """★ What this detector's SILENCE means belongs next to the code, not only in a note —
+    otherwise the next reader treats a silent detector as a clean bill of health.
+
+    #1202jp: the limit that was recorded here has since been measured, and the assertions moved
+    with it. The invariant is unchanged — the site must still answer "does silence mean
+    anything?" — but it now answers with numbers instead of a deferral to run 152.
+    """
     prose = _prose()
-    assert "7 of 119 corpus verdicts carry a `code_state`" in prose
-    assert "run 152" in prose
+    assert "7 of 119 corpus verdicts carried a `code_state`" in prose, (
+        "the original limit must stay legible: it is why the measurement was needed")
+    # asserted as fragments that do not cross a line break: `_prose()` keeps the leading `#`
+    # of each comment line, so any phrase spanning the wrap picks up a `# ` in the middle.
+    assert "83 (screen, code_state)" in prose, (
+        "the measured answer — scores do not drift at an unchanged tree — belongs at the site")
+    assert "the spread is 0.000" in prose
+    assert "#142's verdict cache" in prose, (
+        "and WHY they agree, or a reader concludes the judge is deterministic in general")
 
 
 def test_the_stamp_it_depends_on_is_still_written():

@@ -4341,9 +4341,24 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # non-deterministic, not the app changing. That is exactly the over-claim signature:
         # an element "missing" in one round and not the next, with no code in between.
         #
-        # Honest limit: only 7 of 119 corpus verdicts carry a `code_state`, so this cannot be
-        # validated against history — #621 is recent. Every verdict from here on carries one, so
-        # its first real signal is run 152. It is recorded in the verdict rather than acted on.
+        # Honest limit WHEN WRITTEN: only 7 of 119 corpus verdicts carried a `code_state`, so
+        # this could not be validated against history. #1202jp measured it once there were
+        # enough — 187 verdicts, every one carrying a code_state — and the answer is worth
+        # keeping because it is not the one the limit implied:
+        #
+        #   * SCORES at an unchanged tree do not drift at all. Across 83 (screen, code_state)
+        #     pairs judged two or more times, the spread is 0.000 — every one, because
+        #     #142's verdict cache is keyed by capture md5: identical pixels are never
+        #     re-judged, and at one tree the capture is usually byte-identical. The gate
+        #     therefore does NOT block on a noisy sample, the worry this instrument invites.
+        #   * The instability it does find is entirely in the qualitative `missing` LISTS, with
+        #     `score_delta` 0. r111 is the case: six of nine screens flagged at one tree, and the
+        #     recorded score of each was unchanged.
+        #
+        # So over-claiming is what #893 catches, exactly as intended, and "weigh `missing`
+        # accordingly" is the right and sufficient response. Widening the comparison beyond the
+        # immediately-prior verdict would add nothing: the caching, not the window, is what makes
+        # scores agree. It stays recorded rather than acted on, now for a measured reason.
         _unstable_893 = []
         try:
             if _head_sha and _prior_code_state_893 == _head_sha:
