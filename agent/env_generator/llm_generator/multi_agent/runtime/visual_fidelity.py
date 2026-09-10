@@ -3579,6 +3579,20 @@ async def run_visual_fidelity(
             continue
         shot = shots.get(screen["name"])
         if not shot:
+            # #1202jn: THIS round wrote no file for this screen, whichever of the four
+            # branches below explains it — so the previous round's picture is still sitting at
+            # `visual_gate/<name>.png` and must be taken out of the way HERE, not only in the
+            # `else`. #934 guarded exactly one of the four, and the other three (picker, blank,
+            # auth-bounce) all `continue` before the screenshot just as the fourth does.
+            #
+            # #934's docstring names the cost and it landed again: r111's comments_panel
+            # blanked, and `visual_gate/fyp_feed_comments_panel.png` kept a complete, correct
+            # comments page whose mtime is two hours older than the verdict. I opened it,
+            # reasoned from it and reported "a well-rendered screen scored 0.00" before
+            # checking the mtime — the same two-ticket mistake #934 was written for. A lane
+            # reads this directory too, and #713's duplicate-capture hash treats a stale file
+            # as a real image that can duplicate-match another screen.
+            _retire_stale_capture_934(shots_dir, screen["name"])
             _no_shot_768 = False
             if screen["name"] in _picker_screens:
                 # #657: the SPA hydrated perfectly — it rendered the profile picker, and the
@@ -3678,10 +3692,10 @@ async def run_visual_fidelity(
                 # the mtime. It is also the reading a lane gets, and the reading #713 gets: a
                 # stale file is a real image that can duplicate-match another screen.
                 #
-                # Renamed, never deleted — the pixels stay available under a name that cannot be
-                # mistaken for this round's capture, and #930 has already archived it under its
-                # own code_state if it ever earned a score.
-                _retire_stale_capture_934(shots_dir, screen["name"])
+                # (#1202jn hoisted the retirement to the top of `if not shot:` — it belongs to
+                # every branch here, not to this one. Renamed, never deleted: the pixels stay
+                # under a name that cannot be mistaken for this round, and #930 has already
+                # archived the image under its own code_state if it ever earned a score.)
             results.append({"name": screen["name"], "route": screen["route"],
                             "similarity": 0.0, "passed": False, "dimensions": {},
                             "deviations": [_dev],
@@ -4119,6 +4133,12 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                # Empty list rather than None, matching #771b: a reader can then
                                # tell "checked, none" from "not recorded".
                                "console_errors_live": s.get("console_errors") or [],
+                               # #1202jn: and the path, whose name promises this round. On a
+                               # kept record it came from `**p`, i.e. the round the capture
+                               # WON — a moving path pointing at another round's pixels. None
+                               # when this round took no shot, which is what #934 just made
+                               # true on disk.
+                               "screenshot_live": s.get("screenshot"),
                                "similarity_live_note": (
                                    "this capture scored lower; `similarity` is the best-of-"
                                    "captures merge (#500), `similarity_live` is what the "
@@ -4135,8 +4155,9 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                    "dimensions/deviations/fixes/screenshot on this record "
                                    "describe the RECORDED capture; `similarity_live`, "
                                    "`capture_missing_live`, `capture_error_live`, "
-                                   "`blank_live` and `console_errors_live` describe THIS one "
-                                   "(#950/#1202jl/#1202jm)")})
+                                   "`blank_live`, `console_errors_live` and "
+                                   "`screenshot_live` describe THIS one "
+                                   "(#950/#1202jl/#1202jm/#1202jn)")})
             else:
                 # #930: this capture won, so ARCHIVE the image that earned the score before the
                 # next round overwrites it. `screenshot` is a stable path
@@ -4156,7 +4177,7 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 # `similarity_live` earned in some earlier round — that is the same lie one
                 # level down. Say it was not captured instead.
                 merged.append({**p, "similarity_live": None, "blank_live": None,
-                               "console_errors_live": None,
+                               "console_errors_live": None, "screenshot_live": None,
                                "similarity_live_note": (
                                    "not captured in this round; `similarity` is a previous "
                                    "capture's score (#500/#928)")})
