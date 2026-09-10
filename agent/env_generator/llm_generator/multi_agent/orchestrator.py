@@ -3698,9 +3698,28 @@ class Orchestrator:
                     load_valid_design_system, complete_design_system,
                     design_system_is_enriched, design_system_summary_for_requirements,
                     design_prep_reusable_1202bv, record_design_prep_input_1202bv,
-                    design_prep_donor_1202hj, adopt_design_prep_1202hj)
+                    design_prep_donor_1202hj, adopt_design_prep_1202hj,
+                    foreign_references_1202jw)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
+                # #1202jw: a REUSED run directory keeps the previous environment's reference
+                # screens — staging is additive — and the contract is then built from the
+                # union. googlemaps-r16 shipped a chimera for exactly this reason. Detect and
+                # SAY SO; never delete files the framework did not write.
+                _foreign1202jw = foreign_references_1202jw(self.output_dir, resolved)
+                if _foreign1202jw:
+                    self._logger.error(
+                        "#1202jw FOREIGN REFERENCE SCREENS: %d file(s) under "
+                        "design/references/ are not in this run's design input — %s. A reused "
+                        "output dir keeps the previous environment's screens and the contract "
+                        "is built from the UNION of both, which is how googlemaps-r16 came to "
+                        "register `episodes`/`genres` beside `places`/`routes` and validate "
+                        "Netflix routes against a Google Maps shell. Clear the directory or "
+                        "use a fresh --output-dir before trusting anything this run measures.",
+                        len(_foreign1202jw),
+                        ", ".join(_foreign1202jw[:6])
+                        + (f" (+{len(_foreign1202jw) - 6} more)"
+                           if len(_foreign1202jw) > 6 else ""))
                 dsp = self.output_dir / "design" / "design_system.json"
                 # #1202bv: on a --resume, INHERIT an already-enriched design_system.json instead
                 # of overwriting it with a skeleton and respawning the analyst. This phase is the

@@ -1370,6 +1370,39 @@ def _design_input_fingerprint_1202bv(design_input, resolved) -> Dict:
     }
 
 
+def foreign_references_1202jw(output_dir, resolved) -> List[str]:
+    """Reference files already staged that THIS run's design input does not contain.
+
+    Staging is additive — `stage_reference_docs` and the image staging both copy into
+    `<run>/design/references/` and neither clears it — so a REUSED run directory keeps the
+    previous environment's screens and the contract is built from the union.
+
+    googlemaps-r16 is the case, and it is the only one in 148 runs: `design/references/` holds
+    netflix's 20 `.jpg` screens (staged 13:47) beside google_maps' 29 `.png` (18:58), down to
+    `account_menu` in both spellings. Its registered tables are `continue_watching`,
+    `episodes`, `genres`, `my_list`, `profiles` next to `places`, `directions`, `routes`; its
+    own validation says it plainly — "required Netflix UI routes are serving the Google Maps
+    shell". The run built a chimera, spent its budget, and every number it produced is
+    unusable. It polluted this session's own corpus measurements repeatedly before I noticed.
+
+    DETECTS, never deletes: the strangers may be anything, and a framework that removes files
+    it did not write is a worse failure than the one it prevents. One occurrence in 148 says
+    the frequency is low and the cost is total — which is the shape a cheap loud check fits.
+    """
+    try:
+        want = {Path(r).name for r in (resolved.get("references") or [])}
+        want |= {Path(d).name for d in (resolved.get("docs") or [])}
+        if not want:
+            return []                      # nothing declared → nothing can be foreign
+        staged = Path(output_dir) / "design" / "references"
+        if not staged.is_dir():
+            return []
+        return sorted(p.name for p in staged.iterdir()
+                      if p.is_file() and p.name not in want)
+    except Exception:
+        return []
+
+
 def record_design_prep_input_1202bv(output_dir, design_input, resolved) -> None:
     """Stamp what produced design_system.json so a later resume can tell whether it may
     inherit that doc. Best-effort: failing here only costs a re-run, never correctness."""
