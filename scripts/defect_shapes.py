@@ -23,7 +23,8 @@ screen as 0.0). A detector that stops finding its own seed case has drifted.
 
     python scripts/defect_shapes.py [--self-test]
 """
-import ast, pathlib, sys, re
+import ast
+import collections, pathlib, sys, re
 
 ROOT = pathlib.Path('agent/env_generator')
 MEASURED = re.compile(r'similarity|score|budget|left|elapsed|count|total|duration|'
@@ -335,11 +336,127 @@ def d4(path, tree, src):
     return hits
 
 
-tot={'d1':0,'d3':0,'d4':0,'d5':0}
+
+# D6: a cleanup/report call that guards ONE branch of a chain whose branches all reach the
+# same state. #1202jn is the seed: `if not shot:` fans out into picker / blank / auth-bounce /
+# no-capture, all four `continue` before the screenshot, and `_retire_stale_capture_934` sat
+# inside the last one — so three of the four left last round's image at this round's path.
+#
+# The signal is NOT "a call appears in one branch". Branches legitimately differ. It is that
+# every branch of the chain exits the same way (they are all the same OUTCOME, differing only
+# in the reason), and exactly one of them does a piece of housekeeping the outcome requires.
+#
+# VALIDATED ON THE REAL CASE, not just the seed below, which is the rule a detector's zero has
+# to earn: run against `git show 8d41ebbc^:...visual_fidelity.py` — the tree as it stood before
+# #1202jn — it reports
+#     :3583  _retire_stale_capture_934() guards branch 4/4
+#     :3609  _retire_stale_capture_934() guards branch 3/3
+# and against the current tree it reports nothing. The first draft, before the two narrowings
+# below, produced 424 candidates and was useless.
+_D6_SEED = """
+def f(screens, shots):
+    for screen in screens:
+        shot = shots.get(screen)
+        if not shot:
+            if screen in pickers:
+                dev = "picker"
+            elif screen in blanks:
+                dev = "blank"
+            else:
+                dev = "no capture"
+                retire_stale(shots_dir, screen)
+            results.append({"dev": dev})
+            continue
+        judge(shot)
+"""
+
+# The same chain with the call hoisted to the top of the enclosing `if` — the #1202jn fix.
+_D6_ANTISEED = """
+def f(screens, shots):
+    for screen in screens:
+        shot = shots.get(screen)
+        if not shot:
+            retire_stale(shots_dir, screen)
+            if screen in pickers:
+                dev = "picker"
+            elif screen in blanks:
+                dev = "blank"
+            else:
+                dev = "no capture"
+            results.append({"dev": dev})
+            continue
+        judge(shot)
+"""
+
+
+def _chain_1202jn(node):
+    """The if/elif/else chain rooted at `node`, as a list of branch bodies."""
+    out = []
+    cur = node
+    while isinstance(cur, ast.If):
+        out.append(cur.body)
+        rest = cur.orelse
+        if len(rest) == 1 and isinstance(rest[0], ast.If):
+            cur = rest[0]
+            continue
+        if rest:
+            out.append(rest)
+        return out, bool(rest)
+    return out, False
+
+
+def d6(path, tree, src):
+    """D6: housekeeping guarding one branch of a chain whose branches share an outcome."""
+    hits = []
+    for fn in [n for n in ast.walk(tree)
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.If):
+                continue
+            branches, has_else = _chain_1202jn(node)
+            if len(branches) < 3 or not has_else:
+                continue          # a two-way if is a choice, not a fan-out
+            # #self: and it must be PER ITEM. A chain that runs once decides one thing; the
+            # shape that bites is a chain inside a loop where each pass leaves shared state
+            # behind, which is what left three of #1202jn's four branches uncleaned.
+            if not any(isinstance(a, (ast.For, ast.AsyncFor, ast.While))
+                       for a in ast.walk(fn)
+                       if any(node is d for d in ast.walk(a))):
+                continue
+            # every branch must be a REASON for one outcome: none of them returns or raises,
+            # so control rejoins below and the chain's only product is which reason applies.
+            if any(any(isinstance(x, (ast.Return, ast.Raise)) for b in br for x in ast.walk(b))
+                   for br in branches):
+                continue
+            # #self: 424 candidates before this. A branch legitimately computes different
+            # VALUES; what #1202jn is about is HOUSEKEEPING — a call whose result is thrown
+            # away, i.e. a bare expression statement. `x = foo()` is this branch's own work;
+            # `foo()` on its own line acts on state the whole chain shares.
+            calls = [collections.Counter(
+                        getattr(x.value.func, "attr", None) or getattr(x.value.func, "id", None)
+                        for b in br for x in ast.walk(b)
+                        if isinstance(x, ast.Expr) and isinstance(x.value, ast.Call))
+                     for br in branches]
+            names = set().union(*[set(c) for c in calls]) - {None}
+            for nm in sorted(names):
+                if not nm or nm.startswith(("_fmt", "str", "len", "int", "float", "sorted",
+                                            "list", "dict", "set", "append", "get", "join",
+                                            "format", "search", "match", "sub", "strip")):
+                    continue
+                where = [i for i, c in enumerate(calls) if c.get(nm)]
+                if len(where) != 1:
+                    continue
+                hits.append((node.lineno,
+                             f"{nm}() guards branch {where[0] + 1}/{len(branches)}",
+                             "the other branches of this chain reach the same outcome"))
+    return hits
+
+
+tot={'d1':0,'d3':0,'d4':0,'d5':0,'d6':0}
 for p in sorted(ROOT.rglob('*.py')):
     try: src=p.read_text(errors='ignore'); tree=ast.parse(src)
     except Exception: continue
-    for name,fn in (('d1',d1),('d3',d3),('d4',d4),('d5',d5)):
+    for name,fn in (('d1',d1),('d3',d3),('d4',d4),('d5',d5),('d6',d6)):
         for h in fn(p,tree,src):
             tot[name]+=1
             if name=='d1' and p.name=='visual_fidelity.py' and '_best_by_screen' in src \
@@ -349,7 +466,7 @@ for p in sorted(ROOT.rglob('*.py')):
             print(f"[{name.upper()}] {p.relative_to(ROOT)}:{h[0]}  {h[1]}")
             if name=='d1': print(f"        {h[2]}")
             elif name=='d4': print(f"        keys={h[2]}")
-            elif name=='d5': print(f"        {h[2]}")
+            elif name in ('d5','d6'): print(f"        {h[2]}")
             else: print(f"        {h[2]}  keys={h[3]}")
 if SELFTEST:
     # D4 has no live instance left in this tree (its one case is fixed), so it is seeded on a
@@ -376,13 +493,21 @@ if SELFTEST:
                         ("positional reason", _D3_ANTISEED_POS)):
         _h = d3(pathlib.Path("<seed>"), ast.parse(_snip), _snip)
         assert not _h, f"D3 flags its {_lbl} anti-seed — {_h!r}"
+    _d6s = d6(pathlib.Path("<seed>"), ast.parse(_D6_SEED), _D6_SEED)
+    assert any("retire_stale" in h[1] for h in _d6s), (
+        "D6 no longer flags its seed — #1202jn's pre-fix shape, housekeeping inside one of "
+        "four branches that all reach 'this round photographed nothing'")
+    _d6a = d6(pathlib.Path("<seed>"), ast.parse(_D6_ANTISEED), _D6_ANTISEED)
+    assert not any("retire_stale" in h[1] for h in _d6a), (
+        "D6 flags the FIXED shape: hoisting the call above the chain is the repair, so it "
+        "must go quiet — %r" % (_d6a,))
     assert _seed_seen, ("D1 no longer finds the instance it was built from "
                         "(visual_fidelity `_sim = float(_s.get(\"similarity\") or 0.0)`) — "
                         "the detector has drifted, fix it before trusting a clean run")
     print(f"self-test OK — D1 finds its seed case, D3/D4 find their seed snippets "
           f"(and D3 rejects its anti-seed); "
           f"D5' sees its screens/blank split; "
-          f"D1={tot['d1']} D3={tot['d3']} D4={tot['d4']} D5={tot['d5']} candidates")
+          f"D1={tot['d1']} D3={tot['d3']} D4={tot['d4']} D5={tot['d5']} D6={tot['d6']} candidates")
 else:
-    print(f"\n合计 D1={tot['d1']}  D3={tot['d3']}  D4={tot['d4']}  D5={tot['d5']}"
+    print(f"\n合计 D1={tot['d1']}  D3={tot['d3']}  D4={tot['d4']}  D5={tot['d5']}  D6={tot['d6']}"
           f"  (候选, 每条都要读周边守卫)")
