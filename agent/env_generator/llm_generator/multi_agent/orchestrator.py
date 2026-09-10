@@ -3325,7 +3325,10 @@ class Orchestrator:
                  else ("finished" if success
                        else (self._stop_status_1202ik()
                              if getattr(self, "_budget_stop_1202if", "") else "failed"))),
-                _abort_1202eb or getattr(self, "_budget_stop_1202if", ""))
+                # #1202je: the two named stops carry their own sentence; the generic
+                # `failed` had none, so fill it from what this object knows right here.
+                (_abort_1202eb or getattr(self, "_budget_stop_1202if", "")
+                 or ("" if success else self._generic_stop_reason_1202je())))
         except Exception:
             pass
         return GenerationResult(
@@ -5591,6 +5594,46 @@ class Orchestrator:
     # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
         return self._budget.path()
+
+    def _generic_stop_reason_1202je(self) -> str:
+        """Why a run that fell through to the generic `failed` stopped.
+
+        The terminal write names the stop through `_abort_status_1202hv` (a provider or spend
+        cap) or `_stop_status_1202ik` (a wall-clock/tick cap vs a no-convergence abort). Both
+        read a reason the run had already latched. Everything else lands in a final `else
+        "failed"` whose reason argument is `_abort_1202eb or _budget_stop_1202if` -- both empty
+        by construction on that branch. The comment two lines above it already says what that
+        costs: "#1202if: ... the generic `failed` erased the one sentence that explained the
+        run". #1202if fixed the cap path and left this bucket.
+
+        Measured on this corpus: 8 runs carry `status: "failed"` with no reason at all,
+        $1298 between them, r111's $763 among them. Reconstructing why r111 stopped took
+        several passes over an 80MB log to establish something the orchestrator knew at the
+        moment it wrote the record -- its own last failure set, its stuck blocker, and how
+        many times the delivery gate had declined.
+
+        Every field is read through `getattr` with a default: this runs inside the terminal
+        write's `try`, and accounting must never be the reason a run fails to record itself.
+        """
+        try:
+            bits = []
+            _fs = sorted(str(x) for x in (getattr(self, "_fwval_failure_set", None) or ()))
+            if _fs:
+                bits.append("last framework-validation failure set: " + ", ".join(_fs[:6]))
+            _blk = getattr(self, "_fwval_stuck_blocker", None)
+            if _blk:
+                bits.append("stuck on %s for %s consecutive validation(s)"
+                            % (_blk, int(getattr(self, "_fwval_stuck_count", 0) or 0)))
+            _ds = int(getattr(self, "_fwdeliver_stuck_count", 0) or 0)
+            if _ds:
+                bits.append("the delivery gate declined %d time(s)" % _ds)
+            if not bits:
+                return ("the coordination loop exited without a delivery, an abort or a cap, "
+                        "and no framework-validation failure was on record when it stopped")
+            return ("no abort and no cap -- the loop exited with the app not delivered. "
+                    + "; ".join(bits))
+        except Exception:
+            return "the loop exited without a delivery; the stop state could not be read"
 
     def _stop_status_1202ik(self) -> str:
         """`budget_exceeded` for a cap, `stuck_abort` for a no-convergence stop.
