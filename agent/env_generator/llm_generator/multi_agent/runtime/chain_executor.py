@@ -550,6 +550,80 @@ _UNDECIDABLE_DENIAL_CODES = (401, 403)
 _CHAIN_CONTROL_PREFIXES = ("/auth", "/oauth", "/api/v1/", "/health", "/.well-known", "/mcp")
 
 
+def unenforceable_owner_denials_1202jd(steps, tables) -> List[tuple]:
+    """#1202jd — cross-actor DENIAL probes on a WRITE the projector cannot deny.
+
+    Returns ``[(i, "METHOD path", table, kind)]``; kind is ``"no_owner"`` or ``"degenerate"``.
+
+    A projected write owner-checks by comparing the row's OWNER COLUMN against the caller
+    (route_projector: `if getattr(obj, owner_fk) != _fw_owner_val(...): 404`). A table with no
+    owner column has nothing to compare, so the handler serves every authenticated caller and a
+    step demanding 401/403 from an intruder token can never pass. Verified directly: projecting
+    `PUT /api/sounds/{id}` with owner_scoped True and False emits the SAME handler, because
+    `read_scoped = bool(owner_fk) and ...` and `sounds` has no owner_fk. Marking such a table
+    is inert.
+
+    r111 spent four hours and $762 with exactly this as its last blocker.
+
+    WRITES ONLY, and that is what makes it safe to reject. #77 records that a cross-user
+    PUT/DELETE denial is deliberately NOT used to infer read-scoping ("it proves only WRITE
+    authz, which is true for PUBLIC resources too"), so refusing one cannot starve
+    `_isolation_scoped_tables_from_chains` — that mechanism reads cross-user GET denials, which
+    this never touches.
+
+    TWO ROOT CAUSES, deliberately separated, because the repairs point opposite ways:
+      no_owner    the table genuinely has no owner -- drop the denial or add an owner column
+      degenerate  #568: registered with an EMPTY column schema, so the model carries only its
+                  primary key. Register the columns; telling this lane "your table has no
+                  owner" sends it to add one the table already declares.
+
+    Measured over 28 corpus runs, against the TABLES HUB (what production reads, not
+    models.py): 78 pure-denial cross-actor write probes -- 66 target a table that DOES carry an
+    owner column and are left alone, 8 `no_owner`, 4 `degenerate`, 0 unresolvable paths.
+    """
+    out: List[tuple] = []
+    try:
+        from .route_projector import _OWNER_FK_NAMES as _OWN
+    except Exception:
+        return out
+    _named = {}
+    for _k, _v in (tables or {}).items():
+        if _k == "_meta" or not isinstance(_v, Mapping):
+            continue
+        _named[str(_v.get("name") or _k)] = _v
+    if not _named:
+        return out
+    for i, st in enumerate(steps or []):
+        if not isinstance(st, Mapping):
+            continue
+        method = str(st.get("method") or "GET").upper()
+        if method not in ("PUT", "PATCH", "DELETE"):
+            continue
+        path = str(st.get("path") or "").split("?", 1)[0]
+        if not path or path.startswith(_CHAIN_CONTROL_PREFIXES):
+            continue
+        actor = str(st.get("auth") or "").lower()
+        if "intruder" not in actor and "tokenb" not in actor:
+            continue
+        codes = [int(x) for x in (st.get("expect") or []) if str(x).isdigit()]
+        if not codes or any(200 <= c < 300 for c in codes):
+            continue
+        if not any(c in _UNDECIDABLE_DENIAL_CODES for c in codes):
+            continue
+        segs = [x.replace("-", "_") for x in path.strip("/").split("/")
+                if x and not x.startswith(("{", "$", ":")) and x not in ("api", "v1")]
+        table = next((x for x in segs if x in _named), None)
+        if not table:
+            continue
+        cols = [(c.get("name") if isinstance(c, Mapping) else c)
+                for c in ((_named[table].get("schema") or {}).get("columns") or [])]
+        if len(cols) <= 1:
+            out.append((i, f"{method} {path}", table, "degenerate"))
+        elif not any(str(c) in _OWN for c in cols):
+            out.append((i, f"{method} {path}", table, "no_owner"))
+    return out
+
+
 def undecidable_access_expectations(steps: Sequence[Mapping[str, Any]]) -> List[tuple]:
     """#591 — business steps that pass whether the request was served OR denied.
 

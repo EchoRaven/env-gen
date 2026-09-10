@@ -2405,6 +2405,7 @@ class RegistryHub:
         from .chain_executor import (
             normalize_steps,
             undecidable_access_expectations,
+            unenforceable_owner_denials_1202jd,
             unsatisfiable_expectation_pairs,
         )
         norm, errors = normalize_steps(steps)
@@ -2449,6 +2450,53 @@ class RegistryHub:
                 "OWNER, and put the denial in a SEPARATE step that uses a different actor "
                 "(auth) or a foreign id. Control-plane paths (/auth, /oauth, /api/v1/*, "
                 "/health, /.well-known) are exempt; 409 and 404 are not denial codes.")}
+        # #1202jd: a cross-actor DENIAL on a WRITE the projector has nothing to deny WITH.
+        # A projected write owner-checks the row's owner column against the caller; a table
+        # with no owner column has nothing to compare, so the step can never pass. Verified:
+        # projecting `PUT /api/sounds/{id}` with owner_scoped True and False emits the SAME
+        # handler, so even marking the table is inert. r111 spent four hours and $762 with one
+        # of these as its last blocker and nothing told the verifier why.
+        #
+        # WRITES ONLY, which is what makes rejecting safe: #77 records that a cross-user
+        # PUT/DELETE denial is deliberately NOT used to infer read-scoping, so this cannot
+        # starve `_isolation_scoped_tables_from_chains` — that reads cross-user GET denials.
+        #
+        # `.value()` because `_tables` is a JsonStore, not a dict. The first draft passed the
+        # store itself and every chain registration raised AttributeError — 70 test failures
+        # that I first misread as a design flaw, because I reached for an explanation instead
+        # of the traceback.
+        _unenf = unenforceable_owner_denials_1202jd(norm, self._tables.value() or {})
+        if _unenf:
+            from .message_format import join_capped
+            _no_owner = [x for x in _unenf if x[3] == "no_owner"]
+            _degen = [x for x in _unenf if x[3] == "degenerate"]
+            # TWO ROOT CAUSES, TWO ANSWERS. Handing a #568 lane "this table has no owner"
+            # sends it to add a column the table already declares; the schema is what is
+            # missing. Naming the wrong repair is worse than naming none.
+            _parts = []
+            if _no_owner:
+                _parts.append(
+                    join_capped([f"step[{i}] {p} on `{t}`" for i, p, t, _ in _no_owner],
+                            len(_no_owner), cap=3)
+                    + " — that table declares no owner column, so the framework-projected "
+                      "write has nothing to compare the caller against and serves EVERY "
+                      "authenticated actor. Either drop the denial expectation (say what this "
+                      "actor SHOULD get), or register an owner column on the table first")
+            if _degen:
+                _parts.append(
+                    join_capped([f"step[{i}] {p} on `{t}`" for i, p, t, _ in _degen],
+                            len(_degen), cap=3)
+                    + " — that table is registered with an EMPTY column schema (#568), so its "
+                      "model carries only a primary key and cannot be owner-scoped at all. "
+                      "Register the table's columns first")
+            return {"error": (
+                "chain rejected: unenforceable owner denial — " + ". ".join(_parts) +
+                ". Judged against the tables as REGISTERED TODAY, so this is not permanent: "
+                "register the schema and the same chain is accepted. READS are untouched (a "
+                "cross-user GET denial is how #77 learns a table is private) and POST is "
+                "exempt (a cross-actor create denial is about the payload, not row ownership)."
+            )}
+
         # PROPOSAL #42 (user): every chain step MUST exercise a REGISTERED endpoint. A
         # chain that references an endpoint which doesn't exist tests a phantom (404/422)
         # and fails business_chain forever (the verifier authors loose paths). All
