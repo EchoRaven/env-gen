@@ -36,21 +36,27 @@ import sys
 import pathlib
 
 _AGENT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_AGENT), str(_AGENT / "env_generator" / "llm_generator" / "multi_agent")):
+# House style, and NOT a detail: insert `llm_generator`, never `multi_agent` itself.
+# `multi_agent/` contains its own `tests/` package, so putting it on sys.path ahead of `agent/`
+# shadows `agent/tests` — and `test_kickoff_run_kickoff_finalize_hardening.py`, which does
+# `from tests.test_kickoff_run_kickoff import ...`, then fails to COLLECT and takes the whole
+# suite down with it. Passed alone; only the full run showed it.
+_LLM = _AGENT / "env_generator" / "llm_generator"
+for _p in (str(_LLM), str(_AGENT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import pytest                                                          # noqa: E402
 
-from runtime.kickoff.contract import (                                 # noqa: E402
+from multi_agent.runtime.kickoff.contract import (                                 # noqa: E402
     fixed_surface_1202ke,
     normalize_to_registryhub_endpoint,
 )
-from runtime.kickoff.run_kickoff import (                              # noqa: E402
+from multi_agent.runtime.kickoff.run_kickoff import (                              # noqa: E402
     _normalize_backend_endpoints_for_reconcile as _norm,
 )
-from runtime.oauth_scaffold import AS_CONTRACT_ENDPOINTS               # noqa: E402
-from runtime.control_plane import CONTROL_SURFACE_ENDPOINTS            # noqa: E402
+from multi_agent.runtime.oauth_scaffold import AS_CONTRACT_ENDPOINTS               # noqa: E402
+from multi_agent.runtime.control_plane import CONTROL_SURFACE_ENDPOINTS            # noqa: E402
 
 
 def _ke(method, path, auth, rk="data"):
@@ -148,9 +154,9 @@ def test_a_response_key_is_still_derived_for_a_fixed_endpoint():
     ep = out["backend"]["api_endpoints"][0]
     assert isinstance(ep.get("response_key"), str) and ep["response_key"].strip()
 
-    from runtime.kickoff.roadmap_validator import validate_roadmap  # noqa: F401
+    from multi_agent.runtime.kickoff.roadmap_validator import validate_roadmap  # noqa: F401
     import inspect as _i
-    from runtime.kickoff import roadmap_validator as _rv
+    from multi_agent.runtime.kickoff import roadmap_validator as _rv
     assert "endpoint.response_key MUST be a non-empty string" in _i.getsource(_rv)
 
 
@@ -172,8 +178,8 @@ def test_both_call_sites_share_the_one_helper():
     """#1202gt/gu/gw were all 'one fact, two implementations'. Both must route through
     `fixed_surface_1202ke`, so neither can drift from the framework's declarations."""
     import inspect
-    from runtime.kickoff import run_kickoff as RK
-    from runtime.kickoff import contract as C
+    from multi_agent.runtime.kickoff import run_kickoff as RK
+    from multi_agent.runtime.kickoff import contract as C
     assert "fixed_surface_1202ke()" in inspect.getsource(
         RK._normalize_backend_endpoints_for_reconcile)
     assert "fixed_surface_1202ke()" in inspect.getsource(

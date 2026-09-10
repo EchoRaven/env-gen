@@ -37,15 +37,21 @@ import sys
 import pathlib
 
 _AGENT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_AGENT), str(_AGENT / "env_generator" / "llm_generator" / "multi_agent")):
+# House style, and NOT a detail: insert `llm_generator`, never `multi_agent` itself.
+# `multi_agent/` contains its own `tests/` package, so putting it on sys.path ahead of `agent/`
+# shadows `agent/tests` — and `test_kickoff_run_kickoff_finalize_hardening.py`, which does
+# `from tests.test_kickoff_run_kickoff import ...`, then fails to COLLECT and takes the whole
+# suite down with it. Passed alone; only the full run showed it.
+_LLM = _AGENT / "env_generator" / "llm_generator"
+for _p in (str(_LLM), str(_AGENT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import ast                                                             # noqa: E402
 import re                                                              # noqa: E402
 
-from runtime.backend_scaffold import _AUTH_MIDDLEWARE                  # noqa: E402
-from runtime.backend_skeleton import render_skeleton_main              # noqa: E402
+from multi_agent.runtime.backend_scaffold import _AUTH_MIDDLEWARE                  # noqa: E402
+from multi_agent.runtime.backend_skeleton import render_skeleton_main              # noqa: E402
 
 
 _TABLES = {"videos": {"name": "videos", "schema": {"columns": [
@@ -189,7 +195,7 @@ def test_a_route_projected_later_is_added_to_the_public_set():
     `project_missing_routes` inserts handlers into that same file every cycle. Without the
     refresh, an endpoint a lane registers mid-run gets a no-actor handler and stays denied —
     the #1202ju / #1202ic staleness shape one artefact over."""
-    from runtime.route_projector import refresh_public_api_1202kh as refresh
+    from multi_agent.runtime.route_projector import refresh_public_api_1202kh as refresh
     src = _render([_ep("GET", "/api/videos/feed", False)])
     out = refresh(src, [("GET", "/api/sounds")])
     assert _emitted(out) == [("GET", "/api/videos/feed"), ("GET", "/api/sounds")]
@@ -203,7 +209,7 @@ def test_the_refresh_unions_and_never_replaces():
     Two skeleton entries and ONE incoming entry, deliberately: a replace then changes the
     LENGTH, so the `len(merged) == len(have)` short-circuit cannot make this pass vacuously —
     which it did when the fixture had one of each."""
-    from runtime.route_projector import refresh_public_api_1202kh as refresh
+    from multi_agent.runtime.route_projector import refresh_public_api_1202kh as refresh
     src = _render([_ep("GET", "/api/videos/feed", False),
                    _ep("GET", "/api/videos/{id}", False, rk="item")])
     have = _emitted(src)
@@ -216,7 +222,7 @@ def test_the_refresh_unions_and_never_replaces():
 def test_the_refresh_is_idempotent():
     """A no-op cycle must not rewrite the file — a churned mtime is what #934 and #1202jn
     were both about."""
-    from runtime.route_projector import refresh_public_api_1202kh as refresh
+    from multi_agent.runtime.route_projector import refresh_public_api_1202kh as refresh
     src = _render([_ep("GET", "/api/videos/feed", False)])
     assert refresh(src, [("GET", "/api/videos/feed")]) is src
 
@@ -224,5 +230,5 @@ def test_the_refresh_is_idempotent():
 def test_a_main_py_without_the_literal_is_left_alone():
     """The heal path's main.py has the middleware but no list; rewriting it blindly would
     corrupt a file the skeleton does not own."""
-    from runtime.route_projector import refresh_public_api_1202kh as refresh
+    from multi_agent.runtime.route_projector import refresh_public_api_1202kh as refresh
     assert refresh("x = 1\n", [("GET", "/api/x")]) == "x = 1\n"

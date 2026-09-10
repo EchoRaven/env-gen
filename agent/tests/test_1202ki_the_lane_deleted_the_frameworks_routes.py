@@ -37,15 +37,21 @@ import sys
 import pathlib
 
 _AGENT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_AGENT), str(_AGENT / "env_generator" / "llm_generator" / "multi_agent")):
+# House style, and NOT a detail: insert `llm_generator`, never `multi_agent` itself.
+# `multi_agent/` contains its own `tests/` package, so putting it on sys.path ahead of `agent/`
+# shadows `agent/tests` — and `test_kickoff_run_kickoff_finalize_hardening.py`, which does
+# `from tests.test_kickoff_run_kickoff import ...`, then fails to COLLECT and takes the whole
+# suite down with it. Passed alone; only the full run showed it.
+_LLM = _AGENT / "env_generator" / "llm_generator"
+for _p in (str(_LLM), str(_AGENT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import ast                                                             # noqa: E402
 import asyncio                                                        # noqa: E402
 
-from runtime.backend_skeleton import render_skeleton_main              # noqa: E402
-from runtime.kickoff.contract import fixed_surface_1202ke              # noqa: E402
+from multi_agent.runtime.backend_skeleton import render_skeleton_main              # noqa: E402
+from multi_agent.runtime.kickoff.contract import fixed_surface_1202ke              # noqa: E402
 
 
 def _src():

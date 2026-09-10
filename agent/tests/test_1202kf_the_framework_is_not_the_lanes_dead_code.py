@@ -32,14 +32,20 @@ import sys
 import pathlib
 
 _AGENT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_AGENT), str(_AGENT / "env_generator" / "llm_generator" / "multi_agent")):
+# House style, and NOT a detail: insert `llm_generator`, never `multi_agent` itself.
+# `multi_agent/` contains its own `tests/` package, so putting it on sys.path ahead of `agent/`
+# shadows `agent/tests` — and `test_kickoff_run_kickoff_finalize_hardening.py`, which does
+# `from tests.test_kickoff_run_kickoff import ...`, then fails to COLLECT and takes the whole
+# suite down with it. Passed alone; only the full run showed it.
+_LLM = _AGENT / "env_generator" / "llm_generator"
+for _p in (str(_LLM), str(_AGENT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from runtime.coverage_audit import scan_dead_endpoints                 # noqa: E402
-from runtime.kickoff.contract import fixed_surface_1202ke              # noqa: E402
-from runtime.oauth_scaffold import AS_CONTRACT_ENDPOINTS               # noqa: E402
-from runtime.control_plane import CONTROL_SURFACE_ENDPOINTS            # noqa: E402
+from multi_agent.runtime.coverage_audit import scan_dead_endpoints                 # noqa: E402
+from multi_agent.runtime.kickoff.contract import fixed_surface_1202ke              # noqa: E402
+from multi_agent.runtime.oauth_scaffold import AS_CONTRACT_ENDPOINTS               # noqa: E402
+from multi_agent.runtime.control_plane import CONTROL_SURFACE_ENDPOINTS            # noqa: E402
 
 
 class _Registry:
@@ -117,5 +123,5 @@ def test_an_implemented_endpoint_is_still_skipped_first():
 
 def test_a_missing_oauth_module_does_not_break_the_audit():
     """A build without the AS must degrade to 'nothing exempt', never to a crashed audit."""
-    import runtime.coverage_audit as CA
+    import multi_agent.runtime.coverage_audit as CA
     assert isinstance(CA._framework_fixed_1202kf(), set)

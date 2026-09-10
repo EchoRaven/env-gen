@@ -50,13 +50,19 @@ import sys
 import pathlib
 
 _AGENT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_AGENT), str(_AGENT / "env_generator" / "llm_generator" / "multi_agent")):
+# House style, and NOT a detail: insert `llm_generator`, never `multi_agent` itself.
+# `multi_agent/` contains its own `tests/` package, so putting it on sys.path ahead of `agent/`
+# shadows `agent/tests` — and `test_kickoff_run_kickoff_finalize_hardening.py`, which does
+# `from tests.test_kickoff_run_kickoff import ...`, then fails to COLLECT and takes the whole
+# suite down with it. Passed alone; only the full run showed it.
+_LLM = _AGENT / "env_generator" / "llm_generator"
+for _p in (str(_LLM), str(_AGENT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import pytest                                                          # noqa: E402
 
-from runtime.database_scaffold import (                                # noqa: E402
+from multi_agent.runtime.database_scaffold import (                                # noqa: E402
     TABLE_POLICY_KEYS_1202KG,
     normalize_columns,
     normalize_table_schema,
@@ -110,7 +116,7 @@ def test_a_real_column_that_merely_looks_policyish_survives():
 
 @pytest.fixture()
 def hub(tmp_path):
-    from runtime.hub_registry import HubRegistry
+    from multi_agent.runtime.hub_registry import HubRegistry
     return HubRegistry(str(tmp_path)).registryhub
 
 
