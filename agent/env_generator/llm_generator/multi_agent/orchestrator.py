@@ -4046,6 +4046,15 @@ class Orchestrator:
     def _project_missing_routes(self) -> None:
         from .runtime.heal_pipeline import HealPipeline
         HealPipeline(self).project_missing_routes()
+        # #1202ju: the MCP surface is the OTHER 1:1 projection of the same contract, and it
+        # ran exactly once — at kickoff, before implementation registered anything. Refreshed
+        # HERE rather than at this method's two callers because #706 hooked one of three
+        # release sites and #934 one of four branches; one wrapper, one hook. No-ops unless
+        # the rendered server differs from the one on disk.
+        try:
+            self._scaffolder.refresh_mcp_1202ju()
+        except Exception as _exc:                     # never block a cycle on a projection
+            self._logger.debug("#1202ju MCP refresh skipped: %s", _exc)
 
     def _repair_handler_fk_aliases(self) -> None:
         from .runtime.heal_pipeline import HealPipeline

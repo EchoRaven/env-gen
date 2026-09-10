@@ -955,6 +955,52 @@ volumes:
         )
 
     async def generate_mcp(self) -> None:
+        """Async entry kept for the kickoff call site; the body is synchronous."""
+        self.project_mcp()
+
+    def refresh_mcp_1202ju(self) -> bool:
+        """Re-project the MCP surface when the business contract has outgrown it.
+
+        `generate_mcp` runs ONCE, right after kickoff registers the contract, and
+        `project_mcp`'s own docstring claims the surface "cannot drift from the endpoints".
+        It can, and does: every endpoint a lane registers during implementation arrives after
+        that single pass and never gets a tool. tiktok-r111's `mcp_server/app/main.py` was
+        written at 19:15 and its endpoints hub last moved at 02:23 the next morning — seven
+        hours of contract growth, 20 tools against 31 business endpoints. 16 of the 17 recent
+        runs carrying an MCP probe report the surface INCOMPLETE, and the probe is right.
+
+        Same shape as #1202ic and #1202jt one artefact over: a deterministic projection is
+        only deterministic if it is re-run when its input moves.
+
+        RENDER-THEN-COMPARE rather than write-then-notice: `write_mcp_server` writes three
+        files unconditionally, so calling it every cycle would churn mtimes on an unchanged
+        contract — and a stale-looking mtime is what #934 and #1202jn were both about.
+        Returns True when it actually re-projected.
+        """
+        try:
+            from .mcp_scaffold import business_endpoints, render_mcp_server
+            orch = self._orch
+            endpoints = orch.hubs.registryhub.get_endpoints() or {}
+            if not business_endpoints(endpoints):
+                return False
+            main_py = Path(orch.output_dir) / "mcp_server" / "app" / "main.py"
+            if not main_py.is_file():
+                # Readability, not the backstop: the `except` below already returns False on
+                # the missing-file read. Stated so the next reader does not take this line as
+                # load-bearing and "simplify" the except away.
+                return False          # never projected yet — kickoff's pass owns that
+            if main_py.read_text(encoding="utf-8") == render_mcp_server(endpoints, "app"):
+                return False          # contract has not moved; do not touch the tree
+        except Exception:
+            return False
+        try:
+            self.project_mcp()
+            return True
+        except Exception as exc:
+            self._orch._logger.warning("#1202ju MCP re-projection failed: %s", exc)
+            return False
+
+    def project_mcp(self) -> None:
         """Project the FastMCP server (``mcp_server/<env>/``) 1:1 from the
         registered BUSINESS endpoints + register the server and its tools.
 
