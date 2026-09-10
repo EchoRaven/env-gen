@@ -5257,6 +5257,41 @@ class Orchestrator:
                         _rc_dups = version_variant_duplicate_routes(_rh.get_endpoints())
                 except Exception as _rc_exc:
                     self._logger.debug("route-consistency gate skipped: %s", _rc_exc)
+                # #1202jx: the OTHER contract contradiction, reported beside it. A screen the
+                # design system declares reachable logged out whose page calls an
+                # auth_required endpoint can never render — the capture has no token, the
+                # projected handler answers 401, and the lane reads "the logged-out feed is
+                # blank" and goes looking at a frontend where nothing is wrong. 32 of 98
+                # logged-out screens across 35 recent runs. Reports BOTH repairs and picks
+                # neither: only the contract's author knows which side is wrong.
+                try:
+                    from .runtime.contract_drift import (
+                        logged_out_screens_needing_auth_1202jx)
+                    import json as _json1202jx
+                    _rh1202jx = getattr(self.hubs, "registryhub", None)
+                    _dsp1202jx = self.output_dir / "design" / "design_system.json"
+                    if _rh1202jx is not None and _dsp1202jx.is_file():
+                        _lo1202jx = logged_out_screens_needing_auth_1202jx(
+                            (_json1202jx.loads(_dsp1202jx.read_text(encoding="utf-8"))
+                             or {}).get("screens"),
+                            _rh1202jx.list_ui_pages(), _rh1202jx.get_endpoints())
+                        for _f1202jx in _lo1202jx[:6]:
+                            self._logger.error(
+                                "#1202jx LOGGED-OUT SCREEN NEEDS AUTH: screen %r (route %s) is "
+                                "declared requires_auth=False, but its page calls %s which the "
+                                "contract marks auth_required. That capture arrives with no "
+                                "token, so the handler answers 401 and the screen can never "
+                                "render. Exactly one of the two is wrong: either make those "
+                                "endpoints public in the CONTRACT, or stop declaring this "
+                                "screen reachable logged out.",
+                                _f1202jx["screen"], _f1202jx["route"],
+                                ", ".join(_f1202jx["auth_endpoints"][:3]))
+                        if len(_lo1202jx) > 6:
+                            self._logger.error(
+                                "#1202jx and %d more logged-out screen(s) in the same state.",
+                                len(_lo1202jx) - 6)
+                except Exception as _lo_exc:
+                    self._logger.debug("#1202jx logged-out check skipped: %s", _lo_exc)
                 if _rc_dups:
                     try:
                         from .runtime.remediation_dispatcher import RemediationDispatcher

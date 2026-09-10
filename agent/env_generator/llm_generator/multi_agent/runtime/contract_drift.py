@@ -197,3 +197,79 @@ def version_variant_duplicate_routes(endpoints: Any) -> List[Dict[str, Any]]:
             ),
         })
     return blockers
+
+
+def logged_out_screens_needing_auth_1202jx(screens: Any, ui_pages: Any,
+                                           endpoints: Any) -> List[Dict[str, Any]]:
+    """Screens the design system declares reachable LOGGED OUT whose page calls an endpoint
+    the contract marks auth_required.
+
+    Such a screen can never render: the capture arrives without a token, the projected handler
+    answers 401, and the page shows its error or empty state. The lane then reads "the logged
+    out feed is blank" and looks at the frontend, where nothing is wrong.
+
+    Measured over 35 recent runs (googlemaps-r16 excluded — #1202jw: its references are two
+    environments merged): 32 of 98 screens declared `requires_auth: False` depend on at least
+    one auth-required endpoint. The names say it outright — tiktok's `fyp_feed_logged_out` at
+    `/` calling `GET /api/videos`, netflix's `landing` at `/` calling `GET /api/titles`.
+
+    THE SIGNAL IS DECLARED, NOT SNIFFED: `requires_auth` comes from the design system's own
+    screen record and the auth flag through #1202hi's single reader, so this needs no guess
+    about which routes "look" public — the mistake I made on the first pass here, when I
+    treated `/browse` as a logged-out surface and netflix's login-walled browse page counted
+    as a finding.
+
+    REPORTS BOTH REPAIRS AND PICKS NEITHER. Either the endpoint should be public or the screen
+    should not be marked logged-out, and only the contract's author knows which; flipping
+    `auth_required` here would open an endpoint on a guess. Pure function, no I/O.
+    """
+    out: List[Dict[str, Any]] = []
+    try:
+        auth: Dict[str, bool] = {}
+        for ep in _iter_endpoint_records_1202jx(endpoints):
+            a = _stated_auth_1202jx(ep)
+            if a is None:
+                continue
+            m = str(ep.get("method") or "GET").upper()
+            p = str(ep.get("path") or "")
+            if p:
+                auth[f"{m} {p}"] = bool(a)
+        by_route: Dict[str, Any] = {}
+        for pg in _iter_endpoint_records_1202jx(ui_pages):
+            r = str(pg.get("route") or "")
+            if r:
+                by_route.setdefault(r, pg)
+        for sc in (screens or []):
+            if not isinstance(sc, dict) or sc.get("requires_auth") is not False:
+                continue
+            pg = by_route.get(str(sc.get("route") or ""))
+            if not pg:
+                continue
+            guarded = [str(u) for u in (pg.get("apis_used") or [])
+                       if auth.get(str(u)) is True or auth.get("GET " + str(u)) is True]
+            if guarded:
+                out.append({"screen": str(sc.get("name") or ""),
+                            "route": str(sc.get("route") or ""),
+                            "page": str(pg.get("name") or ""),
+                            "auth_endpoints": sorted(guarded)})
+    except Exception:
+        return []
+    return out
+
+
+def _iter_endpoint_records_1202jx(coll: Any):
+    """RegistryHub hands these back as {id: record}; a list is tolerated too."""
+    if isinstance(coll, dict):
+        return [v for k, v in coll.items() if k != "_meta" and isinstance(v, dict)]
+    if isinstance(coll, (list, tuple)):
+        return [v for v in coll if isinstance(v, dict)]
+    return []
+
+
+def _stated_auth_1202jx(ep: Any) -> Optional[bool]:
+    """#1202hi's precedence, imported so this cannot become a fourth reading of the flag."""
+    try:
+        from .route_projector import _stated_auth_1202hi
+        return _stated_auth_1202hi(ep)
+    except Exception:
+        return None
