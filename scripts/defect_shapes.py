@@ -49,19 +49,82 @@ def d1(path, tree, src):
         if key: hits.append((n.lineno, key, src.splitlines()[n.lineno-1].strip()[:110]))
     return hits
 
+# Two more shapes D3 must NOT flag, both cases it got wrong before #1202jj: a reason merged in
+# conditionally (#1202iz's own record), and a reason riding the positional argument.
+_D3_ANTISEED_MERGE = """
+def f(n, detail_text, ok):
+    codehub.record_check(name=n, status="failure",
+                         evidence={"source": "x", **({"detail": detail_text[:2000]} if not ok else {})})
+    return detail_text
+"""
+
+_D3_ANTISEED_POS = """
+def f(phase, error, context):
+    self.remember(f"Error in {phase}: {error[:200]}", metadata={"type": "e", "context": context})
+    return error
+"""
+
+_D3_SEED = """
+def f(p, n):
+    lint_ok, lint_errors = run_lint(p)
+    codehub.record_check(name=n, status="failure", evidence={"source": "lint"})
+    raise RuntimeError(lint_errors)
+"""
+
+# The same body with the trailing raise removed: `lint_errors` is then DEAD at the call --
+# every use of it lies before, inside a branch that has already returned. The negative seed
+# is the whole point of #1202jj, so it is pinned too.
+_D3_ANTISEED = """
+def f(p, n):
+    lint_ok, lint_errors = run_lint(p)
+    if not lint_ok:
+        return err(lint_errors)
+    codehub.record_check(name=n, status="failure", evidence={"source": "lint"})
+"""
+
+
+def _reasons_live_at_1202jj(fn, REASON, line):
+    """#1202jj: a reason variable counts only where it is LIVE at the call.
+
+    D3's first version collected every reason-ish name anywhere in the enclosing FUNCTION and
+    called it "in scope". Function scope is not control flow, and all 25 candidates it produced
+    were that one artefact in three costumes:
+
+      * `lint_errors` (file_tools 858/1081) -- bound before the call, but its only reader sits
+        in `if not lint_ok:`, which reverts the write and RETURNS. Reaching the hub write is
+        proof lint passed and the variable is empty.
+      * `budget_message` (parallel_runtime 144/155) -- not bound yet at the 130 call site.
+      * `contract_error`, `error_code` -- an earlier branch that returned, and a later `except`
+        in another loop iteration.
+
+    Liveness kills all three: require a binding STRICTLY BEFORE the call and a read AT OR AFTER
+    it. A parameter counts as bound at the function header. This is an approximation of live-
+    variable analysis, not the real thing -- a reader in a later, unrelated branch still counts
+    as live -- but it is sound in the direction that matters here: it never drops a name that a
+    real reporter could still have reached for.
+    """
+    live = set()
+    for nm in {x.id for x in ast.walk(fn) if isinstance(x, ast.Name)
+               and REASON.search(x.id) and x.id.islower()}:
+        stores = [x.lineno for x in ast.walk(fn) if isinstance(x, ast.Name)
+                  and x.id == nm and isinstance(x.ctx, ast.Store)]
+        if nm in {a.arg for a in fn.args.args + fn.args.kwonlyargs}:
+            stores.append(fn.lineno)
+        loads = [x.lineno for x in ast.walk(fn) if isinstance(x, ast.Name)
+                 and x.id == nm and isinstance(x.ctx, ast.Load)]
+        if any(s < line for s in stores) and any(l >= line for l in loads):
+            live.add(nm)
+    return live
+
+
 def d3(path, tree, src):
-    """D3: 记录失败却不带原因 —— evidence=/metadata= 字面量无 reason 字段, 而作用域里有原因变量"""
+    """D3: 记录失败却不带原因 —— evidence=/metadata= 字面量无 reason 字段, 而原因变量在该调用点仍活着"""
     REASON=re.compile(r'detail|reason|error|stderr|stdout|message|traceback|tail|summary',re.I)
     hits=[]
     for fn in [n for n in ast.walk(tree) if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]:
         # #self: the first draft matched CamelCase CLASS names (BaseMessage, MessageHeader)
         # as "reason variables" and buried the real hits under constructor calls. A reason
         # variable is lower_snake_case; a class is not.
-        names={x.id for x in ast.walk(fn) if isinstance(x,ast.Name)
-               and REASON.search(x.id) and x.id.islower()}
-        names |= {c.value for c in ast.walk(fn) if isinstance(c,ast.Constant)
-                  and isinstance(c.value,str) and REASON.fullmatch(c.value or '')}
-        if not names: continue
         for call in [c for c in ast.walk(fn) if isinstance(c,ast.Call)]:
             for kw in call.keywords or []:
                 if kw.arg not in ('evidence','metadata','details','payload'): continue
@@ -72,11 +135,28 @@ def d3(path, tree, src):
                 if any(REASON.search(k2.arg or "") for k2 in (call.keywords or [])
                        if k2.arg and k2.arg != kw.arg): continue
                 keys={k.value for k in kw.value.keys if isinstance(k,ast.Constant)}
+                # #1202jj: a key contributed by a CONDITIONAL MERGE (`**({"detail": d} if ...
+                # else {})`) has key None at the top level -- #1202iz carries its reason exactly
+                # that way, and D3 read the merge as an absent reason.
+                keys |= {c.value for k, v in zip(kw.value.keys, kw.value.values)
+                         if k is None for c in ast.walk(v)
+                         if isinstance(c, ast.Constant) and isinstance(c.value, str)}
                 if any(REASON.search(str(k)) for k in keys): continue
+                # #1202jj: the reason may ride a POSITIONAL argument -- generator_memory's
+                # `remember(f"Error in {phase}: {error[:200]}", metadata={...})` puts it in the
+                # remembered text itself. Same exemption as the sibling-kwarg one below.
+                if any(n.id in _reasons_live_at_1202jj(fn, REASON, call.lineno)
+                       for a in (call.args or []) for n in ast.walk(a)
+                       if isinstance(n, ast.Name)): continue
+                # #1202jj: scope is not reach. A name bound later, or already consumed by a
+                # branch that returned, was never available to this reporter.
+                names = _reasons_live_at_1202jj(fn, REASON, call.lineno)
+                if not names: continue
                 fname=getattr(call.func,'attr',None) or getattr(call.func,'id','?')
                 hits.append((call.lineno, f"{fname}({kw.arg}=...)",
-                             f"作用域内有 {sorted(names)[:3]}", sorted(keys)))
+                             f"调用点仍活着 {sorted(names)[:3]}", sorted(keys)))
     return hits
+
 
 SELFTEST = "--self-test" in sys.argv
 _seed_seen = False
@@ -283,10 +363,24 @@ if SELFTEST:
     assert any("blank" in f for _, f, _ in _scr) and any("blank" not in f for _, f, _ in _scr), (
         "D5' no longer sees visual_fidelity's `screens` split on `blank` (#619's average "
         "excludes it, `_best_by_screen` does not) — its seed case")
+    # #1202jj: D3 was the only unseeded detector, and the only one that produced 0 real
+    # defects out of 25 candidates. Both halves are pinned: it must still SEE a reason that is
+    # live at the call, and must NOT flag one that a returning branch already consumed.
+    _d3_seed = d3(pathlib.Path("<seed>"), ast.parse(_D3_SEED), _D3_SEED)
+    assert _d3_seed, ("D3 no longer flags its own seed (a failure recorded while `lint_errors` "
+                      "is still read afterwards)")
+    _d3_anti = d3(pathlib.Path("<seed>"), ast.parse(_D3_ANTISEED), _D3_ANTISEED)
+    assert not _d3_anti, ("D3 flags its ANTI-seed: `lint_errors` is dead at the call (its only "
+                          "reader returned), which is the artefact #1202jj removed — %r" % (_d3_anti,))
+    for _lbl, _snip in (("conditional-merge reason", _D3_ANTISEED_MERGE),
+                        ("positional reason", _D3_ANTISEED_POS)):
+        _h = d3(pathlib.Path("<seed>"), ast.parse(_snip), _snip)
+        assert not _h, f"D3 flags its {_lbl} anti-seed — {_h!r}"
     assert _seed_seen, ("D1 no longer finds the instance it was built from "
                         "(visual_fidelity `_sim = float(_s.get(\"similarity\") or 0.0)`) — "
                         "the detector has drifted, fix it before trusting a clean run")
-    print(f"self-test OK — D1 finds its seed case, D4 finds its seed snippet; "
+    print(f"self-test OK — D1 finds its seed case, D3/D4 find their seed snippets "
+          f"(and D3 rejects its anti-seed); "
           f"D5' sees its screens/blank split; "
           f"D1={tot['d1']} D3={tot['d3']} D4={tot['d4']} D5={tot['d5']} candidates")
 else:
