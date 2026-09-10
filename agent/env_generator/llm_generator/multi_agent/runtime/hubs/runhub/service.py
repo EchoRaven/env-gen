@@ -349,7 +349,22 @@ class RunHub:
             self.update_run_status(run_id, "probing", agent="runhub")
             endpoints = self._list_registryhub_endpoints()
             for ep in endpoints:
-                plan_or_skip = plan_probe(ep, base_url=base_url)
+                # #1202kl: THE ONE READER, resolved once and handed to both the planner and
+                # the classifier. Both used to read `ep["auth_required"]` raw, and over the
+                # 153 corpus runs that raw key disagrees with `_stated_auth_1202hi` on 1628 of
+                # 4270 endpoint records (38%), in 128 runs -- nearly all of them `False` where
+                # the contract says `True`. The classifier's "401/403 is expected when
+                # auth_required" branch then never fired and a CORRECT denial fell through to
+                # the P2 catch-all as `fail: unexpected status 401`: 125 such records against
+                # 43 correctly passed, i.e. wrong 74% of the times it saw one. #1202ga and
+                # #1202ih are the same lesson on the projector and the validator.
+                try:
+                    from ...route_projector import _stated_auth_1202hi
+                    _auth_1202kl = bool(_stated_auth_1202hi(ep))
+                except Exception:      # a probe must never be the reason a run dies
+                    _auth_1202kl = bool(ep.get("auth_required"))
+                plan_or_skip = plan_probe(ep, base_url=base_url,
+                                          auth_required=_auth_1202kl)
                 if isinstance(plan_or_skip, ProbeSkip):
                     probes.append({
                         "method": ep.get("method"), "path": ep.get("path"),
@@ -361,7 +376,7 @@ class RunHub:
                 outcome = classify_probe_result(
                     status_code=raw.get("status_code"),
                     body_excerpt=raw.get("body_excerpt", ""),
-                    auth_required=bool(ep.get("auth_required")),
+                    auth_required=_auth_1202kl,
                     transport_error=raw.get("transport_error"),
                     # #1001: hand over the headers #1000 preserved. Without this the
                     # classifier cannot quote `Allow` and a 405 stays "unexpected status".

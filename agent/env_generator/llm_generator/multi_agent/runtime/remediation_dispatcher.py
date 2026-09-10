@@ -89,7 +89,7 @@ _BE_BUILD_RE = re.compile(
     re.IGNORECASE)
 
 
-def failed_task_owner_1128(task: Any) -> str:
+def failed_task_owner_1128(task: Any, live_agents: Any = None) -> str:
     """Which agent can actually RESOLVE this failed task -- #1128.
 
     The `unresolved_failed_tasks` re-wake prescribes exactly two escapes, and WorkHub grants
@@ -113,9 +113,40 @@ def failed_task_owner_1128(task: Any) -> str:
     knowable = bool(claimed_by or created_by)
     can_complete = bool(assignee) and assignee == claimed_by
     can_cancel = bool(assignee) and (assignee == created_by or assignee == "orchestrator")
-    if assignee and (not knowable or can_complete or can_cancel):
-        return assignee
-    return created_by or "orchestrator"
+    _owner = assignee if (assignee and (not knowable or can_complete or can_cancel)) \
+        else (created_by or "orchestrator")
+    # #1202kk: ...AND THE OWNER HAS TO STILL BE RUNNING.
+    #
+    # #1128 routes by AUTHORITY, which was the right question and only half of it. tiktok-r114,
+    # live: two P0 tasks were the run's ONLY remaining delivery blocker, assigned to `frontend`,
+    # misclaimed by `backend`, and created by `browser_test_user_10_page_profile_own_pag` -- a
+    # per-page identity the Browser Test-User agent registers for one walkthrough. Neither
+    # escape is open to the assignee (not the claimer, not the creator), so the fall-through
+    # addressed the URGENT re-wake to that page identity. Its agent log's last line is
+    # `finish(...)` at 12:17:49; the tasks were failed at 12:20:01 and the nag was still being
+    # re-sent 33 minutes later. Nobody could act, and `unresolved_failed_tasks` blocked the cut.
+    #
+    # The framework already refuses this shape one hub over: `registryhub.request_review`
+    # rejects a reviewer absent from `_live_agents_provider` because "the review request lands
+    # in a dead inbox and nobody will action it". Same provider, same reasoning, same answer.
+    #
+    # The orchestrator is not a consolation prize here: `cancel_task` grants it UNCONDITIONALLY
+    # (this function's own docstring says so) and #1127 made `failed` cancellable, so it is the
+    # one agent that can always resolve the task.
+    #
+    # Corpus: 79 of 153 runs create tasks owned by a non-lane identity (1015 tasks). Only the
+    # ones that end `failed` are terminal -- broad exposure, rare landing, no second escape.
+    #
+    # An ABSENT or EMPTY roster means "not known", never "no agent exists" -- the same reading
+    # `request_review` takes (`if live is not None and live:`) -- so every existing caller,
+    # which passes nothing, keeps the pre-#1202kk answer exactly.
+    try:
+        _live = set(live_agents) if live_agents else None
+    except TypeError:
+        _live = None
+    if _live and _owner not in _live:
+        return "orchestrator"
+    return _owner
 
 
 def docker_up_host_fault_1202de(detail: Any) -> str:
@@ -2711,7 +2742,11 @@ class RemediationDispatcher:
                         for _t in (_b743.get("failed") or []):
                             _t = _t or {}
                             _a = str(_t.get("assignee") or "").strip()
-                            _owner = failed_task_owner_1128(_t)
+                            # #1202kk: the orchestrator's own roster -- the same object
+                            # `attach_live_agents_provider` hands the hubs -- so an owner that
+                            # has already finished cannot be handed the only escape.
+                            _owner = failed_task_owner_1128(
+                                _t, live_agents=list(getattr(orch, "_agents", None) or ()))
                             if _owner != _a:
                                 # Nobody else can move it: the assignee is neither claimer nor
                                 # creator, so both prescribed escapes would be refused.

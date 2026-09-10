@@ -51,14 +51,25 @@ def plan_probe(
     endpoint: Dict[str, Any],
     base_url: str,
     example_body: Optional[Dict[str, Any]] = None,
+    auth_required: Optional[bool] = None,
 ) -> Union[ProbePlan, ProbeSkip]:
+    """#1202kl: `auth_required` may be handed in, RESOLVED.
+
+    `auth_required` lives in up to three places on an endpoint record and the framework
+    settled that question long ago -- `_stated_auth_1202hi`, schema first, because that is
+    what `register_endpoint(schema=...)` writes. This module is a leaf and must not import
+    the projector, so the caller resolves it and passes it; `None` keeps the raw read, which
+    is what every pre-#1202kl caller relies on.
+    """
     status = (endpoint.get("status") or "defined")
     if status != "defined":
         return ProbeSkip(reason="not_defined")
 
     method = (endpoint.get("method") or "GET").upper()
     path = endpoint.get("path") or "/"
-    auth_required = bool(endpoint.get("auth_required"))
+    if auth_required is None:
+        auth_required = bool(endpoint.get("auth_required"))
+    auth_required = bool(auth_required)
 
     if method in _DESTRUCTIVE:
         return ProbeSkip(reason="destructive")
