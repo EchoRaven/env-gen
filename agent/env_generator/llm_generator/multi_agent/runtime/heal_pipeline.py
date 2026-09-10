@@ -1620,13 +1620,23 @@ class HealPipeline:
                 _ph = int(_li.get("placeholder") or 0) + int(_ls.get("placeholder") or 0)
                 _st = int(_li.get("staged") or 0) + int(_ls.get("staged") or 0)
                 if _ph:
+                    # #1202jq: the counts, and the staged-asset population beside them —
+                    # WITHOUT naming a repair. "The picture was never staged" was the first
+                    # draft and it is false: r109 and r110 stage the same 144 assets and only
+                    # r109's refs fell back. A high share means these URLs matched nothing by
+                    # filename token, which is a different thing from nothing being there.
+                    try:
+                        _pool = len([q for q in (fe / "public" / "assets").rglob("*")
+                                     if q.is_file() and "placeholders" not in q.parts])
+                    except Exception:
+                        _pool = -1
                     orch._logger.warning(
-                        "IMAGE LOCALIZATION: %d ref(s) matched a STAGED asset, %d fell back "
-                        "to a generated PLACEHOLDER glyph (%.0f%%). A placeholder renders as "
-                        "a landscape/person glyph, so the visual gate scores it as a fidelity "
-                        "failure that NO lane can fix — the picture was never staged. If this "
-                        "share is high, the repair is material staging, not the frontend.",
-                        _st, _ph, 100.0 * _ph / max(1, _ph + _st))
+                        "IMAGE LOCALIZATION: %d ref(s) matched a STAGED asset by filename "
+                        "token, %d fell back to a generated PLACEHOLDER glyph (%.0f%%); "
+                        "%s real asset(s) are staged. A placeholder renders as a landscape/"
+                        "person glyph, so those <img> are not photographs of anything.",
+                        _st, _ph, 100.0 * _ph / max(1, _ph + _st),
+                        _pool if _pool >= 0 else "an unknown number of")
             except Exception as _lie:
                 orch._logger.debug("external-image localization skipped: %s", _lie)
             # CJS→ESM FIRST: a lane authors api.js in CommonJS (`module.exports = api`)

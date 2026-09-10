@@ -2,18 +2,17 @@
 
 `_local_ref_for` picks a STAGED asset when a filename token matches, else writes a generated
 placeholder SVG. Those two produce very different apps, and both callers reported only WHICH
-FILES were touched — so a run whose content imagery localized entirely to placeholders looked
+FILES were touched — so a run whose imagery localized entirely to placeholders looked
 identical, in every report, to one that matched real media every time.
 
-tiktok-r109 is the instance: every `videos.thumbnail` became `/assets/placeholders/ph-img-0
-.svg`, its explore grid rendered a wall of landscape glyphs, and the visual gate scored the
-wound — nine of nine screens below the bar, mean 0.30, $339 spent. The adjacent r110 matched
-real media and averaged 0.69 on the same env. Nothing said "the pictures are not here".
+That gap is the whole ticket. The CAUSAL story I first attached to it is not established and
+the test below pins the correction: tiktok-r109's own grid follows from its own 12 placeholder
+refs, but r109 and the adjacent r110 stage the SAME 144 real assets, neither seed points at
+real media (both name an icon SVG), and r110 renders real photographs anyway at mean 0.69.
+Across 49 runs the correlation is weak besides — content imagery >=50% placeholder gives mean
+0.35 over n=3 against 0.43 for the rest, one of the three scoring 0.61.
 
-HONEST LIMIT, pinned in the docstring under test: across 49 runs the correlation is weak
-(content imagery >=50% placeholder gives mean 0.35 over n=3, against 0.43 for the rest, and
-one of the three scored 0.61). This reports a condition; it does not diagnose one, and it
-changes no verdict.
+So this counts a branch nobody could see. It names no repair and changes no verdict.
 """
 import sys
 import pathlib
@@ -82,10 +81,41 @@ def test_it_still_never_raises(tmp_path):
     assert r["placeholder"] == 0
 
 
-def test_the_honest_limit_is_recorded_at_the_site():
-    """A count invites a causal reading. The weak corpus correlation belongs beside it."""
+def test_the_site_says_what_is_not_established():
+    """★ A count invites a causal reading, and mine was wrong before it was written down.
+
+    The first draft said "the picture was never staged, so the repair is material staging".
+    r109 and r110 stage the same 144 assets. What must stay at the site is the negative: the
+    counter-example run, the equal staging, and that this names no repair.
+    """
     doc = inspect.getdoc(FS._local_ref_for) or ""
-    assert "HONEST LIMIT" in doc
+    assert "WHAT IS NOT" in doc, "the unestablished half has to be labelled as such"
+    assert "144" in doc, "equal staging is why 'nothing was staged' is false"
     assert "n=3" in doc and "0.61" in doc, (
         "the counter-example — a high-placeholder run that scored well — is the half that "
         "stops the next reader treating this as a diagnosis")
+    assert "changes no verdict" in doc
+
+
+def test_the_warning_does_not_prescribe_a_repair():
+    """The heal-pipeline line is what a reader acts on; it must not name a cause either.
+
+    Read through `ast` rather than by slicing to the next bracket — #923 forbids the latter,
+    and rightly: the call this inspects gained a nested `max(...)` while I was writing it.
+    """
+    import ast as _ast
+    import env_generator.llm_generator.multi_agent.runtime.heal_pipeline as HP
+
+    tree = _ast.parse(inspect.getsource(HP))
+    calls = [n for n in _ast.walk(tree)
+             if isinstance(n, _ast.Call)
+             and any(isinstance(a, _ast.Constant) and isinstance(a.value, str)
+                     and a.value.startswith("IMAGE LOCALIZATION:") for a in n.args)]
+    assert len(calls) == 1, f"expected one IMAGE LOCALIZATION warning, found {len(calls)}"
+    text = " ".join(c.value for c in _ast.walk(calls[0])
+                    if isinstance(c, _ast.Constant) and isinstance(c.value, str))
+    assert "never staged" not in text and "the repair is" not in text, (
+        "the first draft prescribed material staging, which the 144-asset measurement refutes")
+    assert "real asset(s) are staged" in text, (
+        "the staged POPULATION belongs beside the counts, or a reader cannot tell "
+        "'nothing is there' from 'these names matched nothing'")

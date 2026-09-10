@@ -915,20 +915,24 @@ def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str],
                    tally: Optional[Dict[str, int]] = None) -> str:
     """#1202jq: SAY WHICH BRANCH. This chooses silently between a real staged asset and a
     generated placeholder glyph, and the two produce very different apps — yet both callers
-    reported only WHICH FILES were touched, so a run whose content imagery localized 100% to
+    reported only WHICH FILES were touched, so a run whose imagery localized entirely to
     placeholders looked exactly like one that matched real media every time.
 
-    tiktok-r109 is the instance: every `videos.thumbnail` became
-    `/assets/placeholders/ph-img-0.svg`, its explore grid rendered a wall of landscape
-    glyphs, and the visual gate scored the wound — nine of nine screens below the bar, mean
-    0.30, $339 spent. The adjacent r110 matched real media and averaged 0.69 on the same env.
-    Nothing in between said "the pictures are not here", so the fidelity gap read as something
-    a lane could fix, and no lane can fix an image that was never staged.
+    WHAT IS VERIFIED, and it is less than I first wrote here. tiktok-r109's seed carries 12
+    content-image placeholders against 5 real refs, its explore grid renders a wall of
+    landscape glyphs, and its nine screens all sit below the bar (mean 0.30, $339). That its
+    own grid follows from its own placeholders is clear enough.
 
-    HONEST LIMIT: this is one clear instance, not a corpus law. Over 49 runs the correlation
-    is weak (content imagery >=50% placeholder: mean 0.35 over n=3, against 0.43 for the rest,
-    and one of those three scored 0.61). So this reports a condition rather than diagnosing
-    one, which is why it is a count and a warning and changes no verdict.
+    WHAT IS NOT. I first wrote this as "the pictures are not here, so the repair is material
+    staging". Both r109 and the adjacent r110 stage the SAME 144 real assets, so nothing was
+    missing; and neither seed's `video_url`/`thumbnail` points at real media at all (both name
+    an icon SVG) — yet r110 renders real photographs and averages 0.69. Whatever supplies
+    r110's imagery is not this path, and I did not find it. Across 49 runs the correlation is
+    weak besides: content imagery >=50% placeholder gives mean 0.35 over n=3 against 0.43 for
+    the rest, and one of those three scored 0.61.
+
+    So this counts a branch nobody could see. It is not a diagnosis, it names no repair, and
+    it changes no verdict.
     """
     hit = _match_staged_asset(url, field, assets)
     if hit:
