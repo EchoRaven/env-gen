@@ -1982,16 +1982,17 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
         # a flat by-id 404, which IS that lookup. The sentence below was stated either way.
         #
         # 181 of the corpus' 409 nested-action 404s read the parent successfully SOMEWHERE in
-        # the same run, so for those it is at least unproven. It is deliberately not claimed
-        # to be backwards: r111 is one of the 181 and its ordering says otherwise -- video 1
-        # answered 200/201 while the chains that used it passed, and every 404 is timestamped
-        # AFTER that, monotonically, from 1788998843 on. The id went away mid-run. Both
-        # projected handlers agree by construction (`Video.id` IS the primary key, so
-        # `db.get(Video, id)` and `filter(Video.id == id)` cannot disagree at one instant), so
-        # a same-RUN success is not a same-INSTANT one and cannot settle this.
+        # the same run, so for those the sentence is at least unproven -- but a same-RUN
+        # success is not a same-INSTANT one and cannot settle which way it is wrong. r111
+        # shows why the ledger cannot answer this: its 40 `/api/videos/1/*` 404s sit in
+        # `last_failure_1202fa.failed_steps`, a record #1202fa PRESERVES, while `last_result`
+        # has every one of those steps at 200/201 and all 30 real chains `passing`. Two
+        # readings of one file, minutes apart in wall-clock terms, opposite answers.
         #
         # Which is the whole argument for probing rather than mining the ledger: only a read
         # taken at the moment of the failure separates "wrong id" from "broken handler".
+        # (`videos` is seeded with explicit ids 1..25, so video 1 existing at that moment is
+        # the likelier half -- but likelier is not measured, and this asks instead.)
         _probe = _parent_probe_path_1202jk(method, path, ep) if base else None
         _verified_missing = _probe is None      # flat by-id: this very 404 is the id check
         if _probe:

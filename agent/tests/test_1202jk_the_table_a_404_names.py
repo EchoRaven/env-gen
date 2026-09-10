@@ -1,7 +1,7 @@
 """#1202jk: a 404 note must name the table whose id the path carries.
 
-r111 spent $762 and failed on 40 chain steps, every one a 404 on `/api/videos/1/...`.
-#1202id's note told the lane to look at the WRONG table, and contradicted itself doing it:
+r111 recorded 40 failed steps, every one a 404 on `/api/videos/1/...`, and #1202id's note
+told the lane to look at the WRONG table while contradicting itself doing it:
 
     POST /api/videos/1/like -> 404 {"detail":"parent resource not found"}
     note: TABLE `likes` HAS 6 LIVE ROW(S) (a seeded id is 1) — the table is populated,
@@ -9,6 +9,11 @@ r111 spent $762 and failed on 40 chain steps, every one a 404 on `/api/videos/1/
 
 `likes` id 1 both "is seeded" and "does not exist" in one sentence, and the response says
 **parent** outright. The table to name is `videos`, whose id the path carries.
+
+(Those 40 sit in `last_failure_1202fa.failed_steps`, which #1202fa preserves. By r111's END
+every one of those steps answered 200/201 and all 30 real chains were `passing` — the run
+failed on the VISUAL gate, with `validation:business_chain` recorded success. The note was
+wrong when it was emitted; it did not decide that run's outcome.)
 
 The second half is the verdict itself. On a nested path the 404 comes from the handler's own
 parent lookup, so the failing request settles nothing about the parent — yet the sentence was
