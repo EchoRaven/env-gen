@@ -357,6 +357,22 @@ class RegistryHub:
     and `review` has a writer that has never run. Kept in one place rather than deleted piecemeal
     because the readers still exist and an empty store is a legitimate state — what was wrong was
     the docstring implying they carry data.
+
+    #1202jh: the same measurement, run over the OTHER four hubs, which #693 did not cover.
+    Across the same 150 run directories, nine stores sit at the initialisation baseline
+    (`_meta.version` 11, written once by `ensure_*_document`) with ZERO records, ever:
+
+        codehub    review_threads, repos, pull_requests, code_reviews
+        workhub    decisions, reactions, acceptance_criteria, databases, workspaces
+
+    They have no writers anywhere in the tree and at most one reader each — a `list_*`
+    accessor, not a branch — so unlike #693's `projects/providers/SCHEMAS` there is no dead
+    conditional to find. Same verdict, recorded so the direction is not re-mined: empty is
+    legitimate here, and nothing gates on it.
+
+    For contrast, the live ones on that pass: eventhub_subscriptions v30247,
+    eventhub_inboxes v25367, eventhub_events/threads v15746, codehub_checks v4776,
+    workhub_tasks v3125, runhub_runs v2381.
     """
 
     def __init__(self, hub_dir: Path, eventhub: Optional["EventHub | None"] = None,
