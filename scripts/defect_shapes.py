@@ -89,11 +89,21 @@ codehub.record_check(pr_id="main", name=n,
 """
 
 
-# D5': the highest-yield shape in this tree — two consumers of ONE collection disagreeing
-# about an EXCLUSION flag. Every side reads correctly on its own; the defect is the
-# disagreement. #1202iq (two call sites of one FK resolver, one consulting the declared map
-# and one not), #1202fn/#1202fp (two audits, two different roots), and visual_fidelity's
-# `screens` (#619's average excludes `blank`, `_best_by_screen` does not) are all this.
+# D5': two consumers of ONE collection disagreeing about an EXCLUSION flag. Every side reads
+# correctly on its own, so the defect — when there is one — is the disagreement. #1202iq (two
+# call sites of one FK resolver, one consulting the declared map and one not) and
+# #1202fn/#1202fp (two audits, two different roots) are this shape.
+#
+# ITS SEED IS NOT A DEFECT, and that is worth stating plainly. The self-test pins that D5' can
+# still SEE visual_fidelity's `screens` split on `blank` (#619's average excludes it,
+# `_best_by_screen` does not). Reading the sibling `results` group settled what that split
+# means: the AVERAGE excludes blanks because a blank is not a measurement of the app, while
+# GATING (`_blocking`) and BOOKKEEPING (#713's duplicate-capture hash) include them because a
+# blank screen still blocks and still has a file. `_best_by_screen` is bookkeeping. Three
+# rules, three questions, coherent. I had called it an inconsistency before reading all three.
+#
+# So the seed asserts DETECTABILITY, not wrongness — which is the property a detector needs,
+# and the honest label for it.
 #
 # The FIRST version compared every field name two loops touched and produced 117 candidates:
 # different loops legitimately read different fields, so field overlap carries no signal. It
