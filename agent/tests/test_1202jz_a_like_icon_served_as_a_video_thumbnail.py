@@ -58,16 +58,23 @@ def test_an_icon_field_may_still_take_an_icon():
               ["icons/explore-card-user-verified_6717018b.svg"]) is not None
 
 
-def test_an_avatar_still_matches_an_avatar():
-    """Non-regression: avatars are not chrome and must keep binding."""
+def test_an_avatar_does_not_become_a_verified_badge():
+    """★ 119 of 523 avatar fields hold `icons/explore-card-user-verified*.svg` — a badge
+    served as someone's face. The first version of this test asserted only that a real avatar
+    still binds, which stayed green whether or not avatars were protected; the counter-proof
+    that widened the rule turned nothing red, which is how a non-discriminating guard shows
+    itself."""
+    assert _M("https://cdn.example.com/user-verified-9.jpeg", "avatar",
+              ["icons/explore-card-user-verified_6717018b.svg"]) is None
     got = _M("https://cdn.example.com/avatar-zach.jpeg", "avatar", _ASSETS)
-    assert got == "avatars/creator-avatar-zach_1a2.jpeg"
+    assert got == "avatars/creator-avatar-zach_1a2.jpeg", "a real avatar must still bind"
 
 
 def test_every_content_word_is_covered():
     """The seed fields measured as damaged: thumb/poster/cover/backdrop/banner/video/media."""
     for field in ("thumbnail", "thumbnail_url", "poster", "cover_image", "backdrop_path",
-                  "banner", "video_url", "media_url", "preview_image"):
+                  "banner", "video_url", "media_url", "preview_image", "avatar",
+                  "avatar_url", "profile_pic"):
         assert _M("https://x/y-video-1.jpg", field,
                   ["icons/like-video-25-5m-likes_d5105f7e.svg"]) is None, field
 

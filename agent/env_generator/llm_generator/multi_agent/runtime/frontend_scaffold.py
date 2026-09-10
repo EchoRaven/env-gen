@@ -881,12 +881,50 @@ def _staged_assets(public_dir: Path) -> List[str]:
     return sorted(out)
 
 
+# #1202jz: a CONTENT image is a photograph of something; an icon, logo, sprite, favicon or
+# wordmark is chrome. The vocabulary is the framework's own — `_content_image_assets` already
+# excludes exactly these tokens when it picks content imagery — it simply never reached the
+# matcher, which is the one-fact-many-emitters shape.
+_CONTENTISH_FIELD_1202JZ = re.compile(
+    r"(thumb|poster|cover|backdrop|banner|still|preview|screenshot|video|media|hero|"
+    r"artwork|photo|picture|image|avatar|profile_pic|headshot|portrait)", re.I)
+_CHROME_ASSET_1202JZ = ("icon", "logo", "placeholder", "sprite", "favicon", "wordmark")
+
+
 def _match_staged_asset(url: str, field: str, assets: List[str]) -> Optional[str]:
-    """Best filename-token overlap between the URL path + field name and a staged asset."""
+    """Best filename-token overlap between the URL path + field name and a staged asset.
+
+    #1202jz: ONE shared token used to be enough (`best_n` starts at 0), and chrome assets have
+    descriptive names while photographs often do not — so a video thumbnail bound to
+    `icons/like-video-25-5m-likes_d5105f7e.svg` on the single word "video". Measured over the
+    recent corpus: of 896 content-image seed fields, 646 hold a real asset, 57 an honest
+    placeholder, and **193 an icon** — a wrong picture presented as a real one, across 11 runs
+    (tiktok-r111 alone has 55). That is 3.4x the placeholder branch, and it hid inside the
+    "staged" tally, which is why #1202jq found no correlation between placeholders and score.
+
+    AVATARS TOO, and they were nearly missed: the first draft treated only "content" imagery as
+    protected, and a counter-proof that widened the rule to avatars did not turn any test red —
+    which is how a guard that does not discriminate announces itself. Measured after that:
+    **119 of 523 avatar fields** hold an icon, almost every one
+    `icons/explore-card-user-verified*.svg`, a verified badge served as someone's face. The
+    line is not content-vs-chrome, it is A PICTURE OF SOMETHING vs chrome — 312 bindings in all.
+
+    So an imagery FIELD may not bind to a chrome ASSET. Either a real photograph wins, or
+    nothing does and the caller writes an honest placeholder that #1202jq now counts and warns
+    about. Both beat an icon rendered as a photo.
+
+    HONEST LIMIT: how often the fallback lands on a real photo versus a placeholder is NOT
+    measured. The pre-rewrite URLs are overwritten in place, so the corpus cannot answer it,
+    and a simulation on invented URLs would only measure my invention — I started one and threw
+    it away. What is measured is the 193 bindings this removes.
+    """
     want = set(re.findall(r"[a-z]{3,}", (field + " " + re.sub(r"https?://[^/]+", "", url)).lower()))
     want -= {"http", "https", "photo", "image", "img", "www"}
+    _contentish = bool(_CONTENTISH_FIELD_1202JZ.search(field or ""))
     best, best_n = None, 0
     for a in assets:
+        if _contentish and any(t in a.lower() for t in _CHROME_ASSET_1202JZ):
+            continue
         toks = {t for t in re.split(r"[_\-\s./]+", Path(a).stem.lower())
                 if len(t) >= 3 and not re.fullmatch(r"[0-9a-f]{6,}|\d+", t)}
         n = len(want & toks)
