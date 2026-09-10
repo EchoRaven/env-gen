@@ -2524,6 +2524,90 @@ def _retype_projected_params_1202ic(src: str, models: Dict[str, Dict[str, Any]])
     return ("".join(lines) if edits else src), changed
 
 
+def _reproject_stale_auth_1202jt(src: str, declared_endpoints: List[Mapping[str, Any]]):
+    """Drop projected handlers whose endpoint's AUTH contract moved after registration.
+
+    #1202ic fixed this for param types and named the mechanism exactly: "a handler emitted
+    once is never revisited -- so the param type it was born with outlives the column it was
+    derived from". The same sentence is true of the auth guard, and nothing re-derived it.
+
+    Measured over the 20 runs since #1202ga: 20 projected handlers serve anonymously while
+    their contract requires auth, and 18 of the 20 carry `schema=True, metadata=False` — the
+    mirror frozen at registration says PUBLIC, so the handler was projected open and was right
+    to be, and the contract was flipped to True afterwards. googlemaps-r16 is the case:
+    `GET /api/titles`, `/api/genres`, `/api/search`, `/api/transit-stops/{stop_id}` all
+    projected as `(db=Depends(get_db))` with no actor, while `custom_routes.py:3192` holds the
+    lane's own guarded route that #528 overrides. The lane cannot fix this: it wrote the right
+    route and the projection wins.
+
+    THIS FUNCTION DOES NOT DECIDE AUTH. The decision is four interacting rules (#320's public
+    feed, #1202ht's materials override, #633's structural privacy, #271's owner-scope force)
+    and reproducing it here is the one-fact-many-emitters trap. It only drops the handler so
+    the projection loop below rebuilds it with the CURRENT contract through the same code that
+    built it the first time. A handler dropped when nothing would change is regenerated
+    identically, so a false positive costs nothing.
+
+    Trigger: the frozen `metadata.auth_required` mirror disagrees with what the contract states
+    today. That is the definition of "moved since registration", and it needs no auth rule at
+    all — only #1202hi's reader.
+    """
+    dropped: List[str] = []
+    try:
+        moved = set()
+        for ep in (declared_endpoints or []):
+            if not isinstance(ep, Mapping):
+                continue
+            _md = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
+            _mirror = _md.get("auth_required")
+            if not isinstance(_mirror, bool):
+                continue                       # never mirrored → nothing to have moved from
+            _now = _stated_auth_1202hi(ep)
+            if _now is None or bool(_now) == bool(_mirror):
+                continue
+            _m = str(ep.get("method", "")).upper()
+            _p = _express_to_fastapi(str(ep.get("path", "")))
+            # SAFE BY CONSTRUCTION: drop only what the loop below will REBUILD. It projects
+            # `/api/` business endpoints and nothing else ("/auth/* is owned by the embedded
+            # OAuth2 AS ... never projected here"), so dropping anything outside that prefix
+            # would delete an endpoint instead of refreshing it. r111's moved set contains
+            # POST /auth/register and /auth/login; no `_projected_*` handler exists for them
+            # today, and this does not rely on that staying true.
+            if _m and _p.startswith("/api/"):
+                moved.add((_m, _norm_path(_p)))
+        if not moved:
+            return src, dropped
+        tree = ast.parse(src)
+    except Exception:
+        return src, dropped
+    cuts = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("_projected_"):
+            continue                            # lane-authored code is out of reach
+        for dec in node.decorator_list:
+            if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                    and dec.args and isinstance(dec.args[0], ast.Constant)
+                    and isinstance(dec.args[0].value, str)):
+                continue
+            key = (dec.func.attr.upper(), _norm_path(dec.args[0].value))
+            if key not in moved:
+                continue
+            start = min([d.lineno for d in node.decorator_list] + [node.lineno])
+            end = getattr(node, "end_lineno", None)
+            if end:
+                cuts.append((start, end))
+                dropped.append(f"{key[0]} {dec.args[0].value} ({node.name})")
+            break
+    if not cuts:
+        return src, dropped
+    lines = src.splitlines(keepends=True)
+    drop_idx = set()
+    for a, b in cuts:
+        drop_idx.update(range(a - 1, b))
+    return "".join(l for i, l in enumerate(lines) if i not in drop_idx), dropped
+
+
 def project_missing_routes(
     backend_dir: Any,
     declared_endpoints: List[Mapping[str, Any]],
@@ -2544,6 +2628,10 @@ def project_missing_routes(
     if not main_py.exists():
         return {"projected": [], "already": 0, "error": "main.py absent"}
     src = main_py.read_text(encoding="utf-8")
+    # #1202jt: BEFORE `existing` is taken — a projected handler whose auth contract moved
+    # since it was emitted is dropped here so the loop below rebuilds it from the contract as
+    # it stands now. #1202ic does the same thing for param types; the guard had no such pass.
+    src, _reauth_1202jt = _reproject_stale_auth_1202jt(src, declared_endpoints)
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
     # #1202ir: actor tables the CONTRACT itself declares publicly readable. Computed once
@@ -2669,6 +2757,7 @@ def project_missing_routes(
         _write_py_995(main_py, src, what="retype_projected_params_1202ic")
 
     return {"projected": projected, "already": len(existing) - len(projected),
+            "reauth_reprojected_1202jt": _reauth_1202jt,
             "retyped_1202ic": _retyped_1202ic}
 
 
