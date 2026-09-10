@@ -71,6 +71,7 @@ import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .arbitration_table import resolve_conflict
+from .contract import fixed_surface_1202ke as _fixed_surface_1202ke
 from .contract import normalize_to_registryhub_endpoint
 from .cross_check_suite import (
     run_cross_checks,
@@ -1388,7 +1389,44 @@ def _normalize_backend_endpoints_for_reconcile(
             changed = True
             continue
         ep2 = dict(ep)
-        if not isinstance(ep2.get("auth_required"), bool):
+        # #1202ke: an endpoint the FRAMEWORK fixes is not the LLM's to shape. r114's log read
+        # `defaulted auth_required=True for POST /auth/register` and `... /auth/login`, and the
+        # registration that landed carried `metadata.auth_required: true` beside a summary and
+        # request/response copied VERBATIM out of `AS_CONTRACT_ENDPOINTS` -- whose own record
+        # for that path says `auth_required: False`. The backend draft re-declares the auth
+        # surface it was shown in the prompt, omits the flag, and this normalizer's
+        # "the LLM only omits it, never means public" rule then inverts the framework's own
+        # answer. `register_endpoint` is a merge-upsert on (method, path), so the later write
+        # wins and the contract ends up stating that you must hold a token to log in.
+        #
+        # Measured over the 153 runs with an endpoints ledger: 15 carry it, and they are the
+        # CURRENT era -- r96/97/99/103/104/106/107, netflix r9/27/31/35/41, and r114 live while
+        # this was written (which also flipped /oauth/register and /oauth/token).
+        #
+        # These handlers are projected (`oauth_routes.py`, `control_plane`), so no lane can fix
+        # the contradiction and none of them enforce the auth the ledger claims -- it is a
+        # contract that lies about framework code, the #919 oscillation shape exactly.
+        #
+        # So the framework's value WINS here, over an omission and over a contradiction alike.
+        #
+        # NARROW TO `auth_required` ON PURPOSE. The first draft of this also skipped the
+        # response_key derivation below, reasoning that kind auth/oauth/infra is fixed-spec
+        # with heterogeneous shapes (a 302, an {access_token}, a JWKS doc) the response_key-keyed
+        # api.js generator is required to SKIP. That would have been a RUN-KILLER:
+        # `roadmap_validator` line 212 requires `endpoint.response_key` to be a non-empty string
+        # and this normalizer is the LAST RESORT before `validation_failed` aborts the run, so
+        # leaving the key absent trades a contract that lies for a run that dies. The invented
+        # key is inert downstream -- api.js keys off `kind`, not off the presence of the field.
+        _fixed = _fixed_surface_1202ke().get(
+            (str(method).upper(), str(path).rstrip("/") or "/"))
+        if _fixed is not None:
+            _want = bool(_fixed.get("auth_required", False))
+            if ep2.get("auth_required") is not _want:
+                ep2["auth_required"] = _want
+                notes.append(
+                    f"#1202ke restored framework auth_required={_want} for {method} {path}")
+                changed = True
+        elif not isinstance(ep2.get("auth_required"), bool):
             ep2["auth_required"] = True
             notes.append(f"defaulted auth_required=True for {method} {path}")
             changed = True

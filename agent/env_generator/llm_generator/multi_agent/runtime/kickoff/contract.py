@@ -219,6 +219,39 @@ def endpoint_id(method: str, path: str) -> str:
     return f"{m} {p}"
 
 
+_FIXED_SURFACE_CACHE_1202KE: Dict[tuple, Mapping[str, Any]] = {}
+
+
+def fixed_surface_1202ke() -> Dict[tuple, Mapping[str, Any]]:
+    """The endpoints the FRAMEWORK itself fixes, keyed ``(METHOD, path)``.
+
+    Derived from the framework's own two declarations — never a literal copy — so a build
+    that drops the OAuth AS or the control plane simply contributes nothing here, the same
+    discipline `_CONTROL_PLANE_PUBLIC` follows in chain_executor.
+    """
+    if _FIXED_SURFACE_CACHE_1202KE:
+        return _FIXED_SURFACE_CACHE_1202KE
+    # Resolved on FIRST USE, not at import: this module is imported from the runtime package
+    # that owns `oauth_scaffold`, and an import-time resolution would make that cycle load-order
+    # dependent. The two declarations are literals, so the answer cannot change within a run.
+    out: Dict[tuple, Mapping[str, Any]] = {}
+    for mod, name in (("..oauth_scaffold", "AS_CONTRACT_ENDPOINTS"),
+                      ("..control_plane", "CONTROL_SURFACE_ENDPOINTS")):
+        try:
+            import importlib
+            eps = getattr(importlib.import_module(mod, __package__), name, None) or []
+        except Exception:  # pragma: no cover - a partial build must not break kickoff
+            continue
+        for ep in eps:
+            if not isinstance(ep, Mapping):
+                continue
+            m, path = ep.get("method"), ep.get("path")
+            if isinstance(m, str) and isinstance(path, str):
+                out[(m.upper(), path.rstrip("/") or "/")] = ep
+    _FIXED_SURFACE_CACHE_1202KE.update(out)
+    return out
+
+
 def normalize_to_registryhub_endpoint(ke: KickoffEndpoint) -> Dict[str, Any]:
     """Translate a ``KickoffEndpoint`` into ``register_endpoint`` kwargs.
 
@@ -294,6 +327,16 @@ def normalize_to_registryhub_endpoint(ke: KickoffEndpoint) -> Dict[str, Any]:
         "response_key": ke["response_key"],
         "auth_required": ke["auth_required"],
     }
+    # #1202ke: the FUNNEL half of the rule. `_normalize_backend_endpoints_for_reconcile`
+    # applies the same authority to the DRAFT, but only on the reconcile path -- a draft that
+    # states `auth_required: true` for `/auth/login` outright is valid to `roadmap_validator`,
+    # never reaches reconcile, and would sail through. Every kickoff endpoint passes HERE, so
+    # this is where the ledger is actually protected; both call `fixed_surface_1202ke()` so
+    # there is one implementation of the rule, not two that can drift (#1202gt/gu/gw).
+    _fx = fixed_surface_1202ke().get(
+        (str(ke["method"]).upper(), str(ke["path"]).rstrip("/") or "/"))
+    if _fx is not None:
+        kwargs["auth_required"] = bool(_fx.get("auth_required", False))
     # Part A: AUTO-TAG the fixed tenant/health/admin control surface as
     # ``kind='control'`` (a member of FIXED_ENDPOINT_KINDS) so it can never be
     # audited as a lane business endpoint and get demoted/hand-reimplemented.
