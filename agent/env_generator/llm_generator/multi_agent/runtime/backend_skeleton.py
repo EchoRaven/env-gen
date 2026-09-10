@@ -2107,6 +2107,34 @@ def _custom_route_overrides_projected(method, path):
 
 _FW_DROPPED_1166 = []   # #1166: (route, method, path) dropped for a projection that may not exist
 
+# #1202ki: SNAPSHOT the framework's own fixed surface BEFORE any lane code can run.
+#
+# #528 gives projected handlers precedence by ORDERING them first. Lane code defeats that by
+# DELETING them: `app.router.routes[:] = kept` at import time, then re-registering its own
+# handler on the same path. 66 of the 153 corpus runs mutate `app.router.routes`; 13 of them
+# remove routes AND name a framework-fixed path -- almost always the whole control plane the
+# test harness drives (/api/v1/reset, /api/v1/tenants, /api/v1/admin/init-tenant,
+# /api/v1/tenants/{tenant_id}), and in six of them /auth/login or /auth/register too.
+#
+# tiktok-r114, live: the lane removed GET /api/v1/tenants and re-registered
+# `_authenticated_tenants_list_endpoint` on it, so a control-plane endpoint the framework
+# declares PUBLIC and the harness drives with no token answered
+# `401 {"detail":"missing bearer token"}`. Verified by curl against the running container.
+#
+# The fixed surface is not the lane's to replace -- that is the whole premise of registering it
+# in RegistryHub as `kind=auth|oauth|infra`, and of #1202ke/#1202kf. So keep a reference to the
+# real route objects here, while the table is still the framework's, and put back anything a
+# lane removed. Mirror of #1166 one direction over: that one restores a LANE route dropped for
+# a projection that does not exist; this one restores a FRAMEWORK route a lane dropped.
+_FW_FIXED_ROUTES_1202KI = []
+try:
+    for _rt1202ki in list(getattr(app.router, "routes", [])):
+        _p1202ki = str(getattr(_rt1202ki, "path", ""))
+        if _p1202ki in _FW_FIXED_PATHS_1202KI:
+            _FW_FIXED_ROUTES_1202KI.append(_rt1202ki)
+except Exception:
+    pass
+
 try:
     import custom_routes as _custom_mod
     from fastapi import APIRouter as _APIRouter
@@ -2225,6 +2253,42 @@ try:
                 import logging as _l2
                 _l2.getLogger("custom_routes").warning(
                     "#1166 restore skipped: %s", _e1166)
+            except Exception:
+                pass
+
+
+    @app.on_event("startup")
+    async def _fw_restore_fixed_surface_1202ki():
+        """Put back any fixed-surface route a lane deleted from the router.
+
+        Registered AFTER #1166's hook so it runs after it, and after custom_routes' own
+        startup hooks (that module is imported above, so anything it registers is earlier in
+        the list). Restored to the FRONT, because #528's guarantee is about ORDER: a lane
+        handler already registered on the same path must not keep winning.
+        """
+        try:
+            import logging as _l1202ki
+            _live = set()
+            for _rt in app.routes:
+                _live.add(id(_rt))
+            _back = []
+            for _r1202ki in _FW_FIXED_ROUTES_1202KI:
+                if id(_r1202ki) in _live:
+                    continue
+                app.router.routes.insert(0, _r1202ki)
+                _back.append(str(getattr(_r1202ki, "path", "?")))
+            if _back:
+                _l1202ki.getLogger("custom_routes").warning(
+                    "#1202ki restored %d FRAMEWORK route(s) a lane removed from the router: "
+                    "%s. The fixed auth/oauth/control surface is framework-owned — the test "
+                    "harness drives it and its contract is registered kind=auth|oauth|infra — "
+                    "so a lane handler cannot replace it. Put back FIRST so #528's ordering "
+                    "guarantee holds again.", len(_back), _back)
+        except Exception as _e1202ki:    # never let the repair break startup
+            try:
+                import logging as _l3
+                _l3.getLogger("custom_routes").warning(
+                    "#1202ki restore skipped: %s", _e1202ki)
             except Exception:
                 pass
 except ImportError as _custom_imp:
@@ -2616,7 +2680,17 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         _n = str(_t).strip().lower()
         if _n:
             _degenerate_resources |= {_n, _n + "s", _n.rstrip("s")}
-    custom_include = _CUSTOM_ROUTES_INCLUDE.replace(
+    # #1202ki: the fixed surface's paths, read through the one `fixed_surface_1202ke` helper
+    # rather than re-listed (#853 is what a fourth hand-written copy cost). Emitted as a literal
+    # so the snapshot below runs before any lane code and needs no import at request time.
+    try:
+        from .kickoff.contract import fixed_surface_1202ke as _fx1202ki
+        _fixed_paths_1202ki = sorted({p for _m, p in _fx1202ki()})
+    except Exception:                       # a build without the AS/control plane exempts none
+        _fixed_paths_1202ki = []
+    custom_include = ("# #1202ki: paths the FRAMEWORK owns — see the snapshot below.\n"
+                      "_FW_FIXED_PATHS_1202KI = %r\n\n" % (set(_fixed_paths_1202ki),)
+                      ) + _CUSTOM_ROUTES_INCLUDE.replace(
         "__NESTED_CHILD_RESOURCES__", repr(sorted(_nested_resources))
     ).replace(
         "__OWNER_SCOPED_RESOURCES__", repr(sorted(_owner_scoped_resources))
