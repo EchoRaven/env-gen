@@ -4531,6 +4531,46 @@ class Orchestrator:
                 return  # nothing to deliver yet
             gate = self._validate_delivery_gate()
             if gate.get("failed_checks"):
+                # #1202kn: "attempt refunded, will retry next tick" — THERE WAS NO NEXT TICK.
+                #
+                # The visual gate refunds a capture that found the app unreachable or
+                # mid-rebuild (#655b/#75a) and its own log line promises a retry. Nothing
+                # retried: `_maybe_run_visual_fidelity` has exactly three call sites, and all
+                # three are downstream of a CLEAR delivery gate — the two below in this
+                # method's release-decision branch, and one in framework_validation that fires
+                # only on an api_smoke PASS. While any unrelated check is red, none of them
+                # runs, so a refunded attempt is never retaken.
+                #
+                # tiktok-r115, live: api_smoke passed ONCE at 16:09 and drove the gate; the
+                # capture landed in a rebuild window and was correctly refunded
+                # (`unreachable_refunds: 1`). Twenty-two minutes and thirteen ticks later the
+                # state file still read `total_judgments: 0`, `last_judged_sig: null` — the
+                # run had never once judged a screen, while `deliverability_ui_flow_failed`
+                # held the gate red. r114 had its first verdict at ~22 minutes.
+                #
+                # THIS METHOD IS THE TICK, so honour the promise here. Narrow on purpose:
+                # only when a refund is outstanding AND nothing has been judged this
+                # milestone. `maybe_run` still self-guards (pass latch, `attempts >= 3`,
+                # unchanged signature), and the refund cap bounds how often a capture may be
+                # excused at all — so this cannot exceed the judging budget the gate already
+                # had. It re-takes an attempt the framework already decided not to charge for.
+                try:
+                    _vf1202kn = self.__dict__.get("_vf_gate_instance")
+                    if (_vf1202kn is not None
+                            and getattr(_vf1202kn, "total_judgments", 0) == 0
+                            and (getattr(_vf1202kn, "unreachable_refunds", 0)
+                                 or getattr(_vf1202kn, "transient_refunds", 0))):
+                        self._logger.warning(
+                            "#1202kn re-taking the refunded visual attempt: the gate has "
+                            "judged NOTHING this milestone (refunds unreachable=%s "
+                            "transient=%s) and the delivery gate is red on %s, so neither "
+                            "normal driver will run.",
+                            getattr(_vf1202kn, "unreachable_refunds", 0),
+                            getattr(_vf1202kn, "transient_refunds", 0),
+                            sorted(str(c) for c in (gate.get("failed_checks") or []))[:3])
+                        await self._maybe_run_visual_fidelity()
+                except Exception as _e1202kn:      # a retry must never break the loop
+                    self._logger.warning("#1202kn retry skipped: %s", _e1202kn)
                 # OBSERVABILITY (PROPOSAL #45): the deterministic deliver declined
                 # SILENTLY for every non-ui_page blocker, so a run that "never
                 # delivered" left NO on-disk signal of WHICH gate check was red —
