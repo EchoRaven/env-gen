@@ -1514,7 +1514,7 @@ def _fw_owner_val(cls, col, user):
     # coercion below still normalises the header's string to the column's type.
     try:
         _act1190 = _FW_PROFILE_CTX_1190.get() if _FW_PROFILE_CTX_1190 is not None else None
-        if _act1190 not in (None, "") and _fw_owns(cls, col, _act1190, user):
+        if _act1190 not in (None, "") and _fw_owns(cls, col, _act1190, user, strict=True):
             _v = _act1190
     except Exception as _e1190:
         _fw_dbg("fw_owner_val.active_profile_1190", _e1190)
@@ -1533,7 +1533,7 @@ def _fw_owner_val(cls, col, user):
     return _v
 
 
-def _fw_owns(cls, col, fk_val, user):
+def _fw_owns(cls, col, fk_val, user, strict=False):
     """#566s (netflix r127 cross-user IDOR): True iff the CLIENT-SUPPLIED owner FK ``fk_val`` for
     ``cls.col`` belongs to the caller — the caller's own user id for a direct user-owned FK, or a
     sub-entity (profile / member / character / sub_account) the caller owns for a per-user
@@ -1541,7 +1541,16 @@ def _fw_owns(cls, col, fk_val, user):
     body ``profile_id`` that is userA's) WHILE still honoring the caller's own NON-default
     sub-entity (multi-profile). Reuses _fw_owner_val's proven FK introspection. Fail-OPEN only on
     an introspection/query FAULT (a framework bug must never block a legitimate write); a clean
-    "not owned" returns False → the handler 403s."""
+    "not owned" returns False → the handler 403s.
+
+    #1202ks — ``strict=True`` FAILS CLOSED on those same faults. Fail-open is the right trade
+    for a WRITE ("a framework bug must never block a legitimate write"), and the wrong one for
+    deciding whether to honour a CLIENT-SUPPLIED ``X-Profile-ID`` on a READ: there the same
+    fault hands the caller another profile's rows. #1190's own comment says the header "can
+    only ever NARROW to another of the caller's OWN profiles" and that this is "the difference
+    from the earlier attempt at this, which fail-opened and was reverted" — but it delegates
+    the decision to this function, so on any introspection fault the earlier attempt is exactly
+    what runs. Strict mode is the difference it claimed."""
     try:
         if fk_val is None or fk_val == "":
             return True   # absent → the handler resolves the caller's own via _fw_owner_val
@@ -1581,7 +1590,7 @@ def _fw_owns(cls, col, fk_val, user):
             try:
                 return str(fk_val) == str(_uid)
             except Exception:
-                return True
+                return not strict          # #1202ks
         # per-user SUB-ENTITY FK → the value must be a row in T owned by the caller
         _sub_ufk = None
         for _tc in _tgt_table.columns:
@@ -1606,7 +1615,7 @@ def _fw_owns(cls, col, fk_val, user):
                     _sub_ufk = _cn
                     break
         if _sub_ufk is None:
-            return True   # T is not a per-user sub-entity → cannot assert ownership → fail-open
+            return not strict   # T is not a per-user sub-entity → cannot assert ownership
         _Sub = None
         for _m in Base.registry.mappers:
             _t = getattr(_m, "local_table", None)
@@ -1614,7 +1623,7 @@ def _fw_owns(cls, col, fk_val, user):
                 _Sub = _m.class_
                 break
         if _Sub is None:
-            return True
+            return not strict          # #1202ks
         # #1160c: COERCE THE SUPPLIED VALUE TO THE TARGET COLUMN'S TYPE BEFORE QUERYING.
         # A client-supplied FK can arrive as a JSON string rather than a number, and
         # a JSON string, and binding "23" against an INTEGER pk makes postgres raise
@@ -1641,7 +1650,7 @@ def _fw_owns(cls, col, fk_val, user):
             return _row is not None
     except Exception as _e:
         _fw_dbg("fw_owns", _e)
-        return True
+        return not strict          # #1202ks: a READ decision must not fail open
 
 
 def _fw_fill_required_defaults(cls, valid, db):
