@@ -1751,6 +1751,88 @@ def _chain_touches_business(rh, rec: Dict[str, Any], biz_ids: set) -> bool:
     return False
 
 
+def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
+    """Name the chain steps that demand a DENIAL from a read the CONTRACT calls public.
+
+    #1202kh made the blanket auth middleware honour `auth_required`, so a GET the contract
+    states public now answers 200 instead of 401. That is the framework's documented authority
+    chain (#320 declares the public surface, #1202ga picks the schema copy, #1202ih already
+    ruled that "probing a contract-public read for a 401 is the wedge this replaced"). Before
+    #1202kh the blanket rule denied those routes anyway, which meant a chain asserting a denial
+    passed for a reason that had nothing to do with the contract.
+
+    Rendered with the current code against the corpus's real ledgers: 15 runs contain a chain
+    step expecting ONLY 401/403 on a GET that #1202kh opens — netflix-r13 `/api/profiles`,
+    tiktok-r103 `/api/messages`, tiktok-r110 `/api/live`. Those chains would now fail, and
+    `business_chain_failing` blocks on any one of them.
+
+    THE CONTRADICTION IS NOT RESOLVED HERE, deliberately. One of the two is wrong and the
+    ledgers cannot say which: `owner_scoped_reads` is noisy (netflix-r13 carries it on
+    `titles`, a public catalogue), the materials' `visibility` is silent in exactly these
+    cases, and `schema.response.tables` is empty on every one of them. #1202gd already settled
+    that no structural rule separates a published feed from a private list — the materials
+    have to say, and here they do not. Guessing would either re-wall the logged-out surface or
+    publish a per-user read; #1202ht refuses the same guess for the same reason.
+
+    So this states the disagreement and names both repairs. It is a sentence appended to a
+    blocker that already fires — it opens nothing, closes nothing, and changes no verdict.
+    """
+    try:
+        # THE SET THE GUARD ACTUALLY USES, read from the deployed literal — not re-derived.
+        # A first draft asked the CONTRACT instead (`_stated_auth_1202hi is False` over every
+        # registered GET) and over-reported: r117's `/api/notifications` is contract-public but
+        # was NOT opened (its table is owner-scoped, so the skeleton forced an actor), the guard
+        # still denies it, and the chain demanding 401 is correct. Telling the verifier to widen
+        # that step would have been wrong — and would have suppressed a real auth check. Only
+        # `_FW_PUBLIC_API_1202KH` knows what was opened, so read that.
+        import ast as _ast
+        from pathlib import Path as _Path
+        _mp = _Path(str(getattr(hubs, "base_dir", "") or "")) / "app" / "backend" / "main.py"
+        if not _mp.exists():
+            return ""
+        eps = {}
+        for _n in _ast.parse(_mp.read_text(encoding="utf-8", errors="ignore")).body:
+            if not isinstance(_n, _ast.Assign):
+                continue
+            if not any(getattr(_t, "id", "") == "_FW_PUBLIC_API_1202KH" for _t in _n.targets):
+                continue
+            for _m, _p in _ast.literal_eval(_n.value):
+                if str(_m).upper() == "GET":
+                    eps[str(_p)] = True
+        if not eps:
+            return ""
+        hits = []
+        for rec in (authored or []):
+            if not isinstance(rec, dict) or rec.get("status") in ("passing", "framework_blocked"):
+                continue
+            for st in (rec.get("steps") or []):
+                if not isinstance(st, dict):
+                    continue
+                if str(st.get("method", "GET")).upper() != "GET":
+                    continue
+                exp = st.get("expect") or st.get("expected_status") or []
+                if not isinstance(exp, list):
+                    exp = [exp]
+                ints = {x for x in exp if isinstance(x, int)}
+                if not (ints & {401, 403}) or (ints & {200, 201}):
+                    continue
+                if eps.get(str(st.get("path") or "")):
+                    hits.append(f"{rec.get('name') or rec.get('id')}:GET {st.get('path')}")
+        if not hits:
+            return ""
+        return (" ⚠ CONTRACT/CHAIN CONTRADICTION (#1202kr): "
+                + join_capped(sorted(set(hits)), len(set(hits)), cap=4, sep=", ")
+                + " — these steps require 401/403 from a GET the CONTRACT declares PUBLIC "
+                  "(schema.auth_required=false), and since #1202kh the guard honours that, so "
+                  "the route answers 200. Exactly one of the two is wrong and the framework "
+                  "cannot tell which: if the data is per-user, fix the CONTRACT "
+                  "(register the endpoint auth_required=true) — do NOT just widen the "
+                  "expectation, that would ship an unauthenticated read of private rows. If "
+                  "the read really is public, widen the step to accept 200.")
+    except Exception:
+        return ""
+
+
 def complete_coverage_chain(hubs) -> Dict[str, Any]:
     """COVERAGE-BY-CONSTRUCTION (2026-07-01) — the verifier LLM authors the REAL business-flow
     + isolation chains, but reliably COVERING every registered business endpoint is a mechanical,
@@ -1967,7 +2049,8 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        + join_capped(not_passing, len(not_passing), cap=8, sep=", ")
                        + ". run_validation must show "
                        "business_chain green (re-author the broken step or fix the "
-                       "endpoint) before delivery."),
+                       "endpoint) before delivery."
+                       + _contract_denial_contradictions_1202kr(rh, authored, hubs)),
         }
     # #510 GUARD: not_passing excludes never-run chains, so an authored set that is ALL
     # never-run would otherwise fall through to GREEN with nothing actually verified. Require
