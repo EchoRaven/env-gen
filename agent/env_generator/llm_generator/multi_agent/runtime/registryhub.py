@@ -2858,13 +2858,61 @@ class RegistryHub:
             for _tn in _to_scope:
                 _t = self._tables.value().get(_tn)
                 if isinstance(_t, dict) and not (_t.get("metadata") or {}).get("owner_scoped_reads"):
-                    _t2 = {**_t, "metadata": {**(_t.get("metadata") or {}),
-                                              "owner_scoped_reads": True}}
+                    # #1202kv: this guard fires precisely when the flag is FALSY -- which
+                    # includes the case where a lane just wrote an explicit False. Flipping
+                    # it back is right (the isolation probe is the verifier's judgment that
+                    # the rows are per-user, and outlook run-9/10 leaked because nobody made
+                    # that call), but doing it SILENTLY is what wedges runs: the lane reads
+                    # its own False, sees the endpoint still 401, and has nothing to connect
+                    # the two. #1202io says of the same flag "r107: the lane cleared it SIX
+                    # times and it came back. Neither side can win a fight it has to keep
+                    # re-winning" -- and #1202io could only fix `register_table`, not this
+                    # second writer.
+                    #
+                    # tiktok-r118 is r107 repeating through this one. The attribution is not
+                    # a guess: `register_table` emits `table_registered` and this block does
+                    # NOT, and these are the only two writers of the table store. r118's
+                    # event log carries FOUR `table_registered` for `video_likes` (17:19:31,
+                    # 17:22:21, 17:33:05, 17:34:34), every one of them
+                    # `metadata={"owner_scoped_reads": false}` -- while the stored record
+                    # reads True. Only a writer that mutates without emitting can open that
+                    # gap, and this is the only one. The lane then spent six remediations --
+                    # public regex, nested-resource removal, a middleware short-circuit,
+                    # startup route reordering, a BaseHTTPMiddleware at the front of
+                    # user_middleware, a wrapper around _fw_contract_public_1202kh -- none
+                    # of which touch the flag that actually decides.
+                    #
+                    # And the flip is ONE-WAY: nothing here ever clears it, so a denial step
+                    # that existed in some draft of a chain keeps the table scoped forever
+                    # even after the chain is re-registered without it. r118 has ZERO
+                    # cross-user denial steps on `video_likes` in its chains as they stand,
+                    # and the table is scoped anyway. That is why writing False four times
+                    # could not win. Say it instead of only doing it.
+                    _md1202kv = _t.get("metadata") or {}
+                    _meta1202kv = {**_md1202kv, "owner_scoped_reads": True}
+                    if _md1202kv.get("owner_scoped_reads") is False:
+                        _meta1202kv["owner_scoped_reads_set_by_chain_1202kv"] = str(name)
+                        import logging as _lg1202kv
+                        _lg1202kv.getLogger(__name__).warning(
+                            "#1202kv `%s` was explicitly owner_scoped_reads=False, and chain "
+                            "`%s` asserts a CROSS-USER DENIAL on it -- storing True, so its "
+                            "reads project `WHERE owner = caller` and any contract-public "
+                            "endpoint over it will answer 401. Two ways out, and only these "
+                            "two: if the rows really are public, drop the cross-user denial "
+                            "step from that chain (it is what marks them private); if they "
+                            "really are per-user, stop declaring the endpoint public and "
+                            "stop calling it from a logged-out page. Editing middleware or "
+                            "route order cannot change this flag.",
+                            _tn, name)
+                    _t2 = {**_t, "metadata": _meta1202kv}
                     self._tables.update(
                         lambda m, _k=_tn, _v=_t2: m.set(_k, _v, actor),
                         change_info={"agent": actor})
-        except Exception:
-            pass
+        except Exception as _e1202kv:
+            from .message_format import warn_once_1201
+            warn_once_1201("registryhub.chain_isolation_scoping_1202kv",
+                           "the chain-probe owner-scoping signal, so a table a chain proves "
+                           "private keeps unscoped reads", _e1202kv)
         self._emit("verification_chain_registered", rec, recipients=[])
         return rec
 
