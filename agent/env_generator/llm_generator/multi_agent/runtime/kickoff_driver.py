@@ -305,7 +305,50 @@ class KickoffDriver:
                     _initial_fewest_missing = _missing
                     _initial_progress_poll = poll_count
                 stalled_polls = poll_count - _initial_progress_poll
-                if (elapsed >= run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC
+                # #1202ko: SILENCE IN THE MEETING IS NOT SILENCE FROM THE LANE.
+                #
+                # #28's premise is "a lane that can never emit a clean section" — Gemini
+                # re-mangling its draft — and for that the 242s escape is right. It reads only
+                # the meeting document, so a lane that is BUSY looks identical to one that is
+                # broken, and the run is killed with ~958s of kickoff budget unspent.
+                #
+                # tiktok-r115: M2 kickoff opened 17:15:03; the request reached frontend at
+                # 17:15:05 (priority high) and it READ it at 17:18:46 — then claimed the P0 the
+                # framework had just dispatched (`coord_frontend_gate_..._m2`) and worked it.
+                # Across that window it made FIVE commits (17:17:23, 17:18:00, 17:18:54, ...)
+                # and completed a task at 17:21:33, all visible in the hubs. The driver called
+                # it `initial_stall` at 17:23:15 and aborted a run that had already DELIVERED
+                # milestone 1. The framework told the lane to do two things at once and then
+                # punished it for finishing the urgent one.
+                #
+                # So ask the hubs whether the missing attendee is working, and if it is, decline
+                # the FAST escape only — `KICKOFF_TIMEOUT_SEC` still bounds the wait, which is
+                # what that 1200s is for.
+                #
+                # HONEST ABOUT THE SCOPE: this is a LOOSER escape, not a smarter one. Over the
+                # corpus's two `initial_stall` deaths it declines BOTH — r115 (frontend: a
+                # completed task + 2 commits) and r112 (backend: 1 endpoint re-registration).
+                # A first draft of this comment claimed it still released r112 on "0 writes";
+                # that was measured wrong (two stores instead of five) and is false.
+                #
+                # It is still the right trade, for a reason that does not depend on
+                # discriminating between them: declining only DELAYS, it never changes the
+                # outcome path — at 1200s the driver runs the SAME
+                # `_kickoff_fallback_or_reconcile`. So the worst case is ~16 extra minutes,
+                # against r115's actual cost of a run that had already delivered milestone 1.
+                # And the case #28 was written for — a lane re-mangling its draft and emitting
+                # nothing — writes to no hub either, so it still escapes at 242s.
+                _busy_1202ko = self._missing_attendee_is_working_1202ko(_synth, elapsed)
+                if _busy_1202ko:
+                    self._orch._logger.warning(
+                        "#1202ko NOT taking the %.0fs stall escape: %s has not recorded a "
+                        "section but IS working (%s recent hub write(s)). Silence in the "
+                        "meeting is not silence from the lane; waiting for the real %.0fs "
+                        "timeout instead.",
+                        run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC, _busy_1202ko[0],
+                        _busy_1202ko[1], run_kickoff.KICKOFF_TIMEOUT_SEC)
+                if (not _busy_1202ko
+                        and elapsed >= run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC
                         and stalled_polls >= run_kickoff.KICKOFF_INITIAL_STALL_POLLS):
                     self._orch._logger.error(
                         "Kickoff STALLED in phase=initial (round %d, poll %s, %.0fs): "
@@ -606,6 +649,68 @@ class KickoffDriver:
             return self._orch._kickoff_fallback_or_reconcile(
                 kickoff_handle, synthesis, "unknown_action",
             )
+
+    # #1202ko: how recently a missing attendee touched a hub. Stores whose records carry
+    # `_updated_by` + `_updated_at` — the two the lanes actually write through during a
+    # kickoff. Deliberately NOT the agent log: the driver runs in the orchestrator process and
+    # the hubs are the shared, durable record both sides already agree on.
+    _WORK_STORES_1202KO = ("workhub_tasks", "codehub_commits", "registryhub_endpoints",
+                           "registryhub_ui_pages", "registryhub_tables")
+
+    def _missing_attendee_is_working_1202ko(self, synth, elapsed):
+        """``(agent, n_writes)`` if a MISSING attendee wrote to a hub during this kickoff.
+
+        Returns None when nobody is missing, nothing is known, or every missing attendee has
+        been silent — in which case #28's fast escape is correct and proceeds unchanged.
+
+        Best-effort by construction: any fault returns None, so a fault can only restore the
+        old behaviour, never extend a wait.
+        """
+        try:
+            missing = [str(a) for a in (synth or {}).get("missing") or [] if str(a).strip()]
+            if not missing:
+                return None
+            import json as _json
+            import time as _time
+            from pathlib import Path as _Path
+            base = _Path(str(getattr(self._orch.hubs, "base_dir", "") or "")) / "shared" / "hubs"
+            if not base.is_dir():
+                return None
+            since = _time.time() - float(elapsed or 0)
+            for agent in missing:
+                n = 0
+                for store in self._WORK_STORES_1202KO:
+                    f = base / (store + ".json")
+                    if not f.exists():
+                        continue
+                    try:
+                        j = _json.loads(f.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    for k, r in (j.items() if isinstance(j, dict) else []):
+                        if k == "_meta" or not isinstance(r, dict):
+                            continue
+                        if str(r.get("_updated_by") or "") != agent:
+                            continue
+                        # ONLY `_updated_at`. The two spellings are written by different
+                        # things: `_updated_by`/`_updated_at` are stamped together by the hub
+                        # write boundary, while a bare `updated_at` is the record's own domain
+                        # field. Pairing this agent's NAME with that other clock is how the
+                        # first draft of this read 13 "backend writes" for r112 where there was
+                        # exactly one — the same two-spellings trap that once made a CodeHub
+                        # check read a field nothing writes.
+                        try:
+                            ts = float(r.get("_updated_at") or 0)
+                        except Exception:
+                            continue
+                        if ts >= since:
+                            n += 1
+                if n:
+                    return (agent, n)
+            return None
+        except Exception:
+            return None
+
 
     def _derive_missing_essential_sections(self, kickoff_handle, missing, reason: str):
         """Record deterministically-DERIVED sections for ESSENTIAL lanes
