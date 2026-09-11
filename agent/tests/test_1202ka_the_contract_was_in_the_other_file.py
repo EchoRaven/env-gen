@@ -124,8 +124,33 @@ def test_it_runs_before_the_normalizer_on_the_reconcile_path():
     """★ Reachability: after the normalizer, the registry's rows would miss the shape
     defaults and fail the very validation this exists to clear."""
     src = inspect.getsource(RK.try_synthesize)
-    i = src.index("_backfill_drafts_from_registry_1202ka(")
+    # ORDERING: the LAST backfill call (the one inside the drafts pipeline) must still precede
+    # the shape normalizer. #1202kp added an EARLIER call — the quorum-check probe — so anchor
+    # on the last, not the first.
+    i = src.rindex("_backfill_drafts_from_registry_1202ka(")
     j = src.index("_normalize_backend_endpoints_for_reconcile(")
     assert i < j, "the backfill must precede the shape normalizer"
-    assert "if reconcile:" in src[:i], (
-        "and only on the reconcile path — the happy path must still require the meeting")
+
+    # RECONCILE-ONLY, checked per call site rather than by looking for the literal
+    # `if reconcile:` before the first one — #1202kp's probe is guarded by
+    # `if missing and reconcile:`, which is equally reconcile-only and broke the old
+    # substring form. Every call site must sit under a guard that reads `reconcile`.
+    import ast as _ast
+    import textwrap as _tw
+    tree = _ast.parse(_tw.dedent(src))
+    sites = [n for n in _ast.walk(tree)
+             if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Name)
+             and n.func.id == "_backfill_drafts_from_registry_1202ka"]
+    assert sites, "the backfill is no longer called at all"
+    guarded = 0
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.If):
+            continue
+        body = _ast.dump(_ast.Module(body=node.body, type_ignores=[]))
+        if "_backfill_drafts_from_registry_1202ka" not in body:
+            continue
+        if "reconcile" in {n.id for n in _ast.walk(node.test) if isinstance(n, _ast.Name)}:
+            guarded += 1
+    assert guarded >= len(sites), (
+        f"{len(sites)} call site(s) but only {guarded} guarded by `reconcile` — the happy "
+        "path must still require the meeting")

@@ -1239,6 +1239,27 @@ def _derive_response_key(path: Any) -> str:
     return segs[-1] if segs else "data"
 
 
+def _section_supplied_by_registry_1202kp(agent: Any, drafts: Any) -> bool:
+    """Did `_backfill_drafts_from_registry_1202ka` fill THIS attendee's section?
+
+    Mirrors exactly what that function is able to supply — backend's endpoints and
+    data_model.tables, frontend's ui_pages — so the two can never disagree about whether a
+    lane's decision is recoverable. The verifier's section (predicates / test strategy) has no
+    registry counterpart, so it is never supplied and a missing verifier still blocks.
+    """
+    a = str(agent or "").strip().lower()
+    d = (drafts or {}).get(a) if isinstance(drafts, Mapping) else None
+    if not isinstance(d, Mapping):
+        return False
+    if a == "backend":
+        _dm = d.get("data_model") if isinstance(d.get("data_model"), Mapping) else {}
+        return bool((d.get("api_endpoints") or d.get("endpoints"))
+                    and (_dm.get("tables") if isinstance(_dm, Mapping) else None))
+    if a == "frontend":
+        return bool(d.get("ui_pages") or d.get("screens"))
+    return False
+
+
 def _backfill_drafts_from_registry_1202ka(hubs: Any, drafts: Any):
     """When a section's draft is EMPTY but the lanes REGISTERED the thing, use the registry.
 
@@ -1777,6 +1798,45 @@ def try_synthesize(
     except Exception:
         _quorum_attendees = expected_attendees
     missing = _missing_attendees(decisions, _quorum_attendees)
+    # #1202kp: #1202ka HAD A CALLER AND WAS STILL UNREACHABLE ON THE PATH THAT NEEDED IT.
+    #
+    # The registry backfill sits at the top of the DRAFTS pipeline below, and this quorum check
+    # returns before the drafts are ever built. So on the reconcile path — the one that exists
+    # to converge deterministically instead of aborting — `try_synthesize` answered `awaiting`
+    # and never asked the registry at all. `grep -c` finds the call site, which is exactly why
+    # "prove reachability, not presence" is the rule.
+    #
+    # tiktok-r116, live: M1 kickoff timed out after 1203s with `Missing=['backend']` and
+    # `residual findings=[]` — no validation complaint, just a missing speaker. In that same
+    # window the backend lane made 1541 tool calls, 88 `registryhub_register_endpoint` and 37
+    # `registryhub_register_table` calls, and the ledger held 21 endpoints and 11 tables at the
+    # abort. It did the work and never transcribed the meeting decision. r112 and r113 died the
+    # same way within an hour of each other.
+    #
+    # So ask the registry BEFORE calling an attendee missing, and only when reconciling. A lane
+    # whose section the registry can supply is not silent — it recorded its decision in the
+    # durable store every later phase actually reads. The verifier has no registry-backed
+    # section, so a missing verifier stays missing and the abort still happens.
+    if missing and reconcile:
+        try:
+            _probe1202kp, _pn = _backfill_drafts_from_registry_1202ka(
+                hubs, _collect_drafts(decisions))
+            if _pn:
+                _still = [a for a in missing
+                          if not _section_supplied_by_registry_1202kp(a, _probe1202kp)]
+                if len(_still) < len(missing):
+                    import logging as _lg1202kp
+                    _lg1202kp.getLogger(__name__).warning(
+                        "#1202kp %s did not record a kickoff section, but the registry has "
+                        "its work (%s) — treating it as present and reconciling instead of "
+                        "aborting. Still missing: %s",
+                        [a for a in missing if a not in _still], ", ".join(_pn),
+                        _still or "nobody")
+                missing = _still
+        except Exception as _e1202kp:      # never turn a salvage into a new failure
+            import logging as _lg1202kpe
+            _lg1202kpe.getLogger(__name__).warning(
+                "#1202kp registry probe skipped: %s", _e1202kp)
     if missing:
         return {
             "status": "awaiting",
