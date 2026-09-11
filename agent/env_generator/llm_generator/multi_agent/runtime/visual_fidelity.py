@@ -3738,7 +3738,14 @@ async def run_visual_fidelity(
                         "advisory": bool(screen.get("advisory")),
                         "empty_state": bool(verdict.get("empty_state")),  # FIX #133
                         "dimensions": verdict.get("dimensions", {}),
-                        "deviations": verdict["deviations"],
+                        # #1202kq: hand the lane the ROUTE explanation for a rendered-but-
+                        # empty screen too. Appended to the judge's own deviations so the
+                        # content complaint and its likely cause arrive together.
+                        "deviations": (list(verdict["deviations"]) + [
+                            _unmatchable_route_rendered_1202kq(screen["route"]).lstrip(". ")]
+                            if (_unmatchable_route_rendered_1202kq(screen["route"])
+                                and verdict.get("empty_state"))
+                            else verdict["deviations"]),
                         "fixes": verdict.get("fixes", []),
                         "screenshot": shot,
                         "reference": screen.get("path"),
@@ -6000,6 +6007,41 @@ def _unmatchable_route_1202ix(route) -> str:
                 f"param owns a whole segment (e.g. `/{_lit}/:{_param}`), or take the literal "
                 f"`{_lit}` into the param and strip it in the page")
     return ""
+
+
+def _unmatchable_route_rendered_1202kq(route) -> str:
+    """The same fact, for the case where the page DID render — #1202ix's other half.
+
+    #1202ix fires only from the `not shot` / blank branch, because it was written for the
+    symptom it was found on: nothing routed, so nothing rendered. The identical route defect
+    has a second, quieter symptom. The capture navigates to the literal path (`/@:username`
+    itself), which the literal regex matches trivially, so a component DOES mount — with the
+    param never extracted. The page then has no id to fetch and sits on an empty/loading
+    state with a silent console, which reads as an ordinary styling gap.
+
+    tiktok-r117: `profile_own` route `/@:username`, `empty_state: True`,
+    `console_errors: []`, similarity 0.10, and the judge's deviations describe it as
+    "implementation shows only 'Profile Own' and 'Loading...'" — a content complaint for a
+    routing defect. #1202ix logged nothing, because the screen was not blank.
+
+    Measured over the persisted verdicts: 13 screens sit on an unmatchable-shaped route, 6
+    blank (diagnosed) and 7 NOT blank (undiagnosed) — so the existing check covers about half.
+
+    A HYPOTHESIS, not a verdict: r111 scored 0.74 on such a route, so the shape does not always
+    break the page. This appends a sentence to the deviations the lane reads and changes no
+    score, exactly as #1202ix does.
+    """
+    _base = _unmatchable_route_1202ix(route)
+    if not _base:
+        return ""
+    _r = str(route or "")
+    return (". THE ROUTE ITSELF CANNOT CARRY A PARAM: React Router extracts one only when the "
+            "`:` directly follows a `/`, so `" + _r + "` compiles to a literal. The capture "
+            "navigated to that literal path, so the component DID mount — but with no param "
+            "value, which is why it renders its shell and then waits forever for data it can "
+            "never request. The empty/loading state is a SYMPTOM; fix the ROUTE, not the page: "
+            "give the param a whole segment, or take the literal prefix into the param and "
+            "strip it in the page.")
 
 
 def _apply_sticky_pass(passed_names: set, screens: List[Mapping[str, Any]]) -> bool:
