@@ -29,6 +29,15 @@ given, so guard and handler cannot disagree; a protected route is still denied; 
 skeleton did not render keeps #47's blanket rule exactly; and the path matcher is exact
 (no prefix, no method bleed, `{param}` bounded to one segment).
 
+KNOWN LIMIT, measured rather than assumed: the public set is the set of routes the PROJECTOR
+built with no actor, so a contract-public GET that the LANE implements itself (in
+custom_routes) never enters it and is still denied. tiktok-r117's `/api/live` is one: the
+contract says public, the lane owns the handler, main.py has no projected route for it, and the
+guard 401s it. Across 156 runs this is 5 of 439 contract-public GETs (1%), in 4 runs. Left
+alone on purpose — widening the rule to "whatever the contract says" would drop the one-
+derivation property that keeps the guard and the handler from disagreeing, which is the whole
+point of #1202kh, in exchange for a 1% tail.
+
 WHAT IS NOT: that any lane's declaration is now trusted more than before. `resolve_endpoint_auth`
 + #1202ht + #633 decide `auth`, unchanged — this only stops a second, blind rule from
 overriding the decision they already made.
