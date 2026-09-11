@@ -394,6 +394,29 @@ _DESC_TABLE_RE = re.compile(
     r"(?:\s*:\s*|\s*[\(\[])(.+?)[\)\]]?\s*$", re.MULTILINE
 )
 
+# #1202kt — THE FOURTH DIALECT, and #843's own sentence predicted this one too.
+#
+# The three taught so far are all LINE-shaped: the regex above requires a bullet at the start
+# of a line. tiktok-r115 and r116 write the data model INLINE, mid-sentence, semicolon
+# separated:
+#
+#     DATA MODEL:
+#     Full model ships in milestone 1 and remains available here: users[id, username,
+#     display_name, avatar_url, ...]; videos[id, author_id, video_url, ...]; comments[...]
+#
+# No bullet, no line start, prose in front of it — so the bulleted regex matched nothing and
+# both runs' slices yielded ZERO tables while plainly declaring eleven. The #843 ratchet caught
+# it ("2 slice(s) from the last 30 days DECLARE a data model the parser cannot read").
+#
+# Matched anywhere in the text rather than at a line start, because that is precisely what is
+# new about this dialect. The plausibility filter below is what keeps that safe and is
+# unchanged: a candidate needs >=2 columns AND an `id`, which is what already rejects prose —
+# `available here: users[...]` yields `users`, while an English phrase in brackets does not
+# survive the column test.
+_DESC_TABLE_INLINE_RE_1202KT = re.compile(
+    r"([a-zA-Z_][a-zA-Z0-9_]*)\s*\[([^\[\]]{4,400}?)\]"
+)
+
 
 def _infer_sql_type(col: str) -> str:
     n = col.lower()
@@ -466,7 +489,11 @@ def extract_contract_from_description(description: str) -> Dict[str, Any]:
         })
     tables: List[Dict[str, Any]] = []
     seen_t = set()
-    for m in _DESC_TABLE_RE.finditer(desc):
+    # #1202kt: the bulleted dialects first (they are the more explicit declaration), then the
+    # inline one. `seen_t` already de-duplicates, so a slice written in BOTH forms keeps the
+    # bulleted parse and the inline pass adds only what the first missed.
+    for m in list(_DESC_TABLE_RE.finditer(desc)) + list(
+            _DESC_TABLE_INLINE_RE_1202KT.finditer(desc)):
         name = m.group(1).strip().lower()
         cols: List[Dict[str, str]] = []
         for raw in m.group(2).split(","):

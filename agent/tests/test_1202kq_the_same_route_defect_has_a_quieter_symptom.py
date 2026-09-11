@@ -106,10 +106,19 @@ def test_it_is_applied_to_the_judged_screen_record():
 def test_it_never_touches_the_score_or_the_verdict():
     """★ Scope, and the reason this is safe to ship on a hypothesis: it writes prose only."""
     from multi_agent.runtime import visual_fidelity as VF
-    src = inspect.getsource(VF.run_visual_fidelity)
-    i = src.index("_unmatchable_route_rendered_1202kq")
-    window = src[i - 400:i + 400]
-    for forbidden in ('"similarity"', '"passed"', '"advisory"', "min_similarity"):
-        assert f'{forbidden}:' not in window.replace(" ", "") or True  # structural check below
-    # structural: the call sits inside the value for the "deviations" key only
-    assert '"deviations"' in src[max(0, i - 300):i]
+    src = textwrap.dedent(inspect.getsource(VF.run_visual_fidelity))
+    # #943: structural, not a byte window. Find the dict literal that carries the call and
+    # assert the call appears ONLY under the "deviations" key — so it cannot reach the score.
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Dict):
+            continue
+        for k, v in zip(node.keys, node.values):
+            if not (isinstance(k, ast.Constant) and isinstance(k.value, str)):
+                continue
+            if "_unmatchable_route_rendered_1202kq" not in ast.unparse(v):
+                continue
+            assert k.value == "deviations", (
+                f"the diagnosis leaked into the {k.value!r} field — it must only ever "
+                "append prose")
+            return
+    raise AssertionError("the call is not inside a screen-record dict at all")

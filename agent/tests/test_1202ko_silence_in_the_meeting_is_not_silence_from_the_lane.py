@@ -155,8 +155,18 @@ def test_the_escape_actually_consults_it():
 def test_only_the_fast_escape_is_declined_not_the_real_timeout():
     """★ Scope: the 1200s timeout must still bound the wait, or a genuinely wedged lane could
     hang the run forever — the very thing #28 was added to prevent."""
-    src = inspect.getsource(KickoffDriver._drive_kickoff_to_completion)
+    import textwrap
+    src = textwrap.dedent(inspect.getsource(KickoffDriver._drive_kickoff_to_completion))
     assert "KICKOFF_TIMEOUT_SEC" in src, "the real timeout must still be in force"
-    i = src.index("_busy_1202ko")
-    assert "KICKOFF_TIMEOUT_SEC" in src[i:i + 1600], (
-        "the decline must say the real timeout still applies")
+    # #943: no byte window. The decline branch must NAME the real timeout, read from the
+    # parse tree — a window sized in bytes moves the moment a comment above it grows.
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        if "_busy_1202ko" not in {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}:
+            continue
+        body = ast.unparse(ast.Module(body=node.body, type_ignores=[]))
+        if "KICKOFF_TIMEOUT_SEC" in body:
+            return
+    raise AssertionError("the decline must say the real timeout still applies")

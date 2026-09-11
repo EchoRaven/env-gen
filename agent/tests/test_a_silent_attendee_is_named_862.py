@@ -123,9 +123,21 @@ def test_no_behaviour_changed():
     cause is unknown and tuning the floor on an unknown root is the guess this deliberately
     refuses to make."""
     src = _src()
-    cond = re.search(r"if \(elapsed >= run_kickoff\.KICKOFF_INITIAL_STALL_MIN_SEC\s*\n\s*"
+    # #1202ko added ONE conjunct in front of this: the escape is declined while a MISSING
+    # attendee is demonstrably writing to the hubs. That is not the change this ticket refused
+    # to make — #862 refused to TUNE THE FLOOR on an unknown root, and the floor is untouched
+    # (both constants are still asserted below).
+    #
+    # And it provably cannot reach #862's population. Its signature is lanes that NEVER
+    # STARTED — "EMPTY directory: Backend Engineer, Frontend Engineer, Verifier". Measured
+    # over every corpus run matching that signature: 20 of 20 have ZERO hub writes by any
+    # attendee, so `_busy_1202ko` is None for all of them and the escape fires exactly as it
+    # did. The two guards are complementary: #862's runs are silent everywhere, #1202ko's are
+    # silent only in the meeting.
+    cond = re.search(r"if \(not _busy_1202ko\s*\n\s*"
+                     r"and elapsed >= run_kickoff\.KICKOFF_INITIAL_STALL_MIN_SEC\s*\n\s*"
                      r"and stalled_polls >= run_kickoff\.KICKOFF_INITIAL_STALL_POLLS\):", src)
-    assert cond, "the stall escape's condition was altered"
+    assert cond, "the stall escape's floor condition was altered"
 
 
 if __name__ == "__main__":  # pragma: no cover

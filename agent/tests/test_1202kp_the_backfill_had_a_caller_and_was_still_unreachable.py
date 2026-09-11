@@ -174,5 +174,11 @@ def test_the_probe_cannot_turn_a_salvage_into_a_new_failure():
     """A fault in the probe must leave the old `awaiting` answer, not raise into the driver."""
     from multi_agent.runtime.kickoff import run_kickoff as RK
     src = textwrap.dedent(inspect.getsource(RK.try_synthesize))
-    i = src.index("_section_supplied_by_registry_1202kp")
-    assert "except Exception" in src[max(0, i - 1200):i + 1200]
+    # #943: the INNERMOST try containing the probe, from the parse tree — a byte window here
+    # would drift the moment the comment above the probe grows, which it already has.
+    cands = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Try)
+             and "_section_supplied_by_registry_1202kp" in ast.unparse(n)]
+    assert cands, "the probe is not wrapped in a try"
+    inner = min(cands, key=lambda n: len(ast.unparse(n)))
+    assert any(isinstance(h.type, ast.Name) and h.type.id == "Exception"
+               for h in inner.handlers), "the probe must not raise into the driver"

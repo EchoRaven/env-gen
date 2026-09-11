@@ -1829,7 +1829,16 @@ def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
                   "(register the endpoint auth_required=true) — do NOT just widen the "
                   "expectation, that would ship an unauthenticated read of private rows. If "
                   "the read really is public, widen the step to accept 200.")
-    except Exception:
+    except Exception as _e1202kr:
+        # #1202ah: a gate helper that swallows an exception and returns empty makes a crashed
+        # check read as a passed one. Say so once — the blocker itself still fires either way,
+        # so the only thing lost on a fault is this annotation, and now that loss is visible.
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.contract_denial_contradictions_1202kr",
+                       "the contract/chain contradiction annotation is missing from the "
+                       "business_chain_failing blocker, so a chain failing only because "
+                       "#1202kh opened a contract-public read will look like an app defect",
+                       _e1202kr)
         return ""
 
 
