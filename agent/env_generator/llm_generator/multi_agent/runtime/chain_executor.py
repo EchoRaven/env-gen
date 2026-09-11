@@ -89,6 +89,13 @@ _CONTROL_PLANE_RESET = frozenset(
 # test_user_squad's isolation workflow, the bundled oauth contract tests).
 _TENANT_SCOPE_HEADER = "X-Tenant-Id"
 
+# #1202ku: the tenant that OWNS the seed fixture. database_scaffold.py gives every
+# business table `tenant_id TEXT NOT NULL DEFAULT 'default'` and seeds
+# `INSERT INTO tenants (id, name) VALUES ('default', 'Default Tenant')`, so every
+# seeded row lands here. Scoping a control-plane reset to it deletes the fixture --
+# which is the precise thing _scoped_reset_header exists to prevent.
+_SEED_OWNER_TENANTS_1202KU = frozenset({"default"})
+
 
 def _is_factory_reset(method: Any, path: Any) -> bool:
     """True iff (method, path) is the FIXED control-plane reset endpoint — which,
@@ -109,9 +116,27 @@ def _scoped_reset_header(chain_name: Any, own_tenant_id: Any,
          handler deletes NOTHING and still answers 200: the endpoint stays covered
          and reachable, with zero blast radius.
     Never harvested from ``GET /api/v1/tenants``: the first row there is typically
-    the DEFAULT tenant that OWNS the seed fixture — the very thing to protect."""
-    scope = own_tenant_id or (last_reg_creds or {}).get("tenant_id")
-    if not (scope and str(scope).strip()):
+    the DEFAULT tenant that OWNS the seed fixture — the very thing to protect.
+
+    #1202ku: nor taken from candidates 1/2 when THEY are that tenant. Guarding only
+    the harvest path left the hole open from the other side: a chain registers via
+    ``/auth/register``, which mints its user in ``default`` (the schema's column
+    default), so ``last_reg_creds["tenant_id"]`` IS the seed owner in the ordinary
+    case. 45 resets across 26 runs (netflix + tiktok, r96..r117) went out scoped to
+    ``default``; the reset handler deletes every business row owned by any user of
+    the named tenant, and every seeded user is a user of ``default`` — so the
+    "scoped" reset wiped the whole fixture. r115 is the worked example: three such
+    resets at t=...956.669/957.054/957.196, then ``read_seed_video_comments`` asking
+    for video 1 at t=...957.297 and getting 404 while the seed ledger still said
+    "a seeded id is 1". Falling through to the synthetic scope costs nothing:
+    0 of the corpus's 224 reset-bearing chains assert emptiness after the reset."""
+    scope = None
+    for _cand in (own_tenant_id, (last_reg_creds or {}).get("tenant_id")):
+        _c = str(_cand).strip() if _cand is not None else ""
+        if _c and _c.lower() not in _SEED_OWNER_TENANTS_1202KU:
+            scope = _c
+            break
+    if not scope:
         _slug = re.sub(r"[^A-Za-z0-9_-]", "_", str(chain_name or "chain"))[:40]
         scope = f"_fwscope_{_slug}"
     return {_TENANT_SCOPE_HEADER: str(scope)}
