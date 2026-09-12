@@ -8,18 +8,26 @@ Demonstrated: manager A records ['agent_workflow', 'milestone:1:X']; a manager B
 the same path reads `phases: []`, and B's first `start_phase` leaves the file holding exactly
 ['agent_workflow'] with `current_phase: agent_workflow`.
 
-That is the corpus's checkpoint, verbatim. 126 of 131 runs hold exactly one phase,
-`agent_workflow`, most with `completed_at: null`. tiktok-r119 delivered 1.0.0 and 1.1.0 across
-three milestones and its checkpoint still reads "planning, iteration 0" -- while tiktok-r120,
-caught mid-run, holds `milestone:1:M1-core-fyp-auth-comments@1.0.0`. The writer works; the
-record was being erased.
+★ THE CORPUS EVIDENCE I FIRST CITED FOR THIS WAS WRONG, and the mistake is worth more than
+the fix. I reported "126 of 131 runs hold exactly one phase" and "tiktok-r119's checkpoint still
+reads planning, iteration 0". Both came from my own TRUNCATED prints -- `json.dumps(phases)[:220]`
+and `[:90]` -- so I compared the first 90 characters of each file and read identical prefixes as
+identical files. Measured without truncation: of 159 checkpoints, 39 (25%) DO carry milestone
+records, and r119's carries all four of its phases. The record was not being erased there.
 
-WHAT IT COST. #1202bz gives `--resume` milestone-level granularity and decides by reading these
-phases: "skip a completed milestone only when a LATER milestone has a record". With the record
-gone, every resume re-entered at milestone 1 and re-fought milestones the run had already
-delivered, against a no-convergence clock that kept running. 21 runs in the corpus resumed --
-tiktok-r96 seven times, googlemaps-r16 ten -- for zero additional releases between them, and
-#1202bz has never appeared in any of 310 run logs.
+What survives, and why this fix stands anyway: the constructor genuinely never loads, and a
+second manager over the same path genuinely erases the first one's record. That is reproduced
+below against the real class, not inferred -- manager A records
+['agent_workflow', 'milestone:1:X']; a manager B constructed on the same path reads `phases: []`,
+and B's first `start_phase` leaves the file holding exactly ['agent_workflow']. It is a real
+failure mode with a real cost; it simply is not the one I claimed to have caught in r119.
+
+WHAT THE RESUME PATH COSTS regardless: #1202bz gives `--resume` milestone-level granularity by
+reading these phases ("skip a completed milestone only when a LATER milestone has a record").
+21 runs in the corpus resumed -- tiktok-r96 seven times, googlemaps-r16 ten -- for zero
+additional releases between them, and #1202bz has never appeared in any of 310 run logs. Why it
+never fires is still open; with 25% of checkpoints carrying milestone records, "the record is
+always gone" is NOT the explanation.
 
 The class docstring already prescribed `if manager.load():` at the call site. Nothing called it.
 
