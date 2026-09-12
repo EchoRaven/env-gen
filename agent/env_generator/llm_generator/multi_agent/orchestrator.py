@@ -4556,17 +4556,34 @@ class Orchestrator:
                 # had. It re-takes an attempt the framework already decided not to charge for.
                 try:
                     _vf1202kn = self.__dict__.get("_vf_gate_instance")
+                    # #1202la: THREE refund kinds, and #1202kn read two of them.
+                    #
+                    # `_refund_compose_race_1202dm` has its own counter and its own budget,
+                    # and the branch that spends it RETURNS before the `unreachable_refunds`
+                    # arm — so a compose-race refund leaves both counters this guard reads at
+                    # zero. tiktok-r118 is the case: its only refund while the gate had judged
+                    # nothing was "capture raced the compose stack — 1 screen(s) photographed
+                    # but 7 refused the connection ... the app was torn down" at 17:05:02, the
+                    # precondition was otherwise met, and #1202kn fired ZERO times in a 107
+                    # minute run that then died with no visual judgment at all.
+                    #
+                    # 10 of the corpus's 74 refunds (14%, 7 runs) are this kind. Not the
+                    # majority — `unreachable` is 69% — but invisible to the one mechanism
+                    # written for exactly this situation. #934's rule: the guard belongs at
+                    # the common ancestor of EVERY producing branch, not most of them.
                     if (_vf1202kn is not None
                             and getattr(_vf1202kn, "total_judgments", 0) == 0
                             and (getattr(_vf1202kn, "unreachable_refunds", 0)
-                                 or getattr(_vf1202kn, "transient_refunds", 0))):
+                                 or getattr(_vf1202kn, "transient_refunds", 0)
+                                 or getattr(_vf1202kn, "compose_race_refunds_1202dm", 0))):
                         self._logger.warning(
                             "#1202kn re-taking the refunded visual attempt: the gate has "
                             "judged NOTHING this milestone (refunds unreachable=%s "
-                            "transient=%s) and the delivery gate is red on %s, so neither "
-                            "normal driver will run.",
+                            "transient=%s compose-race=%s) and the delivery gate is red on "
+                            "%s, so neither normal driver will run.",
                             getattr(_vf1202kn, "unreachable_refunds", 0),
                             getattr(_vf1202kn, "transient_refunds", 0),
+                            getattr(_vf1202kn, "compose_race_refunds_1202dm", 0),
                             sorted(str(c) for c in (gate.get("failed_checks") or []))[:3])
                         await self._maybe_run_visual_fidelity()
                 except Exception as _e1202kn:      # a retry must never break the loop
