@@ -5,8 +5,11 @@ All public methods raise GitOpsError on non-zero exit codes.
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -33,6 +36,18 @@ try:
     _GIT_TIMEOUT_1075 = max(1, int(os.environ.get("ENVGEN_GIT_TIMEOUT") or 120))
 except (TypeError, ValueError):
     _GIT_TIMEOUT_1075 = 120
+
+# #1202kw: a lock older than the ceiling on a git call CANNOT be held by a live
+# git this framework started -- #1075 bounds every call in this class to
+# _GIT_TIMEOUT_1075, so anything still holding one past that was killed or
+# crashed. The margin is slack for a machine under load, not a guess about git.
+_LOCK_STALE_AFTER_1202KW = _GIT_TIMEOUT_1075 + 60
+
+# git names the lock in its own message; match that rather than guessing paths.
+_LOCK_ERR_RE_1202KW = re.compile(
+    r"(index\.lock|HEAD\.lock|Another git process)", re.I)
+
+_LOCK_NAMES_1202KW = ("index.lock", "HEAD.lock")
 
 
 class GitOps:
@@ -79,12 +94,113 @@ class GitOps:
                 f"prompt will do this. Raise ENVGEN_GIT_TIMEOUT if the repo is "
                 f"genuinely this slow."
             ) from exc
+        # #1202kw: a STALE lock is not contention, and no lane can clear it.
+        #
+        # auto_commit._run_git already retries this signature 3x with 200/400ms
+        # backoff, for the case it documents: "two agents finishing in the same
+        # millisecond". That is real, and backoff fixes it. It cannot fix a lock
+        # left behind by a git that was killed -- and this wrapper, which every
+        # CodeHub operation goes through, had no retry at all. The comment in
+        # _run above already names the cause ("an index.lock left by a crashed
+        # process ... 187 times").
+        #
+        # tiktok-r118 died of one. A ZERO-BYTE .git/index.lock appeared at
+        # 17:16:08 (git creates it O_EXCL and writes the new index into it, so
+        # empty means it never got that far) and was still there when the run
+        # aborted at 18:36 -- 80 minutes in which every merge failed. The lanes
+        # could not clear it BY CONSTRUCTION: the debugger answered "my tool
+        # subset has no filesystem/shell/delete capability", the orchestrator
+        # raised a P0 "filesystem-capable cleanup" task anyway, and the backend
+        # lane's attempt was refused by the path sandbox ("'..' escapes its
+        # route's root"). A host-level fault laundered into a lane P0 that no
+        # lane can do is how a run burns its remaining ticks.
+        #
+        # Clearing is safe here for a reason, not by hope: #1075 bounds every git
+        # call in this class, so a lock older than that ceiling cannot belong to
+        # one that is still running. Below the threshold nothing is touched --
+        # that window is exactly auto_commit's contention case, which owns it.
+        if result.returncode != 0 and _LOCK_ERR_RE_1202KW.search(
+                (result.stderr or "") + (result.stdout or "")):
+            _cleared = self._clear_stale_locks_1202kw(cwd)
+            if _cleared:
+                logging.getLogger(__name__).warning(
+                    "#1202kw cleared stale git lock(s) %s under %s and retried "
+                    "`git %s` -- left by a git that was killed or crashed, not by "
+                    "a running one (#1075 bounds every call here to %ss). No lane "
+                    "has the capability to remove these.",
+                    ", ".join(_cleared), cwd or self.repo_root,
+                    " ".join(args), _GIT_TIMEOUT_1075)
+                try:
+                    result = subprocess.run(
+                        cmd, cwd=str(cwd or self.repo_root), capture_output=True,
+                        text=True, timeout=_GIT_TIMEOUT_1075, env=_env)
+                except subprocess.TimeoutExpired as exc:
+                    raise GitOpsError(
+                        f"git {' '.join(args)} timed out after "
+                        f"{_GIT_TIMEOUT_1075}s in {cwd or self.repo_root} after "
+                        f"#1202kw cleared a stale lock"
+                    ) from exc
         if check and result.returncode != 0:
             raise GitOpsError(
                 f"git {' '.join(args)} failed (exit {result.returncode}):\n"
                 f"{result.stderr.strip() or result.stdout.strip()}"
             )
         return result
+
+    def _git_dir_1202kw(self, cwd: Optional[Path]) -> Optional[Path]:
+        """Resolve the real .git directory -- a linked worktree's `.git` is a FILE
+        pointing elsewhere, so the lock does not live beside the checkout.
+        `rev-parse` takes no index lock, so it is safe on a locked repo."""
+        try:
+            p = subprocess.run(
+                [GIT, "rev-parse", "--absolute-git-dir"],
+                cwd=str(cwd or self.repo_root), capture_output=True, text=True,
+                timeout=_GIT_TIMEOUT_1075,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+            out = (p.stdout or "").strip()
+            return Path(out) if p.returncode == 0 and out else None
+        except Exception:
+            return None
+
+    def _clear_stale_locks_1202kw(self, cwd: Optional[Path] = None) -> List[str]:
+        """Remove lock files older than any bounded git call could still hold.
+
+        Returns a description of what was removed, for the caller to announce.
+        Never raises: this runs on an error path and must not replace a legible
+        git failure with an obscure one."""
+        cleared: List[str] = []
+        gitdir = self._git_dir_1202kw(cwd)
+        if gitdir is None:
+            return cleared
+        # CONTAINMENT, and it is load-bearing rather than ceremonial: `rev-parse`
+        # WALKS UP. Run it in a directory that is not itself a repo and it answers
+        # with the nearest ANCESTOR repo -- measured, from this checkout's own
+        # `generated/` it returns `/data/common/haibotong/forgingground-gen/.git`,
+        # the development repo. Deleting a lock there would be this fix corrupting
+        # the very tree it lives in. So the git dir must resolve INSIDE repo_root
+        # or nothing is touched. A linked worktree still qualifies: its git dir is
+        # `repo_root/.git/worktrees/<name>`.
+        try:
+            gitdir_real = gitdir.resolve()
+            root_real = self.repo_root.resolve()
+        except OSError:
+            return cleared
+        if not gitdir_real.is_relative_to(root_real):
+            return cleared
+        for name in _LOCK_NAMES_1202KW:
+            lock = gitdir / name
+            try:
+                age = time.time() - lock.stat().st_mtime
+            except OSError:
+                continue
+            if age < _LOCK_STALE_AFTER_1202KW:
+                continue
+            try:
+                lock.unlink()
+            except OSError:
+                continue
+            cleared.append(f"{name} (age {int(age)}s)")
+        return cleared
 
     # ------------------------------------------------------------------
     # Repository lifecycle
