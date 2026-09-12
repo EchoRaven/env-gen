@@ -337,6 +337,64 @@ def _step_is_actionable_1202gx(st) -> bool:
     return True
 
 
+def contract_and_surface_annotations_1202ld(orch) -> str:
+    """#1202ld: the gate computed these and NOTHING read them.
+
+    `#1202kr` (contract says public / a chain demands a denial), `#1202ky` (contract says
+    public / the materials call the table owner-private) and `#1202lb` (several failing chains
+    are one endpoint) all append to the `detail` string that
+    `_validate_delivery_gate` returns for `business_chain_failing`.
+
+    That string reaches nobody. `dispatch_gate_level_checks(self, failed_checks)` says so in
+    its own comment -- "the gate-level failed_checks carry names only" -- and the lane-facing
+    task body is built HERE, from the static `_GATE_OWNER` template plus `_extra`. Measured
+    across 310 run logs and every workhub_tasks.json in the corpus, the base text of that
+    detail -- "verification chain(s) have NOT passed" -- appears ZERO times, and so do all
+    three annotations. #1202kr has been dead this way since it shipped.
+
+    tiktok-r119 is the proof that they compute correctly and still say nothing: replaying
+    #1202ky against its final ledger names `GET /api/messages`, `GET /api/notifications` and
+    `GET /api/video_saves`, while `CONTRACT/MATERIALS DISAGREEMENT` appears nowhere in its log
+    or its tasks.
+
+    So they move to the channel #799 already established for exactly this -- "two more entries
+    in this table told the lane to go and find something the framework already computes".
+    """
+    try:
+        from .delivery_gate import (_contract_materials_disagreement_1202ky,
+                                    _contract_denial_contradictions_1202kr,
+                                    _failing_surface_1202lb)
+        hubs = getattr(orch, "hubs", None)
+        rh = getattr(hubs, "registryhub", None)
+        if rh is None:
+            return ""
+        chains = rh.get_verification_chains() or {}
+        authored = [v for k, v in chains.items()
+                    if k != "_meta" and isinstance(v, dict)]
+        if not authored:
+            return ""
+        parts = []
+        for _fn in (_contract_denial_contradictions_1202kr,
+                    _contract_materials_disagreement_1202ky):
+            try:
+                parts.append(_fn(rh, authored, hubs) or "")
+            except Exception:
+                pass
+        try:
+            parts.append(_failing_surface_1202lb(authored) or "")
+        except Exception:
+            pass
+        body = "".join(p for p in parts if p).strip()
+        return ("\n\n" + body) if body else ""
+    except Exception as _e1202ld:
+        from .message_format import warn_once_1201
+        warn_once_1201("remediation_dispatcher.contract_surface_1202ld",
+                       "the contract/materials and shared-endpoint annotations do not reach "
+                       "the business_chain_failing task, so the lane sees the generic text only",
+                       _e1202ld)
+        return ""
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -2457,6 +2515,9 @@ class RemediationDispatcher:
                             _extra = ("\n\nTHE BROKEN STEP(S), from the chain registry's own "
                                       "last_result — fix THESE, do not re-author the chain:\n- "
                                       + "\n- ".join(_brk798))
+                    # #1202ld: and the annotations the gate computes for this very check,
+                    # which until now were appended to a `detail` string nothing reads.
+                    _extra += contract_and_surface_annotations_1202ld(orch)
                 # #70(b) (netflix r76, 2026-08-05): if the framework armed a deterministic chain
                 # RE-RUN this tick (maybe_rerun_unrun_chains → orch._chain_rerun_armed) AND this
                 # blocker is STILL owned by the verifier (i.e. the action-404 re-route above did
