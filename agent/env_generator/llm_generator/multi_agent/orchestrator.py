@@ -3911,6 +3911,63 @@ class Orchestrator:
                 except Exception:
                     pass
 
+    def _report_logged_out_auth_screens_1202lc(self) -> None:
+        """#1202lc: #1202jx could only speak once the problem had already gone away.
+
+        #1202jx reports the contract contradiction that makes a logged-out screen unrenderable
+        -- the design system declares it reachable without a token, its page calls an
+        auth_required endpoint, the capture arrives anonymous, the handler answers 401, and the
+        lane goes looking at a frontend where nothing is wrong. Its own measurement says the
+        condition is common: 32 of 98 logged-out screens across 35 recent runs.
+
+        It never once said so. In 310 run logs `#1202jx` does not appear, while replaying its
+        finder over the real ledgers returns findings in 29 of 150 runs (19%) -- netflix's
+        `landing` at `/`, over and over.
+
+        The reason is #1202ka's exactly: not a guard above it, but TEN earlier `return`s. It
+        sat at the far end of `_maybe_framework_deliver`, past every "not deliverable yet"
+        exit, so it was reachable only when the gate was GREEN -- and a screen that can never
+        render is precisely what keeps the gate RED. The diagnostic could only speak once the
+        thing it diagnoses had been fixed by someone else.
+
+        So it moves to the branch that runs when the gate is red, beside #1202kn. Said once
+        per distinct finding set: it is a contract fact, not a heartbeat (#845/#1202ad).
+        """
+        try:
+            import json as _json1202lc
+            from .runtime.contract_drift import logged_out_screens_needing_auth_1202jx
+            _rh = getattr(self.hubs, "registryhub", None)
+            _dsp = self.output_dir / "design" / "design_system.json"
+            if _rh is None or not _dsp.is_file():
+                return
+            found = logged_out_screens_needing_auth_1202jx(
+                (_json1202lc.loads(_dsp.read_text(encoding="utf-8")) or {}).get("screens"),
+                _rh.list_ui_pages(), _rh.get_endpoints())
+            if not found:
+                return
+            key = tuple(sorted(str(f.get("screen")) for f in found))
+            if self.__dict__.get("_said_1202lc") == key:
+                return
+            self.__dict__["_said_1202lc"] = key
+            for f in found[:6]:
+                self._logger.error(
+                    "#1202jx LOGGED-OUT SCREEN NEEDS AUTH: screen %r (route %s) is declared "
+                    "requires_auth=False, but its page calls %s which the contract marks "
+                    "auth_required. That capture arrives with no token, so the handler answers "
+                    "401 and the screen can never render. Exactly one of the two is wrong: "
+                    "either make those endpoints public in the CONTRACT, or stop declaring "
+                    "this screen reachable logged out.",
+                    f["screen"], f["route"], ", ".join(f["auth_endpoints"][:3]))
+            if len(found) > 6:
+                self._logger.error(
+                    "#1202jx and %d more logged-out screen(s) in the same state.",
+                    len(found) - 6)
+        except Exception as _e1202lc:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201("orchestrator.logged_out_auth_screens_1202lc",
+                           "the logged-out-screen contract contradiction is not reported, so a "
+                           "screen that can never render reads as a frontend bug", _e1202lc)
+
     @property
     def _vf_gate(self):
         """Lazily-created visual-fidelity gate (PROPOSAL #8 — VisualFidelity
@@ -4554,6 +4611,7 @@ class Orchestrator:
                 # unchanged signature), and the refund cap bounds how often a capture may be
                 # excused at all — so this cannot exceed the judging budget the gate already
                 # had. It re-takes an attempt the framework already decided not to charge for.
+                self._report_logged_out_auth_screens_1202lc()
                 try:
                     _vf1202kn = self.__dict__.get("_vf_gate_instance")
                     # #1202la: THREE refund kinds, and #1202kn read two of them.
@@ -5314,41 +5372,6 @@ class Orchestrator:
                         _rc_dups = version_variant_duplicate_routes(_rh.get_endpoints())
                 except Exception as _rc_exc:
                     self._logger.debug("route-consistency gate skipped: %s", _rc_exc)
-                # #1202jx: the OTHER contract contradiction, reported beside it. A screen the
-                # design system declares reachable logged out whose page calls an
-                # auth_required endpoint can never render — the capture has no token, the
-                # projected handler answers 401, and the lane reads "the logged-out feed is
-                # blank" and goes looking at a frontend where nothing is wrong. 32 of 98
-                # logged-out screens across 35 recent runs. Reports BOTH repairs and picks
-                # neither: only the contract's author knows which side is wrong.
-                try:
-                    from .runtime.contract_drift import (
-                        logged_out_screens_needing_auth_1202jx)
-                    import json as _json1202jx
-                    _rh1202jx = getattr(self.hubs, "registryhub", None)
-                    _dsp1202jx = self.output_dir / "design" / "design_system.json"
-                    if _rh1202jx is not None and _dsp1202jx.is_file():
-                        _lo1202jx = logged_out_screens_needing_auth_1202jx(
-                            (_json1202jx.loads(_dsp1202jx.read_text(encoding="utf-8"))
-                             or {}).get("screens"),
-                            _rh1202jx.list_ui_pages(), _rh1202jx.get_endpoints())
-                        for _f1202jx in _lo1202jx[:6]:
-                            self._logger.error(
-                                "#1202jx LOGGED-OUT SCREEN NEEDS AUTH: screen %r (route %s) is "
-                                "declared requires_auth=False, but its page calls %s which the "
-                                "contract marks auth_required. That capture arrives with no "
-                                "token, so the handler answers 401 and the screen can never "
-                                "render. Exactly one of the two is wrong: either make those "
-                                "endpoints public in the CONTRACT, or stop declaring this "
-                                "screen reachable logged out.",
-                                _f1202jx["screen"], _f1202jx["route"],
-                                ", ".join(_f1202jx["auth_endpoints"][:3]))
-                        if len(_lo1202jx) > 6:
-                            self._logger.error(
-                                "#1202jx and %d more logged-out screen(s) in the same state.",
-                                len(_lo1202jx) - 6)
-                except Exception as _lo_exc:
-                    self._logger.debug("#1202jx logged-out check skipped: %s", _lo_exc)
                 if _rc_dups:
                     try:
                         from .runtime.remediation_dispatcher import RemediationDispatcher
