@@ -889,6 +889,96 @@ def _is_empty_body_1100(fn: Any) -> bool:
     return False
 
 
+_FW_TAMPER_1202LJ = (
+    # (regex, what the lane did, why it cannot stand)
+    (r"app\.router\.routes\s*\[\s*:\s*\]\s*=",
+     "reassigns app.router.routes",
+     "deletes routes the framework projected, including guarded ones"),
+    (r"app\.router\.routes\s*\.\s*remove\s*\(",
+     "removes entries from app.router.routes",
+     "deletes routes the framework projected, including guarded ones"),
+    # Bare NAME, not name-adjacent-to-write: tiktok-r117 reached the same list through an
+    # alias -- `public_api = getattr(main_mod, "_FW_PUBLIC_API_1202KH", None)` and then
+    # `public_api.append(...)` -- so a pattern requiring `.append` right after the name missed
+    # it. Lane code has no legitimate reason to name the guard's internals at all.
+    (r"_FW_PUBLIC_API_1202KH",
+     "names _FW_PUBLIC_API_1202KH",
+     "reaches into the blanket auth guard's allow-list"),
+    (r"_FW_PUBLIC_RE_1202KH",
+     "names _FW_PUBLIC_RE_1202KH",
+     "reaches into the blanket auth guard's allow-list"),
+    (r"_fw_contract_public_1202kh",
+     "names _fw_contract_public_1202kh",
+     "reaches into the guard's own predicate"),
+)
+
+
+def framework_guard_tampering_1202lj(backend_dir: Any) -> List[str]:
+    """#1202lj: lane code that reaches into the framework's route table or auth allow-list.
+
+    The projector's guarantee is that a route the CONTRACT and the MATERIALS call per-user is
+    projected with an actor and an owner filter, and that the blanket guard denies it to an
+    anonymous caller. A lane cannot edit main.py -- but it can, and does, undo that from
+    `custom_routes.py` at import or on a startup hook: delete the projected route, insert its
+    own unguarded one at index 0, and append the path to the guard's public list.
+
+    tiktok-r120 is the worked example, function name and all:
+
+        @router.on_event("startup")
+        async def _promote_public_engagement_and_notification_routes():
+            app.router.routes[:] = [r for r in app.router.routes if not (...)]
+            app.router.routes.insert(0, APIRoute(path="/api/video_likes", ...,
+                                                 name="public_list_video_likes"))
+            main_mod._FW_PUBLIC_RE_1202KH = regexes
+
+    for five endpoints at once. The framework was entirely correct there -- the materials call
+    `video_likes` owner-private, the projected handler at main.py:865 takes `get_current_user`
+    and owner-filters, and the path is NOT in the public list. The lane replaced it at startup,
+    so an anonymous `GET /api/video_likes` answered 200 with every user's rows.
+
+    WHY THIS MUST BE CAUGHT EARLY, and why announcing it at the gate was not enough. Once the
+    endpoint answers 200, the verifier authors chains against THAT: r120 ended with TEN chains
+    asserting 200 on it and passing, and ONE asserting the denial and failing. Restoring the
+    guard would turn ten green chains red, so the locally-cheap move is always to leave it --
+    and the run then wedges on `business_chain_failing` until the stuck-detector aborts it.
+    The wrong fact gets baked into the checks that would have caught it. #1202kx, #1202ky,
+    #1202lf and #1202ld all name this in the lane's task text; r120 received those messages and
+    did it anyway, because by then ten chains depended on the behaviour.
+
+    Detected STATICALLY, from the lane's own source, so it fires as soon as the file is written
+    -- before any chain can be authored against it. Not inferred from runtime: a first attempt
+    reconstructed "guard stripped" by pairing a guarded projected handler with an unauthenticated
+    2xx in the chain ledger, and it both missed r120's `/api/video_likes` (the passing chains DO
+    send a token, so their 200 is legitimate) and flagged four endpoints in netflix-local-r41
+    that were fine. A rule that reads the lane's code needs no such inference.
+
+    Corpus: `app.router.routes[:] =` in 11 of 132 runs, `routes.insert(0,` in 9, the public
+    lists in 2 and 1. Returns one line per site; empty when the lane keeps its hands off.
+    """
+    out: List[str] = []
+    try:
+        import re as _re
+        from pathlib import Path as _P
+        d = _P(str(backend_dir))
+        for name in ("custom_routes.py", "seed_data.py"):
+            f = d / name
+            try:
+                src = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for pat, did, why in _FW_TAMPER_1202LJ:
+                for m in _re.finditer(pat, src):
+                    line = src.count("\n", 0, m.start()) + 1
+                    out.append("%s:%d %s — %s" % (name, line, did, why))
+    except Exception as _e1202lj:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.framework_guard_tampering_1202lj",
+                       "lane code that strips the framework's auth guard is not detected, so "
+                       "an anonymous read of owner-private rows can be baked into the chains",
+                       _e1202lj)
+    return out
+
+
 def stub_handler_blockers(backend_dir: Any) -> List[str]:
     """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route whose SERVED
     handler does NO DB read and returns only a hardcoded EMPTY-or-MOCK collection.
