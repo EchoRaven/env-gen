@@ -149,6 +149,39 @@ class CheckpointManager:
         self.checkpoint_path = Path(checkpoint_path)
         self.checkpoint = GenerationCheckpoint()
         self._auto_save = True
+        # #1202lg: ADOPT an existing checkpoint instead of starting blank on top of it.
+        #
+        # This constructor built an empty `GenerationCheckpoint` and never read the file,
+        # while `_save_if_auto` writes after every mutation -- so the FIRST mutation of a
+        # second manager over the same path silently overwrote whatever the first one had
+        # recorded. Demonstrated: manager A records phases
+        # ['agent_workflow', 'milestone:1:X']; a manager B constructed on the same path
+        # reads `phases: []`, and B's first `start_phase` leaves the file holding exactly
+        # ['agent_workflow'] with `current_phase: agent_workflow`.
+        #
+        # That is the corpus's checkpoint, verbatim: 126 of 131 runs hold exactly one phase,
+        # `agent_workflow`, most with `completed_at: null`. tiktok-r119 delivered 1.0.0 and
+        # 1.1.0 across three milestones and its checkpoint still says "planning, iteration 0"
+        # -- while r120, caught mid-run, holds
+        # `milestone:1:M1-core-fyp-auth-comments@1.0.0`. The writer works; the record was
+        # being erased.
+        #
+        # What that costs: #1202bz gives `--resume` milestone-level granularity and decides
+        # by reading these phases ("skip a completed milestone only when a LATER milestone
+        # has a record"). With the record gone every resume re-enters at milestone 1 and
+        # re-fights milestones the run already delivered, against a no-convergence clock
+        # that keeps running. 21 runs in the corpus resumed -- r96 seven times, googlemaps-r16
+        # ten -- for zero additional releases between them, and #1202bz has never once
+        # appeared in 310 run logs.
+        #
+        # The class docstring already prescribed `if manager.load():` at the call site;
+        # nothing called it. Adopting here is idempotent (no file -> stays blank, exactly
+        # as before) and never raises: `load()` already tolerates a corrupt primary by
+        # falling back to `.bak`, and returns False when both are unreadable.
+        try:
+            self.load()
+        except Exception:
+            self.checkpoint = GenerationCheckpoint()
     
     def set_auto_save(self, enabled: bool) -> None:
         """Enable/disable automatic saving after each update"""
