@@ -2569,6 +2569,40 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         # read blockers on `videos` and set it here too. Where the materials are SILENT #320's
         # bargain is unchanged — see the test that pins that limit.
         if _explicit_public_1097 and _declared_owner_private_1202ht(tables, meta, path):
+            # #1202kx: the materials win here -- and the lane must be TOLD, or it rewrites
+            # the same contract next run. Measured: `GET /api/notifications` is declared
+            # `auth_required=False` while the materials call `notifications` owner-private in
+            # SEVEN runs (r106, r108, r109, r111, r115, r117, r118). Seven times the lane
+            # made the same statement, seven times this line quietly reversed it, and nothing
+            # anywhere said the two disagreed.
+            #
+            # r117 shows the cost of the silence. The framework guarded the route correctly
+            # (its projected handler takes an actor AND owner-filters, verified against the
+            # deployed main.py), so the lane went around it from custom_routes.py -- appending
+            # ("GET", "/api/notifications") into _FW_PUBLIC_API_1202KH and a matching regex
+            # into the public list, re-registering its own unguarded handler on top. That
+            # served owner-private rows to an unauthenticated caller, and the verifier's
+            # chains caught it as `DENIAL-PROBE got success` -- r117's business_chain_failing,
+            # the blocker it died on. A lane that knew WHY it was being refused had no reason
+            # to build that.
+            #
+            # Announce only; the demotion itself is unchanged. #320's bargain and #1202ht's
+            # limit both still hold exactly as they did.
+            try:
+                import logging as _lg1202kx
+                _lg1202kx.getLogger(__name__).warning(
+                    "#1202kx CONTRACT/MATERIALS DISAGREE on %s %s: the endpoint states "
+                    "auth_required=False, the materials call its table owner-private. The "
+                    "materials win (#1202ht), so this route is projected WITH an actor and "
+                    "an owner filter and will refuse an anonymous caller. Two ways out, and "
+                    "only these two: correct the endpoint's auth_required if the rows really "
+                    "are per-user, or correct the materials if the feed really is public. "
+                    "Appending to the framework's public list from custom_routes.py is not a "
+                    "third way -- it serves owner-private rows to anyone and the chains fail "
+                    "it as a denial-probe success.",
+                    str(method).upper(), path)
+            except Exception:
+                pass
             _explicit_public_1097 = False
         if _explicit_public_1097 and _owner_scoped:
             _owner_scoped = False
