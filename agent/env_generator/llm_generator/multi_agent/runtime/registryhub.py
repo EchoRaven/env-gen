@@ -2889,6 +2889,41 @@ class RegistryHub:
                     # and the table is scoped anyway. That is why writing False four times
                     # could not win. Say it instead of only doing it.
                     _md1202kv = _t.get("metadata") or {}
+                    # #1202le: the MATERIALS outrank a probe here, exactly as they do at the
+                    # other writer. #1202io refuses `visibility: public` + owner-scoped in
+                    # `register_table` -- "direct opposites ... every reader of this record
+                    # must see one answer" -- but this block writes through
+                    # `self._tables.update` and never passed under that guard. Same
+                    # contradiction, second producing site.
+                    #
+                    # tiktok-r119, live, is the cost. Its `videos` table carries
+                    # `visibility: public`, and chain `tenant_auth_content_access_flow`
+                    # flipped it owner-scoped here (the #1202kv provenance key on that record
+                    # is how this was found). backend_audit's public-content exemption
+                    # (#1202gd/#1202hm) requires materials-public AND not owner-scoped, so the
+                    # flip withdrew it and the audit reported `unscoped owner read: GET
+                    # /api/videos returns every row of `videos` to ANY caller` -- against a
+                    # public feed. That blocker is minted as `deliverability_other:<prose>`, a
+                    # DYNAMIC name no `_GATE_OWNER` key can match, so it declined delivery with
+                    # "NO remediation owner" and nothing was ever dispatched. The orchestrator
+                    # saw through it and could not act: "Materials declare videos PUBLIC
+                    # content, so do NOT scope feed reads to caller".
+                    #
+                    # Refusing the flip does not weaken the leak check: a table the materials
+                    # call public is one whose rows are MEANT to be visible, which is #320's
+                    # whole case. Where the materials are silent the flip stands unchanged.
+                    if str(_md1202kv.get("visibility") or "").strip().lower() == "public":
+                        import logging as _lg1202le
+                        _lg1202le.getLogger(__name__).warning(
+                            "#1202le chain `%s` asserts a cross-user denial on `%s`, but the "
+                            "MATERIALS declare that table PUBLIC — NOT scoping it. The two are "
+                            "direct opposites and the materials decide (#1202io/#1202ht). "
+                            "Scoping it here would withdraw backend_audit's public-content "
+                            "exemption and mint an `unscoped owner read` blocker that no lane "
+                            "can clear. If these rows really are per-user, correct the "
+                            "materials; if the chain's denial step is wrong, drop that step.",
+                            name, _tn)
+                        continue
                     _meta1202kv = {**_md1202kv, "owner_scoped_reads": True}
                     if _md1202kv.get("owner_scoped_reads") is False:
                         _meta1202kv["owner_scoped_reads_set_by_chain_1202kv"] = str(name)
