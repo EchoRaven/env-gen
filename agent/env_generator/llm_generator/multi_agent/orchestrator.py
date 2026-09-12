@@ -1757,7 +1757,54 @@ class Orchestrator:
                     self._logger.warning(
                         "MILESTONE PLAN: single-milestone mode (ENVGEN_SINGLE_MILESTONE) — "
                         "whole app in ONE kickoff+delivery; multi-milestone planning skipped.")
-                if not _milestones_explicit and not _force_single_ms:
+                # #1202li: ON A RESUME, REUSE THE PLAN THE PREVIOUS ATTEMPT ALREADY MADE.
+                #
+                # `plan_milestones` is an LLM call, so re-running it on a resume produces
+                # DIFFERENT NAMES for the same work. #1202bz keys a completed milestone by
+                # `milestone:<idx>:<name>` deliberately -- "the key carries the milestone's
+                # identity, not just its position, so editing the milestone list between
+                # attempts cannot make a resume skip work it never did" -- so a re-planned
+                # name cannot match, and the resume re-does a milestone it already delivered.
+                #
+                # tiktok-r120's resume is the case, and it is the first time #1202bz has ever
+                # fired in 310 run logs: milestone 1 kept its name and was skipped; milestone 2
+                # came back from the planner as `M2-discovery-creators-engagement@1.1.0` where
+                # the first attempt had delivered `M2-discovery-creators-live@1.1.0`, so the
+                # key missed and the run started rebuilding 1.1.0 from scratch.
+                #
+                # The plan is already durable and already authoritative: `milestones.json`
+                # holds it WITH per-milestone status (`delivered` / `active` / `pending`).
+                # Reusing it is the same move #1202ca makes for `reference_spec.json` and
+                # #1202bv for `design_system.json`, both of which announce the reuse a few
+                # lines earlier in this very log. The milestone plan was the one durable
+                # artefact a resume still threw away.
+                _reused_plan_1202li = None
+                if getattr(self, "_resume", False) and not _milestones_explicit:
+                    try:
+                        _hub_ms = list(self.hubs.milestones.list_milestones() or [])
+                        _hub_ms = [m for m in _hub_ms if isinstance(m, dict) and m.get("name")]
+                        _hub_ms.sort(key=lambda m: int(m.get("index") or 0))
+                        if len(_hub_ms) > 1:
+                            _reused_plan_1202li = [
+                                {"name": str(m.get("name")), "version": str(m.get("version") or ""),
+                                 **{k: v for k, v in m.items()
+                                    if k in ("description_slice", "detail", "acceptance")}}
+                                for m in _hub_ms]
+                            self._logger.warning(
+                                "#1202li Milestone plan: reusing the %d milestone(s) the previous "
+                                "attempt already planned (%s) — re-planning would rename them and "
+                                "#1202bz could not then skip what was already delivered.",
+                                len(_reused_plan_1202li),
+                                [f"{m['name']}@{m['version']}" for m in _reused_plan_1202li])
+                    except Exception as _e1202li:
+                        from .runtime.message_format import warn_once_1201
+                        warn_once_1201("orchestrator.reuse_milestone_plan_1202li",
+                                       "the milestone plan is re-planned on this resume, so "
+                                       "#1202bz cannot match what the last attempt delivered",
+                                       _e1202li)
+                if _reused_plan_1202li:
+                    milestones = _reused_plan_1202li
+                elif not _milestones_explicit and not _force_single_ms:
                     try:
                         from .runtime.reference_materials import plan_milestones
                         from .runtime.llm_overrides import get_component_llm as _gcl
