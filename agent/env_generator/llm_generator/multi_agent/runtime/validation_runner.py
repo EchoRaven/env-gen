@@ -160,6 +160,14 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         raise
     _LOG.info("compose spawn: %s %s -> rc=%s in %.0fs",
               _bin, _verb, cp.returncode, time.monotonic() - _t0)
+    # #1202kz: remember what we just did to this project, so container_runtime can tell an
+    # anomaly ("we started it and it is gone") from the expected ("we tore it down").
+    if cp.returncode == 0:
+        try:
+            from .compose_mutex import record_lifecycle_1202kz
+            record_lifecycle_1202kz(compose_file, args[0] if args else "")
+        except Exception:
+            pass
     # #972: a FAILING spawn must say WHY. #964 announced `rc=1 in 0s` and stopped there,
     # which is enough to see that something broke and useless for diagnosing it — netflix
     # r158 produced two instant `docker build -> rc=1 in 0s` and left no other trace, so

@@ -29,7 +29,7 @@ import os
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, Dict
 
 from .message_format import warn_once_1201
 
@@ -38,6 +38,43 @@ from .message_format import warn_once_1201
 _LIFECYCLE_OPS_1202HN = frozenset({"up", "down", "stop", "start", "restart", "rm", "kill"})
 
 _LOCK_NAME_1202HN = ".compose.lock"
+
+
+# #1202kz: what this PROCESS last did to a compose project, so a "not running" report can
+# tell a reader whether it is an anomaly or the expected consequence of our own teardown.
+#
+# Measured over 21 days of logs: `is NOT RUNNING` is emitted 3852 times, and classifying each
+# against this process's own preceding lifecycle verb gives 1899 (49.3%) after our own `down`,
+# 525 (13.6%) before anything was ever started, and 1428 (37.1%) after an `up` -- the only
+# genuinely anomalous group. All 3852 carry the same alarmed wording, so the real ones sit
+# 2:1 under noise. The corpus cycles hard enough for that to matter: 2318 `up` against 2541
+# `down` across 99 runs (netflix-r30 alone: 138 up / 143 down).
+#
+# In-process only, deliberately. RunHub drives the SAME project from its own subprocess (see
+# #1202hn), so silence here means "this process did not do it" -- never "nobody did". The
+# wording must not claim more than that.
+_LAST_LIFECYCLE_1202KZ: Dict[str, Any] = {}
+
+
+def record_lifecycle_1202kz(compose_file: Any, verb: Any) -> None:
+    """Remember that THIS process just ran `verb` against `compose_file`. Never raises."""
+    try:
+        v = str(verb or "").strip().split()[0].lower()
+        if v in _LIFECYCLE_OPS_1202HN:
+            _LAST_LIFECYCLE_1202KZ[str(compose_file)] = (v, time.time())
+    except Exception:
+        pass
+
+
+def last_lifecycle_1202kz(compose_file: Any):
+    """``(verb, age_seconds)`` for this process's last lifecycle op, or ``None``."""
+    try:
+        rec = _LAST_LIFECYCLE_1202KZ.get(str(compose_file))
+        if not rec:
+            return None
+        return rec[0], max(0.0, time.time() - float(rec[1]))
+    except Exception:
+        return None
 
 
 def is_lifecycle_op_1202hn(args: Iterable[Any]) -> bool:

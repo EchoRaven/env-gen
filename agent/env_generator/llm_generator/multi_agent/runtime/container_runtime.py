@@ -39,6 +39,38 @@ _SAID: Dict[str, bool] = {}
 
 
 
+def _own_lifecycle_note_1202kz(compose_file: Any) -> str:
+    """#1202kz: did THIS process put the stack in this state on purpose?
+
+    `is NOT RUNNING` is the corpus's most-emitted error -- 3852 times over 21 days -- and all
+    3852 carry the same alarmed wording. Classified against this process's own preceding
+    lifecycle verb: 1899 (49.3%) follow our own `down`, 525 (13.6%) precede any start at all,
+    and only 1428 (37.1%) follow an `up` and are therefore anomalous. The real ones sit 2:1
+    under the expected ones, in identical language.
+
+    #1202av answers the neighbouring question ("it existed and died -- here is the exit code")
+    and answers it for 6 of those 3852, because a torn-down project leaves nothing in `ps -a`
+    to inspect. This is why it so rarely has anything to say, and it is not a fault in it.
+
+    In-process only: RunHub drives the same project from its own subprocess (#1202hn), so an
+    empty answer means "not this process", never "nobody". The wording says exactly that.
+    """
+    try:
+        from .compose_mutex import last_lifecycle_1202kz
+        rec = last_lifecycle_1202kz(compose_file)
+    except Exception:
+        return ""
+    if not rec:
+        return (" This process has not run any compose lifecycle command for this project yet, "
+                "so nothing here has started it (another process still might have).")
+    verb, age = rec
+    if verb in ("down", "stop", "rm", "kill"):
+        return (" EXPECTED: this process ran `compose %s` on this project %ds ago and has not "
+                "brought it back up — this is that teardown, not a crash." % (verb, int(age)))
+    return (" ANOMALOUS: this process ran `compose %s` on this project %ds ago and it returned "
+            "success, so the container should be up." % (verb, int(age)))
+
+
 def _exited_container_reason_1202av(rt: str, service: str, want: str, timeout: int) -> str:
     """Why is this run's `service` container gone? Ask the EXITED ones. (#1202av)
 
@@ -255,7 +287,8 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
                 "This run's `%s` container is NOT RUNNING — the other %d belong to other runs "
                 "and are irrelevant. Returning NO id rather than guessing. Start this run's "
                 "stack (compose up) before probing it; stopping the other stacks would not "
-                "help.", rt, service, len(ids), want, service, len(ids))
+                "help.%s", rt, service, len(ids), want, service, len(ids),
+                _own_lifecycle_note_1202kz(compose_file))
             return ""
         log.error(
             "#962 `%s ps --filter name=%s` matched %d containers and the config_files label could "
