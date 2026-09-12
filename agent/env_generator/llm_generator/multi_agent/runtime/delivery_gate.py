@@ -1842,6 +1842,79 @@ def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
         return ""
 
 
+def _contract_materials_disagreement_1202ky(rh, authored, hubs=None) -> str:
+    """#1202ky: the OTHER half of #1202kr -- a route the MATERIALS keep private while the
+    CONTRACT calls it public.
+
+    #1202kr reads the set the guard actually OPENED (`_FW_PUBLIC_API_1202KH`) and says so in
+    its own docstring: "r117's /api/notifications is contract-public but was NOT opened ... the
+    chain demanding 401 is correct." Correct, and deliberately out of its scope -- which left
+    that case with nothing said about it anywhere a lane reads.
+
+    Measured: `GET /api/notifications` is declared auth_required=False while the materials call
+    `notifications` owner-private in SEVEN runs (r106, r108, r109, r111, r115, r117, r118). The
+    lane wrote that contract seven times; #1202ht reversed it seven times, silently until
+    #1202kx put it in the run log. This puts it where the lane actually reads -- the
+    business_chain_failing detail, which is the blocker r117 died on.
+
+    Says the disagreement, resolves nothing: #1202ht's demotion stands and the chains that
+    demand a denial are right. Both repairs are named, and the third thing r117 actually did --
+    appending to the framework's public list from custom_routes.py -- is named as not one.
+    """
+    try:
+        from .backend_skeleton import _spec_visibility_1202hh
+        from .route_projector import _stated_auth_1202hi
+        root = str(getattr(hubs, "base_dir", "") or "")
+        if not root:
+            return ""
+        vis = _spec_visibility_1202hh(root) or {}
+        owner = {str(k).strip().lower() for k, v in vis.items()
+                 if str(v).strip().lower() == "owner"}
+        if not owner:
+            return ""
+        # Only routes a FAILING chain actually touches -- an unexercised disagreement is not
+        # this blocker's business.
+        touched = set()
+        for rec in (authored or []):
+            if not isinstance(rec, dict) or rec.get("status") in ("passing", "framework_blocked"):
+                continue
+            for st in (rec.get("steps") or []):
+                if isinstance(st, dict) and st.get("path"):
+                    touched.add(str(st.get("path")))
+        if not touched:
+            return ""
+        hits = []
+        for ep in (rh.get_endpoints() if rh is not None else {} or {}).values():
+            if not isinstance(ep, dict):
+                continue
+            path = str(ep.get("path") or "")
+            if path not in touched or _stated_auth_1202hi(ep) is not False:
+                continue
+            segs = [x for x in path.split("?", 1)[0].split("/") if x and x.lower() != "api"]
+            if segs and segs[0].strip().lower() in owner:
+                hits.append(f"{str(ep.get('method','GET')).upper()} {path}")
+        if not hits:
+            return ""
+        return (" ⚠ CONTRACT/MATERIALS DISAGREEMENT (#1202ky): "
+                + join_capped(sorted(set(hits)), len(set(hits)), cap=4, sep=", ")
+                + " — the endpoint states auth_required=false, the MATERIALS call its table "
+                  "owner-private, and the materials win (#1202ht), so the route is projected "
+                  "WITH an actor and an owner filter and refuses an anonymous caller. Two "
+                  "repairs, and only these two: register the endpoint auth_required=true if "
+                  "the rows really are per-user, or correct the materials if the feed really "
+                  "is public. Appending the route to the framework's public list from "
+                  "custom_routes.py is NOT a third one — it serves owner-private rows to any "
+                  "caller and the chains fail it as a denial-probe success.")
+    except Exception as _e1202ky:
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.contract_materials_disagreement_1202ky",
+                       "the contract/materials annotation is missing from the "
+                       "business_chain_failing blocker, so a chain failing because the "
+                       "materials overruled a contract-public read will look like an app bug",
+                       _e1202ky)
+        return ""
+
+
 def complete_coverage_chain(hubs) -> Dict[str, Any]:
     """COVERAGE-BY-CONSTRUCTION (2026-07-01) — the verifier LLM authors the REAL business-flow
     + isolation chains, but reliably COVERING every registered business endpoint is a mechanical,
@@ -2059,7 +2132,8 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        + ". run_validation must show "
                        "business_chain green (re-author the broken step or fix the "
                        "endpoint) before delivery."
-                       + _contract_denial_contradictions_1202kr(rh, authored, hubs)),
+                       + _contract_denial_contradictions_1202kr(rh, authored, hubs)
+                       + _contract_materials_disagreement_1202ky(rh, authored, hubs)),
         }
     # #510 GUARD: not_passing excludes never-run chains, so an authored set that is ALL
     # never-run would otherwise fall through to GREEN with nothing actually verified. Require
