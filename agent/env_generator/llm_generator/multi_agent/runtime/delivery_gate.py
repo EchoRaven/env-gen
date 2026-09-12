@@ -1842,6 +1842,75 @@ def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
         return ""
 
 
+def _failing_surface_1202lb(authored) -> str:
+    """#1202lb: collapse the failing chains onto the ENDPOINTS they actually fail on.
+
+    `business_chain_failing` needs every authored chain green, so a tail of three blocks
+    delivery as hard as a tail of thirty -- and the blocker lists chain NAMES. Those names are
+    not one-per-problem. The verifier re-authors the same surface under new names round after
+    round: measured, tiktok-r107 has SEVEN chains over the same two endpoints, r96 has five
+    over one, and r117 has 82 chains covering 71 distinct endpoint-sets.
+
+    r117 died here with four failing chains -- `notifications_activity_page`,
+    `activity_notifications_auth_isolation`, `discovery_notifications_messages_tenant_flow`
+    and `tiktok_feed_engagement_and_auth_coverage`. The first three are ONE problem: every one
+    of their failing steps is `GET /api/notifications`. The blocker named four things and there
+    were two, so a lane reading it has no way to see that fixing one read fixes three rows.
+
+    This also explains why `flips_1202fa` reads 0 across all 1808 chains in the corpus while
+    its own comment records "business_chain_failing flips verdict 115 times over 18 runs, the
+    largest oscillator": the counter is per-chain and increments on a status CHANGE, but each
+    round's re-authored chain is a NEW record starting at zero. The oscillation is real and
+    happens BETWEEN renamed chains, where nothing was counting.
+
+    Reports the surface; changes no verdict and collapses no row.
+    """
+    try:
+        surface = {}
+        for rec in (authored or []):
+            if not isinstance(rec, dict) or rec.get("status") in ("passing", "framework_blocked"):
+                continue
+            name = str(rec.get("name") or rec.get("id") or "?")
+            for st in ((rec.get("last_result") or {}).get("steps") or []):
+                if not isinstance(st, dict) or st.get("ok") is not False:
+                    continue
+                key = "%s %s" % (str(st.get("method", "GET")).upper(),
+                                 str(st.get("path") or "?"))
+                surface.setdefault(key, set()).add(name)
+        # THE SIGNAL IS A SHARED ENDPOINT, not a global count. Three earlier versions of this
+        # comparison were wrong against real ledgers, and only measuring the whole corpus
+        # caught them:
+        #   * vs the SUM of per-endpoint chain counts -> fired on tiktok-r102, whose 16
+        #     failing chains spread over 27 endpoints, announcing "ONLY 27 ENDPOINT(S)": an
+        #     expansion presented as a saving;
+        #   * vs every FAILING chain -> claimed tiktok-r96 collapsed 7 chains onto 2 endpoints
+        #     when only 2 of the 7 had an attributable failed step (`_framework_coverage` and
+        #     never-run chains carry no steps, so they can never be part of a surface);
+        #   * vs every CONTRIBUTING chain -> went silent on tiktok-r117, the run this was
+        #     written for, because one oauth chain contributing 3 endpoints outweighed the
+        #     three notification chains sharing 1.
+        # A shared endpoint is the thing a lane can act on, and it is true or false per
+        # endpoint, so report exactly those.
+        shared = {k: v for k, v in surface.items() if len(v) > 1}
+        if not shared:
+            return ""
+        parts = ["%s (%d chains)" % (k, len(v))
+                 for k, v in sorted(shared.items(), key=lambda kv: -len(kv[1]))]
+        return (" ⚠ %d OF THE FAILING CHAINS ARE THE SAME ENDPOINT (#1202lb): "
+                % sum(len(v) for v in shared.values())
+                + join_capped(parts, len(parts), cap=5, sep="; ")
+                + " — the verifier re-authors the same surface under new names, so these are "
+                  "fewer problems than rows: fixing one endpoint clears every chain listed "
+                  "against it.")
+    except Exception as _e1202lb:
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.failing_surface_1202lb",
+                       "the failing-chain list is not collapsed onto its endpoints, so a tail "
+                       "of chains over ONE endpoint reads as that many separate problems",
+                       _e1202lb)
+        return ""
+
+
 def _contract_materials_disagreement_1202ky(rh, authored, hubs=None) -> str:
     """#1202ky: the OTHER half of #1202kr -- a route the MATERIALS keep private while the
     CONTRACT calls it public.
@@ -2133,7 +2202,8 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        "business_chain green (re-author the broken step or fix the "
                        "endpoint) before delivery."
                        + _contract_denial_contradictions_1202kr(rh, authored, hubs)
-                       + _contract_materials_disagreement_1202ky(rh, authored, hubs)),
+                       + _contract_materials_disagreement_1202ky(rh, authored, hubs)
+                       + _failing_surface_1202lb(authored)),
         }
     # #510 GUARD: not_passing excludes never-run chains, so an authored set that is ALL
     # never-run would otherwise fall through to GREEN with nothing actually verified. Require
