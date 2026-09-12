@@ -1983,7 +1983,25 @@ _INVENTED_HONEST_SUBSTR = (
     # method); the earlier sweep that fed it whole page files reported a meaningless 21.
     "nothing here", "nothing to show", "nothing yet", "unable to", "cannot load",
     "can't load", "try again", "check back",
+    # #1202lh: the same absence phrasings the list above already protects, in the spellings
+    # lanes actually use. Recovered from git history rather than from the delivered source,
+    # because this heal ERASES ITS OWN EVIDENCE: reading the shipped .jsx shows `'—'`, and
+    # only the pre-rewrite side of the framework's own commit still holds what was there.
+    # tiktok-r119's delivery commit rewrote `e.message || 'Couldn’t load notifications'` to
+    # `(e.message ?? '—')` in a frontend-lane file with nine prior lane commits -- the error
+    # the user sees became a dash. `can't load`/`cannot load` were listed; `couldn't` was not,
+    # and neither spelling of the apostrophe matches the other.
+    "could not", "couldn't", "couldn\u2019t", "went wrong", "wasn't able", "wasn\u2019t able",
+    "didn't load", "didn\u2019t load", "no longer available", "problem loading",
 )
+
+# #1202lh: a CSS dimension is not fabricated DATA. `style.gap || '4px 0'` and
+# `w || '100%'` are layout defaults, and `'—'` is not a length -- the rule that already
+# exempts `flex`/`center`/`block`/`#fff` simply has no entry for a value carrying units.
+_CSS_DIMENSION_RE_1202LH = __import__("re").compile(
+    r"^\s*-?[\d.]+\s*(px|%|em|rem|vh|vw|vmin|vmax|ch|pt|fr|deg|s|ms)"
+    r"(\s+-?[\d.]+\s*(px|%|em|rem|vh|vw|vmin|vmax|ch|pt|fr|deg|s|ms)?){0,3}\s*$",
+    __import__("re").I)
 # A fallback that SIGNALS ABSENCE (rather than asserting a fabricated value) is honest even
 # when multi-word: "No description", "Unknown Place", "Anonymous User". Prefix-matched.
 _INVENTED_HONEST_PREFIX = ("no ", "unknown", "anonymous", "select ", "choose ", "enter ",
@@ -2041,6 +2059,8 @@ def _is_fabricated_fallback_literal(s: str) -> bool:
     if any(sub in low for sub in _INVENTED_HONEST_SUBSTR):
         return False
     if low.startswith(_INVENTED_HONEST_PREFIX):   # "No description", "Unknown Place", "Anonymous User"
+        return False
+    if _CSS_DIMENSION_RE_1202LH.match(t):         # #1202lh: '4px 0', '100%' — a length, not data
         return False
     # #992: a UI ACTION LABEL is not fabricated data. The proper-noun rule below fires on
     # `Continue` / `Submit` / `Cancel` / `Search` — uppercase, alphabetic, >=4 chars — and
