@@ -2282,6 +2282,26 @@ class RemediationDispatcher:
                 "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
                 "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
                 "flow has a passing validation:ui_flow record."),
+            "deliverability_unscoped_owner_read": (
+                # #1202lf: unowned until now — 20 runs declined delivery on it with nothing
+                # dispatched. The owner is the BACKEND because the decision is a table-policy
+                # one, and the advice deliberately does NOT say "add a filter": measured over
+                # the corpus, most of these findings are a PUBLIC table wrongly carrying
+                # `owner_scoped_reads` (netflix's `titles`, tiktok's `sounds`/`users`), where
+                # filtering would wall the catalogue. #1202gt exists for that exact wording
+                # hazard. So both repairs are named and neither is assumed.
+                "backend", "Resolve the unscoped owner-read finding (blocks delivery)",
+                "the audit found a projected read returning EVERY row of a table the contract "
+                "marks owner-scoped. Exactly one of two things is true and only the contract "
+                "and the materials can say which. If the rows really are per-user, leave "
+                "`owner_scoped_reads` set and let the projector filter them — the finding is "
+                "then real and the READ is what must change. If the table is a PUBLIC feed "
+                "wrongly carrying that flag, clear `owner_scoped_reads` on the TABLE and make "
+                "the materials say `visibility: public`; the audit then exempts it by "
+                "construction (#1202gd/#1202hm) and the blocker clears itself. Do NOT add a "
+                "filter, a short-circuit or a public-list entry in custom_routes.py: the "
+                "projector re-renders from the contract and will overwrite it, and appending "
+                "to the framework's public list serves owner-private rows to everyone."),
             "deliverability_empty_param_nav_link": (
                 # #1042: the last unmapped token. The route IS declared and wired — the link
                 # interpolated an empty id — so this must NOT reuse the dead-nav-link advice,

@@ -2725,6 +2725,19 @@ def _deliverability_check_token(blocker: str) -> str:
         # different remediations — repointing the link, which is what the dead-nav advice
         # says, would be exactly wrong.
         return "deliverability_empty_param_nav_link"
+    if "unscoped owner read" in low:
+        # #1202lf: the LAST big unmapped token, found the way #1042 found the previous one --
+        # by replaying every historical "NO remediation owner" list. `deliverability_other`
+        # has essentially one subtype: ~348 `unscoped owner read` over 21 days against 4 of
+        # everything else, across 20 runs that declined delivery with nobody dispatched.
+        #
+        # Naming it is not cosmetic here, for a reason the other tokens do not have: the
+        # catch-all embeds the PROSE and truncates it at 80 characters, so the same defect
+        # arrives under a DIFFERENT check name depending on how long the path is --
+        # "...to ANY calle" / "...to ANY caller" / "...to ANY" / "...to AN" are all the same
+        # finding. The dispatcher's re-fire guard is keyed on the name (`guard.get(name) ==
+        # milestone`), so a name that drifts defeats de-duplication and storm control too.
+        return "deliverability_unscoped_owner_read"
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.
