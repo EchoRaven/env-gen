@@ -112,15 +112,48 @@ def test_visual_release_rejudges_fresh_before_escaping():
     The release branch must drive ONE final fresh capture+judge (self-guarded: only
     actually re-judges when the source changed) so the recorded verdict reflects the
     delivered source."""
+    #943/#1202lk: anchored on the BRANCH, not on a byte count. The original
+    # `src[i_release - 2500 : i_release]` asserted the same thing and broke the day #1202lk
+    # added its re-capture arm — no logic changed, the call simply moved further than 2500
+    # bytes from the log line it precedes. A backwards window is the same defect as the
+    # forward ones #943 ratchets.
+    #
+    # ★ And the obvious re-anchor — `"_maybe_run_visual_fidelity" in <branch text>` — is
+    # VACUOUS: #102's own comment inside that branch spells the method name, so deleting the
+    # call still passes. (Written, counter-proved, and thrown away — not assumed.) The
+    # assertion is therefore on CALL NODES.
+    import ast
     import inspect
     from multi_agent.orchestrator import Orchestrator
     src = inspect.getsource(Orchestrator)
-    i_release = src.index("Visual fidelity deferral RELEASED")
-    # a _maybe_run_visual_fidelity call must occur between the release-decision branch
-    # and the RELEASED log (the final fresh re-judge)
-    window = src[max(0, i_release - 2500):i_release]
-    assert "_maybe_run_visual_fidelity" in window
-    assert "FIX #102" in window
+    escape = None
+    for node in ast.walk(ast.parse(src)):
+        if not (isinstance(node, ast.If) and node.orelse):
+            continue
+        seg = ast.get_source_segment(src, node) or ""
+        if ('_vf_decision == "fast_release"' in seg
+                and "Visual fidelity deferral RELEASED" in seg):
+            escape = node.orelse
+            break
+    assert escape, "the visual escape branch moved — relocate this landmark"
+
+    def _linenos(pred):
+        return sorted(n.lineno for stmt in escape for n in ast.walk(stmt)
+                      if isinstance(n, ast.Call) and pred(n))
+
+    rejudge = _linenos(lambda n: isinstance(n.func, ast.Attribute)
+                       and n.func.attr == "_maybe_run_visual_fidelity")
+    released = _linenos(lambda n: any(
+        isinstance(a, ast.Constant) and "Visual fidelity deferral RELEASED" in str(a.value)
+        for a in n.args))
+    assert rejudge, ("the escape branch no longer CALLS the final fresh capture+judge "
+                     "(the name appearing in a comment is not a call)")
+    assert released, "the RELEASED announcement moved out of this branch"
+    assert min(rejudge) < min(released), (
+        "the escape must drive ONE final fresh capture+judge BEFORE it announces the release")
+    _lines = src.splitlines()
+    assert "FIX #102" in "\n".join(_lines[escape[0].lineno - 10:min(released)]), (
+        "#102's reasoning must stay with the mechanism it explains")
 
 
 def test_capture_injects_token_under_all_common_key_aliases():
@@ -150,12 +183,30 @@ def test_auth_rejection_triggers_one_remint_retry():
     RACE — a parallel validation cycle resets the DB (the token's sub vanishes) or
     rotates JWT keys between mint and capture. The gate must re-mint ONCE and retry the
     capture before skipping the whole judgment."""
+    # #943/#1202lk: the enclosing FUNCTION, located by AST, rather than "the 2500 bytes
+    # before the string" — a backwards byte window breaks on comment growth exactly as a
+    # forward one does, and the retry it guards must live in the same function as the skip.
+    import ast
     import inspect
     from multi_agent.runtime import visual_fidelity as vf
     src = inspect.getsource(vf)
     i = src.index("authenticated session rejected — every auth route")
-    window = src[max(0, i - 2500):i]
-    assert "_mint_token" in window          # a re-mint happens before the final skip
+    _line = src[:i].count("\n") + 1
+    _tree = ast.parse(src)
+    _fn = None
+    for _n in ast.walk(_tree):
+        if (isinstance(_n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and _n.lineno <= _line <= (_n.end_lineno or _n.lineno)
+                and (_fn is None or _n.lineno > _fn.lineno)):   # innermost wins
+            _fn = _n
+    assert _fn is not None, "the auth-wipeout skip moved out of any function"
+    _lines = src.splitlines()
+    window = "\n".join(_lines[_fn.lineno - 1:_line - 1])
+    # a re-mint CALL (not merely the name in prose) happens before the final skip
+    assert any(isinstance(_c, ast.Call)
+               and "_mint_token" in (ast.unparse(_c.func) if _c.func else "")
+               and _c.lineno < _line
+               for _c in ast.walk(_fn)), "no re-mint call precedes the wholesale skip"
     assert "FIX #105" in window
     # semantic end (rest of the enclosing top-level function) rather than a
     # character count, so growth in the module cannot silently move it

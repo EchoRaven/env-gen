@@ -5971,6 +5971,87 @@ except Exception:
     _COMPOSE_RACE_REFUND_CAP_1202DM = 8
 
 
+# #1202lk: THE FINAL PRE-RELEASE RE-JUDGE CAN PRODUCE NO JUDGMENT, AND THE RELEASE SHIPS ANYWAY.
+#
+# #102 drives ONE fresh capture+judge immediately before the escape releases, and its comment
+# states the guarantee plainly: *"the recorded score then reflects the DELIVERED source"*. In
+# r120 that sentence was false. The timeline:
+#
+#   18:55:19  profile_own.png written
+#   18:59:51  verdict.json written — blocking_average 0.5487, 2 total judgments
+#   19:16:59  Visual fidelity: capture unavailable — 0 of 8 screen(s) photographed; not judged
+#             — the capture raised explore_grid: Error: Page.g…
+#   19:16:59  Visual fidelity deferral RELEASED (escape after 2734s / 0 attempts / 2 total judged)
+#   19:17:59  FINAL DELIVERY 1.2.0
+#   19:18     App.jsx last modified — the frontend was STILL editing
+#
+# The final re-judge ran, photographed nothing, and returned through `capture_unavailable` —
+# which is the "not a judgment" channel, so `last_result`/`last_judged_sig` were left untouched.
+# The release branch then read `self._vf_gate.passed` (False), announced the escape and shipped.
+# The verdict filed against the delivered app was therefore judged from source that was
+# EIGHTEEN MINUTES and an unknown number of lane commits old, and nothing in the artifact said
+# so: three screens scored 0.34/0.42/0.56 as `empty_state`, and a whole session was spent
+# reasoning about pages that the recorded numbers never actually photographed.
+#
+# Two halves, because either alone leaves the hole open:
+#   (a) RETRY. A capture that photographed zero screens is not evidence the app is unshippable,
+#       it is the absence of evidence — so re-capture rather than release on a stale number.
+#       Bounded at _FINAL_RECAPTURE_TRIES_1202LK extra delivery ticks; `run_visual_fidelity`
+#       boots the stack itself (`_compose_up`, under #1202dl's lock), so a retry is a real
+#       second chance and not a re-read of the same failure.
+#   (b) STAMP. When the retries are spent the run still ships — never deadlock — but the verdict
+#       records that it does NOT cover the delivered source. A number whose provenance is
+#       unrecorded is worse than a missing number: it gets believed.
+try:
+    _FINAL_RECAPTURE_TRIES_1202LK = int(
+        os.environ.get("ENVGEN_VISUAL_FINAL_RECAPTURES", "3"))
+except Exception:
+    _FINAL_RECAPTURE_TRIES_1202LK = 3
+
+
+def stamp_delivery_coverage_1202lk(out_dir: Any,
+                                   judged_sig: Any,
+                                   delivered_sig: Any,
+                                   covered: bool) -> bool:
+    """Record ON the verdict whether it was judged FROM the source about to ship.
+
+    Best-effort and additive: it patches `design/visual_gate/verdict.json` in place, touching
+    no score and no pass/fail. Returns True when the stamp landed.
+
+    This exists because the staleness is otherwise UNRECOVERABLE from the artifact. verdict.json
+    carries `passed`, per-screen similarities and deviations, and not one field saying which
+    code state produced them — so a reader (me, all of 09-12) attributes the scores to the
+    delivered app by default. The signatures are `_compute_app_source_signature` content hashes,
+    so an equal pair is proof of coverage rather than an assertion of it.
+    """
+    try:
+        vdir = Path(out_dir) / "design" / "visual_gate"
+        vp = vdir / "verdict.json"
+        if not vp.is_file():
+            return False
+        try:
+            verdict = json.loads(vp.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        if not isinstance(verdict, dict):
+            return False
+        verdict["reflects_delivered_source_1202lk"] = bool(covered)
+        verdict["judged_source_sig_1202lk"] = (str(judged_sig)[:64] if judged_sig else None)
+        verdict["delivered_source_sig_1202lk"] = (str(delivered_sig)[:64] if delivered_sig else None)
+        verdict["delivery_coverage_stamped_at_1202lk"] = time.time()
+        if not covered:
+            verdict["delivery_coverage_note_1202lk"] = (
+                "These scores were NOT judged from the source that shipped: the final "
+                "pre-release capture produced no judgment and the re-capture budget was "
+                "spent. Read every similarity below as a verdict on EARLIER code (#1202lk).")
+        tmp = vp.with_suffix(vp.suffix + ".%s.tmp" % os.getpid())
+        tmp.write_text(json.dumps(verdict, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, vp)
+        return True
+    except Exception:
+        return False
+
+
 # #1202ix: A ROUTE REACT ROUTER CAN NEVER MATCH, AND NOTHING SAYS SO.
 #
 # `@remix-run/router`'s compilePath extracts a param with `.replace(/\/:([\w-]+)(\?)?/g, ...)`
@@ -6141,6 +6222,9 @@ class VisualFidelityGate:
         self.transient_refunds = 0     # per-milestone bounded blank-capture refunds (#75a)
         self.unreachable_refunds = 0   # #655b: same bound for capture/auth-unavailable
         self.compose_race_refunds_1202dm = 0   # #1202dm: framework-inflicted, own bound
+        self.final_recaptures_1202lk = 0        # #1202lk: extra delivery ticks spent
+        #                                        re-capturing when the final pre-release
+        #                                        re-judge produced NO verdict
         self.last_result = None
         self.last_judged_sig = None
         self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
@@ -6192,6 +6276,7 @@ class VisualFidelityGate:
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
         self.unreachable_refunds = 0   # #655b: milestone-anchored, same reason
         self.compose_race_refunds_1202dm = 0   # #1202dm: milestone-anchored, same reason
+        self.final_recaptures_1202lk = 0       # #1202lk: milestone-anchored, same reason
         self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
         self._seed_reminder_sent = False  # #133: re-armed per milestone
         self._best_by_screen = {}      # #138: plateau tracking is per milestone
@@ -6245,10 +6330,49 @@ class VisualFidelityGate:
     _STATE_FIELDS_1202CE = (
         "sig", "attempts", "passed", "deferred_since", "total_judgments",
         "transient_refunds", "unreachable_refunds", "compose_race_refunds_1202dm",
+        "final_recaptures_1202lk",
         "plateau_rounds", "avg_pass_rounds",
         "released", "app_dead_750", "_seed_reminder_sent", "last_judgment_at",
         "last_judged_sig", "_milestone_key_1202ce",
     )
+
+    def verdict_covers_delivered_source_1202lk(self) -> bool:
+        """#1202lk: is the RECORDED verdict a judgment of the source about to ship?
+
+        True only when the signature the last real judgment was taken from equals the
+        signature of the tree right now. Everything else -- a capture that photographed
+        nothing, an auth wipeout, a refund, a lane commit landing between the judgment and
+        the release, or a signature that could not be computed -- answers False, because
+        none of them is PROOF of coverage and this predicate gates a claim about provenance.
+
+        Deliberately not `last_result is not None`: r120 had a `last_result`. It was
+        eighteen minutes old.
+        """
+        try:
+            sig = self._orch._compute_app_source_signature()
+        except Exception:
+            return False
+        if sig is None or self.last_judged_sig is None:
+            return False
+        return sig == self.last_judged_sig
+
+    def arm_final_recapture_1202lk(self) -> bool:
+        """#1202lk: claim one more delivery tick for a FRESH capture. False when spent.
+
+        Re-arms the per-source attempt budget on the way out. That budget (3 judged runs per
+        source, #417's neighbour) exists to stop a churning lane from driving unbounded vision
+        spend on REMEDIATION rounds; this is not one of those. It is the capture that decides
+        what the delivered verdict says, the run is about to ship either way, and without the
+        re-arm `maybe_run` returns at `if self.attempts >= 3` and the retry photographs nothing
+        -- a retry that cannot retry. Bounded twice over: _FINAL_RECAPTURE_TRIES_1202LK total,
+        and the counter is milestone-anchored and persisted (#1202ce) so a resume cannot mint
+        a fresh budget for a milestone that already spent one.
+        """
+        if self.final_recaptures_1202lk >= _FINAL_RECAPTURE_TRIES_1202LK:
+            return False
+        self.final_recaptures_1202lk += 1
+        self.attempts = 0
+        return True
 
     def _refund_compose_race_1202dm(self, orch, result) -> None:
         """Refund a round the FRAMEWORK broke, on a budget of its own.

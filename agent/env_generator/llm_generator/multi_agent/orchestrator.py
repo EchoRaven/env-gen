@@ -4047,6 +4047,30 @@ class Orchestrator:
             except Exception:
                 pass
 
+    @staticmethod
+    def _final_recapture_cap_1202lk() -> int:
+        """#1202lk: the re-capture budget, read from the gate module so the env override
+        (ENVGEN_VISUAL_FINAL_RECAPTURES) is honoured by the one place that reports it."""
+        try:
+            from .runtime.visual_fidelity import _FINAL_RECAPTURE_TRIES_1202LK
+            return int(_FINAL_RECAPTURE_TRIES_1202LK)
+        except Exception:
+            return 3
+
+    def _stamp_visual_delivery_coverage_1202lk(self, covered: bool) -> None:
+        """#1202lk: record ON verdict.json whether its scores were judged from the source
+        this release ships. Best-effort — a stamp that cannot be written must never be the
+        reason a run fails to deliver."""
+        try:
+            from .runtime.visual_fidelity import stamp_delivery_coverage_1202lk
+            stamp_delivery_coverage_1202lk(
+                self.output_dir,
+                getattr(self._vf_gate, "last_judged_sig", None),
+                self._compute_app_source_signature(),
+                bool(covered))
+        except Exception:
+            pass
+
     def _all_business_endpoints_have_route_code(self) -> bool:
         """Code-reality complement to ``all_business_endpoints_implemented``
         (which reads the lanes' lagging registryhub *status*). True iff the INTEGRATED
@@ -5190,6 +5214,14 @@ class Orchestrator:
                         _fra["avg_stable_rounds"],
                         int(_now - self._vf_gate.deferred_since),
                         self._vf_gate.total_judgments)
+                    # #1202lk: #558 deliberately skips the final re-judge (the average is
+                    # already 2-round stable), so its verdict may or may not cover the
+                    # delivered source. Record which — stamping changes no decision here.
+                    try:
+                        self._stamp_visual_delivery_coverage_1202lk(
+                            bool(self._vf_gate.verdict_covers_delivered_source_1202lk()))
+                    except Exception:
+                        pass
                     # #1133: that wait was the framework's, not the lanes' — give it back.
                     self._credit_framework_deferral_1133(_now - self._vf_gate.deferred_since, "visual (fast-release)")
                 else:
@@ -5201,12 +5233,63 @@ class Orchestrator:
                     # cap), so this re-judges ONLY when the source actually changed since the
                     # stale verdict — the recorded score then reflects the DELIVERED source.
                     await self._maybe_run_visual_fidelity()
+                    # #1202lk: the paragraph above PROMISES "the recorded score then reflects
+                    # the DELIVERED source". Verify it rather than assume it — in r120 the
+                    # final re-judge photographed 0 of 8 screens, returned through the
+                    # capture_unavailable channel (which leaves last_result untouched), and
+                    # the run shipped 1.2.0 sixty seconds later carrying an 18-minute-old
+                    # verdict with nothing anywhere saying so.
+                    _covered_1202lk, _retry_1202lk = True, False
+                    try:
+                        _covered_1202lk = bool(
+                            self._vf_gate.verdict_covers_delivered_source_1202lk())
+                    except Exception:
+                        # A gate double (or a future refactor) must never be the reason a run
+                        # cannot deliver: unknown coverage releases, exactly as it did before.
+                        _covered_1202lk = True
+                    if not _covered_1202lk and not self._vf_gate.passed:
+                        try:
+                            _retry_1202lk = bool(self._vf_gate.arm_final_recapture_1202lk())
+                        except Exception:
+                            _retry_1202lk = False
                     if self._vf_gate.passed:
                         self._logger.warning(
                             "Visual fidelity PASSED on the final pre-release re-judge "
                             "(fresh capture of the delivered source).")
+                        self._stamp_visual_delivery_coverage_1202lk(_covered_1202lk)
+                    elif _retry_1202lk:
+                        # #1202lk (a): NO verdict exists for the code about to ship. That is
+                        # the absence of evidence, not evidence of an unshippable app, so take
+                        # the picture again instead of releasing on an older one. Bounded;
+                        # run_visual_fidelity boots the stack itself, so this is a real retry.
+                        self._logger.warning(
+                            "Visual fidelity: the final pre-release re-judge produced NO "
+                            "verdict for the source about to ship (judged sig %s ≠ delivered "
+                            "%s) — the recorded score belongs to EARLIER code. Deferring this "
+                            "delivery tick for a FRESH capture (final re-capture %s/%s; the "
+                            "per-source attempt budget is re-armed because this is the "
+                            "delivery capture, not a remediation round). #1202lk",
+                            str(getattr(self._vf_gate, "last_judged_sig", None))[:12],
+                            str(self._compute_app_source_signature())[:12],
+                            getattr(self._vf_gate, "final_recaptures_1202lk", 0),
+                            self._final_recapture_cap_1202lk())
+                        return
                     else:
                         # release: an escape fired — deliver anyway, loudly, below-threshold.
+                        if not _covered_1202lk:
+                            # #1202lk (b): the re-capture budget is spent and the app still
+                            # would not photograph. Ship — never deadlock — but say so here
+                            # AND on the artifact, because a score whose provenance is
+                            # unrecorded is read as a verdict on the delivered app by default.
+                            self._logger.warning(
+                                "Visual fidelity: RELEASING WITH A VERDICT THAT DOES NOT COVER "
+                                "THE DELIVERED SOURCE — %s re-capture attempt(s) all failed to "
+                                "photograph the app, so the recorded per-screen scores were "
+                                "judged from earlier code. verdict.json is stamped "
+                                "reflects_delivered_source_1202lk=false; do NOT read those "
+                                "numbers as the delivered UI. #1202lk",
+                                getattr(self._vf_gate, "final_recaptures_1202lk", 0))
+                        self._stamp_visual_delivery_coverage_1202lk(_covered_1202lk)
                         _plat = getattr(self._vf_gate, "plateau_rounds", 0)
                         self._vf_gate.released = True  # #521: LATCH — this milestone's release
                         #                                is now sticky; subsequent delivery polls
