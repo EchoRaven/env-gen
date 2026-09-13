@@ -1815,10 +1815,19 @@ def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
     tiktok-r103 `/api/messages`, tiktok-r110 `/api/live`. Those chains would now fail, and
     `business_chain_failing` blocks on any one of them.
 
-    THE CONTRADICTION IS NOT RESOLVED HERE, deliberately. One of the two is wrong and the
-    ledgers cannot say which: `owner_scoped_reads` is noisy (netflix-r13 carries it on
-    `titles`, a public catalogue), the materials' `visibility` is silent in exactly these
-    cases, and `schema.response.tables` is empty on every one of them. #1202gd already settled
+    THE CONTRADICTION IS RESOLVED ONLY WHERE THE MATERIALS SPEAK (#1202me). One of the two is
+    wrong, and the LEDGERS cannot say which: `owner_scoped_reads` is noisy (netflix-r13
+    carries it on `titles`, a public catalogue) and `schema.response.tables` is empty on every
+    one of them.
+
+    ⚠ This paragraph used to continue "the materials' `visibility` is silent in exactly these
+    cases", measured on netflix-r13 `/api/profiles`, tiktok-r103 `/api/messages` and
+    tiktok-r110 `/api/live`. tiktok-r122 falsified it: its `design/reference_spec.json`
+    declares `videos`, `comments` and `live_streams` PUBLIC while its tables hub carries
+    `visibility=None` for all of them — `_apply_spec_visibility_1202hh` is a render-time
+    backfill that makes no hub write, so a ledger reading None is not the materials being
+    silent. The check now asks the materials directly and splits its message: settled where
+    they speak, unresolved where they do not. #1202gd already settled
     that no structural rule separates a published feed from a private list — the materials
     have to say, and here they do not. Guessing would either re-wall the logged-out surface or
     publish a per-user read; #1202ht refuses the same guess for the same reason.
@@ -1869,15 +1878,60 @@ def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
                     hits.append(f"{rec.get('name') or rec.get('id')}:GET {st.get('path')}")
         if not hits:
             return ""
-        return (" ⚠ CONTRACT/CHAIN CONTRADICTION (#1202kr): "
-                + join_capped(sorted(set(hits)), len(set(hits)), cap=4, sep=", ")
-                + " — these steps require 401/403 from a GET the CONTRACT declares PUBLIC "
-                  "(schema.auth_required=false), and since #1202kh the guard honours that, so "
-                  "the route answers 200. Exactly one of the two is wrong and the framework "
-                  "cannot tell which: if the data is per-user, fix the CONTRACT "
-                  "(register the endpoint auth_required=true) — do NOT just widen the "
-                  "expectation, that would ship an unauthenticated read of private rows. If "
-                  "the read really is public, widen the step to accept 200.")
+        # #1202me: THE MATERIALS OFTEN DO SAY, AND THIS MESSAGE WAS NOT ASKING THEM.
+        #
+        # The docstring above states, as a measured fact, that "the materials' `visibility` is
+        # silent in exactly these cases" — from netflix-r13 `/api/profiles`, tiktok-r103
+        # `/api/messages`, tiktok-r110 `/api/live`. tiktok-r122 falsifies it. Its
+        # `design/reference_spec.json` entities declare
+        #
+        #     videos public · comments public · live_streams public · sounds — · follows —
+        #
+        # while its TABLES HUB carries `visibility=None` for all five, because
+        # `_apply_spec_visibility_1202hh` is a render-time backfill that makes no hub write. A
+        # ledger reading None does NOT mean the materials are silent, and that is precisely
+        # the trap this function fell into: it declared "the framework cannot tell which" for
+        # `comments_page`, `live_streams_page` and `login_page:GET /api/videos`, three chains
+        # the materials settle outright.
+        #
+        # Materials outrank the contract, so where they speak the CHAIN is the wrong half and
+        # the repair is unambiguous. Where they are silent — `follows` here — the original
+        # sentence is right and is kept verbatim. `_spec_visibility_1202hh` is the same reader
+        # `_contract_materials_disagreement_1202ky` uses ten lines below in this very module;
+        # reused, not re-derived.
+        _settled_1202me, _open_1202me = [], []
+        try:
+            from .backend_skeleton import _spec_visibility_1202hh
+            _root_me = str(getattr(hubs, "base_dir", "") or "")
+            _vis_me = (_spec_visibility_1202hh(_root_me) or {}) if _root_me else {}
+            _public_me = {str(k).strip().lower() for k, v in _vis_me.items()
+                          if str(v).strip().lower() == "public"}
+        except Exception:
+            _public_me = set()
+        for _h in sorted(set(hits)):
+            _path_me = _h.split("GET ", 1)[-1]
+            _tok_me = next((_x for _x in _path_me.strip("/").split("/")
+                            if _x and not _x.startswith("{") and _x != "api"), "")
+            (_settled_1202me if _tok_me.lower() in _public_me else _open_1202me).append(_h)
+        _msg = " ⚠ CONTRACT/CHAIN CONTRADICTION (#1202kr): "
+        if _settled_1202me:
+            _msg += (join_capped(_settled_1202me, len(_settled_1202me), cap=4, sep=", ")
+                     + " — these require 401/403 from a GET the contract declares PUBLIC, and "
+                       "the MATERIALS declare those tables PUBLIC too. Materials outrank the "
+                       "contract, so the CHAIN is the wrong half: widen the step to accept "
+                       "200. Do NOT register the endpoint auth_required=true — that would "
+                       "re-wall a surface the materials published (#1202me). ")
+        if _open_1202me:
+            _msg += (join_capped(_open_1202me, len(_open_1202me), cap=4, sep=", ")
+                     + " — these require 401/403 from a GET the CONTRACT declares PUBLIC "
+                       "(schema.auth_required=false), and since #1202kh the guard honours "
+                       "that, so the route answers 200. The materials are SILENT on these "
+                       "tables, so exactly one of the two is wrong and the framework cannot "
+                       "tell which: if the data is per-user, fix the CONTRACT (register the "
+                       "endpoint auth_required=true) — do NOT just widen the expectation, "
+                       "that would ship an unauthenticated read of private rows. If the read "
+                       "really is public, widen the step to accept 200.")
+        return _msg
     except Exception as _e1202kr:
         # #1202ah: a gate helper that swallows an exception and returns empty makes a crashed
         # check read as a passed one. Say so once — the blocker itself still fires either way,
