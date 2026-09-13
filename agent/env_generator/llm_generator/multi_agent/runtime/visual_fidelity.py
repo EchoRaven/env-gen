@@ -2951,6 +2951,57 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
 # ---------------------------------------------------------------------------
 # The gate
 # ---------------------------------------------------------------------------
+_API_404_RE_1202LZ = re.compile(
+    r"\b404\b[^\n]*?\bhttps?://[^\s'\"]*?(/(?:api|auth|oauth)/[A-Za-z0-9_\-./{}:]*)")
+
+
+def api_404s_from_console_1202lz(console_errors: Any) -> Dict[str, List[str]]:
+    """#1202lz: the /api paths the BROWSER proved this app calls and does not serve.
+
+    The delivery gate's contract-alignment check finds frontend↔contract drift by scanning
+    the frontend SOURCE for path literals, and says so itself: "its extractor recognises
+    `request(...)` and `fetch(...)` only". It has a second blind spot it does not state, and
+    cannot: **the running bundle can call a path the source no longer spells out.**
+
+    tiktok-r121 is that case. The browser recorded, twice, during capture:
+
+        #740 ... http: 404 GET http://localhost:8081/api/profiles (on 1 screen(s): (startup));
+                 http: 404 GET http://localhost:8081/api/profile  (on 1 screen(s): (startup))
+
+    `/api/profiles` appears NOWHERE in that run's frontend source, and `git log -S` finds it
+    in none of the repo's 389 commits — but it IS a backend route in the browser-test-user
+    worktrees, so the contract once served it and no longer does. The gate meanwhile reported
+    `frontend_calls: 11, frontend_call_unregistered: 0`, and the registry holds no endpoint
+    with "profile" in it at all. No source scan can ever close that gap; only the live browser
+    can, and it already had.
+
+    #740 routes every console error into the screens' visual DEVIATIONS, which sends this to
+    the frontend lane as a rendering defect. It is not one — it is the contract question, and
+    naming it as itself is the whole fix.
+
+    REPORTS, never blocks. An /api 404 can be legitimate (an optional resource, a probe), the
+    signal is best-effort, and this codebase has paid repeatedly for turning a best-effort
+    signal into a refusal (#504, r81). Returns {path: [screen, ...]}, empty on anything
+    unparseable.
+    """
+    out: Dict[str, List[str]] = {}
+    try:
+        if not isinstance(console_errors, Mapping):
+            return out
+        for _screen, _msgs in console_errors.items():
+            for _m in (_msgs or []):
+                for _path in _API_404_RE_1202LZ.findall(str(_m)):
+                    _p = str(_path).rstrip("/").split("?", 1)[0]
+                    if not _p:
+                        continue
+                    _seen = out.setdefault(_p, [])
+                    if str(_screen) not in _seen:
+                        _seen.append(str(_screen))
+    except Exception:
+        return out
+    return out
+
+
 def _group_console_errors_740(console_errors: Any) -> Dict[str, List[str]]:
     """#740: {screen -> [messages]} inverted to {message -> [screens]}.
 
@@ -3954,6 +4005,22 @@ async def run_visual_fidelity(
         summary += " [blank capture: %s]" % ", ".join(_blank_screens)
     # #740: SAY THE ERROR OUT LOUD, ONCE PER PASS. Grouped by message rather than by screen —
     # one broken import crashes every route, and 12 identical lines read as 12 problems.
+    # #1202lz: separate the /api 404s out of the console stream and name them as the
+    # contract question they are, BEFORE #740 folds the whole stream into visual deviations.
+    _api404_1202lz = api_404s_from_console_1202lz(_console740)
+    if _api404_1202lz:
+        _LOG.warning(
+            "#1202lz the browser called %d /api path(s) this app does NOT serve: %s. This is "
+            "frontend↔contract drift, not a rendering defect, and the delivery gate's "
+            "contract-alignment check cannot see it: that check scans the frontend SOURCE for "
+            "path literals, and a built bundle can call a path the source no longer spells "
+            "out (tiktok-r121: `/api/profiles` is in no source file and in none of the repo's "
+            "389 commits, yet the running bundle requested it). Reported, not blocked — an "
+            "/api 404 can be legitimate.",
+            len(_api404_1202lz),
+            join_capped([f"{_p} (on {len(_ss)} screen(s): {', '.join(sorted(_ss)[:3])})"
+                         for _p, _ss in sorted(_api404_1202lz.items())],
+                        len(_api404_1202lz), cap=8))
     _by740 = _group_console_errors_740(_console740)
     if _by740:
         _LOG.warning(
@@ -4028,6 +4095,9 @@ async def run_visual_fidelity(
             # was not. Reused, not re-derived (#665/#1136): `build_currency_1202ex` already
             # answers exactly this and carries its own never-raises contract.
             "build_currency_1202lx": _build_currency_1202lx(project_dir),
+            # #1202lz: /api paths the browser proved this app calls and does not serve. On the
+            # artifact because the static extractor structurally cannot produce this list.
+            "api_404s_1202lz": _api404_1202lz,
             "min_similarity": min_similarity}
 
 
