@@ -4018,7 +4018,9 @@ async def run_visual_fidelity(
             "389 commits, yet the running bundle requested it). Reported, not blocked — an "
             "/api 404 can be legitimate.",
             len(_api404_1202lz),
-            join_capped([f"{_p} (on {len(_ss)} screen(s): {', '.join(sorted(_ss)[:3])})"
+            # #1034: the inner list is capped by `join_capped` too — a bare `[:3]` beside
+            # `len(_ss)` reads as "these are the N screens" and silently is not.
+            join_capped([f"{_p} (on {join_capped(sorted(_ss), len(_ss), cap=3)})"
                          for _p, _ss in sorted(_api404_1202lz.items())],
                         len(_api404_1202lz), cap=8))
     _by740 = _group_console_errors_740(_console740)
