@@ -33,9 +33,10 @@ def test_the_falsified_claim_is_gone_from_the_docstring():
     # The phrase survives, but only inside the sentence that RETRACTS it. Assert the
     # retraction rather than the absence — the claim's history is worth keeping, its
     # standing as current fact is not.
+    # #943: the SENTENCE containing the phrase, not "the 200 bytes before it".
     if "silent in exactly these cases" in doc:
-        i = doc.index("silent in exactly these cases")
-        assert "used to continue" in doc[max(0, i - 200):i], doc[max(0, i - 200):i + 60]
+        sentence = next(t for t in doc.split(". ") if "silent in exactly these cases" in t)
+        assert "used to continue" in sentence, sentence
     assert "falsified it" in doc
     assert "render-time backfill that makes no hub write" in doc
 
@@ -99,10 +100,15 @@ def test_a_missing_root_degrades_to_the_old_behaviour():
 
 
 def test_the_resource_token_skips_params_and_the_api_prefix():
-    i = _SRC.index("_tok_me = next(")
-    seg = _SRC[i:i + 300]
-    assert 'startswith("{")' in seg
-    assert '!= "api"' in seg
+    # #943: the Assign node, not a fixed slice after its name.
+    import ast
+    stmts = [ast.unparse(n) for n in ast.walk(ast.parse(_SRC.lstrip()))
+             if isinstance(n, ast.Assign)
+             and any(getattr(t, "id", "") == "_tok_me" for t in n.targets)]
+    assert stmts, "the resource-token extraction moved"
+    seg = stmts[0]
+    assert "startswith('{')" in seg or 'startswith("{")' in seg
+    assert "!= 'api'" in seg or '!= "api"' in seg
 
 
 # ------------------------------------------------------------------ behaviour
