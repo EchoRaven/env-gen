@@ -629,6 +629,33 @@ try:
 except Exception:
     _FWDataError = None
 
+def _fw_data_error_hint_1202ma(orig) -> str:
+    """#1202ma: the part of a driver DataError a caller can ACT on, without the value.
+
+    The response prose here is deliberately fixed ("no DB internals leaked") and the driver
+    text goes to `logging.getLogger("app.integrity")` — "the log the owning lane can read".
+    Measured across four tiktok runs (r117/r119/r120/r121): `docker_logs` was called ZERO
+    times in any of them. Nobody has ever read that log. Meanwhile r121's test-user filed
+    `POST /api/feed -> 400 ({"detail":"invalid field value"})` six times with nothing to act
+    on.
+
+    So the actionable half comes back in a SECOND field. Postgres says "invalid input syntax
+    for type integer: \"abc\"" — the part before the colon names the type and is safe; the
+    part after is the value and stays out. Bounded, single-line, and never raises: this runs
+    on an already-failing path.
+    """
+    try:
+        _t = str(orig or "").strip().splitlines()[0]
+        for _cut in ('"', "'"):
+            _i = _t.find(_cut)
+            if _i > 0:
+                _t = _t[:_i]
+        _t = _t.rstrip(" :,")
+        return _t[:120] or "no driver detail"
+    except Exception:
+        return "no driver detail"
+
+
 if _FWDataError is not None:
     @app.exception_handler(_FWDataError)
     async def _framework_data_error_handler(request, exc):
@@ -641,7 +668,12 @@ if _FWDataError is not None:
                 getattr(exc, "orig", None) or exc)
         except Exception:
             pass
-        return _FWIntegrityJSON(status_code=400, content={"detail": "invalid field value"})
+        return _FWIntegrityJSON(status_code=400, content={
+            "detail": "invalid field value",
+            # #1202ma: name the TYPE that rejected the value. `detail` is unchanged on
+            # purpose — chain_executor matches it as a substring — and the value itself is
+            # still withheld, so the "no DB internals leaked" rule above holds.
+            "field_hint": _fw_data_error_hint_1202ma(getattr(exc, "orig", None) or exc)})
 # === end integrity mapping ===
 '''
 
