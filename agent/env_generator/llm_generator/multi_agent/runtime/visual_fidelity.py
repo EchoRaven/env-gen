@@ -3911,13 +3911,45 @@ async def run_visual_fidelity(
     # render. Purely additive — the pass/fail verdict + the 0.65 bar are unchanged.
     _blk_avg = _blocking_similarity_average(results)
     failing = [f"{r['name']}({r['similarity']:.2f})" for r in _blocking if not r["passed"]]
-    _adv_note = [f"{r['name']}({r['similarity']:.2f})" for r in results
-                 if r.get("advisory")]
+    # #1202lw: SAY WHY EACH SCREEN IS ADVISORY, instead of asserting "overlay" for all of them.
+    #
+    # This label was the fixed string "advisory (overlay, non-blocking)", and in tiktok-r121
+    # it described seven screens that `design_system.json` classifies `kind=page`:
+    #
+    #   Visual fidelity PASSED (... friends_suggested_creators=0.28, live_discover=0.40,
+    #     messages_dm_empty=0.13): all 2 screens >= 0.65 (blocking avg 0.72)
+    #     [advisory (overlay, non-blocking): ... friends_suggested_creators(0.28) ...]
+    #
+    # The real reason is one line earlier in the same log: "VISUAL MILESTONE-SCOPE (#565):
+    # demoted 7 non-owned screen(s) ... to advisory for this milestone". Two of those three
+    # were then independently reported BLANK by the browser test-user, so a reader who wants
+    # to know whether a 0.13 matters is exactly the reader this sentence misdirects — I spent
+    # a detour in the classification file on the strength of it. #949's rule: naming a cause
+    # nobody checked is worse than naming none, because it sends the reader somewhere real.
+    #
+    # Everything needed is already in scope: `_scope_excluded_names` from the #565 pass, and
+    # `advisory_reason`, which #595/#1202-era demotions already set and nothing ever read.
+    def _adv_reason_1202lw(r) -> str:
+        if str(r.get("name") or "") in set(_scope_excluded_names):
+            return "not this milestone's routes (#565)"
+        _why = str(r.get("advisory_reason") or "").strip()
+        if _why:
+            return _why[:80]
+        return "overlay/transient screen"
+
+    _adv_groups_1202lw: Dict[str, List[str]] = {}
+    for r in results:
+        if not r.get("advisory"):
+            continue
+        _adv_groups_1202lw.setdefault(_adv_reason_1202lw(r), []).append(
+            f"{r['name']}({r['similarity']:.2f})")
+    _adv_note = ["%s: %s" % (_why, ", ".join(sorted(_names)))
+                 for _why, _names in sorted(_adv_groups_1202lw.items())]
     summary = ("all %d screens ≥ %.2f" % (len(_blocking), min_similarity) if passed
                else "below %.2f: %s" % (min_similarity, ", ".join(failing)))
     summary += " (blocking avg %.2f)" % _blk_avg
     if _adv_note:
-        summary += " [advisory (overlay, non-blocking): %s]" % ", ".join(_adv_note)
+        summary += " [advisory (non-blocking) — %s]" % "; ".join(_adv_note)
     if _blank_screens:
         summary += " [blank capture: %s]" % ", ".join(_blank_screens)
     # #740: SAY THE ERROR OUT LOUD, ONCE PER PASS. Grouped by message rather than by screen —
