@@ -2277,7 +2277,7 @@ Examples:
 _RUN_PORTS_ENV_1134 = "ENVGEN_RUN_HTTP_PORTS"
 
 
-def foreign_target_notice_1134(url: str) -> str:
+def foreign_target_notice_1134(url: str, answered: bool = True) -> str:
     """#1134: is this probe aimed at THIS run's app, or at some other service on the host?
 
     `test_api` accepts any URL and reports whatever answers. On a machine running more than
@@ -2334,12 +2334,29 @@ def foreign_target_notice_1134(url: str) -> str:
         port = str(u.port or ("443" if u.scheme == "https" else "80"))
         if port in allowed:
             return ""
+        # #1202lv: the wording assumed something ANSWERED. On a refusal nothing did, and
+        # "whatever answered is a different service" is then a statement about an event that
+        # did not happen — the mis-attribution #949 ruled is worse than silence. tiktok-r121
+        # live: the backend lane probed `http://localhost:8082/oauth/register` from the HOST
+        # and got ECONNREFUSED. 8082 is that run's CONTAINER-internal API port (`API_PORT:
+        # 8082`, `ports: - "3001:8082"`), which is why the compose file makes it look right;
+        # the host answer was 3001. This notice already knew that and told the lane the wrong
+        # story about why.
+        _targets = ", ".join("localhost:" + p for p in sorted(allowed))
+        if answered:
+            return (
+                "#1134 WRONG TARGET: this run's app publishes %s on localhost, and you probed "
+                ":%s. Whatever answered is a DIFFERENT service on this host, so its response "
+                "says nothing about this product — do not file it as a defect. Re-probe "
+                "against %s."
+                % (", ".join(":" + p for p in sorted(allowed)), port, _targets))
         return (
-            "#1134 WRONG TARGET: this run's app publishes %s on localhost, and you probed "
-            ":%s. Whatever answered is a DIFFERENT service on this host, so its response says "
-            "nothing about this product — do not file it as a defect. Re-probe against %s."
-            % (", ".join(":" + p for p in sorted(allowed)), port,
-               ", ".join("localhost:" + p for p in sorted(allowed))))
+            "#1134 WRONG TARGET: nothing is listening on :%s and nothing was going to be — "
+            "this run publishes %s on localhost. A port that appears in docker-compose.yml is "
+            "often the CONTAINER-internal one (e.g. `ports: \"3001:8082\"` means 8082 INSIDE "
+            "the container, 3001 from here), so this is not evidence the service is down. "
+            "Re-probe against %s. (#1202lv)"
+            % (port, ", ".join(":" + p for p in sorted(allowed)), _targets))
     except Exception:
         return ""
 
@@ -2423,7 +2440,14 @@ To test them, get a token first, then pass it as a header:
         # #1134: the probe runs either way; the CALLER is told when it was not our app.
         result = self._execute_1134(
             method, url, body=body, headers=headers, expect=expect)
-        _fn = foreign_target_notice_1134(url)
+        # #1202lv: tell the notice whether anything actually ANSWERED. A refused probe and a
+        # wrong-service reply need opposite sentences, and only the result knows which
+        # happened: an HTTP error still carries a status, a transport failure carries none.
+        _answered_1202lv = bool(
+            getattr(result, "success", False)
+            or (isinstance(getattr(result, "data", None), dict)
+                and result.data.get("status")))
+        _fn = foreign_target_notice_1134(url, answered=_answered_1202lv)
         if _fn:
             try:
                 result.notices.append(_fn)
