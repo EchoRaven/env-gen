@@ -1375,9 +1375,24 @@ def _compose_lock_1202dl(project_dir: Any, wait_sec: float = 120.0):
     `Frontend unreachable on port 8007 during validation` 22 times, next to the framework's
     own note that 90 of 129 runs end this way.
 
-    Held only across the compose call. Holding it through the capture session would block
-    validations for minutes and trade this race for starvation; a teardown mid-capture is
-    already handled by the `capture_unavailable` refund path.
+    Held across the compose call AND the capture session (#1202ll). The original scope was
+    the compose call only, on two premises that measurement falsified:
+
+      * *"Holding it through the capture session would block validations for minutes."*
+        Measured over the 60 runs that kept per-screen captures: a full session is a MEDIAN
+        OF 19 SECONDS (p90 49s, 8 screens typical). One validation cycle's own hold —
+        `down -v` 2s + `build` 13-26s + `up` 7s — is 22-35s, i.e. LONGER than the capture it
+        was refusing to wait for. And `run_smoke_validation` waits 600s for this lock before
+        it gives up, so the hold was never near its patience. The premise is off by an order
+        of magnitude; the slow tail (3 of 60, up to 413s) is what the deadline below bounds.
+
+      * *"a teardown mid-capture is already handled by the `capture_unavailable` refund
+        path."* r120 is the counter-example. The validation loop was recycling the stack
+        every ~90s; at 19:16:59 all 8 screens raised ERR_CONNECTION_REFUSED in the SAME
+        SECOND, `capture_unavailable` fired, and — being the "not a judgment" channel — it
+        left the recorded verdict at 18:59:51 and the run delivered 1.2.0 sixty seconds
+        later on an 18-minute-old score. "Refunded" is not "handled": a refund buys another
+        round, and this was the last one.
     """
     try:
         import fcntl as _fcntl
@@ -1397,6 +1412,64 @@ def _compose_lock_1202dl(project_dir: Any, wait_sec: float = 120.0):
             if time.time() >= deadline:
                 return fh, False
             time.sleep(2)
+
+
+try:
+    # #1202ll: the ceiling on how long the capture may keep validations waiting. Twice the
+    # measured p90 (49s), and a fifth of `run_smoke_validation`'s 600s patience.
+    _CAPTURE_LOCK_HOLD_1202LL = float(
+        os.environ.get("ENVGEN_VISUAL_CAPTURE_LOCK_HOLD", "120"))
+except Exception:
+    _CAPTURE_LOCK_HOLD_1202LL = 120.0
+
+
+class _CaptureLockHold1202ll:
+    """Keeps the compose lock for the capture session, and gives it up on a deadline.
+
+    A plain `finally` around the captures cannot be written without re-indenting ~140 lines
+    of `run_visual_fidelity`, and every early return inside that span would need to find it.
+    A watchdog is release-by-construction instead: whatever the capture does -- returns,
+    raises, or hangs on a route whose page never loads -- the lock is gone within
+    `_CAPTURE_LOCK_HOLD_1202LL` seconds. `release()` is idempotent, so the fast path (median
+    19s) still hands it back the moment the last screenshot lands.
+    """
+
+    def __init__(self, fh, deadline: float) -> None:
+        self._fh = fh
+        self._released = False
+        self._task = None
+        try:
+            import asyncio as _a
+            self._task = _a.get_running_loop().create_task(self._expire(deadline))
+        except Exception:
+            # No running loop (a synchronous caller or a test double): degrade to the
+            # pre-#1202ll scope rather than holding a lock nothing will ever release.
+            self.release()
+
+    async def _expire(self, deadline: float) -> None:
+        try:
+            import asyncio as _a
+            await _a.sleep(deadline)
+        except Exception:
+            return
+        if not self._released:
+            _LOG.warning(
+                "#1202ll: capture session still running after %ss — releasing the compose "
+                "lock so validations are not starved. The remaining screens may race a "
+                "`down -v`; that is the bounded tail, not the common case (median 19s).",
+                int(deadline))
+        self.release()
+
+    def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        _release_compose_lock_1202dl(self._fh)
+        try:
+            if self._task is not None and not self._task.done():
+                self._task.cancel()
+        except Exception:
+            pass
 
 
 def _release_compose_lock_1202dl(fh) -> None:
@@ -3308,6 +3381,9 @@ async def run_visual_fidelity(
     shots_dir = out_dir or (project_dir / "design" / "visual_gate")
     # #935: same reason as shots_dir above — the no-capture handler reads it whichever branch ran.
     _cap_err935: Dict[str, str] = {}
+    # #1202ll: None whenever nothing is holding the compose lock — an injected `capture_fn`
+    # (tests) never boots a stack, and the boot path sets it only after a successful `up`.
+    _cap_lock_1202ll = None
     if capture is None:
         # #1202dl: take the lock `run_smoke_validation` holds, so the gate cannot boot the
         # stack while a validation is mid `down -v`/`up` — #36's race with one participant
@@ -3318,12 +3394,18 @@ async def run_visual_fidelity(
             if not _got1202dl:
                 return _deferred_for_compose_lock_1202dl(skipped)
             err = _compose_up(project_dir)
+            if err:
+                # #1202de: a host fault (full disk, taken port, dead daemon) is not a verdict
+                # about the app — it routes to the refund channel instead of burning a round.
+                return _boot_failure_result_1202de(err, skipped)
+            # #1202ll: HAND the lock to the capture session rather than dropping it here.
+            # Booting the stack under the lock and then photographing it unlocked protects
+            # the two seconds that were never the exposure: the 18 seconds of `page.goto`
+            # that follow are what a validation's `down -v` lands in.
+            _cap_lock_1202ll = _CaptureLockHold1202ll(_lk1202dl, _CAPTURE_LOCK_HOLD_1202LL)
         finally:
-            _release_compose_lock_1202dl(_lk1202dl)
-        if err:
-            # #1202de: a host fault (full disk, taken port, dead daemon) is not a verdict
-            # about the app — it routes to the refund channel instead of burning a round.
-            return _boot_failure_result_1202de(err, skipped)
+            if _cap_lock_1202ll is None:
+                _release_compose_lock_1202dl(_lk1202dl)
         compose_file = project_dir / "docker" / "docker-compose.yml"
         cwd = project_dir / "docker"
         # FIX #207: resolve THIS app's OWN host ports — retry within the readiness
@@ -3464,6 +3546,11 @@ async def run_visual_fidelity(
             _blank_screens.clear()
             _picker_screens.clear()
             shots = await capture(judged_screens)
+    # #1202ll: the last screenshot has landed (including the #105 re-mint retry, which
+    # re-photographs every screen and is exactly the window a `down -v` must not enter).
+    # Idempotent, and the watchdog has already covered every early return above.
+    if _cap_lock_1202ll is not None:
+        _cap_lock_1202ll.release()
     if _auth_wipeout_655(judged_screens, _auth_bounced):        # #655
         # The minted token was rejected wholesale (e.g. the validation cycle
         # rebuilt the app between mint and capture, rotating the JWT keys).
