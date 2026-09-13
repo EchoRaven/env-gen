@@ -21,6 +21,63 @@ from ._base import ToolResult
 from .hub_tools import HubTool, _finalize_hub_tools
 
 
+# #1202ln: A DEFAULT PORT IS A GUESS, AND THIS ONE PROBED POSTGRES.
+#
+# `run_start`'s base_url defaulted to `http://localhost:8000`. The framework assigns each run
+# its own FREE host ports, so 8000 belongs to whatever that run happened to get. tiktok-r121
+# gave it to the DATABASE:
+#
+#     docker-compose.yml:  PGPORT: 8000   ports: - "8000:8000"
+#     runhub record:       {"status": "aborted", "healthcheck": {
+#                            "url": "http://localhost:8000/health", "attempts": 31,
+#                            "elapsed_s": 60.8,
+#                            "last_error": "Server disconnected without sending a response."}}
+#
+# That error is Postgres closing an HTTP request it cannot parse -- not a dead backend. The
+# run's real API was on 3001 and answering (`GET http://localhost:3001/api/feed -> 200` in the
+# same ledger). SEVEN of r121's 25 RunHub runs aborted this way, and the last one did it at
+# 00:00:52, ninety seconds after the delivery gate had gone COMPLETELY CLEAR (failed_checks
+# []). The orchestrator minted `task_p0_backend_health_abort_after_noop_fix` from it, the gate
+# re-opened, and the run died on its wall-clock cap 23 minutes later having delivered nothing.
+#
+# #207 fixed this exact shape for the visual gate and wrote the rule in `_resolve_app_port`:
+# "NEVER a magic fallback (:8080/:3001 host a persistent gmaps demo -- a fixed fallback made
+# the visual gate screenshot the WRONG app)". The rule never reached this tool. The tool's own
+# docstring for `generated_dir` states the same principle one field above -- "NOT something
+# the model can know ... never let a model guess" -- and then leaves base_url to a constant.
+_BAD_DEFAULT_BASE_URL_1202LN = "http://localhost:8000"
+
+
+def _resolved_base_url_1202ln(generated_dir):
+    """The run's OWN backend base URL, read from its OWN compose file. None if unresolvable.
+
+    Reuses `validation_runner._service_host_port` (which carries #962/#1136's guard against
+    resolving a *stranger's* container) rather than keeping a second copy -- #665's lesson is
+    that the copy drifts, and #1136 WAS that drift.
+    """
+    try:
+        from pathlib import Path as _P
+        try:
+            from multi_agent.runtime.validation_runner import _service_host_port
+        except Exception:
+            from env_generator.llm_generator.multi_agent.runtime.validation_runner import (
+                _service_host_port)
+        root = _P(str(generated_dir or "")).expanduser()
+        compose = root / "docker" / "docker-compose.yml"
+        if not compose.is_file():
+            return None
+        for svc in ("backend", "api", "server", "app"):
+            try:
+                port = _service_host_port(compose, compose.parent, svc)
+            except Exception:
+                port = None
+            if port:
+                return "http://localhost:%d" % int(port)
+        return None
+    except Exception:
+        return None
+
+
 class RunStartTool(HubTool):
     NAME = "run_start"
     DESCRIPTION = (
@@ -39,15 +96,17 @@ class RunStartTool(HubTool):
             },
             "base_url": {
                 "type": "string",
-                "description": "base URL the app exposes",
-                "default": "http://localhost:8000",
+                "description": "Optional -- the app's base URL. Auto-resolved from this "
+                               "run's own docker-compose.yml; leave it out. Host ports are "
+                               "assigned per run, so a guessed port can address another "
+                               "service entirely (#1202ln).",
             },
         },
         "required": ["branch"],
     }
 
     async def _run(self, *, branch: str, generated_dir: str = "",
-                   base_url: str = "http://localhost:8000") -> ToolResult:
+                   base_url: str = "") -> ToolResult:
         try:
             # generated_dir is framework CONTEXT (the env root holding
             # docker-compose.yml), NOT something the model can know — the schema
@@ -64,6 +123,26 @@ class RunStartTool(HubTool):
             base_dir = str(getattr(self._hubs, "base_dir", "") or "")
             if base_dir:
                 generated_dir = base_dir
+            # #1202ln: base_url is framework CONTEXT for exactly the reason generated_dir is
+            # -- the host port is assigned at compose-generation time and no model can know
+            # it. Resolve it from this run's own compose file; a caller-supplied value is
+            # honoured ONLY when resolution fails AND it is not the old magic constant.
+            _resolved = _resolved_base_url_1202ln(generated_dir)
+            if _resolved:
+                base_url = _resolved
+            elif not base_url or base_url == _BAD_DEFAULT_BASE_URL_1202LN:
+                # #207's "skip honestly": probing a port we cannot attribute is worse than
+                # not probing. An aborted run that named the wrong service mints a P0 against
+                # the lane and re-opens a clear delivery gate -- r121 died that way.
+                return ToolResult(
+                    success=False,
+                    error_message=(
+                        "run_start: could not resolve this run's backend host port from "
+                        "%s/docker/docker-compose.yml, and will not fall back to a fixed "
+                        "port -- host ports are per-run, so :8000 may be this run's DATABASE "
+                        "(it was in tiktok-r121, and seven runs aborted probing it). Bring "
+                        "the stack up (or pass the port from the compose file) and retry. "
+                        "(#1202ln)" % (generated_dir or "<no generated_dir>")))
             run = self._hubs.runhub.start_run(
                 branch=branch,
                 generated_dir=generated_dir,
