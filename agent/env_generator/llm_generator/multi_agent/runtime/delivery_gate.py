@@ -1549,14 +1549,57 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
         endpoints = {}
     reg_clean: Dict[str, str] = {}
     impl_ep: set = set()
+    deprecated_ep: set = set()   # #1202lr: retired registrations — their tasks are not required
     for k, v in endpoints.items():
         if k == "_meta" or not isinstance(v, dict):
             continue
-        # Deprecated endpoints are retired from the contract — do NOT count them as
-        # "required" here. lifecycle.business_endpoints (and validation_ready) already
-        # filter them out, so counting them only here makes delivery block on an
-        # endpoint validation considers done (the deprecated-asymmetry: ready-yet-blocked).
+        # #1202lr: THIS EXEMPTION WAS INVERTED, AND IT BLOCKED FOREVER INSTEAD OF EXEMPTING.
+        #
+        # The intent below is right — "deprecated endpoints are retired from the contract, do
+        # NOT count them as required" — but `continue` here drops the endpoint from
+        # `reg_clean`, which is the EVIDENCE map, not the requirement list. The task that
+        # names it still exists in workhub, and `_endpoint_validated` opens with
+        #
+        #     clean = reg_clean.get(nk)
+        #     if not clean:  # endpoint not even registered -> cannot be validated
+        #         return False
+        #
+        # so a deprecated endpoint's task can never find evidence and is reported incomplete
+        # on EVERY evaluation, with the reason "endpoint not implemented in registry and no
+        # passing contract-test record" — about an endpoint the contract retired. Exempting
+        # the evidence is the opposite of exempting the requirement.
+        #
+        # tiktok-r121's resume died on exactly this. Its last two blockers at the abort:
+        #
+        #     validate.api_smoke.get.__noop_orchestrator_read_not_allowed   <- deprecated
+        #     validate.api_smoke.post._auth_logout                          <- genuinely open
+        #
+        # and its registry carries four unsatisfiable registrations, all `deprecated`:
+        #
+        #     GET /__noop__                                        (an agent's parked probe)
+        #     GET /__noop_orchestrator_read_not_allowed__           (a framework sentinel)
+        #     GET /api/videos/{encodeURIComponent}(id)              (a JS template literal
+        #     GET /api/videos/{encodeURIComponent}(id)/comments      scraped from a fetch call)
+        #
+        # None can ever be implemented, which is precisely why somebody deprecated them.
+        #
+        # ★ Precisely: such a task is not UNSATISFIABLE, it is unsatisfiable BY EVIDENCE. A
+        # lane can still close it by hand, and r121's lanes did — the ledger carries a task
+        # named `task_p0_backend_remove_dead_noop_endpoints_final_gate`. What that cost is
+        # the point: this function SYNTHESIZED four requirements at 02:18 against endpoints
+        # the contract had already retired, and the lanes spent the last ten minutes of an
+        # exhausted clock closing them by hand. (The abort that followed is #1202ls's
+        # business — by then this gate had stopped asking for anything real.)
+        #
+        # #1167 and #251/#1202ds/#1202dw already exempt these same registrations in the shape
+        # check and the response-key check. This is the third reader of one fact, and it had
+        # its own half-rule (see [[feedback_one_fact_many_emitters]]): keep the endpoint in
+        # `reg_clean` so nothing else breaks, remember it as deprecated, and drop the TASK.
         if v.get("status") == "deprecated":
+            _dep_nk = _norm(
+                f"{(v.get('method') or '').upper()} {v.get('path') or ''}".strip()
+                if v.get("method") else str(k))
+            deprecated_ep.add(_dep_nk)
             continue
         clean = (
             f"{(v.get('method') or '').upper()} {v.get('path') or ''}".strip()
@@ -1635,6 +1678,12 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
         if t.get("status") not in {"pending", "in_progress"}:
             continue
         kind = (t.get("metadata") or {}).get("kind") or t.get("kind")
+        # #1202lr: a task about a RETIRED endpoint is not a requirement. Checked once here
+        # rather than inside each branch so a future endpoint-keyed kind inherits it — the
+        # half-rule above is what made this a delivery blocker in the first place.
+        if (kind in {"implement_endpoint", "validate_api_smoke"}
+                and _endpoint_norm(t) in deprecated_ep):
+            continue
         if kind == "implement_endpoint":
             _nk = _endpoint_norm(t)
             # Covered if the lane flipped the registry status, OR if api_smoke
@@ -2606,7 +2655,8 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
                       max_failed: int = 2,
                       recent_s: float = 1800.0,
                       grace_s: float = 900.0,
-                      max_grace: int = 2) -> float:
+                      max_grace: int = 2,
+                      instances_shrinking: bool = False) -> float:
     """#228 — seconds of extra time the no-convergence fail-fast should grant.
 
     r20 (live): the run converged to ONE failing gate
@@ -2628,7 +2678,24 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
         return 0.0
     if failed_count <= 0 or failed_count > max_failed:
         return 0.0
-    if last_shrink_age_s > recent_s:
+    # #1202ls: A CHECK NAME IS FLAT WHILE THE LANE CLEARS ITS INSTANCES ONE AT A TIME.
+    #
+    # `last_shrink_age_s` measures the failing CHECK SET — the names. r121's resume held
+    # exactly `['incomplete_required_tasks']` from 02:21 to its abort at 02:28:30, so that
+    # clock never moved. Underneath, the blocking instances went
+    #
+    #     02:21 4 -> 02:22 7 -> 02:24 6 -> 02:25 6 -> 02:26 2 -> 02:27 2 -> 02:28 2
+    #
+    # and the last two tasks completed at 02:29:09 and 02:29:10 — THIRTY-NINE SECONDS after
+    # the abort. #228 exists for exactly this ("the verifier cleared the LAST gate 36s after
+    # the abort fired"); it just could not see a set that shrinks without losing a member.
+    #
+    # `instances_shrinking` is the same falling-instance-count signal #1202lo gives the
+    # wall-clock cap, validated on known cases there: zero of the corpus's seven stuck_aborts
+    # exhibit it. It satisfies the RECENCY requirement only — `max_failed` and the
+    # `max_grace` budget still bound everything, so this widens what counts as converging
+    # without adding a second, unbudgeted grace.
+    if last_shrink_age_s > recent_s and not instances_shrinking:
         return 0.0
     return float(grace_s)
 

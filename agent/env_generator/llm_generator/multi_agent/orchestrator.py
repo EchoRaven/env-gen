@@ -4080,6 +4080,15 @@ class Orchestrator:
                 pass
 
     @staticmethod
+    def _converging_instances_1202ls_impl(output_dir) -> bool:
+        """#1202ls: is the gate's blocking-INSTANCE count falling? Best-effort False."""
+        try:
+            from .runtime.run_budget import converging_at_the_gate_1202lo
+            return bool(converging_at_the_gate_1202lo(output_dir))
+        except Exception:
+            return False
+
+    @staticmethod
     def _final_recapture_cap_1202lk() -> int:
         """#1202lk: the re-capture budget, read from the gate module so the env override
         (ENVGEN_VISUAL_FINAL_RECAPTURES) is honoured by the one place that reports it."""
@@ -4972,7 +4981,13 @@ class Orchestrator:
                         last_shrink_age_s=(_now2 - _shrink_ts) if _shrink_ts else 1e9,
                         # #1202em: `or 0` — a restored None makes the attribute PRESENT,
                         # so the getattr default never applies.
-                        grace_used=(getattr(self, "_fwdeliver_grace_count", 0) or 0))
+                        grace_used=(getattr(self, "_fwdeliver_grace_count", 0) or 0),
+                        # #1202ls: the failing-set clock above cannot see a set that shrinks
+                        # WITHOUT losing a member. r121 held `['incomplete_required_tasks']`
+                        # unchanged for its last eight minutes while the instances under it
+                        # fell 7 -> 2, and its final two tasks completed 39s AFTER this abort.
+                        instances_shrinking=self._converging_instances_1202ls_impl(
+                            getattr(self, "output_dir", None)))
                     if _grace > 0:
                         self._fwdeliver_grace_count = (getattr(
                             self, "_fwdeliver_grace_count", 0) or 0) + 1
