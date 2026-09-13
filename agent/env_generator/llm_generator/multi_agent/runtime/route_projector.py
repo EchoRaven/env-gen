@@ -2264,10 +2264,36 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                                 if str(_f) != str(_owner_fk(meta, exclude=tuple(bound)) or "")
                                 and str(_f) not in {str(_b) for _b in bound}]
                 if _subj_1202bl:
+                    # #1202md: SAY WHY, because with ONE subject FK this reads as a
+                    # contradiction of the contract the framework itself registered.
+                    #
+                    # The rule is "name at least one subject FK", and with two or more that is
+                    # plainly a disjunction. With exactly one it degenerates to "sound_id is
+                    # required" — while the same endpoint's registered request schema declares
+                    # `sound_id: "int?"`, optional. Both statements are true about different
+                    # things, and nothing said so, so a lane reading its own contract sees a
+                    # framework demanding a field it published as optional.
+                    #
+                    # Measured over the corpus (24 runs carrying this guard): 15 multi-FK
+                    # cases, where the message already reads as a choice, and 8 single-FK
+                    # endpoints across 7 runs where it does not —
+                    # POST /api/videos.sound_id in r101/r102/r103/r107/r109/r121,
+                    # POST /api/comments.video_id in r120, POST /api/feed.sound_id in r121.
+                    #
+                    # Message only. The guard's behaviour is unchanged, so #1202bl's measured
+                    # "zero corpus steps break" still holds.
+                    _why_1202md = (
+                        "the table's only subject FK - a create naming none of them inserts a "
+                        "row that is nothing but its own id and owner (#1202bl). The request "
+                        "schema marks it optional because it is optional INDIVIDUALLY; what is "
+                        "required is that at least one subject FK be named"
+                        if len(_subj_1202bl) == 1 else
+                        "at least one subject FK must be named - a create naming none of them "
+                        "inserts a row that is nothing but its own id and owner (#1202bl)")
                     body_lines += [
                         "    if not any(valid.get(_k) is not None for _k in %r):" % (_subj_1202bl,),
                         '        raise HTTPException(status_code=400, detail="one of %s is '
-                        'required")' % (", ".join(_subj_1202bl),),
+                        'required: %s")' % (", ".join(_subj_1202bl), _why_1202md),
                     ]
                 else:
                     # No subject FK to require, so the same empty create lands a row that is
