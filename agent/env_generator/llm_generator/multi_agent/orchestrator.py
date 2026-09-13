@@ -186,6 +186,16 @@ FWVAL_SLOW_INTERVAL_S = 300  # past the cap, retry at most once per this interva
 FWVAL_STUCK_REDISPATCH_AFTER = 2   # validations on the same failure set (past cap) → re-dispatch owner
 FWVAL_STUCK_TERMINAL_AFTER = 4     # validations on the same failure set (past cap) → surface stuck signal
 FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500"))  # 75min
+# #1202lu: delivery-gate evaluations THIS PROCESS must have made before the no-convergence
+# abort may fire. r121's second resume aborted after ONE coordination tick / TWO gate
+# evaluations on a clock it inherited from earlier processes; two of its four blockers
+# (`no successful RunHub run since session start`, and two registrations the lane deprecated
+# 34s later) could not have been anything but failing that early. The gate is evaluated
+# roughly every 60-75s, so 6 is ~7 minutes — one full validate-and-re-gate cycle plus margin,
+# and a no-op for a fresh run, which reaches dozens of evaluations long before 75min of
+# in-process lane time accrues.
+_MIN_GATE_EVALS_BEFORE_ABORT_1202LU = int(
+    os.environ.get("ENVGEN_MIN_GATE_EVALS_BEFORE_ABORT", "6"))
 
 def _time_to_first_gate_s_1202hz() -> int:
     """The threshold, tunable, and never a reason the orchestrator cannot be imported.
@@ -4947,6 +4957,11 @@ class Orchestrator:
                     self._fwdeliver_last_shrink_ts = _now2
                 if _cur_failed_set:
                     self._fwdeliver_prev_failed = _cur_failed_set
+                # #1202lu: how many times THIS PROCESS has evaluated the delivery gate.
+                # Incremented here, in the same block that reads it below, so the guard it
+                # feeds can never be unreachable — a counter published somewhere else could
+                # be absent on some path and `0 >= N` would disable the abort forever.
+                self._gate_evals_1202lu = (getattr(self, "_gate_evals_1202lu", 0) or 0) + 1
                 # #1133c: #1133 credits a deferral when it RELEASES. A deferral that has
                 # not released yet is blocking delivery RIGHT NOW and is billed to the lanes
                 # the whole time — and the no-convergence abort can fire BEFORE the visual
@@ -4969,7 +4984,35 @@ class Orchestrator:
                 _live1133c = self._live_deferral_credit_1133c(_now2)
                 _lane1202fk = self._lane_time_1202fk(
                     _now2 - self._fwdeliver_first_decline_ts - _live1133c)
+                # #1202lu: A RESUME INHERITS AN EXHAUSTED CLOCK AND DIES ON ITS FIRST TICK.
+                #
+                # `_lane1202fk` measures lane time since the CONTRACT built, and it is
+                # restored across processes — correct accounting, ruinous as a trigger. r121's
+                # second resume aborted "after 1 coordination ticks" with the clock already
+                # reading 86min, 744s and $20.17 into a process that had evaluated this gate
+                # exactly twice. Two of its four blockers cannot be anything but failing at
+                # that moment:
+                #
+                #   deliverability_no_successful_run  — `run_within_session: False` is
+                #       DEFINITIONALLY true at process start; only a run_start in THIS process
+                #       can clear it, and the abort fired before one could happen.
+                #   deliverability_dead_artifacts     — the two `/__noop*` registrations were
+                #       still `defined`; their `_updated_at` shows the lane deprecating them
+                #       at 10:39:04, THIRTY-FOUR SECONDS after the abort at 10:38:30.
+                #
+                # That is the third time this one run was stopped just short: 56s before its
+                # last blocker cleared on the wall-clock cap (#1202lo), 39s on the previous
+                # resume's no-convergence abort (#1202ls), 34s here.
+                #
+                # A process that has evaluated the gate twice has not been given a chance to
+                # converge, whatever an inherited clock says. Grant a floor of evaluations
+                # before the abort may fire. For a FRESH run this is a no-op — by the time
+                # 75min of in-process lane time accrues the gate has been evaluated dozens of
+                # times — so it changes nothing except making a resume possible at all, which
+                # is the whole reason resume exists (all the work is already on disk).
                 if (_lane1202fk > FWVAL_NO_DELIVER_ABORT_S
+                        and (self._gate_evals_1202lu
+                             >= _MIN_GATE_EVALS_BEFORE_ABORT_1202LU)
                         and not getattr(self, "_fwval_abort_reason", None)):
                     # #228 (r20: the verifier cleared the LAST gate 36s after the
                     # abort fired): a small, recently-shrinking failing set gets a
