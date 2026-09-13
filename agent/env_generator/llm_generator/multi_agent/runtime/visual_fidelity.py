@@ -1434,8 +1434,9 @@ class _CaptureLockHold1202ll:
     19s) still hands it back the moment the last screenshot lands.
     """
 
-    def __init__(self, fh, deadline: float) -> None:
+    def __init__(self, fh, deadline: float, project_dir: Any = None) -> None:
         self._fh = fh
+        self._project_dir = project_dir
         self._released = False
         self._task = None
         try:
@@ -1458,6 +1459,21 @@ class _CaptureLockHold1202ll:
                 "lock so validations are not starved. The remaining screens may race a "
                 "`down -v`; that is the bounded tail, not the common case (median 19s).",
                 int(deadline))
+            # #947: a log line is not a measurement. Whoever later reads a round whose
+            # screens scored 0.00 needs to know the lock came off mid-capture, and the run's
+            # artifacts are all they will have. Append-only and separate from verdict.json,
+            # which the round in progress is about to overwrite.
+            try:
+                _p947 = (Path(self._project_dir) / "design" / "visual_gate"
+                         / "lock_expiries_1202ll.jsonl")
+                _p947.parent.mkdir(parents=True, exist_ok=True)
+                _row = json.dumps({"at": time.time(), "held_s": float(deadline),
+                                   "note": "compose lock released mid-capture; remaining "
+                                           "screens may have raced a validation down -v"})
+                _prev = _p947.read_text(encoding="utf-8") if _p947.is_file() else ""
+                _p947.write_text(_prev + _row + "\n", encoding="utf-8")
+            except Exception:
+                pass
         self.release()
 
     def release(self) -> None:
@@ -3402,7 +3418,8 @@ async def run_visual_fidelity(
             # Booting the stack under the lock and then photographing it unlocked protects
             # the two seconds that were never the exposure: the 18 seconds of `page.goto`
             # that follow are what a validation's `down -v` lands in.
-            _cap_lock_1202ll = _CaptureLockHold1202ll(_lk1202dl, _CAPTURE_LOCK_HOLD_1202LL)
+            _cap_lock_1202ll = _CaptureLockHold1202ll(
+                _lk1202dl, _CAPTURE_LOCK_HOLD_1202LL, project_dir)
         finally:
             if _cap_lock_1202ll is None:
                 _release_compose_lock_1202dl(_lk1202dl)

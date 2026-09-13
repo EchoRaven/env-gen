@@ -32,6 +32,7 @@ on — a longer hold cannot deadlock the two against each other.
 import asyncio
 import ast
 import fcntl
+import json
 import inspect
 from pathlib import Path
 
@@ -166,3 +167,44 @@ def test_the_docstring_carries_the_measurement_not_the_guess():
     assert "Held only across the compose call" not in doc
     assert "MEDIAN OF 19 SECONDS" in doc, "the measurement that replaced the guess is gone"
     assert "600s" in doc, "the waiter's patience — the reason the hold is safe — is gone"
+
+
+def test_the_watchdog_leaves_an_artifact_not_just_a_log_line(tmp_path):
+    """#947: whoever later reads a round whose screens scored 0.00 has only the run's
+    artifacts. "The lock came off mid-capture" has to be among them."""
+    async def go():
+        fh, got = vf._compose_lock_1202dl(tmp_path)
+        assert got
+        vf._CaptureLockHold1202ll(fh, 0.05, tmp_path)
+        await asyncio.sleep(0.3)
+    asyncio.run(go())
+    rec = tmp_path / "design" / "visual_gate" / "lock_expiries_1202ll.jsonl"
+    assert rec.is_file(), "the expiry reached no artifact"
+    row = json.loads(rec.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert row["held_s"] == 0.05
+    assert "raced a validation down -v" in row["note"]
+
+
+def test_the_artifact_is_append_only(tmp_path):
+    """verdict.json is overwritten by the round in progress; this must not be."""
+    async def go():
+        for _ in range(2):
+            fh, got = vf._compose_lock_1202dl(tmp_path)
+            assert got
+            vf._CaptureLockHold1202ll(fh, 0.05, tmp_path)
+            await asyncio.sleep(0.3)
+    asyncio.run(go())
+    rec = tmp_path / "design" / "visual_gate" / "lock_expiries_1202ll.jsonl"
+    assert len(rec.read_text(encoding="utf-8").strip().splitlines()) == 2
+
+
+def test_a_normal_release_writes_nothing(tmp_path):
+    """Only the EXPIRY is notable — the median 19s round must not litter the artifact."""
+    async def go():
+        fh, got = vf._compose_lock_1202dl(tmp_path)
+        assert got
+        hold = vf._CaptureLockHold1202ll(fh, 60.0, tmp_path)
+        hold.release()
+        await asyncio.sleep(0.05)
+    asyncio.run(go())
+    assert not (tmp_path / "design" / "visual_gate" / "lock_expiries_1202ll.jsonl").exists()

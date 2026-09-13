@@ -801,8 +801,15 @@ def compose_recycle_in_flight_1202lm(compose_file) -> bool:
     The fact that distinguishes the two already exists, in the lock. It just had one reader.
     Probing it is the same LOCK_EX|LOCK_NB the holders use: refusal means held.
 
-    Opened append-only so the probe cannot truncate the holder's marker file, and released
-    in the same breath when it IS free — this reports, it never serialises.
+    Opened READ-ONLY. `flock` does not need write access (verified: an O_RDONLY fd is
+    refused while the lock is held and acquires it when free), so the probe takes no write
+    permission at all — which is what `test_write_gate_invariant` is for, and it was right to
+    refuse the append-mode first draft: a tool that opens a file for writing outside the
+    role-gated workspace is exactly the thing that ratchet exists to catch, and an allowlist
+    entry would have been an excuse rather than a fix. It also makes truncating the holder's
+    marker impossible rather than merely unintended.
+
+    Released in the same breath when the lock IS free — this reports, it never serialises.
     """
     try:
         import fcntl as _fcntl
@@ -810,16 +817,30 @@ def compose_recycle_in_flight_1202lm(compose_file) -> bool:
         lock = _P(compose_file).parent / ".smoke_validation.lock"
         if not lock.exists():
             return False
-        with open(lock, "a") as fh:
+        with open(lock, "r") as fh:
             try:
                 _fcntl.flock(fh.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
             except OSError:
                 return True          # somebody is mid down/build/up
             _fcntl.flock(fh.fileno(), _fcntl.LOCK_UN)
         return False
-    except Exception:
+    except Exception as _e:
         # Unknowable is not "in flight": claiming a recycle that is not happening would
-        # excuse a genuinely dead stack, which is the more expensive mistake.
+        # excuse a genuinely dead stack, which is the more expensive mistake. But it must
+        # not be SILENT — a swallowed exception here downgrades every caller back to the
+        # pre-#1202lm snapshot with nobody able to tell that is what happened. #1202ah was
+        # exactly this shape (an `except: pass` that quietly restored the latch behaviour).
+        try:
+            try:
+                from multi_agent.runtime.message_format import warn_once_1201
+            except Exception:
+                from env_generator.llm_generator.multi_agent.runtime.message_format import (
+                    warn_once_1201)
+            warn_once_1201("compose_recycle_in_flight_1202lm",
+                           "cannot read the compose lock; recycle detection is OFF and a "
+                           "mid-recycle snapshot will read as a crash", _e)
+        except Exception:
+            pass
         return False
 
 

@@ -81,6 +81,89 @@ def process_liveness_1202ev(usage):
         return "unknown"
 
 
+
+# #1202lo: THE WALL-CLOCK CAP CANNOT SEE THAT THE RUN IS ABOUT TO DELIVER.
+#
+# tiktok-r121 (2026-09-13) died 56 seconds after its last blocker cleared:
+#
+#     00:23:36  delivery gate: validation_ui_evidence_failed on 2 record(s)
+#     00:23:38  validation:ui_flow:ui_signup_modal  -> success
+#     00:23:42  validation:ui_smoke                 -> success      (nothing left failing)
+#     00:24:38  wall-clock 7242s exceeded cap 7200s -> ABORT, $270.47, nothing delivered
+#
+# The gate evaluates every ~60-75s, so one more evaluation was all it needed. This grants
+# ONE bounded extension when the run is demonstrably CONVERGING, and never otherwise.
+#
+# "Converging" is measured on BLOCKING INSTANCES, not on the failing-check names: r121's
+# `failed_checks` read `['validation_ui_evidence_failed']` unchanged for its last twelve
+# evaluations while the instance count underneath went 6 -> 3 -> 4 -> 3 -> 2. The check name
+# is flat by construction while the lane is fixing the records one at a time.
+#
+# ★ The criterion was VALIDATED ON KNOWN CASES before being wired (the #1202be/947 lesson
+# about detectors). Across every corpus run with a gate ledger and a budget ledger:
+#
+#     stuck_abort      7 runs   converging: 0 of 7    <- the class that MUST never get it
+#     budget_exceeded  2 runs   converging: 1 (r121)
+#     delivered        6 runs   converging: 2         <- harmless, they already shipped
+#
+# Zero of seven stuck aborts qualify, which is the whole safety argument: a stuck run's
+# instance count is flat or rising, and flat is not converging.
+_WALL_GRACE_SEC_1202LO = 600.0
+_CONVERGENCE_WINDOW_1202LO = 300.0
+
+
+def _blocking_instances_1202lo(row) -> int:
+    """How many concrete things the gate is still blocking on, across every check family."""
+    n = 0
+    try:
+        n += int(row.get("ui_evidence_failed_records") or 0)
+        n += len((row.get("business_chain") or {}).get("chains") or [])
+        n += len(row.get("incomplete_required_tasks") or [])
+        n += int((row.get("unresolved_bugs") or {}).get("open_p0_bug_count") or 0)
+    except Exception:
+        return 0
+    return n
+
+
+def converging_at_the_gate_1202lo(output_dir, now=None) -> bool:
+    """Is the delivery gate's blocking-instance count STRICTLY falling right now?
+
+    False on anything unproven — no ledger, too few evaluations, a stale ledger, a flat or
+    rising count, or a count already at zero (nothing to converge to; the run is not blocked
+    and the cap is not what is stopping it).
+    """
+    try:
+        from pathlib import Path as _P
+        path = _P(str(output_dir or "")) / "logs" / "delivery_gate.jsonl"
+        if not path.is_file():
+            return False
+        rows = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(r, dict) and r.get("at"):
+                rows.append(r)
+        if len(rows) < 3:
+            return False
+        _now = float(now if now is not None else time.time())
+        newest = float(rows[-1].get("at") or 0)
+        if _now - newest > _CONVERGENCE_WINDOW_1202LO:
+            return False          # the gate stopped evaluating; nothing is landing
+        window = [r for r in rows if float(r.get("at") or 0) >= newest - _CONVERGENCE_WINDOW_1202LO]
+        if len(window) < 3:
+            return False
+        first = _blocking_instances_1202lo(window[0])
+        last = _blocking_instances_1202lo(window[-1])
+        return first > last > 0
+    except Exception:
+        return False
+
+
 class RunBudget:
     """Owns run_budget.json. Constructed with the run's output_dir + a logger."""
 

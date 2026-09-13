@@ -2665,7 +2665,39 @@ class Orchestrator:
                             pass
                         if not caps.get("unlimited"):  # admins run with no budget ceiling
                             if elapsed > caps["max_wall_sec"]:
-                                budget_exceeded = f"wall-clock {elapsed:.0f}s exceeded cap {caps['max_wall_sec']:.0f}s"
+                                # #1202lo: before latching, ask whether the run is about to
+                                # deliver. r121 aborted 56s after its last blocker cleared —
+                                # one gate evaluation short, $270.47, nothing shipped. ONE
+                                # bounded extension per process, and only while the gate's
+                                # blocking-INSTANCE count is strictly falling (zero of the
+                                # corpus's seven stuck_aborts qualify; see run_budget.py).
+                                _grace_1202lo = False
+                                if not getattr(self, "_wall_grace_used_1202lo", False):
+                                    try:
+                                        from .runtime.run_budget import (
+                                            converging_at_the_gate_1202lo,
+                                            _WALL_GRACE_SEC_1202LO)
+                                        _grace_1202lo = bool(
+                                            converging_at_the_gate_1202lo(self.output_dir))
+                                    except Exception:
+                                        _grace_1202lo = False
+                                if _grace_1202lo:
+                                    self._wall_grace_used_1202lo = True
+                                    caps["max_wall_sec"] = float(
+                                        caps["max_wall_sec"]) + float(_WALL_GRACE_SEC_1202LO)
+                                    env_caps["max_wall_sec"] = caps["max_wall_sec"]
+                                    self._logger.warning(
+                                        "#1202lo WALL-CLOCK GRACE: %.0fs exceeded the %.0fs "
+                                        "cap, but the delivery gate's blocking-instance "
+                                        "count is still FALLING — granting ONE extension of "
+                                        "%.0fs (new cap %.0fs) rather than aborting a run "
+                                        "that is converging. r121 died 56s after its last "
+                                        "blocker cleared. This is granted once per process "
+                                        "and never to a flat or rising count.",
+                                        elapsed, caps["max_wall_sec"] - _WALL_GRACE_SEC_1202LO,
+                                        _WALL_GRACE_SEC_1202LO, caps["max_wall_sec"])
+                                else:
+                                    budget_exceeded = f"wall-clock {elapsed:.0f}s exceeded cap {caps['max_wall_sec']:.0f}s"
                             elif tick_count >= caps["max_ticks"]:
                                 budget_exceeded = f"coordination ticks {tick_count} reached cap {caps['max_ticks']}"
                         # #326: a TERMINAL LLM-provider error (spend/budget/quota exhausted, hard

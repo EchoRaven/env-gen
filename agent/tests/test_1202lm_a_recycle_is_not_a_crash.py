@@ -70,7 +70,12 @@ def test_the_probe_does_not_truncate_the_holders_marker(tmp_path):
     lock.write_text("holder-pid-12345", encoding="utf-8")
     dt.compose_recycle_in_flight_1202lm(cf)
     assert lock.read_text(encoding="utf-8") == "holder-pid-12345"
-    assert '"a"' in inspect.getsource(dt.compose_recycle_in_flight_1202lm)
+    # READ-ONLY, not append: flock needs no write access, so the probe takes no write
+    # permission at all. `test_write_gate_invariant` refused the append-mode first draft and
+    # was right to — a tool opening a file for writing outside the role-gated workspace is
+    # the thing that ratchet exists to catch.
+    assert '"r"' in inspect.getsource(dt.compose_recycle_in_flight_1202lm)
+    assert '"a"' not in inspect.getsource(dt.compose_recycle_in_flight_1202lm)
 
 
 def test_unknowable_is_not_in_flight():
@@ -100,14 +105,30 @@ def test_the_note_forbids_filing_a_bug_from_a_recycle():
 def test_the_exec_path_does_not_advise_racing_the_recycle():
     """★ The harm here is the REMEDY, not the diagnosis: docker_up during a `down -v`/`up`
     is the concurrent-compose race #36's lock exists to prevent."""
+    # #943/#1202lk: the enclosing FUNCTION by AST, never "the N bytes before the string" —
+    # my own backwards-window ratchet caught the first draft of this very assertion.
+    import ast
     src = inspect.getsource(dt)
-    i = src.index("No container for service")
-    j = src.index("Run docker_up first.", i)
-    guarded = src[:i]
-    assert "compose_recycle_in_flight_1202lm(compose_file)" in guarded.rsplit(
-        "def ", 1)[-1] or "compose_recycle_in_flight_1202lm" in src[max(0, i - 1200):i], (
-        "the recycle-aware arm must precede the docker_up advice")
-    assert "Do NOT run docker_up" in src[i:j], (
+    line = src[:src.index("No container for service")].count("\n") + 1
+    fn = None
+    for n in ast.walk(ast.parse(src)):
+        if (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and n.lineno <= line <= (n.end_lineno or n.lineno)
+                and (fn is None or n.lineno > fn.lineno)):
+            fn = n
+    assert fn is not None, "the exec-path message moved out of any function"
+    calls = [c.lineno for c in ast.walk(fn)
+             if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+             and c.func.id == "compose_recycle_in_flight_1202lm"]
+    assert calls and min(calls) < line, (
+        "the recycle-aware arm must be CALLED before the docker_up advice is returned")
+    # the whole RETURN statement, by node — a line range would stop at the f-string's
+    # first line, which is where the first draft of this assertion went wrong.
+    guarded = [ast.unparse(r) for r in ast.walk(fn)
+               if isinstance(r, ast.Return)
+               and "No container for service" in (ast.unparse(r) or "")]
+    assert guarded, "the recycle-aware return is gone"
+    assert any("Do NOT run docker_up" in g for g in guarded), (
         "the recycle arm must say explicitly not to race it")
 
 
