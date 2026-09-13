@@ -75,9 +75,17 @@ def test_the_guard_itself_is_unchanged():
 
 def test_the_detail_still_opens_with_the_field_list():
     """Anything reading the head of the message keeps working; the reason is appended."""
-    i = _SRC.index("body_lines += [", _SRC.index("_why_1202md = ("))
-    stmt = _SRC[i:_SRC.index("]", i)]
-    assert 'detail="one of %s is ' in stmt
+    # #923: the AugAssign node, not "everything up to the next `]`" — a bare-delimiter slice
+    # moves the moment anything nested appears inside the span, and that ratchet caught this
+    # very assertion.
+    import ast
+    stmts = [ast.unparse(n) for n in ast.walk(ast.parse(_SRC))
+             if isinstance(n, ast.AugAssign)
+             and isinstance(n.target, ast.Name) and n.target.id == "body_lines"
+             and "_why_1202md" in (ast.unparse(n) or "")]
+    assert stmts, "the guard's emission moved"
+    stmt = stmts[0]
+    assert "one of %s is " in stmt
     assert "required: %s" in stmt
 
 
