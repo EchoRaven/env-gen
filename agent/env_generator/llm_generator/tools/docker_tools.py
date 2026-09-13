@@ -787,6 +787,52 @@ Example:
         return _find_compose_file_global(self.workspace.base_root)
 
 
+def compose_recycle_in_flight_1202lm(compose_file) -> bool:
+    """#1202lm: is a validation holding the compose lock RIGHT NOW?
+
+    `run_smoke_validation` opens every cycle with `down -v` + build + `up` — 22-35s during
+    which `docker compose ps` shows exactly what a broken app shows. r120 recycled the stack
+    every ~90s through its whole delivery window, and the framework's own note at the cut
+    reads: *"UI validation blocked: frontend/backend services stopped during browser smoke,
+    leaving only database running. Corpus: 90 of 129 runs end this way"*. "Only database
+    running" IS the signature of a recycle mid-`up` — postgres is the dependency, so it comes
+    back first — and it was filed as a P0 against the lane.
+
+    The fact that distinguishes the two already exists, in the lock. It just had one reader.
+    Probing it is the same LOCK_EX|LOCK_NB the holders use: refusal means held.
+
+    Opened append-only so the probe cannot truncate the holder's marker file, and released
+    in the same breath when it IS free — this reports, it never serialises.
+    """
+    try:
+        import fcntl as _fcntl
+        from pathlib import Path as _P
+        lock = _P(compose_file).parent / ".smoke_validation.lock"
+        if not lock.exists():
+            return False
+        with open(lock, "a") as fh:
+            try:
+                _fcntl.flock(fh.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            except OSError:
+                return True          # somebody is mid down/build/up
+            _fcntl.flock(fh.fileno(), _fcntl.LOCK_UN)
+        return False
+    except Exception:
+        # Unknowable is not "in flight": claiming a recycle that is not happening would
+        # excuse a genuinely dead stack, which is the more expensive mistake.
+        return False
+
+
+_RECYCLE_NOTE_1202LM = (
+    "⚠ A validation is holding the compose lock RIGHT NOW — this stack is mid "
+    "`down -v` / build / `up`, which takes 22-35s and looks exactly like a crash while it "
+    "runs (postgres returns first, so 'only database running' is the normal middle of a "
+    "healthy recycle). This snapshot is NOT evidence that the app's services failed. Do not "
+    "file a bug from it: re-check after the recycle, and if a service is still down THEN, "
+    "that is the real signal. (#1202lm)"
+)
+
+
 class DockerStatusTool(BaseTool):
     """Get status of Docker containers."""
     
@@ -851,9 +897,19 @@ Example:
                         status = "running" if "Up" in line else "stopped"
                         services.append({"name": name, "status": status})
             
+            # #1202lm: a point-in-time `ps` cannot tell a crash from a recycle, and the
+            # reader is an LLM that files P0s. Hand it the fact that separates them.
+            _recycling = compose_recycle_in_flight_1202lm(compose_file)
+            _down = [x["name"] for x in services if x["status"] != "running"]
+            _raw = result.stdout[:1000]
+            if _recycling:
+                _raw = _RECYCLE_NOTE_1202LM + "\n\n" + _raw
             return ToolResult.ok(data={
                 "services": services,
-                "raw": result.stdout[:1000],
+                "compose_recycle_in_flight_1202lm": _recycling,
+                "stopped_services": _down,
+                "snapshot_is_trustworthy_1202lm": (not _recycling) or not _down,
+                "raw": _raw,
             })
         except Exception as e:
             return ToolResult.fail(f"Status error: {e}")
@@ -1187,6 +1243,17 @@ Example:
             container_id = result.stdout.strip()
             
             if not container_id:
+                # #1202lm: same snapshot, same ambiguity — and this one's remedy is worse
+                # than the misdiagnosis. "Run docker_up first" during a validation's
+                # `down -v`/`up` is the concurrent-compose race #36's lock exists to
+                # prevent: both tear each other's containers down and BOTH report failure.
+                if compose_recycle_in_flight_1202lm(compose_file):
+                    return ToolResult.fail(
+                        f"No container for service '{service}' AT THIS INSTANT, because a "
+                        f"validation is holding the compose lock and is mid `down -v` / "
+                        f"build / `up`. Do NOT run docker_up — that races the recycle and "
+                        f"takes both stacks down (#36). Wait for it to finish and retry. "
+                        f"(#1202lm)")
                 return ToolResult.fail(f"No running container for service '{service}'. Run docker_up first.")
             
             # Check each path
