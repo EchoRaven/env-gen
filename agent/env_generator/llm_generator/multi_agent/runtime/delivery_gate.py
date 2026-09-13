@@ -2327,6 +2327,12 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
     return {}
 
 
+#: #1202mc: the real HTTP verbs. A registration whose method is not one of these cannot be a
+#: business endpoint, and no lane can turn it into one.
+_HTTP_METHODS_1202MC = frozenset(
+    {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+
+
 def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
     """PROMPT-C1 (response_key by-construction): a route_projector-projected
     business endpoint MUST declare a response_key inside the canonical envelope
@@ -2374,6 +2380,28 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
         md = v.get("metadata") or {}
         if str(md.get("kind") or "").strip().lower() in _EXEMPT_KINDS:
             continue  # not projector-owned (orchestrator/spine/custom handlers)
+        # #1202mc: A RETIRED REGISTRATION IS NOT A BUSINESS ENDPOINT, AND NEITHER IS `NOOP`.
+        #
+        # tiktok-r121's M3 ended STUCK after 21 coordination ticks with this check as one of
+        # its two remaining blockers, flat for its last twelve gate evaluations. The single
+        # offender:
+        #
+        #     {"id": "NOOP /noop", "method": "NOOP", "path": "/noop",
+        #      "status": "deprecated", "metadata": {"response_key": "noop"}}
+        #
+        # `NOOP` is not an HTTP method and `deprecated` is the documented way to retire a
+        # registration, so no lane could ever make this canonical — the remedy this check
+        # prints ("Use 'items' or 'item'") is unreachable for it. That is the #1202lr shape
+        # exactly, in a second reader: deprecation is the remedy the framework advertises and
+        # a gate ignores it.
+        #
+        # Both tests are general rather than a name match on `/noop`: #251's rule is that an
+        # exemption must not depend on something the LANE has to remember, and a path-literal
+        # exemption would be one more list to keep.
+        if str(v.get("status") or "").strip().lower() == "deprecated":
+            continue
+        if str(v.get("method") or "").strip().upper() not in _HTTP_METHODS_1202MC:
+            continue
         # #251 (r50, live): exemption must not depend on a metadata field the LANE has to
         # remember. r50 was green except for this check, burned both graces and aborted on
         # POST /auth/signup (response_key='signup') and POST /auth/logout — framework-owned
