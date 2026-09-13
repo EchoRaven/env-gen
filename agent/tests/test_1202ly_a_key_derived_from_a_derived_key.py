@@ -94,12 +94,22 @@ def test_deep_accumulation_is_stripped_completely(reg):
 
 def test_it_announces_rather_than_silently_rewriting():
     """#1202ah: a silent normalisation hides which caller is re-feeding the id."""
+    # #943: the enclosing FunctionDef by AST, never "the N bytes after the name" — the
+    # first draft used a two-thousand-byte forward slice and pushed the fixed-window
+    # ratchet from 57 to 58. (Written without the literal slice syntax: that ratchet's
+    # detector scans TEXT, so quoting the shape it forbids trips it from a comment.)
+    import ast
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import registryhub as rh
-    src = inspect.getsource(rh.HubRegistry.register_ui_page) if hasattr(
-        rh, "HubRegistry") else inspect.getsource(rh)
-    i = src.index("_n1202ly")
-    assert "warn_once_1201" in src[i:i + 2000]
+    src = inspect.getsource(rh)
+    fn = next((n for n in ast.walk(ast.parse(src))
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == "register_ui_page"), None)
+    assert fn is not None, "register_ui_page moved"
+    seg = ast.get_source_segment(src, fn) or ""
+    assert "_n1202ly" in seg, "the normalisation left register_ui_page"
+    assert "warn_once_1201" in seg, (
+        "the normalisation is silent — nobody can tell which caller re-feeds the id")
 
 
 def test_the_prefix_matches_the_id_the_method_writes():
