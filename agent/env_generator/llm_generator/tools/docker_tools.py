@@ -1512,10 +1512,15 @@ class WaitForServiceTool(BaseTool):
 Use this AFTER docker_up to ensure services are ready before testing.
 Prevents test failures due to services still starting up.
 
-Example:
-  wait_for_service(url="http://localhost:8083/health")
-  wait_for_service(url="http://localhost:3001", timeout=120)
-  wait_for_service(url="http://localhost:8083/api/health", expected_status=200)
+PORTS: host ports are assigned PER RUN — read this env's own
+docker/docker-compose.yml. Never copy a port from an example; a run's :8000 is
+often its database, and :3000/:8000 are CONTAINER-internal ports that need not
+be published at all (#1202lq).
+
+Example (<API>/<UI> = this run's published base URLs):
+  wait_for_service(url="<API>/health")
+  wait_for_service(url="<UI>", timeout=120)
+  wait_for_service(url="<API>/api/health", expected_status=200)
 """
     
     def __init__(self, **kwargs):
@@ -1531,7 +1536,10 @@ Example:
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "URL to check (e.g., http://localhost:8083/health)"
+                        "description": "URL to check. Use this run's own published "
+                                       "host port (docker/docker-compose.yml) — ports are "
+                                       "per-run and a guessed one may be another service "
+                                       "entirely (#1202lq)."
                     },
                     "timeout": {
                         "type": "integer",

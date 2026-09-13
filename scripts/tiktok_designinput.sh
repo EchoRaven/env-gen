@@ -19,6 +19,19 @@
 set -euo pipefail
 
 RUN="${1:?用法: $0 <runNN>  (日志编号)}"
+
+# #1202lp: RESUME=1 续跑同名 run，而不是从零开跑。
+#
+# 这个脚本一直只会起全新 run，于是每次续跑都要手敲一遍 main.py 命令 —— 而手敲版本漏过
+# provider key 桥接（key 文件只给 ENVGEN_LLM_KEY，main.py 找的是 OPENAI_API_KEY），
+# run 起来第一次 LLM 调用就 401。同一个桥接在本脚本里写得好好的，只是续跑走不到它。
+#
+# r121 就是该续跑的典型：2 小时墙钟到顶未交付，但 28 端点 / 13 表 / 12 页 / 全部
+# verification 绿都已经在盘上，交付门禁一度完全清空。从零再来是把这些全扔掉。
+#
+# ENVGEN_MAX_WALLCLOCK_SEC 会盖掉台账里存的上限（#1202ii），续跑时通常要调大 —— 
+# 台账里那个 7200 是上一个进程的数，不是这次的意图。
+RESUME="${RESUME:-0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # 脚本在 scripts/ 下，上一级是仓库根
 PYTHON="${PYTHON:-python}"
 LOG="$ROOT/gm_tiktok_r${RUN}.log"
@@ -71,8 +84,18 @@ AVAIL_G=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
 cd "$ROOT/agent"
 
 # setsid: 脱离当前会话，session 轮转不会杀掉本 run
+RESUME_ARG=()
+if [ "$RESUME" = "1" ]; then
+  OUT="$ROOT/generated/tiktok-web-r${RUN}"
+  [ -d "$OUT" ] || { echo "REFUSED: RESUME=1 但 $OUT 不存在，没有可续的 run" >&2; exit 1; }
+  RESUME_ARG=(--resume)
+  LOG="$ROOT/gm_tiktok_r${RUN}-resume$(date +%H%M).log"
+  echo "RESUME: 续跑 tiktok-web-r${RUN}（墙钟上限 ${ENVGEN_MAX_WALLCLOCK_SEC:-台账存值}）→ $LOG"
+fi
+
 setsid "$PYTHON" -m env_generator.llm_generator.main \
   --name "tiktok-web-r${RUN}" \
+  ${RESUME_ARG[@]+"${RESUME_ARG[@]}"} \
   --output "$ROOT/generated" \
   --design-input "$DI" \
   --provider "$PROVIDER" --model "$MODEL" \

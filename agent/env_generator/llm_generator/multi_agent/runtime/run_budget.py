@@ -109,6 +109,11 @@ def process_liveness_1202ev(usage):
 # Zero of seven stuck aborts qualify, which is the whole safety argument: a stuck run's
 # instance count is flat or rising, and flat is not converging.
 _WALL_GRACE_SEC_1202LO = 600.0
+# The window convergence is measured over. r121's delivery gate evaluated every 60-75s
+# (12 evaluations in its final 5 minutes), so 300s is 4-5 evaluations — enough for a trend
+# rather than a single lucky step, and short enough that a run which stopped making progress
+# ten minutes ago no longer reads as converging. Must stay >= a few gate periods: at 2
+# evaluations the criterion degenerates into "the last tick was better than the one before".
 _CONVERGENCE_WINDOW_1202LO = 300.0
 
 

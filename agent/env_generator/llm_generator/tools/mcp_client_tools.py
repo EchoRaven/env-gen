@@ -221,7 +221,10 @@ Returns list of available tools on success.
                     "properties": {
                         "server_url": {
                             "type": "string",
-                            "description": "MCP server URL (e.g., http://localhost:8080)"
+                            "description": "MCP server URL. Use the address this run "
+                                           "actually published — ports are per-run and the "
+                                           "example's :8080 has long hosted an unrelated "
+                                           "demo on the gen host (#207/#1202lq)."
                         },
                         "auth_token": {
                             "type": "string",

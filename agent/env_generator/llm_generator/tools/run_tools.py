@@ -48,8 +48,16 @@ from .hub_tools import HubTool, _finalize_hub_tools
 _BAD_DEFAULT_BASE_URL_1202LN = "http://localhost:8000"
 
 
-def _resolved_base_url_1202ln(generated_dir):
-    """The run's OWN backend base URL, read from its OWN compose file. None if unresolvable.
+#: #1202lq: the same resolution, for the FRONTEND. `task_suite_executor` prefixed bare routes
+#: with `http://localhost:3000`, which is the frontend's CONTAINER-internal port — from the
+#: host it is whatever compose published (r121: 8081, and nothing at all was on 3000).
+_BACKEND_SERVICES_1202LN = ("backend", "api", "server", "app")
+_FRONTEND_SERVICES_1202LQ = ("frontend", "ui", "web", "client")
+
+
+def _resolved_base_url_1202ln(generated_dir, services=_BACKEND_SERVICES_1202LN):
+    """The run's OWN base URL for `services`, read from its OWN compose file. None if
+    unresolvable.
 
     Reuses `validation_runner._service_host_port` (which carries #962/#1136's guard against
     resolving a *stranger's* container) rather than keeping a second copy -- #665's lesson is
@@ -66,7 +74,7 @@ def _resolved_base_url_1202ln(generated_dir):
         compose = root / "docker" / "docker-compose.yml"
         if not compose.is_file():
             return None
-        for svc in ("backend", "api", "server", "app"):
+        for svc in services:
             try:
                 port = _service_host_port(compose, compose.parent, svc)
             except Exception:

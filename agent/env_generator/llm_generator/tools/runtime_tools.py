@@ -2353,9 +2353,15 @@ class TestAPITool(BaseTool):
     
     DESCRIPTION = """Send HTTP request to test an API.
 
-Examples:
-    test_api("GET", "http://localhost:8000/health")
-    test_api("POST", "http://localhost:8000/api/items", body='{"name": "test"}')
+PORTS: this env's host ports are assigned PER RUN and are in its own
+docker/docker-compose.yml — read them from there (or from a tool that already
+reports them). Do NOT copy a port out of an example: a run's :8000 is often its
+DATABASE, and probing it returns "Server disconnected without sending a
+response" for a minute before giving up (#1202lq).
+
+Examples (<API> = this run's published backend base URL):
+    test_api("GET", "<API>/health")
+    test_api("POST", "<API>/api/items", body='{"name": "test"}')
 
 Expected status: pass `expect` when a non-2xx IS the correct answer, e.g.
     test_api("GET", ".../api/notes/1", expect=401)      # prove it refuses anonymously
@@ -2365,8 +2371,8 @@ a failure, which made the negative tests the delivery gates require look broken.
 
 Auth: protected endpoints return 401/403 without a token (that is CORRECT, not a bug).
 To test them, get a token first, then pass it as a header:
-    test_api("POST", "http://localhost:8000/auth/login", body='{"username":"...","password":"..."}')
-    test_api("GET", "http://localhost:8000/api/messages/conversations",
+    test_api("POST", "<API>/auth/login", body='{"username":"...","password":"..."}')
+    test_api("GET", "<API>/api/messages/conversations",
              headers={"Authorization": "Bearer <token-from-login>"})
 """
     

@@ -732,6 +732,38 @@ This tool:
 
         return await self._exec_browser_action(task_id=task_id, idx=idx, action_type=action_type, params=params)
 
+
+    def _app_base_url_1202lq(self, frontend: bool):
+        """#1202lq: this run's OWN published host port, or None.
+
+        Both call sites below used to prefix a bare path with a CONTAINER-internal port —
+        `http://localhost:8000` for the API, `http://localhost:3000` for the UI. Those are
+        the ports the services listen on INSIDE the compose network; from the host they are
+        whatever compose published, which is assigned per run. In tiktok-r121, host :8000 was
+        POSTGRES (`PGPORT: 8000, ports: "8000:8000"`) and the real API was on 3001 — the same
+        confusion that made `run_start` probe the database for /health and abort seven runs
+        (#1202ln). Nothing was listening on host :3000 at all.
+
+        Reuses #1202ln's resolver rather than copying it (#665/#1136: the copy drifts).
+        """
+        try:
+            from pathlib import Path as _P
+            try:
+                from .run_tools import (_resolved_base_url_1202ln,
+                                        _FRONTEND_SERVICES_1202LQ, _BACKEND_SERVICES_1202LN)
+            except Exception:
+                from env_generator.llm_generator.tools.run_tools import (
+                    _resolved_base_url_1202ln, _FRONTEND_SERVICES_1202LQ,
+                    _BACKEND_SERVICES_1202LN)
+            root = getattr(self.workspace, "base_root", None)
+            if not root:
+                return None
+            return _resolved_base_url_1202ln(
+                _P(str(root)),
+                _FRONTEND_SERVICES_1202LQ if frontend else _BACKEND_SERVICES_1202LN)
+        except Exception:
+            return None
+
     def _exec_api_action(self, action_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
         method = str(params.get("method", "GET")).upper()
         url = params.get("url")
@@ -742,7 +774,18 @@ This tool:
             if str(path).startswith("http://") or str(path).startswith("https://"):
                 url = path
             else:
-                url = f"http://localhost:8000{path if str(path).startswith('/') else '/' + str(path)}"
+                _base = self._app_base_url_1202lq(frontend=False)
+                if not _base:
+                    # #1202lq/#207: a port we cannot attribute is worse than no probe — it
+                    # reports confidently about somebody else's service.
+                    return {"success": False,
+                            "error": ("api_call got a bare path but this run's backend host "
+                                      "port could not be resolved from its docker-compose.yml"
+                                      " — pass an absolute url, or bring the stack up. Host "
+                                      "ports are per-run; :8000 may be the database "
+                                      "(#1202lq)."),
+                            "error_code": "E_API_INVALID_INPUT"}
+                url = f"{_base}{path if str(path).startswith('/') else '/' + str(path)}"
 
         headers = params.get("headers") if isinstance(params.get("headers"), dict) else None
         body_obj = params.get("body")
@@ -830,7 +873,16 @@ This tool:
             if not url:
                 return {"success": False, "error": "navigate requires params.url", "error_code": "E_UI_INVALID_INPUT"}
             if str(url).startswith("/"):
-                url = f"http://localhost:3000{url}"
+                _base = self._app_base_url_1202lq(frontend=True)
+                if not _base:
+                    return {"success": False,
+                            "error": ("navigate got a bare route but this run's frontend host "
+                                      "port could not be resolved from its docker-compose.yml"
+                                      " — pass an absolute url, or bring the stack up. Host "
+                                      "ports are per-run; nothing need be on :3000 "
+                                      "(#1202lq)."),
+                            "error_code": "E_UI_INVALID_INPUT"}
+                url = f"{_base}{url}"
             return await self._run_browser_tool("browser_navigate", {"url": url})
 
         if action_type == "click":
