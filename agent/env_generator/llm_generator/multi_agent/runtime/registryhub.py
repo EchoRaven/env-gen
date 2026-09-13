@@ -1831,6 +1831,50 @@ class RegistryHub:
                 "to='orchestrator', ...)."
             ),
         )
+        # #1202ly: A REGISTRATION KEY DERIVED FROM AN ALREADY-DERIVED KEY.
+        #
+        # This method stores `"id": f"page:ui:{name}"`. Feed that id back in as `name` and the
+        # prefix accumulates, once per pass. tiktok-r121's ui_page registry, verbatim:
+        #
+        #     root_for_you_page                  component=''  route=''
+        #     page:ui:root_for_you_page          component=''  route=''
+        #     page:ui:page:ui:root_for_you_page  component=''  route=''
+        #
+        # and the frontend scaffold then PascalCased each one into a build-integrity stub for
+        # an import nothing declares:
+        #
+        #     src/pages/PageUiRootForYouPage.jsx
+        #     src/pages/PageUiPageUiRootForYouPage.jsx
+        #     src/pages/PageUiPageUiPageUiRootForYouPage.jsx
+        #     src/pages/PageUiPageUiPageUiPageUiRootForYouPage.jsx
+        #
+        # Four framework-generated files ("edits are overwritten"), nothing imports any of
+        # them, each rendering a heading that degrades with the name — `<h2>Ui  Ui Root For
+        # You</h2>`. #1014 then commits them as lane-owned paths at delivery, and they feed
+        # the dead-artifact gate.
+        #
+        # #1193/#1195 already de-duplicate a page registered under two NAMES; they cannot see
+        # this, because each accumulated key is a genuinely new name whose route and component
+        # are both empty, so neither the route test nor the component test has anything to
+        # match on. Normalising here is [[feedback_guard_the_value_not_just_the_entry_path]]:
+        # whichever caller re-feeds an id, the value cannot carry the prefix past this point.
+        # `page:ui:` is the framework's own id namespace, so stripping it can never collide
+        # with a name an agent legitimately chose.
+        try:
+            _n1202ly = str(name or "")
+            while _n1202ly.startswith("page:ui:"):
+                _n1202ly = _n1202ly[len("page:ui:"):]
+            if _n1202ly != str(name or ""):
+                from .message_format import warn_once_1201
+                warn_once_1201(
+                    "registryhub.register_ui_page.id_as_name_1202ly",
+                    "a ui_page was registered under its own generated id (%r) — normalised to "
+                    "%r so the `page:ui:` prefix stops accumulating into phantom pages and "
+                    "PageUiPageUi… stub files" % (name, _n1202ly),
+                    ValueError("id used as name"))
+                name = _n1202ly
+        except Exception:
+            pass
         # STRUCTURAL GUARD: App.jsx is the FRAMEWORK-OWNED router/entry point. A
         # ui_page whose component (or name) is a reserved frontend identifier — "App"
         # above all — collides with App.jsx's own `export default function App()` and
