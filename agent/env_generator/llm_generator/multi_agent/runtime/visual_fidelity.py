@@ -4005,6 +4005,29 @@ async def run_visual_fidelity(
             # remediation_text so an intermediate milestone never files frontend work for a
             # later milestone's pages. Empty on the final/single-milestone path.
             "scope_excluded_screens": _scope_excluded_names,
+            # #1202lx: WAS THE APP IN THESE PHOTOGRAPHS BUILT FROM THE SOURCE ON DISK?
+            #
+            # The chain executor has asked this since #1202ex; the visual gate never did, and
+            # it is the gate whose output is a per-screen score somebody later reads as a
+            # statement about the delivered UI. tiktok-r121 resume #3:
+            #
+            #   11:58:25  docker build         <- the image these photographs show
+            #   12:00:00  the frontend lane rewrites SecondaryScreenContent.jsx, the shared
+            #             component behind /friends, /live and /messages, after the browser
+            #             test-user reported them blank at 11:56
+            #   12:07:38  #713 3 screens captured the SAME image (md5 d226ac543c60) -- the
+            #             SAME hash as the 11:59 capture, because the bundle had not changed
+            #   12:07:38  Visual fidelity PASSED
+            #   12:08:43  docker build         <- the fix finally enters an image
+            #   12:09:21  #1202ex: chains are about to judge an app whose image may not be
+            #             the source on disk
+            #
+            # So the gate passed a build that predates the fix, and #713's "their routes did
+            # not resolve" described a bundle two edits old. #1202lk cannot see this: it
+            # compares SOURCE signatures, and the source was current -- it was the IMAGE that
+            # was not. Reused, not re-derived (#665/#1136): `build_currency_1202ex` already
+            # answers exactly this and carries its own never-raises contract.
+            "build_currency_1202lx": _build_currency_1202lx(project_dir),
             "min_similarity": min_similarity}
 
 
@@ -6207,6 +6230,22 @@ def stamp_delivery_coverage_1202lk(out_dir: Any,
 # the bar at least once (#129 sticky pass), one permanently-blank screen makes the gate
 # unpassable for the whole milestone. r110 scored 7 of 9 over the bar and could still never
 # pass. The lane can fix it in one edit -- but only if it is told which edit.
+def _build_currency_1202lx(project_dir: Any) -> Dict[str, Any]:
+    """#1202lx: is the running image the source on disk? Delegates to #1202ex's measurement.
+
+    A thin wrapper on purpose. The answer belongs on the visual verdict — the artifact a
+    reader consults months later to ask "what did the delivered UI look like" — and the
+    measurement belongs to the module that already owns it. Never raises: `build_currency_
+    1202ex` promises that, and a diagnostic that can fail the gate it diagnoses is worse than
+    no diagnostic.
+    """
+    try:
+        from .chain_executor import build_currency_1202ex
+        return build_currency_1202ex(project_dir)
+    except Exception as exc:
+        return {"verdict": "unknown", "detail": "%s: %s" % (type(exc).__name__, exc)}
+
+
 def _unmatchable_route_1202ix(route) -> str:
     """A sentence explaining why this path can never match, or "" when it can."""
     _r = str(route or "")
@@ -6490,7 +6529,22 @@ class VisualFidelityGate:
             return False
         if sig is None or self.last_judged_sig is None:
             return False
-        return sig == self.last_judged_sig
+        if sig != self.last_judged_sig:
+            return False
+        # #1202lx: matching SOURCE signatures are not enough. r121 judged at 12:07:38 with a
+        # current source and an image built at 11:58:25 — before the 12:00 fix to the very
+        # component behind the three screens it was scoring — and #713 reported the same md5
+        # as eight minutes earlier because the bundle had not changed. "Covered" has to mean
+        # the photographs show the code about to ship, and a stale image breaks that as
+        # surely as a stale capture does. Not covered ⇒ #1202lk re-captures (bounded), and
+        # the rebuild it waits for is one a validation cycle performs on its own.
+        try:
+            _cur = (self.last_result or {}).get("build_currency_1202lx") or {}
+            if str(_cur.get("verdict") or "") == "changed":
+                return False
+        except Exception:
+            pass
+        return True
 
     def arm_final_recapture_1202lk(self) -> bool:
         """#1202lk: claim one more delivery tick for a FRESH capture. False when spent.
@@ -6802,6 +6856,19 @@ class VisualFidelityGate:
             screens = result.get("screens") or []
             self.last_result = result
             self.last_judged_sig = sig
+            # #1202lx: say it in the LOG too, not only on the artifact. The scores below are
+            # about to be read as a statement about the delivered UI; if the image predates
+            # the source, they are a statement about an older one.
+            try:
+                _cur1202lx = result.get("build_currency_1202lx") or {}
+                if str(_cur1202lx.get("verdict") or "") == "changed":
+                    orch._logger.warning(
+                        "#1202lx VISUAL VERDICT IS ABOUT AN OLDER BUILD: %s. Every score in "
+                        "this round describes the image that is running, not the source that "
+                        "will ship — treat a PASS here as unconfirmed until a rebuild lands.",
+                        _cur1202lx.get("detail"))
+            except Exception:
+                pass
             # PIPE-C3: per-milestone real-judgment counter (NOT reset on sig
             # change — only at milestone start). A vision-cost backstop escape so a
             # churning lane that keeps flipping the source signature can't drive
