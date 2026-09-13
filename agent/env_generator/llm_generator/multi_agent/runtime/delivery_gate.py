@@ -2587,6 +2587,46 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     except Exception:
         pass
     _EXTERNAL = ("/idp",)
+
+    def _registerable_path_1202lt(mp: str) -> str:
+        """#1202lt: render a scraped frontend call as a path the lane can actually REGISTER.
+
+        The comparison below is param-agnostic, but the ERROR MESSAGE was the raw scrape, and
+        the lane does what the message says. tiktok-r121, verbatim from its gate ledger:
+
+            Frontend calls unregistered endpoint(s) (register in RegistryHub):
+              GET /api/videos/:encodeURIComponent(id),
+              GET /api/videos/:encodeURIComponent(id)/comments
+
+        `:encodeURIComponent(id)` is a JS template literal the extractor flattened, not a
+        path parameter. The lane registered exactly that — the registry still carries
+        `GET /api/videos/{encodeURIComponent}(id)` — then deprecated it once it saw what it
+        was, and the retired registration went on to manufacture required tasks that helped
+        end the run (#1202lr). The framework asked for a defect that did not exist, which is
+        the one thing projected//instructed output is not allowed to do.
+
+        A segment that is not a plain literal becomes `{name}`, where `name` is the INNERMOST
+        identifier in the expression — `encodeURIComponent(id)` -> `{id}`, `${videoId}` ->
+        `{videoId}` — falling back to `{id}` when there is nothing to read. That is a real
+        contract path, which is what the message is asking the lane to create.
+        """
+        try:
+            method, _, path = str(mp or "").partition(" ")
+            if not path:
+                method, path = "", str(mp or "")
+            path = path.split("?", 1)[0]
+            out = []
+            for seg in path.split("/"):
+                if seg == "" or re.fullmatch(r"[A-Za-z0-9._~-]+", seg):
+                    out.append(seg)
+                    continue
+                names = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", seg)
+                out.append("{%s}" % (names[-1] if names else "id"))
+            rendered = "/".join(out)
+            return (method + " " + rendered).strip() if method else rendered
+        except Exception:
+            return str(mp or "")
+
     # Match on PATH (param-agnostic), METHOD-tolerant. A static scan can't
     # reliably tell a fetch's method from a React-Router route path (a `/auth/
     # login` *page* route looks like `GET /auth/login`), so requiring a
@@ -2614,9 +2654,16 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
                 _strip_source_fragment_1202dn(call)) not in declared_path_keys:
             unregistered_calls.append(call)
     if unregistered_calls:
+        # #1202lt: name the path to REGISTER, and keep the raw scrape beside it so the lane
+        # can still find the source line. Only the ones that differ get the parenthetical —
+        # a plain `/api/sounds` reads exactly as before.
+        _shown_1202lt = []
+        for _c in unregistered_calls:
+            _reg = _registerable_path_1202lt(_c)
+            _shown_1202lt.append(_reg if _reg == _c else f"{_reg}  (source spells it {_c})")
         errors.append(
             "Frontend calls unregistered endpoint(s) (register in RegistryHub): "
-            + join_capped(unregistered_calls, len(unregistered_calls), cap=10, sep=", ")
+            + join_capped(_shown_1202lt, len(_shown_1202lt), cap=10, sep=", ")
         )
 
     return {
