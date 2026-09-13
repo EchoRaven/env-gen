@@ -2564,10 +2564,53 @@ class RegistryHub:
                     + " — that table is registered with an EMPTY column schema (#568), so its "
                       "model carries only a primary key and cannot be owner-scoped at all. "
                       "Register the table's columns first")
+            # #1202mb: "NOT PERMANENT" IS FALSE WHEN THE MATERIALS DECLARE THE TABLE PUBLIC.
+            #
+            # The closing sentence invites a retry — "register the schema and the same chain
+            # is accepted" — and for a table whose schema simply has not landed yet, that is
+            # true and useful. For a table the MATERIALS declare public it is false: nothing
+            # will ever give it an owner column, because the authority chain puts materials
+            # above the contract and above table metadata.
+            #
+            # tiktok-r121 paid three hours for that sentence. `PUT /api/sounds/{}` was
+            # rejected SIXTEEN times between 11:27:45 and 14:39:45, every one the same step on
+            # the same endpoint, while `sounds` carried `visibility=public` the whole time —
+            # and the framework knew, logging "#1202le chain ... asserts a cross-user denial
+            # on `comments`, but the MATERIALS declare that table PUBLIC" for its siblings in
+            # that same run. The fact existed; this message did not consult it.
+            #
+            # Eleven backend tasks about sounds/owner were filed and COMPLETED over that
+            # window, which is the tell: the lanes were not ignoring the rejection, they were
+            # doing what it asked, and what it asked could not work.
+            _public_1202mb = []
+            try:
+                _tbls_mb = self._tables.value() or {}
+                for _i, _p, _t, _ in _unenf:
+                    _md = ((_tbls_mb.get(_t) or {}).get("metadata") or {})
+                    if str(_md.get("visibility") or "").strip().lower() == "public":
+                        if _t not in _public_1202mb:
+                            _public_1202mb.append(_t)
+            except Exception:
+                _public_1202mb = []
+            if _public_1202mb:
+                _tail_1202mb = (
+                    ". PERMANENT for %s: the MATERIALS declare %s PUBLIC, and materials "
+                    "outrank both the contract and table metadata, so %s will never gain an "
+                    "owner column and this denial can never be enforced. Do NOT re-register "
+                    "this chain unchanged — drop the denial step and assert what the actor "
+                    "SHOULD get instead (#1202mb)." % (
+                        join_capped(["`%s`" % _t for _t in _public_1202mb],
+                                    len(_public_1202mb), cap=3),
+                        "it" if len(_public_1202mb) == 1 else "them",
+                        "it" if len(_public_1202mb) == 1 else "they"))
+            else:
+                _tail_1202mb = (
+                    ". Judged against the tables as REGISTERED TODAY, so this is not "
+                    "permanent: register the schema and the same chain is accepted.")
             return {"error": (
                 "chain rejected: unenforceable owner denial — " + ". ".join(_parts) +
-                ". Judged against the tables as REGISTERED TODAY, so this is not permanent: "
-                "register the schema and the same chain is accepted. READS are untouched (a "
+                _tail_1202mb +
+                " READS are untouched (a "
                 "cross-user GET denial is how #77 learns a table is private) and POST is "
                 "exempt (a cross-actor create denial is about the payload, not row ownership)."
             )}
