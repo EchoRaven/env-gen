@@ -27,6 +27,7 @@ something that never happened. Everything needed was already in scope — `_scop
 names` from the #565 pass, and `advisory_reason`, which earlier demotions set and nothing
 ever read.
 """
+import ast
 import inspect
 import re
 
@@ -34,42 +35,54 @@ import pytest
 
 from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
 
+# #943: AST anchors, not byte windows. The first draft of this file used six
+# `src[i:i + N]` slices and tripped the ratchet on the same day I widened it — the
+# mechanisms under test are a nested function and one augmented assignment, both of
+# which the parser can hand over exactly.
+_SRC = inspect.getsource(vf)
+_TREE = ast.parse(_SRC)
 
-def _summary_src():
-    src = inspect.getsource(vf)
-    i = src.index("_adv_groups_1202lw")
-    return src[:i + 4000]
+
+def _reason_fn_src() -> str:
+    for n in ast.walk(_TREE):
+        if isinstance(n, ast.FunctionDef) and n.name == "_adv_reason_1202lw":
+            return ast.get_source_segment(_SRC, n) or ""
+    raise AssertionError("_adv_reason_1202lw is gone — the advisory reason is unexplained again")
+
+
+def _summary_stmt_src() -> str:
+    out = []
+    for n in ast.walk(_TREE):
+        if (isinstance(n, ast.AugAssign)
+                and isinstance(n.target, ast.Name) and n.target.id == "summary"
+                and "advisory" in (ast.unparse(n) or "")):
+            out.append(ast.unparse(n))
+    assert out, "the advisory clause no longer reaches the summary"
+    return "\n".join(out)
 
 
 def test_the_fixed_overlay_label_is_gone():
-    # The string survives in the fix's own comment, which QUOTES the r121 log line it
-    # replaces — so assert it is no longer EMITTED, not that it is absent from the file.
-    # (The first draft asserted absence and failed on the explanation of its own fix.)
-    src = inspect.getsource(vf)
-    emitting = [ln for ln in src.splitlines()
+    """The string survives in the fix's own comment, which QUOTES the r121 log line it
+    replaces — so assert it is no longer EMITTED, not that it is absent from the file."""
+    emitting = [ln for ln in _SRC.splitlines()
                 if "advisory (overlay, non-blocking)" in ln
                 and not ln.lstrip().startswith("#")]
     assert not emitting, ("the label is still emitted, not merely quoted: %s" % emitting)
 
 
 def test_milestone_scope_is_named_as_itself():
-    src = inspect.getsource(vf)
-    assert "not this milestone's routes (#565)" in src
+    assert "not this milestone's routes (#565)" in _reason_fn_src()
 
 
 def test_the_existing_advisory_reason_field_is_finally_read():
     """#595-era demotions have been WRITING `advisory_reason` with nothing reading it."""
-    src = inspect.getsource(vf)
-    assert src.count('advisory_reason') >= 4
-    i = src.index("_adv_reason_1202lw")
-    assert 'advisory_reason' in src[i:i + 900], (
+    assert _SRC.count("advisory_reason") >= 4
+    assert "advisory_reason" in _reason_fn_src(), (
         "the reason field is still written-only at the one place a reader looks")
 
 
 def test_the_reason_function_prefers_scope_then_recorded_then_fallback():
-    src = inspect.getsource(vf)
-    i = src.index("def _adv_reason_1202lw")
-    body = src[i:i + 700]
+    body = _reason_fn_src()
     i_scope = body.index("_scope_excluded_names")
     i_reason = body.index("advisory_reason")
     i_fallback = body.index("overlay/transient")
@@ -79,22 +92,24 @@ def test_the_reason_function_prefers_scope_then_recorded_then_fallback():
 
 
 def test_screens_are_grouped_by_reason_not_listed_flat():
-    src = inspect.getsource(vf)
-    assert "_adv_groups_1202lw.setdefault" in src
-    i = src.index('summary += " [advisory (non-blocking)')
-    assert '"; ".join(_adv_note)' in src[i:i + 200]
+    assert "_adv_groups_1202lw.setdefault" in _SRC
+    # `ast.unparse` normalises quoting, so compare on a quote-insensitive form.
+    stmt = _summary_stmt_src().replace("'", '"')
+    assert '"; ".join(_adv_note)' in stmt, stmt
 
 
 def test_the_fallback_still_covers_a_genuine_overlay():
     """★ Non-vacuity: login_modal really IS `kind=overlay` in r121's classification, and must
     still be describable."""
-    src = inspect.getsource(vf)
-    i = src.index("def _adv_reason_1202lw")
-    assert 'return "overlay/transient screen"' in src[i:i + 700]
+    assert 'return "overlay/transient screen"' in _reason_fn_src()
 
 
 def test_the_reason_is_bounded():
     """A recorded reason is prose from elsewhere; the summary is a log line."""
-    src = inspect.getsource(vf)
-    i = src.index("def _adv_reason_1202lw")
-    assert re.search(r"_why\[:\d+\]", src[i:i + 700]), "an unbounded reason can flood the line"
+    assert re.search(r"_why\[:\d+\]", _reason_fn_src()), (
+        "an unbounded reason can flood the line")
+
+
+def test_the_reason_function_is_reached_by_the_grouping():
+    """★ Reachability: a helper nothing calls explains nothing."""
+    assert "_adv_reason_1202lw(r)" in _SRC
