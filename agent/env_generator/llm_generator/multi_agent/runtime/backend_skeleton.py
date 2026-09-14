@@ -27,6 +27,21 @@ from typing import Iterable, Any, Dict, List, Mapping, Optional, Tuple
 from .database_scaffold import _columns_of, _is_constraint_pseudo_column
 
 
+def _scrub_1202mi(content: str, name: str) -> str:
+    """#1202mi: this module emits the projected backend, and its templates carry
+    the framework's own ticket tags and forensic narratives about past runs --
+    46 tags and 7 run names reached tiktok-r122's main.py. It writes directly
+    rather than through `framework_write_1202cw`, so the scrub is applied here
+    too. Comments and docstrings only: `#471` and `#528` are real tags and also
+    valid CSS colours, so nothing may be rewritten by pattern alone.
+    """
+    try:
+        from .provenance_scrub import scrub_provenance_1202mi
+        return scrub_provenance_1202mi(content, name)
+    except Exception:
+        return content
+
+
 def safe_column_name(name: str) -> str:
     """FIX #158 (gmrun6): map a column name to a valid, non-keyword Python IDENTIFIER
     usable as an ORM attribute — the single sanitize the whole dataset channel shares
@@ -3004,7 +3019,8 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
-        (be / name).write_text(content, encoding="utf-8")
+        (be / name).write_text(
+            _scrub_1202mi(content, name), encoding="utf-8")
         written[name] = str(be / name)
     return {"written": list(written), "backend_dir": str(be)}
 
@@ -4695,7 +4711,8 @@ def write_backend_skeleton(
         pass
 
     def w(name: str, content: str) -> None:
-        (be / name).write_text(content, encoding="utf-8")
+        (be / name).write_text(
+            _scrub_1202mi(content, name), encoding="utf-8")
         written[name] = str(be / name)
 
     # FIX #72: detect the canonical per-user named rows the lane's handlers REQUIRE

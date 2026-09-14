@@ -12099,7 +12099,7 @@ function _bcIsApi(url) {
   } catch (e) { return String(url).indexOf('/api/') === 0 || String(url).includes('/api/'); }
 }
 function _bcOn401(url) {
-  // #1202do: report whether a navigation was actually started, so the fetch wrapper knows
+  // Report whether a navigation was actually started, so the fetch wrapper knows
   // when it must withhold the response. Returns false on /login|/register|/signup, where
   // no redirect happens and the caller MUST still get its answer.
   if (String(url).includes('/api/')
@@ -12119,7 +12119,7 @@ window.fetch = async (input, init) => {
     if (!h.has('Authorization')) { h.set('Authorization', 'Bearer ' + tok); init = Object.assign({}, init, { headers: h }); }
   }
   const res = await _origFetch(input, init);
-  // #1202do: `location.assign` SCHEDULES a navigation, it does not stop execution. Returning
+  // `location.assign` SCHEDULES a navigation, it does not stop execution. Returning
   // the 401 here let the page run on and do what pages do with a list response —
   // `await res.json()` then `data.items.map(...)` — against `{"detail": ...}`. That
   // TypeError crashed /titles and was one of the two blockers that stopped netflix-r44 from
@@ -12590,6 +12590,56 @@ def ensure_assets_staged_for_build(anchor) -> List[str]:
     return []
 
 
+def _lock_err_1202mj(completed) -> bool:
+    """Did this git call fail on a lock rather than on its own merits?"""
+    try:
+        blob = ((completed.stderr or b"") + (completed.stdout or b"")).decode(
+            "utf-8", "replace")
+    except Exception:
+        return False
+    low = blob.lower()
+    return ("index.lock" in low or "head.lock" in low
+            or "another git process" in low)
+
+
+def _clear_stale_locks_1202mj(root) -> bool:
+    """Delegate to the one stale-lock implementation (#1202mg), rather than a
+    third copy of the age/containment rules."""
+    try:
+        from ..agents.runtime.auto_commit import clear_stale_git_locks_1202mg
+        return bool(clear_stale_git_locks_1202mg(root, contain_under=root))
+    except Exception:
+        return False
+
+
+def _record_restore_1202mj(root, rel: str, outcome: str, detail: str = "") -> None:
+    """Append one row to ``<root>/logs/build_infra_restore_1202mj.jsonl``.
+
+    The framework putting a whole `app/frontend` back from HEAD is a large event
+    and it was completely unobservable: the function returns the list, and BOTH
+    callers (validation_runner before the clean boot, docker_tools at the build
+    entry) discard it inside a bare ``except Exception: pass``. Never raises.
+    """
+    try:
+        import json as _json
+        import time as _time
+        out = Path(root) / "logs" / "build_infra_restore_1202mj.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        row = {"at": _time.time(), "path": rel, "outcome": outcome}
+        if detail:
+            row["detail"] = detail
+        prev = out.read_text(encoding="utf-8") if out.is_file() else ""
+        # Through the choke point, not around it. `#1202cw`'s ratchet forbids a
+        # raw `write_text` anywhere in a projector module, and it is right to:
+        # that is exactly how all 62 original bypasses looked. This particular
+        # path is framework-owned (`logs/`), so the clobber guard will allow it
+        # -- which is the guard deciding, rather than me asserting.
+        _fw_write_1202cw(out, prev + _json.dumps(row) + "\n",
+                         clobber_ok="#1202mj: framework-owned run log")
+    except Exception:
+        pass
+
+
 def ensure_build_infra_staged_for_build(anchor) -> List[str]:
     """FIX #450 (netflix r37: visual gate 0.069 across ALL screens — a blank app, not
     a fidelity signal): the framework-owned backend/frontend Dockerfiles are (re)written
@@ -12651,10 +12701,43 @@ def ensure_build_infra_staged_for_build(anchor) -> List[str]:
             if _d.is_dir() and (_d / _core).exists():
                 continue  # core present → intact (Dockerfile-only drop handled above)
             try:
+                # The docstring's "no-op if never committed" used to rest on the
+                # checkout failing harmlessly. Now that a failure is RECORDED,
+                # the condition has to be explicit: a directory this app never
+                # had is not a dropped one, and logging it as a failed repair
+                # every build would bury the real event.
+                _in_head = _sp.run(
+                    ["git", "-C", str(root), "ls-tree", "-d", "--name-only",
+                     "HEAD", "--", _dir], capture_output=True, timeout=30)
+                if _in_head.returncode != 0 or not (_in_head.stdout or b"").strip():
+                    continue
                 r = _sp.run(["git", "-C", str(root), "checkout", "HEAD", "--", _dir],
+                            capture_output=True, timeout=30)
+                # #1202mj: THE SAME LOCK THAT CAUSES THE DAMAGE BLOCKS THE REPAIR.
+                #
+                # `checkout` writes the index, so a stale `.git/index.lock` fails it
+                # — and this runs at every build entry, which is precisely when a
+                # dropped `app/frontend` has to come back. tiktok-r122 held such a
+                # lock for 46 minutes (age 5410s when a resume finally cleared it)
+                # while every merge failed; had the directory gone missing in that
+                # window this repair would have failed too, silently, and the image
+                # would have baked a tree with no frontend.
+                if r.returncode != 0 and _lock_err_1202mj(r):
+                    if _clear_stale_locks_1202mj(root):
+                        r = _sp.run(
+                            ["git", "-C", str(root), "checkout", "HEAD", "--", _dir],
                             capture_output=True, timeout=30)
                 if r.returncode == 0:
                     restored.append(_dir + "/ (dir)")
+                    _record_restore_1202mj(root, _dir, "restored")
+                else:
+                    # #947: silence here is how a missing frontend reaches a build.
+                    # Both callers discard this function's return value and swallow
+                    # its exceptions, so an unrecorded failure is invisible at every
+                    # later frame.
+                    _record_restore_1202mj(
+                        root, _dir, "failed",
+                        (r.stderr or b"").decode("utf-8", "replace")[-300:])
             except Exception:
                 pass
     except Exception:

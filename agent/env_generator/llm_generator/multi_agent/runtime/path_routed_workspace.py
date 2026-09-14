@@ -877,6 +877,21 @@ def _calling_site_1202fc() -> str:
     return "an unidentified site"
 
 
+def _scrubbed_1202mi(text: str, filename: str) -> str:
+    """#1202mi: strip the framework's own ticket tags and past-run names from the
+    comments and docstrings this write puts INSIDE the generated application.
+
+    Applied here because this is the one point every projector write passes
+    through, rather than at the ~140 template sites that would each have to
+    remember. Never raises: a scrub that fails must not stop the projection.
+    """
+    try:
+        from .provenance_scrub import scrub_provenance_1202mi
+        return scrub_provenance_1202mi(text, filename)
+    except Exception:
+        return text
+
+
 def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
                            encoding: str = "utf-8") -> bool:
     """Write ``text`` to ``path``; refuse if that would clobber lane work.
@@ -912,7 +927,7 @@ def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
             return False
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding=encoding)
+        p.write_text(_scrubbed_1202mi(text, p.name), encoding=encoding)
         return True
     except Exception:
         return False
