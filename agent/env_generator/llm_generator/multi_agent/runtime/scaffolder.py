@@ -246,6 +246,31 @@ def _scrubbed_1202mi(text: str, filename: str) -> str:
         return text
 
 
+#: Framework-owned LIVE state at the run root. git must never own any of it.
+#:
+#: #1202ml shipped with only `shared/` in this list, which was the same
+#: under-scoping it exists to punish: I fixed the entry I had found instead of
+#: enumerating the set. tiktok-r123 then showed the rest of it — after the same
+#: single "auto-commit uncommitted work on integration before strategic merge"
+#: swept them in, a later checkout restored `run_budget.json` over the live one
+#: and the run's cumulative spend went from $424.37 back to $61.98, reporting
+#: itself as run #1 with nothing spent before it. `.checkpoint` is worse: a
+#: reverted checkpoint is a resume reading someone else's position.
+#:
+#: Ignoring these costs nothing that needs them. `run_snapshot` copies
+#: `.checkpoint`, `run_budget.json`, `project.json` and `.user_gates.json` into
+#: snapshots by direct file copy, not through git, so resume keeps working.
+_LIVE_RUN_STATE_1202ml = (
+    "shared/",            # the hub ledgers
+    "logs/",              # gate ledger + the framework's own forensic jsonl
+    "run_budget.json",    # spend and caps
+    "project.json",       # run identity
+    ".checkpoint",        # resume position
+    ".checkpoint.bak",
+    ".user_gates.json",
+)
+
+
 def ensure_base_gitignore(output_dir: Path) -> list:
     """Keep everything that is NOT deliverable code out of git. Returns the rel-paths to commit.
 
@@ -291,7 +316,8 @@ def ensure_base_gitignore(output_dir: Path) -> list:
     # Only the ignore list changes. `shared/` is deliberately NOT added to
     # FRAMEWORK_SCRATCH_DIRS: that set also governs what the file tools prune and
     # what lanes can see, which is a far wider change than this defect calls for.
-    want = ["memory-bank/", "shared/"] + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS]
+    want = (["memory-bank/"] + list(_LIVE_RUN_STATE_1202ml)
+            + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS])
     cur = gi.read_text(encoding="utf-8") if gi.exists() else ""
     new = [p for p in want if p not in cur.split()]
     if not new:

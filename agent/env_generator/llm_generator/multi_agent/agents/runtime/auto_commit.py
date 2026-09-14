@@ -62,11 +62,21 @@ ALLOWED_DOTFILES = frozenset({
 FRAMEWORK_SCRATCH_DOTDIRS_1202AW = frozenset({".openenv_trash"})
 
 
+#: Top-level names that are framework-owned LIVE run state, never deliverable.
+#: Kept as the first path component so `app/frontend/src/shared/` — a lane's own
+#: directory that merely shares a name — is untouched. The scaffolder ignores the
+#: same set; this refuses it even when a caller names the path explicitly.
+_LIVE_RUN_STATE_TOP_1202ml = frozenset({
+    "shared", "logs", "run_budget.json", "project.json",
+    ".checkpoint", ".checkpoint.bak", ".user_gates.json",
+})
+
+
 def _stage_refusal_1202ml(rel_str: str) -> str:
     """Name the rule that refused, so a lane is not told "dotfile" about a path
     with no dot in it."""
     first = (rel_str or "").replace("\\", "/").lstrip("./").split("/", 1)[0]
-    if first == "shared":
+    if first in _LIVE_RUN_STATE_TOP_1202ml:
         return (f"auto-stage refused {rel_str}: shared/ holds the LIVE hub "
                 "ledgers. Committing one makes the next checkout or merge "
                 "restore it over live coordination state, and every lane "
@@ -100,7 +110,7 @@ def _should_stage_path(rel_path: str, agent_id: Optional[str] = None) -> bool:
     # value. Once committed, every checkout of the branch reverts live
     # coordination state and every worktree carries a frozen copy of it.
     _first = (rel_path or "").replace("\\", "/").lstrip("./").split("/", 1)[0]
-    if _first == "shared":
+    if _first in _LIVE_RUN_STATE_TOP_1202ml:
         # Logged the way this function's sibling refusal is logged, without a
         # ticket tag: it is a per-file policy refusal, not a measurement, and it
         # has no artifact to write to — the caller is told through `stage_file`'s

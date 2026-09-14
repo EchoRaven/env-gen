@@ -44,11 +44,40 @@ from multi_agent.agents.runtime.auto_commit import (  # noqa: E402
 
 class TheScaffolderIgnoresTheLedger(unittest.TestCase):
 
-    def test_shared_is_in_the_generated_gitignore(self):
+    def test_every_piece_of_live_run_state_is_in_the_gitignore(self):
+        """The first version listed only `shared/` — the same under-scoping this
+        ticket exists to punish. tiktok-r123 showed the rest: its committed
+        `run_budget.json` was restored over the live one and the run's
+        cumulative spend went from $424.37 back to $61.98, reporting itself as
+        run #1 with nothing spent before it."""
         with tempfile.TemporaryDirectory() as d:
             ensure_base_gitignore(Path(d))
             gi = (Path(d) / ".gitignore").read_text(encoding="utf-8").split()
-            self.assertIn("shared/", gi, gi)
+            for entry in ("shared/", "logs/", "run_budget.json", "project.json",
+                          ".checkpoint", ".checkpoint.bak", ".user_gates.json"):
+                self.assertIn(entry, gi, "%s is live run state: %s" % (entry, gi))
+
+    def test_git_ignores_the_budget_ledger_and_the_checkpoint(self):
+        """The two whose reversion is worst: spend accounting, and the resume
+        position."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "run_budget.json").write_text('{"llm": {"usd": 424.37}}',
+                                                  encoding="utf-8")
+            (root / ".checkpoint").write_text('{"status": "running"}',
+                                              encoding="utf-8")
+            (root / "logs").mkdir()
+            (root / "logs" / "delivery_gate.jsonl").write_text("{}\n",
+                                                               encoding="utf-8")
+            (root / "app").mkdir()
+            (root / "app" / "main.py").write_text("X = 1\n", encoding="utf-8")
+            ensure_base_gitignore(root)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            out = subprocess.run(["git", "status", "--porcelain", "-uall"],
+                                 cwd=root, capture_output=True, text=True).stdout
+            for hidden in ("run_budget.json", ".checkpoint", "logs/"):
+                self.assertNotIn(hidden, out, out)
+            self.assertIn("app/main.py", out, "the app must still be tracked")
 
     def test_git_does_not_see_the_ledger_as_untracked(self):
         """The real mechanism: `git add -A` can only sweep in what git lists."""
@@ -86,11 +115,15 @@ class TheScaffolderIgnoresTheLedger(unittest.TestCase):
 class TheStageFilterRefusesItAnyway(unittest.TestCase):
     """Guarding the entry is not guarding the value."""
 
-    def test_a_ledger_path_is_refused(self):
+    def test_every_live_state_path_is_refused(self):
         for p in ("shared/hubs/workhub_documents.json",
                   "shared/hubs/registryhub_endpoints.json",
                   "./shared/hubs/eventhub_events.json",
-                  "shared/seed_live_counts.json"):
+                  "shared/seed_live_counts.json",
+                  "run_budget.json", "project.json", ".checkpoint",
+                  ".checkpoint.bak", ".user_gates.json",
+                  "logs/delivery_gate.jsonl",
+                  "logs/git_lock_clears_1202mg.jsonl"):
             self.assertFalse(_should_stage_path(p), p)
 
     def test_app_paths_are_unaffected(self):
