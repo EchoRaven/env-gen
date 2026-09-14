@@ -1454,15 +1454,34 @@ while you were busy is missed.
             self._processing_state = ProcessingState.IDLE
             self._focus_hub = prev_focus_hub
             self._active_phase = prev_active_phase
-            # Drain any task_ready that arrived while we were busy
-            # responding to kickoff. This is the same path
-            # _handle_task_ready uses on its way out.
-            await self._drain_deferred_task_ready_messages()
+            # #1202mn: RECORD THE SECTION FIRST. The guarantee below is real
+            # but it used to run AFTER the drain, and the drain is unbounded —
+            # it replays every queued task_ready, each of which can run a full
+            # agentic loop. So the one write the kickoff coordinator is waiting
+            # for was sequenced behind arbitrary other work.
+            #
+            # tiktok-r123, measured. The backend lane took `#1202er`'s skip at
+            # 13:49:07, entered a 2000-step agentic loop in the same second,
+            # and produced 3087 log lines of unrelated work; its section
+            # decision landed at 14:43:15 — 54 minutes later, 42 minutes after
+            # the kickoff had already timed out at 14:00:52 and reconciled from
+            # the registry. Its M2 kickoff spent its last 18 minutes waiting on
+            # frontend alone, whose section arrived an hour after that timeout.
+            # Two 1200s timeouts in one run, ~$113 of LLM spend on both, for a
+            # write that costs nothing and needs no model.
+            #
+            # This is a pure reordering: the call has no dependency on the drain
+            # (it reads workhub and writes one decision), and the drain has none
+            # on it.
             self._ensure_initial_section_decision(
                 meeting_id=meeting_id,
                 milestone_index=milestone_index,
                 expected_section=expected_section,
             )
+            # Drain any task_ready that arrived while we were busy
+            # responding to kickoff. This is the same path
+            # _handle_task_ready uses on its way out.
+            await self._drain_deferred_task_ready_messages()
 
     def _contract_already_complete_1202er(self) -> bool:
         """True when RegistryHub already holds a contract worth reconciling from.
