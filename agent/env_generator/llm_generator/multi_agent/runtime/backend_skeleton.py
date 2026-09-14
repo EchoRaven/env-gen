@@ -17,7 +17,9 @@ become generic lists; richer business logic is a later lane-override extension).
 
 from __future__ import annotations
 
+import ast
 import keyword
+import logging
 import re
 from urllib.parse import quote as _quote
 import sys
@@ -2815,6 +2817,49 @@ _IMPORT_TO_PIP = {
 }
 _TOP_IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_]\w*)", re.M)
 
+# #1202mk: a PEP 508 distribution name. Anything else cannot go in `dependencies`
+# -- `uv pip install -r pyproject.toml` rejects the WHOLE file, so one bad token
+# means the backend image never builds and the app never boots for the entire run.
+_PEP508_NAME_1202MK = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+
+
+def _imported_top_modules_1202mk(src: str):
+    """Top-level module names this source really imports.
+
+    Read from the AST, not from the text. `_TOP_IMPORT_RE` scans raw source with
+    `re.M`, so ANY line that happens to begin with "from " or "import " counts --
+    including a line of prose inside a docstring. That is not hypothetical: this
+    module's own projected `main.py` carries the sentence
+
+        ... this is "the difference
+        from the earlier attempt at this, which fail-opened and was reverted" ...
+
+    whose second line begins "from the", so `the` has been written into
+    `app/backend/pyproject.toml` as a dependency and pip-installed into every
+    generated backend image since at least tiktok-r120 (verified: r120, r121,
+    r122 and r123 all carry it). An unrelated package off PyPI has been shipping
+    inside the environments.
+
+    Returns None when the source does not parse, so the caller can fall back to
+    the regex -- a lane's file mid-edit must not silently lose its real imports.
+    """
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return None
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                names.append(a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            # `from . import x` is local: level > 0 and module may be None.
+            if node.level or not node.module:
+                continue
+            names.append(node.module.split(".")[0])
+    return names
+
 
 def _lane_third_party_imports(be_dir: Any) -> List[str]:
     """pip requirement strings for third-party modules the backend source imports but the
@@ -2838,7 +2883,13 @@ def _lane_third_party_imports(be_dir: Any) -> List[str]:
                 src = f.read_text(encoding="utf-8")
             except Exception:
                 continue
-            for name in _TOP_IMPORT_RE.findall(src):
+            # #1202mk: the AST says what is imported; the regex only says what a
+            # line starts with. Fall back to the regex only when the file does
+            # not parse, which is a lane's file mid-edit.
+            _names = _imported_top_modules_1202mk(src)
+            if _names is None:
+                _names = _TOP_IMPORT_RE.findall(src)
+            for name in _names:
                 if name in seen or name in local or name in stdlib:
                     continue
                 seen.add(name)
@@ -2850,7 +2901,46 @@ def _lane_third_party_imports(be_dir: Any) -> List[str]:
                     out.append(name)             # asyncpg / httpx / redis / aiohttp / ...
     except Exception:
         return []
-    return sorted(set(out))
+    # #1202mk: VALIDATE THE VALUE, do not enumerate the bad ones. `__main__` is a
+    # real module and `import __main__ as main_mod` is legal Python, so a lane
+    # writing it is not wrong -- but `__main__` is not a distribution name, and
+    # tiktok-r123 is what that costs: `project.dependencies[7] must be pep508`,
+    # so `uv pip install` refused the whole file, the backend image never built,
+    # and the run burned 26 ticks / 121 min / $396 without the app ever booting.
+    # No lane could fix it: pyproject.toml is framework-owned.
+    _kept, _dropped = [], []
+    for _d in sorted(set(out)):
+        _head = re.split(r"[<>=!~\[;]", _d, 1)[0].strip()
+        (_kept if _head and _PEP508_NAME_1202MK.match(_head) else _dropped).append(_d)
+    if _dropped:
+        _record_dropped_deps_1202mk(be_dir, _dropped)
+    return _kept
+
+
+def _record_dropped_deps_1202mk(be_dir: Any, dropped: List[str]) -> None:
+    """Say — and record — which inferred dependencies were refused.
+
+    #947: silently dropping one would leave a backend missing a package it
+    really imports, with nothing to read afterwards explaining why. Never raises:
+    this runs inside the projection.
+    """
+    logging.getLogger(__name__).warning(
+        "#1202mk refused %d inferred dependency/ies that are not PEP 508 "
+        "distribution names: %s. They were read out of the backend's imports; "
+        "pyproject.toml is framework-owned, so a bad one wedges `uv pip install` "
+        "and no lane can clear it.", len(dropped), ", ".join(dropped))
+    try:
+        import json as _json
+        import time as _time
+        root = Path(be_dir).parent.parent
+        out = root / "logs" / "inferred_deps_refused_1202mk.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        prev = out.read_text(encoding="utf-8") if out.is_file() else ""
+        out.write_text(
+            prev + _json.dumps({"at": _time.time(), "dropped": list(dropped)}) + "\n",
+            encoding="utf-8")
+    except Exception:
+        pass
 
 
 def render_pyproject(be_dir: Any) -> str:
