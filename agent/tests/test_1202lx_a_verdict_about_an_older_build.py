@@ -103,9 +103,17 @@ def test_the_measurement_is_reused_not_reimplemented():
 
 
 def test_it_lands_on_the_verdict_artifact():
-    src = inspect.getsource(vf)
-    assert '"build_currency_1202lx": _build_currency_1202lx(project_dir)' in src, (
-        "the answer must reach the artifact a reader consults, not only the log")
+    """★ CORRECTED (#1202mf). This asserted the source line that sets the key on the RETURNED
+    dict, and stayed green while `_persist_verdict` — which actually writes verdict.json —
+    never saw it. r122's verdict.json carried neither field. The property is that the value
+    reaches the FILE; test_1202mf proves it by reading one back."""
+    import ast
+    src = inspect.getsource(vf.run_visual_fidelity)
+    calls = [ast.unparse(n) for n in ast.walk(ast.parse(src.lstrip()))
+             if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_persist_verdict"]
+    assert calls, "the persist call moved"
+    assert "build_currency_1202lx=" in calls[0], (
+        "the writer that makes the artifact is not being handed this fact")
 
 
 def test_a_stale_build_is_announced_in_the_log():

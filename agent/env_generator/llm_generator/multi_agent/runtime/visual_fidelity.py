@@ -4044,9 +4044,19 @@ async def run_visual_fidelity(
                 len(_by740), cap=4))
     # #419: PERSIST the per-dimension verdict to disk so fidelity iteration is
     # TARGETED, not guessed (see _persist_verdict). Best-effort + write-only.
+    # #1202mf: HAND THE TWO FACTS TO THE WRITER THAT ACTUALLY MAKES THE ARTIFACT.
+    #
+    # #1202lx and #1202lz each put their answer on the dict `run_visual_fidelity` RETURNS,
+    # and both commit messages claimed it landed "on the artifact a reader consults". It did
+    # not. `_persist_verdict` builds its own #500 best-of-captures structure and never sees
+    # the returned dict, so tiktok-r122's verdict.json carries neither — the same
+    # fact-with-no-reader defect this whole batch has been closing, committed by me twice.
+    # Caught by reading r122's verdict.json instead of the source line my tests asserted.
     _persist_verdict(project_dir, passed=passed, min_similarity=min_similarity,
                      milestone_label=milestone_label,
-                     summary=summary, coverage=_coverage, results=results)
+                     summary=summary, coverage=_coverage, results=results,
+                     build_currency_1202lx=_build_currency_1202lx(project_dir),
+                     api_404s_1202lz=_api404_1202lz)
     # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
     # (no real verdict obtained). If SOME screens produced real shots, do NOT refund —
     # their verdicts + remediation must flow this tick (a partial-blank must not discard
@@ -4185,7 +4195,9 @@ def _archive_capture_930(rec: Dict[str, Any], vdir: Any, code_state: Any) -> Dic
 
 def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                      milestone_label: Optional[str] = None,
-                     summary: str, coverage: Any, results: List[Mapping[str, Any]]) -> None:
+                     summary: str, coverage: Any, results: List[Mapping[str, Any]],
+                     build_currency_1202lx: Any = None,
+                     api_404s_1202lz: Any = None) -> None:
     """#419/#500: write design/visual_gate/verdict.json — the BEST per-screen result MERGED
     across the milestone's captures — with each screen's per-dimension detail, so fidelity
     iteration is TARGETED and the recorded Part-A metric reflects the app's real fidelity.
@@ -4646,6 +4658,10 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             _unstable_893 = []
 
         _verdict = {
+            # #1202mf: recorded here, in the file, because the in-memory result the gate uses
+            # is gone the moment the round ends and this is what a reader has months later.
+            "build_currency_1202lx": build_currency_1202lx,
+            "api_404s_1202lz": api_404s_1202lz,
             "passed": bool(passed) or _merged_passed, "min_similarity": min_similarity,
             "code_state": _head_sha,   # #621: the tree `blocking_average_live` scored
             "blocking_average": _blocking_average,  # #542a: Part-A over BLOCKING screens only

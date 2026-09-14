@@ -97,9 +97,15 @@ def test_it_is_named_as_contract_drift_not_a_rendering_defect():
 
 
 def test_it_reaches_the_artifact():
-    src = inspect.getsource(vf)
-    assert '"api_404s_1202lz": _api404_1202lz' in src, (
-        "the static extractor structurally cannot produce this list — the artifact must carry it")
+    """★ CORRECTED (#1202mf): asserting the source line that sets the key on the RETURNED dict
+    proved nothing — `_persist_verdict` builds verdict.json separately and never saw it."""
+    import ast
+    src = inspect.getsource(vf.run_visual_fidelity)
+    calls = [ast.unparse(n) for n in ast.walk(ast.parse(src.lstrip()))
+             if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_persist_verdict"]
+    assert calls, "the persist call moved"
+    assert "api_404s_1202lz=" in calls[0], (
+        "the static extractor cannot produce this list — the WRITER must be handed it")
 
 
 def test_it_is_computed_before_740_folds_the_stream():
