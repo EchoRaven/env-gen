@@ -62,6 +62,19 @@ ALLOWED_DOTFILES = frozenset({
 FRAMEWORK_SCRATCH_DOTDIRS_1202AW = frozenset({".openenv_trash"})
 
 
+def _stage_refusal_1202ml(rel_str: str) -> str:
+    """Name the rule that refused, so a lane is not told "dotfile" about a path
+    with no dot in it."""
+    first = (rel_str or "").replace("\\", "/").lstrip("./").split("/", 1)[0]
+    if first == "shared":
+        return (f"auto-stage refused {rel_str}: shared/ holds the LIVE hub "
+                "ledgers. Committing one makes the next checkout or merge "
+                "restore it over live coordination state, and every lane "
+                "worktree then carries a frozen copy of it. Nothing under "
+                "shared/ is deliverable — leave it untracked.")
+    return f"auto-stage refused {rel_str}: dotfile not in allowlist"
+
+
 def _should_stage_path(rel_path: str, agent_id: Optional[str] = None) -> bool:
     """Return True if ``rel_path`` is safe to auto-stage in a worktree.
 
@@ -81,6 +94,22 @@ def _should_stage_path(rel_path: str, agent_id: Optional[str] = None) -> bool:
     caller in this module derives ``rel_path`` via ``Path.relative_to``,
     so an absolute slipping in is itself a sign of a bug.
     """
+    # #1202ml: never stage the live hub ledgers. Ignoring them (scaffolder's
+    # `.gitignore`) stops `git add -A` from seeing them; this stops an explicit
+    # path from getting them in anyway — guarding the entry is not guarding the
+    # value. Once committed, every checkout of the branch reverts live
+    # coordination state and every worktree carries a frozen copy of it.
+    _first = (rel_path or "").replace("\\", "/").lstrip("./").split("/", 1)[0]
+    if _first == "shared":
+        # Logged the way this function's sibling refusal is logged, without a
+        # ticket tag: it is a per-file policy refusal, not a measurement, and it
+        # has no artifact to write to — the caller is told through `stage_file`'s
+        # message, which is the channel the lane actually reads.
+        _LOG.warning(
+            "auto-stage refused %s for agent %s: shared/ holds the live hub "
+            "ledgers and nothing under it is deliverable", rel_path,
+            agent_id or "<unknown>")
+        return False
     if not rel_path:
         return False
     norm = rel_path.replace("\\", "/")
@@ -368,7 +397,7 @@ def stage_file(
     rel_str = str(rel)
     if not _should_stage_path(rel_str, agent_id=agent_id):
         return False, (
-            f"auto-stage refused {rel_str}: dotfile not in allowlist"
+            _stage_refusal_1202ml(rel_str)
         )
     if not fp.exists():
         return False, f"file does not exist: {fp}"
@@ -401,7 +430,7 @@ def stage_deletion(
     rel_str = str(rel)
     if not _should_stage_path(rel_str, agent_id=agent_id):
         return False, (
-            f"auto-stage refused {rel_str}: dotfile not in allowlist"
+            _stage_refusal_1202ml(rel_str)
         )
     try:
         rc, _out, err = _run_git(["add", "-A", "--", rel_str], cwd=wt)

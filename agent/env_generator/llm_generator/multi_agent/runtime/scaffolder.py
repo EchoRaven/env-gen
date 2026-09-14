@@ -274,7 +274,24 @@ def ensure_base_gitignore(output_dir: Path) -> list:
         FRAMEWORK_SCRATCH_DIRS = (
             ".agents", ".agent_logs", "worktrees", ".memory", "snapshots")
     gi = Path(output_dir) / ".gitignore"
-    want = ["memory-bank/"] + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS]
+    # #1202ml: `shared/` holds the LIVE hub ledgers, and git must never own them.
+    #
+    # They are read and written continuously from the run root while the lanes work.
+    # Once a broad auto-commit sweeps them in, every later checkout/merge/reset of
+    # `integration` RESTORES the committed snapshot over live state, and every lane
+    # worktree carries a frozen checkout of it. tiktok-r123 is what that costs: a
+    # single "auto-commit uncommitted work on integration before strategic merge"
+    # at 03:05 committed workhub_documents.json at version 34; the resume then
+    # created its kickoff meeting, the lanes read `Document not found` for it, the
+    # coordinator waited 245s for sections that could never be recorded, and the
+    # run died 11 minutes in. Three of the 162 generated runs on disk are in this
+    # state (netflix-local-r11, netflix-local-r19, tiktok-web-r123) — rare, and
+    # fatal to resume when it happens.
+    #
+    # Only the ignore list changes. `shared/` is deliberately NOT added to
+    # FRAMEWORK_SCRATCH_DIRS: that set also governs what the file tools prune and
+    # what lanes can see, which is a far wider change than this defect calls for.
+    want = ["memory-bank/", "shared/"] + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS]
     cur = gi.read_text(encoding="utf-8") if gi.exists() else ""
     new = [p for p in want if p not in cur.split()]
     if not new:
