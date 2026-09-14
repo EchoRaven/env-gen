@@ -4008,6 +4008,11 @@ async def run_visual_fidelity(
     # #1202lz: separate the /api 404s out of the console stream and name them as the
     # contract question they are, BEFORE #740 folds the whole stream into visual deviations.
     _api404_1202lz = api_404s_from_console_1202lz(_console740)
+    # #1202mf/#720: measured ONCE and shared by the returned dict and the persisted verdict,
+    # so the two provably carry the same value. Calling it twice would make them two
+    # measurements taken moments apart — exactly the undeclared-collision shape #712 tripped
+    # over, and the ratchet asks for a decision rather than a coincidence.
+    _bc_1202lx = _build_currency_1202lx(project_dir)
     if _api404_1202lz:
         _LOG.warning(
             "#1202lz the browser called %d /api path(s) this app does NOT serve: %s. This is "
@@ -4055,7 +4060,7 @@ async def run_visual_fidelity(
     _persist_verdict(project_dir, passed=passed, min_similarity=min_similarity,
                      milestone_label=milestone_label,
                      summary=summary, coverage=_coverage, results=results,
-                     build_currency_1202lx=_build_currency_1202lx(project_dir),
+                     build_currency_1202lx=_bc_1202lx,
                      api_404s_1202lz=_api404_1202lz)
     # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
     # (no real verdict obtained). If SOME screens produced real shots, do NOT refund —
@@ -4106,7 +4111,7 @@ async def run_visual_fidelity(
             # compares SOURCE signatures, and the source was current -- it was the IMAGE that
             # was not. Reused, not re-derived (#665/#1136): `build_currency_1202ex` already
             # answers exactly this and carries its own never-raises contract.
-            "build_currency_1202lx": _build_currency_1202lx(project_dir),
+            "build_currency_1202lx": _bc_1202lx,
             # #1202lz: /api paths the browser proved this app calls and does not serve. On the
             # artifact because the static extractor structurally cannot produce this list.
             "api_404s_1202lz": _api404_1202lz,

@@ -41,6 +41,12 @@ KNOWN_SHARED = {
     "coverage":         "same object passed straight through",
     "min_similarity":   "same scalar passed straight through",
     "summary":          "same string passed straight through",
+    # #1202mf: both are measured ONCE in run_visual_fidelity and handed to both dicts, so
+    # they agree by construction rather than by coincidence — see the `_bc_1202lx` /
+    # `_api404_1202lz` locals. They are on BOTH because the gate reads the in-memory result
+    # and a human reads the file, and the file is what survives the round.
+    "build_currency_1202lx": "same dict passed straight through (measured once)",
+    "api_404s_1202lz":       "same dict passed straight through (measured once)",
 }
 
 
