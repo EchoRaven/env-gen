@@ -233,6 +233,19 @@ def _loop_page_advice_1202gq(names, pages=None) -> str:
     return "\n\n".join(parts)
 
 
+def _scrubbed_1202mi(text: str, filename: str) -> str:
+    """Strip framework ticket tags and past-run names from the comments and
+    docstrings of Python written into the generated app. Applied on EVERY such
+    write path, not only the ones that leak today: this template is currently
+    clean, and a policy that holds on five of six paths is the shape of defect
+    `#1202mg` was about. Never raises."""
+    try:
+        from .provenance_scrub import scrub_provenance_1202mi
+        return scrub_provenance_1202mi(text, filename)
+    except Exception:
+        return text
+
+
 def ensure_base_gitignore(output_dir: Path) -> list:
     """Keep everything that is NOT deliverable code out of git. Returns the rel-paths to commit.
 
@@ -856,7 +869,9 @@ volumes:
         main_py = orch.output_dir / "app" / "backend" / "main.py"
         if not main_py.exists():
             main_py.parent.mkdir(parents=True, exist_ok=True)
-            main_py.write_text(_BASE_MAIN_PY, encoding="utf-8")
+            main_py.write_text(
+                _scrubbed_1202mi(_BASE_MAIN_PY, main_py.name),
+                encoding="utf-8")
             rel_paths.append("app/backend/main.py")
         # The backend Dockerfile COPYs reset.sh; scaffold a base one so the image
         # always builds (the lane may overwrite it with an app-specific reset).

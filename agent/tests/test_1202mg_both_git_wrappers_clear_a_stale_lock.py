@@ -161,6 +161,12 @@ class TheDevelopmentRepoIsNeverTouched(unittest.TestCase):
             AC._self_gitdir_1202mg = orig
         self.assertEqual(cleared, [], "it deleted a lock in its own repo")
         self.assertTrue(self.lock.exists())
+        # and it wrote nothing there either. The first version recorded the
+        # refusal under the resolved root -- which, in the real layout, IS the
+        # development tree: verified by resolving a non-repo directory under
+        # generated/, which lands on the framework's own .git.
+        self.assertFalse((self.repo / "logs").exists(),
+                         "the refusal wrote into the repository it refused to touch")
 
     def test_without_that_guard_the_same_lock_WOULD_go(self):
         """Counter-proof: the refusal above is the only thing holding it back."""

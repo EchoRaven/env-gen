@@ -154,6 +154,15 @@ def render_oauth_module(module: str) -> str:
     return _template_path(module).read_text(encoding="utf-8")
 
 
+def _scrubbed_1202mi(text: str, filename: str) -> str:
+    """See `provenance_scrub`. Never raises: OAuth scaffolding must land."""
+    try:
+        from .provenance_scrub import scrub_provenance_1202mi
+        return scrub_provenance_1202mi(text, filename)
+    except Exception:
+        return text
+
+
 def write_oauth_as(output_dir: Path) -> Dict[str, Any]:
     """Author the embedded OAuth2 AS modules under ``<output_dir>/app/backend/``.
 
@@ -171,7 +180,11 @@ def write_oauth_as(output_dir: Path) -> Dict[str, Any]:
     written: List[str] = []
     for module in AS_MODULES:
         dest = backend_dir / module
-        dest.write_text(render_oauth_module(module), encoding="utf-8")
+        # #1202mi: measured on a real render, these three modules carry 11
+        # framework tags between them and were reached by no scrub, because
+        # this write goes through neither choke point.
+        dest.write_text(_scrubbed_1202mi(render_oauth_module(module), module),
+                        encoding="utf-8")
         written.append(str(dest))
     return {"written": written}
 

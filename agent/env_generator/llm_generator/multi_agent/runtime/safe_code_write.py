@@ -26,6 +26,17 @@ from pathlib import Path
 _LOG = logging.getLogger(__name__)
 
 
+def _scrubbed_1202mi(text: str, filename: str) -> str:
+    """Strip this framework's ticket tags and past-run names from the comments
+    and docstrings of Python it writes into the generated app. Never raises: a
+    failed scrub must not stop a repair from landing."""
+    try:
+        from .provenance_scrub import scrub_provenance_1202mi
+        return scrub_provenance_1202mi(text, filename)
+    except Exception:
+        return text
+
+
 def write_py_if_still_parses(path: Path, new_text: str, *, what: str = "") -> bool:
     """Write ``new_text`` to ``path`` unless doing so would break a file that currently parses.
 
@@ -43,6 +54,14 @@ def write_py_if_still_parses(path: Path, new_text: str, *, what: str = "") -> bo
     if path.suffix != ".py":
         path.write_text(new_text, encoding="utf-8")
         return True
+
+    # #1202mi: this is the THIRD way framework-authored Python reaches the
+    # generated app (the others are `framework_write_1202cw` and
+    # backend_skeleton's direct writes), and it serves four callers --
+    # handler_fk_repair, backend_scaffold, route_projector, heal_pipeline. A
+    # scrub wired to only some of the ways in is the defect `#1202mg` was about;
+    # I reproduced it here by not counting the ways in before wiring.
+    new_text = _scrubbed_1202mi(new_text, path.name)
 
     old = ""
     if path.exists():

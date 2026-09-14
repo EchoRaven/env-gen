@@ -230,7 +230,13 @@ def clear_stale_git_locks_1202mg(
             "OWN repository, reached because %s is not a repository of its own. "
             "A stale lock there is a developer's to clear, not this process's.",
             gitdir, cwd)
-        _record_lock_event_1202mg(gitdir, "refused_own_repo", [], str(cwd))
+        # Deliberately NOT recorded. The record is written under the resolved
+        # repository's root, and here that root IS the development tree -- so
+        # recording the refusal would put a file into the one repository this
+        # branch exists to leave alone. Verified in the real layout: a non-repo
+        # directory under generated/ resolves to the framework's own .git, and
+        # the first version of this branch wrote logs/ into it. There is no
+        # legitimate place to persist this case; the warning above is it.
         return cleared
     for name in _LOCK_NAMES_1202MG:
         lock = Path(gitdir) / name

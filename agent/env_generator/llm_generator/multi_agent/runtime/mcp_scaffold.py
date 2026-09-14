@@ -339,6 +339,19 @@ def _resolve_tool_names(endpoints: Dict[str, Any],
     return out
 
 
+def _scrubbed_1202mi(text: str, filename: str) -> str:
+    """Strip framework ticket tags and past-run names from the comments and
+    docstrings of Python written into the generated app. Applied on EVERY such
+    write path, not only the ones that leak today: this template is currently
+    clean, and a policy that holds on five of six paths is the shape of defect
+    `#1202mg` was about. Never raises."""
+    try:
+        from .provenance_scrub import scrub_provenance_1202mi
+        return scrub_provenance_1202mi(text, filename)
+    except Exception:
+        return text
+
+
 def render_mcp_server(endpoints: Dict[str, Any], env_name: str = "app",
                       tool_aliases: Optional[Dict[str, str]] = None) -> str:
     """Render the full ``main.py``: fixed skeleton + one tool per business
@@ -411,7 +424,9 @@ def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
     server_dir.mkdir(parents=True, exist_ok=True)
 
     main_py = server_dir / "main.py"
-    main_py.write_text(render_mcp_server(endpoints, env_name), encoding="utf-8")
+    main_py.write_text(
+        _scrubbed_1202mi(render_mcp_server(endpoints, env_name), main_py.name),
+        encoding="utf-8")
     (server_dir / "pyproject.toml").write_text(
         _PYPROJECT.replace("__ENV_NAME__", env_name), encoding="utf-8")
     (server_dir / "start.sh").write_text(_START_SH, encoding="utf-8")

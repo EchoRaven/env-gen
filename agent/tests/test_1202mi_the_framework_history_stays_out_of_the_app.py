@@ -102,6 +102,47 @@ class ProvenanceLeavesCommentsAndDocstrings(unittest.TestCase):
         self.assertIn("an earlier run", out)
 
 
+class ItRemovesProvenanceNotEnglish(unittest.TestCase):
+    """The first version swept `\\(\\s*\\)` to clean up what `(#1202db)` became,
+    and ate the parentheses off every `finish()` in the prose around it. Measured
+    over the generated backends on disk, that rule cost 555 function-call
+    references; this one costs none."""
+
+    def test_a_call_in_the_same_sentence_keeps_its_parens(self):
+        src = ('def f():\n'
+               '    """The lane calls finish() when done (#1202db); '
+               'see check_inbox()."""\n'
+               '    return 1\n')
+        out = scrub(src, "main.py")
+        self.assertNotIn("1202db", out)
+        self.assertIn("finish()", out)
+        self.assertIn("check_inbox()", out)
+        self.assertIn("done; see", out, "spacing was not repaired")
+
+    def test_a_docstring_of_pure_calls_is_untouched(self):
+        src = ('def g():\n'
+               '    """Uses tuple() and dict(). No provenance here."""\n'
+               '    return 2\n')
+        self.assertEqual(scrub(src, "main.py"), src)
+
+    def test_a_comment_that_led_with_its_tag_does_not_become_a_sphinx_marker(self):
+        out = scrub("# FIX #93: call reset() then seed()\nX = 1\n", "main.py")
+        self.assertFalse(out.startswith("#:"), out)
+        self.assertIn("call reset() then seed()", out)
+
+    def test_indentation_inside_a_docstring_survives(self):
+        src = ('def h():\n'
+               '    """Head (#1202db).\n'
+               '\n'
+               '        indented block\n'
+               '            deeper still\n'
+               '    """\n'
+               '    return 3\n')
+        out = scrub(src, "main.py")
+        self.assertIn("        indented block", out)
+        self.assertIn("            deeper still", out)
+
+
 class WhatItMustNeverTouch(unittest.TestCase):
     """Each of these would be a regression worse than the leak."""
 

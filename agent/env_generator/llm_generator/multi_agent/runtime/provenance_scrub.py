@@ -79,6 +79,14 @@ _RUN_1202MI = re.compile(
     r"facebook|outlook|instagram|atlassian|calendar|gmrun|bsb\w*)"
     r"(?:[a-z-]*-?r\d+[a-z0-9-]*|[a-z ]{0,6}run[- ]#?\d+)\b", re.I)
 
+#: A tag that is the entire content of a bracketed aside: "(#1202db)",
+#: "(see FIX #93)". Matched before the bare forms so the brackets go with it and
+#: `_tidy_1202mi` never has to decide whether an empty `()` was ours -- it is
+#: not, in `finish()` and `check_inbox()`, which the first version ate.
+_PAREN_TAG_1202MI = re.compile(
+    r"[ \t]*\((?:see[ \t]+)?(?:\b(?:FIX|PROPOSAL|Round)[- ]?#?\d{1,4}[a-z]{0,2}"
+    r"|#\d{3,4}[a-z]{0,2})\)", re.I)
+
 _RUN_REPLACEMENT_1202MI = "an earlier run"
 
 
@@ -131,11 +139,27 @@ def _comment_and_docstring_spans_1202mi(src: str) -> List[Tuple[int, int]]:
 
 
 def _tidy_1202mi(text: str) -> str:
-    """Repair the spacing a removal leaves behind, without touching layout."""
-    text = re.sub(r"\(\s*\)", "", text)            # "(#123)" -> ""
-    text = re.sub(r"[ \t]{2,}([.,;:)])", r"\1", text)
-    text = re.sub(r"([(\[])[ \t]+", r"\1", text)
+    """Repair the spacing a removal leaves behind, without touching anything a
+    removal did not create.
+
+    The first version swept away every empty pair of parentheses, to clean up
+    what `(#1202db)` became once its tag was removed. That
+    also ate the parentheses off every `finish()` and `check_inbox()` in the
+    prose around it -- a scrub is allowed to remove provenance, not to rewrite
+    English. The empty pair is now consumed by the tag patterns themselves, so
+    nothing here has to guess whether a `()` was ours.
+
+    Indentation is untouched: a docstring's leading whitespace is layout, and
+    only runs BETWEEN non-space characters are collapsed.
+    """
+    text = re.sub(r"(?<=\S)[ \t]+([.,;:])", r"\1", text)
+    text = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", text)
+    text = re.sub(r"(?<=\()[ \t]+", "", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
+    # A comment that led with its tag ("# FIX #93: call reset()") is left
+    # starting "#:", which is a Sphinx attribute-doc marker and means something
+    # else. Drop the orphaned punctuation the removal exposed.
+    text = re.sub(r"(?m)^([ \t]*#)[ \t]*[:,;][ \t]*", r"\1 ", text)
     return text
 
 
@@ -185,6 +209,9 @@ def scrub_provenance_1202mi(text: str, filename: str = "") -> str:
     for start, end in sorted(spans, reverse=True):
         chunk = out[start:end]
         new = _RUN_1202MI.sub(_RUN_REPLACEMENT_1202MI, chunk)
+        # Parenthesised first, so "(#1202db)" goes whole rather than leaving an
+        # empty pair for a later sweep to guess about.
+        new = _PAREN_TAG_1202MI.sub("", new)
         new = _TAG_PREFIXED_1202MI.sub("", new)
         new = _TAG_BARE_1202MI.sub("", new)
         if new != chunk:
