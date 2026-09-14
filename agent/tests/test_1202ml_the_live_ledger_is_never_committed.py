@@ -112,6 +112,36 @@ class TheScaffolderIgnoresTheLedger(unittest.TestCase):
                              first)
 
 
+class ByteCodeIsNeverCommitted(unittest.TestCase):
+    """#1202mm: `.pyc` is a build artifact and it is BINARY, so two lanes
+    touching the same module cannot merge it — they can only conflict. Measured:
+    10 of 162 generated runs track one, and tiktok-r123 is sitting on 24
+    unmerged `.pyc` entries across its twelve test-user worktrees."""
+
+    def test_bytecode_is_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            ensure_base_gitignore(Path(d))
+            gi = (Path(d) / ".gitignore").read_text(encoding="utf-8").split()
+            self.assertIn("__pycache__/", gi, gi)
+            self.assertIn("*.pyc", gi, gi)
+
+    def test_git_does_not_list_compiled_python(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "app" / "backend" / "__pycache__").mkdir(parents=True)
+            (root / "app" / "backend" / "__pycache__" /
+             "models.cpython-311.pyc").write_bytes(b"\x00\x01")
+            (root / "app" / "backend" / "models.py").write_text("X = 1\n",
+                                                                encoding="utf-8")
+            ensure_base_gitignore(root)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            out = subprocess.run(["git", "status", "--porcelain", "-uall"],
+                                 cwd=root, capture_output=True, text=True).stdout
+            self.assertNotIn(".pyc", out, out)
+            self.assertIn("app/backend/models.py", out,
+                          "the source must still be tracked")
+
+
 class TheStageFilterRefusesItAnyway(unittest.TestCase):
     """Guarding the entry is not guarding the value."""
 

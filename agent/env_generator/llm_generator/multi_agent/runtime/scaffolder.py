@@ -271,6 +271,22 @@ _LIVE_RUN_STATE_1202ml = (
 )
 
 
+#: #1202mm: byte-compiled Python is a BUILD ARTIFACT, and git handling it is a
+#: pure loss. It is never deliverable, it is regenerated on every import, and it
+#: is BINARY — so a merge of the same module from two lanes cannot be resolved,
+#: it can only conflict.
+#:
+#: Measured: 10 of the 162 generated runs on disk track a `.pyc` (25 files), and
+#: tiktok-r123 is sitting on 24 unmerged `.pyc` entries right now — every one of
+#: its twelve browser-test-user worktrees is stuck mid-merge on bytecode.
+#:
+#: NOT claimed: that this is what made that run's test-user squad gate report
+#: `0 attempts`. The squad did launch — twelve agents spawned at 14:06:02 and
+#: the browser users were driving the app a minute later — so whatever that
+#: counter means, these conflicts are not it.
+_BUILD_ARTIFACTS_1202mm = ("__pycache__/", "*.pyc")
+
+
 def ensure_base_gitignore(output_dir: Path) -> list:
     """Keep everything that is NOT deliverable code out of git. Returns the rel-paths to commit.
 
@@ -317,6 +333,7 @@ def ensure_base_gitignore(output_dir: Path) -> list:
     # FRAMEWORK_SCRATCH_DIRS: that set also governs what the file tools prune and
     # what lanes can see, which is a far wider change than this defect calls for.
     want = (["memory-bank/"] + list(_LIVE_RUN_STATE_1202ml)
+            + list(_BUILD_ARTIFACTS_1202mm)
             + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS])
     cur = gi.read_text(encoding="utf-8") if gi.exists() else ""
     new = [p for p in want if p not in cur.split()]
