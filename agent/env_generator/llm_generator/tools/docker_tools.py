@@ -149,6 +149,43 @@ def _run_compose(
     )
 
 
+def _operator_only_notice_1202mh(text) -> str:
+    """#1202mh, delegated to the module that owns the host-fault taxonomy so the
+    two cannot disagree about what a lane can act on.
+
+    Imported lazily -- this tool is on the hot path and visual_fidelity is not --
+    under BOTH names the package is reachable by, which is this file's existing
+    convention (see `compose_recycle_in_flight_1202lm`). One form alone returned
+    "" under the other import style, and "" here means "no host fault": a guard
+    that answers in the affirmative when it is broken is the exact shape
+    `#1202be` exists to stop. A genuinely absent module is announced, not
+    swallowed.
+    """
+    try:
+        try:
+            from multi_agent.runtime.visual_fidelity import (
+                operator_only_notice_1202mh as _n)
+        except ImportError:
+            from env_generator.llm_generator.multi_agent.runtime.visual_fidelity import (
+                operator_only_notice_1202mh as _n)
+    except ImportError as _e:
+        try:
+            try:
+                from multi_agent.runtime.message_format import warn_once_1201
+            except ImportError:
+                from env_generator.llm_generator.multi_agent.runtime.message_format import (
+                    warn_once_1201)
+            warn_once_1201(
+                "1202mh-import",
+                "cannot load the host-fault taxonomy; a compose failure will "
+                "reach the lane with no host/app attribution and the lane may "
+                "open a task no lane tool can complete", _e)
+        except Exception:
+            pass
+        return ""
+    return _n(text)
+
+
 def _compose_port_conflict_hint(stderr: str, compose_file: Path) -> Optional[str]:
     """Return an agent-actionable hint when compose failed because a host port is busy."""
     text = stderr or ""
@@ -614,6 +651,19 @@ Example:
                         compose_file=str(compose_file),
                         stderr=result.stderr,
                         hint=port_hint,
+                    )
+                # #1202mh: say WHOSE fault it is. A lane reading raw compose
+                # stderr cannot tell a full disk from a broken Dockerfile, and
+                # the corpus shows it opening tasks for the former.
+                _hf1202mh = _operator_only_notice_1202mh(
+                    (result.stderr or "") + "\n" + (result.stdout or ""))
+                if _hf1202mh:
+                    return ToolResult.fail(
+                        f"Failed to start:\n{result.stderr}\n\n{_hf1202mh}",
+                        error_code="docker_host_fault",
+                        compose_file=str(compose_file),
+                        stderr=result.stderr,
+                        hint=_hf1202mh,
                     )
                 return ToolResult.fail(
                     f"Failed to start:\n{result.stderr}"

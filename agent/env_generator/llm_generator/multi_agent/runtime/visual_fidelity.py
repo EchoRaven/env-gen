@@ -1348,6 +1348,47 @@ _COMPOSE_FATAL_1202DC = (
 )
 
 
+# #1202mh: WHICH host faults can no lane act on, as opposed to merely being
+# host-caused. The distinction matters because the answer is given to a lane.
+#
+# `#1202de` already stops the FRAMEWORK dispatching remediation for any token
+# above. It does not reach the lanes: they read the tool result, and the tool
+# result carries raw compose stderr with no attribution. netflix-local-r43 is
+# what that looks like -- six tasks ("Docker build/up is failing -- diagnose the
+# FULL build error", "docker_up fails: Postgres initdb cannot create pg_wal due
+# no space left") created by the orchestrator and the verifier for a FULL DISK,
+# none of which any lane tool could act on.
+#
+# The port tokens are deliberately NOT here. `docker/` is writable by backend,
+# frontend, database and verifier, and the compose ports in a generated run are
+# lane-authored -- so re-mapping a clashing port IS lane work, and
+# `_compose_port_conflict_hint` already says how. Calling that one futile would
+# be the opposite error.
+_OPERATOR_ONLY_1202MH = frozenset({
+    "address pool",
+    "no space left on device",
+    "Cannot connect to the Docker daemon",
+})
+
+
+def operator_only_notice_1202mh(text: Any) -> str:
+    """The notice to hand a LANE when compose failed on something no lane tool
+    can reach, or ``""``. Keys on `_COMPOSE_FATAL_1202DC` through the subset
+    above rather than restating signatures, so this cannot drift from what
+    `#1202de` calls a host fault."""
+    low = str(text or "").lower()
+    for token, why in _COMPOSE_FATAL_1202DC:
+        if token in _OPERATOR_ONLY_1202MH and token.lower() in low:
+            return (
+                "HOST FAULT (not a bug in this app): %s -- %s.\n"
+                "No lane tooling can fix this: it is not in the repository, and "
+                "editing app code, compose or the Dockerfile will not change it. "
+                "Do NOT open a remediation task for it and do not claim it fixed "
+                "-- an operator has to act. Report it and move to work that is "
+                "actually blocked on you." % (token, why))
+    return ""
+
+
 def _compose_failure_reason_1202dc(stderr: Any, stdout: Any) -> str:
     """Lead with the host-level cause when the daemon named one; keep the raw tail after.
 

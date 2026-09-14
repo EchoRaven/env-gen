@@ -1219,6 +1219,17 @@ def run_smoke_validation(
                 _ctail = ""
             _detail = _up_detail + (
                 "\n--- container logs (tail) ---\n" + _ctail if _ctail else "")
+            # #1202mh: this detail is what the lanes read AND what the
+            # remediation dispatcher classifies. #1202de already stops the
+            # framework dispatching on a host fault; without this the lanes
+            # still see undifferentiated stderr and open the task themselves.
+            try:
+                from .visual_fidelity import operator_only_notice_1202mh
+                _hf = operator_only_notice_1202mh(_detail)
+            except Exception:
+                _hf = ""
+            if _hf:
+                _detail = _hf + "\n\n--- raw ---\n" + _detail
             _add("docker_up", False, _detail)
             return _finalize(checks, backend_port, endpoint_results)
         _add("docker_up", True)

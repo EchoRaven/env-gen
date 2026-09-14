@@ -165,42 +165,21 @@ class GitOps:
     def _clear_stale_locks_1202kw(self, cwd: Optional[Path] = None) -> List[str]:
         """Remove lock files older than any bounded git call could still hold.
 
-        Returns a description of what was removed, for the caller to announce.
-        Never raises: this runs on an error path and must not replace a legible
-        git failure with an obscure one."""
-        cleared: List[str] = []
-        gitdir = self._git_dir_1202kw(cwd)
-        if gitdir is None:
-            return cleared
-        # CONTAINMENT, and it is load-bearing rather than ceremonial: `rev-parse`
-        # WALKS UP. Run it in a directory that is not itself a repo and it answers
-        # with the nearest ANCESTOR repo -- measured, from this checkout's own
-        # `generated/` it returns `/data/common/haibotong/forgingground-gen/.git`,
-        # the development repo. Deleting a lock there would be this fix corrupting
-        # the very tree it lives in. So the git dir must resolve INSIDE repo_root
-        # or nothing is touched. A linked worktree still qualifies: its git dir is
-        # `repo_root/.git/worktrees/<name>`.
-        try:
-            gitdir_real = gitdir.resolve()
-            root_real = self.repo_root.resolve()
-        except OSError:
-            return cleared
-        if not gitdir_real.is_relative_to(root_real):
-            return cleared
-        for name in _LOCK_NAMES_1202KW:
-            lock = gitdir / name
-            try:
-                age = time.time() - lock.stat().st_mtime
-            except OSError:
-                continue
-            if age < _LOCK_STALE_AFTER_1202KW:
-                continue
-            try:
-                lock.unlink()
-            except OSError:
-                continue
-            cleared.append(f"{name} (age {int(age)}s)")
-        return cleared
+        #1202mg: the age/containment/unlink logic now lives in one place, shared
+        with `auto_commit._run_git` -- the OTHER git wrapper in this package,
+        which had no clearing at all and so let a stale lock fail every merge in
+        tiktok-r122 for 46 minutes. Two copies of a guard is how that happened;
+        this call keeps there being one.
+
+        `repo_root` is still passed as the containment boundary, and it is
+        load-bearing rather than ceremonial: `rev-parse` WALKS UP, so from this
+        checkout's own `generated/` it answers with the development repo's git
+        dir. Deleting a lock there would be this fix corrupting the very tree it
+        lives in.
+        """
+        from ....agents.runtime.auto_commit import clear_stale_git_locks_1202mg
+        return clear_stale_git_locks_1202mg(
+            cwd or self.repo_root, contain_under=self.repo_root)
 
     # ------------------------------------------------------------------
     # Repository lifecycle

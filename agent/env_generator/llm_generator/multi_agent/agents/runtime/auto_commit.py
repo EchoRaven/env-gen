@@ -8,13 +8,26 @@ agent explicitly calls ``codehub_commit``).
 
 from __future__ import annotations
 
+import functools
+import json
 import logging
 import os
+import re
 import subprocess
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 _GIT_TIMEOUT = 30
+
+
+def _env_git_timeout_1202mg() -> int:
+    """GitOps' ceiling, read the same way GitOps reads it. Kept here so the
+    stale threshold below cannot drift from the longest call it must outlive."""
+    try:
+        return max(1, int(os.environ.get("ENVGEN_GIT_TIMEOUT") or 120))
+    except (TypeError, ValueError):
+        return 120
 
 _LOG = logging.getLogger(__name__)
 
@@ -113,18 +126,190 @@ def _filter_paths_for_staging(
     return [p for p in rel_paths if _should_stage_path(p, agent_id=agent_id)]
 
 
+# #1202mg: the STALE-lock remedy has to live on BOTH git wrappers.
+#
+# `#1202kw` taught GitOps._run to clear a lock that no live git can be holding.
+# It shipped there only, and its own comment reasoned that "auto_commit's
+# contention case owns" the sub-threshold window -- true, and irrelevant to the
+# case that actually kills runs, which is a lock left by a git that was killed.
+# This wrapper handles ~30 call sites including the auto-merge path, and it had
+# no clearing at all. What that cost, from the run logs on disk:
+#
+#   run    `index.lock` failures    #1202kw fired
+#   r115            90                   0
+#   r118           123                   0
+#   r120            46                   0  (once, but only in its RESUME)
+#   r122           106                   0  (once, but only in its RESUME)
+#
+# tiktok-r122 is the clean case. A lock appeared at 18:17:10; every merge and
+# every `codehub_resolve_merge_conflict` failed for the next 46 minutes; the
+# delivery gate went FULLY GREEN at 18:44:57 and the run still could not ship,
+# because shipping needs a checkout. The resume at 19:47:20 took one GitOps
+# path, `#1202kw` fired, and the log records the age it had reached: 5410s.
+# It was clearable from the first second and nothing on this path could clear it.
+_LOCK_ERR_RE_1202MG = re.compile(r"(index\.lock|HEAD\.lock|Another git process)", re.I)
+_LOCK_NAMES_1202MG = ("index.lock", "HEAD.lock")
+
+# Not a tuned number (#647): it is derived from the two ceilings that bound
+# every git call in this package -- this module's `_GIT_TIMEOUT` and GitOps'
+# `ENVGEN_GIT_TIMEOUT` (default 120). A lock older than the LARGER of the two,
+# plus slack for a loaded machine, cannot be held by a bounded call that is
+# still running. Taking the max matters: clearing at this module's own 30s
+# ceiling could delete a lock a live 120s GitOps call still owns.
+_GIT_CEILING_1202MG = max(_GIT_TIMEOUT, _env_git_timeout_1202mg())
+_LOCK_STALE_AFTER_1202MG = _GIT_CEILING_1202MG + 60
+
+
+@functools.lru_cache(maxsize=1)
+def _self_gitdir_1202mg() -> Optional[str]:
+    """The git dir of the repository THIS FRAMEWORK's source lives in.
+
+    Load-bearing, not ceremonial. `rev-parse` WALKS UP: run it somewhere that
+    is not itself a repo and it answers with the nearest ancestor repo. Every
+    generated run is checked out *inside* the development tree, so a cwd that
+    has lost its own `.git` resolves to the development repo -- and removing a
+    lock there would be this fix corrupting the tree it ships in. Resolved once
+    from this file's own directory, and never cleared.
+    """
+    return _resolve_gitdir_1202mg(Path(__file__).resolve().parent)
+
+
+def _resolve_gitdir_1202mg(cwd: Path) -> Optional[str]:
+    """Absolute .git dir for `cwd`, or None. A linked worktree's `.git` is a
+    FILE pointing elsewhere, so the lock does not live beside the checkout.
+    `rev-parse` takes no index lock, so it is safe on a locked repo."""
+    try:
+        p = subprocess.run(
+            ["git", "rev-parse", "--absolute-git-dir"],
+            cwd=str(cwd), capture_output=True, text=True, timeout=_GIT_TIMEOUT,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = (p.stdout or "").strip()
+    if p.returncode != 0 or not out:
+        return None
+    try:
+        return str(Path(out).resolve())
+    except OSError:
+        return None
+
+
+def clear_stale_git_locks_1202mg(
+    cwd: Union[str, Path],
+    contain_under: Optional[Union[str, Path]] = None,
+) -> List[str]:
+    """Remove `index.lock`/`HEAD.lock` older than any bounded git call could
+    still hold, under the repository `cwd` belongs to.
+
+    `contain_under` is an additional, stricter boundary for callers that know
+    the repository root they are entitled to touch: the resolved git dir must
+    live inside it or nothing is removed. Callers without one still get the
+    refusal below, which is what keeps `rev-parse`'s walk-up from reaching the
+    development tree.
+
+    Returns one description per lock removed, for the caller to announce; an
+    empty list means nothing qualified. Never raises -- this runs on an error
+    path and must not replace a legible git failure with an obscure one.
+    """
+    cleared: List[str] = []
+    gitdir = _resolve_gitdir_1202mg(Path(cwd))
+    if gitdir is None:
+        return cleared
+    if contain_under is not None:
+        try:
+            if not Path(gitdir).is_relative_to(Path(contain_under).resolve()):
+                return cleared
+        except OSError:
+            return cleared
+    _self = _self_gitdir_1202mg()
+    if _self is not None and gitdir == _self:
+        # `cwd` is not (or is no longer) its own repo and rev-parse walked up
+        # into the development tree. Refusing is the whole point of this check.
+        _LOG.warning(
+            "#1202mg refusing to clear locks under %s: that is this framework's "
+            "OWN repository, reached because %s is not a repository of its own. "
+            "A stale lock there is a developer's to clear, not this process's.",
+            gitdir, cwd)
+        _record_lock_event_1202mg(gitdir, "refused_own_repo", [], str(cwd))
+        return cleared
+    for name in _LOCK_NAMES_1202MG:
+        lock = Path(gitdir) / name
+        try:
+            age = time.time() - lock.stat().st_mtime
+        except OSError:
+            continue                      # absent, or unreadable: not ours to judge
+        if age < _LOCK_STALE_AFTER_1202MG:
+            continue                      # inside the contention window backoff owns
+        try:
+            lock.unlink()
+        except OSError as exc:
+            _LOG.warning("#1202mg could not remove stale %s: %s", lock, exc)
+            continue
+        cleared.append("%s (age %ds)" % (name, int(age)))
+    if cleared:
+        # #947: a remediation that exists only in a log line is not a
+        # measurement. Whoever reads this run later -- a resume, a forensic
+        # pass, me -- has to be able to ask "did the framework remove a lock
+        # here, and how old was it" without grepping a log that may be gone.
+        _LOG.warning(
+            "#1202mg cleared stale git lock(s) %s under %s -- left by a git "
+            "that was killed or crashed, not by a running one (every git call "
+            "in this package is bounded to %ss). No lane has the capability to "
+            "remove these.", ", ".join(cleared), gitdir, _GIT_CEILING_1202MG)
+        _record_lock_event_1202mg(gitdir, "cleared", cleared, str(cwd))
+    return cleared
+
+
+def _repo_root_1202mg(gitdir: str) -> Optional[Path]:
+    """The checkout `gitdir` belongs to: `<root>/.git` for a main repo,
+    `<root>/.git/worktrees/<name>` for a linked one, so the component before
+    `.git` is the root in both shapes."""
+    parts = Path(gitdir).parts
+    if ".git" in parts:
+        return Path(*parts[:parts.index(".git")])
+    return Path(gitdir).parent or None
+
+
+def _record_lock_event_1202mg(gitdir: str, outcome: str,
+                              cleared: List[str], cwd: str) -> None:
+    """Append one row to `<repo_root>/logs/git_lock_clears_1202mg.jsonl`.
+
+    Never raises: this runs on an error path, and failing to record must not
+    replace a git failure with an obscure one. A failure to write is itself
+    logged, so the artifact never goes missing silently (#1202be)."""
+    root = _repo_root_1202mg(gitdir)
+    if root is None:
+        return
+    row = {"at": time.time(), "outcome": outcome, "cleared": list(cleared),
+           "gitdir": gitdir, "cwd": cwd,
+           "stale_after_s": _LOCK_STALE_AFTER_1202MG}
+    try:
+        out = root / "logs" / "git_lock_clears_1202mg.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        prev = out.read_text(encoding="utf-8") if out.is_file() else ""
+        out.write_text(prev + json.dumps(row) + "\n", encoding="utf-8")
+    except (OSError, TypeError, ValueError) as exc:
+        _LOG.warning("could not record the git-lock event under %s: %s", root, exc)
+
+
 def _run_git(args, cwd: Path) -> Tuple[int, str, str]:
-    """Run a git command, transparently retrying on transient
-    ``index.lock``/``HEAD.lock`` busy errors.
+    """Run a git command, retrying on ``index.lock``/``HEAD.lock`` busy errors,
+    then clearing the lock if it proves to be stale rather than contended.
 
     Two agents finishing in the same millisecond both try to
     ``git checkout integration && git merge``. git's index.lock
     serializes us, but the loser sees ``fatal: Unable to create
     '.git/index.lock': File exists``. That's not a real merge failure
     — wait a beat and retry up to 3 times before reporting.
+
+    A lock left behind by a git that was KILLED looks identical and never
+    clears, so backoff alone turns it into every subsequent merge failing for
+    the rest of the run (#1202mg). Once the backoff is spent, ask how old the
+    lock is: past the ceiling on a bounded call, no live git can hold it.
     """
     import time as _time
     attempts = 0
+    tried_clearing = False
     while True:
         attempts += 1
         p = subprocess.run(
@@ -135,13 +320,22 @@ def _run_git(args, cwd: Path) -> Tuple[int, str, str]:
             timeout=_GIT_TIMEOUT,
         )
         err = (p.stderr or "")
-        if (
-            p.returncode != 0
-            and attempts < 3
-            and ("index.lock" in err or "HEAD.lock" in err or "Another git process" in err)
-        ):
-            _time.sleep(0.2 * attempts)  # 200ms, 400ms backoff
-            continue
+        if p.returncode != 0 and _LOCK_ERR_RE_1202MG.search(err):
+            if attempts < 3:
+                _time.sleep(0.2 * attempts)  # 200ms, 400ms backoff
+                continue
+            # #1202mg: backoff is spent, so this is not two agents colliding.
+            # Attempted at most once per call, so a lock that is genuinely held
+            # still returns a legible git failure instead of spinning here.
+            if not tried_clearing:
+                tried_clearing = True
+                # The clearing function announces and records the event --
+                # one emitter for one fact, at the frame that knows what was
+                # removed and how old it was.
+                if clear_stale_git_locks_1202mg(cwd):
+                    _LOG.info("retrying `git %s` after a stale lock was cleared",
+                              " ".join(map(str, args)))
+                    continue
         return p.returncode, p.stdout, p.stderr
 
 

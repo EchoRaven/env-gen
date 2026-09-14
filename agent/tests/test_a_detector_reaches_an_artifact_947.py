@@ -70,7 +70,13 @@ _PERSIST_CALLS = {"write_text", "writelines", "dump"}
 # #1202cw routed every projector write through a choke point, so the `.write_text` these
 # functions used to call is now one frame away. It is the SAME file write — a plain call,
 # not an attribute, hence the separate set below.
-_PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw"}
+# #1202mg is the same shape: `clear_stale_git_locks_1202mg` routes its row through one
+# recorder so the clear and the refusal cannot write two different shapes. The recorder
+# calls `.write_text` — the entry below is backed by a behavioural test that plants a
+# stale lock, runs the real wrapper and reads the jsonl back
+# (test_1202mg_both_git_wrappers_clear_a_stale_lock.py), not by this list asserting it.
+_PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw",
+                         "_record_lock_event_1202mg"}
 _PERSIST_TARGETS = {"_verdict", "row", "rec", "results", "payload", "report", "out",
                     "findings", "data"}
 _LOGGERS = {"_LOG", "logger", "_LOGGER", "_log939"}
