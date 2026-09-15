@@ -765,8 +765,15 @@ class AgentMessaging:
             # a loop, fall through to the busy branch below -> defer to
             # _deferred_task_ready_messages (drained, exactly as today, when the lane next
             # goes IDLE). Lower-priority urgent work correctly waits for the in-flight task.
+            # #1202ms: nor while this lane is authoring a kickoff section. `_processing_state`
+            # is the flag every busy guard here reads, and an inner handler's unwind resets it
+            # to IDLE while the kickoff loop is still open; the task then runs INSIDE the
+            # kickoff. Keyed on the authoring marker, not on state or depth, so the ordinary
+            # nesting other lanes rely on is untouched.
+            _authoring_1202ms = getattr(self, "_kickoff_authoring_1202ms", None)
             if (self._processing_state == ProcessingState.IDLE
-                    and getattr(self, "_agentic_loop_depth", 0) == 0):
+                    and getattr(self, "_agentic_loop_depth", 0) == 0
+                    and not _authoring_1202ms):
                 await self._handle_task_ready(urgent_msg)
                 return True
 
@@ -796,6 +803,7 @@ class AgentMessaging:
             except Exception:
                 _wedge_s = 600.0
             if (not from_loop and _last is not None and _wedge_s > 0
+                    and not _authoring_1202ms
                     and (time.time() - _last) >= _wedge_s):
                 self._logger.warning(
                     f"[{self.agent_id}] lane claims busy (state={self._processing_state}, "
@@ -1167,6 +1175,15 @@ while you were busy is missed.
             return
         if self._processing_state != ProcessingState.IDLE:
             return
+        # #1202ms: the state check above is not enough on its own. An urgent handler that
+        # runs INSIDE an open kickoff loop restores IDLE in its finally and drains here, and
+        # the drain then starts a full task loop in the middle of the kickoff. tiktok-r124's
+        # backend: an `info` at step 2/12 drained a queued "Re-drive P0" into a 2000-step
+        # loop, and step 3/12 came 448s later. Corpus: 52 such nested loops in 31 runs,
+        # pausing kickoff authoring for a median 108s, p90 844s, max 1568s. Leave the queue
+        # intact; the kickoff handler's own finally drains it once authoring has closed.
+        if getattr(self, "_kickoff_authoring_1202ms", None):
+            return
         kickoff_queued = list(getattr(self, "_deferred_kickoff_messages", []) or [])
         if kickoff_queued:
             next_kickoff, next_msg_type = kickoff_queued.pop(0)
@@ -1290,6 +1307,18 @@ while you were busy is missed.
             )
             return
 
+        # #1202ms: one authoring loop per meeting per lane. `kickoff_request` is dispatched
+        # directly (see `_check_and_handle_urgent`), so a second request for a meeting this
+        # lane is ALREADY authoring started a second loop inside the first: tiktok-r124's
+        # frontend entered two 12-step authoring loops for doc_2d07232f52 one second apart
+        # (depth=2, then depth=3) — the double-author race `_defer_or_handle_kickoff`'s
+        # docstring describes. The outer loop is already answering this exact request.
+        if getattr(self, "_kickoff_authoring_1202ms", None) == meeting_id:
+            self._logger.info(
+                f"[{self.agent_id}] duplicate kickoff_request for {meeting_id} while already "
+                "authoring it — ignored (#1202ms)")
+            return
+
         # Section identity is the agent_id itself — only the 4 attendees
         # subscribe to kickoff_request (see agent_subscriptions.py).
         expected_section = self.agent_id
@@ -1366,6 +1395,8 @@ while you were busy is missed.
         # key while this is set.
         prev_active_phase = getattr(self, "_active_phase", None)
         self._active_phase = "kickoff"
+        prev_authoring_1202ms = getattr(self, "_kickoff_authoring_1202ms", None)
+        self._kickoff_authoring_1202ms = meeting_id
         try:
             system_prompt = self._compose_system_prompt()
             # The macro instructs "Run ONCE, then finish()"; this cap
@@ -1455,6 +1486,8 @@ while you were busy is missed.
             self._processing_state = ProcessingState.IDLE
             self._focus_hub = prev_focus_hub
             self._active_phase = prev_active_phase
+            # #1202ms: authoring is over before the drain below may start queued work.
+            self._kickoff_authoring_1202ms = prev_authoring_1202ms
             # #1202mn: RECORD THE SECTION FIRST. The guarantee below is real
             # but it used to run AFTER the drain, and the drain is unbounded —
             # it replays every queued task_ready, each of which can run a full
