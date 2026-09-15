@@ -861,7 +861,15 @@ Returns:
             filtered.append(msg)
         
         # Apply limit
-        filtered = filtered[:limit]
+        # #1202ob: UNREAD FIRST. The list is in-memory messages (oldest first) followed by durable
+        # events, and `persist` in-memory messages are never cleared — so once a lane holds `limit`
+        # of them, every default call returned the same stale head and nothing newer. tiktok-r126
+        # ab2: the verifier's `check_inbox(limit=20)` led with the same task_ready (`5bdeb13e…`,
+        # already read) from 15:30 to 15:51 over 241-258 messages. Order within each group is
+        # unchanged; already-read messages still come back as #302 previews after the unread ones.
+        _unread_1202ob = [m for m in filtered if not m.get("read")]
+        _omitted_unread_1202ob = max(0, len(_unread_1202ob) - limit)
+        filtered = (_unread_1202ob + [m for m in filtered if m.get("read")])[:limit]
 
         # #274 NOTE: inbox bodies are deliberately NOT truncated. A 2026-06-01 directive
         # ("不要截断，这个肯定要完整信息的") removed a [:500] cap that broke Facebook-scale
@@ -959,7 +967,10 @@ Returns:
                 "total_inbox": len(all_messages),
                 "messages": formatted,
                 "filters_applied": self._get_filter_summary(from_agent, tags, msg_type, unread_only, search),
-                "info": f"Retrieved {len(formatted)} of {len(all_messages)} message(s)"
+                "info": (f"Retrieved {len(formatted)} of {len(all_messages)} message(s)"
+                         + (f"; {_omitted_unread_1202ob} more UNREAD message(s) did not fit the "
+                            "limit — call check_inbox again to read them"
+                            if _omitted_unread_1202ob else ""))
             }
         )
     
