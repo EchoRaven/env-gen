@@ -77,6 +77,19 @@ _OWNER_FK_NAMES = (
 _TARGET_FK_NAMES = (
     "following_id", "followee_id", "followed_id", "recipient_id", "to_user_id",
     "target_user_id", "addressee_id",
+    # #1202nf: the `_user_id` spellings of the same roles, and `receiver`. Without them a
+    # `Follow(follower_user_id, followed_user_id)` matched nothing here, the FK fallback took
+    # the FIRST user FK, and the projected `POST /api/users/{user_id}/follow` wrote the path
+    # user as the FOLLOWER and the caller as the one followed (tiktok-r123, r125).
+    "followed_user_id", "following_user_id", "followee_user_id", "recipient_user_id",
+    "receiver_id", "receiver_user_id",
+)
+# #1202nf: columns that name the ACTOR of a two-user relation. `_target_fk`'s FK fallback skips
+# them while another FK to the parent remains, so the actor is never bound to the path user.
+_ACTOR_ROLE_FK_NAMES_1202NF = (
+    "follower_id", "follower_user_id", "sender_id", "sender_user_id", "from_user_id",
+    "actor_id", "actor_user_id", "author_id", "author_user_id", "owner_id", "owner_user_id",
+    "creator_id", "creator_user_id",
 )
 # Path params that reference a user even when no ``users`` segment precedes them.
 _USER_PARAM_NAMES = ("username", "user_id", "userid", "user", "handle")
@@ -1216,10 +1229,11 @@ def _target_fk(child_meta: Dict[str, Any], parent_table: str, parent_singular: s
     sing = parent_singular + "_id"
     if sing in cols:
         return sing
-    for col, tgt in fks.items():
-        if tgt == parent_table:
-            return col
-    return None
+    to_parent = [col for col, tgt in fks.items() if tgt == parent_table]
+    non_actor = [col for col in to_parent if col not in _ACTOR_ROLE_FK_NAMES_1202NF]
+    if non_actor:
+        return non_actor[0]
+    return to_parent[0] if to_parent else None
 
 
 # ---------------------------------------------------------------------------

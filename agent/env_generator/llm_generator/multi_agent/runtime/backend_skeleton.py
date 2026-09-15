@@ -3263,7 +3263,9 @@ _OWNER_FK_VOCAB_FALLBACK_1202JV = frozenset({
     "user_id", "author_id", "owner_id", "creator_id", "created_by",
     "follower_id", "sender_id", "from_user_id", "actor_id", "uploaded_by",
     "posted_by", "account_id", "following_id", "followee_id", "followed_id",
-    "recipient_id", "to_user_id", "target_user_id", "addressee_id", "profile_id"})
+    "recipient_id", "to_user_id", "target_user_id", "addressee_id", "profile_id",
+    "followed_user_id", "following_user_id", "followee_user_id", "recipient_user_id",
+    "receiver_id", "receiver_user_id"})
 
 
 def _owner_fk_vocabulary() -> frozenset:

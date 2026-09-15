@@ -20,6 +20,7 @@ per call, so call sites + tests are unchanged.
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, List
 
 from .message_format import join_capped  # #1034
@@ -734,6 +735,21 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
         return {"healed": healed}
 
 
+def _stack_serving_1202ne(base: str, api_base: "str | None", timeout_s: float = 180.0,
+                          poll_s: float = 3.0) -> bool:
+    """#1202ne: wait (bounded) for a recycled stack to serve its frontend and backend again."""
+    from .validation_runner import _http
+    deadline = time.time() + timeout_s
+    while True:
+        fe_ok = _http("GET", base, timeout=5).get("status") == 200
+        be_ok = (not api_base) or _http("GET", f"{api_base}/health", timeout=5).get("status") == 200
+        if fe_ok and be_ok:
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(poll_s)
+
+
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
     orchestrator (output_dir / hubs / logger / llm) live."""
@@ -1344,9 +1360,37 @@ class HealPipeline:
             _seed_vals = extract_seed_display_values(proj)
         except Exception:
             _seed_vals = []
-        report = asyncio.run(run_browser_test_user(
-            base, pages, out_dir, register=True, api_base_url=api_base,
-            demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
+        def _walk():
+            return asyncio.run(run_browser_test_user(
+                base, pages, out_dir, register=True, api_base_url=api_base,
+                demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
+
+        # #1202ne: a walk the stack was recycled under says nothing about the app. tiktok-r125
+        # v1.1.0: the verifier's `docker_up(fresh=True)` ran `down -v` 22s into this walk; the
+        # login page was captured at that second and the next 12 pages came back blank, so the
+        # frontend got a P0 for "12 blank pages" and the release was deferred, while the walk
+        # eight minutes earlier had rendered real data on the same code. Compare the stack's
+        # containers across the walk; if they changed, discard it and walk once more when the
+        # stack is serving again — never judge, dispatch or record from the broken one.
+        from .compose_mutex import stack_identity_1202ne
+        _stack_before = stack_identity_1202ne(compose)
+        report = _walk()
+        for _rewalk in (True, False):
+            if not report.get("ran") or not _stack_before:
+                break
+            _stack_after = stack_identity_1202ne(compose)
+            if _stack_after is None or _stack_after == _stack_before:
+                break
+            orch._logger.warning(
+                "#1202ne BROWSER test-user (v%s): the stack's containers changed DURING the "
+                "walk (%d -> %d running; a lane or validation recycled it) — this walk's "
+                "verdict is discarded, not dispatched (%s)", version, len(_stack_before),
+                len(_stack_after), "re-walking once the stack serves" if _rewalk
+                else "second walk overlapped a recycle too; no browser verdict this pass")
+            if not _rewalk or not _stack_serving_1202ne(base, api_base):
+                return None
+            _stack_before = stack_identity_1202ne(compose)
+            report = _walk()
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))

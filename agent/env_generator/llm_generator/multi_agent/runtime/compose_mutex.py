@@ -142,3 +142,43 @@ def compose_mutex_1202hn(cwd: Any, op: str = "", timeout_s: float = 300.0) -> It
                     fcntl.flock(fd, fcntl.LOCK_UN)
             finally:
                 os.close(fd)
+
+
+def stack_identity_1202ne(compose_file: Any, timeout_s: float = 20.0):
+    """#1202ne: which containers ARE this project's stack right now, and since when.
+
+    A frozenset of ``"<container id> <StartedAt>"``, empty when nothing is running, or ``None``
+    when it cannot be read. `down`/`up`, `--force-recreate` and `restart` each change a member
+    (new id or new start time); an `up -d` over an unchanged stack changes none, because it
+    disturbed nothing. Read-only: `ps` and `inspect` are not lifecycle verbs and take no lock.
+
+    Why a snapshot and not the lock or #1202kz's record: the lane's `docker_up` tool spawns
+    compose from its own worktree with neither, and RunHub runs in its own subprocess. The
+    containers are the one place every one of those writers leaves a mark.
+    """
+    import subprocess
+    try:
+        from .container_runtime import runtime_bin as _rb
+        _bin = _rb()
+    except Exception:
+        _bin = "docker"
+    try:
+        cf = Path(str(compose_file))
+        ps = subprocess.run([_bin, "compose", "-f", str(cf), "ps", "-q"], cwd=str(cf.parent),
+                            capture_output=True, text=True, timeout=timeout_s)
+        if ps.returncode != 0:
+            return None
+        ids = [ln.strip() for ln in (ps.stdout or "").splitlines() if ln.strip()]
+        if not ids:
+            return frozenset()
+        ins = subprocess.run([_bin, "inspect", "-f", "{{.Id}} {{.State.StartedAt}}", *ids],
+                             capture_output=True, text=True, timeout=timeout_s)
+        if ins.returncode != 0:
+            # a container listed a moment ago is already gone: the stack is changing right now
+            return frozenset({"(vanished during inspect)"})
+        return frozenset(ln.strip() for ln in (ins.stdout or "").splitlines() if ln.strip())
+    except Exception as _e:
+        warn_once_1201("stack_identity_1202ne",
+                       "cannot read the stack's container identity; a browser walk that "
+                       "overlaps a stack recycle will be judged as if the app were blank", _e)
+        return None
