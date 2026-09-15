@@ -6594,6 +6594,16 @@ class VisualFidelityGate:
         self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
         self.last_judgment_at = None   # #145: idle-source stamp is per milestone
         self.released = False          # #521: sticky escape latch is per milestone
+        # #1202nu: the PASS latch and the per-source judging budget are per milestone too.
+        # `passed` was cleared only when the app source signature changed, so a milestone
+        # that passed handed its pass to the next one. tiktok-r125: M3 passed at 10:06; the
+        # M4 key was written at 10:59:42 with passed=True and total_judgments=0; the delivery
+        # block reads `not _vf_gate.passed`, so the FINAL milestone — the only one visual
+        # blocking applies to — cut v1.3.0 at 11:57:52 without a single visual judgment.
+        self.passed = False
+        self.attempts = 0
+        self.sig = None
+        self.last_judged_sig = None
         # #1202ce: stamp WHICH milestone these fresh counters belong to, and land them, so a
         # resume can tell re-entry from advance without re-deriving it.
         self._milestone_key_1202ce = milestone_key
