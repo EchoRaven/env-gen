@@ -3981,23 +3981,49 @@ def _projected_owner_note(proj: set, method: Any, path: Any,
     m = str(method or "GET").upper()
     if (m, p) in proj:
         # #1202hs: only assert sole framework ownership when no lane route claims this path.
-        if lane and (m, p) in lane:
-            return (" [BOTH a _projected_ handler in main.py and a lane route in "
-                    "custom_routes.py declare this path — main.py decides per route which "
-                    "one serves, so check the traceback: if it names custom_routes.py the "
-                    "fix is there, and only if it names a _projected_ handler is this the "
-                    "projector's or the contract's]")
-        return (" [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
-                "the lane cannot edit it, fix the projector/contract]")
+        if _lane_declares_1202ng(lane, m, p):
+            return _BOTH_DECLARE_NOTE_1202NG
+        return _PROJECTED_NOTE_1202NG
     # a by-id shape: /api/x/7 vs the emitted /api/x/{id}
     for (pm, pp) in proj:
         if pm != m or "{" not in pp:
             continue
         rx = "^" + re.escape(pp).replace(r"\{", "{").replace("{", "{").split("{")[0]
         if p.startswith(rx.lstrip("^")) and p.count("/") == pp.count("/"):
-            return (" [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
-                    "the lane cannot edit it, fix the projector/contract]")
+            # #1202ng: the step names a CONCRETE path, so #1202hs's check above never ran for
+            # it. tiktok-r125: `POST /api/users/67/follow -> 400 "cannot follow yourself"` was
+            # tagged "the lane cannot edit it" while that detail exists only in the lane's
+            # custom_routes.py. Across the corpus's chain records, 306 of 443 such tags on a
+            # concrete path (23 runs) named a template the lane's router also declares.
+            if _lane_declares_1202ng(lane, pm, pp):
+                return _BOTH_DECLARE_NOTE_1202NG
+            return _PROJECTED_NOTE_1202NG
     return ""
+
+
+_PROJECTED_NOTE_1202NG = (
+    " [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
+    "the lane cannot edit it, fix the projector/contract]")
+_BOTH_DECLARE_NOTE_1202NG = (
+    " [BOTH a _projected_ handler in main.py and a lane route in "
+    "custom_routes.py declare this path — main.py decides per route which "
+    "one serves, so check the traceback: if it names custom_routes.py the "
+    "fix is there, and only if it names a _projected_ handler is this the "
+    "projector's or the contract's]")
+_PARAM_SEG_1202NG = re.compile(r"\{[^/{}]*\}")
+
+
+def _lane_declares_1202ng(lane: Any, method: str, template: str) -> bool:
+    """Does the lane's router declare this method + path template? Parameter NAMES are not
+    part of the route: the projector's `/api/users/{user_id}/follow` and a lane's
+    `/api/users/{id}/follow` are the same route to the app."""
+    if not lane:
+        return False
+    if (method, template) in lane:
+        return True
+    shape = _PARAM_SEG_1202NG.sub("{}", template)
+    return any(lm == method and _PARAM_SEG_1202NG.sub("{}", str(lp)) == shape
+               for (lm, lp) in lane)
 
 
 def _declared_but_unmounted_952(project_dir: Any, missing_steps: List[Mapping[str, Any]],

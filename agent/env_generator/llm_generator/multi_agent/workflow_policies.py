@@ -1948,6 +1948,23 @@ class RetroBeforeDeliverPolicy(BaseWorkflowPolicy):
     ) -> Optional[Dict[str, Any]]:
         if tool_name not in self._TRIGGER_TOOLS:
             return None
+        # #1202nh: never demand a tool the agent is not offered. #361 withholds `submit_retro`
+        # (with deliver_project) until the final milestone, while this gate asked for it on every
+        # milestone's `report_completion` — 82 blocks across 17 run logs, each answered with
+        # "submit_retro is not exposed in this tool surface" and another turn (tiktok-r125's M2
+        # resume: 9). Before the final milestone the retro is not yet due, so there is nothing
+        # to gate.
+        try:
+            from .agents.runtime.step_pipeline.tooling import (
+                withhold_delivery_before_final_milestone)
+            if withhold_delivery_before_final_milestone(agent):
+                return None
+        except Exception as _e1202nh:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201("retro_gate_milestone_check_1202nh",
+                           "the retro gate cannot tell whether this is the final milestone, "
+                           "so it may demand submit_retro while the tool is withheld",
+                           _e1202nh)
         hubs = getattr(agent, "_hubs", None)
         if hubs is None or not hasattr(hubs, "workhub"):
             return None
