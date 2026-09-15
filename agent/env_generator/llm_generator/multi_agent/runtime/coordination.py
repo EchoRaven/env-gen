@@ -153,6 +153,28 @@ class Coordination:
                 self._orch._silent_lane_nudges.pop(lane_id, None)
                 continue
 
+            # #1202mz: A LANE THAT IS WORKING IS NOT SILENT. Freshness above is read from
+            # `agent_status` heartbeats only, and a lane can work for many minutes without
+            # emitting one — it calls tools, broadcasts, finishes. Across the run logs, 2950 of
+            # 3216 stall re-drives (92%, in 106 runs) went to a lane that had logged a tool call
+            # within the previous 150s; tiktok-r125's verifier was re-driven as "never-woke" 104s
+            # after its last tool call, in the middle of a validation pass. Each re-drive is an
+            # urgent persisted task_ready: queued while the lane is busy (72 in that verifier),
+            # then replayed as a full work loop, and meanwhile part of the inbox every step
+            # re-reads.
+            # The agent object already carries the liveness #147's wedge watchdog trusts:
+            # `_last_step_activity`, stamped at loop entry, every action round and after every
+            # stage LLM call. A loop that has really stopped stops stamping and is still nudged.
+            try:
+                _stepped_1202mz = getattr((self._orch._agents or {}).get(lane_id),
+                                          "_last_step_activity", None)
+                if (isinstance(_stepped_1202mz, (int, float))
+                        and 0 <= _now - float(_stepped_1202mz) < _stall):
+                    self._orch._silent_lane_nudges.pop(lane_id, None)
+                    continue
+            except Exception:
+                pass
+
             # #1202aa: a STOPPED lane is not a slow one, and nudging it cannot work. This
             # loop reads heartbeat freshness only, so a lane whose run loop has exited looks
             # exactly like a lane that is merely busy — and r32 ended on that confusion:
