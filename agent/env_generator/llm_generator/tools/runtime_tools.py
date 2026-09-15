@@ -2453,6 +2453,21 @@ To test them, get a token first, then pass it as a header:
                 result.notices.append(_fn)
             except Exception:
                 pass
+            # #1202oa: on a refusal at a port this run does not publish, #677's sentence ("The
+            # service is not running … Bring the stack up") contradicts the notice right beside
+            # it ("not evidence the service is down"). tiktok-r126 ab2: the backend lane got
+            # both for localhost:8082 (the CONTAINER port; published as 8005) five times in 22
+            # minutes. Keep the fact that nothing listened there; drop the wrong remedy.
+            if not _answered_1202lv:
+                try:
+                    _em = str(getattr(result, "error_message", "") or "")
+                    _i = _em.find(" The service is not running")
+                    if _i >= 0:
+                        result.error_message = (
+                            _em[:_i] + " That port is not one this run publishes on localhost "
+                            "— see the #1134 notice for the ports that are.")
+                except Exception:
+                    pass
         return result
 
     def _execute_1134(
