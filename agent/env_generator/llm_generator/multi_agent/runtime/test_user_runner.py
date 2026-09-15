@@ -970,6 +970,14 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
         and p.get("route_seed_hit") is False and not p.get("blank")
         and p.get("api_requests") != 0
         for p in pages)
+    # #1202mr: this is a HARD hold that never escapes (FIX #152), so say what it looked at.
+    # r124 held M1 for hours on `primary_dataless=True` alone; the P0 it sent the frontend
+    # named nothing, and the page was in fact showing seeded data.
+    if report["primary_dataless"]:
+        report["primary_route_rendered"] = next(
+            (str(p.get("sample") or "")[:240] for p in pages
+             if str(p.get("route") or "").rstrip("/") in ("", "/")
+             and p.get("route_seed_hit") is False), "")
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
     # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
@@ -1202,6 +1210,8 @@ def browser_unusable_signals(report: Optional[Mapping[str, Any]]) -> Dict[str, A
                "fallback_dom_pages", "primary_dataless"):
         if report.get(_k):
             out[_k] = report.get(_k)
+    if out.get("primary_dataless") and report.get("primary_route_rendered"):
+        out["primary_route_rendered"] = report.get("primary_route_rendered")
     return out
 
 
@@ -1383,6 +1393,11 @@ def salient_seed_values(seed_map: Mapping[str, Any], limit: int = 40) -> List[st
     return out
 
 
+def _ws_1202mr(text: str) -> str:
+    """Lower-cased, every whitespace run collapsed to one space — how a browser renders it."""
+    return re.sub(r"\s+", " ", str(text or "")).strip().lower()
+
+
 def real_data_verdict(page_texts: Optional[List[str]],
                       seed_values: Optional[List[str]]) -> Dict[str, Any]:
     """Pure: does ANY salient seed value render in ANY walked page's text? Returns
@@ -1395,8 +1410,13 @@ def real_data_verdict(page_texts: Optional[List[str]],
     checked = bool(vals) and bool(texts)
     matched: List[str] = []
     if checked:
-        blob = "\n".join(texts).lower()
-        matched = [v for v in vals if v.strip().lower() in blob]
+        # #1202mr: compare with whitespace collapsed on BOTH sides. The page text is the DOM's
+        # innerText, which renders any whitespace run as one space; a seed value is stored
+        # verbatim. tiktok-r124's feed rendered `#KEEPSWIMMING with BTS. To everyone...` from
+        # a caption stored with TWO spaces after "BTS.", so the exact substring never matched
+        # and the primary route read as empty while showing a seeded video.
+        blob = _ws_1202mr("\n".join(texts))
+        matched = [v for v in vals if _ws_1202mr(v) and _ws_1202mr(v) in blob]
     return {"checked": checked, "rendered": bool(matched), "matched": matched[:8],
             "sample_values": vals[:5], "n_values": len(vals), "n_texts": len(texts)}
 
@@ -1492,4 +1512,21 @@ def extract_seed_display_values(project_dir: Any) -> List[str]:
             for table, rows in data.items():
                 if isinstance(rows, list):
                     merged.setdefault(table, []).extend(rows)
-    return salient_seed_values(merged)
+    head = salient_seed_values(merged)
+    # #1202mr: the 40-value sample decides what "real data" means, and a feed renders ITS
+    # first rows, not the sample's. r124's `/` showed a seeded video whose caption was value
+    # 41+ of 139, and #231d's hard, never-escaping hold kept M1 from shipping for hours.
+    # Raising the cap wholesale is not safe: past 40 the corpus adds single words — `Music`,
+    # `Comedy`, `Drama`, `Family` — that a nav bar or genre chip renders on an EMPTY page,
+    # which would hide the very shell this check exists to catch. So extend only with
+    # CONTENT: multi-word values of 20+ characters (captions, descriptions, full titles).
+    # `salient_seed_values` round-robins, so the first 40 are unchanged by a larger limit.
+    seen = {v.lower() for v in head}
+    tail = [v for v in salient_seed_values(merged, limit=_CONTENT_POOL_1202MR)[len(head):]
+            if len(v.strip()) >= 20 and " " in v.strip() and v.lower() not in seen]
+    return head + tail
+
+
+# #1202mr: salient values per run over 143 runs — median 144, p90 206, max 1211; 400 takes every
+# value in 139 of the 143, and the 4 larger seeds still get 400 candidates past the first 40.
+_CONTENT_POOL_1202MR = 400
