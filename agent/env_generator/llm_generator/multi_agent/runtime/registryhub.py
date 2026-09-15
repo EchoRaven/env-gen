@@ -2463,7 +2463,16 @@ class RegistryHub:
         # framework's own coverage-completion + the regression-guard restore write the store
         # directly (not via this method), so neither is blocked.
         _frozen_eps = getattr(self, "_chains_frozen_eps", None)
-        if _frozen_eps is not None and str(name) in (self._verification_chains.value() or {}):
+        # #1202nz: the freeze keeps "the already-passing chain". A chain that is FAILING now is not
+        # that chain — the contract moved under it without changing the endpoint set (tiktok-r126
+        # ab2: backend made `GET /api/video_saves` public at 15:48:31, the chain's anonymous-denial
+        # step went red, and five re-registrations with the corrected expectation were each
+        # silently kept out while the run aborted on that one chain). A regression-guard restore
+        # writes the snapshot's passing records back, so the freeze re-engages on its own.
+        _existing_1202nz = (self._verification_chains.value() or {}).get(str(name))
+        if (_frozen_eps is not None and _existing_1202nz is not None
+                and not (isinstance(_existing_1202nz, dict)
+                         and _existing_1202nz.get("status") == "failing")):
             try:
                 _cur_eps = set((self._endpoints.value() or {}).keys())
             except Exception:

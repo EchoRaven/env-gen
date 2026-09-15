@@ -1984,6 +1984,12 @@ class RegistryHubRegisterVerificationChainTool(HubTool):
             name, steps, description=description, agent=self._agent_id)
         if isinstance(res, dict) and res.get("error"):
             return ToolResult(success=False, error_message=res["error"])
+        if isinstance(res, dict) and res.get("frozen"):
+            # #1202nz: this was reported as `{registered: name, steps: 0, status: None}` — a
+            # success. 1384 such results in 96 of 165 runs' verifier logs; r126's verifier read
+            # them as a registry fault it could not work around.
+            return ToolResult(success=False, error_message=(
+                f"NOT registered — chain `{name}` is frozen: " + str(res.get("detail") or "")))
         return ToolResult(data={"registered": name,
                                 "steps": len(res.get("steps") or []),
                                 "status": res.get("status")})
