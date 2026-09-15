@@ -873,14 +873,26 @@ class EnvGenAgent(
         auto-backup stub at 09:19 — the meeting waited 7 minutes on the frontend alone.
 
         Waiting, not skipping: a skipped wakeup's `finally` re-arms #966's deferred wakeup and
-        would spin while the other loop runs. The wait is bounded (ENVGEN_RESIDENT_WAIT_SEC,
-        default 600) so a wedged loop — #147's case — cannot starve the lane's queue.
+        would spin while the other loop runs.
+
+        #1202nq: WHEN to stop waiting is a question about the other loop, not the clock.
+        #1202nl's first cut proceeded after a fixed 600s; tiktok-r126's frontend started its
+        M1 work loop at 12:10:21, a wakeup queued a second later waited 600s and then entered at
+        depth=2 while that loop was still stepping — the fixed cap only postponed the
+        concurrency. Now: proceed when the loop ends, or when it stops stamping step activity
+        for ENVGEN_LANE_WEDGE_S (default 600s, the #147 watchdog's own definition of wedged), or
+        at a hard cap (ENVGEN_RESIDENT_WAIT_MAX_SEC, default 3600) so nothing waits forever.
         """
         import time as _time
-        try:
-            limit = float(os.environ.get("ENVGEN_RESIDENT_WAIT_SEC", "600") or 600)
-        except ValueError:
-            limit = 600.0
+
+        def _env_float(name: str, default: float) -> float:
+            try:
+                return float(os.environ.get(name, str(default)) or default)
+            except ValueError:
+                return default
+
+        wedge_s = _env_float("ENVGEN_LANE_WEDGE_S", 600.0)
+        hard_cap = _env_float("ENVGEN_RESIDENT_WAIT_MAX_SEC", 3600.0)
         start = _time.monotonic()
         announced = False
         while (int(getattr(self, "_agentic_loop_depth", 0) or 0) > 0
@@ -892,11 +904,18 @@ class EnvGenAgent(
                     f"(depth={getattr(self, '_agentic_loop_depth', 0)}, kickoff authoring="
                     f"{bool(getattr(self, '_kickoff_authoring_1202ms', None))}) instead of "
                     "starting a second one beside it")
-            if _time.monotonic() - start >= limit:
+            waited = _time.monotonic() - start
+            last = getattr(self, "_last_step_activity", None)
+            idle = (_time.time() - float(last)) if last is not None else waited
+            if wedge_s > 0 and idle >= wedge_s and waited >= wedge_s:
                 self._logger.warning(
-                    f"[{self.agent_id}] #1202nl {task_name} waited {int(limit)}s and the other "
-                    "loop is still running — proceeding (a wedged loop must not starve the "
-                    "queue; see FIX #147)")
+                    f"[{self.agent_id}] #1202nq {task_name}: the running loop has taken no step "
+                    f"for {int(idle)}s — treating it as wedged (FIX #147) and proceeding")
+                return False
+            if waited >= hard_cap:
+                self._logger.warning(
+                    f"[{self.agent_id}] #1202nq {task_name} waited {int(waited)}s (hard cap) "
+                    "while the other loop kept stepping — proceeding")
                 return False
             await asyncio.sleep(1.0)
         return True

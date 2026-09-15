@@ -647,6 +647,58 @@ def _apply_observation_mask(messages: list, cutoff: int, max_old: int,
     return out
 
 
+# #1202nr: WHERE a request stops matching the previous one of the same conversation.
+#
+# A provider prompt cache bills the longest common PREFIX. In tiktok-r125 the orchestrator's
+# calls averaged 18k uncached input tokens against ~3k for every other lane (cache share ~50-65%
+# vs 96%), and consecutive calls inside one loop kept the same cached count (23,168) while the
+# prompt grew to 72k — something after the first ~23k tokens changed between calls. The log
+# carried counts only, so the position could not be recovered. This names it: a short hash of
+# the tool list, and the index of the first message that differs from the previous request whose
+# first two messages (system prompt + task) match — i.e. the same conversation. Cheap: hashes
+# only, one dict entry per conversation, and it never raises into a request.
+_PREFIX_LAST_1202NR: "Dict[str, Any]" = {}
+
+
+def _prefix_trace_1202nr(tools: Any, messages: Any) -> str:
+    try:
+        import hashlib as _h
+
+        def _fp(obj) -> str:
+            if isinstance(obj, str):
+                raw = obj
+            else:
+                raw = json.dumps(obj, sort_keys=False, default=str)
+            return _h.sha1(raw.encode("utf-8", "replace")).hexdigest()[:8]
+
+        def _msg_fp(m) -> str:
+            if isinstance(m, dict):
+                return _fp([m.get("role"), m.get("content"), m.get("tool_calls"),
+                            m.get("tool_call_id")])
+            return _fp([getattr(m, "role", None), getattr(m, "content", None),
+                        getattr(m, "tool_calls", None), getattr(m, "tool_call_id", None)])
+
+        msgs = list(messages or [])
+        tools_fp = _fp(tools or [])
+        fps = [_msg_fp(m) for m in msgs]
+        key = "|".join(fps[:2])
+        prev = _PREFIX_LAST_1202NR.get(key)
+        diverge = "new"
+        if prev is not None:
+            p_tools, p_fps = prev
+            if p_tools != tools_fp:
+                diverge = "tools"
+            else:
+                diverge = str(next((i for i, (a, b) in enumerate(zip(p_fps, fps)) if a != b),
+                                   min(len(p_fps), len(fps))))
+        _PREFIX_LAST_1202NR[key] = (tools_fp, fps)
+        if len(_PREFIX_LAST_1202NR) > 512:
+            _PREFIX_LAST_1202NR.pop(next(iter(_PREFIX_LAST_1202NR)))
+        return f", prefix_fp=tools:{tools_fp} conv:{key[:17]} diverge_at={diverge}/{len(fps)}"
+    except Exception:
+        return ""
+
+
 def _mask_old_observations(messages: list, model: Optional[str] = None) -> list:
     """Truncate the bulky text content of stale messages to bound per-call input —
     but ONLY when the full history would exceed the model's RECOMMENDED WORKING
@@ -2221,7 +2273,8 @@ class OpenAIClient(BaseLLMClient):
         msg_count = len(safe_messages)
         total_content_len = _payload_chars_1199(safe_messages)
         tool_count = len(tools) if tools else 0
-        self._logger.info(f"[LLM Request] model={model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}")
+        self._logger.info(f"[LLM Request] model={model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}"
+                          f"{_prefix_trace_1202nr(tools, safe_messages)}")
         
         async def _call_with_progress():
             """Wrapper that logs progress during long waits"""
