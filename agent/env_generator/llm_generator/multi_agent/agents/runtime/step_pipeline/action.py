@@ -21,6 +21,12 @@ _HUB_FOCUS_ENABLED = os.environ.get("ENVGEN_HUB_FOCUS", "0").strip().lower() in 
 )
 
 
+def _one_call_per_round_1202nt() -> bool:
+    """#1202nt: merge an action round's internal stages into one LLM call (opt-in)."""
+    return str(os.environ.get("ENVGEN_ONE_CALL_PER_ROUND", "") or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 def _apply_hub_focus(self, names: Set[str]) -> Set[str]:
     """Drop hub WRITE tools that don't belong to the agent's current focus hub."""
     if not _HUB_FOCUS_ENABLED or not getattr(self, "_hub_focus_enabled", True):
@@ -245,6 +251,8 @@ class AgentActionStageMixin:
         action_stage_name: str,
         action_round: int,
         max_action_rounds: int,
+        selection_only_1202nt: bool = False,
+        preselected_1202nt: Optional[Set[str]] = None,
         all_names: Set[str],
         tool_schema_map: Dict[str, Dict[str, Any]],
         retrieved_action_names: Dict[str, Set[str]],
@@ -327,6 +335,12 @@ class AgentActionStageMixin:
         # Re-apply hub-focus at the final chokepoint: the retrieve_context stage may
         # have pre-selected tools (retrieved_action_names) that bypass the candidate filter.
         selected_names = _apply_hub_focus(self, selected_names)
+        # #1202nt: the merged round asks each stage for its menu without an LLM call, then
+        # makes ONE call with the union (see _run_action_stage).
+        if selection_only_1202nt:
+            return None, {"name": action_stage_name, "selected_1202nt": set(selected_names)}, False, False
+        if preselected_1202nt is not None:
+            selected_names = _apply_hub_focus(self, set(preselected_1202nt))
         action_tools = self._filtered_tool_schemas(tool_schema_map, selected_names)
         if not action_tools:
             return None, {"name": action_stage_name, "executed": False, "skip_reason": "no_stage_tools_available"}, False, False
@@ -487,6 +501,7 @@ class AgentActionStageMixin:
             # "no code to edit" filler that was 14.3% of the r93 orchestrator's
             # calls. Category re-homing is validated at construction, so a
             # skipped stage never strands a granted tool.
+            _stages_this_round: List[str] = []
             for action_stage_name in _enabled_action_stages(self):
                 if action_stage_name == "delegate_team" and self._execution_mode != "team":
                     continue
@@ -502,8 +517,57 @@ class AgentActionStageMixin:
                 # round 0, so message handling is at most one step delayed.
                 if lean_impl and action_round > 0 and action_stage_name in ("communicate", "deliver"):
                     continue
+                _stages_this_round.append(action_stage_name)
 
+            # #1202nt: ONE LLM call per action round instead of one per internal stage.
+            #
+            # Each internal stage is a separate full-context call with its own ranked menu of
+            # 8-10 tools, and the stage names do not partition the work: in tiktok-r125 the
+            # frontend's `communicate` stage mostly ran read/list_tasks/lint, its `run_checks`
+            # mostly lint/read, and edit_code carried 13% of all spend. Lanes averaged 16-22 LLM
+            # calls per step and 18% of calls ($258) returned no tool call at all. The merged
+            # round asks every stage that would have run for its menu (same ranking, same
+            # force-offers, same hub focus, no LLM call), offers the union in one call labelled
+            # `action` — the key stage_tool_preconditions already fall back to — and handles the
+            # result exactly as a stage result. Team mode keeps the per-stage walk: its
+            # delegate_team split is enforced by `_enforce_execution_mode`, which a merged call
+            # would change. Opt-in via ENVGEN_ONE_CALL_PER_ROUND=1 until measured.
+            _walk_1202nt: List[Tuple[str, Optional[Set[str]]]] = [
+                (_s, None) for _s in _stages_this_round]
+            if (_one_call_per_round_1202nt() and self._execution_mode != "team"
+                    and len(_stages_this_round) > 1):
+                _union_1202nt: Set[str] = set()
+                for _s in _stages_this_round:
+                    _sel = await self._run_action_internal_stage(
+                        action_stage_name=_s,
+                        action_round=action_round,
+                        max_action_rounds=max_action_rounds,
+                        selection_only_1202nt=True,
+                        all_names=all_names,
+                        tool_schema_map=tool_schema_map,
+                        retrieved_action_names=retrieved_action_names,
+                        knowledge_fetch_names=knowledge_fetch_names,
+                        knowledge_store_names=knowledge_store_names,
+                        hub_sync_tool_names=hub_sync_tool_names,
+                        initial_prompt=initial_prompt,
+                        messages=messages,
+                        files_created=files_created,
+                        files_modified=files_modified,
+                        step=step,
+                        step_trace=step_trace,
+                        step_traces=step_traces,
+                        action_round_results=action_round_results,
+                        round_internal_stage_results=round_internal_stage_results,
+                        loop_time=loop_time,
+                        mark_stage=mark_stage,
+                    )
+                    _union_1202nt |= set((_sel[1] or {}).get("selected_1202nt") or set())
+                if _union_1202nt:
+                    _walk_1202nt = [("action", _union_1202nt)]
+
+            for action_stage_name, _preselected_1202nt in _walk_1202nt:
                 done, stage_result, stage_used_tools, should_stop = await self._run_action_internal_stage(
+                    preselected_1202nt=_preselected_1202nt,
                     action_stage_name=action_stage_name,
                     action_round=action_round,
                     max_action_rounds=max_action_rounds,
