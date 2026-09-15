@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from ._base import BaseTool, ToolResult, create_tool_param
 from multi_agent.hub_tool_surface import HUB_NAMES, known_hub, writes_for_hub
@@ -1115,14 +1115,37 @@ class WorkHubListTasksTool(HubTool):
             row["priority"] = md["priority"]
         return row
 
+    # #1202nn: statuses an UNFILTERED scan leaves out, by count. tiktok-r125's store held 642
+    # tasks of which 4 were open (516 completed, 122 cancelled); its 238 unfiltered calls
+    # returned all of them — ~150KB each, nearly all of the tool's 40MB in that resume — and
+    # every one of those results was carried through the rest of the caller's loop as prompt.
+    # Asking for a status (status="completed") still lists exactly those rows.
+    _TERMINAL_1202NN = ("completed", "cancelled")
+
     async def _run(self, assignee: Optional[str] = None, status: Optional[str] = None, domain: Optional[str] = None, plan_id: Optional[str] = None) -> ToolResult:
         tasks = self._hubs.workhub.list_tasks(assignee=assignee, status=status, domain=domain, plan_id=plan_id)
         compact = [self._compact(t) for t in tasks] if isinstance(tasks, list) else tasks
-        return ToolResult(data={
+        data = {
             "tasks": compact,
             "_detail": "compact list — call workhub_get_task(id) for "
                        "description/evidence/result",
-        })
+        }
+        if status in (None, "") and isinstance(compact, list):
+            omitted: Dict[str, int] = {}
+            kept = []
+            for row in compact:
+                st = row.get("status") if isinstance(row, dict) else None
+                if st in self._TERMINAL_1202NN:
+                    omitted[st] = omitted.get(st, 0) + 1
+                else:
+                    kept.append(row)
+            if omitted:
+                data["tasks"] = kept
+                data["omitted_by_status"] = omitted
+                data["_detail"] += ("; completed/cancelled tasks are counted in "
+                                    "omitted_by_status, not listed — pass status=\"completed\" "
+                                    "or status=\"cancelled\" to list them")
+        return ToolResult(data=data)
 
 
 class WorkHubAvailableTasksTool(HubTool):
