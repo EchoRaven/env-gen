@@ -965,6 +965,27 @@ def _frontend_navigable(project_dir: Any) -> "tuple[bool, str]":
     return ok, detail
 
 
+def _owner_fk_names_1202nk() -> frozenset:
+    """The owner-column vocabulary the projector fills from the caller (#1202jv's single source)."""
+    try:
+        from .route_projector import _OWNER_FK_NAMES
+        return frozenset(str(n).lower() for n in _OWNER_FK_NAMES)
+    except Exception as _e:
+        from .message_format import warn_once_1201
+        warn_once_1201("probe_body_owner_names_1202nk",
+                       "cannot load the owner-FK vocabulary; create probes will send owner "
+                       "columns and the ownership guard will refuse them", _e)
+        return frozenset()
+
+
+def _is_time_field_1202nk(field: Any, typ: str) -> bool:
+    name = str(field or "").lower()
+    if any(w in typ for w in ("int", "float", "decimal", "double", "number", "bool")):
+        return False            # `watch_time: int` is a duration, not a timestamp
+    return (any(w in typ for w in ("timestamp", "datetime", "date", "time"))
+            or name.endswith("_at") or name.endswith("_date") or name.endswith("_time"))
+
+
 def _probe_body(ep: Any) -> dict:
     """Build a create-probe request body from the endpoint's REGISTERED request
     schema — domain-agnostic. Sends exactly the fields the contract declares, with
@@ -975,8 +996,22 @@ def _probe_body(ep: Any) -> dict:
     req = (ep.get("schema") or {}).get("request") if isinstance(ep, dict) else None
     body: dict = {}
     if isinstance(req, dict):
+        _owner_names = _owner_fk_names_1202nk()
         for field, typ in req.items():
             t = str(typ).lower().strip().rstrip("?").strip()
+            # #1202nk: two placeholders the framework's own handlers reject. An OWNER column
+            # is filled from the caller by the handler, and a literal `1` there is another
+            # user's id — the #566s guard answers 403 "profile_id does not belong to the
+            # caller" (33 of the 95 failed creates across 221 test-user reports). And a
+            # timestamp-named or -typed field got "persist-probe" — tiktok-r125's
+            # `created_at: "string?"` answered 400 "invalid input syntax for type timestamp"
+            # on every milestone's journey. A create that fails on the probe's own body is
+            # "write not verified", which quietly skips the persistence check it feeds.
+            if str(field).lower() in _owner_names:
+                continue
+            if _is_time_field_1202nk(field, t):
+                body[field] = "2026-01-01" if t == "date" else "2026-01-01T00:00:00Z"
+                continue
             if t.endswith("[]") or t.startswith("list") or "array" in t:
                 body[field] = []
             elif t.startswith("{") or "dict" in t or "object" in t:
