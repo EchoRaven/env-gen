@@ -842,6 +842,17 @@ def squad_gate_tick_action(*, task_exists: bool, task_done: bool) -> str:
 
 async def run_squad_for_delivery(orch: Any, version: str = "",
                                  *, max_concurrent: int = 4) -> Dict[str, Any]:
+    """#1202nx: the squad tests a RUNNING stack for minutes; hold the stack lease so a validation
+    does not `down -v` it underneath (tiktok-r126: phantom "backend unreachable" P0s)."""
+    from pathlib import Path as _P1202nx
+    from .compose_mutex import stack_lease_1202nx
+    with stack_lease_1202nx(_P1202nx(str(getattr(orch, "output_dir", ".") or ".")),
+                            "test-user squad"):
+        return await _run_squad_for_delivery_impl(orch, version, max_concurrent=max_concurrent)
+
+
+async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
+                                       *, max_concurrent: int = 4) -> Dict[str, Any]:
     """Orchestrator-facing entry point: gather inputs, plan modality goals, fan out the squad.
 
     Best-effort + never raises into delivery. Returns {ran, report?, goals?, reason?}. Env-gated

@@ -151,7 +151,7 @@ def test_a_skipped_squad_is_RETRY_not_PASS():
 
 def test_the_delivery_wrapper_reports_it_as_not_ran():
     import inspect
-    src = inspect.getsource(sq.run_squad_for_delivery)
+    src = inspect.getsource(sq._run_squad_for_delivery_impl)  # #1202nx: body behind the lease
     i = src.index("#625: if the target was down")
     block = src[i:src.index("bugs = collect_test_user_bugs", i)]
     assert '"ran": False' in block
@@ -161,7 +161,7 @@ def test_the_delivery_wrapper_reports_it_as_not_ran():
 def test_it_returns_before_the_ledger_records_false_failures():
     """A stack-down cycle must not mark every goal as a fresh regression."""
     import inspect
-    src = inspect.getsource(sq.run_squad_for_delivery)
+    src = inspect.getsource(sq._run_squad_for_delivery_impl)  # #1202nx: body behind the lease
     assert src.index("skipped_env_unavailable") < src.index("ledger.record_cycle")
 
 

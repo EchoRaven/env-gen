@@ -397,6 +397,26 @@ async def _await_blocking_990(fn, *args, **kwargs):
     """
     return await asyncio.to_thread(lambda: fn(*args, **kwargs))
 
+async def _await_stack_leases_1202nx(compose_file, who: str) -> None:
+    """#1202nx: do not take down a stack the framework is using right now.
+
+    tiktok-r126: the 12-agent test-user squad ran 15:32-15:44 while lanes and validations recycled
+    the stack five times (`down -v` at 15:31:56, 15:34:21, 15:36:50, 15:38:25, 15:40:24); the squad
+    filed "Backend API unreachable" P0s that deferred delivery. The squad, the browser walk and the
+    visual capture hold a lease (runtime/compose_mutex.py); a teardown waits for it, bounded.
+    """
+    try:
+        try:
+            from multi_agent.runtime.compose_mutex import wait_for_stack_leases_1202nx
+        except ImportError:
+            from env_generator.llm_generator.multi_agent.runtime.compose_mutex import (
+                wait_for_stack_leases_1202nx)
+        await _await_blocking_990(wait_for_stack_leases_1202nx,
+                                  Path(compose_file).parent.parent, who)
+    except ImportError:
+        pass
+
+
 class DockerBuildTool(BaseTool):
     """Build Docker images using docker-compose."""
     
@@ -614,6 +634,7 @@ Example:
             # before a full-env boot. Best-effort; skipped for a targeted
             # single-service ``up`` (the caller is managing specific services).
             if fresh and not service:
+                await _await_stack_leases_1202nx(compose_file, "docker_up(fresh)")
                 await _await_blocking_990(_run_compose, 
                     compose_file, ["down", "-v", "--remove-orphans"],
                     cwd=self.workspace.base_root, timeout=120,
@@ -731,6 +752,7 @@ Example:
                 "Checked: docker/docker-compose.yml, docker/docker-compose.dev.yml, docker/docker-compose.prod.yml, docker-compose.yml"
             )
         
+        await _await_stack_leases_1202nx(compose_file, "docker_down")
         # Use docker compose (v2) instead of docker-compose
         cmd = [_rt936(), "compose", "-f", str(compose_file), "down"]  # #961
         

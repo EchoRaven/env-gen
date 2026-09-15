@@ -26,6 +26,7 @@ from __future__ import annotations
 import errno
 import fcntl
 import os
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -182,3 +183,84 @@ def stack_identity_1202ne(compose_file: Any, timeout_s: float = 20.0):
                        "cannot read the stack's container identity; a browser walk that "
                        "overlaps a stack recycle will be judged as if the app were blank", _e)
         return None
+
+
+# #1202nx: A STACK LEASE — "someone is using this running app; do not tear it down".
+#
+# #1202hn serialises compose lifecycle verbs against each other; nothing stopped a validation
+# from running `down -v` under a consumer that needs the stack UP for minutes. tiktok-r126 M1:
+# the test-user squad (12 browser agents) ran from 15:32; validation ran `down -v` at 15:34:21,
+# 15:36:50, 15:38:25 and 15:40:24; the squad filed "P0: Backend API ... becomes unreachable
+# during auth flow" at 15:35:04 and "Configured API base localhost:8005 is unreachable" at
+# 15:38:42 — phantom P0s routed to the backend lane, and 12 paid agents testing a stack that kept
+# vanishing (and whose database `-v` wiped). #1202ne discards a browser walk AFTER the fact; this
+# keeps the teardown from happening while the lease is held.
+#
+# In-process on purpose: the squad, the browser walk, the visual capture, run_validation and the
+# lane docker tools all run inside the generator process. Bounded: a teardown waits at most
+# ENVGEN_STACK_LEASE_WAIT_SEC (default 900) and then proceeds, audibly — a lease can never wedge.
+_STACK_LEASES_1202NX: Dict[str, Dict[str, float]] = {}
+_STACK_LEASES_LOCK_1202NX = threading.Lock()   # holders and waiters run on different threads
+
+
+def _lease_key_1202nx(project_dir: Any) -> str:
+    try:
+        return str(Path(str(project_dir)).resolve())
+    except Exception:
+        return str(project_dir)
+
+
+@contextmanager
+def stack_lease_1202nx(project_dir: Any, holder: str, ttl_s: float = 3600.0) -> Iterator[None]:
+    """Hold a lease on this project's running stack for the duration of the block."""
+    key = _lease_key_1202nx(project_dir)
+    token = "%s#%s" % (holder, id(object()))
+    with _STACK_LEASES_LOCK_1202NX:
+        _STACK_LEASES_1202NX.setdefault(key, {})[token] = time.time() + max(1.0, float(ttl_s))
+    try:
+        yield
+    finally:
+        with _STACK_LEASES_LOCK_1202NX:
+            _STACK_LEASES_1202NX.get(key, {}).pop(token, None)
+
+
+def active_stack_leases_1202nx(project_dir: Any) -> list:
+    now = time.time()
+    with _STACK_LEASES_LOCK_1202NX:
+        held = _STACK_LEASES_1202NX.get(_lease_key_1202nx(project_dir)) or {}
+        for tok in [t for t, exp in held.items() if exp <= now]:
+            held.pop(tok, None)        # an expired lease is a crashed holder, not a user
+        return sorted(t.split("#", 1)[0] for t in held)
+
+
+def wait_for_stack_leases_1202nx(project_dir: Any, who: str, timeout_s: Any = None,
+                                 poll_s: float = 2.0, logger: Any = None) -> bool:
+    """Block (bounded) until nobody holds a lease on this stack. True when free."""
+    try:
+        limit = float(timeout_s if timeout_s is not None
+                      else (os.environ.get("ENVGEN_STACK_LEASE_WAIT_SEC") or 900))
+    except (TypeError, ValueError):
+        limit = 900.0
+    start = time.time()
+    announced = False
+    while True:
+        holders = active_stack_leases_1202nx(project_dir)
+        if not holders:
+            return True
+        waited = time.time() - start
+        if not announced:
+            announced = True
+            msg = ("#1202nx %s waits to tear the stack down: in use by %s"
+                   % (who, ", ".join(holders)))
+            try:
+                import logging as _logging
+                (logger or _logging.getLogger("compose_mutex")).warning(msg)
+            except Exception:
+                pass
+        if waited >= limit:
+            warn_once_1201("stack_lease_wait_1202nx",
+                           "%s waited %.0fs for the stack lease held by %s and is tearing the "
+                           "stack down anyway (a lease must never wedge a run)"
+                           % (who, waited, ", ".join(holders)), None)
+            return False
+        time.sleep(poll_s)

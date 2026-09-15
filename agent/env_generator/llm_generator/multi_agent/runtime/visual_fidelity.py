@@ -6959,10 +6959,16 @@ class VisualFidelityGate:
                     _mlabel941 = " ".join(b for b in _bits if b) or None
             except Exception:
                 _mlabel941 = None
-            result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm,
-                                               verdict_cache=self._verdict_cache,
-                                               milestone_owned_routes=_scope,
-                                               milestone_label=_mlabel941)
+            try:                                            # #1202nx: capture needs the stack up
+                from .compose_mutex import stack_lease_1202nx as _lease_1202nx
+            except ImportError:                             # loaded outside the runtime package
+                from contextlib import nullcontext as _nc_1202nx
+                _lease_1202nx = lambda *_a, **_k: _nc_1202nx()   # noqa: E731
+            with _lease_1202nx(orch.output_dir, "visual capture"):
+                result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm,
+                                                   verdict_cache=self._verdict_cache,
+                                                   milestone_owned_routes=_scope,
+                                                   milestone_label=_mlabel941)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or
                 # the authed session was rejected wholesale (token mint failed

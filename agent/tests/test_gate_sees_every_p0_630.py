@@ -134,7 +134,7 @@ def test_the_gate_still_blocks_on_a_defect_and_can_still_escape():
 def test_the_widening_happens_where_the_gate_reads(sample=None):
     """`orchestrator.py` reads bugs["p0"] and nothing else — the change lives in one file."""
     import inspect
-    src = inspect.getsource(sq.run_squad_for_delivery)
+    src = inspect.getsource(sq._run_squad_for_delivery_impl)  # #1202nx: body behind the lease
     i = src.index("#630: the gate reads")
     block = src[i:src.index("verdict = ", i)]
     assert 'bugs["p0"] = sum(by_source.values())' in block
@@ -144,7 +144,7 @@ def test_the_widening_happens_where_the_gate_reads(sample=None):
 def test_a_genuine_zero_is_not_confused_with_a_failed_reading():
     """`sum(...) or old` would treat a real 0 as 'no reading' and fall back. Explicit branch."""
     import inspect
-    src = inspect.getsource(sq.run_squad_for_delivery)
+    src = inspect.getsource(sq._run_squad_for_delivery_impl)  # #1202nx: body behind the lease
     i = src.index("#630: the gate reads")
     block = src[i:src.index("verdict = ", i)]
     assert "if by_source else" in block

@@ -2266,6 +2266,7 @@ class Orchestrator:
                         self._fwdeliver_stuck_count = 0
                         self._fwdeliver_stuck_key = None
                         self._fwdeliver_first_decline_ts = 0.0
+                        self._fwdeliver_grace_until_1202ny = 0.0   # #1202ny: per milestone
                         # #230 (r21 M2): the #228 converging-grace bookkeeping is
                         # per-milestone too — M1 consumed both graces, so M2's
                         # converging stall aborted with zero grace available.
@@ -4474,6 +4475,29 @@ class Orchestrator:
         except Exception:
             return 0.0
 
+    def _grace_window_open_1202ny(self, now: float) -> bool:
+        """#1202ny: True while a #228 converging-grace window granted earlier is still running.
+
+        #228 granted its grace as `_fwdeliver_first_decline_ts += grace`, i.e. "move the deadline
+        900s later". That buys 900s only when the clock sits AT the budget. Two cases where it
+        buys nothing:
+
+        * a resume inherits a clock already past the budget (#1202lu lets it evaluate anyway).
+          tiktok-r126 ab2 resumed at 127min of a 120min budget; by the first grace (15:48:46)
+          the clock read ~160min, so +15min still left it 25min over. Grace #2 followed 147s
+          later, and the abort 113s after that (15:53:06), with the gate green ten minutes
+          before and one chain failing.
+        * `_lane_time_1202fk` bounds the clock by `alive_total`; once that bound is the smaller
+          term, moving the stamp does not move the clock at all.
+
+        A window with its own deadline has neither problem, and the grace budget (`max_grace`)
+        still bounds the total.
+        """
+        try:
+            return float(now) < float(getattr(self, "_fwdeliver_grace_until_1202ny", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+
     def _lane_time_1202fk(self, raw_seconds: float) -> float:
         """`raw_seconds` bounded by how long this project's processes have actually existed.
 
@@ -5110,7 +5134,8 @@ class Orchestrator:
                 if (_lane1202fk > FWVAL_NO_DELIVER_ABORT_S
                         and (self._gate_evals_1202lu
                              >= _MIN_GATE_EVALS_BEFORE_ABORT_1202LU)
-                        and not getattr(self, "_fwval_abort_reason", None)):
+                        and not getattr(self, "_fwval_abort_reason", None)
+                        and not self._grace_window_open_1202ny(_now2)):
                     # #228 (r20: the verifier cleared the LAST gate 36s after the
                     # abort fired): a small, recently-shrinking failing set gets a
                     # bounded grace extension instead of the axe.
@@ -5131,13 +5156,15 @@ class Orchestrator:
                     if _grace > 0:
                         self._fwdeliver_grace_count = (getattr(
                             self, "_fwdeliver_grace_count", 0) or 0) + 1
-                        self._fwdeliver_first_decline_ts += _grace
+                        # #1202ny: a grace is a WINDOW from now, not a shift of the stamp.
+                        self._fwdeliver_grace_until_1202ny = _now2 + float(_grace)
                         self._logger.warning(
                             "DELIVERY-GATE CONVERGING-GRACE #%d: failing set is small "
-                            "and recently shrank (%s) — extending the no-convergence "
-                            "deadline by %ds instead of aborting.",
+                            "and recently shrank (%s) — no-convergence abort held for %ds "
+                            "(lane clock reads %dmin against a %dmin budget).",
                             self._fwdeliver_grace_count, sorted(_cur_failed_set),
-                            int(_grace))
+                            int(_grace), int(_lane1202fk / 60),
+                            int(FWVAL_NO_DELIVER_ABORT_S / 60))
                     else:
                         # #1133: say what is actually measured. "has not gone green"
                         # was false in netflix-local-r2 — that gate went FULLY green five

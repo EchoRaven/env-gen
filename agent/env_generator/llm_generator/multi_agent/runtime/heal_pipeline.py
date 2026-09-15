@@ -1400,9 +1400,11 @@ class HealPipeline:
         except Exception:
             _seed_vals = []
         def _walk():
-            return asyncio.run(run_browser_test_user(
-                base, pages, out_dir, register=True, api_base_url=api_base,
-                demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
+            from .compose_mutex import stack_lease_1202nx   # #1202nx: the walk needs the stack up
+            with stack_lease_1202nx(proj, "browser test-user walk"):
+                return asyncio.run(run_browser_test_user(
+                    base, pages, out_dir, register=True, api_base_url=api_base,
+                    demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
 
         # #1202ne: a walk the stack was recycled under says nothing about the app. tiktok-r125
         # v1.1.0: the verifier's `docker_up(fresh=True)` ran `down -v` 22s into this walk; the

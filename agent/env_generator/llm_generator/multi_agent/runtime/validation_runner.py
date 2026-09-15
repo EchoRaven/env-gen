@@ -1117,6 +1117,14 @@ def run_smoke_validation(
     # deliverable app never validates in-run (confirmed: two concurrent
     # run_smoke_validation calls both fail docker_up). A cross-thread/process file
     # lock makes validations run strictly one-at-a-time.
+    # #1202nx: this validation's fresh boot `down -v`s the stack. A test-user squad, browser walk or
+    # visual capture that is using the stack right now holds a lease; wait for it BEFORE taking the
+    # smoke lock (holding the lock while waiting would stall every other validation and gate).
+    try:
+        from .compose_mutex import wait_for_stack_leases_1202nx
+        wait_for_stack_leases_1202nx(project_dir, "api_smoke validation (fresh boot)", logger=_LOG)
+    except Exception:
+        pass
     import fcntl as _fcntl
     import time as _time
     _lock_fh = None
@@ -1616,6 +1624,12 @@ def run_smoke_validation(
     finally:
         if teardown:
             try:
+                from .compose_mutex import wait_for_stack_leases_1202nx   # #1202nx
+                # capped below the 600s other validations wait for the lock this one holds
+                wait_for_stack_leases_1202nx(project_dir, "api_smoke validation (teardown)",
+                                             timeout_s=min(300.0, float(os.environ.get(
+                                                 "ENVGEN_STACK_LEASE_WAIT_SEC") or 300)),
+                                             logger=_LOG)
                 _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
             except Exception:
                 pass
