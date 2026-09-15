@@ -1406,7 +1406,8 @@ while you were busy is missed.
                 # this section's gaps FROM THE CONTRACT". When the contract is complete the
                 # reconcile has everything; the turns can only rediscover that at LLM
                 # prices. A fresh run with an incomplete contract still gets corrected.
-                if self._contract_already_complete_1202er():
+                if self._contract_already_complete_1202er(
+                        meeting_id=meeting_id, milestone_index=milestone_index):
                     self._logger.warning(
                         "[%s] kickoff section is missing but the contract is already "
                         "complete in RegistryHub — skipping the corrective turns and "
@@ -1483,21 +1484,70 @@ while you were busy is missed.
             # _handle_task_ready uses on its way out.
             await self._drain_deferred_task_ready_messages()
 
-    def _contract_already_complete_1202er(self) -> bool:
-        """True when RegistryHub already holds a contract worth reconciling from.
+    def _contract_already_complete_1202er(self, *, meeting_id=None,
+                                          milestone_index=None) -> bool:
+        """True only when THIS milestone's kickoff already produced its contract in
+        an earlier meeting — the resume case #1202er was written for.
 
-        #1202er: deliberately narrow. Both endpoints AND tables must be non-empty — a
-        half-built contract is exactly the case the corrective turns are for, and this must
-        not become a way for an empty kickoff to advance. Any failure answers False, which
-        keeps today's behaviour.
+        #1202mo: THE FIRST VERSION WAS MILESTONE-BLIND. It returned
+        `bool(endpoints) and bool(tables)`, which asks "is there any contract at
+        all". After M1 registers one endpoint and one table that is True for M2,
+        M3 and every later milestone forever — so a lane about to declare a new
+        milestone's contract was told the contract was already complete and to
+        skip its corrective turns.
+
+        Measured in tiktok-r123, from each registry record's creation time against
+        its release boundaries (v1.0.0 14:49:46, v1.1.0 16:08:48): M2 added 14 NEW
+        endpoints and M3 added 8 more plus 12 tables. Neither contract existed when
+        its kickoff opened, and both kickoffs were told otherwise.
+
+        The docstring #1202er shipped with already named its intent — "This is the
+        resume case, not a dropped section" — and its motivating run was a resume
+        (googlemaps-r16: 50 endpoints and 27 tables already in the registry). So the
+        question is narrowed to exactly that: is there a DIFFERENT kickoff meeting
+        for this same milestone that already closed having produced a contract?
+
+        Walked against the real meetings on disk, the answer is right in every case
+        the old predicate got wrong and unchanged in every case it got right:
+          r123 resume M1  earlier closed M1 meeting exists  -> True  (skip, resume)
+          r123 M2         no earlier M2 meeting           -> False (was True)
+          r123 M3         no earlier M3 meeting           -> False (was True)
+          r124 fresh M1   no earlier meeting               -> False
+          r124 resume M1  earlier closed M1 meeting exists -> True  (skip, resume)
+
+        The registry must still be non-empty too: #1202er's own rule that this must
+        not become a way for an empty kickoff to advance still holds. An unknown
+        milestone answers False — the corrective turns run, which costs a turn but
+        never skips a declaration a milestone actually needs. Any failure answers
+        False for the same reason.
         """
+        if milestone_index is None:
+            return False
         try:
             rh = getattr(getattr(self, "_hubs", None), "registryhub", None)
-            if rh is None:
+            if rh is None or not (rh.get_endpoints() or {}) or not (rh.list_tables() or {}):
                 return False
-            eps = rh.get_endpoints() or {}
-            tbls = rh.list_tables() or {}
-            return bool(eps) and bool(tbls)
+            workhub = getattr(self._hubs, "workhub", None)
+            store = getattr(getattr(workhub, "stores", None), "documents", None)
+            docs = store.value() if (store is not None and hasattr(store, "value")) else {}
+            try:
+                want = int(milestone_index)
+            except (TypeError, ValueError):
+                return False
+            for doc_id, doc in (docs or {}).items():
+                if doc_id == meeting_id or not isinstance(doc, Mapping):
+                    continue
+                if doc.get("kind") != "kickoff" or doc.get("status") != "closed":
+                    continue
+                md = doc.get("metadata") or {}
+                try:
+                    if int(md.get("milestone_index")) != want:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                if "contract" in (md.get("produced_artifacts") or []):
+                    return True
+            return False
         except Exception:
             return False
 
