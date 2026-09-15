@@ -2315,7 +2315,11 @@ class Orchestrator:
                         )
                     except Exception:
                         pass    # observability must never break the boot it observes
+                    # #1202mv: a resume re-entering a milestone whose kickoff already closed.
+                    _settled_1202mv = run_kickoff.settled_kickoff_meeting_1202mv(
+                        self.hubs, _m_idx)
                     self._kickoff_handle = run_kickoff.start_kickoff(
+                        broadcast=not _settled_1202mv,
                         hubs=self.hubs,
                         milestone_index=_m_idx,
                         requirements=(
@@ -2406,27 +2410,68 @@ class Orchestrator:
                     # itself can hang. This wait_for is the process-level
                     # last resort: a wedged driver degrades to the same
                     # deterministic reconcile/fallback as a normal timeout.
-                    try:
-                        kickoff_receipt = await asyncio.wait_for(
-                            self._drive_kickoff_to_completion(
-                                self._kickoff_handle
-                            ),
-                            timeout=run_kickoff.KICKOFF_TIMEOUT_SEC + 600,
-                        )
-                    except asyncio.TimeoutError:
-                        self._logger.error(
-                            "Kickoff DRIVER wedged past %.0fs — forcing "
-                            "deterministic reconcile/fallback.",
-                            run_kickoff.KICKOFF_TIMEOUT_SEC + 600,
-                        )
+                    # #1202mv: DO NOT HOLD A SECOND MEETING TO RE-DECIDE A SETTLED CONTRACT.
+                    # A resume re-entering a milestone re-ran its whole kickoff: attendee turns,
+                    # comment and reply phases, the facilitator. tiktok-r124's last resume spent
+                    # $48.1 of its $80.3 in that window (585 LLM calls at ~65k prompt tokens) --
+                    # and the contract it finalized came from the deterministic registry
+                    # reconcile at 23:45:04 anyway, after the synthesis failed validation.
+                    # When this milestone already has a closed kickoff that produced a contract,
+                    # carry its sections into the new meeting and finalize through that same
+                    # reconcile (no LLM). Replayed on r124's hubs: 49 sections carried ->
+                    # synthesis ready -> finalized, registry statuses intact (#1202mw). If it
+                    # does not finalize, ask the attendees after all and run the meeting as
+                    # before -- the fallback is today's path, never a wait on nobody.
+                    kickoff_receipt = None
+                    if _settled_1202mv:
                         try:
-                            _ls = run_kickoff.try_synthesize(
+                            _carried_1202mv = run_kickoff.carry_settled_sections_1202mv(
+                                self.hubs, _settled_1202mv, self._kickoff_handle)
+                            _r_1202mv = self._attempt_reconciled_finalize(
+                                self._kickoff_handle, "resume_settled")
+                        except Exception as _e_1202mv:
+                            _carried_1202mv, _r_1202mv = 0, None
+                            self._logger.warning(
+                                "#1202mv settled-kickoff carry raised: %s", _e_1202mv)
+                        if isinstance(_r_1202mv, dict) and _r_1202mv.get("phase") == "finalized":
+                            kickoff_receipt = _r_1202mv
+                            self._logger.warning(
+                                "#1202mv M%s kickoff already settled by %s — carried %d "
+                                "section(s) and finalized deterministically; no attendee, "
+                                "comment, reply or facilitator turns.",
+                                _m_idx, _settled_1202mv, _carried_1202mv)
+                        else:
+                            self._logger.warning(
+                                "#1202mv M%s settled kickoff %s did not finalize from its "
+                                "carried sections (receipt phase=%r) — broadcasting the "
+                                "kickoff_request and holding the meeting normally.",
+                                _m_idx, _settled_1202mv,
+                                (_r_1202mv or {}).get("phase") if isinstance(_r_1202mv, dict) else None)
+                            run_kickoff.rebroadcast_kickoff_request(
                                 self.hubs, self._kickoff_handle)
-                        except Exception:
-                            _ls = {"status": "unknown"}
-                        kickoff_receipt = self._kickoff_fallback_or_reconcile(
-                            self._kickoff_handle, _ls, "driver_wedged",
-                        )
+                            self._kickoff_handle["started_at"] = time.time()
+                    if kickoff_receipt is None:
+                        try:
+                            kickoff_receipt = await asyncio.wait_for(
+                                self._drive_kickoff_to_completion(
+                                    self._kickoff_handle
+                                ),
+                                timeout=run_kickoff.KICKOFF_TIMEOUT_SEC + 600,
+                            )
+                        except asyncio.TimeoutError:
+                            self._logger.error(
+                                "Kickoff DRIVER wedged past %.0fs — forcing "
+                                "deterministic reconcile/fallback.",
+                                run_kickoff.KICKOFF_TIMEOUT_SEC + 600,
+                            )
+                            try:
+                                _ls = run_kickoff.try_synthesize(
+                                    self.hubs, self._kickoff_handle)
+                            except Exception:
+                                _ls = {"status": "unknown"}
+                            kickoff_receipt = self._kickoff_fallback_or_reconcile(
+                                self._kickoff_handle, _ls, "driver_wedged",
+                            )
                     if kickoff_receipt.get("phase") == "timeout_fallback":
                         # FIX #95 (runs 4/10/13, live): Gemini MALFORMED storms are
                         # 20-50min BURSTS — a kickoff landing in one times out with

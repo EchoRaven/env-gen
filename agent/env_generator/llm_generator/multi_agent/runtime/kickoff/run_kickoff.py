@@ -1129,12 +1129,67 @@ async def author_milestone_detail(
     return ""  # timed out → caller falls back to the rough slice
 
 
+def settled_kickoff_meeting_1202mv(
+    hubs: Any, milestone_index: Any, exclude_meeting_id: Optional[str] = None,
+) -> Optional[str]:
+    """The most recently closed kickoff meeting for THIS milestone that produced a contract.
+
+    A milestone's kickoff runs once per run; a second one for the same milestone is a resume
+    re-entering it. `None` on any doubt — every caller treats that as "a normal kickoff"."""
+    try:
+        docs = hubs.workhub.stores.documents.value() or {}
+        want = int(milestone_index)
+    except Exception:
+        return None
+    best, best_t = None, -1.0
+    for doc_id, doc in docs.items():
+        if doc_id == exclude_meeting_id or not isinstance(doc, Mapping):
+            continue
+        if doc.get("kind") != "kickoff" or doc.get("status") != "closed":
+            continue
+        md = doc.get("metadata") or {}
+        try:
+            if int(md.get("milestone_index")) != want:
+                continue
+        except Exception:
+            continue
+        if "contract" not in (md.get("produced_artifacts") or []):
+            continue
+        try:
+            t = float(doc.get("closed_at") or doc.get("_updated_at") or 0.0)
+        except Exception:
+            t = 0.0
+        if t > best_t:
+            best, best_t = doc_id, t
+    return best
+
+
+def carry_settled_sections_1202mv(
+    hubs: Any, source_meeting_id: str, kickoff_handle: Mapping[str, Any],
+) -> int:
+    """Copy the attendee sections of a settled meeting into the new one, attributed to each
+    attendee (quorum counts decisions by `agent`). Returns how many were carried."""
+    attendees = set(kickoff_handle.get("expected_attendees") or [])
+    doc = (hubs.workhub.stores.documents.value() or {}).get(source_meeting_id) or {}
+    carried = 0
+    for dec in (doc.get("metadata") or {}).get("decisions") or []:
+        section = dec.get("section") if isinstance(dec, Mapping) else None
+        if section not in attendees:
+            continue
+        hubs.workhub.add_meeting_decision(
+            kickoff_handle["meeting_id"], decision=dict(dec), agent=section,
+            milestone_index=kickoff_handle.get("milestone_index"))
+        carried += 1
+    return carried
+
+
 def start_kickoff(
     hubs: Any,
     milestone_index: int,
     requirements: Any,
     attendees: List[str],
     agent: str = "orchestrator",
+    broadcast: bool = True,
 ) -> Dict[str, Any]:
     """Open the meeting and fan-out the ``kickoff_request`` event.
 
@@ -1195,19 +1250,23 @@ def start_kickoff(
     meeting_id = meeting["id"]
 
     # Step 2: broadcast the kickoff_request event.
-    hubs.eventhub.publish_event(
-        source_hub="orchestrator",
-        event_type="kickoff_request",
-        payload={
-            "meeting_id": meeting_id,
-            "milestone_index": milestone_index,
-            "requirements": requirements_list,
-            "expected_sections": list(EXPECTED_SECTIONS),
-        },
-        recipients=expected_attendees,
-        priority="high",
-        caller=agent,
-    )
+    # #1202mv: a resume re-entering a milestone whose kickoff already closed opens the meeting
+    # without asking anyone; the orchestrator carries the settled sections in and finalizes
+    # deterministically, and broadcasts (`rebroadcast_kickoff_request`) only if that fails.
+    if broadcast:
+        hubs.eventhub.publish_event(
+            source_hub="orchestrator",
+            event_type="kickoff_request",
+            payload={
+                "meeting_id": meeting_id,
+                "milestone_index": milestone_index,
+                "requirements": requirements_list,
+                "expected_sections": list(EXPECTED_SECTIONS),
+            },
+            recipients=expected_attendees,
+            priority="high",
+            caller=agent,
+        )
 
     started_at = time.time()
     return {
@@ -2241,6 +2300,21 @@ def finalize_kickoff(
     _require_milestone_index(milestone_index)
     expected_attendees = list(kickoff_handle.get("expected_attendees") or [])
 
+    # #1202mw: A RESUMED FINALIZE MUST NOT UNDO THE WORK THE REGISTRY RECORDS.
+    # Registration below passes status="defined", and both register_endpoint and
+    # register_table store `status or existing` — so an explicit "defined" overwrites. On a
+    # resume that re-finalizes the milestone the lanes were in the middle of, every endpoint
+    # and table goes back to `defined`. Replayed on tiktok-r124's real hubs: 41 implemented
+    # endpoints -> defined, 2 DEPRECATED endpoints -> defined, 18 implemented tables ->
+    # defined, 6 tasks reopened. That run's resume then probed 42 endpoints (21 before, incl.
+    # the resurrected `/__noop_monitor_read__`), failed 11, and the backend spent turns
+    # re-registering what it had already built.
+    # A second closed kickoff for the SAME milestone means this is that resume: keep every
+    # status the registry already holds. A new milestone's finalize is unchanged — its
+    # contract may legitimately change or revive an endpoint.
+    _resume_1202mw = settled_kickoff_meeting_1202mv(
+        hubs, milestone_index, exclude_meeting_id=meeting_id) is not None
+
     # Step 0a: phase guard — idempotent re-call short-circuit.
     current_phase = _current_phase(hubs, meeting_id)
     if current_phase == "finalized":
@@ -2354,10 +2428,19 @@ def finalize_kickoff(
         try:
             kwargs = normalize_to_registryhub_endpoint(ep)
             provider = kwargs.pop("provider", "backend")
+            _status_1202mw = "defined"
+            if _resume_1202mw:
+                try:
+                    _prior_1202mw = (hubs.registryhub.get_endpoints() or {}).get(
+                        hubs.registryhub.endpoint_id(kwargs.get("method"), kwargs.get("path")))
+                    if isinstance(_prior_1202mw, Mapping) and _prior_1202mw.get("status"):
+                        _status_1202mw = str(_prior_1202mw["status"])
+                except Exception:
+                    _status_1202mw = "defined"
             result = hubs.registryhub.register_endpoint(
                 agent=agent,
                 provider=provider,
-                status="defined",
+                status=_status_1202mw,
                 **kwargs,
             )
         except Exception as exc:
@@ -2464,11 +2547,20 @@ def finalize_kickoff(
                     _have1202hk.add(_f1202hk.strip().lower())
                 schema = dict(schema, columns=_cols1202hk)
         try:
+            _tstatus_1202mw = "defined"
+            if _resume_1202mw:
+                try:
+                    _tprior_1202mw = hubs.schema_hub.get_table(name)
+                    if isinstance(_tprior_1202mw, Mapping) and _tprior_1202mw.get("status"):
+                        _tstatus_1202mw = str(_tprior_1202mw["status"])
+                except Exception:
+                    _tstatus_1202mw = "defined"
             result = hubs.schema_hub.register_table(
                 name=name,
                 schema=schema,
                 provider="backend",
                 agent=agent,
+                status=_tstatus_1202mw,
                 **table_meta,
             )
         except Exception as exc:
