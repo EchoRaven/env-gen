@@ -179,6 +179,32 @@ def reconcile_integration_seed(repo_root, logger=None) -> dict:
         return {}
 
 
+def _page_referenced_1202ns(src_root, page_filename) -> bool:
+    """#1202ns: does any source file under integration's `src/` import this page component?"""
+    from pathlib import Path as _P
+    stem = _P(str(page_filename)).stem
+    pat = re.compile(r"""['"][^'"]*/pages/%s(?:\.[jt]sx?)?['"]""" % re.escape(stem))
+    try:
+        for f in _P(src_root).rglob("*"):
+            if f.suffix not in (".js", ".jsx", ".ts", ".tsx") or "node_modules" in f.parts:
+                continue
+            if f.name == page_filename and f.parent.name == "pages":
+                continue
+            try:
+                if pat.search(f.read_text(encoding="utf-8", errors="ignore")):
+                    return True
+            except Exception:
+                continue
+    except Exception as _e1202ns:
+        # unknowable → keep the old restore-on-missing behaviour, and say so (#1202be)
+        from .message_format import warn_once_1201
+        warn_once_1201("page_referenced_1202ns",
+                       "cannot scan integration sources for page imports; a deleted page may be "
+                       "restored from a lane worktree", _e1202ns)
+        return True
+    return False
+
+
 def reconcile_integration_frontend_pages(repo_root, logger=None) -> dict:
     """#566b (netflix r113 — fail-fast rc=1) — the frontend lane authors a REAL page
     component in ITS worktree, but the integration tree the delivery gate audits
@@ -240,10 +266,23 @@ def reconcile_integration_frontend_pages(repo_root, logger=None) -> dict:
                 if cur is None or len(wt_text) > len(cur[1]):
                     best[wt_file.name] = (wt_file, wt_text)
         reconciled = []
+        src_root = repo / "app" / "frontend" / "src"
         for name, (_wt_file, wt_text) in best.items():
             integ_file = integ_pages / name
-            if not _is_stub(_read(integ_file)):
+            integ_text = _read(integ_file)
+            if not _is_stub(integ_text):
                 continue                          # integration already real → never clobber
+            # #1202ns: MISSING is not STUB. A page absent from integration that nothing in
+            # integration imports was DELETED there, not left unmerged — copying a lane
+            # worktree's older copy back resurrects it. tiktok-r125 M3: the frontend removed
+            # `MessagesPage.jsx` at 10:12 (dead file); its own worktree still held the file, this
+            # reconcile — called with no logger on every gate evaluation, so it never said so —
+            # wrote it back, framework delivery committed it at 10:18 and 10:33, the coverage
+            # audit flagged the dead file again, and the lane was re-dispatched four times
+            # between 10:23 and 10:56. A missing page is restored only when integration still
+            # references it (the #566b case: a wired page whose component had not merged yet).
+            if integ_text is None and not _page_referenced_1202ns(src_root, name):
+                continue
             try:
                 integ_file.parent.mkdir(parents=True, exist_ok=True)
                 integ_file.write_text(wt_text, encoding="utf-8")

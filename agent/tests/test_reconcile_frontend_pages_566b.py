@@ -66,7 +66,10 @@ def test_worktree_also_stub_is_noop(tmp_path):
 
 
 def test_missing_integration_page_gets_created_from_real_worktree(tmp_path):
-    # no integration file at all → treated as stub → real worktree page copied in
+    # no integration file, but integration App.jsx imports it → the r113 case → real page copied
+    # in. (#1202ns: a missing page that NOTHING imports was deleted, and is not restored.)
+    _mk(tmp_path, "app/frontend/src/App.jsx",
+        "import TitleDetailPage from './pages/TitleDetailPage';\n")
     _mk(tmp_path, "worktrees/frontend/app/frontend/src/pages/TitleDetailPage.jsx", _REAL)
     res = reconcile_integration_frontend_pages(tmp_path)
     assert res.get("count") == 1, res
