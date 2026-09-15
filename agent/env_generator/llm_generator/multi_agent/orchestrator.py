@@ -1064,6 +1064,7 @@ class Orchestrator:
         *,
         timeout_s: float = 600.0,
         poll_s: float = 2.0,
+        prior_release_tag: str = "",
     ) -> bool:
         """FIX #561 (serialize milestones): block until the PRIOR milestone's
         delivery is FULLY DRAINED before M(i>=2) advances into its kickoff.
@@ -1086,6 +1087,23 @@ class Orchestrator:
         delivery loop already ran). NEVER invoked for M1, so the single-milestone
         path is byte-identical (the whole method is behind ``if _m_idx > 1``).
         """
+        # #1202nd: A RELEASE THAT IS ALREADY CUT IS DRAINED. The loop below reads
+        # `self._project_delivered`, and on a resume that flag is the CURRENT milestone's (#1202dv
+        # restores it, undelivered), not the prior one's. tiktok-r125's M2 resumes found M1's
+        # v1.0.0 long since released and still polled `_maybe_framework_deliver()` every 2s for
+        # the full 600s — each poll a fresh evaluation of M2's gate, which raced the stuck count
+        # to its abort threshold within seconds (latched 04:31:40 and 05:27:11) and delayed the
+        # kickoff by ten minutes (04:31 -> 04:42). The release store is the durable record of
+        # "the prior milestone's release was cut".
+        if prior_release_tag:
+            try:
+                if str(prior_release_tag) in (self.hubs.codehub.stores.releases.value() or {}):
+                    self._logger.info(
+                        "#1202nd M%s: the prior milestone's release %s is already cut — "
+                        "delivery drained, not polling.", milestone_index, prior_release_tag)
+                    return True
+            except Exception:
+                pass
         prev_lane = self._agents.get("orchestrator")
         if prev_lane is None:
             return True
@@ -2226,7 +2244,9 @@ class Orchestrator:
                         # clearing the event + resetting per-milestone state below, so
                         # the reset never races the prior delivery. Bounded; no-op once
                         # already drained. Never runs for M1 (byte-identical single-MS).
-                        await self._await_prior_milestone_delivery_drained(_m_idx)
+                        await self._await_prior_milestone_delivery_drained(
+                            _m_idx, prior_release_tag=str(
+                                (milestones[_m_idx - 2] or {}).get("version") or ""))
                         # New milestone: reset per-milestone delivery state so the
                         # framework-deliver / framework-validation paths start
                         # clean, then re-spawn the core lanes for FRESH LLM
