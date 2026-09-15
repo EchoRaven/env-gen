@@ -2354,11 +2354,54 @@ def _save_miss_reason_1202gu(payload, dotted: str) -> str:
             else:
                 walked.append(seg)
                 if not isinstance(cur, Mapping) or seg not in cur:
-                    return "the response lacks the save path `%s`" % dotted
+                    return ("the response lacks the save path `%s`" % dotted
+                            + _where_it_is_1202nj(payload, parts, cur, walked[:-1]))
                 cur = cur[seg]
         return "the response lacks the save path `%s`" % dotted
     except Exception:
         return "the response lacks the save path"
+
+
+def _where_it_is_1202nj(payload, parts, cur, walked) -> str:
+    """#1202nj: say what the response DID contain, not only what it lacked.
+
+    tiktok-r125 M2: the verifier authored `save: {userB: "item.id"}` on `/auth/register`, whose
+    response carries the new user at `user.id`. The note said "the response lacks the save path
+    `item.id`" and nothing else; the verifier re-registered the chain six times over 80 minutes
+    with `item.id` and `id`, while the one chain that saved `user.id` passed every run. The
+    executor held the payload the whole time.
+
+    Names the paths ending in the same field (the likely intended capture), else the keys at the
+    level where the walk stopped. Empty when there is nothing useful to say.
+    """
+    try:
+        leaf = str(parts[-1]) if parts else ""
+        found = []
+
+        def _walk(node, trail, depth):
+            if len(found) >= 3 or depth > 4:
+                return
+            if isinstance(node, Mapping):
+                for k, v in node.items():
+                    t = trail + [str(k)]
+                    if str(k) == leaf and not isinstance(v, (Mapping, list, tuple)):
+                        found.append(".".join(t))
+                    _walk(v, t, depth + 1)
+            elif isinstance(node, (list, tuple)) and node:
+                _walk(node[0], trail + ["0"], depth + 1)
+
+        if leaf and not leaf.isdigit():
+            _walk(payload, [], 0)
+        found = [f for f in found if f != ".".join(parts)]
+        if found:
+            return " -- the response has %s" % ", ".join("`%s`" % f for f in found)
+        if isinstance(cur, Mapping) and cur:
+            keys = sorted(str(k) for k in cur.keys())[:12]
+            return " -- keys at `%s`: %s" % (".".join(walked) or "the top level",
+                                             ", ".join(keys))
+        return ""
+    except Exception:
+        return ""
 
 
 def classify_endpoint_failure(status, body_text):
@@ -3598,9 +3641,12 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             # #592: the var WAS filled — by the ladder, standing in for a save that failed
             # upstream. Name that step, or this status gets blamed on the endpoint.
             if _ladder_filled:
+                # #1202nj: carry #1202gu's verdict (and where the field actually is) into this
+                # sentence too — it is the one the verifier reads on the failing step.
                 note = ("SUBSTITUTED " + "; ".join(
-                    f"${{{_v}}} save failed at step '{save_failed_by_var[_v]}' (response "
-                    f"lacked the save path) — the ladder sent an UNRELATED id"
+                    f"${{{_v}}} save failed at step '{save_failed_by_var[_v]}' ("
+                    + (save_failed_why_1202hb.get(_v) or "response lacked the save path")
+                    + ") — the ladder sent an UNRELATED id"
                     for _v in _ladder_filled) +
                     " — fix that capture, not this endpoint. " + note)
             # #1202id: a 404 whose id was NOT substituted by the ladder is a literal the
