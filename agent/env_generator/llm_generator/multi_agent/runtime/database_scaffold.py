@@ -927,8 +927,14 @@ def _ddl_type_from_introspect(col: Dict[str, Any],
     if col.get("fk"):
         tbl, _, tcol = str(col["fk"]).partition(".")
         ref_base = (pk_types or {}).get(tbl.strip().lower(), "integer")
+        # #1202nb: QUOTE THE TARGET. Every other identifier in this DDL is quoted
+        # (`CREATE TABLE "follow"`, the structured-FK path's `REFERENCES "users" ("id")`); this
+        # one was not, and `user` is reserved. tiktok-r125's ORM had a `user` table, so the DDL
+        # regenerated from it read `references user(id)`, Postgres stopped on `syntax error at or
+        # near "user"`, and docker_up failed 10 times across the run and its resume — a file the
+        # lanes do not own and cannot fix.
         return "{} references {}({}) on delete cascade".format(
-            ref_base, tbl, tcol or "id")
+            ref_base, _quote_ident(tbl.strip()), _quote_ident((tcol or "id").strip()))
     if base == "boolean":
         return "boolean default false"
     if base == "timestamptz":

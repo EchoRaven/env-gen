@@ -168,7 +168,7 @@ def test_a_quoted_spine_fk_is_coerced():
 def test_on_delete_cascade_survives_coercion():
     col = {"name": "user_id", "type": 'TEXT REFERENCES "users" ("id") ON DELETE CASCADE'}
     _set_col_base_category(col, "integer")
-    assert col["type"].lower().startswith("integer references users(id)")
+    assert col["type"].lower().startswith('integer references "users"("id")')
     assert "on delete cascade" in col["type"].lower(), (
         "the cascade was dropped — a parent delete would raise instead of cascading")
 
@@ -176,7 +176,7 @@ def test_on_delete_cascade_survives_coercion():
 def test_a_reference_with_no_tail_gains_no_trailing_space():
     col = {"name": "user_id", "type": "TEXT REFERENCES users(id)"}
     _set_col_base_category(col, "integer")
-    assert col["type"] == "integer references users(id)"
+    assert col["type"] == 'integer references "users"("id")'
 
 
 def test_a_structured_fk_column_is_still_overwritten_bare():

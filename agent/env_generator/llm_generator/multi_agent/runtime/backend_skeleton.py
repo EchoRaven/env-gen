@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Iterable, Any, Dict, List, Mapping, Optional, Tuple
 
 from .database_scaffold import _columns_of, _is_constraint_pseudo_column
+from .database_scaffold import _quote_ident as _quote_ident_1202nb
 
 
 def _scrub_1202mi(content: str, name: str) -> str:
@@ -627,8 +628,11 @@ def _set_col_base_category(col: Dict[str, Any], category: str) -> None:
         # parent delete would start raising instead of cascading. Harmless while #197 was
         # dead (nothing was ever coerced in the DDL); live the moment it works.
         _tail = cur[m.end():].strip()
+        # #1202nb: the regex captures the names WITHOUT their quotes, so rebuilding the clause
+        # unquoted turned `REFERENCES "user" ("id")` into `references user(id)` — a syntax
+        # error in Postgres, where `user` is reserved. Quote them back.
         col["type"] = "{} references {}({}){}".format(
-            category, m.group(1), m.group(2) or m.group(3),
+            category, _quote_ident_1202nb(m.group(1)), _quote_ident_1202nb(m.group(2) or m.group(3)),
             (" " + _tail) if _tail else "")
     else:
         col["type"] = category
