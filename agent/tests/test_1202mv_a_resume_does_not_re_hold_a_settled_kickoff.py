@@ -178,3 +178,45 @@ def test_a_meeting_closed_without_a_contract_is_not_settled():
                                    agent="orchestrator")
         assert hubs.workhub.stores.documents.value()[h["meeting_id"]]["status"] == "closed"
         assert RK.settled_kickoff_meeting_1202mv(hubs, 1) is None
+
+
+# ── #1202na: the schema the lanes corrected survives a resumed finalize ────────────────────
+
+def test_a_resumed_finalize_keeps_the_lanes_corrected_table_schema():
+    """tiktok-r125: the resumed M2 finalize wrote the kickoff draft's `user.id` reference back
+    over the lane's `users(id)`; the schema SQL then broke Postgres."""
+    with tempfile.TemporaryDirectory() as tmp:
+        hubs = _hubs(tmp)
+        _finalize(hubs, _kickoff(hubs))
+        corrected = {"columns": [{"name": "id", "type": "integer primary key"},
+                                 {"name": "lane_fixed_column", "type": "text"}]}
+        hubs.schema_hub.register_table(name="posts", schema=corrected, provider="backend",
+                                       agent="backend", status="implemented")
+        before = hubs.schema_hub.get_table("posts")["schema"]
+        _finalize(hubs, _kickoff(hubs))
+        after = hubs.schema_hub.get_table("posts")
+        assert after["schema"] == before, (before, after["schema"])
+        assert after["status"] == "implemented"
+
+
+def test_a_resumed_finalize_keeps_the_lanes_corrected_endpoint_schema():
+    with tempfile.TemporaryDirectory() as tmp:
+        hubs = _hubs(tmp)
+        _finalize(hubs, _kickoff(hubs))
+        hubs.registryhub.register_endpoint(method="GET", path="/api/posts",
+                                           schema={"response_key": "items", "lane": "fixed"},
+                                           provider="backend", agent="backend",
+                                           status="implemented")
+        before = hubs.registryhub.get_endpoints()["GET /api/posts"]["schema"]
+        _finalize(hubs, _kickoff(hubs))
+        assert hubs.registryhub.get_endpoints()["GET /api/posts"]["schema"] == before
+
+
+def test_a_resumed_finalize_still_registers_what_is_missing():
+    with tempfile.TemporaryDirectory() as tmp:
+        hubs = _hubs(tmp)
+        _finalize(hubs, _kickoff(hubs))
+        hubs.registryhub._endpoints.delete("GET /api/posts")   # lost from the registry
+        assert "GET /api/posts" not in hubs.registryhub.get_endpoints()
+        _finalize(hubs, _kickoff(hubs))
+        assert "GET /api/posts" in hubs.registryhub.get_endpoints()

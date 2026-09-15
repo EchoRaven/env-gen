@@ -1183,6 +1183,15 @@ def carry_settled_sections_1202mv(
     return carried
 
 
+def _registry_has_1202na(lookup) -> bool:
+    """True iff `lookup()` returns a registry record. Any error answers False, which only means
+    the entry is registered again, as before #1202na."""
+    try:
+        return isinstance(lookup(), Mapping)
+    except Exception:
+        return False
+
+
 def start_kickoff(
     hubs: Any,
     milestone_index: int,
@@ -2304,14 +2313,14 @@ def finalize_kickoff(
     # Registration below passes status="defined", and both register_endpoint and
     # register_table store `status or existing` — so an explicit "defined" overwrites. On a
     # resume that re-finalizes the milestone the lanes were in the middle of, every endpoint
-    # and table goes back to `defined`. Replayed on tiktok-r124's real hubs: 41 implemented
+    # and table went back to `defined`. Replayed on tiktok-r124's real hubs: 41 implemented
     # endpoints -> defined, 2 DEPRECATED endpoints -> defined, 18 implemented tables ->
-    # defined, 6 tasks reopened. That run's resume then probed 42 endpoints (21 before, incl.
-    # the resurrected `/__noop_monitor_read__`), failed 11, and the backend spent turns
-    # re-registering what it had already built.
-    # A second closed kickoff for the SAME milestone means this is that resume: keep every
-    # status the registry already holds. A new milestone's finalize is unchanged — its
-    # contract may legitimately change or revive an endpoint.
+    # defined, 6 tasks reopened.
+    # #1202na: keeping the status was not enough — the upsert also replaced each SCHEMA with
+    # the kickoff draft (r125's resumed M2 broke Postgres that way). A second closed kickoff
+    # for the SAME milestone means this is that resume, and the registry is the authority:
+    # an entry it already holds is skipped outright; only missing ones are registered. A new
+    # milestone's finalize is unchanged — its contract may legitimately change an endpoint.
     _resume_1202mw = settled_kickoff_meeting_1202mv(
         hubs, milestone_index, exclude_meeting_id=meeting_id) is not None
 
@@ -2428,19 +2437,18 @@ def finalize_kickoff(
         try:
             kwargs = normalize_to_registryhub_endpoint(ep)
             provider = kwargs.pop("provider", "backend")
-            _status_1202mw = "defined"
-            if _resume_1202mw:
-                try:
-                    _prior_1202mw = (hubs.registryhub.get_endpoints() or {}).get(
-                        hubs.registryhub.endpoint_id(kwargs.get("method"), kwargs.get("path")))
-                    if isinstance(_prior_1202mw, Mapping) and _prior_1202mw.get("status"):
-                        _status_1202mw = str(_prior_1202mw["status"])
-                except Exception:
-                    _status_1202mw = "defined"
+            # #1202na: on a resume, an endpoint the registry already holds is NOT re-registered.
+            # #1202mw kept its status, but the upsert still replaced its SCHEMA with the
+            # kickoff draft — undoing every correction the lanes had registered since.
+            if _resume_1202mw and _registry_has_1202na(
+                    lambda: (hubs.registryhub.get_endpoints() or {}).get(
+                        hubs.registryhub.endpoint_id(kwargs.get("method"), kwargs.get("path")))):
+                n_endpoints += 1
+                continue
             result = hubs.registryhub.register_endpoint(
                 agent=agent,
                 provider=provider,
-                status=_status_1202mw,
+                status="defined",
                 **kwargs,
             )
         except Exception as exc:
@@ -2472,6 +2480,14 @@ def finalize_kickoff(
             continue
         name = tbl.get("name")
         if not isinstance(name, str) or not name.strip():
+            continue
+        # #1202na: on a resume, a table the registry already holds is NOT re-registered —
+        # its schema carries the lanes' corrections, not the kickoff draft's. tiktok-r125's
+        # resumed M2 finalize wrote `follower_user_id: int -> user.id` back over the lane's
+        # `integer references users.id`, the schema SQL became `references user(id)` (a
+        # reserved word, unquoted) and Postgres refused to start: docker_up failed.
+        if _resume_1202mw and _registry_has_1202na(lambda: hubs.schema_hub.get_table(name)):
+            n_tables += 1
             continue
         # owner_scoped_reads (a.k.a private/private_reads): per-user-PRIVATE table —
         # every read is owner-scoped, like writes. It's a TABLE PROPERTY, not a
@@ -2547,20 +2563,11 @@ def finalize_kickoff(
                     _have1202hk.add(_f1202hk.strip().lower())
                 schema = dict(schema, columns=_cols1202hk)
         try:
-            _tstatus_1202mw = "defined"
-            if _resume_1202mw:
-                try:
-                    _tprior_1202mw = hubs.schema_hub.get_table(name)
-                    if isinstance(_tprior_1202mw, Mapping) and _tprior_1202mw.get("status"):
-                        _tstatus_1202mw = str(_tprior_1202mw["status"])
-                except Exception:
-                    _tstatus_1202mw = "defined"
             result = hubs.schema_hub.register_table(
                 name=name,
                 schema=schema,
                 provider="backend",
                 agent=agent,
-                status=_tstatus_1202mw,
                 **table_meta,
             )
         except Exception as exc:
