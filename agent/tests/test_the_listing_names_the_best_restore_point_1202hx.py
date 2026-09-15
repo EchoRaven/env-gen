@@ -39,9 +39,9 @@ def _snap(root: Path, name: str, *, scores=None, fwval=None, stuck=None) -> Path
 # --- reading quality out of a snapshot --------------------------------------------
 
 def test_it_counts_screens_over_the_threshold(tmp_path):
-    q = RS._snapshot_quality_1202hx(_snap(tmp_path, "a", scores=[0.9, 0.7, 0.64, 0.2]))
+    q = RS._snapshot_quality_1202hx(_snap(tmp_path, "a", scores=[0.9, 0.7, 0.54, 0.2]))
     assert q["screens_total"] == 4
-    assert q["screens_pass"] == 2          # 0.9, 0.7 — 0.64 is under 0.65
+    assert q["screens_pass"] == 2          # 0.9, 0.7 — 0.54 is under the #1202nv bar (0.55)
     # Upper median on an even count, the convention the rest of this corpus reports with.
     assert q["visual_med"] == 0.7
 

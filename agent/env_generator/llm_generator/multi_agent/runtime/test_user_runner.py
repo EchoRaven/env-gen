@@ -1021,10 +1021,8 @@ async def judge_against_references(
     lists the page names that fell below threshold. Best-effort: no references, no captured
     shots, or a judge that errors → the page is left unjudged, never raises into the loop."""
     if min_similarity is None:
-        try:
-            min_similarity = float(os.environ.get("ENVGEN_VISUAL_MIN", "0.65"))
-        except Exception:
-            min_similarity = 0.65
+        from .visual_fidelity import visual_min_similarity_1202nv   # #1202nv: one bar
+        min_similarity = visual_min_similarity_1202nv()
     report.setdefault("visual_mismatches", [])
     refs = list(reference_images or [])
     pages = report.get("pages") or []

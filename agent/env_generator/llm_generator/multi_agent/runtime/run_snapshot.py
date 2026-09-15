@@ -404,7 +404,7 @@ def list_snapshots(output_dir) -> List[Dict]:
 # `None` means NOT MEASURED throughout, never coerced to 0, for the same reason #1202di
 # gives: a snapshot older than the gate directory has no verdict, which is a different
 # fact from "scored nothing".
-_VISUAL_PASS_1202HX = 0.65
+_VISUAL_PASS_1202HX = 0.55   # fallback only; #1202nv owns the bar
 
 
 def _snapshot_quality_1202hx(d: Path) -> Dict:
@@ -426,7 +426,12 @@ def _snapshot_quality_1202hx(d: Path) -> Dict:
             if scores:
                 scores.sort()
                 q["screens_total"] = len(scores)
-                q["screens_pass"] = sum(1 for x in scores if x >= _VISUAL_PASS_1202HX)
+                try:
+                    from .visual_fidelity import visual_min_similarity_1202nv   # #1202nv: one bar
+                    _bar = visual_min_similarity_1202nv()
+                except Exception:
+                    _bar = _VISUAL_PASS_1202HX
+                q["screens_pass"] = sum(1 for x in scores if x >= _bar)
                 q["visual_med"] = scores[len(scores) // 2]
     except Exception:
         pass

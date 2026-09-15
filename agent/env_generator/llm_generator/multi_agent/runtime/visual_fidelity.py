@@ -3179,6 +3179,31 @@ def _blank_wipeout_656(results, blank_screens, shots) -> bool:
     return bool(blocking) and len(blanked) * 2 >= len(blocking)
 
 
+# #1202nv: THE PER-SCREEN BAR, ONE DEFINITION.
+#
+# 0.65 was the bar everywhere it was written (this gate, the browser test-user's mismatch list,
+# the snapshot quality summary) and nothing measured what it separated. Measured on the 3,681
+# per-screen judgments in the run corpus, the scores are bimodal with the valley at 0.50-0.55
+# (189 judgments) between a 0.30-0.50 cluster and a 0.55+ cluster, and the captures say what the
+# clusters are: ~0.1-0.2 is the WRONG page (r125 fyp_feed_comments_panel 0.19 was a Friends grid),
+# 0.40-0.54 is the right layout with placeholder or missing primary media (r120 live_discover
+# 0.43, every image a glyph; r125 fyp_feed_comments_panel 0.54, a blank grey video box), and
+# 0.55-0.65 is the right page with real content and polish gaps — r125 explore_grid 0.58 (real
+# thumbnails, missing sidebar icons), messages_dm_empty 0.60 (every element but the icon rail),
+# r126 fyp_feed_comments_panel 0.64 (clipped action rail, placeholder avatars). 525 judgments
+# (14%) sat in 0.55-0.65 and failed. The judge also moves: consecutive rounds of the same screen
+# differ by 0.06 at p75 and 0.12 at p90, so a screen at 0.60-0.70 passed or failed on noise.
+# The bar is the valley. ENVGEN_VISUAL_MIN still overrides.
+VISUAL_MIN_DEFAULT_1202NV = 0.55
+
+
+def visual_min_similarity_1202nv() -> float:
+    try:
+        return float(os.environ.get("ENVGEN_VISUAL_MIN", "") or VISUAL_MIN_DEFAULT_1202NV)
+    except (TypeError, ValueError):
+        return VISUAL_MIN_DEFAULT_1202NV
+
+
 async def run_visual_fidelity(
     project_dir: Any,
     reference_images: List[Any],
@@ -3198,7 +3223,7 @@ async def run_visual_fidelity(
     Returns {"passed": bool, "summary": str, "screens": [{name, route,
     similarity, passed, deviations, screenshot}], "skipped": [names]}.
     ``passed`` is True iff every judged screen reaches ``min_similarity``
-    (default 0.65, env ENVGEN_VISUAL_MIN). No mappable references → passes
+    (default VISUAL_MIN_DEFAULT_1202NV, env ENVGEN_VISUAL_MIN). No mappable references → passes
     vacuously with a summary saying so (the gate only binds when references
     exist — that's the user-provided design contract)."""
     # #891: the capture's only real input is the built frontend. r32 captured with
@@ -3218,10 +3243,7 @@ async def run_visual_fidelity(
 
     project_dir = Path(project_dir).resolve()
     if min_similarity is None:
-        try:
-            min_similarity = float(os.environ.get("ENVGEN_VISUAL_MIN", "0.65"))
-        except Exception:
-            min_similarity = 0.65
+        min_similarity = visual_min_similarity_1202nv()
     known_routes: set = set()
     _stale_serve_715 = None
     try:

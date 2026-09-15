@@ -288,9 +288,9 @@ def test_failed_capture_canonical_page_counts_in_blocking_denominator(tmp_path):
     assert by["card_hover_preview"]["advisory"] is True
     # blocking average = (browse_home 0.0 + login 0.90) / 2 = 0.45 (card_hover_preview excluded)
     assert result["blocking_average"] == 0.45, result["blocking_average"]
-    # the app didn't pass (a blocking page at 0.0), and the 0.65 bar is unchanged
+    # the app didn't pass (a blocking page at 0.0), and the bar is the shared default (#1202nv)
     assert result["passed"] is False
-    assert result["min_similarity"] == 0.65
+    assert result["min_similarity"] == VF.VISUAL_MIN_DEFAULT_1202NV
     # the recorded verdict.json carries the blocking_average too
     vj = json.loads((proj / "design" / "visual_gate" / "verdict.json").read_text())
     assert vj["blocking_average"] == 0.45, vj["blocking_average"]
