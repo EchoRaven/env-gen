@@ -511,6 +511,26 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 # the backoff (which consumes the previous step's verdict) and before any
                 # tool can run, so each step is judged on its own calls.
                 self._step_action_tools_637 = 0
+                # #1202no: a kickoff section loop whose meeting has already been finalized has
+                # nothing left to author. tiktok-r125 M4: the meeting stall-finalized at
+                # 11:11:32 and the frontend's section loop kept stepping (7/12, 8/12, ...) —
+                # and under #1202nl the lane's real work waited behind it. Across the run logs,
+                # 189 kickoff-budget steps ran after their meeting finalized (42 logs).
+                _mtg_1202no = getattr(self, "_kickoff_authoring_1202ms", None)
+                if _mtg_1202no:
+                    try:
+                        from .preconditions import kickoff_meeting_closed_1202no
+                        _closed_1202no = kickoff_meeting_closed_1202no(
+                            getattr(self, "_hubs", None), _mtg_1202no)
+                    except Exception:
+                        _closed_1202no = False
+                    if _closed_1202no:
+                        self._logger.info(
+                            f"[{self.agent_id}] #1202no kickoff meeting {_mtg_1202no} is already "
+                            f"closed — ending this section loop at step {step + 1}")
+                        return {"success": True, "files_created": files_created,
+                                "summary": "kickoff meeting already finalized; nothing to author",
+                                "kickoff_meeting_closed_1202no": True}
                 self._logger.info(f"[{self.agent_id}] Step {step + 1}/{max_steps} (mode={self._execution_mode})")
                 _mark_stage(
                     "step_reminders",

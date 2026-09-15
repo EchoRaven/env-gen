@@ -517,6 +517,41 @@ def kickoff_finalized_signal(hubs: Any, agent: Any = None) -> bool:
 _KICKOFF_OPEN_CACHE_1202MX: Dict[str, Any] = {}
 
 
+_MEETING_CLOSED_CACHE_1202NO: Dict[str, Any] = {}
+
+
+def kickoff_meeting_closed_1202no(hubs: Any, meeting_id: Any) -> bool:
+    """#1202no: has THIS kickoff meeting been closed (finalized) already?
+
+    Read at every step of a kickoff-authoring loop, so cached on the documents file's
+    (mtime, size) like #1202mx. False on any doubt: a loop that keeps authoring is the old
+    behaviour, a loop stopped by a misread would lose a section."""
+    if not meeting_id:
+        return False
+    try:
+        store = hubs.workhub.stores.documents
+    except Exception:
+        return False
+    try:
+        import os as _os
+        path = str(getattr(store, "file_path", "") or "")
+        key = "%s|%s" % (path, meeting_id)
+        stamp = None
+        if path:
+            st = _os.stat(path)
+            stamp = (st.st_mtime_ns, st.st_size)
+            hit = _MEETING_CLOSED_CACHE_1202NO.get(key)
+            if hit is not None and hit[0] == stamp:
+                return hit[1]
+        doc = (store.value() or {}).get(str(meeting_id))
+        answer = isinstance(doc, dict) and doc.get("status") == "closed"
+        if stamp is not None:
+            _MEETING_CLOSED_CACHE_1202NO[key] = (stamp, answer)
+        return answer
+    except Exception:
+        return False
+
+
 def latest_kickoff_open_1202mx(hubs: Any) -> bool:
     """#1202mx: is the NEWEST kickoff meeting still open — a milestone kickoff in progress?
 

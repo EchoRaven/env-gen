@@ -1636,6 +1636,11 @@ while you were busy is missed.
             workhub = getattr(self._hubs, "workhub", None)
             if workhub is None or not hasattr(workhub, "add_meeting_decision"):
                 return
+            # #1202no: a finalized meeting takes no more sections — a stub written after the
+            # close would only be carried into a resume's settled sections (#1202mv).
+            from .preconditions import kickoff_meeting_closed_1202no
+            if kickoff_meeting_closed_1202no(self._hubs, meeting_id):
+                return
             # Walk the meeting page directly — no facilitate helper here
             # because the initial-section check needs section-name (not
             # round_n + phase) keying.
