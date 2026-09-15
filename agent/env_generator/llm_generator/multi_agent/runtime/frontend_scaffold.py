@@ -577,7 +577,68 @@ def _unimported_jsx_tags(src: str) -> List[str]:
             if part:
                 known.add(part.split(" as ")[-1].strip())  # the LOCAL binding
     known.update(_LOCAL_DEF_RE.findall(src))
+    known.update(_locally_bound_names_1202mq(src))
     return sorted(used - known)
+
+
+# #1202mq: A NAME THE FILE BINDS ITSELF IS NOT AN UNIMPORTED ICON.
+#
+# `known` above held imports and LINE-START declarations only. It missed the two shapes
+# generated components use most for dynamic icons: a destructured parameter —
+# `items.map(([to, label, Icon]) => <Icon/>)`, `({ icon: I }) => <I/>` — and a declaration
+# in the middle of a minified line — `const C = m[type] || Home; return <C />`. Each looked
+# unimported, so the heal added `import { Icon } from 'lucide-react'` to the lane's file;
+# the lane removed it and the next framework delivery added it back (tiktok-r124's
+# LeftNavSidebar and TikTokAppShell). Across the corpus's framework delivery commits, 54 of
+# the 152 names this heal imported were bound in the same file, in 27 runs — r88's lane had
+# even written "`I` ... is a LOCAL alias for destructuring — do NOT import `I`". A mid-line
+# declaration at module scope is worse than churn: the added import is a second binding of
+# the same name, which is #970's "already been declared" build failure.
+_DECL_ANYWHERE_1202MQ = re.compile(
+    r"(?<![\w$.])(?:function|class|const|let|var)\s+([A-Z][\w$]*)")
+_GROUP_1202MQ = re.compile(r"([(\[{])([^()\[\]{}]*)([)\]}])")
+_GROUP_NAME_1202MQ = re.compile(r"(?:^|,|:|\.\.\.)\s*([A-Z][\w$]*)\s*(?==(?![=>])|,|$)")
+_BINDS_AFTER_1202MQ = re.compile(r"=>|=(?![=>])|of\b|in\b")
+
+
+def _group_binds_1202mq(src: str, end: int, closer: str) -> bool:
+    """Is the bracket group that closed at `end` a binding pattern — a destructuring target,
+    an arrow or function parameter list, or a for-of/in head? Walks outward through the
+    enclosing groups (`({ a, B }, i) =>`) up to four levels."""
+    for _ in range(4):
+        rest = src[end:end + 200].lstrip()
+        if _BINDS_AFTER_1202MQ.match(rest):
+            return True
+        if closer == ")" and rest.startswith("{"):
+            return True
+        if not rest or rest[0] not in ",)]}":
+            return False
+        depth, j, found = 0, end, False
+        while j < min(len(src), end + 400):
+            ch = src[j]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                if depth == 0:
+                    closer, end, found = ch, j + 1, True
+                    break
+                depth -= 1
+            j += 1
+        if not found:
+            return False
+    return False
+
+
+def _locally_bound_names_1202mq(src: str) -> Set[str]:
+    """Capitalized names this source binds itself, anywhere in it."""
+    names: Set[str] = set(_DECL_ANYWHERE_1202MQ.findall(src))
+    for m in _GROUP_1202MQ.finditer(src):
+        # `if (Heart) {` reads a name; it does not bind one.
+        if re.search(r"\b(?:if|while|switch|return)\s*$", src[max(0, m.start() - 8):m.start()]):
+            continue
+        if _group_binds_1202mq(src, m.end(), m.group(3)):
+            names.update(_GROUP_NAME_1202MQ.findall(m.group(2).strip()))
+    return names
 
 
 def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
@@ -9653,7 +9714,12 @@ def _dominant_route_wrapper(app_jsx: str) -> Optional[str]:
     bare. (Captures the FIRST identifier after ``element={<`` — the wrapper, not
     the inner page — which is exactly what we want here.)"""
     from collections import Counter
-    names = re.findall(r"element=\{\s*<\s*([A-Za-z_]\w*)", app_jsx)
+    # #1202mp: only an element that OPENS around a child is a wrapper. The first identifier of
+    # `element={<ProfileOwnPage />}` is the page itself; tiktok-r124's lane routed ProfileOwnPage
+    # bare three times, it became the "dominant wrapper", and every injected route shipped as
+    # `<ProfileOwnPage><FypFeedCommentsPage /></ProfileOwnPage>` — re-added after each merge
+    # that removed it.
+    names = re.findall(r"element=\{\s*<\s*([A-Za-z_]\w*)(?:\s[^<>]*?)?(?<!/)>\s*<", app_jsx)
     if not names:
         return None
     name, cnt = Counter(names).most_common(1)[0]
@@ -9977,6 +10043,12 @@ def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
             route = str(page.get("route") or "").strip()
             if not route:
                 continue
+            # #1202mp: #913's rule, which `scaffold_pages_from_contract`'s plan already applies
+            # and this injector did not — a query or fragment is a STATE of the base path, and
+            # React Router matches the pathname only. r124 injected `/?comments=<video_id>`, a
+            # route that can never fire, after every merge whose App.jsx already routed `/`.
+            if "?" in route or "#" in route:
+                route = route.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
             canon = _canon_route(route)
             # decide "missing" with the EXACT gate predicate (#18 _route_is_wired:
             # normalized SET match + trailing-optional fallback) — NOT raw set
@@ -10829,6 +10901,37 @@ def reconcile_ui_page_apis_1199(frontend_dir, ui_pages, registryhub) -> Dict[str
     return out
 
 
+def _page_is_referenced_1202mp(src: Path, comp: str, app_text: str) -> bool:
+    """Does anything import `pages/<comp>` — the router, or any other source file?
+
+    Matches a module specifier whose last segment is `comp` (with or without an extension),
+    so `./pages/X`, `../pages/X.jsx` and a sibling page's `./X` all count. A same-named file
+    elsewhere also matches, which only ever errs toward writing the page (the old behaviour).
+    Unreadable trees answer True for the same reason."""
+    rx = re.compile(r"""['"](?:[^'"\n]*/)?""" + re.escape(comp)
+                    + r"""(?:\.(?:jsx|tsx|js|ts))?['"]""")
+    if rx.search(app_text or ""):
+        return True
+    try:
+        own = (src / "pages" / f"{comp}.jsx").resolve()
+        for f in src.rglob("*"):
+            if (f.suffix not in (".jsx", ".tsx", ".js", ".ts") or "node_modules" in f.parts
+                    or f.name == "App.jsx" or f.resolve() == own):
+                continue
+            try:
+                if rx.search(f.read_text(encoding="utf-8", errors="ignore")):
+                    return True
+            except Exception:
+                continue
+    except Exception as _e1202mp:
+        from .message_format import warn_once_1201
+        warn_once_1201("page_is_referenced_1202mp",
+                       "the orphan-page check (#1202mp) — unreferenced pages are being written again",
+                       _e1202mp)
+        return True
+    return False
+
+
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
     """Project one page-component STUB per registered ui_page + wire React-Router
     routes in App.jsx — the frontend analogue of the deterministic backend
@@ -10975,6 +11078,33 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 page = {**page, "route": route}
             plan.append((comp, route, page))
 
+        # #1202mp: WHEN THE LANE OWNS THE ROUTER, A PAGE NOBODY ROUTES IS NOT A PAGE.
+        #
+        # Everything below assumes the routes in `plan` will exist. They do when App.jsx is
+        # regenerated from `entries`; when the lane owns App.jsx, only the routes it wired plus
+        # those `project_missing_ui_routes` injects will. tiktok-r124 registered two screens with
+        # `route=''` and one at `/following` that the lane serves with its own FollowingPage.
+        # The plan derived `/friends-suggested-creators` and `/settings-more-menu`, put them in
+        # every projected page's sidebar — links to URLs no route serves — and wrote three page
+        # files nothing imports. The lane deleted the three files as dead code; each framework
+        # delivery wrote them back: 30+ delete/re-add cycles, a lane tick each.
+        #
+        # So compute what the router WILL serve (the lane's App.jsx after the same additive
+        # injection the branch below performs) and hold the plan to it: nav links only to
+        # served routes, and a missing page file is written only when something references it.
+        # A regenerated router is untouched, and so is an auth page.
+        _lane_router_1202mp: Optional[str] = None
+        _orphans_1202mp: List[str] = []
+        try:
+            _app_1202mp = src / "App.jsx"
+            _cur_1202mp = (_app_1202mp.read_text(encoding="utf-8")
+                           if _app_1202mp.exists() else "")
+            if (_cur_1202mp.strip() and _ROUTES_MARKER not in _cur_1202mp
+                    and "</Routes>" in _cur_1202mp):
+                _lane_router_1202mp = project_missing_ui_routes(_cur_1202mp, ui_pages)[0]
+        except Exception:
+            _lane_router_1202mp = None
+
         # Shared top-nav for the data pages: the main business routes (skip auth /
         # landing / param-detail routes, dedup, cap), labelled from the route segment.
         # Built from ALL entries FIRST so every projected page links to the same set —
@@ -10991,12 +11121,21 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             _seg = _r.strip("/").split("/")[0]
             _lbl = re.sub(r"[-_]+", " ", _seg).strip().title() or _seg
             nav_routes.append((_lbl, _r))
+        if _lane_router_1202mp is not None:
+            from .frontend_audit import _route_is_wired as _wired_1202mp
+            nav_routes = [(_l, _r) for _l, _r in nav_routes
+                          if _wired_1202mp(_r, _lane_router_1202mp)]
         nav_routes = _filter_nav_to_ref(nav_routes, design)  # #474 match ref nav (drop /profiles-type leaks)
         nav_routes = nav_routes[:7]
 
         from .frontend_page_projector import _STRUCTURED_MARKER
         for comp, route, page in plan:
             target = pages_dir / f"{comp}.jsx"
+            if (_lane_router_1202mp is not None and not target.exists()
+                    and not _is_auth_page(comp, page)
+                    and not _page_is_referenced_1202mp(src, comp, _lane_router_1202mp)):
+                _orphans_1202mp.append(comp)
+                continue
             # Auth pages are ALWAYS (over)written with the framework's wired auth
             # form — the lane consistently ships a dead/unwired login. Other pages
             # are projected only when missing (never clobber the lane's real UI).
@@ -11331,7 +11470,8 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
         _fixed_632 = repair_default_import_of_named_export_632(app.parent)
         return {"scaffolded": sorted(scaffolded), "routes": len(entries),
                 "app_wired": app_wired, "injected_routes": injected_routes,
-                "default_import_repairs": _fixed_632}
+                "default_import_repairs": _fixed_632,
+                "orphan_pages_not_written": sorted(_orphans_1202mp)}
     except Exception as exc:  # never raise into the orchestrator
         return {"scaffolded": [], "routes": 0, "app_wired": False,
                 "error": str(exc)}

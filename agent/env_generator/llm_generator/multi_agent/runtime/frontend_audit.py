@@ -342,6 +342,17 @@ def _route_is_wired(route: str, app_jsx: str) -> bool:
     wired = _wired_route_set(app_jsx)
     if canon in wired:
         return True
+    # #1202mp: the framework wires `/@:username` as `/:username` (#1202ix — React Router cannot
+    # take a param after `@`), and this predicate then called its own output unwired, so
+    # `project_missing_ui_routes` injected the route again on every pass. Both spellings serve
+    # the same URLs; accept either.
+    try:
+        from .frontend_scaffold import _router_matchable_route_1202iy
+        _matchable = _canon_route(_router_matchable_route_1202iy(route))
+        if _matchable != canon and _matchable in wired:
+            return True
+    except Exception:
+        pass
     if canon.endswith("/{}"):
         base = canon[: -len("/{}")] or "/"
         return base in wired
@@ -2034,7 +2045,90 @@ _HEAL_EXPR = r"[\w$]+(?:\.[\w$]+)*"
 # exactly as the checker does — parity, no NEW build-break span).
 _HEAL_OR = re.compile(r"(?<![\w$])(" + _HEAL_EXPR + r")\s*\|\|\s*(['\"])(.*?)\2")
 _HEAL_TERNARY_FALSE = re.compile(r"\?\s*(" + _HEAL_EXPR + r")\s*:\s*(['\"])(.*?)\2")
-_HEAL_TERNARY_TRUE = re.compile(r"\?\s*(['\"])(.*?)\1\s*:\s*(" + _HEAL_EXPR + r")")
+# #1202mp: the literal may not contain its own quote. With `(.*?)\1` the lazy group ran on
+# across closing quotes until it found one followed by `: expr`, and the corpus has the heal
+# rewriting `? 'active':''} ${it==='Following'...?'/' : it` as ONE literal.
+_HEAL_TERNARY_TRUE = re.compile(
+    r"\?\s*(['\"])((?:(?!\1)[^\\\n])*)\1\s*:\s*(" + _HEAL_EXPR + r")")
+
+
+# #1202mp: A TERNARY IS A FALLBACK ONLY WHEN ITS CONDITION ASKS ABOUT THE VALUE.
+#
+# `x.name || 'Hotel'` is a fallback by its syntax: the literal shows exactly when `x.name` is
+# absent. A ternary is not. `following ? 'Following' : busy` shows 'Following' when the user
+# follows, and `busy` is an unrelated flag — it is the button's own label. The heal rewrote it
+# to '—' on every tick, the frontend lane restored it on every merge, and tiktok-r124's
+# CreatorSuggestionCard.jsx alternated between the two for 30+ framework delivery commits.
+# Replaying every unique heal site in 131 run logs: 13 mirror ternaries with a bare value
+# (`? 'LIVE' : id`, `? 'Copied' : fmt`, `? 'For You' : id`, `? 'Activity' : to`), every one a
+# UI state label.
+#
+# The shape that IS a fabricated fallback names the value in its condition:
+# `raw ? raw : 'haibotong7'`, `!v.caption ? 'some caption' : v.caption`. So: a ternary whose
+# condition does not mention the value is left alone — except the member-access FALSE-branch
+# form, which the #175 checker flags without looking at the condition, and which the heal
+# must keep clearing or the gate becomes unclearable (#496's round-trip invariant).
+_TERNARY_STOP_1202MP = frozenset(",;?:")
+
+
+def _ternary_condition_1202mp(before: str) -> str:
+    """The condition of the ternary whose `?` sits at the end of `before`.
+
+    Scans backwards at bracket depth 0 and stops at whatever ends an expression: an unmatched
+    opening bracket, `,` `;` `?` `:`, an assignment `=`, or an arrow `=>`. String contents are
+    not parsed; a quote inside the window only ever widens it, which errs toward keeping the
+    old behaviour (rewrite), never toward inventing a new one."""
+    depth = 0
+    i = len(before) - 1
+    while i >= 0:
+        ch = before[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0:
+            if ch in _TERNARY_STOP_1202MP:
+                break
+            if ch == ">" and i > 0 and before[i - 1] == "=":
+                break
+            if (ch == "=" and (i == 0 or before[i - 1] not in "=!<>")
+                    and (i + 1 >= len(before) or before[i + 1] != "=")):
+                break
+        i -= 1
+    return before[i + 1:]
+
+
+_ABSENT_1202MP = r"(?:(?:null|undefined|0|false)(?![\w$.])|''|\"\")"
+_CMP_AFTER_1202MP = re.compile(r"\s*(?:(?:===?|!==?)\s*(" + _ABSENT_1202MP + r")?|[<>])")
+_CMP_BEFORE_1202MP = re.compile(r"(?:(" + _ABSENT_1202MP + r")\s*)?(?:===?|!==?|[<>]=?)\s*$")
+
+
+def _condition_mentions_1202mp(condition: str, expr: str) -> bool:
+    """Does the ternary's condition test whether `expr` (or its root) is ABSENT?
+
+    `x`, `!x`, `x.name && y`, `x == null`, `x === ''` all do. `mode === 'movies'` does not: it
+    compares the value to a state, and `mode === 'movies' ? 'Movies' : mode` is a label switch
+    (60 of the corpus's rewritten lines are this chain). A comparison against an absence
+    literal still counts."""
+    if not condition or not expr:
+        return False
+    root = expr.split(".", 1)[0]
+    for m in re.finditer(r"(?<![\w$.])" + re.escape(root) + r"(?:\??\.[\w$]+)*(?![\w$])",
+                         condition):
+        after = _CMP_AFTER_1202MP.match(condition, m.end())
+        if after is not None and after.group(0).strip():
+            if after.group(1):
+                return True
+            continue
+        before = _CMP_BEFORE_1202MP.search(condition[:m.start()])
+        if before is not None:
+            if before.group(1):
+                return True
+            continue
+        return True
+    return False
 
 
 def _is_fabricated_fallback_literal(s: str) -> bool:
@@ -2215,6 +2309,12 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
         changed = False
         new_lines: List[str] = []
         for i, line in enumerate(lines, 1):
+            # #1202mp: a ternary's condition can start on an earlier line.
+            _prior = "".join(lines[max(0, i - 3):i - 1])
+
+            def _cond_of(m, _text):
+                return _ternary_condition_1202mp(_prior + _text[:m.start()])
+
             def _sub_or(m):
                 expr, lit = m.group(1), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
@@ -2234,6 +2334,11 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
                 expr, lit = m.group(1), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
                     return m.group(0)
+                # #1202mp: `? 108 : '16%'` is a number, not a value that can be absent. A
+                # member access keeps checker parity; a bare name must be what's tested.
+                if expr[:1].isdigit() or ("." not in expr and not _condition_mentions_1202mp(
+                        _cond_of(m, _cur[0]), expr)):
+                    return m.group(0)
                 sites.append(f"{f.name}:{i} `? {expr} : '{lit}'` → `? {expr} : '—'`")
                 return f"? {expr} : '—'"
 
@@ -2243,11 +2348,19 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
                 lit, expr = m.group(2), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
                     return m.group(0)
+                # #1202mp: the checker never flags this form, so nothing forces a rewrite; only
+                # a condition that asks about `expr` makes the literal its stand-in.
+                if expr[:1].isdigit() or not _condition_mentions_1202mp(
+                        _cond_of(m, _cur[0]), expr):
+                    return m.group(0)
                 sites.append(f"{f.name}:{i} `? '{lit}' : {expr}` → `? '—' : {expr}`")
                 return f"? '—' : {expr}"
 
+            _cur = [line]
             new = _HEAL_OR.sub(_sub_or, line)
+            _cur[0] = new
             new = _HEAL_TERNARY_FALSE.sub(_sub_ternary_false, new)
+            _cur[0] = new
             new = _HEAL_TERNARY_TRUE.sub(_sub_ternary_true, new)
             if new != line:
                 changed = True

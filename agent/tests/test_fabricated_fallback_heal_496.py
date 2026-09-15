@@ -116,15 +116,28 @@ def test_ternary_false_branch_fake_rewritten():
 
 
 def test_ternary_true_branch_mirror_rewritten():
-    # `cond ? 'Live now' : place.name` — MIRROR ternary the checker does NOT flag; heal cleans it.
+    # `!place.name ? 'Live now' : place.name` — MIRROR ternary the checker does NOT flag; the
+    # condition asks about the value, so the literal is its stand-in and the heal cleans it.
     with tempfile.TemporaryDirectory() as tmp:
-        src = _mk(tmp, {"components/C.jsx": _wrap("{cond ? 'Live now' : place.name}")})
+        src = _mk(tmp, {"components/C.jsx": _wrap("{!place.name ? 'Live now' : place.name}")})
         out = repair_fabricated_fallbacks(src)
         assert out.get("repaired") == ["C.jsx"], out
         after = (src / "components" / "C.jsx").read_text()
-        assert "{cond ? '—' : place.name}" in after, after
+        assert "{!place.name ? '—' : place.name}" in after, after
         assert "'Live now'" not in after
         assert invented_field_fallback_blockers(src) == []
+
+
+def test_ternary_true_branch_with_an_unrelated_condition_is_kept():
+    # #1202mp: `cond ? 'Live now' : place.name` used to be rewritten too. With a condition that
+    # says nothing about `place.name`, the literal is a label for the `cond` state, not a value
+    # standing in for a missing field — see test_1202mp for the corpus measurement.
+    with tempfile.TemporaryDirectory() as tmp:
+        body = _wrap("{cond ? 'Live now' : place.name}")
+        src = _mk(tmp, {"components/C.jsx": body})
+        out = repair_fabricated_fallbacks(src)
+        assert out == {"repaired": [], "sites": []}, out
+        assert (src / "components" / "C.jsx").read_text() == body
 
 
 # ── (b) legitimate defaults the checker deliberately allows are LEFT UNCHANGED ───────────────
