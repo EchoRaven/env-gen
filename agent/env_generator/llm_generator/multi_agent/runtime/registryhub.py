@@ -2540,6 +2540,32 @@ class RegistryHub:
         # store itself and every chain registration raised AttributeError — 70 test failures
         # that I first misread as a design flaw, because I reached for an explanation instead
         # of the traceback.
+        # #1202nw: the POST half #1202jd exempts, where the create is projected.
+        try:
+            from .chain_executor import (unenforceable_create_denials_1202nw,
+                                         projected_routes, _lane_routes_1202hs)
+            _proj_dir_1202nw = self.hub_dir.parent.parent
+            _uc = unenforceable_create_denials_1202nw(
+                norm, self._tables.value() or {}, projected_routes(_proj_dir_1202nw),
+                _lane_routes_1202hs(_proj_dir_1202nw))
+        except Exception as _e1202nw:
+            from .message_format import warn_once_1201
+            warn_once_1201("create_denial_guard_1202nw",
+                           "cannot check chain create-denials against projected routes; an "
+                           "unenforceable 403 on a projected create may be registered", _e1202nw)
+            _uc = []
+        if _uc:
+            from .message_format import join_capped
+            return {"error": (
+                "chain rejected: unenforceable create denial — "
+                + join_capped([f"step[{i}] {p} on `{t}`" for i, p, t, _ in _uc], len(_uc), cap=3)
+                + ". That create is served by a FRAMEWORK-PROJECTED handler, which refuses a "
+                  "cross-user create ONLY when the body names an owner column ("
+                + ", ".join(sorted({c for _i, _p, _t, cs in _uc for c in cs}))
+                + ") belonging to another user (#566s); this body names none, so the request is "
+                  "SERVED (201) with the caller as owner, and no lane can change that handler. "
+                  "Either drop the denial step and assert what this actor SHOULD get, or make "
+                  "it a real IDOR probe by putting ANOTHER user's id in the owner column.")}
         _unenf = unenforceable_owner_denials_1202jd(norm, self._tables.value() or {})
         if _unenf:
             from .message_format import join_capped

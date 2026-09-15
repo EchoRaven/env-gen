@@ -649,6 +649,77 @@ def unenforceable_owner_denials_1202jd(steps, tables) -> List[tuple]:
     return out
 
 
+def unenforceable_create_denials_1202nw(steps, tables, projected, lane) -> List[tuple]:
+    """#1202nw — a 401/403 expectation on a projected CREATE whose body gives it nothing to deny.
+
+    Returns ``[(i, "POST path", table, owner_columns)]``.
+
+    #1202jd exempts POST ("a cross-actor create denial is about the payload, not row
+    ownership"), and for a lane's own handler that is right: it may enforce any rule. A
+    FRAMEWORK-PROJECTED create enforces exactly one: #566s refuses a body OWNER column naming
+    another user. A body that names no owner column is served — the handler fills the owner
+    from the caller.
+
+    tiktok-r126 M1: `deny_a_claiming_b_comment_actor` POSTed /api/notifications as user A with
+    user B's `comment_id` and expected 403; the projected create stored it (201). The runtime
+    note called it a data-isolation hole on a route "the lane cannot edit", the verifier kept the
+    step through six re-registrations, and the milestone died on the no-convergence abort after
+    65 minutes with that step as its only blocker.
+
+    Rejected only when every condition holds, so nothing enforceable is refused: a token is sent,
+    the expectation is ONLY 401/403, the path is a bare collection (no path parameter) — the shape
+    main.py always serves from the projected handler, even when the lane declares one — the route
+    is projected, the table is registered with an owner column, and the body names none of them.
+    """
+    out: List[tuple] = []
+    if not projected:
+        return out
+    try:
+        from .route_projector import _OWNER_FK_NAMES as _OWN
+    except Exception:
+        return out
+    _named = {}
+    for _k, _v in (tables or {}).items():
+        if _k == "_meta" or not isinstance(_v, Mapping):
+            continue
+        _named[str(_v.get("name") or _k)] = _v
+    for i, st in enumerate(steps or []):
+        if not isinstance(st, Mapping):
+            continue
+        if str(st.get("method") or "GET").upper() != "POST" or not st.get("auth"):
+            continue
+        path = str(st.get("path") or "").split("?", 1)[0]
+        if (not path or path.startswith(_CHAIN_CONTROL_PREFIXES)
+                or re.search(r"\{|\$\{|:[A-Za-z_]", path)):
+            continue
+        _exp = st.get("expect")
+        _exp = _exp if isinstance(_exp, (list, tuple, set)) else ([_exp] if _exp is not None else [])
+        codes = [int(x) for x in _exp if str(x).isdigit()]
+        if not codes or any(c not in _UNDECIDABLE_DENIAL_CODES for c in codes):
+            continue
+        # A lane route for the same bare collection does NOT serve it: main.py keeps the
+        # projected handler for standard CRUD (`_custom_route_overrides_projected`), and r126's
+        # lane handler — which DID refuse a foreign comment_id — never ran; its own attempt to
+        # swap itself into the route table did not take. `lane` is accepted for the record only.
+        if ("POST", path) not in projected:
+            continue
+        segs = [x.replace("-", "_") for x in path.strip("/").split("/")
+                if x and x not in ("api", "v1")]
+        table = next((x for x in reversed(segs) if x in _named), None)
+        if not table:
+            continue
+        cols = [str(c.get("name") if isinstance(c, Mapping) else c)
+                for c in ((_named[table].get("schema") or {}).get("columns") or [])]
+        owners = [c for c in cols if c in _OWN]
+        if not owners:
+            continue
+        body = st.get("body") if isinstance(st.get("body"), Mapping) else {}
+        if any(body.get(c) not in (None, "") for c in owners):
+            continue
+        out.append((i, f"POST {path}", table, owners))
+    return out
+
+
 def undecidable_access_expectations(steps: Sequence[Mapping[str, Any]]) -> List[tuple]:
     """#591 — business steps that pass whether the request was served OR denied.
 
