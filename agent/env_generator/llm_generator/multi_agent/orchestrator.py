@@ -5613,6 +5613,7 @@ class Orchestrator:
             if (os.environ.get("ENVGEN_TESTUSER_BROWSER_GATE", "1").strip().lower()
                     not in ("0", "false", "no", "off")):
                 _bg_report = None
+                self._prerelease_walk_1202nm = None     # #1202nm: only THIS pass's walk counts
                 try:
                     import asyncio as _bg_asyncio
                     _bg_report = await _bg_asyncio.to_thread(
@@ -5670,6 +5671,11 @@ class Orchestrator:
                     # so a later milestone starts with a fresh attempt/wall-clock allowance.
                     self._tu_browser_deferred_since = None
                     self._tu_browser_attempts = 0
+                if isinstance(_bg_report, dict) and _bg_report.get("ran"):
+                    # #1202nm: this pass has walked the app for this version; see the
+                    # post-release phase below.
+                    self._prerelease_walk_1202nm = str(
+                        getattr(self, "_current_milestone_version", "1.0.0"))
             # SOFT CONTRACT ROUTE-CONSISTENCY GATE (#180, 2026-07-16): run-13 aborted (80min
             # no-convergence) because the contract registered ONE endpoint at version-variant
             # duplicate paths (GET /api/directions + GET /api/v1/directions); the lane
@@ -5832,11 +5838,25 @@ class Orchestrator:
             # API + check the MCP surface, writing a feedback report so a milestone never
             # ships a broken contract silently. Offloaded to a thread (blocking HTTP +
             # subprocess); best-effort, never blocks/raises into delivery.
-            try:
-                import asyncio as _asyncio
-                await _asyncio.to_thread(self._run_test_user_validation, release_tag)
-            except Exception as _tu_err:
-                self._logger.debug("test-user phase dispatch failed: %s", _tu_err)
+            # #1202nm: not twice in one pass. The pre-release gate above runs this SAME function
+            # — API journey, MCP check, browser walk, visual judging, P0 dispatch — on the tree
+            # being cut. Repeating it here re-dispatched the same P0s and held the delivery
+            # signal (and FIX #139's cleared stamp) behind a second walk: tiktok-r125 v1.1.0 was
+            # cut at 08:44:29 and signalled at 08:59:30; across the logs, cut -> signal has a
+            # median of 3 min and a p90 of 14 min over 33 deliveries. It still runs when the
+            # pre-release gate is disabled or did not get to walk this version.
+            _walked_1202nm = getattr(self, "_prerelease_walk_1202nm", None) == str(release_tag)
+            self._prerelease_walk_1202nm = None
+            if _walked_1202nm:
+                self._logger.info(
+                    "#1202nm post-release test-user phase skipped: the pre-release gate walked "
+                    "v%s in this delivery pass", release_tag)
+            else:
+                try:
+                    import asyncio as _asyncio
+                    await _asyncio.to_thread(self._run_test_user_validation, release_tag)
+                except Exception as _tu_err:
+                    self._logger.debug("test-user phase dispatch failed: %s", _tu_err)
             # NOTE: the multi-agent TEST-USER SQUAD now runs as a BLOCKING PRE-RELEASE gate
             # ABOVE (before create_release), not here — its bug_create defects gate the
             # milestone that produced them (the verify->fix loop). The deterministic
