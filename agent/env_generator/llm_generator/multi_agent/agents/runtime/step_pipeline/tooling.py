@@ -320,6 +320,26 @@ class AgentStepToolingMixin:
                     always_include = set(always_include) - defer
             except Exception:
                 pass
+        # #1202mx: AND WITHHOLD THEM WHILE A KICKOFF IS OPEN — every milestone's, not just
+        # the first. The block above keys non-orchestrator lanes on
+        # `kickoff_finalized_signal`, which is true from the end of M1 onward, and it only
+        # drops the force-offer, leaving the tools rankable. Across the run logs, inside
+        # open kickoff windows, the verifier called `run_validation` 300 times in 63 runs
+        # (181 of them in M2+ kickoffs), each a `down -v` / build / up of the one shared
+        # stack, plus ~650 verification-chain registrations — work PROPOSAL #28 calls
+        # meaningless before the contract exists. tiktok-r125's M2 kickoff: the verifier's
+        # corrective turn for its predicates section spent its ten steps registering
+        # chains and running `run_validation` instead, and a second corrective loop
+        # followed. Removed from BOTH the force-offer and the candidate pool, for every
+        # lane, only while the newest kickoff meeting is open.
+        if defer:
+            try:
+                from ..preconditions import latest_kickoff_open_1202mx
+                if latest_kickoff_open_1202mx(getattr(self, "_hubs", None)):
+                    always_include = set(always_include) - set(defer)
+                    candidate_names = set(candidate_names) - set(defer)
+            except Exception:
+                pass
         # #361: the milestone axis, applied at the same place as the
         # validation-ready axis above rather than as a second mechanism. Removed
         # from BOTH the force-offer and the candidate pool — leaving it rankable

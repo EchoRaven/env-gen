@@ -514,6 +514,52 @@ def kickoff_finalized_signal(hubs: Any, agent: Any = None) -> bool:
     return False
 
 
+_KICKOFF_OPEN_CACHE_1202MX: Dict[str, Any] = {}
+
+
+def latest_kickoff_open_1202mx(hubs: Any) -> bool:
+    """#1202mx: is the NEWEST kickoff meeting still open — a milestone kickoff in progress?
+
+    `kickoff_finalized_signal` answers "has ANY kickoff produced contract surface", which is
+    true from the end of M1 for the rest of the run, so PROPOSAL #28's kickoff-time tool
+    deferral never applied to an M2+ kickoff or to a resume re-entering M1. Only the newest
+    meeting is read: a run killed mid-kickoff leaves an older meeting open forever, and
+    counting it would withhold the verifier's tools for the rest of the run.
+
+    Called on every tool-surface build, so the answer is cached on the documents file's
+    (mtime, size). False on any doubt — the old behaviour."""
+    try:
+        store = hubs.workhub.stores.documents
+    except Exception:
+        return False
+    try:
+        import os as _os
+        path = str(getattr(store, "file_path", "") or "")
+        stamp = None
+        if path:
+            st = _os.stat(path)
+            stamp = (st.st_mtime_ns, st.st_size)
+            hit = _KICKOFF_OPEN_CACHE_1202MX.get(path)
+            if hit is not None and hit[0] == stamp:
+                return hit[1]
+        newest, newest_t = None, float("-inf")
+        for doc in (store.value() or {}).values():
+            if not isinstance(doc, dict) or doc.get("kind") != "kickoff":
+                continue
+            try:
+                t = float(doc.get("created_at") or 0.0)
+            except Exception:
+                t = 0.0
+            if t >= newest_t:
+                newest, newest_t = doc, t
+        answer = bool(newest) and newest.get("status") != "closed"
+        if stamp is not None:
+            _KICKOFF_OPEN_CACHE_1202MX[path] = (stamp, answer)
+        return answer
+    except Exception:
+        return False
+
+
 def validation_ready_signal(hubs: Any, agent: Any = None) -> bool:
     """PRE-LAUNCH AUDIT F1/F5 — STICKY "is the run VALIDATION-ready?" predicate.
 
