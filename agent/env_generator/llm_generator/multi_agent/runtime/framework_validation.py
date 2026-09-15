@@ -1049,8 +1049,32 @@ def restore_regressed_chains(orch: Any, fset):
         snap_eps = getattr(orch, "_chains_snapshot_endpoints", cur_eps)
         # #1054: compare AUTHORED content only — a chain that merely RAN is not a
         # chain an agent re-authored.
-        if cur_eps == snap_eps and (_authored_chain_content_1054(rh._verification_chains.value())
+        _cur_chains = rh._verification_chains.value() or {}
+        if cur_eps == snap_eps and (_authored_chain_content_1054(_cur_chains)
                                     != _authored_chain_content_1054(snap)):
+            # #1202ni: a restore can only change a chain that differs from the snapshot. When
+            # every chain that is failing NOW has exactly the steps it had when it passed, the
+            # re-authoring is not what broke them (the pass was non-deterministic, or the app
+            # moved) — restoring would only delete the verifier's newer chains and hide the
+            # step from its owner. tiktok-r125 M2: follow_lifecycle_isolation_chain_v2 passed
+            # once through a substituted id, its capture never worked, and the guard restored
+            # it twice over the verifier's corrected v3 before #327 poisoned the snapshot —
+            # 06:43 to 07:15 with business_chain held away from the only lane that could fix it.
+            _failing_1202ni = [
+                str(_n) for _n, _c in dict(_cur_chains).items()
+                if not str(_n).startswith("_") and isinstance(_c, Mapping)
+                and _c.get("status") == "failing"]
+            _snap_auth_1202ni = _authored_chain_content_1054(snap)
+            _cur_auth_1202ni = _authored_chain_content_1054(_cur_chains)
+            if _failing_1202ni and all(
+                    _n in _snap_auth_1202ni and _snap_auth_1202ni[_n] == _cur_auth_1202ni.get(_n)
+                    for _n in _failing_1202ni):
+                orch._logger.warning(
+                    "#1202ni REGRESSION GUARD standing down: every failing chain %s has the "
+                    "same steps it had in the last-passing snapshot, so restoring the snapshot "
+                    "cannot fix it — business_chain stays with its owner.",
+                    sorted(_failing_1202ni)[:6])
+                return fset
             # #327: POISONED-SNAPSHOT ESCAPE. The old guard assumed the last-passing snapshot
             # is idempotently green ("restore it and it passes again"). But a chain that went
             # green ONCE via a transient/non-deterministic recovery (or a seed that has since
