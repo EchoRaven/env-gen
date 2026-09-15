@@ -4914,11 +4914,29 @@ class Orchestrator:
                 # (_fwval_abort_reason, consumed at run()-loop) so a genuine wedge fails fast.
                 _progress = self._deliver_progress_sig()
                 _stuck_key = (tuple(_failed), _progress)
+                # #1202nc: evaluations of this ladder made by THIS process. Never persisted, so a
+                # resume starts it at 0 — unlike the stuck count, which #1202dv restores on purpose.
+                self._stuck_evals_1202nc = (getattr(self, "_stuck_evals_1202nc", 0) or 0) + 1
                 if _progress is not None and _stuck_key == getattr(self, "_fwdeliver_stuck_key", None):
                     self._fwdeliver_stuck_count = (getattr(self, "_fwdeliver_stuck_count", 0) or 0) + 1
                 else:
                     self._fwdeliver_stuck_key = _stuck_key
                     self._fwdeliver_stuck_count = 1
+                    # #1202nc: A LATCH MUST NOT OUTLIVE THE COUNT THAT RAISED IT. tiktok-r125's
+                    # resume latched this abort at 04:31:40; the failing set then changed at
+                    # 04:33, 04:35 and 04:36 — which resets the count right here — and the stale
+                    # latch still fired at 04:45:10. Clear it only when it IS this ladder's latch
+                    # (identity with the stored deliver reason), so a Site A / no-converge abort
+                    # that overwrote it is never cleared from here.
+                    _latched_1202nc = getattr(self, "_fwval_abort_reason", None)
+                    if (_latched_1202nc is not None and _latched_1202nc
+                            == getattr(self, "_fwval_abort_deliver_reason", None)):
+                        self._logger.warning(
+                            "#1202nc delivery-gate stuck-abort latch CLEARED before it was "
+                            "consumed: the failing set / progress signature changed since it "
+                            "latched (%s), so it no longer describes this gate.", sorted(_failed))
+                        self._fwval_abort_reason = None
+                        self._fwval_abort_deliver_reason = None
                 # #566b LAST-CHANCE RECONCILE before the fail-fast latch: if we are about to
                 # abort with deliverability_ui_page_unwired among the blockers, first surface
                 # any lane-committed-but-unmerged frontend page onto integration. If that copies
@@ -4943,7 +4961,21 @@ class Orchestrator:
                             "treating as progress, not a wedge.", _rc.get("count"))
                         self._fwdeliver_stuck_count = 1
                         self._fwdeliver_stuck_key = None
+                # #1202nc: #1202lu's floor, for this abort too. The stuck count is restored across a
+                # resume (#1202dv) while `deliverability_no_successful_run` is red by DEFINITION
+                # until this process records a run, so r125's resume latched "7 consecutive cycles"
+                # after its first one or two evaluations and died after 0 coordination ticks. A
+                # fresh run is unaffected: it cannot reach the count without the evaluations.
                 if (self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER
+                        and not getattr(self, "_fwval_abort_reason", None)
+                        and (getattr(self, "_stuck_evals_1202nc", 0) or 0)
+                        < _MIN_GATE_EVALS_BEFORE_ABORT_1202LU):
+                    self._logger.warning(
+                        "#1202nc delivery-gate stuck count is %d but this process has evaluated "
+                        "the gate only %d time(s) (floor %d) — not latching the abort yet.",
+                        self._fwdeliver_stuck_count, self._stuck_evals_1202nc,
+                        _MIN_GATE_EVALS_BEFORE_ABORT_1202LU)
+                elif (self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER
                         and not getattr(self, "_fwval_abort_reason", None)):
                     # Diagnostics accuracy: this branch can latch even when api_smoke
                     # NEVER passed (the deliver gate is entered on route-code presence, not
