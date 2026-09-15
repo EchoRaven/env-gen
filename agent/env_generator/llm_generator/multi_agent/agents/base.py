@@ -859,12 +859,57 @@ class EnvGenAgent(
     
     # ==================== TASK PROCESSING ====================
     
+    async def _await_no_running_loop_1202nl(self, task_name: str) -> bool:
+        """#1202nl: hold a resident wakeup until this lane's running agentic loop has ended.
+
+        The urgent task_ready path refuses to start a loop while one runs (V30: depth != 0) or
+        while a kickoff section is being authored (#1202ms). The resident wakeup comes through
+        the main loop's task queue, which asks neither, so it started a second full loop beside
+        the first: in the tiktok-r12x logs 608 of 1108 worker-lane resident wakeups (55%)
+        entered at depth >= 2. tiktok-r125 M3 kickoff: the frontend's section loop opened at
+        09:03:02, a resident wakeup started P0 remediation at 09:03:43 in the same lane,
+        `process_task` re-pinned `_active_phase` to implementation, both loops' `finish()`
+        calls consumed the kickoff's two corrective turns, and the section was written as an
+        auto-backup stub at 09:19 — the meeting waited 7 minutes on the frontend alone.
+
+        Waiting, not skipping: a skipped wakeup's `finally` re-arms #966's deferred wakeup and
+        would spin while the other loop runs. The wait is bounded (ENVGEN_RESIDENT_WAIT_SEC,
+        default 600) so a wedged loop — #147's case — cannot starve the lane's queue.
+        """
+        import time as _time
+        try:
+            limit = float(os.environ.get("ENVGEN_RESIDENT_WAIT_SEC", "600") or 600)
+        except ValueError:
+            limit = 600.0
+        start = _time.monotonic()
+        announced = False
+        while (int(getattr(self, "_agentic_loop_depth", 0) or 0) > 0
+               or getattr(self, "_kickoff_authoring_1202ms", None)):
+            if not announced:
+                announced = True
+                self._logger.info(
+                    f"[{self.agent_id}] #1202nl {task_name} waits for the running loop "
+                    f"(depth={getattr(self, '_agentic_loop_depth', 0)}, kickoff authoring="
+                    f"{bool(getattr(self, '_kickoff_authoring_1202ms', None))}) instead of "
+                    "starting a second one beside it")
+            if _time.monotonic() - start >= limit:
+                self._logger.warning(
+                    f"[{self.agent_id}] #1202nl {task_name} waited {int(limit)}s and the other "
+                    "loop is still running — proceeding (a wedged loop must not starve the "
+                    "queue; see FIX #147)")
+                return False
+            await asyncio.sleep(1.0)
+        return True
+
     async def process_task(self, task: TaskMessage) -> ResultMessage:
         """
         Process task via agentic loop.
         
         Implements the abstract method from BaseAgent.
         """
+        # #1202nl: a resident wakeup does not start a second loop beside a running one.
+        if str(getattr(task, "task_name", "") or "").startswith("resident_"):
+            await self._await_no_running_loop_1202nl(str(task.task_name))
         # Extract task data from message
         task_data = task.payload if isinstance(task.payload, dict) else {}
         if isinstance(task.payload, str):
