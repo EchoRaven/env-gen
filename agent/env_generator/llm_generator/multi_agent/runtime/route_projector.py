@@ -1635,8 +1635,31 @@ def _me_user_model(models: Dict[str, Dict[str, Any]]):
     return None
 
 
+def _declared_optional_1202my(request_schema: Any, field: str) -> bool:
+    """Does the endpoint's registered request schema EXPLICITLY mark `field` optional?
+
+    Only an explicit marker counts. The corpus spells it two ways for POST `*_id` fields:
+    a `?` suffix (509, e.g. `"str?"`) and `nullable` (3, incl. r125's
+    `"string nullable references sounds.id"`); 298 are a plain type (required), and one is
+    `"... not null"`, which is the opposite. An undeclared field or a missing schema is not
+    optional."""
+    if not isinstance(request_schema, Mapping):
+        return False
+    spec = request_schema.get(field)
+    if isinstance(spec, str):
+        low = spec.lower()
+        if "not null" in low or "not nullable" in low or "non-null" in low:
+            return False
+        return spec.strip().endswith("?") or bool(re.search(r"\bnullable\b", low))
+    if isinstance(spec, Mapping):
+        return (spec.get("required") is False or spec.get("optional") is True
+                or str(spec.get("type") or "").strip().endswith("?"))
+    return False
+
+
 def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "", owner_scoped_reads: bool = False, owner_scoped_tables: Optional[Iterable[str]] = None,
-                       public_actor_tables: Optional[Iterable[str]] = None) -> str:
+                       public_actor_tables: Optional[Iterable[str]] = None,
+                       request_schema: Optional[Mapping[str, Any]] = None) -> str:
     """Project a FastAPI handler. Functional for recognised CRUD + nested-resource
     patterns over a resolvable model; valid-shape stub otherwise. Never 404s.
 
@@ -2263,7 +2286,42 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 _subj_1202bl = [str(_f) for _f in (meta.get("fks") or {})
                                 if str(_f) != str(_owner_fk(meta, exclude=tuple(bound)) or "")
                                 and str(_f) not in {str(_b) for _b in bound}]
-                if _subj_1202bl:
+                # #1202my: THE FRAMEWORK MUST NOT REFUSE A CREATE ITS OWN CONTRACT DECLARES VALID.
+                # #1202bl's premise is "a create naming no subject FK is nothing but its own id
+                # and owner" — true for `POST /api/continue-watching {}`, false for tiktok-r125's
+                # `POST /api/videos {video_url, thumbnail, caption, category}`: a video with no
+                # linked sound is an ordinary video, and the registered request schema says
+                # `sound_id: "int?"`. #1202md saw the contradiction and changed only the message.
+                # r125's M2 then failed framework validation 6/6 on that 400, labelled "the lane
+                # cannot edit it" — while nothing the lane could do would make it pass.
+                # When EVERY subject FK is explicitly declared optional, the contract has already
+                # answered the question; fall back to the weaker "a create needs at least one
+                # field" check below. An undeclared FK or a missing schema keeps the guard, so the
+                # continue-watching shape stays refused.
+                # The same empty create is still refused: the owner FK is always filled in, so the
+                # fallback `if not valid:` could never fire here. What changes is that a request
+                # naming ANY field of its own (caption, video_url) is no longer turned away.
+                # Corpus: 39 of 281 subject-FK POST endpoints declare every subject FK optional
+                # (`/api/videos` 17, `/api/notifications` 7, ...); netflix continue-watching
+                # declares `title_id: "int"` in every run and keeps the full guard.
+                _optional_only_1202my = bool(_subj_1202bl) and all(
+                    _declared_optional_1202my(request_schema, _f) for _f in _subj_1202bl)
+                if _optional_only_1202my:
+                    _excl_1202my = sorted({"id", *(str(_b) for _b in bound), *_subj_1202bl,
+                                           str(_owner_fk(meta, exclude=tuple(bound)) or "")} - {""})
+                    body_lines += [
+                        "    if not any(valid.get(_k) is not None for _k in %r) and not any(" % (_subj_1202bl,),
+                        "            _v not in (None, '') and _k not in %r" % (_excl_1202my,),
+                        "            and not (isinstance(_v, str) and _v.startswith('${'))",
+                        "            for _k, _v in payload.items() if hasattr(%s, _k)):" % (cls,),
+                        "        raise HTTPException(status_code=400, detail=%r)" % (
+                            "a create must name %s or at least one other field of its own - an "
+                            "empty create is nothing but its own id and owner (#1202my)"
+                            % " or ".join(_subj_1202bl),),
+                    ]
+                if _optional_only_1202my:
+                    pass
+                elif _subj_1202bl:
                     # #1202md: SAY WHY, because with ONE subject FK this reads as a
                     # contradiction of the contract the framework itself registered.
                     #
@@ -2788,7 +2846,8 @@ def project_missing_routes(
         if ((not auth) and str(method).upper() in ("GET", "HEAD")
                 and path.startswith("/api/") and not path.startswith("/api/v1/")):
             _public_1202kh.append((str(method).upper(), str(path)))
-        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables, public_actor_tables=_pub_actors_1202ir)))
+        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables, public_actor_tables=_pub_actors_1202ir,
+                                                    request_schema=(_schema.get("request") if isinstance(_schema, Mapping) else None))))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
 

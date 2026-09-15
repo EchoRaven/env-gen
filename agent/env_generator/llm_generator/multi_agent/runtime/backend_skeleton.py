@@ -2655,7 +2655,10 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         if ((not auth) and str(method).upper() in ("GET", "HEAD")
                 and str(path).startswith("/api/") and not str(path).startswith("/api/v1/")):
             _public_api_1202kh.append((str(method).upper(), str(path)))
-        block = _generate_handler(method, path, auth, meta, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)
+        # #1202my: the second of the two callers — the skeleton writes the projected main.py
+        # the run actually serves, so the contract must reach the subject-FK guard here too.
+        block = _generate_handler(method, path, auth, meta, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables,
+                                  request_schema=(_eschema.get("request") if isinstance(_eschema, Mapping) else None))
         (param_blocks if "{" in path else static_blocks).append(block)
 
     # _AUTH_MIDDLEWARE references ``app`` + imports jwt/JSONResponse/jwt_manager; it is
