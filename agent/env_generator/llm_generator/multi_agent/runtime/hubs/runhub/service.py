@@ -17,6 +17,16 @@ from .stores import RunHubStores
 _logger = logging.getLogger(__name__)
 
 
+def _stack_serving_1202mu(base_url: str, timeout_s: float = 3.0) -> bool:
+    """Is an app already answering `<base_url>/health` — i.e. did somebody else bring it up?"""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(base_url.rstrip("/") + "/health", timeout=timeout_s) as r:
+            return 200 <= int(getattr(r, "status", 0) or 0) < 400
+    except Exception:
+        return False
+
+
 _VALID_STATUSES = (
     "starting", "starting_compose", "healthy", "probing",
     "failed", "aborted", "completed",
@@ -246,7 +256,8 @@ class RunHub:
                    probe_runner: Any = None,
                    mcp_stdio_probe: Any = None,
                    mcp_http_probe: Any = None,
-                   timeout_s: int = 300) -> dict:
+                   timeout_s: int = 300,
+                   already_serving: Any = None) -> dict:
         from .probes import plan_probe, classify_probe_result, ProbePlan, ProbeSkip
         from .compose import ComposeLifecycle, HealthcheckProbe
 
@@ -260,6 +271,7 @@ class RunHub:
             _gd754 = str(Path(generated_dir).resolve())
         except Exception:
             _gd754 = str(generated_dir)
+        _compose_injected_1202mu = compose is not None
         compose = compose or ComposeLifecycle(
             cwd=_gd754,
             compose_file=_resolve_compose_file(_gd754))
@@ -269,6 +281,27 @@ class RunHub:
 
         probes: list = []
         fail_count = 0
+
+        # #1202mu: TEAR DOWN ONLY WHAT THIS RUN BROUGHT UP. The `finally` below always ran
+        # `compose down`, and the stack it names is not RunHub's: it is the run's one shared
+        # app — the one validation_runner booted, the verifier is walking and the test-user
+        # squad is driving. tiktok-r125: the orchestrator's `run_start` at 01:38:07 finished at
+        # 01:38:10 and took the stack with it; by 01:38:14 the shared browser driver was dead,
+        # by 01:38:44 the squad saw connection refused, and it filed three P0 "running app
+        # became unreachable" bugs against the lanes that then held M1's release. Corpus:
+        # 938 `run_start` calls; a connection refusal follows within 60s after 203 of them,
+        # against 110 in the same-length window just before the call.
+        # A stack that was already answering before `up` belongs to someone else: probe it,
+        # and leave it running. One that was not is still torn down, as before. The live probe
+        # runs only for the real lifecycle — a caller that injects `compose` owns the answer,
+        # so tests stay independent of whatever else is listening on this host.
+        try:
+            _was_serving_1202mu = bool(already_serving() if callable(already_serving)
+                                       else already_serving if already_serving is not None
+                                       else (not _compose_injected_1202mu
+                                             and _stack_serving_1202mu(base_url)))
+        except Exception:
+            _was_serving_1202mu = False
 
         try:
             # Stage 1: compose up. FIX #113: `up` implicit-builds when images are
@@ -463,7 +496,12 @@ class RunHub:
             return self.get_run(run_id)
         finally:
             try:
-                compose.down()
+                if _was_serving_1202mu:
+                    _logger.info(
+                        "#1202mu RunHub run %s left the stack running — it was already serving "
+                        "before this run started, so another owner is using it", run_id)
+                else:
+                    compose.down()
             except Exception as e:
                 _logger.warning(
                     "swallowed: RunHub start_run compose.down raised %r "
