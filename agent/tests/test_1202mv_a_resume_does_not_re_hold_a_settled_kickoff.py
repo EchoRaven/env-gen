@@ -84,11 +84,16 @@ def test_a_first_finalize_still_registers_defined():
 
 
 def test_a_different_milestone_is_not_a_resume():
-    """M2's contract may legitimately change an endpoint M1 built — unchanged behaviour."""
+    """M2's contract may legitimately change an endpoint M1 built: when the schema M2 declares
+    differs from the one built, the endpoint goes back to `defined`. (#1202np: an UNCHANGED
+    schema keeps its status — see test_1202np.)"""
     with tempfile.TemporaryDirectory() as tmp:
         hubs = _hubs(tmp)
         _finalize(hubs, _kickoff(hubs, ms=1))
-        _mark_built(hubs)
+        ep = hubs.registryhub.get_endpoints()["GET /api/posts"]
+        hubs.registryhub.register_endpoint(
+            method="GET", path="/api/posts", schema={**(ep.get("schema") or {}), "built": "v1"},
+            provider="backend", agent="backend", status="implemented")
         _finalize(hubs, _kickoff(hubs, ms=2))
         assert hubs.registryhub.get_endpoints()["GET /api/posts"]["status"] == "defined"
 

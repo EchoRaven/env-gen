@@ -1183,6 +1183,32 @@ def carry_settled_sections_1202mv(
     return carried
 
 
+def _kept_status_1202np(hubs: Any, kwargs: Mapping[str, Any]) -> str:
+    """#1202np: the status a finalize registers an endpoint with — `defined`, unless the
+    registry already holds this endpoint IMPLEMENTED with exactly the schema being registered.
+
+    A later milestone's contract re-declares the endpoints earlier milestones built. #1202mw
+    kept their status on a resume of the SAME milestone; a NEW milestone still wrote `defined`
+    over all of them. tiktok-r125 M4 (stall-finalized from the registry via #1202kp): all 44
+    endpoints went implemented -> defined at 11:11:42-11:12:11, the gate reported
+    `no_implemented_endpoints` plus 14 "endpoint not implemented in registry", and backend was
+    re-woken to redo endpoints that were serving. Seen in r120, r121, r122 and r124 as well,
+    usually masked by passing contract-test records.
+
+    A changed schema still goes back to `defined`: that endpoint has something new to build.
+    """
+    try:
+        rh = hubs.registryhub
+        eid = rh.endpoint_id(kwargs.get("method"), kwargs.get("path"))
+        old = (rh.get_endpoints() or {}).get(eid)
+        if (isinstance(old, Mapping) and old.get("status") == "implemented"
+                and kwargs.get("schema") == old.get("schema")):
+            return "implemented"
+    except Exception:
+        pass
+    return "defined"
+
+
 def _registry_has_1202na(lookup) -> bool:
     """True iff `lookup()` returns a registry record. Any error answers False, which only means
     the entry is registered again, as before #1202na."""
@@ -2448,7 +2474,7 @@ def finalize_kickoff(
             result = hubs.registryhub.register_endpoint(
                 agent=agent,
                 provider=provider,
-                status="defined",
+                status=_kept_status_1202np(hubs, kwargs),
                 **kwargs,
             )
         except Exception as exc:
