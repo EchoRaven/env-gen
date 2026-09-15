@@ -1550,6 +1550,13 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
     reg_clean: Dict[str, str] = {}
     impl_ep: set = set()
     deprecated_ep: set = set()   # #1202lr: retired registrations — their tasks are not required
+    unprobed_ep: set = set()     # #1202mt: surfaces run_validation never probes (see below)
+    try:
+        from .lifecycle import is_business as _is_business_1202mt
+    except Exception as exc:
+        _swallowed_790("incomplete_required_tasks.is_business", exc,
+                       "auth/oauth validate_api_smoke tasks stay required")
+        _is_business_1202mt = None
     for k, v in endpoints.items():
         if k == "_meta" or not isinstance(v, dict):
             continue
@@ -1609,6 +1616,24 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
         reg_clean[nk] = clean
         if v.get("status") in {"implemented", "tested"}:
             impl_ep.add(nk)
+        # #1202mt: THE GATE ASKED FOR EVIDENCE THE FRAMEWORK HAS DECIDED NOT TO COLLECT.
+        # `run_validation` records one contract test per endpoint it probes, and it probes
+        # `lifecycle.business_endpoints` — which excludes every /auth/, /oauth/, /api/auth/
+        # path and the control surface as framework-owned. RunHub's own probe skips an
+        # implemented endpoint and posts `{}` to a defined one. So a `validate_api_smoke`
+        # task for `POST /auth/signup` can only ever close by a lane marking it done.
+        # tiktok-r124's last resume aborted with exactly three blockers: both signup routes
+        # (400 "email and password are required" to an empty body) and one business route
+        # that run_validation cleared 40s before the abort. Across the logs, 391 of the 442
+        # `incomplete_required_tasks` blocker lines, in 14 runs, name an auth/oauth task
+        # (`_oauth_token` 269, `_oauth_authorize` 269, `_auth_login` 264, ...). The auth
+        # surface is exercised by the flows that log in; it is not a contract-test target.
+        if _is_business_1202mt is not None:
+            try:
+                if not _is_business_1202mt(v):
+                    unprobed_ep.add(nk)
+            except Exception:
+                pass
 
     tables: Dict[str, Any] = {}
     try:
@@ -1705,6 +1730,8 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
             reason = "table not implemented in registry"
         elif kind == "validate_api_smoke":
             if _endpoint_validated(_endpoint_norm(t)):
+                continue
+            if _endpoint_norm(t) in unprobed_ep:   # #1202mt
                 continue
             reason = "endpoint has no passing contract-test record"
         else:
