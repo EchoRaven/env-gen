@@ -215,7 +215,8 @@ def test_540_neutral_footer_links():
                                  _LOGIN_SPEC, _design(), [("Home", "/browse")], "")
     # NEUTRAL footer (not the accent-red link class); reference legal columns present
     assert "text-white/50" in out
-    assert "Terms of Use" in out and "Help Center" in out
+    assert "Terms" in out and "Help" in out          # #1202pb: neutral, not Netflix's wording
+    assert "Corporate Information" not in out
     # the accent brand-red is never applied to a footer link anchor
     assert "text-accent" not in out.split("<footer", 1)[1]
 

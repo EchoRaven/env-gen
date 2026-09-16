@@ -1400,6 +1400,24 @@ class RegistryHub:
             lambda m: m.set(key, payload, actor),
             change_info={"agent": actor},
         )
+        # #1202pd: a FRAMEWORK-OWNED endpoint's schema is not the lanes' contract to break. The
+        # framework registers and serves /auth, /oauth, /.well-known, /health and the control
+        # surface itself, and a lane or kickoff re-declaring one changes nothing that is served
+        # — yet every re-declaration that dropped a field minted an URGENT message and a P0
+        # "Fix breaking change in <endpoint>" at each consumer lane. Measured: 392 of 3,442 such
+        # tasks (11%) across 54 runs named a framework-owned endpoint (253 of them /auth/*), e.g.
+        # r124 `GET /auth/me` "removed" avatar_url/display_name/username. The record is kept —
+        # it is evidence of a re-declaration — but nobody is dispatched after it.
+        try:
+            from .lifecycle import is_business as _is_business_1202pd
+            _rec1202pd = (self._endpoints.value() or {}).get(endpoint_id)
+            if isinstance(_rec1202pd, dict) and not _is_business_1202pd(_rec1202pd):
+                return payload
+        except Exception as _e1202pd:
+            from .message_format import warn_once_1201
+            warn_once_1201("registryhub.breaking_change_framework_owned_1202pd",
+                           "skipping breaking-change P0s for framework-owned endpoints",
+                           _e1202pd)
         consumers = [c for c in self._consumers.value().values()
                      if c.get("endpoint_id") == endpoint_id]
         recipient_agents = sorted(set(c.get("agent") for c in consumers if c.get("agent")))
@@ -2718,6 +2736,25 @@ class RegistryHub:
                     return _chain_eid(alt) in registered_ids
                 return False
 
+            # #1202oy: withdraw a probe the FRAMEWORK injected, instead of rejecting the
+            # verifier's chain for it. `normalize_steps` (#192a) appends
+            # `framework_isolation_probe_<col>` as a hardcoded `PUT <collection>/${id}` without
+            # knowing whether a PUT route exists — it cannot, it is not given the contract —
+            # and this check then runs over the injected step and refuses the chain with
+            # "NOT registered in RegistryHub: PUT /api/<col>/{}", telling the verifier to fix a
+            # step it never wrote. Resubmitting re-injects it. Measured by comparing each
+            # rejection with the steps in the verifier's own tool-call arguments: 2,119
+            # unregistered-endpoint rejections across 74 runs, 1,312 of them naming exactly
+            # this injected shape (the verifier itself wrote 1); still live — r122 20, r124 12,
+            # r125 38, r126 10. The default-chain builder already asks `(method, path) in
+            # by_key` before adding a step; this is the same question, asked where the answer
+            # is known. A probe whose route IS registered is kept exactly as before.
+            _probes_1202oy = [
+                st for st in norm
+                if str(st.get("action") or "").startswith("framework_isolation_probe")
+                and st.get("path") and not _chain_eid_ok(st)]
+            if _probes_1202oy:
+                norm = [st for st in norm if not any(st is pr for pr in _probes_1202oy)]
             unregistered = sorted({
                 _chain_eid(s) for s in norm if s.get("path")
                 if not _chain_eid_ok(s)

@@ -652,6 +652,16 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
         return SeedReport()
     tables = schema_hub.list_tables() or {}
     seed_regs = schema_hub.list_seed_registrations() or {}
+    try:   # #1202ow: the last capture of this run, however old — used only to refuse a flip
+        _last_live_1202ow = recent_live_counts_1202dj(project_dir, max_age_sec=float("inf")) \
+            if project_dir is not None else {}
+    except Exception as _e1202ow:
+        # Empty here is fail-CLOSED (no earlier capture -> #956's flag stands), but say so.
+        from .message_format import warn_once_1201
+        warn_once_1201("seed_audit.last_live_capture_1202ow",
+                       "the last live seed capture, so a table counted earlier in this run may "
+                       "flip back to missing_seed when its count ages", _e1202ow)
+        _last_live_1202ow = {}
 
     # #956 repair: when the database is reachable, its exact row counts are authoritative and
     # the `status == "defined"` filter (which skips 1729 of 1745 corpus tables) is bypassed.
@@ -719,6 +729,22 @@ def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
             continue  # explicit opt-out
 
         reg = seed_regs.get(name)
+        # #1202ow: WITHOUT a fresh live row count this branch asks the seed-REGISTRATION store,
+        # which no run writes — and a fresh count has a TTL (`recent_live_counts_1202dj`). So
+        # the verdict swung with nothing but time: inside the TTL a measured table read clean,
+        # after it the same table read `missing_seed`. Measured: 50 flips on an unchanged table
+        # count across 12 of 22 runs (fastest 3.7s, r125; r120 alternated missing:13 /
+        # missing:0 about once a minute) and 15 runs dispatched a backend P0 "Seed the empty
+        # business table" while live counts showed every business table non-empty.
+        #
+        # #956 decided — and its tests pin — that a table NEVER measured and not registered is
+        # still flagged; that stands. What changes is only this: a table THIS RUN has already
+        # counted at or above its minimum is not declared empty because the count went stale.
+        # The last capture is real evidence; a missing registration is not new evidence.
+        if reg is None:
+            _n_last = _last_live_1202ow.get(name)
+            if isinstance(_n_last, int) and _n_last >= int(min_rows or 0):
+                continue
         if reg is None:
             flagged.append({
                 "table": name,

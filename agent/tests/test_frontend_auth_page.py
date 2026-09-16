@@ -54,4 +54,7 @@ def test_auth_page_has_footer_chrome_463():
     out = _r("Login", {"route": "/login", "id": "login_page"}, _LOGIN)
     assert "<footer" in out, "auth page renders a footer"
     assert "not a bot" in out, "reCAPTCHA-style legal line present"
-    assert "Help Center" in out and "Terms of Use" in out, "footer link columns present"
+    # #1202pb: the footer band still carries links, but generic ones — "Help Center" /
+    # "Terms of Use" were Netflix's wording, emitted into every product (domain-agnostic rule).
+    assert "Help" in out and "Terms" in out, "footer link columns present"
+    assert "Corporate Information" not in out and "Cookie Preferences" not in out

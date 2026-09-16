@@ -1493,7 +1493,7 @@ def _joinable_types_1202fh(fk_type, id_type) -> bool:
 
 
 def _expandable_fks_1202fh(cols, models, table, *, private_tables=None,
-                           public_actor_tables=None):
+                           public_actor_tables=None, actor_fold_ok_1202ot=False):
     """[(fk_col, target_cls, target_cols)] worth folding into a projected list read.
 
     Empty whenever anything is uncertain: an unresolvable FK, an actor target, a degenerate
@@ -1526,12 +1526,23 @@ def _expandable_fks_1202fh(cols, models, table, *, private_tables=None,
             if not tgt or tgt == table:
                 continue
             _actor = tgt in _ACTOR_TABLES_803
-            if _actor and tgt not in _pub_actors:
+            # #1202ot: an actor fold is safe because of the COLUMNS it takes, not because the
+            # actor table happens to be served anonymously somewhere. This gate and #1202ip's
+            # below both ask the latter, and in a social app neither can be satisfied — `users`
+            # is the framework's own spine table, registered owner-scoped, and no app serves
+            # `GET /api/users` anonymously — so `_ACTOR_DISPLAY_COLS_1202IR` (username / avatar /
+            # verified, with #1202jb's private denylist subtracted) was unreachable. Measured
+            # over the 22 most recent runs: 159 projected lists carry an actor FK and 154 ship it
+            # bare, so a video card renders `author_id: 3` with no name and no avatar against a
+            # reference screen full of @handles. `actor_fold_ok_1202ot` is the caller's answer to
+            # "is this row's author already public here?" — the MATERIALS calling the content
+            # table public (the feed case), or the list being the caller's own rows.
+            if _actor and not actor_fold_ok_1202ot and tgt not in _pub_actors:
                 # #569/#803's ban, unchanged wherever the app does not already publish the
                 # actor. #1202iq made these targets resolvable for the first time, so this
                 # is now the guard that actually fires rather than the keep-list below.
                 continue
-            if tgt in _private:
+            if tgt in _private and not (_actor and actor_fold_ok_1202ot):
                 continue                      # #1202ip: not public -> never folded in
             tmeta = (models or {}).get(tgt) or {}
             tcls = tmeta.get("cls")
@@ -1549,7 +1560,9 @@ def _expandable_fks_1202fh(cols, models, table, *, private_tables=None,
                 # carry the entity. Refuse instead: no join key, no expansion.
                 continue
             if _actor:
-                keep = [x for x in tcols if str(x).lower() in _ACTOR_DISPLAY_COLS_1202IR]
+                keep = [x for x in tcols
+                        if str(x).lower() in _ACTOR_DISPLAY_COLS_1202IR
+                        and str(x).lower() not in _PRIVATE_ACTOR_COLS_1202JB]   # #1202ot
             else:
                 keep = [x for x in tcols
                         if x in _LABEL_COLS_803
@@ -1681,6 +1694,42 @@ def _me_user_model(models: Dict[str, Dict[str, Any]]):
     return None
 
 
+def _declared_query_filters_1202os(request_schema: Any, cols: List[str],
+                                   types: Optional[Mapping[str, Any]] = None):
+    """#1202os — the declared query parameters a projected COLLECTION read can actually serve.
+
+    Every projected list read is `db.query(Cls).limit(100).all()`, and the endpoint's own
+    `schema.request` is read only on the write path. So `GET /api/comments?video_id=5` — a
+    filter the CONTRACT declares and the page depends on — returns unrelated rows. Measured
+    across 8 delivered backends: 61 projected collection reads declare at least one request
+    field and not one accepts it (r126 11, r125 8, r124 6, r123 8, r122 10, r121 5,
+    netflix-r45 6, netflix-r44 7), e.g. `GET /api/videos?category=&author_id=&sound_id=`,
+    `GET /api/sounds?q=`, `GET /api/titles?genre=&kind=`, `GET /api/my-list?profile_id=`.
+
+    Only fields that name a REAL column are served: the projector can honour `video_id` on
+    `comments`, and inventing a meaning for anything else is how a projection starts guessing.
+    `limit`/`offset` are handled separately as pagination. Returns `[(name, "int"|"str")]`.
+    """
+    out: List[Tuple[str, str]] = []
+    if not isinstance(request_schema, Mapping):
+        return out
+    _cols = set(cols or ())
+    _types = types or {}
+    for field in request_schema.keys():
+        name = str(field)
+        if name in ("limit", "offset") or name not in _cols:
+            continue
+        t = str(_types.get(name) or "").lower()
+        out.append((name, "int" if ("int" in t or name.endswith("_id")) else "str"))
+    return sorted(out)
+
+
+def _declared_pagination_1202os(request_schema: Any) -> bool:
+    """#1202os — does the contract declare `limit`/`offset` for this read?"""
+    return (isinstance(request_schema, Mapping)
+            and any(str(k) in ("limit", "offset") for k in request_schema.keys()))
+
+
 def _declared_optional_1202my(request_schema: Any, field: str) -> bool:
     """Does the endpoint's registered request schema EXPLICITLY mark `field` optional?
 
@@ -1796,6 +1845,12 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # cannot drift the way #1202hi found them drifting on the auth copies.
     if not read_scoped and bool(owner_fk) and _declared_owner_private_1202ht(meta):
         read_scoped = True
+    # #1202ot: may this read fold the author's public display columns in? Yes when the MATERIALS
+    # call this content public — a feed, where the author's handle and avatar ARE the page. Not
+    # for the caller's own rows: the author there is the caller, which the page already knows,
+    # and the fold would only add a query.
+    _actor_fold_ok_1202ot = bool(
+        res and str((meta or {}).get("visibility") or "").strip().lower() == "public")
     # #777: the column a READ filters on — the narrowest owner the table declares.
     read_owner_fk = _read_owner_fk_777(meta, owner_fk) if read_scoped else owner_fk
 
@@ -1942,7 +1997,8 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         _fkl1202is, _fkm1202is = _detail_expansion_1202is(
             _expandable_fks_1202fh(cols, models, table,
                                    private_tables=owner_scoped_tables,
-                                   public_actor_tables=public_actor_tables) if table else [])
+                                   public_actor_tables=public_actor_tables,
+                                   actor_fold_ok_1202ot=_actor_fold_ok_1202ot) if table else [])
         body_lines += _fkl1202is
         _links803 = _link_label_reads_803(table, models) if table else []
         if _links803:
@@ -2107,7 +2163,39 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             body_lines = ['    return {"item": {}}']
     elif cls and m == "GET":
         # GET collection
-        if read_scoped:
+        # #1202os: serve the query parameters the CONTRACT declares for this read. Emitted only
+        # when there is something to serve — with no declared filter or pagination every line
+        # below is byte-identical to before, which is what keeps the 69 corpus assertions about
+        # `db.query(Cls).limit(100).all()` honest.
+        _qf1202os = _declared_query_filters_1202os(request_schema, cols,
+                                                   (meta or {}).get("types") if res else None)
+        _pg1202os = _declared_pagination_1202os(request_schema)
+        if _qf1202os or _pg1202os:
+            _owner1202os = ([f'.filter(getattr({cls}, "{read_owner_fk}") == '
+                             f'_fw_owner_val({cls}, "{read_owner_fk}", user))'] if read_scoped
+                            else [])
+            body_lines = [f"    query = db.query({cls}){''.join(_owner1202os)}"]
+            for _n, _t in _qf1202os:
+                body_lines += [
+                    f"    if {_n} is not None:",
+                    f'        query = query.filter(getattr({cls}, "{_n}") == {_n})',
+                ]
+            body_lines.append("    rows = query.offset(offset).limit(limit).all()")
+            _prep1202os, _item1202os = _expansion_lines_1202ip(
+                _expandable_fks_1202fh(cols, models, table,
+                                       private_tables=owner_scoped_tables,
+                                       public_actor_tables=public_actor_tables,
+                                       actor_fold_ok_1202ot=_actor_fold_ok_1202ot) if table else [],
+                cols)
+            body_lines += _prep1202os
+            body_lines.append(
+                f"    return {{\"items\": [{_item1202os} for r in rows], "
+                f"\"total\": query.count()}}")
+            for _n, _t in _qf1202os:
+                sig_params += f"{_n}: {_t} = Query(default=None), "
+            sig_params += "limit: int = Query(default=100, ge=1, le=100), "
+            sig_params += "offset: int = Query(default=0, ge=0), "
+        elif read_scoped:
             # PRIVATE resource: the list is the caller's own rows only.
             body_lines = [
                 f'    rows = db.query({cls}).filter(getattr({cls}, "{read_owner_fk}") == _fw_owner_val({cls}, "{read_owner_fk}", user)).limit(100).all()',  # #777
@@ -2117,7 +2205,8 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             _prep1202fh, _item1202fh = _expansion_lines_1202ip(
                 _expandable_fks_1202fh(cols, models, table,
                                        private_tables=owner_scoped_tables,
-                                       public_actor_tables=public_actor_tables), cols)
+                                       public_actor_tables=public_actor_tables,
+                                       actor_fold_ok_1202ot=_actor_fold_ok_1202ot), cols)
             body_lines += _prep1202fh
             body_lines.append(
                 f"    return {{\"items\": [{_item1202fh} for r in rows], \"total\": len(rows)}}"
@@ -2130,7 +2219,8 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             _prep1202ip, _item1202ip = _expansion_lines_1202ip(
                 _expandable_fks_1202fh(cols, models, table,
                                        private_tables=owner_scoped_tables,
-                                       public_actor_tables=public_actor_tables), cols)
+                                       public_actor_tables=public_actor_tables,
+                                       actor_fold_ok_1202ot=_actor_fold_ok_1202ot), cols)
             _rank1155 = _ranked_collection_1155(path, cols, table)
             if _rank1155:
                 _rcol, _rlim, _rdesc = _rank1155

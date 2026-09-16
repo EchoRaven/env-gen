@@ -98,7 +98,14 @@ def is_business(rec: Mapping[str, Any]) -> bool:
     if endpoint_kind(rec) in _FIXED_KINDS:
         return False
     p = str(rec.get("path") or "")
-    if p.startswith(("/auth/", "/oauth/", "/api/auth/", "/api/oauth/")) or p == "/health":
+    # #1202ov: `/.well-known/` belongs beside `/oauth/`. `jwks.json` and
+    # `oauth-authorization-server` are the framework's OAuth discovery documents (registered by
+    # the orchestrator, served by the skeleton), yet they classified as BUSINESS, so they were
+    # required for implementation and for business_chain coverage, and their validate tasks
+    # blocked delivery in 9 runs — 10 of 11 with no contract-test record for those paths, closed
+    # by hand. This only removes a framework-owned path from the business set, never adds one.
+    if p.startswith(("/auth/", "/oauth/", "/api/auth/", "/api/oauth/", "/.well-known/")) \
+            or p == "/health":
         return False
     try:
         from .kickoff.contract import is_control_surface_path

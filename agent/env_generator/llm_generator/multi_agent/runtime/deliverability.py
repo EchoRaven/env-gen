@@ -763,7 +763,10 @@ def _seed_summary(hub_registry, project_dir=None) -> Dict[str, Any]:
     # gate report prints, so a seed whose rows point at nothing stops being invisible.
     _orph = getattr(report, "orphan_fk_rows", None) or {}
     out = {"tables": total_tables, "registered": registered,
-           "missing": missing, "flagged": flagged}
+           "missing": missing, "flagged": flagged,
+           # #1202ow: which tables, and why — the task body could only say "N table(s)".
+           "flagged_tables": [{"table": f.get("table"), "reason": f.get("reason")}
+                              for f in (report.flagged_tables or [])][:20]}
     if _orph:
         out["orphan_fk_rows"] = dict(_orph)
         out["orphan_fk_total"] = int(sum(_orph.values()))

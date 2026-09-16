@@ -124,3 +124,22 @@ def test_process_task_waits_before_it_pins_the_phase():
     pin = src.index("self._active_phase = ")
     assert wait < pin
     assert 'startswith("resident_")' in src[:wait]
+
+
+def test_r125_depth_zero_but_mid_kickoff_authoring_still_waits(monkeypatch):
+    """#1202oq-b: the KICKOFF half of the wait, on its own.
+
+    The test above sets depth=1 AND authoring, so the depth clause alone satisfies it — dropping
+    `or _kickoff_authoring_1202ms` from the while-condition left every test in this file green.
+    r125's defect was exactly the other case: the lane's section loop was between steps
+    (depth 0) while its kickoff section was still being authored, and a wakeup started a second
+    loop that ate the frontend section into a stub.
+    """
+    import time as _t
+    monkeypatch.setenv("ENVGEN_RESIDENT_WAIT_MAX_SEC", "30")
+    lane = _lane(depth=0, authoring="doc_27858e9ee4")
+    lane._last_step_activity = _t.time()
+    began = _t.monotonic()
+    assert _wait(lane, release_after=1.0) is True
+    assert _t.monotonic() - began >= 0.9, "it did not wait for the authoring to finish"
+    assert lane._kickoff_authoring_1202ms is None

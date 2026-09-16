@@ -2076,6 +2076,26 @@ class RemediationDispatcher:
         (complements #45's failed_checks log). Conservative: ambiguous / relaxed /
         framework-deterministic checks are logged, not mis-routed. Best-effort."""
         _GATE_OWNER = {
+            # #1202ou: the two auth-tampering blockers, routed. The gate-level check carries
+            # its name only, so this body names the patterns to delete.
+            "deliverability_guard_tampering": (
+                "backend", "Remove the code that rewrites the framework's auth guard (blocks delivery)",
+                "app/backend/custom_routes.py (or seed_data.py) edits the framework's own auth "
+                "guard: it assigns or removes entries of `app.router.routes`, or names "
+                "`_FW_PUBLIC_API_1202KH` / `_FW_PUBLIC_RE_1202KH` / `_fw_contract_public_1202kh`. "
+                "That publishes routes the contract keeps private — anonymous callers then read "
+                "other users' rows, and the verifier's denial chains fail on exactly those "
+                "paths. Delete every such line (grep the file for those names). To make an "
+                "endpoint public, change its CONTRACT (`auth_required: false` on a table the "
+                "materials call public) and let the framework project it — never edit the "
+                "guard."),
+            "deliverability_auth_override": (
+                "backend", "Stop reassigning a framework auth primitive (blocks delivery)",
+                "app/backend/custom_routes.py reassigns an authentication primitive the "
+                "framework owns (e.g. `verify_user_password`, `get_current_user`). /auth/login "
+                "and /auth/register are framework-owned, so any override desynchronises login "
+                "from the tokens every other route checks. Delete the reassignment; if login "
+                "behaviour is wrong, report it as a framework defect instead."),
             "business_response_key_noncanonical": (
                 "backend", "Fix non-canonical business response_key (blocks delivery)",
                 "a business endpoint declares a response_key the projector never emits — "

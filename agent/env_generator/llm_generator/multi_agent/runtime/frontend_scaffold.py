@@ -3606,6 +3606,9 @@ __FOOTER_LINKS__
 # same set the base template ships; rendered NEUTRAL (not accent) in the spec path.
 _AUTH_FOOTER_LINKS_540 = ("FAQ", "Help Center", "Terms of Use", "Privacy",
                           "Cookie Preferences", "Corporate Information")
+# #1202pb: what a DECLARED-but-unlabelled footer band gets. Generic web conventions only — no
+# single product's wording (the list above is Netflix's sign-in footer, kept for reference).
+_NEUTRAL_FOOTER_LINKS_1202PB = ("Help", "Terms", "Privacy")
 
 
 def _first_quoted_540(text) -> str:
@@ -3628,10 +3631,18 @@ def _auth_spec_540(screen):
     heading = subheading = button = help_txt = contact = ""
     recaptcha = False
     inputs = []  # list of type strings
+    footer_links: list = []   # #1202pb: what the design names, else a neutral set if it has a footer
+    footer_declared = False
     for c in comps:
         role = str(c.get("role") or "")
         low = role.lower()
         q = _first_quoted_540(role)
+        if "footer" in low:
+            footer_declared = True
+            for _lbl in re.findall(r"['‘’“”\"]([^'‘’“”\"]{1,40})['‘’“”\"]", role):
+                _lbl = _lbl.strip()
+                if _lbl and _lbl not in footer_links:
+                    footer_links.append(_lbl)
         if not heading and q and re.search(r"\b(headline|(?:primary\s+)?(?:page\s+)?heading)\b", low) \
                 and "section" not in low:
             heading = q
@@ -3655,6 +3666,11 @@ def _auth_spec_540(screen):
             recaptcha = True
         if not contact and re.search(r"contact|questions?|call\b|support", low) and q:
             contact = q
+    if footer_declared and not footer_links:
+        # The design measured a footer band but named nothing in it. #463 exists because a
+        # login page with NO footer scored 0.35 ("missing footer"), so the band keeps content —
+        # the generic conventions nearly every product's footer carries, not one product's copy.
+        footer_links = list(_NEUTRAL_FOOTER_LINKS_1202PB)
     emailmobile = "emailmobile" in inputs
     password_declared = "password" in inputs
     single = emailmobile and not password_declared
@@ -3662,7 +3678,7 @@ def _auth_spec_540(screen):
         return None
     return {"heading": heading, "subheading": subheading, "button": button,
             "help": help_txt, "recaptcha": recaptcha, "contact": contact,
-            "single": single, "emailmobile": emailmobile}
+            "single": single, "emailmobile": emailmobile, "footer_links": footer_links}
 
 
 def _is_login_route_546(name, page) -> bool:
@@ -3748,7 +3764,13 @@ def _auth_page_src_540(name, page, screen, design, pal, surf, nav_routes=None):
         if _is_login_route_546(name, page):
             spec = {"heading": "", "subheading": "", "button": "", "help": "",
                     "recaptcha": True, "contact": "", "single": True,
-                    "emailmobile": False}
+                    "emailmobile": False,
+                    # #1202pb: same footer rule as `_auth_spec_540` — a declared band keeps
+                    # neutral links; no band, no links.
+                    "footer_links": (list(_NEUTRAL_FOOTER_LINKS_1202PB) if any(
+                        "footer" in str((c or {}).get("role") or "").lower()
+                        for c in ((screen or {}).get("components") or [])
+                        if isinstance(c, Mapping)) else [])}
         else:
             return None
     _app = _label_words_1080(name).replace("Page", "").replace(
@@ -3767,13 +3789,18 @@ def _auth_page_src_540(name, page, screen, design, pal, surf, nav_routes=None):
     recap = ("        <p className=\"text-xs __CLS_SUBTXT__\">This page is protected to verify "
              "you are not a bot. <a href=\"#\" className=\"underline\">Learn more</a>.</p>"
              if spec["recaptcha"] else "")
+    # #1202pb: NO PRODUCT LITERALS. This path always emitted `_AUTH_FOOTER_LINKS_540` (FAQ, Help
+    # Center, Terms of Use, Privacy, Cookie Preferences, Corporate Information) and a
+    # "Questions? Contact support" fallback — Netflix's sign-in footer — whatever the product.
+    # #873 gated those lines in the BASE template only, not here. The literals sit in the
+    # delivered trees of 13 tiktok runs (r102-r117), and r111/r119/r123's `login_modal`
+    # captures are byte-identical Netflix-style pages (0.13/0.11/0.09) though their LoginPage
+    # sources differ. Emit only what the design names; nothing when it names nothing.
     contact = ("        <p className=\"mb-3\">" + _jsx_text_540(spec["contact"])
-               + "</p>") if spec["contact"] else \
-              ("        <p className=\"mb-3\">Questions? <a href=\"#\" className=\"underline\">"
-               "Contact support</a></p>")
+               + "</p>") if spec["contact"] else ""
     footer_links = "\n".join(
         "          <a href=\"#\" className=\"underline\">" + _jsx_text_540(l) + "</a>"
-        for l in _AUTH_FOOTER_LINKS_540)
+        for l in (spec.get("footer_links") or []))
     _footer_cls = "text-white/50" if dark else "text-black/50"
     _subtxt_cls = "text-white/70" if dark else "text-black/60"
     src = (_AUTH_SPEC_TEMPLATE_540
@@ -6929,6 +6956,28 @@ def _state_write_effect_556b(screen, page, design) -> str:
     )
 
 
+_LOADING_LINES_1202PE = (
+    "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading…</p> : null}\n",
+    "          {rows.length === 0 && !error ? <p className=\"text-sm opacity-50\">Loading…</p> : null}\n",
+)
+
+
+def _without_loading_when_nothing_fetches_1202pe(src: Any, get_ep: Any) -> Any:
+    """#1202pe: "Loading…" promises that data is on its way, so it ships only on a page that FETCHES.
+
+    With no GET mapped to the screen, #426's branch emits an effect with no fetch; `setData` is
+    never called, rows stay [] forever, and the page showed "Loading…" for its whole life. 26
+    judged screens across 10 runs sat on such a page — mean similarity 0.197, 2 of 26 at or above
+    0.55; r126's FollowingSuggestedCreatorsPage rendered its title and "Loading…" and nothing
+    else. A page that fetches is returned byte-for-byte as before.
+    """
+    if get_ep or not isinstance(src, str):
+        return src
+    for _line in _LOADING_LINES_1202PE:
+        src = src.replace(_line, "")
+    return src
+
+
 def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str, Any],
                            design: Dict[str, Any], nav_routes, get_ep: str) -> str:
     """Emit a reference-structured, data-populated page: one layout band per
@@ -8669,8 +8718,11 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
             _screen = None
     if _screen is not None:
         try:
-            return _render_reference_page(name, page, _screen, design or {},
-                                          nav_routes, get_ep or "")
+            # #1202pe: see `_without_loading_when_nothing_fetches_1202pe`.
+            return _without_loading_when_nothing_fetches_1202pe(
+                _render_reference_page(name, page, _screen, design or {},
+                                              nav_routes, get_ep or ""),
+                get_ep)
         except Exception:
             pass  # fall through to the generic floor — never break the build
 
@@ -9097,12 +9149,52 @@ def _is_definitive_stub_page(text: str) -> bool:
         # r163's LandingPage imports three local components that way, so `\s+` demanded
         # a space and let a real page through to be overwritten. Found by replaying 253
         # corpus pages through this predicate — the only method that held up today.
-        for _m in re.finditer(r"import\s+(\w+)\s+from\s*['\"][.][^'\"]*['\"]", text):
-            if re.search(r"<" + re.escape(_m.group(1)) + r"[\s/>]", text):
+        for _name in _locally_imported_components_1202pa(text):
+            if re.search(r"<" + re.escape(_name) + r"[\s/>.]", text):
                 return False
     except Exception:
         pass
     return "export default" in text and "return" in text
+
+
+def _locally_imported_components_1202pa(text: str) -> List[str]:
+    """#1202pa — every name a page imports from a LOCAL module, in all three import forms.
+
+    #1010's delegation check (a page that renders a component it imported is not a stub) only
+    recognised a DEFAULT import, `import X from '../...'`. A lane that exports several views from
+    one module writes `import { CreatorSuggestions } from '../components/TiktokViews'`, and that
+    page — 210 bytes, a single `<CreatorSuggestions ... />` — read as an inert stub. #488's
+    `repair_stub_declared_pages` runs after every merge and replaced it with the framework
+    projection. Across the git history of r114-r126 that overwrote named-import lane pages 806
+    times (r126 317 across 14 pages, 12 of which SHIPPED as the projection; r114 235). Same run,
+    same judge: r126's pages that were never overwritten scored 0.68 / 0.77 / 0.76, the
+    overwritten ones 0.08 / 0.11 / 0.11 / 0.24 — the projection it substitutes can only show
+    "Loading…" when the screen has no mapped GET.
+
+    Handles `import X from`, `import { A, B as C } from`, `import X, { A } from` and
+    `import * as NS from` (rendered as `<NS.View`). Local modules only (`./` or `../`), which is
+    the same boundary #914's `_imports_own_components` draws; a page importing only React or a
+    library still reads as a stub, exactly as before.
+    """
+    names: List[str] = []
+    for m in re.finditer(r"import\s+([^;]*?)\s+from\s*['\"](\.[^'\"]*)['\"]", text or ""):
+        clause = m.group(1).strip()
+        ns = re.match(r"\*\s+as\s+(\w+)$", clause)
+        if ns:
+            names.append(ns.group(1))
+            continue
+        default = re.match(r"(\w+)\s*(?:,|$)", clause)
+        if default:
+            names.append(default.group(1))
+        braces = re.search(r"\{([^}]*)\}", clause)
+        if braces:
+            for part in braces.group(1).split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                alias = re.match(r"\w+\s+as\s+(\w+)$", part)
+                names.append(alias.group(1) if alias else re.sub(r"\W", "", part))
+    return [n for n in names if n]
 
 
 def repair_stub_declared_pages(frontend_dir, ui_pages=None) -> Dict[str, object]:

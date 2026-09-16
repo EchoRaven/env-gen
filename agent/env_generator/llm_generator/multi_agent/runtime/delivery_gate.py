@@ -2353,6 +2353,7 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
             "chains": not_passing,
             "detail": (f"{len(not_passing)} verification chain(s) have NOT passed: "
                        + join_capped(not_passing, len(not_passing), cap=8, sep=", ")
+                       + _first_broken_step_1202ox(authored, not_passing)
                        + ". run_validation must show "
                        "business_chain green (re-author the broken step or fix the "
                        "endpoint) before delivery."
@@ -2886,6 +2887,31 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
 _NOT_A_LANE_FAILURE_1202OF = ("passing", "framework_blocked", "environment_blocked")
 
 
+def _first_broken_step_1202ox(authored, not_passing) -> str:
+    """#1202ox — the first broken step of the first failing chain, for the gate's own detail.
+
+    The detail named chains only. Operators read this field, and it is what the abort message
+    and the ledger carry: before r119, 0 of 700+ `business_chain_failing` records named any
+    endpoint, and from r119 on the 40% that do got it only from the #1202ky/#1202kr add-ons,
+    never from the failing step itself. The step is already on the record.
+    """
+    try:
+        names = set(not_passing or ())
+        for rec in (authored or []):
+            if str(rec.get("name") or rec.get("id")) not in names:
+                continue
+            last = rec.get("last_result") or {}
+            for b in (last.get("broken") or []):
+                return " (first broken step: [%s] %s)" % (
+                    rec.get("name") or rec.get("id"), str(b)[:220])
+        return ""
+    except Exception as _e1202ox:
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.first_broken_step_1202ox",
+                       "the business_chain gate detail naming its first broken step", _e1202ox)
+        return ""
+
+
 def _deliverability_check_token(blocker: str) -> str:
     """Map ONE deliverability blocker (human prose) onto its stable check token.
 
@@ -2949,6 +2975,20 @@ def _deliverability_check_token(blocker: str) -> str:
         # functionally_validated — functional validation is exactly the
         # blind spot.
         return "deliverability_bare_authed_fetch"
+    # #1202ou: two AUTH-TAMPERING blockers reached the gate and were routed to nobody. Neither
+    # prose matched a token here, so each became `deliverability_other:<first 80 chars>` — a
+    # name that embeds `custom_routes.py:<line>` and therefore changes on every lane edit, and
+    # that `dispatch_gate_level_checks` looks up by exact key: "NO remediation owner", nothing
+    # dispatched. #1202s (a lane reassigning an auth primitive) has been in that state since it
+    # shipped; #1202oj (a lane rewriting the route table or the guard's public list) joined it.
+    # The latter is how tiktok-r126 got stuck: `custom_routes.py:310-411` made
+    # `/api/video_saves` and `/api/user_settings` public, anonymous reads returned other users'
+    # rows, and the only two failing chains failed on exactly those paths. Present in 8 of the
+    # 12 runs that carry the guard, every run from r120 to r126.
+    if "framework auth guard tampered" in low:
+        return "deliverability_guard_tampering"
+    if "reassigns the auth primitive" in low:
+        return "deliverability_auth_override"
     if "placeholder stub" in low:
         # #173 (gmrun9): a GET route handler that does NO DB read and returns a
         # hardcoded empty collection → a permanently-empty page (the departures

@@ -617,6 +617,7 @@ def map_reference_screens(
         # `_overlay_by_name`), so this restores COVERAGE without quietly enlarging the
         # blocking set — a declaration still cannot promote a dropdown into a gate.
         _declared_page = None
+        _claimants_1202pc: List[Dict[str, Any]] = []
         if not _transient_by_name:
             for _pg in pages:
                 _ri = str(_pg.get("reference_image") or "").strip()
@@ -626,10 +627,22 @@ def map_reference_screens(
                 if _ri_stem and _ri_stem == stem:
                     _rt = str(_pg.get("route") or "").strip()
                     if _rt and (not known or _rt in known):
-                        _declared_page = _pg
-                        break
+                        _claimants_1202pc.append(_pg)
+            _declared_page = _claimants_1202pc[0] if _claimants_1202pc else None
         _guessed_page = (None if (_overlay_by_name or _transient_by_name)
                          else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
+        # #1202pc: when SEVERAL pages claim one reference image, bind the one the screen is named
+        # after — not whichever the registry lists first. Nothing enforces one claim per image,
+        # and 77 of 143 runs carry collisions (342 extra claims). tiktok-r126: four pages claimed
+        # `explore_grid.png`; the gate judged `/videos` (VideosPage, 0.29) while `/explore`
+        # (ExploreGridPage) was registered and wired. A single claim is unchanged.
+        if len(_claimants_1202pc) > 1 and _guessed_page is not None:
+            for _cl in _claimants_1202pc:
+                if _cl is _guessed_page or (
+                        str(_cl.get("route") or "") == str(_guessed_page.get("route") or "")
+                        and str(_cl.get("name") or "") == str(_guessed_page.get("name") or "")):
+                    _declared_page = _cl
+                    break
         # #758: SAY WHEN THE DECLARATION DECIDED, AND WHEN IT OVERRULED THE GUESS. #747 shipped
         # silent, so r149 — which carried 15 declarations and ran with #747 in its build — left
         # no way to tell whether a single binding came from the declaration or from the token
