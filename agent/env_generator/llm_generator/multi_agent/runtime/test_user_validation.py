@@ -581,9 +581,17 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         pass
                     for _round in range(3):
                         await _fill_visible_inputs()
+                        # #1202py: a comma selector matches in DOCUMENT order, so `.first` of
+                        # "button[type=submit], form button, button" was whichever button came
+                        # first on the page — on tiktok-r126's login that is a nav or "Use QR
+                        # code" button, the form was never submitted, and this reported "submit
+                        # sent NO /auth request — the form is not wired" at 16:03 while the
+                        # browser test-user, which tries the selectors in PRIORITY order, logged
+                        # in with the same page at 16:08. One rule, the runner's.
                         try:
-                            await page.locator(
-                                "button[type=submit], form button, button").first.click()
+                            from .test_user_runner import _click_primary as _click_1202py
+                            if not await _click_1202py(page):
+                                break
                         except Exception:
                             break
                         await page.wait_for_timeout(2000)

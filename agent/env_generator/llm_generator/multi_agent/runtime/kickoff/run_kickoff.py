@@ -1262,6 +1262,33 @@ def _kept_status_1202np(hubs: Any, kwargs: Mapping[str, Any]) -> str:
     return "defined"
 
 
+def _merged_with_registered_columns_1202pz(tbl: Mapping, lookup) -> Mapping:
+    """`tbl` with the registry's existing columns kept and only new draft columns appended."""
+    try:
+        cur = lookup()
+    except Exception:
+        return tbl
+    if not isinstance(cur, Mapping):
+        return tbl
+    have = (cur.get("schema") or {}).get("columns") if isinstance(cur.get("schema"), Mapping) \
+        else cur.get("columns")
+    if not isinstance(have, list) or not have:
+        return tbl
+    schema = tbl.get("schema") if isinstance(tbl.get("schema"), Mapping) else None
+    draft = (schema or tbl).get("columns")
+    if not isinstance(draft, list):
+        draft = []
+
+    def _n(c):
+        return str(c.get("name") or "").strip().lower() if isinstance(c, Mapping) else ""
+
+    known = {_n(c) for c in have}
+    merged = list(have) + [c for c in draft if _n(c) and _n(c) not in known]
+    if schema is not None:
+        return dict(tbl, schema=dict(schema, columns=merged))
+    return dict(tbl, columns=merged)
+
+
 def _registry_has_1202na(lookup) -> bool:
     """True iff `lookup()` returns a registry record. Any error answers False, which only means
     the entry is registered again, as before #1202na."""
@@ -2568,6 +2595,13 @@ def finalize_kickoff(
         if _resume_1202mw and _registry_has_1202na(lambda: hubs.schema_hub.get_table(name)):
             n_tables += 1
             continue
+        # #1202pz: a NEW milestone's draft may add to a registered table, never shrink it.
+        # tiktok-r126's M2 finalize registered `videos` and `sounds` as `[id]` — the draft
+        # only referenced them as FK targets — over M1's 13-column tables with 35 staged rows,
+        # and the gate reported "a primary key and nothing else while data is staged" minutes
+        # after M1 delivered. Registered columns are kept as they are (they carry the lanes'
+        # corrections); the draft contributes only columns the registry does not have yet.
+        tbl = _merged_with_registered_columns_1202pz(tbl, lambda: hubs.schema_hub.get_table(name))
         # owner_scoped_reads (a.k.a private/private_reads): per-user-PRIVATE table —
         # every read is owner-scoped, like writes. It's a TABLE PROPERTY, not a
         # column, so lift it into metadata (the projector reads it from there);
