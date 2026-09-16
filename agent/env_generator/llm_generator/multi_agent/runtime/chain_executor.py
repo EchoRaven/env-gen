@@ -575,6 +575,33 @@ _UNDECIDABLE_DENIAL_CODES = (401, 403)
 _CHAIN_CONTROL_PREFIXES = ("/auth", "/oauth", "/api/v1/", "/health", "/.well-known", "/mcp")
 
 
+_TRANSPORT_FAILURE_1202OD = re.compile(
+    r"ConnectionReset|Connection refused|Connection aborted|ConnectionRefused|Errno 104"
+    r"|Errno 111|Remote end closed|BadStatusLine|Max retries|timed out|TimeoutError"
+    r"|URLError|Temporary failure in name resolution|Connection reset", re.I)
+
+
+def is_transport_failure_1202od(res: Mapping[str, Any]) -> bool:
+    """#1202od — the step never got an ANSWER: the stack was gone, not wrong.
+
+    A chain step that raises at the socket carries `status=None` and the exception text, and
+    it was recorded as `broken` — indistinguishable, to the gate and to the lane, from an
+    endpoint that answered wrongly. tiktok-r124: 50 chains, 121 steps, all
+    `POST /auth/register -> None (ConnectionResetError [Errno 104])`, recorded as failing
+    business_chain; the app was fine, the stack was mid-recycle. 24% of the corpus's broken
+    steps are this shape, 114 of them in the last three days.
+
+    "The app is unreachable" is a fact about the ENVIRONMENT. #272 already carved out
+    `framework_defect` for the same reason — not the lane's to fix, so not `broken`.
+    """
+    try:
+        if res.get("status") is not None:
+            return False
+        return bool(_TRANSPORT_FAILURE_1202OD.search(str(res.get("error") or "")))
+    except Exception:
+        return False
+
+
 def unenforceable_owner_denials_1202jd(steps, tables) -> List[tuple]:
     """#1202jd — cross-actor DENIAL probes on a WRITE the projector cannot deny.
 
@@ -3790,6 +3817,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     note = ("cross-user denial re-verified with a FRESH intruder → DENIED; the "
                             f"original {status} was a stale/owner-colliding probe token, not a "
                             "real cross-user leak (#78)")
+            if is_transport_failure_1202od(res):
+                # #1202od: last word, after every other classifier — no answer came back, so
+                # none of them was looking at an app response.
+                kind = "environment_1202od"
         # #682: a 404 on a write says "not found" and never says WHAT was not found.
         # r145 died on exactly this: business_chain never went green in 75 minutes because two
         # chains posted `title_id: 'movie-1003596'` and got 404 "title not found". That id is
@@ -3841,6 +3872,24 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     "trace captured for this request")
         if autofilled:
             entry["autofilled"] = autofilled
+        # #1202oe: SAY THAT THIS IS NOT THE FIRST FAILURE. A step whose id was never created
+        # because an EARLIER step in the same chain failed is reported as if the endpoint were
+        # at fault. Corpus: of 252 chain 404s, 94 (37%) have a failed step ahead of them and
+        # carry no word of it; tiktok-r76's `follow_creator_relationship_effect` sent the
+        # backend after `GET /api/v1/users/14 → 404` for a user its own earlier step never
+        # registered. The note states the fact and names the step — it asserts no causality
+        # (#1023's rule: attach evidence, not a verdict).
+        if kind in ("broken", "missing"):
+            _first_fail_1202oe = next(
+                (r for r in recorded
+                 if r.get("kind") in ("broken", "missing", "environment_1202od")), None)
+            if _first_fail_1202oe is not None:
+                entry["note"] = ((entry.get("note") or "") + " | " if entry.get("note") else "") + (
+                    "NOT THE FIRST FAILURE in this chain — `%s %s` failed earlier (%s). Any "
+                    "state that step was to create does not exist, so fix that one first and "
+                    "re-run before treating this step as a defect."
+                    % (_first_fail_1202oe.get("method"), _first_fail_1202oe.get("path"),
+                       str(_first_fail_1202oe.get("note") or _first_fail_1202oe.get("status"))[:80]))
         recorded.append(entry)
         if ok:
             # #566z: remember what this actor already got a 2xx for. Recorded AFTER the
@@ -4016,12 +4065,16 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 + _projected_owner_note(projected, s.get("method"), s.get("path"),
                                        lane=_lane_1202hs))
     broken = [_fmt(s) for s in recorded if s["kind"] == "broken"]
+    # #1202od: steps whose request never reached the app — reported apart from `broken` so the
+    # gate can say "not verified" instead of dispatching a lane to fix a connection reset.
+    environment_1202od = [_fmt(s) for s in recorded if s["kind"] == "environment_1202od"]
     # #272: framework-projected defects are reported SEPARATELY so the gate can surface them
     # as framework work, not fold them into `broken` where a lane would be dispatched to fix
     # code it never wrote.
     framework_defects = [_fmt(s) for s in recorded if s["kind"] == "framework_defect"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
-            "broken": broken, "framework_defects": framework_defects}
+            "broken": broken, "framework_defects": framework_defects,
+            "environment_1202od": environment_1202od}
 
 
 AUTHORING_INSTRUCTIONS = (
@@ -4328,6 +4381,8 @@ def run_chains(base: str, project_dir: Any,
                          "failure below as an app defect.")
     framework_defects = [f"[{r['name']}] {b}"
                          for r in results for b in r.get("framework_defects", [])]
+    environment_1202od = [f"[{r['name']}] {b}"
+                          for r in results for b in r.get("environment_1202od", [])]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the
     # registry is the single place to see chain health (monitor renders it).
@@ -4341,12 +4396,15 @@ def run_chains(base: str, project_dir: Any,
                 # #272: a chain whose ONLY failures are framework-projected defects is not the
                 # lane's to fix — mark it framework_blocked, not failing (which would dispatch a
                 # lane) and not passing (which would hide a real framework bug).
-                _status = ("passing" if not r["broken"] and not _fd
-                           else "failing" if r["broken"]
-                           else "framework_blocked")
+                _env1202od = r.get("environment_1202od") or []
+                _status = ("failing" if r["broken"]
+                           else "environment_blocked" if _env1202od
+                           else "framework_blocked" if _fd
+                           else "passing")
                 rec = {**rec,
                        "status": _status,
                        "last_result": {"broken": r["broken"], "framework_defects": _fd,
+                                       "environment_1202od": _env1202od,
                                        "steps": r["steps"]},
                        "last_run_at": time.time()}
                 store.update(lambda m, _rec=rec, _n=r["name"]: m.set(_n, _rec, "chain_executor"),
@@ -4400,7 +4458,8 @@ def run_chains(base: str, project_dir: Any,
                 _u["method"], _u["path"], _u["declared_in"], _u["declared_as"],
                 _currency_1202ex.get("detail"))
     return {"source": "verifier", "chains": results, "broken": broken,
-            "framework_defects": framework_defects, "total_steps": total,
+            "framework_defects": framework_defects,
+            "environment_1202od": environment_1202od, "total_steps": total,
             "declared_but_unmounted_952": _unmounted952,
             "build_currency_1202ex": _currency_1202ex,
             "schema_currency_1202fj": _schema_1202fj}

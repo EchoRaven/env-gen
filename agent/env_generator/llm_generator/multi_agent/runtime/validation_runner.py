@@ -1557,6 +1557,15 @@ def run_smoke_validation(
                         _chain_salient = ""
                 _add("business_chain", False,
                      _business_chain_detail(_chain["broken"], _chain_salient))
+            elif _chain.get("environment_1202od"):
+                # #1202od: the steps never reached the app. Not a pass (nothing was verified)
+                # and not the lanes' failure — say which it is, so the retry is the remedy.
+                _env1202od = _chain["environment_1202od"]
+                _add("business_chain", False,
+                     "NOT VERIFIED — the app was unreachable while the chains ran, so these "
+                     "steps got no answer at all (%d step(s), e.g. %s). This is the stack, "
+                     "not the code: no lane edit can change it. Re-run the validation once "
+                     "the stack is up." % (len(_env1202od), str(_env1202od[0])[:160]))
             else:
                 _add("business_chain", True,
                      f"{_chain['total_steps']} step(s) across "

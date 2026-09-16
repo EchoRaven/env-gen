@@ -3081,6 +3081,13 @@ class RegistryHub:
         rec = self._verification_chains.value().get(str(name))
         if not isinstance(rec, dict):
             return {"error": f"chain not found: {name}"}
+        # #1202od: "no broken steps" means PASSING only if the steps actually ran. A run whose
+        # requests never reached the app (connection reset/refused) carries them here instead.
+        if not result.get("broken") and result.get("environment_1202od"):
+            return {"name": str(name), "status": rec.get("status"),
+                    "environment_blocked_1202od": len(result["environment_1202od"]),
+                    "detail": ("the app was unreachable while these chains ran — verdict "
+                               "unchanged, nothing was verified")}
         _status = "passing" if not result.get("broken") else "failing"
         # #1202fa: a chain that fails and then passes leaves NO trace of the failure.
         # `last_result` is overwritten unconditionally, so the next passing run destroys

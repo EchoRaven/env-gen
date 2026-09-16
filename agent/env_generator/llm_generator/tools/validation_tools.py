@@ -287,10 +287,15 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
             name = ch.get("name") if isinstance(ch, dict) else None
             if not name:
                 continue
+            # #1202od: a chain whose steps never reached the app tells us nothing about it.
+            # Recording {"broken": []} here would flip it to PASSING on a stack that was down.
+            if not (ch.get("broken") or []) and (ch.get("environment_1202od") or []):
+                continue
             try:
                 registryhub.record_chain_result(
                     str(name),
                     result={"broken": ch.get("broken") or [],
+                            "environment_1202od": ch.get("environment_1202od") or [],
                             "steps": ch.get("steps") or []},
                     agent="",  # framework/system authority (see docstring)
                 )
