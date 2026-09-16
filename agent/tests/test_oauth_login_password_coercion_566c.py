@@ -37,7 +37,7 @@ def test_sibling_fields_still_coerced():
     # guard the invariant the fix mirrors: email/username/tenant_id remain str-coerced
     src = _routes()
     assert 'email = str(body.get("email") or "").strip()' in src
-    assert 'tenant_id = str(body.get("tenant_id") or "default")' in src
+    assert 'tenant_id = str(body.get("tenant_id") or request.headers.get("x-tenant-id") or "default")' in src  # #1202qa
 
 
 def test_rendered_oauth_routes_is_valid_python():

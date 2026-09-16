@@ -334,7 +334,10 @@ def build_router(db: OAuthStore, jwt_manager: JWTManager) -> APIRouter:
         if not email or not password:
             return JSONResponse(
                 {"detail": "email and password are required"}, status_code=422)
-        tenant_id = str(body.get("tenant_id") or "default")
+        # The body wins; otherwise the app-wide X-Tenant-Id header, which every other route and
+        # the test-user squad already send. Without it a user registered "into tenant B" landed
+        # in `default` and logged in with a token for the wrong tenant (tiktok-r126 M2 P0s).
+        tenant_id = str(body.get("tenant_id") or request.headers.get("x-tenant-id") or "default")
         name = body.get("name") or body.get("full_name") or ""
         extra = {k: v for k, v in body.items()
                  if k not in ("email", "password", "tenant_id")}
@@ -364,7 +367,10 @@ def build_router(db: OAuthStore, jwt_manager: JWTManager) -> APIRouter:
         if not isinstance(body, dict):
             body = {}
         password = str(body.get("password") or "")
-        tenant_id = str(body.get("tenant_id") or "default")
+        # The body wins; otherwise the app-wide X-Tenant-Id header, which every other route and
+        # the test-user squad already send. Without it a user registered "into tenant B" landed
+        # in `default` and logged in with a token for the wrong tenant (tiktok-r126 M2 P0s).
+        tenant_id = str(body.get("tenant_id") or request.headers.get("x-tenant-id") or "default")
         email = str(body.get("email") or "").strip()
         username = str(body.get("username") or "").strip()
         user = None

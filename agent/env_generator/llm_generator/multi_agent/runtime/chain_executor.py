@@ -3410,9 +3410,23 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # change actor and defeat the ownership probes (#591/#663).
         _headers: Optional[Dict[str, str]] = None
         _authored = step.get("headers")
+        _hdr_dropped_1202qb: List[str] = []
         if isinstance(_authored, Mapping):
-            _headers = {str(k): str(v) for k, v in _authored.items()
-                        if str(k).strip() and str(k).lower() != "authorization"}
+            # #1202qb: header VALUES are substituted like the path and body. They were sent
+            # verbatim, so `X-Tenant-ID: ${tenantA}` reached POST /api/v1/admin/init-tenant as
+            # the literal text even when tenantA had been saved, and the control plane created a
+            # tenant named `${tenantA}` (tiktok-r126 lists `${tenantA}` and `${tenantId}`).
+            # A value still holding an unresolved placeholder is dropped and recorded: a literal
+            # `${...}` never names anything real.
+            _headers = {}
+            for k, v in _authored.items():
+                if not (str(k).strip() and str(k).lower() != "authorization"):
+                    continue
+                _hv = _subst(str(v), variables)
+                if _UNRESOLVED_PLACEHOLDER.search(str(_hv)):
+                    _hdr_dropped_1202qb.append(str(k))
+                    continue
+                _headers[str(k)] = str(_hv)
             _headers = _headers or None
         _scope_note: Optional[str] = None
         if _is_factory_reset(method, path):
@@ -3442,6 +3456,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             autofilled.append(_scope_note)  # #566x: SAY it in the record, never silently
         for _dk in _dropped_owner_fks:      # #575: likewise — never a silent body edit
             autofilled.append(f"owner-fk-omitted:{_dk}")
+        for _hk in _hdr_dropped_1202qb:     # #1202qb: likewise for a header
+            autofilled.append(f"header-omitted-unresolved:{_hk}")
         for _lv in _ladder_filled:          # #592: likewise — the substitution is on the record
             autofilled.append(f"ladder-filled-after-failed-save:{_lv}")
         # #301+#316: a /oauth/authorize step lacking the PKCE code_challenge (bare OR
