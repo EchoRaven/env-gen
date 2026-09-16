@@ -1888,7 +1888,7 @@ def _contract_denial_contradictions_1202kr(rh, authored, hubs=None) -> str:
             return ""
         hits = []
         for rec in (authored or []):
-            if not isinstance(rec, dict) or rec.get("status") in ("passing", "framework_blocked"):
+            if not isinstance(rec, dict) or rec.get("status") in _NOT_A_LANE_FAILURE_1202OF:
                 continue
             for st in (rec.get("steps") or []):
                 if not isinstance(st, dict):
@@ -1998,7 +1998,7 @@ def _failing_surface_1202lb(authored) -> str:
     try:
         surface = {}
         for rec in (authored or []):
-            if not isinstance(rec, dict) or rec.get("status") in ("passing", "framework_blocked"):
+            if not isinstance(rec, dict) or rec.get("status") in _NOT_A_LANE_FAILURE_1202OF:
                 continue
             name = str(rec.get("name") or rec.get("id") or "?")
             for st in ((rec.get("last_result") or {}).get("steps") or []):
@@ -2075,7 +2075,7 @@ def _contract_materials_disagreement_1202ky(rh, authored, hubs=None) -> str:
         # this blocker's business.
         touched = set()
         for rec in (authored or []):
-            if not isinstance(rec, dict) or rec.get("status") in ("passing", "framework_blocked"):
+            if not isinstance(rec, dict) or rec.get("status") in _NOT_A_LANE_FAILURE_1202OF:
                 continue
             for st in (rec.get("steps") or []):
                 if isinstance(st, dict) and st.get("path"):
@@ -2295,12 +2295,13 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
     def _never_ran(_rec):
         return (not _rec.get("last_result")
                 and str(_rec.get("status") or "").lower()
-                not in ("passing", "framework_blocked", "failing", "broken"))
+                not in ("passing", "framework_blocked", "environment_blocked",
+                        "failing", "broken"))
     not_passing = [
         str(rec.get("name") or rec.get("id"))
         for rec in authored
         if not _never_ran(rec) and (
-            (rec.get("status") not in ("passing", "framework_blocked"))
+            (rec.get("status") not in _NOT_A_LANE_FAILURE_1202OF)
             or (rec.get("last_result") or {}).get("broken"))
     ]
     framework_blocked = [
@@ -2309,6 +2310,30 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
         if rec.get("status") == "framework_blocked"
         and not (rec.get("last_result") or {}).get("broken")
     ]
+    # #1202of: the gate is the reader that DISPATCHES. #1202od stopped a connection reset
+    # being recorded as a broken endpoint, but this reader did not know the new status, so an
+    # unreachable app still arrived here as `business_chain_failing` and still sent a lane
+    # after a socket — the "fixed one reader, not the other" shape this codebase has paid for
+    # before. Delivery still blocks (nothing was verified); nobody is dispatched.
+    environment_blocked_1202of = [
+        str(rec.get("name") or rec.get("id"))
+        for rec in authored
+        if rec.get("status") == "environment_blocked"
+        and not (rec.get("last_result") or {}).get("broken")
+    ]
+    if environment_blocked_1202of and not not_passing:
+        _envs = [d for rec in authored
+                 for d in ((rec.get("last_result") or {}).get("environment_1202od") or [])]
+        return {
+            "reason": "business_chain_environment_blocked", "authored": len(authored),
+            "chains": environment_blocked_1202of, "unreachable": _envs[:8],
+            "detail": (f"{len(environment_blocked_1202of)} chain(s) could not be verified "
+                       "because the app was UNREACHABLE while they ran (the request never "
+                       "got an answer): "
+                       + join_capped(_envs, len(_envs), cap=4)
+                       + ". Nothing here says the code is wrong and no lane edit can change "
+                       "it — bring the stack up and re-run the validation."),
+        }
     if framework_blocked and not not_passing:
         _defs = [d for rec in authored
                  for d in ((rec.get("last_result") or {}).get("framework_defects") or [])]
@@ -2854,6 +2879,11 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
     if last_shrink_age_s > recent_s and not instances_shrinking:
         return 0.0
     return float(grace_s)
+
+
+# #1202of: chain statuses that are NOT a lane's failure to fix — `framework_blocked` (#272,
+# a projected handler crashed) and `environment_blocked` (#1202od, the app was unreachable).
+_NOT_A_LANE_FAILURE_1202OF = ("passing", "framework_blocked", "environment_blocked")
 
 
 def _deliverability_check_token(blocker: str) -> str:
