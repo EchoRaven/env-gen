@@ -79,6 +79,21 @@ def _lane_log_activity_1202fg(output_dir: Any) -> dict:
     return out
 
 
+def _milestone_label_1202qc(orch) -> str:
+    """#1202qc: the milestone a kickoff dispatch belongs to. The message said "the M1 contract"
+    at every milestone (tiktok-r126 M2 and M3 lanes were told they were implementing M1)."""
+    try:
+        m = getattr(orch, "_current_milestone", None) or {}
+        for k in ("id", "milestone_id", "name"):
+            v = str(m.get(k) or "").strip()
+            if v:
+                return v
+        v = str(m.get("version") or getattr(orch, "_current_milestone_version", "") or "").strip()
+        return f"v{v}" if v else "milestone"
+    except Exception:
+        return "milestone"
+
+
 class KickoffDriver:
     """Drives the kickoff meeting to completion + finalize/author/dispatch.
     Stateless; reads the orchestrator's collaborators live via the back-ref."""
@@ -1043,7 +1058,8 @@ class KickoffDriver:
                 source_agent_id="orchestrator",
                 target_agent_id=lane_id,
                 content=(
-                    "Kickoff finalized — the M1 contract (endpoints/tables/pages) "
+                    f"Kickoff finalized — the {_milestone_label_1202qc(self._orch)} contract "
+                    "(endpoints/tables/pages) "
                     "and your assigned task_tree entries are registered in "
                     "RegistryHub/WorkHub. Claim your tasks now "
                     f"(workhub_list_tasks assignee='{lane_id}', status='pending') "
