@@ -2419,8 +2419,15 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 # an empty body and all but 3 are framework-owned auth/oauth/tenant routes the
                 # projection does not serve. Those 3 already list 400 in their `expect`. Zero
                 # corpus steps break.
+                # #1202pu: an owner-shaped column is not a subject. The POST guard above checks
+                # EVERY `_OWNER_FK_NAMES` column against the caller (403 on anyone else), but only
+                # the primary owner was left out of this list — so `notifications(user_id,
+                # actor_id)` projected "one of actor_id is required", a field whose only legal
+                # value is the caller's own id. tiktok-r126 aborted M1 on exactly that step
+                # (`POST /api/notifications -> 400`), the gate's last failing check.
                 _subj_1202bl = [str(_f) for _f in (meta.get("fks") or {})
                                 if str(_f) != str(_owner_fk(meta, exclude=tuple(bound)) or "")
+                                and str(_f) not in _OWNER_FK_NAMES
                                 and str(_f) not in {str(_b) for _b in bound}]
                 # #1202my: THE FRAMEWORK MUST NOT REFUSE A CREATE ITS OWN CONTRACT DECLARES VALID.
                 # #1202bl's premise is "a create naming no subject FK is nothing but its own id

@@ -2711,8 +2711,36 @@ def _pick_id_for_resource(resource: Any, seen_responses: list, last_id: Any) -> 
     return last_id
 
 
+def _resource_candidates_1202pv(var: str, key: Any = None) -> List[str]:
+    """#1202pv: the resources an unresolved ``${var}`` in body field ``key`` can name.
+
+    The field is the strongest evidence (``sound_id`` names ``sound``), then the variable
+    itself with camelCase folded (``soundId`` / ``createdSoundId`` -> ``sound``). The old
+    rule only read a snake ``*_id`` variable, so tiktok-r126's ``{"sound_id": "${soundId}"}``
+    fell through to the chain's LAST id — a video's — although the same chain had just
+    created a sound: ``POST /api/videos -> 404 referenced resource not found``, the gate's
+    last failing chain after 20 minutes of a resume.
+    """
+    out: List[str] = []
+
+    def _add(name: str) -> None:
+        n = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", str(name or "")).lower().strip("_")
+        if not n.endswith("_id"):
+            return
+        base = n[:-3]
+        for cand in (base, re.sub(r"^(?:created|new|my|saved|captured)_", "", base)):
+            if cand and cand not in out:
+                out.append(cand)
+
+    if isinstance(key, str):
+        _add(key)
+    _add(var)
+    return out
+
+
 def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
-                                    by_resource: Optional[Mapping[str, Any]] = None) -> Any:
+                                    by_resource: Optional[Mapping[str, Any]] = None,
+                                    _key_1202pv: Any = None) -> Any:
     """BODY counterpart of execute_chain's path UNRESOLVED-VARIABLE FALLBACK. A
     verifier-authored body that references a ``${var}`` no prior step saved — a nested
     FK like ``{"calendar_id": "${calendar_id}"}`` with no ``save:{calendar_id:...}`` —
@@ -2744,19 +2772,21 @@ def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
                 direct = by_resource.get(var)
                 if direct is not None and str(direct).strip():
                     return direct
-            if by_resource and var.endswith("_id"):
-                res = var[:-3]
-                rid = by_resource.get(res)
-                if rid is None:
-                    rid = by_resource.get(res + "s")  # tolerate a plural-keyed map
-                if rid is not None:
-                    return rid
+            if by_resource:
+                for res in _resource_candidates_1202pv(var, _key_1202pv):
+                    rid = by_resource.get(res)
+                    if rid is None:
+                        rid = by_resource.get(res + "s")  # tolerate a plural-keyed map
+                    if rid is None and res.endswith("s"):
+                        rid = by_resource.get(res[:-1])
+                    if rid is not None:
+                        return rid
             return last_id
         if _BODY_DOLLAR_VAR.search(value):
             return _BODY_DOLLAR_VAR.sub(str(last_id), value)
         return value
     if isinstance(value, Mapping):
-        return {k: _resolve_unresolved_dollar_vars(v, last_id, by_resource) for k, v in value.items()}
+        return {k: _resolve_unresolved_dollar_vars(v, last_id, by_resource, k) for k, v in value.items()}
     if isinstance(value, list):
         return [_resolve_unresolved_dollar_vars(v, last_id, by_resource) for v in value]
     return value
