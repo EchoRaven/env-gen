@@ -700,7 +700,45 @@ def _prompt_split_1202oc(tools: Any, messages: Any) -> str:
             else:
                 hist_chars += n
         tools_chars = len(json.dumps(tools, default=str)) if tools else 0
-        return " split=sys:%d,tools:%d,hist:%d" % (sys_chars, tools_chars, hist_chars)
+        return " split=sys:%d,tools:%d,hist:%d%s" % (sys_chars, tools_chars, hist_chars,
+                                                   _new_content_by_tool_1202pq(messages))
+    except Exception:
+        return ""
+
+
+def _new_content_by_tool_1202pq(messages: Any) -> str:
+    """#1202pq: which tools' results the context is made of, `name:chars`, top five.
+
+    Priced per response line, r126-ab2 split into uncached input $27 / cached $24 / output $13.
+    Content is paid in full the first time a call sends it and at a tenth on every later call
+    that still carries it, so the tools whose results fill the context are the ones worth
+    trimming. `split=` sizes the history as one number; this names its parts. (Every tool call
+    gets its own assistant message, so "after the last assistant turn" would see one result.)
+    """
+    try:
+        names: dict = {}
+        by: dict = {}
+        for m in list(messages or []):
+            get = m.get if isinstance(m, dict) else (lambda k, _m=m: getattr(_m, k, None))
+            role = get("role")
+            role = str(getattr(role, "value", role))
+            if role == "assistant":
+                for c in (get("tool_calls") or []):
+                    cget = c.get if isinstance(c, dict) else (lambda k, _c=c: getattr(_c, k, None))
+                    fn = cget("function")
+                    nm = (fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", None))                         or cget("name")
+                    if cget("id"):
+                        names[cget("id")] = nm or "?"
+            elif role == "tool":
+                content = get("content")
+                n = len(content) if isinstance(content, str) else (
+                    len(json.dumps(content, default=str)) if content is not None else 0)
+                key = names.get(get("tool_call_id")) or get("name") or "?"
+                by[key] = by.get(key, 0) + n
+        if not by:
+            return ""
+        top = sorted(by.items(), key=lambda kv: -kv[1])[:5]
+        return " ctx=" + "|".join("%s:%d" % kv for kv in top)
     except Exception:
         return ""
 

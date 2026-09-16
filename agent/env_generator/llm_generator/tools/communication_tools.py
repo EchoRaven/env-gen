@@ -646,6 +646,7 @@ Returns:
 # Enough to identify the message + a real snippet; the full body is fetchable by
 # id. UNREAD bodies are never previewed (kept whole — #274).
 _INBOX_PREVIEW_LEN = 240
+_READ_PREVIEWS_KEPT_1202PR = 5
 
 
 class CheckInboxTool(BaseTool):
@@ -869,7 +870,18 @@ Returns:
         # unchanged; already-read messages still come back as #302 previews after the unread ones.
         _unread_1202ob = [m for m in filtered if not m.get("read")]
         _omitted_unread_1202ob = max(0, len(_unread_1202ob) - limit)
-        filtered = (_unread_1202ob + [m for m in filtered if m.get("read")])[:limit]
+        # #1202pr: an UNFILTERED call keeps only the most recent already-read previews. The
+        # read group is oldest-first, so a default `check_inbox(limit=20|30)` padded every
+        # result up to the limit with the OLDEST read messages: tiktok-r126's lanes made 496
+        # calls averaging 19.8 messages from inboxes of 230-350, each call re-sending ~20
+        # previews that were first paid at full price and then carried in the context. A
+        # caller that filters (search / from_agent / msg_type / tags) still gets them all.
+        _read_1202pr = [m for m in filtered if m.get("read")]
+        _omitted_read_1202pr = 0
+        if not (search or from_agent or msg_type or tags) and len(_read_1202pr) > _READ_PREVIEWS_KEPT_1202PR:
+            _omitted_read_1202pr = len(_read_1202pr) - _READ_PREVIEWS_KEPT_1202PR
+            _read_1202pr = _read_1202pr[-_READ_PREVIEWS_KEPT_1202PR:]
+        filtered = (_unread_1202ob + _read_1202pr)[:limit]
 
         # #274 NOTE: inbox bodies are deliberately NOT truncated. A 2026-06-01 directive
         # ("不要截断，这个肯定要完整信息的") removed a [:500] cap that broke Facebook-scale
@@ -970,7 +982,10 @@ Returns:
                 "info": (f"Retrieved {len(formatted)} of {len(all_messages)} message(s)"
                          + (f"; {_omitted_unread_1202ob} more UNREAD message(s) did not fit the "
                             "limit — call check_inbox again to read them"
-                            if _omitted_unread_1202ob else ""))
+                            if _omitted_unread_1202ob else "")
+                         + (f"; {_omitted_read_1202pr} older already-read message(s) not listed "
+                            "— search_messages finds them"
+                            if _omitted_read_1202pr else ""))
             }
         )
     

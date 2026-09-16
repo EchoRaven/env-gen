@@ -22,7 +22,7 @@ TOOLS = [{"type": "function", "function": {"name": "read", "description": "R" * 
 
 
 def _split(text):
-    return dict(kv.split(":") for kv in text.split("split=")[1].strip().split(","))
+    return dict(kv.split(":") for kv in text.split("split=")[1].split()[0].split(","))
 
 
 def test_the_split_names_system_tools_and_history_separately():

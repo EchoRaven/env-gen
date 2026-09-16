@@ -266,6 +266,14 @@ class AgentStepStageMixin(AgentActionStageMixin):
         # the next ``_RETRIEVE_AUTO_THROTTLE_STEPS`` steps unless the
         # LLM-decision path explicitly says yes.
         _last_auto = getattr(self, "_last_auto_retrieve_step", -10**9)
+        # #1202ps: `step` restarts at 1 in every agentic loop (each wake), while this marker
+        # lives on the agent. After the first wake `step - _last_auto` was negative for the
+        # whole of the next loop, the auto path never fired again, and every wake paid the
+        # "NEED_RETRIEVAL yes|no" LLM call the throttle exists to avoid (r124-r126
+        # orchestrator: $19 across 692 wakes, and the answer was yes in 97% of them). A step
+        # number below the marker can only mean a new loop.
+        if step < _last_auto:
+            _last_auto = -10**9
         _steps_since_auto = step - _last_auto
         if (
             knowledge_fetch_names

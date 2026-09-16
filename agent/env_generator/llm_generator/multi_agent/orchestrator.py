@@ -55,6 +55,29 @@ from progress import (
 from .runtime.container_runtime import runtime_bin as _rt936
 
 
+def _tick_delivery_line_1202pt(lane) -> str:
+    """#1202pt: the coordination tick's delivery sentence, told the truth about who delivers.
+
+    Before the final milestone deliver_project is not offered (#361) and the framework delivers
+    once the gate passes. The tick still said "call deliver_project()": 144 of 362 orchestrator
+    wakes in r125/r126 ended "gate green but deliver_project not exposed", and the orchestrator
+    cancelled the gate's own "(blocks delivery)" repair tasks as stale.
+    """
+    try:
+        from .agents.runtime.step_pipeline.tooling import withhold_delivery_before_final_milestone
+        withheld = withhold_delivery_before_final_milestone(lane)
+    except Exception as exc:
+        from .runtime.message_format import warn_once_1201
+        warn_once_1201("tick-delivery-line-1202pt", "#1202pt: the tick's delivery instruction", exc)
+        withheld = False
+    if withheld:
+        return ("This is not the final milestone: the framework delivers it itself once the gate "
+                "above passes, and deliver_project is not available to you. Tasks titled "
+                "'(blocks delivery)' are the gate's live repairs - do not cancel them; route the "
+                "failed checks to their owners instead. ")
+    return "If validation has passed and deliverables are ready, call deliver_project(). "
+
+
 def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> None:
     """Append one line per delivery-gate evaluation to ``logs/delivery_gate.jsonl``.
 
@@ -3020,8 +3043,8 @@ class Orchestrator:
                                     "Check inbox, hub plan/status, runtime team status, verifier results, and blockers. "
                                     "Here is the current objective delivery gate report:\n"
                                     f"{gate_report}\n\n"
-                                    "If validation has passed and deliverables are ready, call deliver_project(). "
-                                    "If the gate has missing or failed validation/build evidence, wake Verifier with msg_type='task_ready' "
+                                    + _tick_delivery_line_1202pt(orchestrator_lane)
+                                    + "If the gate has missing or failed validation/build evidence, wake Verifier with msg_type='task_ready' "
                                     "and require `record_build(...)` plus `record_validation_result(...)` entries. "
                                     "If validation records already show failed/error checks, convert them into remediation work with "
                                     "`create_dev_task_from_validation_failure(...)` or send task_ready to the owning static lane. "

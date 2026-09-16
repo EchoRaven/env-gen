@@ -433,9 +433,24 @@ class AgentStepToolingMixin:
         # every-step-boundary condensation (between endpoints, where it's safe),
         # which keeps the list ~28-100 — well under the ~770 saturation — without
         # ever interrupting an in-progress implementation.
+        # #1202po: a stage with no tools (planning, the yes/no decisions) used to send `tools=[]`.
+        # The provider's prompt cache is keyed on the tool list FIRST, so that call shared no
+        # prefix with the lane's previous request and paid full input price for the whole
+        # history: 188 of r126-ab2's 1,203 requests, ~4.5M prompt tokens (ab1 ~8M). Measured on
+        # this gateway: same messages + same tools with tool_choice="none" -> 5,632 of 6,411
+        # prompt tokens cached; same messages with the tools removed -> 0. "none" guarantees no
+        # tool call comes back, so the stage's contract (plain text) is unchanged.
+        _tools_1202po, _kw_1202po = stage_tools, {}
+        if stage_tools:
+            self._last_stage_tools_1202po = stage_tools
+        elif _stage_cache_keep_ok_1202po(getattr(self, "llm", None)):
+            _prev_1202po = getattr(self, "_last_stage_tools_1202po", None)
+            if _prev_1202po:
+                _tools_1202po, _kw_1202po = _prev_1202po, {"tool_choice": "none"}
         from utils.llm import attribute_llm_1202cr as _attr_1202cr
         with _attr_1202cr(_label_1202cr):
-            return await self.call_with_retry(self.llm.chat_messages, messages, tools=stage_tools)
+            return await self.call_with_retry(self.llm.chat_messages, messages,
+                                              tools=_tools_1202po, **_kw_1202po)
 
     async def _maybe_condense_messages_in_place(self, messages: List[Message]) -> None:
         """Condense ``messages`` in-place if it exceeds the condenser cap.
@@ -869,3 +884,12 @@ class AgentStepToolingMixin:
                 ]))
 
         return None
+
+
+def _stage_cache_keep_ok_1202po(llm) -> bool:
+    """#1202po applies only on the OpenAI client (where tool_choice="none" is the measured
+    contract) and can be switched off with ENVGEN_STAGE_TOOLS_CACHE=0."""
+    import os as _os
+    if _os.environ.get("ENVGEN_STAGE_TOOLS_CACHE", "1").strip().lower() in ("0", "false", "off", "no"):
+        return False
+    return type(getattr(llm, "_client", None)).__name__ in ("OpenAIClient",)
