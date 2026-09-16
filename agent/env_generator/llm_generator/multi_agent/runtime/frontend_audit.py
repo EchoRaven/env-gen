@@ -2039,11 +2039,19 @@ _INVENTED_TERNARY = re.compile(r"""\?\s*(\b\w+(?:\.\w+)+)\s*:\s*(['"])(.*?)\2"""
 # The literal guard `_is_fabricated_fallback_literal` is the SAME classifier the checker uses,
 # so legitimate defaults (`count || '0'`, `|| ''`, `|| 'all'`, error/asset/hex/state literals)
 # are NEVER rewritten — the heal inherits the checker's soundness on what NOT to touch.
-_HEAL_EXPR = r"[\w$]+(?:\.[\w$]+)*"
-# `(?<![\w$])` keeps the match anchored at an identifier start (mirrors the checker's `\b`,
-# and still permits a leading `.`/`(`/`{`/space, so `a().foo.bar || 'x'` matches `foo.bar`
-# exactly as the checker does — parity, no NEW build-break span).
-_HEAL_OR = re.compile(r"(?<![\w$])(" + _HEAL_EXPR + r")\s*\|\|\s*(['\"])(.*?)\2")
+# #1202ph: the member chain includes OPTIONAL chaining, and a match never starts mid-chain.
+#
+# `[\w$]+(?:\.[\w$]+)*` did not know `?.`, and the old lookbehind `(?<![\w$])` allowed a match
+# to begin right after a `.` — so in `user?.username || user?.name || 'Haibo'` the heal took only
+# `name`, and wrapped it: `user?.(name ?? '—')`. That is an optional CALL of `user`: a TypeError
+# whenever `user` exists. The framework injected that crash into correct lane code 175 times
+# across 18 recent runs (plus 463 ordinary rewrites in 32), and it is the true cause of r111's
+# blank /comments route — `aria-label={video?.(caption ?? '—')}` — which was attributed to the
+# lane at the time. Now the whole chain is the expression: `(user?.name ?? '—')`, valid JS.
+# A chain the heal cannot anchor at its start (e.g. `a().foo.bar || 'x'`) is left untouched —
+# the #175 checker still reports it, and the lane can fix it; a missed heal is not a crash.
+_HEAL_EXPR = r"[\w$]+(?:\??\.[\w$]+)*"
+_HEAL_OR = re.compile(r"(?<![\w$.])(" + _HEAL_EXPR + r")\s*\|\|\s*(['\"])(.*?)\2")
 _HEAL_TERNARY_FALSE = re.compile(r"\?\s*(" + _HEAL_EXPR + r")\s*:\s*(['\"])(.*?)\2")
 # #1202mp: the literal may not contain its own quote. With `(.*?)\1` the lazy group ran on
 # across closing quotes until it found one followed by `: expr`, and the corpus has the heal

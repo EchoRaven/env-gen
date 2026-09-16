@@ -111,6 +111,44 @@ def _coerce_milestone_index_1120(value, what: str):
         return value
 
 
+def _gate_still_fails_on_1202pg(hub_dir, title: str, max_age_s: float = 1200.0) -> str:
+    """#1202pg — why a delivery-gate repair task is still live, from the gate's own ledger, or ''.
+
+    Only the business_chain repair is matched (the one measured being cancelled while its check
+    still failed). Reads the LAST line of `<run>/logs/delivery_gate.jsonl`; a missing, unreadable
+    or stale ledger returns '' so nothing is refused on doubt.
+    """
+    try:
+        if "(blocks delivery)" not in title or "business_chain" not in title:
+            return ""
+        import json as _json
+        import time as _time
+        from pathlib import Path as _P
+        ledger = _P(str(hub_dir)).parent.parent / "logs" / "delivery_gate.jsonl"
+        if not ledger.is_file():
+            return ""
+        with open(ledger, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - 65536))
+            tail = fh.read().decode("utf-8", "replace").strip().splitlines()
+        if not tail:
+            return ""
+        last = _json.loads(tail[-1])
+        if _time.time() - float(last.get("at") or 0) > max_age_s:
+            return ""
+        failing = [c for c in (last.get("failed_checks") or [])
+                   if str(c).startswith("business_chain")]
+        if not failing:
+            return ""
+        chains = ((last.get("business_chain") or {}).get("chains") or [])[:4]
+        return ("the latest gate evaluation still fails %s%s"
+                % (", ".join(failing),
+                   (" on chain(s) " + ", ".join(map(str, chains))) if chains else ""))
+    except Exception:
+        return ""
+
+
 class WorkHub:
     """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments.
 
@@ -541,6 +579,22 @@ class WorkHub:
                 "if you are blocked or believe the task is wrong, "
                 f"send_message '{creator or 'orchestrator'}' explaining why — "
                 "the creator decides whether to cancel.")}
+        # #1202pg: the framework's own gate-fix task is not "stale" while the gate still fails
+        # on it. The orchestrator is told the app is deliverable by `compute_deliverability`,
+        # which does not read the framework gate's failures, so it judged
+        # "Make business_chain pass (blocks delivery)" stale and cancelled it; the gate then
+        # re-dispatched it. Measured: 20 of r125's 73 gate-fix tasks and 10 of r126's 30 were
+        # cancelled by the orchestrator, and r125's log carries 154 GATE-CHECK re-dispatches.
+        # Refused only when the most recent gate evaluation (under 20 minutes old) still lists
+        # a business_chain_* failure; `force` (the framework's own path) is never refused.
+        if not force:
+            _why1202pg = _gate_still_fails_on_1202pg(self.hub_dir, str(task.get("title") or ""))
+            if _why1202pg:
+                return {"error": (
+                    f"cancel denied: {task_id} is the framework's delivery-gate repair task and "
+                    f"the gate still fails on it — {_why1202pg}. It is not stale: delivery of "
+                    "this milestone is decided by the framework gate, not by deliverability_"
+                    "check. Leave it for its assignee; it clears when the gate does.")}
         # Cancellation is never silent: the event below is pushed to the
         # orchestrator (subscription, high priority), so a reason is
         # mandatory for agent-initiated cancels — it IS the notification.

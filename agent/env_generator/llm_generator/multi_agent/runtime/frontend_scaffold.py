@@ -10242,6 +10242,31 @@ def _env_flag_914() -> bool:
     return _raw not in {"0", "false", "no", "n", "off"}
 
 
+def _lane_authored_real_page_1202pj(src: str) -> bool:
+    """#1202pj — a lane page with real behaviour that does NOT route through `../components/`.
+
+    #914 defers to a lane page only when `_imports_own_components` sees `'../components/'`. Every
+    other honest shape read as "not refined" and `scaffold_pages_from_contract` replaced it with the
+    structured-floor projection: a self-contained page (r126 LiveStreamsPage, 6,251 bytes with a
+    list and a create form; netflix-r45 PlayerPage, a real player), a page delegating to a sibling
+    (`import FriendsPage from './FriendsPage.jsx'`), a re-export (`export { default } from`).
+    694 clobbers across 30 recent runs. The cost, same run and same judge (r120):
+    friends_suggested_creators 0.48 / 0.70 on the lane page, 0.08 on the projection; live_discover
+    0.43 vs 0.08.
+
+    Only reached for a page WITHOUT the framework's marker (the caller checks `not _marked`), so a
+    projection can never qualify; and never for a definitive stub, which #488 still heals.
+    """
+    text = src or ""
+    if not text.strip() or _is_definitive_stub_page(text):
+        return False
+    if re.search(r"export\s*\{\s*default\s*\}\s*from\s*['\"]\.", text):
+        return True
+    if re.search(r"import\s+[^;]*?from\s*['\"]\./[^'\"]+['\"]", text):
+        return True
+    return bool(_STUB_REAL_CONTENT_RE.search(text))
+
+
 def _imports_own_components(src: str) -> bool:
     """Does this page pull in its own components? — #583's first condition, in its own words:
 
@@ -11396,7 +11421,9 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                         # exposure for free — how many pages the rule would have kept, and which —
                         # with byte-identical output. That is the cheap half of the experiment.
                         _lane_real_914 = bool(
-                            _cand_ok and not _marked and _imports_own_components(_existing))
+                            _cand_ok and not _marked
+                            and (_imports_own_components(_existing)
+                                 or _lane_authored_real_page_1202pj(_existing)))
                         _defer_914 = _lane_real_914 and _env_flag_914()
                         if _lane_real_914:
                             _record_exposure_946(frontend_dir, comp, {
@@ -12535,9 +12562,20 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 pass
         idx_css = fe / "src" / "index.css"
         try:
-            if not idx_css.exists() or "@tailwind" not in idx_css.read_text(encoding="utf-8"):
+            # #1202pi: PREPEND the directives; never replace the lane's stylesheet. The check was
+            # "no @tailwind in index.css" and the repair wrote the three-line baseline over the
+            # whole file, so a lane that wrote its app's CSS without the directives lost all of
+            # it. r121: lane f2ae92c (14,314 bytes of hand-written TikTok CSS) -> framework
+            # 1efcb56 (59 bytes); the visual capture 6 minutes later fell from 0.44 to 0.165, and
+            # climbed to 0.715 once the lane restored it. 19 wipes across 4 runs.
+            _existing_1202pi = idx_css.read_text(encoding="utf-8") if idx_css.exists() else ""
+            if "@tailwind" not in _existing_1202pi:
                 idx_css.parent.mkdir(parents=True, exist_ok=True)
-                _fw_write_1202cw(idx_css, _BASELINE_INDEX_CSS, encoding="utf-8")
+                _fw_write_1202cw(
+                    idx_css,
+                    _BASELINE_INDEX_CSS + (("\n" + _existing_1202pi) if _existing_1202pi.strip()
+                                           else ""),
+                    encoding="utf-8")
                 changed.append("src/index.css (tailwind directives)")
         except Exception:
             pass
