@@ -17,6 +17,7 @@ from typing import Any, AsyncIterator, Dict, Optional, Union, Tuple, Set
 import asyncio
 import base64
 import contextvars
+import itertools
 import json
 import logging
 import os
@@ -658,6 +659,50 @@ def _apply_observation_mask(messages: list, cutoff: int, max_old: int,
 # first two messages (system prompt + task) match — i.e. the same conversation. Cheap: hashes
 # only, one dict entry per conversation, and it never raises into a request.
 _PREFIX_LAST_1202NR: "Dict[str, Any]" = {}
+
+
+_CALL_SEQ_1202OC = itertools.count(1)
+
+
+def _call_id_1202oc() -> str:
+    """A short id shared by one call's [LLM Request] and [LLM Response] lines."""
+    return "c%05d" % next(_CALL_SEQ_1202OC)
+
+
+def _prompt_split_1202oc(tools: Any, messages: Any) -> str:
+    """#1202oc: say what the prompt is MADE OF, so the expensive part is identifiable.
+
+    tiktok-r126 paid $240 of $293 for INPUT: 249M prompt tokens over 4437 calls (56k each) for
+    1.6M tokens of output, and 92% of that input was cached — at a tenth of the price it still
+    came to $126. Whether the money is in the system prompt, the tool schemas or the accumulated
+    history decides which fix is worth building, and the log could not say: five lanes run
+    concurrently, so a [LLM Request] line cannot be matched to the [LLM Response] that carries
+    `prompt_tokens`. Two estimates off the same log disagreed by 30k tokens per call. `call=` on
+    both lines makes the pairing exact; the split makes the answer arithmetic instead of
+    inference.
+    """
+    try:
+        sys_chars = 0
+        hist_chars = 0
+        for i, m in enumerate(messages or []):
+            if isinstance(m, dict):
+                role, content, calls = m.get("role"), m.get("content"), m.get("tool_calls")
+            else:
+                role = getattr(m, "role", None)
+                content = getattr(m, "content", None)
+                calls = getattr(m, "tool_calls", None)
+            n = len(content) if isinstance(content, str) else len(
+                json.dumps(content, default=str)) if content is not None else 0
+            if calls:
+                n += len(json.dumps(calls, default=str))
+            if i == 0 and str(role) == "system":
+                sys_chars += n
+            else:
+                hist_chars += n
+        tools_chars = len(json.dumps(tools, default=str)) if tools else 0
+        return " split=sys:%d,tools:%d,hist:%d" % (sys_chars, tools_chars, hist_chars)
+    except Exception:
+        return ""
 
 
 def _prefix_trace_1202nr(tools: Any, messages: Any) -> str:
@@ -2273,8 +2318,10 @@ class OpenAIClient(BaseLLMClient):
         msg_count = len(safe_messages)
         total_content_len = _payload_chars_1199(safe_messages)
         tool_count = len(tools) if tools else 0
-        self._logger.info(f"[LLM Request] model={model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}"
-                          f"{_prefix_trace_1202nr(tools, safe_messages)}")
+        _cid_1202oc = _call_id_1202oc()
+        self._logger.info(f"[LLM Request] call={_cid_1202oc} model={model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}"
+                          f"{_prefix_trace_1202nr(tools, safe_messages)}"
+                          f"{_prompt_split_1202oc(tools, safe_messages)}")
         
         async def _call_with_progress():
             """Wrapper that logs progress during long waits"""
@@ -2384,7 +2431,7 @@ class OpenAIClient(BaseLLMClient):
             cached_tokens = "n/a"      # a provider without the field must never break a call
         has_tool_calls = bool(message.tool_calls)
         _record_usage_1163(prompt_tokens, cached_tokens, completion_tokens)  # #1163
-        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={choice.finish_reason}")
+        self._logger.info(f"[LLM Response] call={_cid_1202oc} latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={choice.finish_reason}")
 
         return LLMResponse(
             content=message.content or "",
@@ -3318,7 +3365,9 @@ class GoogleClient(BaseLLMClient):
         msg_count = len(safe_messages)
         total_content_len = _payload_chars_1199(safe_messages)
         tool_count = len(tools) if tools else 0
-        self._logger.info(f"[LLM Request] model={self.config.model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}")
+        _cid_1202oc = _call_id_1202oc()
+        self._logger.info(f"[LLM Request] call={_cid_1202oc} model={self.config.model_name}, messages={msg_count}, content_chars={total_content_len}, tools={tool_count}"
+                          f"{_prompt_split_1202oc(tools, safe_messages)}")
         
         async def _call_with_progress():
             """Wrapper that logs progress during long waits"""
@@ -3523,7 +3572,7 @@ class GoogleClient(BaseLLMClient):
             self._logger.info(f"[LLM thinking] {_thinking[:1500]}")
 
         _record_usage_1163(prompt_tokens, cached_tokens, completion_tokens)  # #1163
-        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
+        self._logger.info(f"[LLM Response] call={_cid_1202oc} latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
 
         return LLMResponse(
             content=content,

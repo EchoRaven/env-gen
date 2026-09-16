@@ -78,7 +78,7 @@ def test_absent_is_reported_as_absent_not_as_zero_1026b():
 def test_both_response_sites_now_report_it():
     """The two paths must not drift again — that drift is the whole defect."""
     src = inspect.getsource(L)
-    sites = re.findall(r'\[LLM Response\] latency=[^"\']*', src)
+    sites = re.findall(r'\[LLM Response\][^"\']*latency=[^"\']*', src)   # #1202oc: `call=` id first
     assert len(sites) >= 2, sites
     for s in sites:
         assert "cached_tokens=" in s, f"a response log site without cached_tokens: {s[:90]}"

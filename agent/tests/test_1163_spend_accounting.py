@@ -13,6 +13,7 @@ a model's rate. Unset means tokens are still counted and cost reads 0.0 with
 """
 import importlib
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -90,7 +91,8 @@ def test_it_is_recorded_at_every_response_site():
     src = Path(L.__file__).read_text(encoding="utf-8")
     calls = src.count("_record_usage_1163(prompt_tokens, cached_tokens, "
                       "completion_tokens)")     # the def line must not count
-    assert calls == src.count("[LLM Response] latency=") == 2, calls
+    # #1202oc put a `call=` id between the tag and `latency=`; the property is unchanged.
+    assert calls == len(re.findall(r"\[LLM Response\][^\"']*latency=", src)) == 2, calls
 
 
 def test_the_run_record_carries_it():
