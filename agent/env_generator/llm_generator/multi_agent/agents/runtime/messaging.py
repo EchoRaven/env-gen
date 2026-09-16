@@ -1013,6 +1013,21 @@ Start by thinking about what might cause this issue.
             self._active_phase = prev_phase
             await self._drain_deferred_task_ready_messages()
 
+    def _open_bugs_to_triage_1202on(self) -> list:
+        """#1202on — the open-bug set this wake would act on. Fail OPEN: on any doubt, triage.
+
+        A wrong `[]` here silently drops a triage, which is far worse than a wasted loop, so an
+        unreadable hub, a missing accessor or any exception all return a non-empty sentinel and
+        the loop runs exactly as before.
+        """
+        try:
+            wh = getattr(getattr(self, "_hubs", None), "workhub", None)
+            if wh is None or not hasattr(wh, "list_open_bugs"):
+                return ["unknown"]
+            return list(wh.list_open_bugs() or [])
+        except Exception:
+            return ["unknown"]
+
     async def _handle_bug_triage(self, message: BaseMessage) -> None:
         """Run ONE triage loop for a bug_found / run_failed wakeup (#1202dr).
 
@@ -1022,6 +1037,19 @@ Start by thinking about what might cause this issue.
         """
         msg_type = (message.metadata or {}).get("msg_type") or "bug_found"
         payload = message.payload if isinstance(message.payload, str) else str(message.payload)
+        # #1202on: ASK THE QUEUE BEFORE PAYING FOR THE LOOP. The prompt below opens with
+        # `bug_list_open()`, so a wake with an empty queue buys one full-context agentic loop
+        # (system prompt + up to 30 steps) to be told there is nothing to do. Measured over the
+        # debugger's own transcripts: r125 229 triage cycles, 134 (58%) ended in a `finish()`
+        # saying exactly that, 80 of them with a literally empty `bug_list_open()`; r124 75 of
+        # 155; r126 19 of 37. The framework already computes this set for the debugger's hub
+        # pulse, so the answer costs a dict lookup. A wake that finds work is untouched.
+        if not self._open_bugs_to_triage_1202on():
+            self._logger.info(
+                "[%s] #1202on skipping the %s triage wake: the open-bug queue is empty, so the "
+                "loop would open a full context only to report nothing to do (the next %s "
+                "re-wakes it).", self.agent_id, msg_type, msg_type)
+            return
         self._logger.info(
             f"[{self.agent_id}] Handling {msg_type} — opening a triage loop: {payload[:160]}")
 

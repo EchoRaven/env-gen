@@ -1300,6 +1300,31 @@ class RegistryHub:
         )
         return updated
 
+    # #1202om: the same declared type, spelled two ways. A re-registration that changes only
+    # `bool`→`boolean` or `int`→`integer` is not a contract change, but the comparison below is
+    # `old[key] != new[key]` on raw strings, so it minted a `type_changed_fields` event, an
+    # URGENT message to every consumer, and a P0 task titled "Fix breaking change in <endpoint>".
+    # Measured: r125 filed 199 such tasks — 25% of ALL its tasks, 140 of them at the frontend;
+    # r124 77; r126 19. tiktok-r126 12:39:57 is the shape: `GET /api/notifications` re-registered
+    # with `'is_read': 'bool'` → `'boolean'`, nothing else.
+    _TYPE_ALIASES_1202OM = {
+        "bool": "bool", "boolean": "bool",
+        "int": "int", "integer": "int", "number": "float", "float": "float",
+        "str": "str", "string": "str", "text": "str",
+        "dict": "object", "object": "object",
+        "list": "array", "array": "array",
+        "datetime": "datetime", "timestamp": "datetime", "date-time": "datetime",
+    }
+
+    @classmethod
+    def _canon_type_1202om(cls, declared: Any) -> str:
+        """One spelling per declared type, so only a REAL change compares unequal."""
+        t = str(declared or "").strip().lower()
+        optional = t.endswith("?")
+        t = t.rstrip("?").strip()
+        base = cls._TYPE_ALIASES_1202OM.get(t, t)
+        return base + ("?" if optional else "")
+
     def detect_breaking_change(self, old_schema: dict, new_schema: dict) -> dict:
         old_schema = old_schema or {}
         new_schema = new_schema or {}
@@ -1313,7 +1338,8 @@ class RegistryHub:
         if isinstance(old_response, dict) and isinstance(new_response, dict):
             removed_response_fields = sorted(set(old_response.keys()) - set(new_response.keys()))
             for key in old_response.keys() & new_response.keys():
-                if old_response[key] != new_response[key]:
+                if (self._canon_type_1202om(old_response[key])      # #1202om
+                        != self._canon_type_1202om(new_response[key])):
                     type_changed_fields.append(key)
 
         required_added_in_request: list = []

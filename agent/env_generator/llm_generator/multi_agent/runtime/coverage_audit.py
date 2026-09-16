@@ -757,12 +757,41 @@ def _coverage_bases_1202fn(app_root: Path) -> Tuple[Path, Path]:
     return p, p
 
 
+def _dead_files_from_decl_root_1202op(tree_root: Path, decl_root: Path) -> List[dict]:
+    """#1202op — report a dead file by the SAME path a ui_page declares it with.
+
+    `#1202fn` gave the two scans the two different bases they each need, and with it the two
+    halves of ONE tool result started naming one file two ways: `scan_dead_files` reports
+    `src.relative_to(tree_root)` → `frontend/src/pages/MessagesPage.jsx`, a path that resolves
+    from no lane's working directory, while `scan_pages_without_files` reports
+    `app/frontend/src/pages/MessagesPage.jsx`. r125's frontend lane could not tell they were the
+    same file: five consecutive P0s went into that confusion, and the framework's own task text
+    recorded it — "Previous remediation verified app/frontend/…, but the live coverage gate is
+    still seeing the non-app-root path."
+
+    Only the vocabulary changes; which files are dead is untouched.
+    """
+    out = scan_dead_files(tree_root)
+    try:
+        if Path(tree_root).resolve() == Path(decl_root).resolve():
+            return out
+        prefix = Path(tree_root).resolve().relative_to(Path(decl_root).resolve())
+    except Exception:
+        return out
+    for row in out:
+        try:
+            row["path"] = str(prefix / str(row.get("path") or ""))
+        except Exception:
+            pass
+    return out
+
+
 def compute_coverage(hub_registry, app_root) -> CoverageReport:
     tree_root, decl_root = _coverage_bases_1202fn(Path(app_root))
     return CoverageReport(
         dead_endpoints=scan_dead_endpoints(hub_registry),
         dead_tables=[],   # #1199: detection removed; see the note above
-        dead_files=scan_dead_files(tree_root),
+        dead_files=_dead_files_from_decl_root_1202op(tree_root, decl_root),
         dead_mcp_tools=scan_dead_mcp_tools(hub_registry),
         empty_mcp_servers=scan_empty_mcp_servers(hub_registry),
         pages_without_files=scan_pages_without_files(hub_registry, decl_root),
