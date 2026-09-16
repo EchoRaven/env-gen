@@ -219,6 +219,12 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # in-process lane time accrues.
 _MIN_GATE_EVALS_BEFORE_ABORT_1202LU = int(
     os.environ.get("ENVGEN_MIN_GATE_EVALS_BEFORE_ABORT", "6"))
+# #1202px: a resume whose inherited no-convergence budget is already spent gets this much WALL
+# time before the abort may fire. Six evaluations (#1202lu) is ~7 minutes, one gate cycle, and
+# not one REPAIR cycle: tiktok-r126-ab4 dispatched the verifier's chain repair at 15:18 and
+# aborted at 15:25; ab3 the same shape at 20 minutes. Each attempt cost $18-28 and could not
+# have converged. The operator chose to resume; ENVGEN_MAX_SPEND_USD bounds what it costs.
+_RESUME_ATTEMPT_S_1202PX = float(os.environ.get("ENVGEN_RESUME_ATTEMPT_S", "1800"))
 
 def _time_to_first_gate_s_1202hz() -> int:
     """The threshold, tunable, and never a reason the orchestrator cannot be imported.
@@ -4498,6 +4504,13 @@ class Orchestrator:
         except Exception:
             return 0.0
 
+    def _resume_floor_open_1202px(self, now: float) -> bool:
+        """#1202px: True while a resume that started over budget is inside its attempt window."""
+        try:
+            return float(now) < float(getattr(self, "_resume_floor_until_1202px", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+
     def _grace_window_open_1202ny(self, now: float) -> bool:
         """#1202ny: True while a #228 converging-grace window granted earlier is still running.
 
@@ -4602,7 +4615,9 @@ class Orchestrator:
                     int(_left / 60), int(_spent / 60),
                     int(FWVAL_NO_DELIVER_ABORT_S / 60),
                     int(_TIME_TO_FIRST_GATE_S_1202GO / 60))
+                self._resume_floor_until_1202px = time.time() + _RESUME_ATTEMPT_S_1202PX
                 return
+            self._resume_floor_until_1202px = time.time() + _RESUME_ATTEMPT_S_1202PX
             self._logger.warning(
                 "#1202fw this run has ALREADY spent %d min of lane time since its first "
                 "declined delivery, past the %d min no-convergence abort. The abort also "
@@ -5158,7 +5173,8 @@ class Orchestrator:
                         and (self._gate_evals_1202lu
                              >= _MIN_GATE_EVALS_BEFORE_ABORT_1202LU)
                         and not getattr(self, "_fwval_abort_reason", None)
-                        and not self._grace_window_open_1202ny(_now2)):
+                        and not self._grace_window_open_1202ny(_now2)
+                        and not self._resume_floor_open_1202px(_now2)):
                     # #228 (r20: the verifier cleared the LAST gate 36s after the
                     # abort fired): a small, recently-shrinking failing set gets a
                     # bounded grace extension instead of the axe.

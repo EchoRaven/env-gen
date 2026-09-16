@@ -2227,7 +2227,27 @@ def _denial_scope_verdict_663(sent_body, body_text) -> str:
     if not isinstance(got, dict):
         return ""
     echoed, swapped = [], []
+    # #1202pw: only an OWNER-shaped field can cross an ownership boundary. Comparing every
+    # field called tiktok-r126's `POST /api/notifications {type, title, body, video_id,
+    # comment_id}` "BOUNDARY CROSSED — a data-isolation hole" because the row kept its own
+    # title and the ids of content anyone may reference, while the server stored it under the
+    # caller (`user_id` 32, `actor_id` null). The probe claimed no one else's ownership; its
+    # denial expectation is what is wrong, and the old sentence sent the lanes after a leak.
+    _owner_sent_1202pw = [k for k in sent_body if str(k) in _OWNER_FK_NAMES]
+    _stored_owner_1202pw = "; ".join(
+        f"{k}={got.get(k)!r}" for k in _OWNER_FK_NAMES if got.get(k) is not None)
+    _plain_sent_1202pw = [k for k, v in sent_body.items()
+                          if k in got and v is not None and not isinstance(v, (dict, list))]
+    if not _owner_sent_1202pw and _stored_owner_1202pw and _plain_sent_1202pw:
+        return ("NOT A BOUNDARY PROBE — the request named no owner field (sent: "
+                + ", ".join(map(str, _plain_sent_1202pw[:8]))
+                + f") and the row was stored under the caller ({_stored_owner_1202pw})"
+                + ", so no data crossed and a success is the correct answer. Re-author the "
+                  "step: expect success, or name ANOTHER user's owner id if a denial is what it "
+                  "means to test. ")
     for k, v in sent_body.items():
+        if str(k) not in _OWNER_FK_NAMES:
+            continue
         if k not in got or isinstance(v, (dict, list)) or v is None:
             continue
         try:
