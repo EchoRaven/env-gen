@@ -745,6 +745,32 @@ _PUBLIC_LITERAL_RE_1202KH = re.compile(
     r"^_FW_PUBLIC_API_1202KH = \[.*?^\]", re.M | re.S)
 
 
+_ACTOR_SIG_RE_1202OR = "get_current_user"
+
+
+def _listed_route_demands_a_user_1202or(src: str, method: str, path: str) -> bool:
+    """#1202or — does THIS file's own handler for (method, path) require an authenticated user?
+
+    The public list is a UNION and never shrinks (deliberately: the projector sees only the
+    endpoints of the current cycle, so replacing it would drop the skeleton's entries). But
+    `_reproject_stale_auth_1202jt` DOES drop and rebuild a handler whose auth moved, so a route
+    can gain an actor while its public entry is immortal — and then the guard reports the route
+    as public while the handler 401s anyway, which is the logged-out-landing-page signature
+    #1202kh exists to eliminate. Measured across 12 delivered backends: 15 of 96 listed entries
+    (16%) name a handler that takes `Depends(get_current_user)`.
+
+    Only a contradiction INSIDE THIS FILE is removed. A listed route with no projected handler
+    here (a lane route in custom_routes.py) is left alone — fail open, as before.
+    """
+    try:
+        pat = (r'@app\.%s\("%s"\)\s*\ndef \w+\(([^\n]*)\):'
+               % (re.escape(str(method).lower()), re.escape(str(path))))
+        m = re.search(pat, src)
+        return bool(m and _ACTOR_SIG_RE_1202OR in m.group(1))
+    except Exception:
+        return False
+
+
 def refresh_public_api_1202kh(src: str, public: "List[Tuple[str, str]]") -> str:
     """Rewrite main.py's `_FW_PUBLIC_API_1202KH` literal to the CURRENT public set.
 
@@ -768,8 +794,14 @@ def refresh_public_api_1202kh(src: str, public: "List[Tuple[str, str]]") -> str:
     except Exception:
         return src
     merged = list(have) + [t for t in public if t not in have]
-    if len(merged) == len(have):
+    # #1202or: …and an entry this same file contradicts comes OUT. The union is what keeps the
+    # skeleton's entries; it is not a reason to advertise a route whose handler demands a user.
+    _kept = [t for t in merged
+             if not (isinstance(t, tuple) and len(t) == 2
+                     and _listed_route_demands_a_user_1202or(src, t[0], t[1]))]
+    if len(_kept) == len(have) and _kept == list(have):
         return src
+    merged = _kept
     body = "".join("    (%r, %r),\n" % (mm, pp) for mm, pp in merged)
     return src[:m.start()] + "_FW_PUBLIC_API_1202KH = [\n" + body + "]" + src[m.end():]
 
