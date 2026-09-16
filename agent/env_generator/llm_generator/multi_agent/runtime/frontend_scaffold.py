@@ -641,6 +641,68 @@ def _locally_bound_names_1202mq(src: str) -> Set[str]:
     return names
 
 
+# #1202pl: NOT EVERY UNIMPORTED TAG IS AN ICON.
+#
+# lucide-react exports a `Link` icon, so r125's `<Link to={commentsHref}>` that the lane forgot
+# to import built cleanly and rendered a chain-link glyph where the comments link was: no
+# navigation, no error. The corpus's heal imports also include router names (`BrowserRouter`,
+# `Routes`, `Route`) and the project's own components and pages (`AppShell`, `LoginPage`,
+# `FypFeedCommentsPage`, `AuthShell`, `EngagementRail` ...), each turned into a placeholder
+# glyph. A name the router exports, or a file the project itself has, has a known source.
+_ROUTER_NAMES_1202PL = frozenset({
+    "Link", "NavLink", "Navigate", "Outlet", "Routes", "Route", "BrowserRouter",
+    "HashRouter", "MemoryRouter", "RouterProvider", "ScrollRestoration", "Form"})
+
+
+def _project_modules_1202pl(src_dir: Path) -> Dict[str, List[Path]]:
+    """``{Name: [files]}`` for every .jsx/.tsx/.js file under src named ``Name.*``."""
+    out: Dict[str, List[Path]] = {}
+    for g in src_dir.rglob("*"):
+        if (g.suffix in (".jsx", ".tsx", ".js", ".ts") and g.is_file()
+                and g.stem[:1].isupper() and "node_modules" not in g.parts):
+            out.setdefault(g.stem, []).append(g)
+    return out
+
+
+def _import_line_for_1202pl(name: str, f: Path, modules: Dict[str, List[Path]],
+                            router_ok: bool) -> str:
+    """The import that binds ``name`` in ``f``, or "" to leave it to lucide."""
+    if router_ok and name in _ROUTER_NAMES_1202PL:
+        return "import { %s } from 'react-router-dom';" % name
+    cands = [g for g in modules.get(name, []) if g.resolve() != f.resolve()]
+    if len(cands) != 1:
+        return ""   # none, or ambiguous: no guess
+    g = cands[0]
+    try:
+        body = g.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    rel = os.path.relpath(str(g.with_suffix("")), str(f.parent)).replace(os.sep, "/")
+    if not rel.startswith("."):
+        rel = "./" + rel
+    if re.search(r"\bexport\s+default\b", body):
+        return "import %s from '%s';" % (name, rel)
+    if re.search(r"\bexport\s+(?:function|const|class|let)\s+%s\b" % re.escape(name), body):
+        return "import { %s } from '%s';" % (name, rel)
+    return ""
+
+
+def _router_is_a_dependency_1202pl(frontend_dir) -> bool:
+    _pj = Path(frontend_dir) / "package.json"
+    if not _pj.is_file():
+        return False
+    try:
+        pkg = json.loads(_pj.read_text(encoding="utf-8"))
+        return any("react-router-dom" in (pkg.get(k) or {})
+                   for k in ("dependencies", "devDependencies"))
+    except Exception as exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("icon-heal-router-dep-1202pl",
+                       "#1202pl: could not read package.json, router names fall back to "
+                       "lucide", exc)
+        return False
+
+
 def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
     """Import every capitalized JSX tag that is used but neither imported nor locally
     defined, via lucide-react (safe-icon plugin guarantees no crash either way).
@@ -650,6 +712,8 @@ def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
         src_dir = Path(frontend_dir) / "src"
         if not src_dir.is_dir():
             return {"repaired": repaired}
+        _modules_1202pl = _project_modules_1202pl(src_dir)
+        _router_ok_1202pl = _router_is_a_dependency_1202pl(frontend_dir)
         for f in src_dir.rglob("*"):
             if f.suffix not in (".jsx", ".tsx") or not f.is_file():
                 continue
@@ -660,7 +724,15 @@ def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
             missing = _unimported_jsx_tags(txt)
             if not missing:
                 continue
-            add = "import { " + ", ".join(missing) + " } from 'lucide-react';\n"
+            _known_1202pl = []
+            for _n in list(missing):
+                _line = _import_line_for_1202pl(_n, f, _modules_1202pl, _router_ok_1202pl)
+                if _line:
+                    _known_1202pl.append(_line)
+                    missing.remove(_n)
+            add = "".join(l + "\n" for l in _known_1202pl)
+            if missing:
+                add += "import { " + ", ".join(missing) + " } from 'lucide-react';\n"
             # #970: splice after the last import STATEMENT by character offset, not after
             # the last LINE that starts with "import ". These generated components are
             # routinely written minified — every import AND the whole component on one
@@ -12357,11 +12429,16 @@ function _bcIsApi(url) {
     return u.origin === window.location.origin && u.pathname.indexOf('/api/') === 0;
   } catch (e) { return String(url).indexOf('/api/') === 0 || String(url).includes('/api/'); }
 }
-function _bcOn401(url) {
+function _bcOn401(url, hadAuth) {
   // Report whether a navigation was actually started, so the fetch wrapper knows
   // when it must withhold the response. Returns false on /login|/register|/signup, where
   // no redirect happens and the caller MUST still get its answer.
-  if (String(url).includes('/api/')
+  // Only a request that CARRIED a token has a session to lose. An anonymous visitor's 401
+  // is the endpoint saying "sign in for this part", not "your session expired": sending
+  // them to /login from a public page (a logged-out feed whose badge call needs a user)
+  // makes that page unreachable. Lanes kept exempting '/' by hand and every framework
+  // delivery put the redirect back. The page decides what to show a visitor.
+  if (hadAuth && String(url).includes('/api/')
       && !['/login', '/register', '/signup'].includes(window.location.pathname)) {
     localStorage.removeItem('access_token');
     window.location.assign('/login');
@@ -12373,9 +12450,11 @@ const _origFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : (input && input.url) || '';
   const tok = _bcTok();
-  if (tok && _bcIsApi(url)) {
+  let hadAuth = false;
+  if (_bcIsApi(url)) {
     const h = new Headers((init && init.headers) || (typeof input !== 'string' && input && input.headers) || {});
-    if (!h.has('Authorization')) { h.set('Authorization', 'Bearer ' + tok); init = Object.assign({}, init, { headers: h }); }
+    if (tok && !h.has('Authorization')) { h.set('Authorization', 'Bearer ' + tok); init = Object.assign({}, init, { headers: h }); }
+    hadAuth = h.has('Authorization');
   }
   const res = await _origFetch(input, init);
   // `location.assign` SCHEDULES a navigation, it does not stop execution. Returning
@@ -12384,7 +12463,7 @@ window.fetch = async (input, init) => {
   // TypeError crashed /titles and was one of the two blockers that stopped netflix-r44 from
   // delivering, on a backend whose own probes were 17/17 green. Once the redirect is
   // underway the caller has no use for a body: never settle, so no page code can run.
-  if (res.status === 401 && _bcOn401(url)) return new Promise(function () {});
+  if (res.status === 401 && _bcOn401(url, hadAuth)) return new Promise(function () {});
   return res;
 };
 const _origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
@@ -12395,7 +12474,7 @@ XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
 const _origOpen = XMLHttpRequest.prototype.open;
 XMLHttpRequest.prototype.open = function (method, url, ...rest) {
   this._bcUrl = url;
-  this.addEventListener('load', () => { if (this.status === 401) _bcOn401(url); });
+  this.addEventListener('load', () => { if (this.status === 401) _bcOn401(url, !!this._bcAuthSet); });
   return _origOpen.call(this, method, url, ...rest);
 };
 const _origXhrSend = XMLHttpRequest.prototype.send;

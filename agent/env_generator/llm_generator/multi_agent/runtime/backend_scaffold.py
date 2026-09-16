@@ -869,6 +869,51 @@ def _route_param_annotations(src: str) -> Dict[tuple, Dict[str, str]]:
     return out
 
 
+def _narrowing_is_evidenced_1202pk(models_src: str, path: str, param: str) -> bool:
+    """#1202pk: may #119 rewrite ``<param>: str`` to ``int`` on ``path``?
+
+    Widening (int -> str) never breaks a request; narrowing 422s every id that is
+    not a number. r125's `/api/videos/{video_id}/like` was projected with ``int``
+    while ``videos.id`` is a String uuid PK (its twin ``video`` is the integer
+    one); #119 narrowed it 28 times, the lane restored ``str`` each time, and
+    ``str`` is what shipped. Narrow only when models.py says the resource table
+    (the segment before the first path param, exact name first) has an integer PK
+    and the param is not named after one of its textual columns."""
+    import ast as _ast
+    try:
+        tree = _ast.parse(models_src)
+    except Exception:
+        return False
+    int_pk, known = set(), set()
+    for node in tree.body:
+        if not isinstance(node, _ast.ClassDef):
+            continue
+        tname, pk_int = None, False
+        for st in node.body:
+            seg = _ast.get_source_segment(models_src, st) or ""
+            m = re.search(r"__tablename__\s*=\s*['\"]([^'\"]+)", seg)
+            if m:
+                tname = m.group(1).lower()
+            if "primary_key" in seg and re.search(r"\b(Integer|BigInteger|SmallInteger)\b", seg):
+                pk_int = True
+        if tname:
+            known.add(tname)
+            if pk_int:
+                int_pk.add(tname)
+    segs = [x for x in path.strip("/").split("/") if x and x != "api"]
+    idx = next((i for i, x in enumerate(segs) if x.startswith("{")), 0)
+    if idx < 1:
+        return False
+    res = segs[idx - 1].lower().replace("-", "_")
+    cands = [res] if res in known else [c for c in (res.rstrip("s"), res + "s") if c in known]
+    if not cands:
+        return False
+    table = cands[0]
+    if param in _string_columns_1104(models_src).get(table, set()):
+        return False
+    return table in int_pk
+
+
 def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, object]:
     """FIX #119 (instagram run-35 M4 STUCK, 2026-07-09, live-diagnosed): the lane's
     custom GET /api/users/{username} annotated the param ``int`` while the contract
@@ -895,6 +940,10 @@ def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, obj
         except Exception:
             return {"fixed": 0, "reason": "custom_routes unparseable"}
         verbs = {"get", "post", "put", "patch", "delete"}
+        try:
+            _models_src_1202pk = (be / "models.py").read_text(encoding="utf-8")
+        except Exception:
+            _models_src_1202pk = ""   # no evidence -> never narrow (#1202pk)
         edits = []  # (lineno, col0, col1, old, new)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -913,6 +962,9 @@ def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, obj
                     if (tgt and isinstance(arg.annotation, ast.Name)
                             and arg.annotation.id in ("int", "str")
                             and arg.annotation.id != tgt):
+                        if tgt == "int" and not _narrowing_is_evidenced_1202pk(
+                                _models_src_1202pk, dec.args[0].value, arg.arg):
+                            continue  # #1202pk: unevidenced str -> int narrowing
                         edits.append((arg.annotation.lineno - 1,
                                       arg.annotation.col_offset,
                                       arg.annotation.end_col_offset,
