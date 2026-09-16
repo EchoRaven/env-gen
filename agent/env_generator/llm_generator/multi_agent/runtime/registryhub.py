@@ -1865,13 +1865,16 @@ class RegistryHub:
             while _n1202ly.startswith("page:ui:"):
                 _n1202ly = _n1202ly[len("page:ui:"):]
             if _n1202ly != str(name or ""):
-                from .message_format import warn_once_1201
-                warn_once_1201(
-                    "registryhub.register_ui_page.id_as_name_1202ly",
-                    "a ui_page was registered under its own generated id (%r) — normalised to "
-                    "%r so the `page:ui:` prefix stops accumulating into phantom pages and "
-                    "PageUiPageUi… stub files" % (name, _n1202ly),
-                    ValueError("id used as name"))
+                # #1202ok: this is a mechanism that WORKED, so it must not speak through
+                # `warn_once_1201`, whose sentence is "treat this as the mechanism being OFF".
+                # That channel is how an auditor finds inert mechanisms; r122-r125 each carry a
+                # line from here asserting a working normalisation is off (4 false entries
+                # against 3 true ones in the same corpus).
+                import logging as _lg1202ok
+                _lg1202ok.getLogger(__name__).warning(
+                    "#1202ly a ui_page was registered under its own generated id (%r) — "
+                    "NORMALISED to %r, so the `page:ui:` prefix stops accumulating into "
+                    "phantom pages and PageUiPageUi… stub files.", name, _n1202ly)
                 name = _n1202ly
         except Exception:
             pass

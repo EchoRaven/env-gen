@@ -153,6 +153,9 @@ def test_the_question_is_asked_before_the_auth_decision():
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
     src = inspect.getsource(rp.project_missing_routes)
+    # #1202og: read CODE, not prose — a comment that QUOTED the auth line made `src.index`
+    # find the quote first and this probe went red on a correctly-ordered file.
+    src = "\n".join(ln for ln in src.splitlines() if not ln.strip().startswith("#"))
     assert (src.index("_structurally_private_resource_633(method, path, models)")
             < src.index("auth = resolve_endpoint_auth("))
 

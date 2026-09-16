@@ -2356,12 +2356,12 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     # "zero corpus steps break" still holds.
                     _why_1202md = (
                         "the table's only subject FK - a create naming none of them inserts a "
-                        "row that is nothing but its own id and owner (#1202bl). The request "
+                        "row that is nothing but its own id and owner. The request "
                         "schema marks it optional because it is optional INDIVIDUALLY; what is "
                         "required is that at least one subject FK be named"
                         if len(_subj_1202bl) == 1 else
                         "at least one subject FK must be named - a create naming none of them "
-                        "inserts a row that is nothing but its own id and owner (#1202bl)")
+                        "inserts a row that is nothing but its own id and owner")
                     body_lines += [
                         "    if not any(valid.get(_k) is not None for _k in %r):" % (_subj_1202bl,),
                         '        raise HTTPException(status_code=400, detail="one of %s is '
@@ -2739,6 +2739,47 @@ def _reproject_stale_auth_1202jt(src: str, declared_endpoints: List[Mapping[str,
     return "".join(l for i, l in enumerate(lines) if i not in drop_idx), dropped
 
 
+def _stamp_spec_visibility_1202og(models: Dict[str, Dict[str, Any]], project_root: Any) -> int:
+    """#1202og — put `visibility` where `#1202hh`/`#1202ht` read it. They never could.
+
+    Both predicates take a `meta` dict and ask for `meta["visibility"]`; every call site in this
+    module passes an `_orm_models` entry, whose keys are exactly
+    {cls, cols, fks, types, required} — so on the projector's path the materials' verdict was
+    unreachable and the SHAPE heuristics decided alone. Measured on tiktok-r126's real models:
+    `_structurally_private_resource_633` is True for `videos` and `comments` (the public feed:
+    the projected read owner-filters it AND takes `Depends(get_current_user)`, so a logged-out
+    visitor gets 401 on the app's front page) and False for `user_settings` and
+    `dm_conversations` (per-user rows served to any anonymous caller, unfiltered) — while that
+    run's `design/reference_spec.json` says, correctly, public / public / owner / owner.
+
+    The spec is the authority #1202hh already names ("compiled at design time from the product's
+    screenshots and docs, before any lane runs"). Read it here so both predicates come alive at
+    both call sites, with no signature change. Backfill only: a meta that already carries
+    `visibility` is left alone. Never raises — a projector that cannot read the spec projects
+    exactly as it did before.
+    """
+    try:
+        from .backend_skeleton import (_spec_visibility_1202hh,
+                                       _spec_verdict_for_table_1202oh)
+    except Exception:
+        return 0
+    try:
+        vis = _spec_visibility_1202hh(project_root) or {}
+    except Exception:
+        return 0
+    if not vis:
+        return 0
+    stamped = 0
+    for _t, _meta in (models or {}).items():
+        if not isinstance(_meta, dict) or str(_meta.get("visibility") or "").strip():
+            continue
+        declared = _spec_verdict_for_table_1202oh(str(_t), vis)
+        if declared:
+            _meta["visibility"] = declared
+            stamped += 1
+    return stamped
+
+
 def project_missing_routes(
     backend_dir: Any,
     declared_endpoints: List[Mapping[str, Any]],
@@ -2758,6 +2799,7 @@ def project_missing_routes(
     main_py = backend_dir / "main.py"
     if not main_py.exists():
         return {"projected": [], "already": 0, "error": "main.py absent"}
+    _project_root_1202og = backend_dir.parent.parent
     src = main_py.read_text(encoding="utf-8")
     # #1202jt: BEFORE `existing` is taken — a projected handler whose auth contract moved
     # since it was emitted is dropped here so the loop below rebuilds it from the contract as
@@ -2766,6 +2808,7 @@ def project_missing_routes(
     src, _reauth_1202jt = _reproject_stale_auth_1202jt(src, declared_endpoints)
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
+    _stamp_spec_visibility_1202og(models, _project_root_1202og)   # #1202og
     # #1202ir: actor tables the CONTRACT itself declares publicly readable. Computed once
     # from the same endpoint list the handlers are projected from, so the fold can never
     # publish an actor this app keeps behind auth.
@@ -2825,6 +2868,14 @@ def project_missing_routes(
         # #1202ht: an endpoint flag cannot publish a table the materials call per-user.
         if _explicit_public and _rm_cur and _declared_owner_private_1202ht(_rm_cur[1]):
             _explicit_public = False
+        # #1202og: …and withholding the exemption is only half of it. `_owner_scoped` comes from
+        # the CONTRACT alone, so a table the materials call per-user whose contract never set
+        # `owner_scoped_reads` was still projected with no actor and no filter — tiktok-r126
+        # served every account's `user_settings` and `dm_conversations` to anonymous callers
+        # exactly this way. The materials' `owner` verdict scopes the read, which also forces
+        # auth below (the endpoint's resolved auth is OR-ed with `_owner_scoped`).
+        if _rm_cur and _declared_owner_private_1202ht(_rm_cur[1]):
+            _owner_scoped = True
         if _explicit_public and _owner_scoped:
             _owner_scoped = False   # deliberate public read → all rows, no owner filter
         # #633: …but a table that is per-user-private BY CONSTRUCTION is private whatever the

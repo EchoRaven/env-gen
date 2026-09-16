@@ -61,7 +61,10 @@ def test_both_wordings_name_the_reason_and_the_ticket():
     for n in (1, 3):
         d = _emitted_detail(n)
         assert "nothing but its own id and owner" in d
-        assert "#1202bl" in d
+        # #1202oi: the REASON stays, the internal ticket does not — this string is an HTTP 400
+        # body an API consumer receives, and internal markers must not ship in generated
+        # output (standing rule). The marker stays in the emitter's own comment.
+        assert "#1202bl" not in d
 
 
 def test_the_guard_itself_is_unchanged():

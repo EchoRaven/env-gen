@@ -581,6 +581,38 @@ def _auth_override_blockers_1202s(app_root) -> List[str]:
         return []
 
 
+def _guard_tampering_blockers_1202oj(app_root) -> List[str]:
+    """#1202oj — #1202lj's findings, delivered to the gate. It had no caller at all.
+
+    `framework_guard_tampering_1202lj` (backend_audit) detects lane code that strips or rebinds
+    the framework's auth guard — the shape that makes an anonymous read of owner-private rows
+    legitimate-looking to every later check. Committed 2026-09-12; across the four runs since
+    (r123-r126) its condition is present in EVERY ONE (r126 `custom_routes.py:352`
+    `app.router.routes[:] = kept`; r125:618 rebinds `_FW_PUBLIC_API_1202KH`; r123:221 rebinds
+    `_fw_contract_public_1202kh`) and it fired zero times, because the only importer in the tree
+    was its own unit test. Its sibling `auth_override_findings_1202s` reaches the gate through
+    this exact channel and its findings appear in six gate ledgers.
+
+    Wired like the siblings: import-guarded, best-effort, `[]` on any failure (#792).
+    ``ENVGEN_GUARD_TAMPER_GATE=0`` disables.
+    """
+    try:
+        import os as _os1202oj
+        if str(_os1202oj.environ.get("ENVGEN_GUARD_TAMPER_GATE", "1")).strip().lower() in (
+                "0", "false", "no"):
+            return []
+        from .backend_audit import framework_guard_tampering_1202lj
+    except Exception as exc:
+        _gate_absent_792("_guard_tampering_blockers_1202oj", exc, "import")
+        return []
+    try:
+        return [f"framework auth guard tampered with: {f}"
+                for f in (framework_guard_tampering_1202lj(Path(app_root) / "backend") or [])]
+    except Exception as exc:
+        _gate_absent_792("_guard_tampering_blockers_1202oj", exc, "run")
+        return []
+
+
 def _unscoped_owner_read_blockers(app_root) -> List[str]:
     """#919: a served GET that returns every row of an OWNED table to any authenticated caller.
 
@@ -1084,6 +1116,7 @@ def compute_deliverability(hub_registry, app_root,
     # generator cannot disagree about what is private.
     blockers.extend(_unscoped_owner_read_blockers(app_root))
     blockers.extend(_auth_override_blockers_1202s(app_root))
+    blockers.extend(_guard_tampering_blockers_1202oj(app_root))   # #1202oj
 
     # FABRICATED member-field fallback gate (#175, gmrun9). The frontend renders
     # `place.rating || '4.5'` / `? place.name : 'HI Point Montara Lighthouse'` — invented data

@@ -1071,6 +1071,30 @@ def _spec_entity_fields_1202hk(project_root: Any, table: str) -> List[str]:
     return []
 
 
+def _spec_verdict_for_table_1202oh(name: str, vis: Dict[str, str]) -> str:
+    """#1202oh — the spec entity that names this TABLE, matched the way the tables are named.
+
+    `_apply_spec_visibility_1202hh` matched by exact name only. tiktok-r125's spec declares
+    singular entities (`video`, `comment`, `user_setting`) and its registry holds BOTH twins:
+    `video {visibility: public, owner_scoped_reads: False}` — stamped, and read by nothing — next
+    to `videos {owner_scoped_reads: True}`, which is the table every handler actually queries.
+    Its `GET /api/feed` auth_required flipped 16 times in 3h21m over that gap (886 lane steps),
+    because backend_audit's public-content exemption needs the verdict on the table the handler
+    reads. r126 (plural spec, no twins) had 0 flips.
+
+    Exact name first, so a spec that names both twins is unaffected; then the singular/plural
+    pair. Nothing else — a fuzzier match would let one entity's verdict govern a different table.
+    """
+    n = str(name or "").strip()
+    if not n:
+        return ""
+    for cand in (n, n[:-1] if n.endswith("s") else n + "s",
+                 n[:-3] + "y" if n.endswith("ies") else n):
+        if cand and vis.get(cand):
+            return str(vis[cand])
+    return ""
+
+
 def _apply_spec_visibility_1202hh(tables: Dict[str, Any], project_root: Any) -> None:
     """#1202hh -- stamp the materials' verdict onto an in-memory table dict, in place.
 
@@ -1093,7 +1117,7 @@ def _apply_spec_visibility_1202hh(tables: Dict[str, Any], project_root: Any) -> 
         for name, rec in list((tables or {}).items()):
             if not isinstance(rec, dict):
                 continue
-            declared = vis.get(str(name)) or vis.get(str(name).strip())
+            declared = _spec_verdict_for_table_1202oh(str(name), vis)   # #1202oh
             if not declared:
                 continue
             meta = dict(rec.get("metadata") or {})
