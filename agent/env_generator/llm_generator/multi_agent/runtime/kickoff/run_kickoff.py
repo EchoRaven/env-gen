@@ -534,6 +534,59 @@ def _frontend_page_from_resource(resource: str, apis_used: Optional[List[str]] =
     return page
 
 
+def derive_frontend_pages_from_spec_1202pf(project_root: Any) -> List[Dict[str, Any]]:
+    """#1202pf — the salvaged frontend section, built from the SCREENS the design names.
+
+    When the frontend lane misses kickoff, the framework authors its section for it. It did so
+    from the endpoint list — one `/<table>` CRUD page per collection — and never read
+    `design/reference_spec.json`, which is compiled before any lane runs and names every screen
+    with its `route_hint`. The lane later registers the spec screens too, so both sets live side
+    by side. `KICKOFF DERIVE ... authored ['frontend']` fired in 6 of 15 runs (r112-r126); those
+    runs carry 2-11 table-derived pages, the other 9 carry 0. In r126: 18 pages against 11 spec
+    screens, and all 11 derived pages claimed a spec reference image — the contested bindings
+    #1202pc had to untangle.
+
+    Returns [] when the spec is absent or names no routed screen, so the caller keeps the
+    endpoint-derived salvage exactly as before.
+    """
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        spec = _json.loads((_P(str(project_root)) / "design" / "reference_spec.json")
+                           .read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    pages: List[Dict[str, Any]] = [{
+        "id": "login_page", "route": "/login", "component": "LoginPage",
+        "purpose": "Authenticate the user (framework-owned auth surface).",
+    }, {
+        "id": "signup_page", "route": "/signup", "component": "SignupPage",
+        "purpose": "Register a new user (framework-owned auth surface).",
+    }]
+    seen = {"/login", "/signup"}
+    for sc in (spec.get("screens") or []) if isinstance(spec, dict) else []:
+        if not isinstance(sc, Mapping):
+            continue
+        name = str(sc.get("name") or "").strip()
+        route = str(sc.get("route_hint") or "").strip()
+        if not name or not route.startswith("/") or route in seen:
+            continue
+        seen.add(route)
+        comp = "".join(w.capitalize() for w in re.split(r"[_\-]+", name) if w) + "Page"
+        pages.append({"id": f"{name}_page", "route": route, "component": comp,
+                      "reference_image": f"{name}.png",
+                      "purpose": f"The '{name}' screen of the reference design."})
+    return pages if len(pages) > 2 else []
+
+
+def salvaged_frontend_pages_1202pf(project_root: Any, endpoints: Any, tables: Any = None
+                                   ) -> List[Dict[str, Any]]:
+    """#1202pf — what a salvaged frontend section declares: the design's screens when it names
+    any, else the endpoint-derived pages exactly as before."""
+    return (derive_frontend_pages_from_spec_1202pf(project_root)
+            or derive_frontend_pages_from_endpoints(endpoints, tables))
+
+
 def derive_frontend_pages_from_endpoints(
     endpoints: List[Mapping[str, Any]],
     tables: Optional[List[Any]] = None,

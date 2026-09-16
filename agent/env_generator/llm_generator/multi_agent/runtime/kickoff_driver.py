@@ -788,8 +788,10 @@ class KickoffDriver:
             elif lane == "frontend":
                 if not fe_source_eps and not fe_source_tbls:
                     continue  # GUARD: no endpoints or tables → only a login page; skip
+                # #1202pf: the design's screens first; the endpoint list only when it has none.
                 content = {"section": "frontend",
-                           "ui_pages": run_kickoff.derive_frontend_pages_from_endpoints(
+                           "ui_pages": run_kickoff.salvaged_frontend_pages_1202pf(
+                               getattr(self._orch, "output_dir", None) or "",
                                fe_source_eps, fe_source_tbls)}
             else:
                 continue  # verifier handled by the existing defer block below
