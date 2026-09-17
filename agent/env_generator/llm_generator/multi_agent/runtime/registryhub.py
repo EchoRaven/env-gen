@@ -704,6 +704,7 @@ class RegistryHub:
             # keep schema consistent so no other reader sees the stale non-canonical key
             if isinstance(endpoint.get("schema"), dict) and endpoint["schema"].get("response_key"):
                 endpoint["schema"]["response_key"] = _canon
+        _note_1202qr = self._materials_auth_guard_1202qr(old, endpoint)
         old_full = {
             **((old or {}).get("schema") or {}),
             "method": (old or {}).get("method"),
@@ -904,6 +905,8 @@ class RegistryHub:
                                          ", ".join(sorted(_KNOWN_SCHEMA_KEYS_731))))}
         except Exception:
             pass
+        if _note_1202qr:
+            endpoint = {**endpoint, "_auth_flip_refused": _note_1202qr}
         return endpoint
 
     def update_schema(self, endpoint_id: str, request: Optional[dict] = None, response: Optional[dict] = None, agent: str = "") -> dict:
@@ -1391,6 +1394,64 @@ class RegistryHub:
             "response_key_changed": response_key_changed,
             "auth_added": auth_added,
         }
+
+    def _materials_auth_guard_1202qr(self, old: Optional[dict], endpoint: dict) -> str:
+        """#1202qr: a READ's auth may not be flipped AGAINST the materials' declared visibility.
+
+        The materials already decide this (the projector honours an owner-private table whatever
+        the contract says, #1202ht), but the registry accepted every flip, so a lane caught
+        between a logged-out page (wants public) and an ownership chain (wants auth) rewrote the
+        contract back and forth: 6-28 auth flips per run in tiktok r120-r127, e.g. r120's
+        GET /api/video_saves six times. r127's flip of the public feed to auth_required at 23:24
+        is what sent the frontend its auth_added P0 and led to the logged-out fake feed.
+
+        Refuses only a FLIP (an existing record changing direction) of a GET whose resource
+        table the materials declare `public` (to auth) or `owner` (to public); the stored value
+        stays, and the returned note says why and what the two real repairs are. First
+        registrations, writes, `/me` paths and tables the materials are silent on are untouched.
+        Returns the note, or "".
+        """
+        try:
+            if not old or str(endpoint.get("method") or "").upper() != "GET":
+                return ""
+            before, after = _resolved_auth_1202gr(old), _resolved_auth_1202gr(endpoint)
+            if before == after:
+                return ""
+            segs = [x for x in str(endpoint.get("path") or "").strip("/").split("/") if x]
+            if any(x.lower() in ("me", "my", "mine") for x in segs):
+                return ""
+            from .backend_skeleton import _spec_visibility_1202hh
+            vis = _spec_visibility_1202hh(self.hub_dir.parent.parent)
+            if not vis:
+                return ""
+            lowered = {str(k).lower(): str(v).lower() for k, v in vis.items()}
+            table = ""
+            for x in reversed([x for x in segs if not x.startswith("{") and x.lower() != "api"]):
+                for cand in (x.lower(), x.lower().rstrip("s"), x.lower() + "s"):
+                    if cand in lowered:
+                        table = cand
+                        break
+                if table:
+                    break
+            verdict = lowered.get(table, "")
+            if not ((verdict == "public" and after) or (verdict == "owner" and not after)):
+                return ""
+            for holder in (endpoint.get("schema"), endpoint.get("metadata")):
+                if isinstance(holder, dict) and "auth_required" in holder:
+                    holder["auth_required"] = before
+            if "auth_required" in endpoint:
+                endpoint["auth_required"] = before
+            want = "public" if verdict == "public" else "per-user (owner)"
+            return (f"auth_required={after} was NOT applied to {endpoint.get('method')} "
+                    f"{endpoint.get('path')}: the materials declare `{table}` {want}, so it stays "
+                    f"auth_required={before}. If a page cannot use it as it is, fix the page "
+                    "(a logged-out screen must not call a per-user read; a public read needs no "
+                    "token). If the materials are wrong, say so - do not flip the contract.")
+        except Exception as exc:
+            from .message_format import warn_once_1201
+            warn_once_1201("registryhub.materials_auth_guard_1202qr",
+                           "refusing an auth flip that contradicts the materials", exc)
+            return ""
 
     def _notify_auth_relaxed_1202qq(self, endpoint_id: str, agent: str = "") -> bool:
         """#1202qq: an endpoint whose auth_added change was announced is public again - say so.
