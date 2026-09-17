@@ -46,7 +46,8 @@ def test_the_real_sibling_is_copied(tmp_path):
     assert row["thumbnail_url"] == "/assets/real_videos/a.jpg"
 
 
-def test_no_real_image_still_gets_the_placeholder(tmp_path):
+def test_no_real_image_invents_none(tmp_path):
+    """#1202qo: no picsum placeholder for a row with no image."""
     run = _fill(tmp_path)
     row = run({"id": 2})
-    assert row["thumbnail"].startswith("https://picsum.photos/")
+    assert not row.get("thumbnail") and "picsum" not in str(row)

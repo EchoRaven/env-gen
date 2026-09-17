@@ -4526,14 +4526,15 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                elif owner and not row.get(owner):\n"
         "                    _rids = _real_owner_ids(db, _owner_id_cache)\n"
         "                    row[owner] = (_rids[i % len(_rids)] if _rids else (i % nu) + 1)\n"
-        # #1202qd: a sibling image column that already holds the row's REAL image wins over the
-        # external placeholder. tiktok-r126's design-prep dataset carries `thumbnail`
+        # #1202qo: no external placeholder at all - a row with no image keeps none (a picsum URL
+        # made missing imagery look present). #1202qd: a sibling image column that already holds
+        # the row's REAL image fills the empty one. tiktok-r126's design-prep dataset carries `thumbnail`
         # (/assets/real_videos/...jpg) and no `thumbnail_url`; the page reads `thumbnail_url`, got
         # picsum, and the logged-out feed card rendered a stranger's photo or nothing.
         "                _real_img = next((row.get(_c) for _c in _IMAGE_COL.get(t, []) if row.get(_c)), None)\n"
         "                for _ic in _IMAGE_COL.get(t, []):\n"
         "                    if not row.get(_ic):\n"
-        "                        row[_ic] = _real_img or ('https://picsum.photos/seed/' + t + str(i) + '/400/400')\n"
+        "                        row[_ic] = _real_img\n"
         "                # #1112: point this row's FKs at the ids the parents really got.\n"
         "                for _fkc in [c for c in list(row) if str(c).endswith('_id')]:\n"
         "                    _fv = row.get(_fkc)\n"

@@ -38,15 +38,15 @@ def _fe(tmp, src):
 def test_a_glyph_fallback_is_counted(tmp_path):
     fe = _fe(tmp_path, '<img src="https://images.unsplash.com/photo-1.jpg" />\n')
     r = FS.localize_frontend_external_images(fe)
-    assert r["placeholder"] == 1 and r["staged"] == 0, r
-    assert r["localized"], "non-vacuity: the rewrite must actually have happened"
+    assert r["unmatched"] == 1 and r["staged"] == 0, r
+    assert not r["localized"], "#1202qo: an unmatched URL is counted, not rewritten"
 
 
 def test_a_real_match_is_counted_as_staged(tmp_path):
     fe = _fe(tmp_path, '<img src="https://cdn.example.com/hero_shot.jpg" />\n')
     (fe / "public" / "assets" / "hero_shot.jpg").write_bytes(b"\xff\xd8\xff")
     r = FS.localize_frontend_external_images(fe)
-    assert r["staged"] == 1 and r["placeholder"] == 0, r
+    assert r["staged"] == 1 and r["unmatched"] == 0, r
 
 
 def test_the_seed_localizer_reports_the_same_split(tmp_path):
@@ -57,8 +57,8 @@ def test_the_seed_localizer_reports_the_same_split(tmp_path):
                     {"thumbnail": "https://cdn.example.com/real_clip.jpg"}]}))
     (fe / "public" / "assets" / "real_clip.jpg").write_bytes(b"\xff\xd8\xff")
     r = FS.localize_seed_external_images(be, fe)
-    assert r["localized"] == 2, r
-    assert r["staged"] == 1 and r["placeholder"] == 1, r
+    assert r["localized"] == 1, r
+    assert r["staged"] == 1 and r["unmatched"] == 1, r
 
 
 def test_the_counts_are_present_even_with_nothing_to_do(tmp_path):
@@ -66,10 +66,10 @@ def test_the_counts_are_present_even_with_nothing_to_do(tmp_path):
     the keys to exist on every path, including the early return."""
     fe = _fe(tmp_path, "const a = 1;\n")
     r = FS.localize_frontend_external_images(fe)
-    assert r["staged"] == 0 and r["placeholder"] == 0, r
+    assert r["staged"] == 0 and r["unmatched"] == 0, r
     be = tmp_path / "empty"; be.mkdir()
     r2 = FS.localize_seed_external_images(be, fe)     # no seed_data.json at all
-    assert "staged" in r2 and "placeholder" in r2, r2
+    assert "staged" in r2 and "unmatched" in r2, r2
 
 
 def test_it_still_never_raises(tmp_path):
@@ -78,7 +78,7 @@ def test_it_still_never_raises(tmp_path):
     assert "except Exception as exc" in src and "finally:" in src, (
         "both are required: the counts report on every path, and the function still swallows")
     r = FS.localize_frontend_external_images(tmp_path / "does_not_exist")
-    assert r["placeholder"] == 0
+    assert r["unmatched"] == 0
 
 
 def test_the_site_says_what_is_not_established():

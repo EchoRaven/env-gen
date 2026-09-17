@@ -1110,17 +1110,23 @@ def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str],
         if tally is not None:
             tally["staged"] = tally.get("staged", 0) + 1
         return f"/assets/{hit}"
-    avatarish = bool(_AVATAR_CTX_RE.search(field or "") or _AVATAR_CTX_RE.search(url))
+    # #1202qo: no staged asset matches -> the URL stays as it is. A generated placeholder glyph
+    # made "this data points at an image nobody staged" look like a working picture; the user's
+    # rule is that a substitute which hides a failure is not wanted. Offline, the image shows as
+    # broken, which is the truth, and the unmatched count says how many.
     if tally is not None:
-        tally["placeholder"] = tally.get("placeholder", 0) + 1
-    return _placeholder_ref(public_dir, url, avatarish)
+        # counted per distinct URL: several rewrite passes see the same unchanged URL
+        _seen = tally.setdefault("_unmatched_urls", set())  # type: ignore[arg-type]
+        _seen.add(url)
+        tally["unmatched"] = len(_seen)
+    return url
 
 
 def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
     """Rewrite image-signaled EXTERNAL URLs in frontend source to local /assets/ refs
     (staged real asset by token match, else deterministic placeholder SVG). Best-effort,
     idempotent, never raises. See the FIX #111 block comment for the safety rails."""
-    result: Dict[str, object] = {"localized": [], "staged": 0, "placeholder": 0}
+    result: Dict[str, object] = {"localized": [], "staged": 0, "unmatched": 0}
     _tally: Dict[str, int] = {}
     try:
         fe = Path(frontend_dir)
@@ -1163,7 +1169,10 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
                     return m.group(0)
                 if not _is_image_signaled(body):
                     return m.group(0)  # e.g. `https://api.example.com/v1/${id}` — keep
-                return '"' + _local_ref_for(body, "", public_dir, assets, _tally) + '"'
+                _ref = _local_ref_for(body, "", public_dir, assets, _tally)
+                if _ref == body:
+                    return m.group(0)  # #1202qo: unmatched stays the template it was
+                return '"' + _ref + '"'
 
             def _bare_repl(m):
                 url = m.group(2)
@@ -1188,7 +1197,7 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
         result["error"] = f"{type(exc).__name__}: {exc}"
     finally:                          # #1202jq: report the split even on a partial pass
         result["staged"] = _tally.get("staged", 0)
-        result["placeholder"] = _tally.get("placeholder", 0)
+        result["unmatched"] = _tally.get("unmatched", 0)
     return result
 
 
@@ -1197,7 +1206,7 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
     — seed rows render as <img src> at runtime and break identically offline. The seed
     fingerprint changes with the content, so the loader re-seeds on next boot (#99).
     Best-effort, idempotent, never raises."""
-    result: Dict[str, object] = {"localized": 0, "staged": 0, "placeholder": 0}
+    result: Dict[str, object] = {"localized": 0, "staged": 0, "unmatched": 0}
     _tally: Dict[str, int] = {}
     try:
         seed = Path(backend_dir) / "seed_data.json"
@@ -1214,8 +1223,10 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
                 for k, v in node.items():
                     if (isinstance(v, str) and v.startswith(("http://", "https://"))
                             and _is_image_signaled(v, field=str(k))):
-                        node[k] = _local_ref_for(v, str(k), public_dir, assets, _tally)
-                        count += 1
+                        _new = _local_ref_for(v, str(k), public_dir, assets, _tally)
+                        if _new != v:
+                            node[k] = _new
+                            count += 1
                     else:
                         _walk(v)
             elif isinstance(node, list):
@@ -1232,7 +1243,7 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
         result["error"] = f"{type(exc).__name__}: {exc}"
     finally:                          # #1202jq
         result["staged"] = _tally.get("staged", 0)
-        result["placeholder"] = _tally.get("placeholder", 0)
+        result["unmatched"] = _tally.get("unmatched", 0)
     return result
 
 
@@ -7563,8 +7574,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 _crop_img_531 = (
                     "<img alt={" + _title + "} src=\"" + _hero_title_crop + "\" "
                     # #468 sizing preserved for the no-data crop fallback path
-                    "className=\"mb-3 max-h-56 md:max-h-72 w-auto max-w-[80%] object-contain drop-shadow-2xl\" "
-                    "onError={(e) => { e.currentTarget.style.display = 'none'; }} />")
+                    "className=\"mb-3 max-h-56 md:max-h-72 w-auto max-w-[80%] object-contain drop-shadow-2xl\" />")
                 _data_h1_531 = (
                     "<h1 className=\"text-4xl font-bold drop-shadow-lg md:text-6xl\" "
                     "style={{ color: '#ffffff'" + _ts_hero + " }}>{_titleOf(cur)}</h1>")

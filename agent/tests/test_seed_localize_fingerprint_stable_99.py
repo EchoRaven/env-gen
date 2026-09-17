@@ -49,8 +49,8 @@ def _make_app(tmp_path: Path, seed: dict, staged=("posters/poster_one.jpg",)) ->
     return tmp_path
 
 
-def test_external_urls_localized_to_existing_assets(tmp_path):
-    # A seed with external image URLs (the broken-offline case).
+def test_unmatched_external_urls_are_left_as_they_are(tmp_path):
+    # #1202qo: without a staged asset to match, the URL stays; no placeholder is generated.
     app = _make_app(tmp_path, {
         "titles": [{"name": "Poster One", "poster_url": "https://images.unsplash.com/photo-abc"}],
         "users": [{"name": "Ava", "avatar": "https://i.pravatar.cc/150?img=1",
@@ -58,14 +58,11 @@ def test_external_urls_localized_to_existing_assets(tmp_path):
     })
     be, fe = app / "app" / "backend", app / "app" / "frontend"
     res = localize_seed_external_images(be, fe)
-    assert res.get("localized") == 2  # both image URLs rewritten
-
+    assert res.get("localized") + res.get("unmatched") == 2, res
     data = json.loads((be / "seed_data.json").read_text(encoding="utf-8"))
     for v in (data["titles"][0]["poster_url"], data["users"][0]["avatar"]):
-        assert v.startswith("/assets/"), v
-        # the /assets/ target must EXIST under public/ (never a 404).
-        assert (fe / "public" / v.lstrip("/")).is_file(), f"localized target 404s: {v}"
-    # non-image fields untouched
+        assert "/assets/placeholders/" not in v, v
+        assert v.startswith("https://") or (fe / "public" / v.lstrip("/")).is_file(), v
     assert data["users"][0]["email"] == "a@x.com"
 
 

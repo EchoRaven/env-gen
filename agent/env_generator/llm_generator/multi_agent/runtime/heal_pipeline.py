@@ -1718,7 +1718,7 @@ class HealPipeline:
                 # generated glyph are very different apps, and only the file list was ever
                 # reported — so a run whose imagery went entirely to placeholders looked
                 # like one that matched real media every time. tiktok-r109 is the instance.
-                _ph = int(_li.get("placeholder") or 0) + int(_ls.get("placeholder") or 0)
+                _ph = int(_li.get("unmatched") or 0) + int(_ls.get("unmatched") or 0)  # #1202qo
                 _st = int(_li.get("staged") or 0) + int(_ls.get("staged") or 0)
                 if _ph:
                     # #1202jq: the counts, and the staged-asset population beside them —
