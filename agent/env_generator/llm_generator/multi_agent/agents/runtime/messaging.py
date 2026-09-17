@@ -973,6 +973,24 @@ Fix this issue in your code. Steps:
 
 Start by thinking about what might cause this issue.
 """
+        _max_steps_1202qi = 30
+        if _coordinates_but_does_not_code_1202qi(self.agent_id):
+            # #1202qi: the orchestrator owns no code. "Fix this issue in your code" ran a 30-step
+            # loop on it for every urgent issue (tiktok-r126 resumes: 9, including issues it had
+            # sent the debugger itself), which can end only in routing or in nothing.
+            fix_prompt = f"""## Issue Reported by {from_agent}
+
+**Severity**: {severity}
+**Issue**: {issue_content}
+
+## Your Task
+
+You coordinate; you do not edit code. Route this issue to the lane that owns the failing code
+(backend, frontend or verifier): send it `task_ready` with the issue text and the evidence, or file
+it with `bug_create` if it is a defect. Do not read or edit source files. If it is already being
+handled, say so to {from_agent} with `send_message` and finish.
+"""
+            _max_steps_1202qi = 6
 
         prev_state = self._processing_state
         self._processing_state = ProcessingState.PROCESSING_TASK
@@ -988,7 +1006,7 @@ Start by thinking about what might cause this issue.
             await self.run_agentic_loop(
                 system_prompt=system_prompt,
                 initial_prompt=fix_prompt,
-                max_steps=30,
+                max_steps=_max_steps_1202qi,
             )
         except Exception as e:
             self._logger.error(f"[{self.agent_id}] Failed to fix issue: {e}")
@@ -2679,3 +2697,8 @@ from ...runtime.kickoff.section_substance import (  # noqa: E402
     real_items as _real_items,
     section_has_substance as _section_has_substance,
 )
+
+
+def _coordinates_but_does_not_code_1202qi(agent_id) -> bool:
+    """#1202qi: lanes that route work instead of writing code."""
+    return str(agent_id or "").strip().lower() in ("orchestrator",)
