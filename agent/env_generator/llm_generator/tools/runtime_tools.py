@@ -2363,6 +2363,31 @@ def foreign_target_notice_1134(url: str, answered: bool = True) -> str:
 
 # ===== Test API Tool =====
 
+def _stale_image_note_1202qs(hubs) -> str:
+    """#1202qs: '' unless the running app was built BEFORE the app source on disk changed.
+
+    A lane reads a status from the stack and acts on it. tiktok-r127 23:22: the contract had made
+    GET /api/videos/feed public eight minutes earlier, the running image predated that, the
+    tokenless call still answered 401, and the backend rewrote the contract to match the old
+    binary. The chain runner already measures this (#1202ex); test_api never said it.
+    """
+    try:
+        base = getattr(hubs, "base_dir", None) if hubs is not None else None
+        if not base:
+            return ""
+        try:
+            from ..multi_agent.runtime.chain_executor import build_currency_1202ex
+        except ImportError:
+            from multi_agent.runtime.chain_executor import build_currency_1202ex
+        if (build_currency_1202ex(base) or {}).get("verdict") != "changed":
+            return ""
+        return (" — NOTE: app/ has changed since the running image was built, so this response may "
+                "come from the OLD code. Re-run validation (it rebuilds) before changing code or "
+                "the contract to match what you just saw.")
+    except Exception:
+        return ""
+
+
 def _contract_says_public_1202qp(hubs, method, url):
     """'GET /api/x' when the live contract registers this request's endpoint auth_required=false,
     else None. Matches {param} templates; never raises."""
@@ -2563,6 +2588,9 @@ To test them, get a token first, then pass it as a header:
                     # "SUPPOSED" - so the backend registered the feed auth_required=true to match,
                     # the frontend was told auth was added and fed logged-out visitors hard-coded
                     # videos, and nobody was told when it went public again at 23:35.
+                    _stale_1202qs = _stale_image_note_1202qs(self._hubs)
+                    if _stale_1202qs:
+                        hint += _stale_1202qs
                     _public_1202qp = _contract_says_public_1202qp(self._hubs, method, url)
                     if _public_1202qp:
                         hint = (
@@ -2572,6 +2600,10 @@ To test them, get a token first, then pass it as a header:
                             "401. Find why auth is enforced: a stale image (re-run validation to "
                             "rebuild) or a handler/dependency that still requires a user."
                         )
+                elif e.code >= 400:
+                    _stale_1202qs = _stale_image_note_1202qs(self._hubs)
+                    if _stale_1202qs:
+                        hint += _stale_1202qs
                 if status_meets_expectation(e.code, expect):
                     # #365: the caller DECLARED this status — it is the result,
                     # not a failure.

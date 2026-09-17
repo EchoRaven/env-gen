@@ -72,6 +72,9 @@ def _setup(monkeypatch, tmp_path, identities, walks, serving=True):
     monkeypatch.setattr(VF, "_service_host_port", lambda *a: 8006)
     monkeypatch.setattr(VF, "_seed_demo_login", lambda proj: None)
     monkeypatch.setattr(VR, "_backend_host_port", lambda *a: 8082)
+    # #1202qt gates the walk on a serving backend; these cases are about a stack that IS
+    # serving when the walk starts, so the readiness wait passes.
+    monkeypatch.setattr(VR, "wait_backend_ready", lambda *a, **kw: True)
     pipe = HP.HealPipeline(orch)
     run = lambda: pipe._run_browser_test_user(tmp_path, compose, registry, "1.1.0")  # noqa: E731
     return run, tasks, calls, orch

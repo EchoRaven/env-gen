@@ -1412,6 +1412,18 @@ class HealPipeline:
         def _walk():
             from .compose_mutex import stack_lease_1202nx   # #1202nx: the walk needs the stack up
             with stack_lease_1202nx(proj, "browser test-user walk"):
+                # #1202qt: judge a SERVING stack or none. The walk resolved ports and went; when a
+                # validation cycle had just recreated the stack, nginx answered 502 and the walk
+                # reported auth_ok=False with console errors on every page and filed a P0 against
+                # the frontend (tiktok-r128 16:42, backend still booting). The API journey already
+                # health-checks; this one never did.
+                from .validation_runner import wait_backend_ready as _ready_1202qt
+                if not _ready_1202qt(proj, timeout_s=120):
+                    orch._logger.warning(
+                        "#1202qt browser test-user SKIPPED: the backend is not serving yet "
+                        "(stack recently recreated) - a walk against a booting stack reports "
+                        "failures the app does not have.")
+                    return {"ran": False, "summary": "backend not serving (stack booting)"}
                 # #1202qj: its own data scope, taken on the database the walk actually uses. The
                 # enclosing test_user_validation scope snapshots the database as it was when that
                 # phase began; r127's stack was recreated before the walk, so the outer restore
