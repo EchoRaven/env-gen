@@ -1681,6 +1681,31 @@ def _seed_demo_login(project_dir: Any) -> Optional[Dict[str, str]]:
                     "name": str(users[0].get("name") or "Demo")}
         return None
 
+    # #1202ql: 0) the design-prep dataset REPLACES a table wholesale at seed time (seed_data.py
+    # `_load_rows`, "dataset tables win"), so when it carries users, the users in the database
+    # are ITS users, not seed_data.json's. tiktok-r127's walk logged in as maya.rivera from
+    # seed_data.json - a user the database never held (401 invalid credentials) - so every
+    # browser walk reported auth_ok=False and browsed signed out. The dataset rows carry no
+    # email; mirror the loader's backfill (username@example.com, else user<id>@seed.local).
+    try:
+        dj = backend / "seed_dataset.json"
+        if dj.is_file():
+            import json as _json
+            rows = (_json.loads(dj.read_text(encoding="utf-8", errors="ignore")) or {}).get("users") or []
+            if rows and isinstance(rows[0], dict):
+                first = dict(rows[0])
+                if not first.get("email"):
+                    _un = str(first.get("username") or "").strip().lstrip("@")
+                    first["email"] = (_un + "@example.com") if _un else (
+                        "user" + str(first.get("id") or 1) + "@seed.local")
+                if not first.get("name"):
+                    first["name"] = (first.get("display_name")
+                                     or str(first.get("username") or "").lstrip("@") or "Demo")
+                creds = _creds_from_users([first])
+                if creds:
+                    return creds
+    except Exception:
+        pass
     # 1) the agent-authored JSON the loader inserts into the DB (authoritative)
     try:
         sj = backend / "seed_data.json"
