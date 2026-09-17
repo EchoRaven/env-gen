@@ -1005,6 +1005,69 @@ def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, r
             f"page ONLY if this screen is genuinely in scope.")
 
 
+# #1202qn: a request whose failure is answered with HARD-CODED data. tiktok-r127's api.js did
+#   try { ...request('/api/videos/feed')... } catch { return fallbackVideos }
+# with fallbackVideos copied from the reference screenshots: every failed call rendered a
+# plausible feed, the lane never saw the failure, and only the browser walk's "no real data"
+# verdict noticed. The same shape shipped in 4 of the last 80 runs' final trees (a fake profile
+# on a failed user read, a default tenant list on a failed /api/v1/tenants, ...). Flagged only
+# when the guarded chain makes an API call and the substitute is a literal record list or a
+# name that says what it is (fallback/mock/static/sample/demo/placeholder/dummy/fake).
+_MASK_NAMED_1202QN = (r"(?:[A-Za-z_$][\w$]*)?(?:[Ff]allback|[Mm]ock|[Ss]tatic|[Ss]ample|[Dd]emo|"
+                      r"[Pp]laceholder|[Dd]ummy|[Ff]ake)[\w$]*")
+_MASK_VALUE_1202QN = r"(?:\[\s*\{|" + _MASK_NAMED_1202QN + r")"
+_MASK_CATCH_1202QN = re.compile(
+    r"catch\s*(?:\([^)]*\))?\s*\{\s*(?:return\s+|set[A-Z]\w*\(\s*)(?P<v>" + _MASK_VALUE_1202QN + r")"
+    r"|\.catch\(\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)?\s*=>\s*(?:\{\s*(?:return\s+|set[A-Z]\w*\(\s*)"
+    r"|set[A-Z]\w*\(\s*)?(?P<w>" + _MASK_VALUE_1202QN + r")")
+_MASK_API_1202QN = re.compile(
+    r"\bfetch\s*\(|\brequest\s*\(|\baxios\b|\bapi\.\w+\s*\(|/api/"
+    r"|\bget(?!Item\b|Attribute\b|Element|Computed|Bounding|Context\b|Time\b|Hours\b|Minutes\b"
+    r"|Seconds\b|Date\b|Day\b|Month\b|FullYear\b|Tenant\b|Token\b)[A-Z]\w*\s*\(")
+_MASK_BOUNDARY_1202QN = re.compile(r"\n(?:export\s|function\s|const\s|let\s|async\s+function\s)")
+
+
+def masked_api_failures_1202qn(text: str) -> List[tuple]:
+    """[(line, snippet)] for each request failure answered with hard-coded data."""
+    out: List[tuple] = []
+    for m in _MASK_CATCH_1202QN.finditer(text or ""):
+        before = text[max(0, m.start() - 700):m.start()]
+        if m.group("v") is not None:
+            t = before.rfind("try")
+            seg = before[t:] if t >= 0 else ""
+        else:
+            b = [x.end() for x in _MASK_BOUNDARY_1202QN.finditer(before)]
+            seg = before[b[-1] - 1:] if b else before
+        if _MASK_API_1202QN.search(seg):
+            out.append((text.count("\n", 0, m.start()) + 1, m.group(0).strip()[:80]))
+    return out
+
+
+def masked_api_failure_blockers_1202qn(frontend_src: Any, limit: int = 10) -> List[str]:
+    """Gate prose, one per masked failure (anchor: 'masked api failure')."""
+    blockers: List[str] = []
+    try:
+        src = Path(frontend_src)
+        if not src.is_dir():
+            return blockers
+        for f in sorted(src.rglob("*")):
+            if (f.suffix not in (".js", ".jsx", ".ts", ".tsx") or "node_modules" in f.parts
+                    or not f.is_file()):
+                continue
+            for line, snip in masked_api_failures_1202qn(f.read_text(encoding="utf-8", errors="ignore")):
+                blockers.append(
+                    f"masked API failure: {f.relative_to(src).as_posix()}:{line} `{snip}` answers a "
+                    "failed request with hard-coded data, so the page shows invented content and "
+                    "the failure is invisible. Remove the substitute and let the error reach the "
+                    "page (an error state the user can see) - then fix whatever made the request fail.")
+                if len(blockers) >= limit:
+                    return blockers
+    except Exception as exc:
+        from .delivery_gate import _swallowed_790
+        _swallowed_790("masked_api_failure_blockers_1202qn", exc, "[] = no masked failures")
+    return blockers
+
+
 def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
                            reference_routes: Optional[set] = None) -> List[str]:
     """#238 (tiktok r27 M1, runtime-verified): the delivered app's own Profile

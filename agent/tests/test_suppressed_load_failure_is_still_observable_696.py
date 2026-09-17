@@ -58,9 +58,11 @@ def test_each_catch_logs_the_suppressed_failure(i):
 
 
 @pytest.mark.parametrize("i", [0, 1, 2])
-def test_each_catch_still_suppresses_the_visible_error(i):
-    """The whole point is that the UI is unchanged."""
-    assert "setError('')" in _catches()[i]
+def test_each_catch_shows_the_http_failure(i):
+    """#1202qm reversed #536's suppression: an HTTP failure reaches the page as a readable
+    sentence instead of passing for an empty dataset."""
+    assert "setError('')" not in _catches()[i]
+    assert "setError('Could not load this data (' + String(e) + ')')" in _catches()[i]
 
 
 @pytest.mark.parametrize("i", [0, 1, 2])

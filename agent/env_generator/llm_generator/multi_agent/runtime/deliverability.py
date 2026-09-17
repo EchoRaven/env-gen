@@ -1112,6 +1112,11 @@ def compute_deliverability(hub_registry, app_root,
         except Exception:
             pass
 
+    # #1202qn: a failed request answered with hard-coded data (see frontend_audit).
+    if app_root and os.environ.get("ENVGEN_MASKED_FAILURE_GATE", "1") not in ("0", "false", "no"):
+        from .frontend_audit import masked_api_failure_blockers_1202qn
+        blockers.extend(masked_api_failure_blockers_1202qn(Path(app_root) / "frontend" / "src"))
+
     # BARE-FETCH-NO-TOKEN gate (#154, gmrun4 root cause). Like the ui_page gate
     # above, NOT relaxed on a functionally-validated app: api_smoke probes the
     # backend with a FRAMEWORK-minted token, so a frontend that never attaches

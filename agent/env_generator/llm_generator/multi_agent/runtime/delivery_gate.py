@@ -2995,6 +2995,9 @@ def _deliverability_check_token(blocker: str) -> str:
         # `return {"items": []}` the lane shipped). Deterministic AST; NOT relaxed
         # on functionally_validated — api_smoke never asserts a non-empty body.
         return "deliverability_placeholder_stub_handler"
+    if "masked api failure" in low:
+        # #1202qn: a failed request answered with hard-coded data (frontend_audit).
+        return "deliverability_masked_api_failure"
     if "fabricated fallback" in low:
         # #175 (gmrun9): the frontend renders `place.rating || '4.5'` /
         # `? place.name : 'HI Point Montara Lighthouse'` → invented data whenever

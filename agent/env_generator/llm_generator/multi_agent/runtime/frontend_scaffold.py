@@ -6442,7 +6442,7 @@ def _owned_list_shell_src_535(comp, nav_name, grid_name, endpoint, label, bg, te
         "    fetch('" + endpoint + "', token ? { headers: { Authorization: 'Bearer ' + token } } : {})\n"
         "      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })\n"
         "      .then((d) => setRows(Array.isArray(d && d.items) ? d.items : (d && d.item ? [d.item] : (Array.isArray(d) ? d : []))))\n"
-        "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError(''); } else { setError(String(e)); } })\n"
+        "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError('Could not load this data (' + String(e) + ')'); } else { setError(String(e)); } })\n"
         "      .finally(() => setLoading(false));\n"
         "  }, []);\n"
         "  return (\n"
@@ -7019,7 +7019,7 @@ def _state_write_effect_556b(screen, page, design) -> str:
         "        method: 'POST',\n"
         "        headers: { 'Content-Type': 'application/json', ...(_swTok ? { Authorization: 'Bearer ' + _swTok } : {}) },\n"
         "        body: JSON.stringify(" + _body + "),\n"
-        "      }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); }).catch(() => {});\n"
+        "      }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); }).catch((e) => console.error('[projected] progress write failed: ' + String(e)));\n"
         "    };\n"
         "    _swPost();\n"  # play start
         "    const _swTimer = setInterval(() => { _swPlayed.current += 15; _swPost(); }, 15000);\n"
@@ -8207,14 +8207,14 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             f"    fetch({_item_js_547}, _h)\n"
             "      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })\n"
             "      .then(setData)\n"
-            "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError(''); } else { setError(String(e)); } });\n")
+            "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError('Could not load this data (' + String(e) + ')'); } else { setError(String(e)); } });\n")
         if _eps_ep_547:
             _eps_js_547 = _remap_route_param_547(_api_path_to_js(_eps_ep_547), _eps_ep_547)
             _effect_547 += (
                 f"    fetch({_eps_js_547}, _h)\n"
                 "      .then((r) => (r.ok ? r.json() : null))\n"
                 "      .then((d) => setEps((d && (d.items || d.item || d)) || []))\n"
-                "      .catch(() => {});\n")
+                "      .catch((e) => console.error('[projected] episodes load failed: ' + String(e)));\n")
         _rows_cur_547 = (
             "  const _rec = (data && data.item) ? data.item : (Array.isArray(data) ? (data[0] || null) : (data || null));\n"
             "  const rows = _rec ? [_rec] : [];\n"
@@ -8227,10 +8227,12 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                        f"    fetch({_get_js}, token ? {{ headers: {{ Authorization: 'Bearer ' + token }} }} : {{}})\n"
                        "      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })\n"
                        "      .then(setData)\n"
-                       # #536: never surface a raw 'Error: HTTP 404/500' string in the UI — an
-                       # HTTP-status failure suppresses to the graceful empty/loading catalog
-                       # state (a genuine network/parse error still shows). Generalizable.
-                       "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError(''); } else { setError(String(e)); } });\n"
+                       # #1202qm (supersedes #536's suppression): an HTTP failure is SHOWN, as a
+                       # readable sentence. #536 folded it into the empty/loading state, so a 500
+                       # read exactly like "nothing here yet" to the user and to every screenshot
+                       # judge; #696 could only add a console line. A failure the page hides is a
+                       # failure nobody fixes.
+                       "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError('Could not load this data (' + String(e) + ')'); } else { setError(String(e)); } });\n"
                        if get_ep else
                        # #426: no GET endpoint (e.g. a player/media screen with only param-fetched
                        # data) — render the reference STRUCTURE without a data fetch; emitting
@@ -12313,6 +12315,7 @@ export async function register({ username, email, password, full_name }) {
     body: JSON.stringify({ username, email, password, full_name }),
   })
   const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw Object.assign(new Error(d.detail || r.statusText), { status: r.status, data: d })
   if (d.access_token) localStorage.setItem('token', d.access_token)
   return d
 }
@@ -12322,6 +12325,7 @@ export async function login({ email, username, password }) {
     body: JSON.stringify({ email, username, password }),
   })
   const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw Object.assign(new Error(d.detail || r.statusText), { status: r.status, data: d })
   if (d.access_token) localStorage.setItem('token', d.access_token)
   return d
 }

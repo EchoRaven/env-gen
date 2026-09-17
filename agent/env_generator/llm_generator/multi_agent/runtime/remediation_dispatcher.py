@@ -2262,6 +2262,15 @@ class RemediationDispatcher:
                 "route's real data fields, real working controls. Removing framework "
                 "comments/attributes or reformatting API calls does NOT count — the "
                 "gate fingerprints the page CONTENT, not markers."),
+            "deliverability_masked_api_failure": (
+                # #1202qn: the frontend lane wrote the catch that substitutes hard-coded data.
+                "frontend", "Stop masking failed API requests with hard-coded data (blocks delivery)",
+                "a request's failure is answered with a hard-coded list/record (a fallback, mock or "
+                "sample copied from the design), so the page renders invented content and nobody "
+                "sees the failure. For EACH flagged file:line: delete the substitute data, let the "
+                "error reach the page as a visible error state, then find and fix why the request "
+                "fails (wrong path, missing auth header, contract drift). Do not replace it with "
+                "another fallback."),
             "deliverability_dead_nav_link": (
                 # #238 (tiktok r27 M1, runtime-verified): the app's own Profile+
                 # Upload <Link>s pointed at routes App.jsx never wired → 404 on
