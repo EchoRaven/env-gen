@@ -3234,6 +3234,7 @@ class Orchestrator:
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
             
                 self._enter_project_phase("done", reason="delivery gate passed")
+                self._cancel_inflight_squad_1202qg("the final delivery gate passed")
                 # FINAL-MILESTONE RELEASE. create_release lives ONLY inside the
                 # per-milestone _maybe_framework_deliver, which DEFERS on the final
                 # milestone (visual gate) — so this post-loop success path would mark
@@ -4503,6 +4504,29 @@ class Orchestrator:
             return max(0.0, min(live, room))
         except Exception:
             return 0.0
+
+    def _cancel_inflight_squad_1202qg(self, why: str) -> bool:
+        """#1202qg: a background test-user squad has nothing left to gate once delivery is decided.
+
+        tiktok-r126 M3: a delivery tick launched the squad at 18:40:17 and deferred; six seconds
+        later the post-loop final gate passed and cut v1.2.0, and the squad task kept going -
+        it spawned 12 browser agents at 18:41:43 against a finished run until the shutdown
+        watchdog forced the exit. Its verdict could no longer change anything. Returns True
+        when a task was cancelled.
+        """
+        task = getattr(self, "_tu_squad_task", None)
+        try:
+            if task is None or task.done():
+                return False
+            task.cancel()
+            self._logger.warning(
+                "#1202qg cancelled the in-flight TEST-USER SQUAD: %s, so its agents would test a "
+                "delivery that is already decided.", why)
+            return True
+        except Exception as exc:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201("cancel_squad_1202qg", "#1202qg cancelling the in-flight squad", exc)
+            return False
 
     def _resume_floor_open_1202px(self, now: float) -> bool:
         """#1202px: True while a resume that started over budget is inside its attempt window."""

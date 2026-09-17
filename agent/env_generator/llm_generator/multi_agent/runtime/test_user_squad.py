@@ -296,9 +296,20 @@ def plan_test_user_goals(
         res = _resource_label(base_col)
         goals.append({
             "modality": "browser", "kind": "ui_crud", "name": f"ui_{res}",
-            "goal": (f"As a user, create a new {res} through the UI, confirm it appears in the "
-                     f"{res} list/view, open it, edit it, and delete it — asserting each screen "
-                     f"transition and that the change persisted (cross-check via the API)."),
+            # #1202qh: only the writes the screens OFFER. "create, open, edit and delete a {res}
+            # through the UI" was asked of every table with a POST: tiktok-r126's M2 squad filed P0s
+            # that `video_likes`, `dm_messages` and `notifications` had "no UI to create, open, edit,
+            # or delete" - screens no reference image has, which the lanes would then build off-
+            # design. A like is a heart toggle, a notification is never hand-authored. A control
+            # that exists and fails is still a P0; a write no screen offers is api_crud's to test.
+            "goal": (f"As a user, exercise every way the app's screens let you change {res}: use "
+                     f"each control that creates, toggles, edits or removes it (a form, a button, "
+                     f"a like/follow/save toggle, ...), confirm the change shows where the UI "
+                     f"displays {res}, reverse it where the UI offers that, and cross-check each "
+                     f"change via the API. A control that exists but does not work, or a change "
+                     f"that does not persist: FILE A P0. An operation no screen offers a control "
+                     f"for (for example no edit form) is NOT a defect of this flow - note it and "
+                     f"do not file a P0; the API workflow covers that write."),
             "acceptance": acc or None,
         })
     # 3) exercise each remaining declared page (covers read-only/aggregate screens —
