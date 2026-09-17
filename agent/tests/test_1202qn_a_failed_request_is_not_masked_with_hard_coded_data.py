@@ -42,3 +42,22 @@ def test_the_blocker_names_the_file_and_line_and_routes_to_frontend(tmp_path):
     i = src.index('"deliverability_masked_api_failure": (')
     entry = src[i:src.index('"deliverability_dead_nav_link": (', i)]
     assert '"frontend"' in entry
+
+
+R127_EARLY = ("export async function getFeed(params={}){if(!getToken())return fallbackVideos;"
+              "try{const q=new URLSearchParams(params).toString();"
+              "return (await request(`/api/videos/feed${q?`?${q}`:''}`,{auth:true})).items||[]}"
+              "catch{return fallbackVideos}}")
+MEMO = ("export async function ensureDemoAuth(force = false) {\n"
+        "  if (demoAuthPromise) return demoAuthPromise;\n"
+        "  demoAuthPromise = (async () => { await request('/auth/login'); })();\n}")
+
+
+def test_an_early_return_of_a_named_substitute_is_flagged():
+    """r127: logged-out visitors never reached the API, so no failure was ever logged."""
+    snippets = [s for _, s in FA.masked_api_failures_1202qn(R127_EARLY)]
+    assert "return fallbackVideos" in snippets
+
+
+def test_a_memoised_promise_is_not_a_substitute():
+    assert FA.masked_api_failures_1202qn(MEMO) == []

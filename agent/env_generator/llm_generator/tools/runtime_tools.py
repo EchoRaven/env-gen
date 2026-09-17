@@ -2363,6 +2363,32 @@ def foreign_target_notice_1134(url: str, answered: bool = True) -> str:
 
 # ===== Test API Tool =====
 
+def _contract_says_public_1202qp(hubs, method, url):
+    """'GET /api/x' when the live contract registers this request's endpoint auth_required=false,
+    else None. Matches {param} templates; never raises."""
+    try:
+        if hubs is None or getattr(hubs, "registryhub", None) is None:
+            return None
+        from urllib.parse import urlparse
+        import re as _re
+        path = urlparse(str(url)).path.rstrip("/") or "/"
+        eps = hubs.registryhub.get_endpoints() or {}
+        try:
+            from ..multi_agent.runtime.route_projector import _stated_auth_1202hi
+        except ImportError:
+            from multi_agent.runtime.route_projector import _stated_auth_1202hi
+        for ep in (eps.values() if isinstance(eps, dict) else eps):
+            if not isinstance(ep, dict) or str(ep.get("method", "")).upper() != str(method).upper():
+                continue
+            tmpl = str(ep.get("path") or "").rstrip("/") or "/"
+            rx = "^" + _re.sub(r"\\\{[^/]+?\\\}", "[^/]+", _re.escape(tmpl)) + "$"
+            if _re.match(rx, path) and _stated_auth_1202hi(ep) is False:
+                return f"{str(method).upper()} {ep.get('path')}"
+    except Exception:
+        return None
+    return None
+
+
 class TestAPITool(BaseTool):
     """Test an HTTP API endpoint."""
     
@@ -2395,6 +2421,12 @@ To test them, get a token first, then pass it as a header:
     
     def __init__(self):
         super().__init__(name=self.NAME, category=ToolCategory.RUNTIME)
+        self._hubs = None  # #1202qp: bound by set_agent, so a 401 can be read against the contract
+
+    def set_agent(self, agent) -> None:
+        hubs = getattr(agent, "_hubs", None)
+        if hubs is not None:
+            self._hubs = hubs
     
     @property
     def tool_definition(self):
@@ -2525,6 +2557,21 @@ To test them, get a token first, then pass it as a header:
                         "headers={'Authorization': 'Bearer <token>'}. Protected-endpoint "
                         "round-trips belong in the verifier's business_chain (auth step)."
                     )
+                    # #1202qp: ask the CONTRACT before saying the rejection is correct.
+                    # tiktok-r127 23:22: GET /api/videos/feed was registered public, the running
+                    # app still answered a tokenless call 401, and this hint said the 401 was
+                    # "SUPPOSED" - so the backend registered the feed auth_required=true to match,
+                    # the frontend was told auth was added and fed logged-out visitors hard-coded
+                    # videos, and nobody was told when it went public again at 23:35.
+                    _public_1202qp = _contract_says_public_1202qp(self._hubs, method, url)
+                    if _public_1202qp:
+                        hint = (
+                            f" — the CONTRACT declares {_public_1202qp} PUBLIC (auth_required=false), "
+                            "yet the running app rejected a tokenless request: the served app "
+                            "disagrees with the contract. Do NOT change the contract to match this "
+                            "401. Find why auth is enforced: a stale image (re-run validation to "
+                            "rebuild) or a handler/dependency that still requires a user."
+                        )
                 if status_meets_expectation(e.code, expect):
                     # #365: the caller DECLARED this status — it is the result,
                     # not a failure.

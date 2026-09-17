@@ -722,6 +722,8 @@ class RegistryHub:
         if breaking["is_breaking"]:
             self._record_breaking_change(endpoint_id, breaking, agent=agent)
             endpoint["breaking_change"] = breaking
+        elif old and old_full.get("auth_required") and not new_full.get("auth_required"):
+            self._notify_auth_relaxed_1202qq(endpoint_id, agent=agent)
         self._endpoints.update(
             lambda m: m.set(endpoint_id, endpoint, actor),
             change_info={"agent": actor},
@@ -1389,6 +1391,56 @@ class RegistryHub:
             "response_key_changed": response_key_changed,
             "auth_added": auth_added,
         }
+
+    def _notify_auth_relaxed_1202qq(self, endpoint_id: str, agent: str = "") -> bool:
+        """#1202qq: an endpoint whose auth_added change was announced is public again - say so.
+
+        Tightening auth is a breaking change and its consumers get a P0 to adapt; relaxing it is
+        not, so nobody heard when it was undone. tiktok-r127: GET /api/videos/feed went
+        auth_required at 23:24 (P0 to frontend: "auth_added"), the frontend fed logged-out visitors
+        hard-coded videos, the feed went public again at 23:35, and the workaround survived for
+        an hour. Only sent when an auth_added change for this endpoint was recorded, so an
+        endpoint that was simply born protected and later opened creates no noise.
+        """
+        try:
+            workhub = getattr(self, "_workhub", None)
+            if workhub is None:
+                return False
+            # The agents that were actually TOLD auth was added: a first registration records
+            # auth_added too (None -> True) but nobody consumed the endpoint yet.
+            told = sorted({t.get("assignee") for t in (workhub.list_tasks() or [])
+                           if isinstance(t, dict)
+                           and t.get("title") == f"Fix breaking change in {endpoint_id}"
+                           and "'auth_added': True" in str(t.get("description") or "")
+                           and t.get("assignee")})
+            if not told:
+                return False
+            consumers = [c for c in self._consumers.value().values()
+                         if c.get("endpoint_id") == endpoint_id]
+            recipients = told
+            payload = {"endpoint_id": endpoint_id, "auth_required": False, "_updated_by": agent}
+            self._emit("endpoint_auth_relaxed", payload, recipients=recipients, priority="urgent")
+            for consumer_agent in recipients:
+                files = [c.get("file_path") for c in consumers if c.get("agent") == consumer_agent]
+                try:
+                    workhub.create_task(
+                        title=f"{endpoint_id} is public again - undo the auth workaround",
+                        description=(
+                            f"{endpoint_id} was announced as newly auth-required and is now "
+                            "registered auth_required=false. Remove whatever was added for the "
+                            "auth change (a logged-out branch that skips the call, hard-coded "
+                            f"data for anonymous visitors) and call the endpoint. Files: {files}"),
+                        assignee=consumer_agent, agent=agent or "registryhub",
+                        source="registryhub_auth_relaxed", linked_apis=[endpoint_id],
+                        affected_files=files, priority="P1")
+                except Exception:
+                    pass  # hub linkage missing in test setup; the event still went out
+            return True
+        except Exception as exc:
+            from .message_format import warn_once_1201
+            warn_once_1201("registryhub.auth_relaxed_1202qq",
+                           "announcing an endpoint that became public again", exc)
+            return False
 
     def _record_breaking_change(self, endpoint_id: str, breaking: dict, agent: str = "") -> dict:
         actor = agent or "registryhub"

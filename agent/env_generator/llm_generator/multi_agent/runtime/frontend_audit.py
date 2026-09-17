@@ -1027,9 +1027,31 @@ _MASK_API_1202QN = re.compile(
 _MASK_BOUNDARY_1202QN = re.compile(r"\n(?:export\s|function\s|const\s|let\s|async\s+function\s)")
 
 
+# #1202qn: the same substitute outside a catch. tiktok-r127's getFeed began
+#   if(!getToken())return fallbackVideos;try{...request('/api/videos/feed')...}
+# - a logged-out visitor never reached the API, so no request failed and no console error was
+# ever logged; only the invented feed showed. A NAMED substitute returned from a function that
+# also makes an API call is flagged; bare literals are not (too common as honest defaults).
+_MASK_EARLY_RETURN_1202QN = re.compile(
+    r"\breturn\s+(?P<n>(?![\w$]*(?:Promise|Ref|Cache|Pending|Timer)\b)" + _MASK_NAMED_1202QN + r")\b")
+_MASK_DECL_1202QN = re.compile(r"(?:^|\n|;|\})\s*(?:export\s+)?(?:async\s+)?(?:function\s+\w+|const\s+\w+\s*=)")
+
+
 def masked_api_failures_1202qn(text: str) -> List[tuple]:
     """[(line, snippet)] for each request failure answered with hard-coded data."""
     out: List[tuple] = []
+    text = text or ""
+    for m in _MASK_EARLY_RETURN_1202QN.finditer(text):
+        if "catch" in text[max(0, m.start() - 40):m.start()]:
+            continue  # the catch form is reported below
+        # the enclosing declaration: from the nearest top-level-looking declaration before the
+        # return to the next one after it (brace counting is defeated by default params `={}`)
+        heads = [x.start() for x in _MASK_DECL_1202QN.finditer(text, 0, m.start())]
+        start = heads[-1] if heads else max(0, m.start() - 700)
+        nxt = _MASK_DECL_1202QN.search(text, m.end())
+        end = nxt.start() if nxt else min(len(text), m.end() + 1200)
+        if _MASK_API_1202QN.search(text[start:end]):
+            out.append((text.count("\n", 0, m.start()) + 1, m.group(0).strip()[:80]))
     for m in _MASK_CATCH_1202QN.finditer(text or ""):
         before = text[max(0, m.start() - 700):m.start()]
         if m.group("v") is not None:
