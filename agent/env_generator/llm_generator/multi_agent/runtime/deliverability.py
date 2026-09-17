@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from .message_format import join_capped  # #1034
@@ -872,7 +873,11 @@ def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
         name = str(pg.get("name") or key)
         if name not in wanted:
             continue
-        bad = [str(a) for a in (pg.get("apis_used") or []) if str(a) in authed]
+        # #1202qk: an identity probe (`GET /auth/me`) answering 401 IS the logged-out answer; the
+        # page must treat it as "no user". tiktok-r127's note told the lanes to declare
+        # `/auth/me` auth_required=false - advice that would publish a "who am I" endpoint.
+        bad = [str(a) for a in (pg.get("apis_used") or [])
+               if str(a) in authed and not _identity_probe_1202qk(str(a))]
         if bad:
             hits.append(f"{name} -> {bad[0]}")
     if not hits:
@@ -914,6 +919,16 @@ def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
               "so it is fixed in the CONTRACT rather than the page: declare "
               "auth_required=false for a read that is meant to be public (#320)."
             + _pub1202gl)
+
+
+_IDENTITY_PROBE_1202QK = re.compile(
+    r"^(?:GET\s+)?/(?:api/)?(?:v\d+/)?(?:auth/|users/|user/|account/)?(?:me|whoami|session)/?$",
+    re.I)
+
+
+def _identity_probe_1202qk(api: str) -> bool:
+    """`GET /auth/me`, `/api/users/me`, `/session`: endpoints whose 401 means "not signed in"."""
+    return bool(_IDENTITY_PROBE_1202QK.match(str(api or "").strip()))
 
 
 def _flow_coverage_summary(hub_registry, app_root) -> Tuple[Dict[str, Any], List[str]]:
