@@ -1298,6 +1298,17 @@ def run_smoke_validation(
             _add("backend_health", False, "/health not 200 within timeout. logs:\n" + (logs.stdout or logs.stderr)[-1200:])
             return _finalize(checks, backend_port, endpoint_results)
         _add("backend_health", True)
+        # #1202qe: the freshly seeded state, before any check writes to it; restored in
+        # _finalize so the next capture sees the seed, not this validation's test accounts.
+        try:
+            from .verification_isolation import isolated_verification_1202qe
+            _scope = isolated_verification_1202qe(compose_file.parent.parent, "validation", _LOG)
+            _scope.__enter__()
+            _VALIDATION_SCOPE_1202QE.append(_scope)
+        except Exception as _e1202qe:
+            from .message_format import warn_once_1201
+            warn_once_1201("validation_db_snapshot_1202qe", "#1202qe validation data snapshot",
+                           _e1202qe)
 
         # #1202dj: THE one moment the database is provably up. `live_row_counts_1039` works
         # — proven against a live stack — but it is called from gate evaluation, and the
@@ -1654,9 +1665,19 @@ def run_smoke_validation(
                 pass
 
 
+_VALIDATION_SCOPE_1202QE: List[Any] = []
+
+
 def _finalize(checks: List[Dict[str, Any]], backend_port: Optional[int],
               endpoint_results: Optional[List[Dict[str, Any]]] = None,
               chain_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    while _VALIDATION_SCOPE_1202QE:          # #1202qe: every return path after the snapshot
+        try:
+            _VALIDATION_SCOPE_1202QE.pop().__exit__(None, None, None)
+        except Exception as _e1202qe:
+            from .message_format import warn_once_1201
+            warn_once_1201("validation_db_restore_1202qe", "#1202qe validation data restore",
+                           _e1202qe)
     passed = bool(checks) and all(c["status"] == "pass" for c in checks)
     fails = [c["name"] for c in checks if c["status"] != "pass"]
     summary = "all api_smoke checks passed" if passed else f"FAILED: {', '.join(fails)}"

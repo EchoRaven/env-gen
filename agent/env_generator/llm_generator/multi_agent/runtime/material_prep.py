@@ -685,6 +685,75 @@ _VIDEO_EXTS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
 _AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac"}
 
 
+def _video_codec_1202qf(path: Path) -> str:
+    """'hevc' / 'h264' / '' from the container's sample-entry tags (no ffprobe needed)."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4_000_000)
+        if b"hvc1" in head or b"hev1" in head:
+            return "hevc"
+        if b"avc1" in head or b"avc3" in head:
+            return "h264"
+    except Exception:
+        pass
+    return ""
+
+
+def _ffmpeg_1202qf() -> str:
+    exe = shutil.which("ffmpeg") or ""
+    if not exe:
+        try:
+            import imageio_ffmpeg  # optional: a bundled static ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            exe = ""
+    return exe
+
+
+def _stage_video_1202qf(path: Path, dest: Path, entry: Dict) -> bool:
+    """#1202qf: an HEVC video is staged as H.264 when ffmpeg is available.
+
+    Chromium on Linux and most desktop browsers without hardware HEVC cannot decode `hvc1`;
+    tiktok's 35 real videos were all HEVC, so every feed card errored, the page hid the
+    element, and the capture judged a black card (fyp_feed_logged_out 0.56). Without ffmpeg the
+    file is staged as-is and the entry says `browser_playable: False` so the poster must carry
+    the frame. Returns True when this function wrote `dest`.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    codec = _video_codec_1202qf(path)
+    entry["codec"] = codec or None
+    if codec != "hevc":
+        return False
+    exe = _ffmpeg_1202qf()
+    if not exe:
+        entry["browser_playable"] = False
+        log.warning("#1202qf %s is HEVC and no ffmpeg is available to transcode it: most "
+                    "browsers will not play it - render its poster image", path.name)
+        return False
+    tmp = dest.with_name(".tmp_" + dest.name)
+    try:
+        import subprocess
+        res = subprocess.run(
+            [exe, "-y", "-loglevel", "error", "-i", str(path), "-c:v", "libx264",
+             "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "26",
+             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(tmp)],
+            capture_output=True, text=True, timeout=900)
+        if res.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+            tmp.replace(dest)
+            entry["codec"], entry["transcoded_from"] = "h264", "hevc"
+            return True
+        log.warning("#1202qf transcoding %s failed: %s", path.name, (res.stderr or "")[-200:])
+    except Exception as exc:
+        log.warning("#1202qf transcoding %s failed: %s", path.name, exc)
+    try:
+        tmp.unlink()
+    except Exception:
+        pass
+    entry["browser_playable"] = False
+    return False
+
+
 def _nonimage_asset_type(suffix: str) -> Optional[str]:
     if suffix in _FONT_EXTS:
         return "font"
@@ -732,7 +801,8 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
         try:
             dest = stage / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, dest)
+            if not (entry.get("type") == "video" and _stage_video_1202qf(path, dest, entry)):
+                shutil.copy2(path, dest)
         except Exception:
             continue
         manifest.append(entry)

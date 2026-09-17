@@ -881,11 +881,15 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
                 "(api=%s ui=%s mcp=%s multi_tenant=%s); replaying %d prior failure(s) first",
                 version, len(goals), modalities, inp["api_base"], inp["ui_base"],
                 inp["mcp_present"], inp["multi_tenant"], len(ledger.open_failures()))
-        report = await run_test_user_squad(
-            orch, goals,
-            ui_base=inp["ui_base"] or inp["api_base"],
-            api_base=inp["api_base"] or inp["ui_base"],
-            identity=inp["identity"], max_concurrent=max_concurrent)
+        # #1202qe: the squad's agents register accounts and create rows as real users; the
+        # seeded state comes back when the squad finishes (see verification_isolation).
+        from .verification_isolation import isolated_verification_1202qe
+        with isolated_verification_1202qe(proj, "test_user_squad", logger):
+            report = await run_test_user_squad(
+                orch, goals,
+                ui_base=inp["ui_base"] or inp["api_base"],
+                api_base=inp["api_base"] or inp["ui_base"],
+                identity=inp["identity"], max_concurrent=max_concurrent)
         # #625: if the target was down, some or all goals were never dispatched. That must NOT
         # read as a pass — with no agent running, no P0 is filed, and `ran=True, p0=0` is
         # exactly the input that sets _tu_squad_passed and releases the milestone UNTESTED.

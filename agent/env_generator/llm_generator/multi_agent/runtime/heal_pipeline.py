@@ -1260,73 +1260,78 @@ class HealPipeline:
         raises into delivery. Web screenshots are produced by the orchestrating layer
         (Playwright is not a gen-runtime dependency)."""
         orch = self._orch
-        try:
-            out_dir = getattr(orch, "output_dir", None)
-            registryhub = getattr(orch.hubs, "registryhub", None)
-            if not out_dir or registryhub is None:
-                return
-            from pathlib import Path as _P
-            from .lifecycle import business_endpoints
-            from .validation_runner import _backend_host_port, _http
-            from .test_user_validation import run_test_user_validation
-            proj = _P(out_dir)
-            compose = proj / "docker" / "docker-compose.yml"
-            port = _backend_host_port(compose, compose.parent) if compose.exists() else None
-            base = f"http://localhost:{port}" if port else None
-            # Health pre-check: only run the journey against a live app.
-            healthy = False
-            if base:
-                for _ in range(3):
-                    if _http("GET", f"{base}/health", timeout=5).get("status") == 200:
-                        healthy = True
-                        break
-            if not healthy:
-                orch._logger.warning(
-                    "TEST-USER validation (v%s): SKIPPED — app not reachable at "
-                    "delivery time (no false-negative report).", version)
-                return
-            eps = business_endpoints(registryhub.get_endpoints())
+        # #1202qe: the API journey and the browser walk register users and write rows into the
+        # app's own data; put the seeded state back when they finish (see verification_isolation).
+        from .verification_isolation import isolated_verification_1202qe
+        with isolated_verification_1202qe(getattr(orch, "output_dir", None),
+                                          "test_user_validation", getattr(orch, "_logger", None)):
             try:
-                from .llm_overrides import get_component_llm
-                _tu_llm = get_component_llm(orch, "test_user_judge") or getattr(orch, "llm", None)
-            except Exception:
-                _tu_llm = getattr(orch, "llm", None)
-            report = run_test_user_validation(
-                proj, eps, version=version, base_url=base, compose_file=compose,
-                llm=_tu_llm)
-            summ = report.get("summary", {})
-            if summ.get("verdict") == "PASS":
-                orch._logger.warning(
-                    "TEST-USER validation (v%s): PASS — %s/%s API journey steps OK + "
-                    "MCP surface complete.", version,
-                    summ.get("api_passed"), summ.get("api_steps"))
-            else:
-                # #1038: this printed only `broken`, but PARTIAL is DEFINED as "nothing
-                # broken — only missing endpoints (404/405) or an incomplete MCP surface".
-                # So every PARTIAL was structurally guaranteed to read "BROKEN: []" and name
-                # nothing: 84 of them across r1-r175, 100% of the PARTIAL verdicts. Report
-                # whichever cause actually produced the verdict.
-                from .test_user_validation import describe_non_pass_1038
-                orch._logger.warning(
-                    "TEST-USER validation (v%s): %s — %s/%s journey steps passed; %s",
-                    version, summ.get("verdict"), summ.get("api_passed"),
-                    summ.get("api_steps"),
-                    describe_non_pass_1038(
-                        summ, (report.get("mcp") or {}) if isinstance(report, dict) else {}))
-            # BROWSER test-user (2026-06-22): drive a real browser through the frontend
-            # — the auth FLOW (catches a dead login form) + every declared page route
-            # (screenshot + blank/console-error checks). The structured feedback is
-            # logged AND routed to the frontend lane as remediation, then re-tested next
-            # milestone — the user's intended "recruit -> test via web tools -> key-node
-            # screenshots -> feedback -> fix" loop. Best-effort; never blocks.
-            try:
-                # Returns the browser report (auth_ok/blank_pages/…) so a PRE-RELEASE
-                # caller can gate the release on it; None if it could not run.
-                return self._run_browser_test_user(proj, compose, registryhub, version)
-            except Exception as _bexc:
-                orch._logger.debug("browser test-user skipped: %s", _bexc)
-        except Exception as exc:
-            orch._logger.debug("test-user validation skipped: %s", exc)
+                out_dir = getattr(orch, "output_dir", None)
+                registryhub = getattr(orch.hubs, "registryhub", None)
+                if not out_dir or registryhub is None:
+                    return
+                from pathlib import Path as _P
+                from .lifecycle import business_endpoints
+                from .validation_runner import _backend_host_port, _http
+                from .test_user_validation import run_test_user_validation
+                proj = _P(out_dir)
+                compose = proj / "docker" / "docker-compose.yml"
+                port = _backend_host_port(compose, compose.parent) if compose.exists() else None
+                base = f"http://localhost:{port}" if port else None
+                # Health pre-check: only run the journey against a live app.
+                healthy = False
+                if base:
+                    for _ in range(3):
+                        if _http("GET", f"{base}/health", timeout=5).get("status") == 200:
+                            healthy = True
+                            break
+                if not healthy:
+                    orch._logger.warning(
+                        "TEST-USER validation (v%s): SKIPPED — app not reachable at "
+                        "delivery time (no false-negative report).", version)
+                    return
+                eps = business_endpoints(registryhub.get_endpoints())
+                try:
+                    from .llm_overrides import get_component_llm
+                    _tu_llm = get_component_llm(orch, "test_user_judge") or getattr(orch, "llm", None)
+                except Exception:
+                    _tu_llm = getattr(orch, "llm", None)
+                report = run_test_user_validation(
+                    proj, eps, version=version, base_url=base, compose_file=compose,
+                    llm=_tu_llm)
+                summ = report.get("summary", {})
+                if summ.get("verdict") == "PASS":
+                    orch._logger.warning(
+                        "TEST-USER validation (v%s): PASS — %s/%s API journey steps OK + "
+                        "MCP surface complete.", version,
+                        summ.get("api_passed"), summ.get("api_steps"))
+                else:
+                    # #1038: this printed only `broken`, but PARTIAL is DEFINED as "nothing
+                    # broken — only missing endpoints (404/405) or an incomplete MCP surface".
+                    # So every PARTIAL was structurally guaranteed to read "BROKEN: []" and name
+                    # nothing: 84 of them across r1-r175, 100% of the PARTIAL verdicts. Report
+                    # whichever cause actually produced the verdict.
+                    from .test_user_validation import describe_non_pass_1038
+                    orch._logger.warning(
+                        "TEST-USER validation (v%s): %s — %s/%s journey steps passed; %s",
+                        version, summ.get("verdict"), summ.get("api_passed"),
+                        summ.get("api_steps"),
+                        describe_non_pass_1038(
+                            summ, (report.get("mcp") or {}) if isinstance(report, dict) else {}))
+                # BROWSER test-user (2026-06-22): drive a real browser through the frontend
+                # — the auth FLOW (catches a dead login form) + every declared page route
+                # (screenshot + blank/console-error checks). The structured feedback is
+                # logged AND routed to the frontend lane as remediation, then re-tested next
+                # milestone — the user's intended "recruit -> test via web tools -> key-node
+                # screenshots -> feedback -> fix" loop. Best-effort; never blocks.
+                try:
+                    # Returns the browser report (auth_ok/blank_pages/…) so a PRE-RELEASE
+                    # caller can gate the release on it; None if it could not run.
+                    return self._run_browser_test_user(proj, compose, registryhub, version)
+                except Exception as _bexc:
+                    orch._logger.debug("browser test-user skipped: %s", _bexc)
+            except Exception as exc:
+                orch._logger.debug("test-user validation skipped: %s", exc)
         return None
 
     def _run_browser_test_user(self, proj, compose, registryhub, version) -> "dict | None":
