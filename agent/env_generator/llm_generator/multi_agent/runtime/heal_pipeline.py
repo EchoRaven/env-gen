@@ -1296,9 +1296,14 @@ class HealPipeline:
                     _tu_llm = get_component_llm(orch, "test_user_judge") or getattr(orch, "llm", None)
                 except Exception:
                     _tu_llm = getattr(orch, "llm", None)
-                report = run_test_user_validation(
-                    proj, eps, version=version, base_url=base, compose_file=compose,
-                    llm=_tu_llm)
+                # #1202qj: the API journey needs the stack up for its whole length, like the browser
+                # walk. Without a lease, tiktok-r127's api_smoke validation ran `down -v` at
+                # 23:19:30 in the middle of it and the journey reported "0/0 steps passed".
+                from .compose_mutex import stack_lease_1202nx as _lease_1202qj
+                with _lease_1202qj(proj, "test-user API journey"):
+                    report = run_test_user_validation(
+                        proj, eps, version=version, base_url=base, compose_file=compose,
+                        llm=_tu_llm)
                 summ = report.get("summary", {})
                 if summ.get("verdict") == "PASS":
                     orch._logger.warning(
@@ -1407,9 +1412,15 @@ class HealPipeline:
         def _walk():
             from .compose_mutex import stack_lease_1202nx   # #1202nx: the walk needs the stack up
             with stack_lease_1202nx(proj, "browser test-user walk"):
-                return asyncio.run(run_browser_test_user(
-                    base, pages, out_dir, register=True, api_base_url=api_base,
-                    demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
+                # #1202qj: its own data scope, taken on the database the walk actually uses. The
+                # enclosing test_user_validation scope snapshots the database as it was when that
+                # phase began; r127's stack was recreated before the walk, so the outer restore
+                # found no snapshot and the walk's accounts stayed in the app.
+                from .verification_isolation import isolated_verification_1202qe
+                with isolated_verification_1202qe(proj, "browser_walk", orch._logger):
+                    return asyncio.run(run_browser_test_user(
+                        base, pages, out_dir, register=True, api_base_url=api_base,
+                        demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
 
         # #1202ne: a walk the stack was recycled under says nothing about the app. tiktok-r125
         # v1.1.0: the verifier's `docker_up(fresh=True)` ran `down -v` 22s into this walk; the

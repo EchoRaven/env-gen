@@ -171,6 +171,13 @@ class isolated_verification_1202qe:
             _ACTIVE_1202QE.pop(self.cid, None)
             tag = group["tag"]
         r = restore_db_1202qe(self.compose, tag)
+        if not r.get("ok") and "recreated" in str(r.get("error")):
+            # The database this scope snapshotted is gone: a validation's `down -v` replaced it
+            # with a freshly seeded one. There is nothing of this scope's to restore; writers
+            # on the new database hold scopes of their own.
+            self._say("info", "#1202qe nothing to restore after %s: its database was recreated "
+                      "and re-seeded while it ran", self.tag)
+            return False
         if r.get("ok"):
             self._say("info", "#1202qe restored the seeded data after %s: the accounts and "
                       "rows verification created are gone", self.tag)
