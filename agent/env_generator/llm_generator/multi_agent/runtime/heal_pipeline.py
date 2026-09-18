@@ -1744,6 +1744,20 @@ class HealPipeline:
                 # like one that matched real media every time. tiktok-r109 is the instance.
                 _ph = int(_li.get("unmatched") or 0) + int(_ls.get("unmatched") or 0)  # #1202qo
                 _st = int(_li.get("staged") or 0) + int(_ls.get("staged") or 0)
+                # #1202re: a THIRD outcome now exists -- a real staged asset chosen by design-
+                # prep's own category when no filename token matched. Counting it as "staged"
+                # would hide how often the token match actually wins; counting it as unmatched
+                # would say the picture is broken when it is a real photograph.
+                _cat1202re = (int(_li.get("category_1202re") or 0)
+                              + int(_ls.get("category_1202re") or 0))
+                if _cat1202re:
+                    orch._logger.warning(
+                        "#1202re %d image ref(s) matched no staged asset BY NAME and were bound "
+                        "to a real staged asset of the right kind instead (design-prep stages "
+                        "media under content-hash names, which share no token with a semantic "
+                        "URL -- r130 matched 5 of 55 by name, r129 matched 0 of 27). These are "
+                        "photographs from this env's own reference material, not placeholders.",
+                        _cat1202re)
                 if _ph:
                     # #1202jq: the counts, and the staged-asset population beside them —
                     # WITHOUT naming a repair. "The picture was never staged" was the first

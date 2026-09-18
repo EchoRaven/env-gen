@@ -1066,6 +1066,102 @@ def _match_staged_asset(url: str, field: str, assets: List[str]) -> Optional[str
     return best
 
 
+# #1202re: the staged tree keeps design-prep's own classification as DIRECTORIES, and the
+# filename-token matcher above never looks at them. These are the ones that hold pictures of
+# something; `icons/` and `fonts/` are chrome and #1202jz forbids binding imagery to them.
+# Each rule names the category to try FIRST and the ones to spill into when it runs out. A
+# spill target must hold the same KIND of thing: r130 sent 30 image-ish refs at a 24-file
+# `images/` pool and had to repeat three, while 35 unused .jpg poster frames sat in
+# `real_videos/` -- equally real photographs. Repeating a picture when an unused one exists is
+# the "duplicate content" the r129 squad filed.
+_ASSET_CATEGORY_1202RE = (
+    (re.compile(r"avatar|profile_?pic|author|creator|user", re.I),
+     ("real_avatars", "images", "real_videos")),
+    (re.compile(r"video|clip|media|stream", re.I),
+     ("real_videos",)),
+    (re.compile(r"thumb|cover|poster|banner|image|photo|picture|logo", re.I),
+     ("images", "real_videos", "real_avatars")),
+)
+
+
+def _category_asset_1202re(url: str, field: str, assets: List[str],
+                           tally: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """A REAL staged asset of the right KIND when no filename token matched.
+
+    The token matcher's own docstring left this open: "how often the fallback lands on a real
+    photo versus a placeholder is NOT measured." Measured now, and it is bad -- tiktok-r130
+    matched 5 of 55 refs (9%) and r129 matched 0 of 27, because design-prep stages media under
+    CONTENT-HASH names (`9932bdd955452673e344caf5ee4ae765_tplv-tiktokx-cropcenter_100_100.jpeg`)
+    and a hash shares no token with `avatar/alice.jpg`. The match was unwinnable by construction.
+
+    What design-prep does keep is the classification, as directories: `real_avatars/` (9 files
+    in r130), `real_videos/` (70), `images/` (24), beside `icons/` (36) and `fonts/` (5). This
+    reads that.
+
+    NOT a placeholder (#1202qo removed those, and the user's rule is that a substitute hiding a
+    failure is not wanted): these are the real photographs design-prep collected FOR this app,
+    the same choice #1202qd already makes for seed rows -- a sibling real image, never a
+    generated glyph. NOT chrome either: `icons/` and `fonts/` are never candidates, so #1202jz's
+    193 icon-as-photograph bindings cannot come back this way.
+
+    Deterministic by URL so a rebuild maps the same URL to the same asset -- the seed
+    fingerprint depends on it being stable.
+    """
+    try:
+        cats = None
+        hay = "%s %s" % (field or "", re.sub(r"https?://[^/]+", "", url or ""))
+        for rx, names in _ASSET_CATEGORY_1202RE:
+            if rx.search(hay):
+                cats = names
+                break
+        if not cats:
+            return None
+        # `real_videos/` holds 35 .mp4 AND their 35 .jpg poster frames (r130). A `video_url`
+        # bound to a poster gives `<video src="...jpg">`, which plays nothing; a `thumbnail`
+        # bound to an .mp4 gives an <img> that renders nothing. Split by what the FIELD wants.
+        _wants_video = bool(re.search(r"video|clip|stream", "%s %s" % (field or "", url or ""),
+                                      re.I)) and not re.search(
+            r"thumb|poster|cover|preview", field or "", re.I)
+        _vid_ext = (".mp4", ".webm", ".mov", ".m4v")
+        pools = []
+        for _c in cats:
+            _p = sorted(a for a in assets if Path(a).parts and Path(a).parts[0] == _c)
+            _p = [a for a in _p
+                  if (a.lower().endswith(_vid_ext) if _wants_video
+                      else not a.lower().endswith(_vid_ext))]
+            if _p:
+                pools.append(_p)
+        if not pools:
+            return None
+        pool = pools[0]
+        import hashlib
+        k = int(hashlib.md5((url or "").encode("utf-8")).hexdigest(), 16) % len(pool)
+        if tally is None:
+            return pool[k]
+        # DISTINCT WHILE THE POOL LASTS. Hash-mod alone collides by the birthday rule -- r130's
+        # nine seeded users drew nine avatars and two of them got khaby.lame's face, and
+        # "duplicate avatars" is a defect the r129 squad filed in those words. Hand out an
+        # unused asset first, starting from the hashed offset so different URLs do not all
+        # queue behind the same one; fall back to the hashed pick once the pool is spent.
+        # Deterministic: the same file yields the same call order yields the same assignment,
+        # which the seed fingerprint depends on.
+        memo = tally.setdefault("_1202re_map", {})
+        if url in memo:
+            return memo[url]
+        taken = tally.setdefault("_1202re_taken", set())
+        for _i, _pool in enumerate(pools):
+            _start = k % len(_pool)
+            for a in _pool[_start:] + _pool[:_start]:
+                if a not in taken:
+                    taken.add(a)
+                    memo[url] = a
+                    return a
+        memo[url] = pool[k]       # every compatible pool is spent -- repeat, deterministically
+        return pool[k]
+    except Exception:
+        return None
+
+
 def _placeholder_ref(public_dir: Path, url: str, avatarish: bool) -> str:
     """DEAD SINCE #1202qo -- nothing calls this, and nothing should.
 
@@ -1116,6 +1212,13 @@ def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str],
         if tally is not None:
             tally["staged"] = tally.get("staged", 0) + 1
         return f"/assets/{hit}"
+    # #1202re: no filename token matched -- ask design-prep's own classification instead. A
+    # real photograph of the right KIND, never a generated glyph and never chrome.
+    cat = _category_asset_1202re(url, field, assets, tally)
+    if cat:
+        if tally is not None:
+            tally["category_1202re"] = tally.get("category_1202re", 0) + 1
+        return f"/assets/{cat}"
     # #1202qo: no staged asset matches -> the URL stays as it is. A generated placeholder glyph
     # made "this data points at an image nobody staged" look like a working picture; the user's
     # rule is that a substitute which hides a failure is not wanted. Offline, the image shows as
