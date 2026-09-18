@@ -632,8 +632,27 @@ def _business_chain_detail(broken, salient: str) -> str:
     step's POST /replies → 500 showed the lane only 'Internal Server Error' while
     business_endpoints_reachable surfaced the file:line traceback for its 500s and
     those got fixed. Attach the salient backend traceback to a chain 5xx too, so
-    the lane sees the real root cause (mirrors compose_unreachable_detail)."""
-    joined = "; ".join(broken or [])
+    the lane sees the real root cause (mirrors compose_unreachable_detail).
+
+    #1202qy -- joined by NEWLINE, not "; ". Every reader downstream is line-based, and the one
+    that matters is `_salient_error`, whose whole promise (#182) is "return the marker-matching
+    lines, never the misleading prefix". Collapse the list into one line and that promise cannot
+    be kept: there is a single line, it matches, and the 200-char clip shows whatever happens to
+    sit at position 0.
+
+    tiktok-r129 20:24:35 is the instance. Four chains were failing on
+    `POST /api/videos/{id}/comments -> 404`, with the diagnosis already computed beside it
+    ("PARENT EXISTS: `GET /api/videos/35` answers 200 right now"). What the orchestrator logged,
+    and what the lane was handed, was:
+
+        RELEASE HELD: ... FAILS a fresh api_smoke
+        (['business_chain:[build currency #1202ex] These verdicts may not be about the'])
+
+    -- #1202ex's advisory, which sits at index 0 of `broken` by design so a human reading the
+    whole list sees it first. One line each and the extractor reaches the 404s again; the
+    advisory keeps its place in the list for whoever reads all of it.
+    """
+    joined = "\n".join(broken or [])
     if not salient:
         return joined[:800]
     return f"{joined[:520]} | backend traceback: {salient}"[:800]
