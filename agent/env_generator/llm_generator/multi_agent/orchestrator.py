@@ -5667,6 +5667,26 @@ class Orchestrator:
                         # So consult what the framework's own last validation measured. This
                         # holds the LAUNCH, not the gate: the single-flight slot stays unarmed,
                         # this tick still defers, and the next tick launches once it answers.
+                        # #1202rd: `squad_gate_tick_action`'s docstring says the handle is
+                        # cleared so the next launch may re-arm "after the fix lands" -- and
+                        # nothing checked that it had. r130: squad #1 returned 19 open P0 at
+                        # 23:42:53 and squad #2 spawned twelve agents at 23:44:29, ninety-six
+                        # seconds later, over lanes that had read files and written nothing.
+                        from .runtime.test_user_squad import squad_relaunch_blocked_1202rd
+                        _sig1202rd = getattr(self, "_tu_squad_verdict_sig_1202rd", None)
+                        if _sig1202rd:
+                            try:
+                                _now_sig = self._compute_app_source_signature()
+                            except Exception:
+                                _now_sig = None
+                            _wait1202rd = squad_relaunch_blocked_1202rd(
+                                _now_sig, _sig1202rd[0], _sig1202rd[1])
+                            if _wait1202rd:
+                                self._logger.warning(
+                                    "TEST-USER SQUAD re-launch HELD: %s. Deferring this tick "
+                                    "instead; the wall-clock escape still releases the gate.",
+                                    _wait1202rd)
+                                return
                         from .runtime.test_user_squad import squad_launch_held_1202qw
                         _held1202qw = squad_launch_held_1202qw(
                             getattr(self, "_stack_verdict_1202qw", None), _now)
@@ -5703,6 +5723,13 @@ class Orchestrator:
                     finally:
                         self._tu_squad_task = None  # consumed — single-flight may re-arm
                     _p0 = int((_tu_result.get("bugs") or {}).get("p0", 0))
+                    # #1202rd: remember WHAT THE APP WAS when this verdict was reached, so the
+                    # next launch can tell "the lanes fixed something" from "nothing moved".
+                    try:
+                        self._tu_squad_verdict_sig_1202rd = (
+                            self._compute_app_source_signature(), _p0)
+                    except Exception:
+                        self._tu_squad_verdict_sig_1202rd = None
                     _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0)
                     if _tu_outcome == "pass":
                         self._tu_squad_passed = True  # clean -> fall through to release

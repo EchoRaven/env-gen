@@ -874,6 +874,35 @@ def squad_gate_outcome(*, ran: bool, p0: int) -> str:
     return "pass" if int(p0 or 0) == 0 else "defect"
 
 
+def squad_relaunch_blocked_1202rd(app_sig, last_verdict_sig, open_p0: int) -> str:
+    """#1202rd: why a re-launch should wait, or "" to launch.
+
+    `squad_gate_tick_action`'s own docstring says the handle is cleared "so the next 'launch'
+    may re-arm AFTER THE FIX LANDS". Nothing checked that. Consume clears the handle and the
+    very next tick sees `task_exists=False` and launches twelve more agents.
+
+    tiktok-r130: squad #1 returned `verdict=DEFECTS: 19 open P0 (18 from test-users)` at
+    23:42:53, and squad #2 spawned twelve agents at 23:44:29 -- ninety-six seconds later. In
+    that gap the lanes read files and claimed tasks and wrote nothing, so the second squad was
+    paid to rediscover the same nineteen defects.
+
+    The condition is deliberately "the app changed", not "the P0s are closed": a lane may fix
+    something without closing a ticket, and a squad that re-runs over changed code is doing its
+    job. With no open P0 there is nothing to wait for either, so it launches.
+    """
+    try:
+        if int(open_p0 or 0) <= 0:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    if not app_sig or not last_verdict_sig:
+        return ""                     # no signature to compare -- never block on ignorance
+    if app_sig != last_verdict_sig:
+        return ""                     # the app moved; re-testing is the point
+    return ("the app source has not changed since the last squad returned %d open P0(s); "
+            "twelve more agents would rediscover them" % int(open_p0))
+
+
 def squad_gate_tick_action(*, task_exists: bool, task_done: bool) -> str:
     """#532: single-flight decision for the BACKGROUND test-user squad gate.
 
