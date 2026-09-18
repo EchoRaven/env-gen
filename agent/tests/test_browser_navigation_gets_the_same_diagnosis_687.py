@@ -99,7 +99,27 @@ def test_the_browser_import_is_local_and_guarded():
     tail = src[i:src.index("def _is_extension_error", i)]
     assert "from tools.runtime_tools import" in tail
     assert "except Exception:" in tail
-    assert "from tools.runtime_tools" not in src[:i], "must not be a module-level import"
+    # What this guards is a MODULE-LEVEL dependency. The old proxy for that -- "the name does
+    # not appear before the #687 block" -- also forbids any other local import earlier in the
+    # file, and #1202qz added one inside `execute` (guarded the same way). Ask the real
+    # question instead: is there a top-level import of runtime_tools?
+    import ast
+    tree = ast.parse(src)
+    top_level = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    for node in top_level:
+        names = [a.name for a in node.names]
+        mod = getattr(node, "module", "") or ""
+        assert "runtime_tools" not in mod and not any("runtime_tools" in n for n in names), (
+            "must not be a module-level import")
+    # and every mention of it inside the file sits under a try/except
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if "runtime_tools" not in (node.module or ""):
+            continue
+        assert any(node.lineno > h.lineno and node.lineno <= (h.end_lineno or h.lineno)
+                   for h in ast.walk(tree) if isinstance(h, ast.Try)), (
+            "a runtime_tools import must be guarded")
 
 
 def test_a_helper_failure_leaves_the_raw_error_intact():

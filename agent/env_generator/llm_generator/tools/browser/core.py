@@ -42,6 +42,12 @@ class BrowserNavigateTool(BaseTool):
     def __init__(self, browser_manager: BrowserManager, **kwargs):
         super().__init__(name="browser_navigate", category=ToolCategory.RUNTIME, **kwargs)
         self.browser = browser_manager
+        self._hubs = None   # #1202qz: bound by set_agent, so a failure can be dated
+
+    def set_agent(self, agent) -> None:
+        hubs = getattr(agent, "_hubs", None)
+        if hubs is not None:
+            self._hubs = hubs
     
     @property
     def tool_definition(self) -> Dict[str, Any]:
@@ -203,7 +209,21 @@ class BrowserNavigateTool(BaseTool):
                 "content_preview": content[:500] + "..." if len(content) > 500 else content,
                 "has_errors": len(console_errors) > 0 or len(our_network_errors) > 0,
             }
-            
+            # #1202qz: a page that failed on a stack recreated seconds ago is usually the
+            # recreate. tiktok-r129 recreated at 20:47:58; the verifier captured a 502 at
+            # 20:48:12, filed P1 at 20:48:27, and the backend lane claimed it at 20:48:56.
+            # test_api carries the same note (#1202qs is its sibling for a stale image) --
+            # the harm has two producing paths, so the note goes on both (#934).
+            _st = result.get("status")
+            if result["has_errors"] or (isinstance(_st, int) and _st >= 500):
+                try:
+                    from tools.runtime_tools import _young_stack_note_1202qz
+                    _n = _young_stack_note_1202qz(getattr(self, "_hubs", None))
+                    if _n:
+                        result["stack_note_1202qz"] = _n.lstrip(" —").strip()
+                except Exception:
+                    pass
+
             return ToolResult.ok(result)
             
         except Exception as e:

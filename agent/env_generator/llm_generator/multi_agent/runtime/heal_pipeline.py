@@ -1441,13 +1441,22 @@ class HealPipeline:
         # eight minutes earlier had rendered real data on the same code. Compare the stack's
         # containers across the walk; if they changed, discard it and walk once more when the
         # stack is serving again — never judge, dispatch or record from the broken one.
-        from .compose_mutex import stack_identity_1202ne
-        _stack_before = stack_identity_1202ne(compose)
-        report = _walk()
+        # #1202ra: hold the lease ACROSS the two identity samples, not only inside the walk.
+        # `_walk()` takes its own lease (#1202nx) and releases it when it returns, so the
+        # "after" sample was taken with the stack unprotected. tiktok-r129 20:52: the walk
+        # finished, validation_runner ran `down -v` at 20:52:29, the sample at 20:52:32 read
+        # 3 -> 0 containers, and a walk that had completed on a live stack was discarded as
+        # "recycled under". The lease is a token set, not a mutex, so nesting it is free and
+        # the inner one still protects the walk itself.
+        from .compose_mutex import stack_identity_1202ne, stack_lease_1202nx as _lease_1202ra
+        with _lease_1202ra(proj, "browser walk verdict"):
+            _stack_before = stack_identity_1202ne(compose)
+            report = _walk()
+            _stack_after_1202ra = stack_identity_1202ne(compose)
         for _rewalk in (True, False):
             if not report.get("ran") or not _stack_before:
                 break
-            _stack_after = stack_identity_1202ne(compose)
+            _stack_after = _stack_after_1202ra   # re-walks below refresh it
             if _stack_after is None or _stack_after == _stack_before:
                 break
             orch._logger.warning(
@@ -1458,8 +1467,10 @@ class HealPipeline:
                 else "second walk overlapped a recycle too; no browser verdict this pass")
             if not _rewalk or not _stack_serving_1202ne(base, api_base):
                 return None
-            _stack_before = stack_identity_1202ne(compose)
-            report = _walk()
+            with _lease_1202ra(proj, "browser walk verdict"):
+                _stack_before = stack_identity_1202ne(compose)
+                report = _walk()
+                _stack_after_1202ra = stack_identity_1202ne(compose)
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))

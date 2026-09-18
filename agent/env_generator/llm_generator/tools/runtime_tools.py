@@ -2363,6 +2363,49 @@ def foreign_target_notice_1134(url: str, answered: bool = True) -> str:
 
 # ===== Test API Tool =====
 
+# #1202qz: a stack younger than this was still coming up when the caller looked at it. Sized
+# from tiktok-r129: `up -d` returned at 20:47:58, uvicorn logged "Application startup complete"
+# at 20:48:07, and the verifier's navigation landed in between.
+_YOUNG_STACK_S_1202QZ = 90.0
+
+
+def _young_stack_note_1202qz(hubs) -> str:
+    """#1202qz: '' unless this project's stack was (re)created seconds ago.
+
+    A FACT, not a verdict. tiktok-r129 20:47:58 recreated the stack; at 20:48:12 the verifier
+    captured `ui_smoke_fyp_feed_logged_out_502_failure.png`; at 20:48:27 it filed P1 "Frontend
+    same-origin API proxy returns 502 for GET /api/videos/feed while backend API is healthy";
+    the debugger triaged it and the backend lane claimed it at 20:48:56. A whole dispatch chain
+    on a stack that was twenty-nine seconds old.
+
+    Deliberately says only how old the stack is. Two explanations I tried for that 502 -- nginx
+    holding a stale upstream IP, and the backend still booting when the screenshot was written --
+    were both falsified (both containers are recreated together, and uvicorn was serving five
+    seconds before the file's mtime). The age is the part that is measured.
+    """
+    try:
+        base = getattr(hubs, "base_dir", None) if hubs is not None else None
+        if not base:
+            return ""
+        try:
+            from ..multi_agent.runtime.verification_isolation import compose_for_project_1202qe
+            from ..multi_agent.runtime.compose_mutex import stack_age_s_1202qz
+        except ImportError:
+            from multi_agent.runtime.verification_isolation import compose_for_project_1202qe
+            from multi_agent.runtime.compose_mutex import stack_age_s_1202qz
+        compose = compose_for_project_1202qe(base)
+        if compose is None:
+            return ""
+        age = stack_age_s_1202qz(compose)
+        if age is None or age > _YOUNG_STACK_S_1202QZ:
+            return ""
+        return (" — NOTE: this stack was (re)created %ds ago. A failure this soon after a "
+                "recreate is often the recreate, not the app: re-check before filing it as a "
+                "defect (#1202qz)." % int(age))
+    except Exception:
+        return ""
+
+
 def _stale_image_note_1202qs(hubs) -> str:
     """#1202qs: '' unless the running app was built BEFORE the app source on disk changed.
 
@@ -2604,6 +2647,12 @@ To test them, get a token first, then pass it as a header:
                     _stale_1202qs = _stale_image_note_1202qs(self._hubs)
                     if _stale_1202qs:
                         hint += _stale_1202qs
+                # #1202qz: a 5xx on a stack recreated seconds ago is usually the recreate.
+                # browser_navigate carries the same note -- one harm, two producing paths.
+                if e.code >= 500:
+                    _young_1202qz = _young_stack_note_1202qz(self._hubs)
+                    if _young_1202qz:
+                        hint += _young_1202qz
                 if status_meets_expectation(e.code, expect):
                     # #365: the caller DECLARED this status — it is the result,
                     # not a failure.

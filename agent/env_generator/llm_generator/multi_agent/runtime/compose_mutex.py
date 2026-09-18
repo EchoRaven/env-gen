@@ -185,6 +185,46 @@ def stack_identity_1202ne(compose_file: Any, timeout_s: float = 20.0):
         return None
 
 
+def stack_age_s_1202qz(compose_file: Any, timeout_s: float = 20.0):
+    """Seconds since the YOUNGEST container of this stack started; None when unreadable.
+
+    Reads `stack_identity_1202ne`'s own `"<id> <StartedAt>"` rows rather than shelling out
+    again, so there is one place that knows what the stack's identity looks like.
+
+    Why the youngest: a recreate replaces containers one at a time, and what matters to a
+    caller about to judge the app is how long ago the LAST thing came up.
+    """
+    from datetime import datetime, timezone
+    ident = stack_identity_1202ne(compose_file, timeout_s=timeout_s)
+    if not ident:
+        return None
+    newest = None
+    for row in ident:
+        parts = str(row).split(None, 1)
+        if len(parts) != 2:
+            continue
+        stamp = parts[1].strip()
+        try:                                   # docker emits RFC3339 with nanoseconds
+            if stamp.endswith("Z"):
+                stamp = stamp[:-1] + "+00:00"
+            head, _, rest = stamp.partition(".")
+            if rest:
+                frac, sign, off = rest.partition("+")
+                if not sign:
+                    frac, sign, off = rest.partition("-")
+                stamp = head + "." + frac[:6] + sign + off
+            started = datetime.fromisoformat(stamp)
+        except Exception:
+            continue
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if newest is None or started > newest:
+            newest = started
+    if newest is None:
+        return None
+    return max(0.0, (datetime.now(timezone.utc) - newest).total_seconds())
+
+
 # #1202nx: A STACK LEASE — "someone is using this running app; do not tear it down".
 #
 # #1202hn serialises compose lifecycle verbs against each other; nothing stopped a validation
