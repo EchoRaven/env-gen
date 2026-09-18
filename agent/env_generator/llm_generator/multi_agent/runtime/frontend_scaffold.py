@@ -1359,6 +1359,99 @@ def _best_match(missing: str, exported: Set[str]) -> Optional[str]:
     return None
 
 
+def orphan_stylesheets_1202rb(frontend_dir) -> Dict[str, object]:
+    """#1202rb: stylesheets under src/ that NOTHING imports, and the import that fixes them.
+
+    A .css file only reaches the bundle when a module imports it (or another stylesheet
+    `@import`s it). Vite drops an unreferenced one silently -- no warning, no build error, no
+    missing file. The page keeps its markup and loses its layout, which reads as a lane that
+    cannot lay out a page.
+
+    tiktok-r129: `visual-fixes.css` -- 6,368 bytes, 48 classes -- was imported by nothing.
+    `main.jsx` imports `index.css` and `App.jsx` imports `styles.css`; that was all. Twenty of
+    `LiveDiscoverPage.jsx`'s class names exist ONLY in the orphan, so the visual gate
+    photographed a single unstyled column of text and scored the page 0.14, and the test-user
+    squad reported "The LIVE discovery page layout is severely broken, with overlapping text".
+    tiktok-r127 shipped an orphaned `styles.css` too (smaller, 640 bytes).
+
+    Returns ``{"orphans": [names], "entry": <relative path or "">}``. Pure; never raises.
+    """
+    out: Dict[str, object] = {"orphans": [], "entry": ""}
+    try:
+        src = Path(str(frontend_dir)) / "src"
+        if not src.is_dir():
+            return out
+        sheets = [f for f in src.rglob("*.css") if "node_modules" not in f.parts]
+        if not sheets:
+            return out
+        referrers = "\n".join(
+            f.read_text(encoding="utf-8", errors="ignore")
+            for f in src.rglob("*")
+            if f.is_file() and f.suffix in (".js", ".jsx", ".ts", ".tsx", ".css")
+            and "node_modules" not in f.parts)
+        orphans = []
+        for sheet in sorted(sheets):
+            rel = sheet.relative_to(src).as_posix()
+            # a reference is any import/@import naming the file; match the path tail so
+            # './styles.css', '../styles.css' and 'src/styles.css' all count
+            hits = 0
+            for m in re.finditer(r"""(?:from\s*|import\s*|@import\s*(?:url\()?)['"]([^'"]+\.css)['"]""",
+                                 referrers):
+                ref = m.group(1).lstrip("./").lstrip("/")
+                if rel.endswith(ref) or ref.endswith(rel) or ref.endswith(sheet.name):
+                    hits += 1
+            if not hits:
+                orphans.append(rel)
+        out["orphans"] = orphans
+        if orphans:
+            for cand in ("App.jsx", "App.tsx", "main.jsx", "main.tsx"):
+                if (src / cand).is_file():
+                    out["entry"] = cand
+                    break
+    except Exception:
+        return {"orphans": [], "entry": ""}
+    return out
+
+
+def import_orphan_stylesheets_1202rb(frontend_dir) -> Dict[str, object]:
+    """Import every orphaned stylesheet from the app entry, LAST, so it can override.
+
+    Last on purpose: a sheet the lane wrote beside an existing one is a correction to it
+    (r129's was literally named `visual-fixes.css`), and CSS gives the final rule the win.
+    Idempotent -- a second pass finds no orphans. Never raises; reports what it did.
+    """
+    found = orphan_stylesheets_1202rb(frontend_dir)
+    orphans, entry = list(found.get("orphans") or []), str(found.get("entry") or "")
+    if not orphans or not entry:
+        return {"imported": [], "entry": entry, "orphans": orphans}
+    try:
+        f = Path(str(frontend_dir)) / "src" / entry
+        src_txt = f.read_text(encoding="utf-8")
+        lines = src_txt.splitlines(keepends=True)
+        # after the last existing import line, so the new sheets come after the old ones
+        last = 0
+        for i, ln in enumerate(lines):
+            if re.match(r"\s*import\s", ln):
+                last = i + 1
+        rel_prefix = "./" + ("/".join([".."] * (len(Path(entry).parts) - 1)) + "/"
+                             if len(Path(entry).parts) > 1 else "")
+        added = ["import '%s%s';\n" % ("./" if rel_prefix == "./" else rel_prefix, o)
+                 for o in orphans]
+        lines[last:last] = added
+        # #1202cw: the entry is a LANE file, so this goes through the one choke point rather
+        # than `write_text`. The ticket: a stylesheet the lane itself wrote, that reaches no
+        # browser because nothing imports it, is not lane work being clobbered -- the edit adds
+        # an import line and changes nothing the lane authored.
+        if not _fw_write_1202cw(
+                f, "".join(lines),
+                clobber_ok="#1202rb: add the import for a stylesheet nothing references"):
+            return {"imported": [], "entry": entry, "orphans": orphans,
+                    "error": "framework_write refused the entry file"}
+        return {"imported": orphans, "entry": entry, "orphans": orphans}
+    except Exception as exc:
+        return {"imported": [], "entry": entry, "orphans": orphans, "error": str(exc)}
+
+
 def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
     """Ensure every name imported from api.js is exported by it. Mutates api.js
     in place (appends aliases/stubs). Returns a report dict; best-effort and

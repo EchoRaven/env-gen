@@ -1773,6 +1773,20 @@ class HealPipeline:
             # r5/r51/r54). Convert to ESM BEFORE the export reconcilers below so they see
             # a proper `export default api` (and default_api_import never appends the
             # bogus `export default {};` that cements the empty object).
+            # #1202rb: a stylesheet nothing imports never reaches the bundle, and Vite says
+            # nothing about it. r129's `visual-fixes.css` carried 20 of LiveDiscoverPage's
+            # class names; the page shipped as an unstyled column of text and scored 0.14.
+            try:
+                from .frontend_scaffold import import_orphan_stylesheets_1202rb
+                _orph = import_orphan_stylesheets_1202rb(fe)
+                if _orph.get("imported"):
+                    orch._logger.warning(
+                        "#1202rb %d stylesheet(s) under src/ were imported by NOTHING, so Vite "
+                        "dropped them and the pages using their classes shipped unstyled: %s. "
+                        "Imported from %s, last, so they override what came before.",
+                        len(_orph["imported"]), _orph["imported"], _orph.get("entry"))
+            except Exception as _orphe:
+                orch._logger.debug("orphan-stylesheet import skipped: %s", _orphe)
             try:
                 _cjs = repair_frontend_cjs_module_exports(fe)
                 if _cjs.get("repaired"):

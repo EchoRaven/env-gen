@@ -627,6 +627,22 @@ def _chain_broken_has_5xx(broken) -> bool:
     return False
 
 
+def _unmounted_lines_1202rc(chain) -> list:
+    """#1202rc: the declared-but-unmounted summary as a 0- or 1-element list, for prepending.
+
+    A list so it composes with `broken` without a branch, and empty whenever there is nothing
+    to say -- a clean run gets no extra line.
+    """
+    try:
+        from .chain_executor import unmounted_summary_1202rc
+        line = unmounted_summary_1202rc(
+            (chain or {}).get("declared_but_unmounted_952"),
+            (chain or {}).get("build_currency_1202ex"))
+        return [line] if line else []
+    except Exception:
+        return []
+
+
 def _business_chain_detail(broken, salient: str) -> str:
     """#300 — the ``business_chain`` failure detail. r81 M2 STUCK (95min): a chain
     step's POST /replies → 500 showed the lane only 'Internal Server Error' while
@@ -1586,7 +1602,8 @@ def run_smoke_validation(
                     except Exception:
                         _chain_salient = ""
                 _add("business_chain", False,
-                     _business_chain_detail(_chain["broken"], _chain_salient))
+                     _business_chain_detail(
+                         _unmounted_lines_1202rc(_chain) + _chain["broken"], _chain_salient))
             elif _chain.get("environment_1202od"):
                 # #1202od: the steps never reached the app. Not a pass (nothing was verified)
                 # and not the lanes' failure — say which it is, so the retry is the remedy.
@@ -1597,9 +1614,15 @@ def run_smoke_validation(
                      "not the code: no lane edit can change it. Re-run the validation once "
                      "the stack is up." % (len(_env1202od), str(_env1202od[0])[:160]))
             else:
+                # #1202rc: a `missing` step leaves the chain PASSING (#927), so a handler
+                # nobody can reach is invisible on exactly the branch that reports success.
+                # r129 shipped v1.0.0 with 78 unmounted reports for PATCH /api/videos/{id}
+                # and business_chain green throughout.
+                _unm1202rc = _unmounted_lines_1202rc(_chain)
                 _add("business_chain", True,
                      f"{_chain['total_steps']} step(s) across "
-                     f"{len(_chain['chains'])} verifier-authored chain(s) pass")
+                     f"{len(_chain['chains'])} verifier-authored chain(s) pass"
+                     + (("\n" + _unm1202rc[0]) if _unm1202rc else ""))
         except Exception as _chain_exc:
             _add("business_chain", False, f"chain runner crashed: {_chain_exc}")
 

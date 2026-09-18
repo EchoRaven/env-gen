@@ -4262,6 +4262,51 @@ def _lane_declares_1202ng(lane: Any, method: str, template: str) -> bool:
                for (lm, lp) in lane)
 
 
+def unmounted_summary_1202rc(unmounted, currency) -> str:
+    """#1202rc: `declared_but_unmounted_952` as one line an AGENT can be handed, or "".
+
+    The key exists since #952 and this file's own #1202ex comment names it as the example of
+    "a key nothing outside this file ever reads". It was right: the finding reached a log line
+    in the generator's process and nothing else, so the verifier re-derived it by hand and
+    filed it as a product bug -- tiktok-r128's `POST /api/v1/admin/init-tenant returns 404 for
+    created tenant` became a P1, a debugger triage and a backend claim, all while build
+    currency read "changed".
+
+    Deduped by method+path because the same handler repeats: tiktok-r129 logged 80 of these in
+    one milestone and 78 were `PATCH /api/videos/{id}`; netflix-local-r1 logged 112 for one
+    handler over 98 minutes. A reader needs the endpoint once, not the step count.
+
+    Carries #1132's three causes and the build-currency verdict, and names none of them as THE
+    cause -- that is exactly what the comparison cannot see.
+    """
+    from .message_format import join_capped   # #1034: count and list must agree
+    try:
+        seen = []
+        for u in (unmounted or []):
+            key = "%s %s" % (str((u or {}).get("method") or "?").upper(),
+                             str((u or {}).get("path") or "?"))
+            if key not in seen:
+                seen.append(key)
+        if not seen:
+            return ""
+        stale = str((currency or {}).get("verdict") or "") == "changed"
+        line = ("%d endpoint(s) the backend SOURCE declares are not served by the running app: "
+                "%s. Three causes look identical from here and their fixes differ (#1132): the "
+                "router was never included; main.py's custom-routes duplicate filter dropped it "
+                "(it logs that refusal to the `custom_routes` logger INSIDE the container); or "
+                "the running container predates the handler."
+                # #1034: the count and the list must agree -- a cut list beside "%d endpoint(s)"
+                # reads as the whole set.
+                % (len(seen), join_capped(seen, total=len(seen), cap=8, sep=", ")))
+        if stale:
+            line += (" BUILD CURRENCY SAYS THE THIRD IS LIVE: %s -- rebuild and recreate the "
+                     "stack before treating any of these as a code defect."
+                     % str((currency or {}).get("detail") or "app/ has changed since the build"))
+        return "[declared but unmounted #952] " + line
+    except Exception:
+        return ""
+
+
 def _declared_but_unmounted_952(project_dir: Any, missing_steps: List[Mapping[str, Any]],
                                 base: str) -> List[Dict[str, Any]]:
     """Missing steps whose route the BACKEND SOURCE declares — written, but not reachable.
