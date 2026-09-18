@@ -1014,6 +1014,31 @@ def _staged_assets(public_dir: Path) -> List[str]:
     return sorted(out)
 
 
+_VIDEO_EXT_1202RF = re.compile(r"\.(?:mp4|webm|mov|m4v)(?:[?#]|$)", re.I)
+
+
+def _staged_media_1202rf(public_dir: Path) -> List[str]:
+    """Staged assets INCLUDING video files.
+
+    `_staged_assets` filters on `_IMG_EXT_RE`, which is right for an <img> binding and wrong
+    for the category fallback: tiktok-r130 staged 35 .mp4 beside their 35 .jpg posters, and
+    every one of the .mp4 was filtered out before `_category_asset_1202re` ever saw the pool.
+    A `video_url` therefore asked for a playable file, found an empty pool and was left at its
+    picsum URL -- the fallback's video half had never run at all.
+    """
+    adir = Path(public_dir) / "assets"
+    if not adir.is_dir():
+        return []
+    out = []
+    for f in adir.rglob("*"):
+        rel = f.relative_to(adir)
+        if not f.is_file() or _PLACEHOLDER_DIRNAME in rel.parts:
+            continue
+        if _IMG_EXT_RE.search(f.name + "?") or _VIDEO_EXT_1202RF.search(f.name):
+            out.append(str(rel))
+    return sorted(out)
+
+
 # #1202jz: a CONTENT image is a photograph of something; an icon, logo, sprite, favicon or
 # wordmark is chrome. The vocabulary is the framework's own — `_content_image_assets` already
 # excludes exactly these tokens when it picks content imagery — it simply never reached the
@@ -1055,7 +1080,14 @@ def _match_staged_asset(url: str, field: str, assets: List[str]) -> Optional[str
     want -= {"http", "https", "photo", "image", "img", "www"}
     _contentish = bool(_CONTENTISH_FIELD_1202JZ.search(field or ""))
     best, best_n = None, 0
+    # #1202rf: the pool now carries video files too (the category fallback needs them). An
+    # <img> bound to an .mp4 renders nothing and a <video> bound to a still plays nothing, so
+    # the token matcher may only return a file of the KIND the field asked for.
+    _wants_video_1202rf = bool(re.search(r"video|clip|stream", field or "", re.I)) and not \
+        re.search(r"thumb|poster|cover|preview", field or "", re.I)
     for a in assets:
+        if bool(_VIDEO_EXT_1202RF.search(a)) != _wants_video_1202rf:
+            continue
         if _contentish and any(t in a.lower() for t in _CHROME_ASSET_1202JZ):
             continue
         toks = {t for t in re.split(r"[_\-\s./]+", Path(a).stem.lower())
@@ -1243,7 +1275,7 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
         public_dir = fe / "public"
         if not src_dir.is_dir():
             return result
-        assets = _staged_assets(public_dir)
+        assets = _staged_media_1202rf(public_dir)   # #1202rf: videos included
         touched: List[str] = []
         for f in src_dir.rglob("*"):
             if f.suffix not in (".jsx", ".tsx", ".js", ".ts") or not f.is_file():
@@ -1310,6 +1342,34 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
     return result
 
 
+# #1202rf: a CONTENT-image field pointing at chrome. `logo` is left out on purpose -- a logo
+# legitimately IS an icon, and flagging it would be a false positive on a correct binding.
+_CONTENT_IMG_FIELD_1202RF = re.compile(
+    r"(avatar|profile_?pic|image|img|photo|picture|thumb(nail)?|banner|cover|poster|media|"
+    r"video|stream)(_?url|_?src|_?path)?$", re.I)
+_CHROME_PATH_1202RF = ("/assets/icons/", "/assets/fonts/")
+
+
+def _chrome_as_content_1202rf(field: str, value: str) -> bool:
+    """True when an imagery field already holds a LOCAL chrome path.
+
+    #1202jz measured the harm and closed one door: 193 corpus bindings served an icon as
+    someone's photograph, and it stopped the filename-token matcher from producing them. The
+    lane can write one directly, and tiktok-r130 did -- all ten `live_streams.stream_url` rows
+    read `/assets/icons/go-to-tiktok-for-you-feed_50508994.svg`, an arrow glyph standing in for
+    a live video, on the `live_discover` page that has scored at or below 0.50 in ten
+    consecutive runs. The localizer never saw them because it only inspects http(s) values.
+
+    #934's rule: a guard belongs at the common ancestor of every producing branch, and this
+    harm had two.
+    """
+    try:
+        return (bool(_CONTENT_IMG_FIELD_1202RF.search(field or ""))
+                and str(value or "").startswith(_CHROME_PATH_1202RF))
+    except Exception:
+        return False
+
+
 def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object]:
     """Rewrite image-signaled EXTERNAL URLs inside seed_data.json to local /assets/ refs
     — seed rows render as <img src> at runtime and break identically offline. The seed
@@ -1323,15 +1383,30 @@ def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object
         if not seed.is_file():
             return result
         data = json.loads(seed.read_text(encoding="utf-8"))
-        assets = _staged_assets(public_dir)
+        assets = _staged_media_1202rf(public_dir)   # #1202rf: videos included
         count = 0
 
         def _walk(node):
             nonlocal count
             if isinstance(node, dict):
                 for k, v in node.items():
-                    if (isinstance(v, str) and v.startswith(("http://", "https://"))
-                            and _is_image_signaled(v, field=str(k))):
+                    _ext = (isinstance(v, str) and v.startswith(("http://", "https://"))
+                            and _is_image_signaled(v, field=str(k)))
+                    # #1202rf: a local chrome path in a content-image field is the same harm
+                    # as an unresolvable URL, and worse -- it RENDERS, so nothing looks wrong.
+                    _chrome = isinstance(v, str) and _chrome_as_content_1202rf(str(k), v)
+                    if _chrome:
+                        # Do NOT route this through the token matcher: given an icon path it
+                        # happily returns ANOTHER icon (r130: go-to-tiktok-for-you-feed_50508994
+                        # -> _d58e3f44), which changes the value without repairing the harm.
+                        # A chrome path in a content field needs a picture, so ask for one.
+                        _cat = _category_asset_1202re(v, str(k), assets, _tally)
+                        _new = ("/assets/" + _cat) if _cat else v
+                        if _new != v:
+                            node[k] = _new
+                            count += 1
+                            _tally["chrome_1202rf"] = _tally.get("chrome_1202rf", 0) + 1
+                    elif _ext:
                         _new = _local_ref_for(v, str(k), public_dir, assets, _tally)
                         if _new != v:
                             node[k] = _new
