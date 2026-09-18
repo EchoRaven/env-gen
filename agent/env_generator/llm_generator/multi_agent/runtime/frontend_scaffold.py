@@ -927,9 +927,9 @@ def neutralize_frontend_external_backgrounds(frontend_dir) -> Dict[str, object]:
 # signal); (b) seed_data.json image-ish string fields — those DB rows render as
 # <img src> at runtime and break identically. Rewrite to a STAGED real asset under
 # frontend/public/assets/ when a filename-token match exists (design-prep's
-# ingest_assets stages them), else to a DETERMINISTIC generated placeholder SVG under
-# /assets/placeholders/ (md5(url) → same URL always maps to the same file; avatar-ish
-# context gets a circle-person glyph, other imagery a landscape glyph). SAFETY: only a
+# ingest_assets stages them); a URL that matches nothing is LEFT AS IT IS (#1202qo — the
+# generated placeholder glyph this used to fall back to turned "nobody staged this picture"
+# into something that looked like a working image). SAFETY: only a
 # URL carrying an IMAGE SIGNAL is touched — image file extension, a known stock/
 # placeholder host, an <img/poster carrier, or an image-ish property/field name.
 # Navigation (<a href>), API bases, issuer URLs are never image-signaled → untouched.
@@ -1067,7 +1067,13 @@ def _match_staged_asset(url: str, field: str, assets: List[str]) -> Optional[str
 
 
 def _placeholder_ref(public_dir: Path, url: str, avatarish: bool) -> str:
-    """Ensure a deterministic placeholder SVG exists; return its /assets/ URL."""
+    """DEAD SINCE #1202qo -- nothing calls this, and nothing should.
+
+    It generated the substitute glyph that `_local_ref_for` used to return for an image URL
+    no staged asset matched, which is precisely the kind of stand-in the user ruled out: a
+    picture that renders fine and says nothing about the missing media behind it. Kept only
+    so the tone/SVG constants above have a reader; wire it to nothing.
+    """
     import hashlib
     k = int(hashlib.md5(url.encode("utf-8")).hexdigest(), 16) % len(_PH_TONES)
     bg, fg = _PH_TONES[k]
@@ -1124,7 +1130,7 @@ def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str],
 
 def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
     """Rewrite image-signaled EXTERNAL URLs in frontend source to local /assets/ refs
-    (staged real asset by token match, else deterministic placeholder SVG). Best-effort,
+    (staged real asset by token match; unmatched URLs are left alone, #1202qo). Best-effort,
     idempotent, never raises. See the FIX #111 block comment for the safety rails."""
     result: Dict[str, object] = {"localized": [], "staged": 0, "unmatched": 0}
     _tally: Dict[str, int] = {}

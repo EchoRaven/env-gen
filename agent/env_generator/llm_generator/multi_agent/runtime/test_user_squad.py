@@ -50,6 +50,9 @@ TEST_USER_SOURCES = frozenset(MODALITY_PROFILE.values())
 # not mounted" is genuine), and classifying findings after the fact would suppress those.
 _PROBE_DEADLINE_625 = 60.0
 _PROBE_INTERVAL_625 = 5.0
+# #1202qu: what a COLD boot costs -- `down -v` + build + migrations + seed. The 60s above was
+# sized for "is anything there", not for "wait for the stack this squad just leased".
+_BOOT_DEADLINE_1202QU = 240.0
 
 
 def _probe_http_625(url: str, timeout: float = 4.0):
@@ -85,12 +88,53 @@ def targets_reachable_625(ui_base: str, api_base: str, *,
         _time.sleep(min(_PROBE_INTERVAL_625, max(end - _time.time(), 0.0)))
 
 
+# #1202qw: how long a stack verdict is worth consulting. Long enough to cover the seconds
+# between a validation and the delivery tick that follows it; short enough that a stack which
+# came back while nothing re-validated is not held down by an old reading.
+STACK_VERDICT_TTL_1202QW = 300.0
+
+
+def squad_launch_held_1202qw(verdict, now, ttl=STACK_VERDICT_TTL_1202QW):
+    """Why the squad LAUNCH should be held, or "" to launch.
+
+    `verdict` is the orchestrator's `_stack_verdict_1202qw` -- `(when, (failing stack checks))`
+    -- stamped by every framework validation. No verdict, no failing stack check, and a verdict
+    older than `ttl` all launch: this may only hold the squad on a MEASURED, RECENT
+    "nothing answers".
+    """
+    try:
+        when, failing = float(verdict[0]), tuple(verdict[1] or ())
+    except Exception:
+        return ""
+    if not failing:
+        return ""
+    age = now - when
+    if age < 0 or age > max(float(ttl), 0.0):
+        return ""
+    return "%ds ago the framework's validation found the stack not serving (%s)" % (
+        int(age), ", ".join(str(f) for f in failing))
+
+
 def _runnable_goals_625(goals: Sequence[Mapping[str, Any]],
                         reach: Mapping[str, bool]) -> List[Dict[str, Any]]:
-    """Drop the goals whose modality has no listening target. `mcp` talks to the API."""
-    need = {"browser": "ui", "api": "api", "mcp": "api"}
+    """Drop the goals whose modality has no listening target.
+
+    `mcp` talks to the API. So does `browser`, transitively and always: a browser test-user
+    drives the UI to exercise the APP, and every page it opens reads through the API. With the
+    API down it sees empty lists, spinners and failed fetches on every page -- the stack's
+    state, which is exactly what #625 exists to keep out of the bug queue.
+
+    tiktok-r128 17:25-17:34 measured it: the squad took the stack lease while the backend was
+    still down, the 60s probe gave up, the 3 api/mcp goals were skipped -- and the 7 browser
+    goals were dispatched anyway, because `browser` needed only the UI. They ran nine minutes
+    against a frontend whose backend answered `Connection refused` to every call (the log has
+    their `test_api ... NOTHING IS LISTENING at localhost:8008` lines), and their findings were
+    thrown away wholesale by the `skipped_env_unavailable` early return.
+    """
+    need = {"browser": ("ui", "api"), "api": ("api",), "mcp": ("api",)}
     return [dict(g) for g in goals
-            if reach.get(need.get(str(g.get("modality") or "browser"), "api"), False)]
+            if all(reach.get(t, False)
+                   for t in need.get(str(g.get("modality") or "browser"), ("api",)))]
 
 
 def _collection_groups(business_eps: Sequence[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -463,7 +507,13 @@ async def run_test_user_squad(
 
     # #625: probe before spawning. An agent that cannot reach the app files the environment's
     # state as a product defect, once per goal.
-    _reach = targets_reachable_625(ui_base, api_base)
+    # #1202qu: a stack that is still BOOTING is not a stack that is down. The squad holds the
+    # compose lease (#1202nx) by the time it gets here, so nothing can tear the stack down
+    # while it waits -- and in r128 the API answered nowhere near the 60s the probe allowed
+    # after a `down -v` + rebuild. Give a cold boot the same budget every other verifier gives
+    # it before calling the environment unavailable.
+    _reach = targets_reachable_625(ui_base, api_base,
+                                   deadline=_BOOT_DEADLINE_1202QU)
     report["reachable"] = dict(_reach)
     if not (_reach["ui"] and _reach["api"]):
         _kept = _runnable_goals_625(goals, _reach)

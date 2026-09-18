@@ -510,6 +510,41 @@ _BUILD_TRUTH_CHECK_RE = re.compile(
     r"^(?:build:(?:docker|backend|frontend|database)|validation:(?:api_smoke|frontend_build))$")
 
 
+# #1202qw: the checks that say the STACK is not serving, as opposed to the app being wrong.
+# A validation that fails on these has just measured that nothing answers -- and everything
+# downstream that drives the live app (the test-user squad above all) is about to discover the
+# same thing the expensive way.
+_STACK_CHECKS_1202QW = ("docker_up", "backend_port", "backend_health", "frontend_http")
+
+
+def _note_stack_verdict_1202qw(orch: Any, failed_names: Any) -> None:
+    """Stamp (when, which stack checks failed) on the orchestrator. Never raises."""
+    try:
+        import time as _t
+        orch._stack_verdict_1202qw = (
+            _t.time(),
+            tuple(n for n in (failed_names or ()) if str(n) in _STACK_CHECKS_1202QW))
+    except Exception:
+        pass
+
+
+def stack_known_serving_1202qx(verdict: Any, now: float, ttl: float = 300.0) -> bool:
+    """Did a framework validation RECENTLY measure the stack answering? Reads the same
+    `_stack_verdict_1202qw` tuple `_note_stack_verdict_1202qw` writes (and
+    `test_user_squad.squad_launch_held_1202qw` reads for the opposite question).
+
+    False on no verdict, on a stale one, and on one that named a failing stack check. "The gate
+    is green" is not this: tiktok-r128's gate read 0 failed checks at 17:20:31 while the last
+    api_smoke pass was 19 minutes old and the next measurement, at 17:25:34, found
+    `backend_health` failing. A green gate over evidence that old is not a serving app.
+    """
+    try:
+        when, failing = float(verdict[0]), tuple(verdict[1] or ())
+    except Exception:
+        return False
+    return (not failing) and 0.0 <= (now - when) <= max(float(ttl), 0.0)
+
+
 def _record_build_truth_from_passing_run(orch: Any) -> int:
     """#511 — when a gate-passing api_smoke RunHub run exists this session, DIRECTLY re-record
     any stale (non-success) build:*/validation:{api_smoke,frontend_build} check = success with
@@ -1591,6 +1626,7 @@ class FrameworkValidation:
                     "(%s endpoints) — delivery-gate run requirement satisfied.",
                     data.get("runhub_run_id"), data.get("endpoints_tested"),
                 )
+                _note_stack_verdict_1202qw(orch, ())   # the stack answered
                 await orch._maybe_run_visual_fidelity()
                 snapshot_passing_chains(orch)
                 # #232 (r20/r22 recurring killer): ui_flow recording was only
@@ -1638,6 +1674,10 @@ class FrameworkValidation:
                     orch._framework_validation_attempts, str(_summ)[:200],
                     _failed or "(no checks returned)",
                 )
+                _note_stack_verdict_1202qw(
+                    orch, [str((c or {}).get("name") or "")
+                           for c in ((data or {}).get("checks") or [])
+                           if (c or {}).get("status") == "fail"])
                 # #1115: track whether the failure is byte-identical to last time. The
                 # failure SET (below) only carries check IDs — `docker_up` failing on a
                 # host kernel error and `docker_up` failing on a missing npm package are

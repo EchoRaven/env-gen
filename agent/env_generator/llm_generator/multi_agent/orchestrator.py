@@ -5308,7 +5308,43 @@ class Orchestrator:
                                 _ui_page_wiring_blockers(self.hubs, _app_root))
                     except Exception as _exc:
                         self._logger.error("unwired/misplaced frontend dispatch failed: %s", _exc)
-                return  # not deliverable yet
+                # #1202qx: RE-ASK THE GATE. Everything above this line in the declined
+                # branch is a deterministic framework repair that CHANGES THE GATE'S OWN
+                # INPUTS -- #511 re-records a stale build checklist, #475 re-runs never-run
+                # chains, #240 authors the ui_flow evidence, #74 re-emits the schema SQL. The
+                # verdict that sent us here was taken BEFORE any of them ran, and the tick
+                # then ended on it.
+                #
+                # tiktok-r128, to the second: 17:20:29 "Framework deliver declined: delivery
+                # gate has 1 failed check(s): ['verification_checklist_not_ready']", the SAME
+                # second "#511 ... re-recorded 2 stale build/validation check(s) = success",
+                # and at 17:20:31 the gate evaluated 0 failed checks. Nothing delivered, and
+                # the next delivery tick five minutes later went to the test-user squad
+                # (#1202qw). The run aborted at 17:55 on "delivery never SUCCEEDED in 77min".
+                #
+                # But a cleared gate is NOT permission to ship: r128's 17:20:31 green rested
+                # on an api_smoke pass from 17:01, and the very next measurement (17:25:34)
+                # found `backend_health` failing. #511 re-records build truth from a run that
+                # may be minutes old, which is exactly the evidence this branch just repaired.
+                # So deliver here only when a framework validation RECENTLY watched the stack
+                # answer -- otherwise return as before and let the next validation decide.
+                _gate1202qx = self._validate_delivery_gate()
+                if _gate1202qx.get("failed_checks"):
+                    return  # not deliverable yet
+                from .runtime.framework_validation import stack_known_serving_1202qx
+                if not stack_known_serving_1202qx(
+                        getattr(self, "_stack_verdict_1202qw", None), time.time()):
+                    self._logger.warning(
+                        "#1202qx this tick's own repairs cleared the delivery gate (was "
+                        "failing %s) but no recent validation has seen the stack serve, so "
+                        "the green rests on stale build evidence -- holding for the next "
+                        "validation rather than releasing over it.", _shown)
+                    return  # not deliverable yet
+                self._logger.warning(
+                    "#1202qx the framework's own repairs cleared the gate in this tick (was "
+                    "failing %s) and the stack is freshly measured serving -- delivering now "
+                    "instead of waiting for the next delivery tick.", _shown)
+                gate = _gate1202qx
             # PAGE-BUILD BLOCKING (2026-06-22, user goal: the UI must be the REAL
             # reference pages, not the framework fallback). A declared business
             # ui_page the lane never authored ships as the framework FALLBACK
@@ -5618,6 +5654,28 @@ class Orchestrator:
                         task_exists=_tu_task is not None,
                         task_done=bool(_tu_task is not None and _tu_task.done()))
                     if _tu_action == "launch":
+                        # #1202qw: the comment above this gate says "the app is up (api_smoke
+                        # booted it)". In tiktok-r128 that premise was two seconds stale and
+                        # false: 17:25:34 logged `api_smoke NOT passing - FAILED:
+                        # backend_health`, 17:25:36 launched the squad anyway and deferred this
+                        # delivery tick, and 17:26:39 the squad reported `api DOWN`. The gate
+                        # was GREEN at 17:25:36 -- 0 failed checks, the third of only three
+                        # green evaluations in the entire run -- and that window went to a squad
+                        # that could not test anything. The run aborted 30 minutes later on
+                        # "delivery never SUCCEEDED".
+                        #
+                        # So consult what the framework's own last validation measured. This
+                        # holds the LAUNCH, not the gate: the single-flight slot stays unarmed,
+                        # this tick still defers, and the next tick launches once it answers.
+                        from .runtime.test_user_squad import squad_launch_held_1202qw
+                        _held1202qw = squad_launch_held_1202qw(
+                            getattr(self, "_stack_verdict_1202qw", None), _now)
+                        if _held1202qw:
+                            self._logger.warning(
+                                "TEST-USER SQUAD launch HELD: %s. Ten agents against a stack "
+                                "that does not answer file the stack's state, not the app's.",
+                                _held1202qw)
+                            return
                         # SINGLE-FLIGHT: exactly one background squad run, then defer.
                         self._tu_squad_task = asyncio.create_task(
                             run_squad_for_delivery(

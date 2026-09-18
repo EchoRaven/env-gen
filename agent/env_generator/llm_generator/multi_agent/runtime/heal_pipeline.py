@@ -1710,8 +1710,9 @@ class HealPipeline:
             # (pravatar/unsplash/placeholder — seen in live artifacts, in BOTH frontend
             # source and seed rows) can never resolve in the offline sandbox → the
             # broken-image glyph is a permanent visual-score wound. Localize image-signaled
-            # external URLs to staged /assets/ (token match) or a deterministic placeholder
-            # SVG; navigation hrefs/API bases are never image-signaled → untouched.
+            # external URLs to staged /assets/ by filename token; one that matches nothing is
+            # LEFT ALONE (#1202qo — a generated placeholder glyph is a substitute that hides
+            # the failure). Navigation hrefs/API bases are never image-signaled → untouched.
             try:
                 from .frontend_scaffold import (
                     localize_frontend_external_images, localize_seed_external_images)
@@ -1745,9 +1746,12 @@ class HealPipeline:
                         _pool = -1
                     orch._logger.warning(
                         "IMAGE LOCALIZATION: %d ref(s) matched a STAGED asset by filename "
-                        "token, %d fell back to a generated PLACEHOLDER glyph (%.0f%%); "
-                        "%s real asset(s) are staged. A placeholder renders as a landscape/"
-                        "person glyph, so those <img> are not photographs of anything.",
+                        "token; %d matched nothing and were LEFT AT THEIR EXTERNAL URL "
+                        "(%.0f%%), which resolves nowhere in the offline sandbox -- those "
+                        "<img> render as the browser's broken-image mark (#1202qo: a "
+                        "generated glyph in their place made a missing picture look like a "
+                        "working one). %s real asset(s) are staged, so what failed is the "
+                        "filename-token match, not the staging.",
                         _st, _ph, 100.0 * _ph / max(1, _ph + _st),
                         _pool if _pool >= 0 else "an unknown number of")
             except Exception as _lie:

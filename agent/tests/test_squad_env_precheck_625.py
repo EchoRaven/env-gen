@@ -35,6 +35,8 @@ def probe(monkeypatch):
 
     monkeypatch.setattr(sq, "_probe_http_625", fake)
     monkeypatch.setattr(sq, "_PROBE_DEADLINE_625", 0.0)
+    # #1202qu gave the squad's own probe a cold-boot budget; these tests want neither wait.
+    monkeypatch.setattr(sq, "_BOOT_DEADLINE_1202QU", 0.0)
     return state
 
 
@@ -82,10 +84,10 @@ def test_a_dead_ui_drops_only_the_browser_goals():
     assert [g["name"] for g in kept] == ["b", "c"]
 
 
-def test_a_dead_api_drops_the_api_and_mcp_goals():
-    """mcp talks to the API."""
-    kept = sq._runnable_goals_625(_GOALS, {"ui": True, "api": False})
-    assert [g["name"] for g in kept] == ["a"]
+def test_a_dead_api_drops_every_goal():
+    """mcp talks to the API, and so does browser -- #1202qu. A browser test-user drives the
+    UI to exercise the APP; with the API down every page it opens is the stack's state."""
+    assert sq._runnable_goals_625(_GOALS, {"ui": True, "api": False}) == []
 
 
 def test_everything_down_drops_everything():
@@ -130,6 +132,7 @@ def test_the_report_says_which_side_was_down(probe):
     rep = asyncio.run(sq.run_test_user_squad(_Orch(), _GOALS, ui_base=_UI, api_base=_API))
     assert "api=" in rep["error"] and "DOWN" in rep["error"]
     assert rep["reachable"] == {"ui": True, "api": False}
+    assert rep["skipped_env_unavailable"] == 3      # #1202qu: browser needs the API too
 
 
 def test_a_healthy_stack_still_dispatches(probe):
