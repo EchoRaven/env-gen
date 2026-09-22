@@ -61,6 +61,18 @@ with 0 followers running ads, $0 tax on $12M, an empty chart beside a narrative 
 its trend); round-number balances everywhere. Vary volume, recency, authorship and length the
 way a live dataset does.
 
+   UNIFORM STATE IS THE QUIET VERSION OF THIS, and it is the one that slips through. When a
+   screen needs a flag to render something — a verified badge, a premium tier, an online dot,
+   an unread marker — do NOT set that flag on every row so the element always appears. Eight
+   of eight users verified, every product in stock, every thread unread: each reads as a
+   switch turned on for the demo, because in the real product the flag is what makes a row
+   DIFFERENT from its neighbours. Seed the distribution the real population has, and accept
+   that the element is then absent on most rows — that absence is the realistic state.
+   Measured under remediation pressure: a lane correctly refused to hardcode follower counts
+   it could not fetch, and in the same pass marked all eight seeded users `verified: true` so
+   a badge would render. It reported that as "data-driven, not hardcoded". It was data-driven;
+   it was also eight for eight.
+
 **7. Front-end fidelity tells.** Undecoded HTML entities (`&amp;`, `&#39;`) in rendered text;
 "1 days ago" / "-3 minutes ago" style pluralisation and clock bugs; a garbled or mis-rendered
 logo; icon-font fallback (ligature words or tofu where icons belong); a dev-mode error

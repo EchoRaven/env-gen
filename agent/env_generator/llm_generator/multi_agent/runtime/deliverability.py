@@ -717,6 +717,40 @@ def _operator_identity_1202rj() -> List[str]:
     return sorted({t for t in out if t}, key=len, reverse=True)
 
 
+def _identity_outside_comments_1202rk(suffix: str, text: str, token: str):
+    """True when `token` reaches a browser, False when it is comment-only, None when the
+    check itself failed.
+
+    Crude on purpose: strip `//`, `/* */` and `#` comments, then look again. A string
+    containing `//` (a URL) survives as code, which is the safe direction -- this may call a
+    comment live, never the reverse.
+
+    #1202be: the first draft returned True on exception, "the conservative direction". It was
+    conservative for the VERDICT and wrong for the READER: a crashed check then read as "this
+    file renders the operator's handle", and the lane goes looking for a render that may not
+    exist. #1202ah then caught the replacement for the opposite sin -- a silent empty return.
+    Both ratchets point at the same exit: SAY SO. The caller labels the None apart AND the
+    failure is announced, so neither the reader nor the log is left guessing.
+    """
+    try:
+        import re as _re
+        body = text
+        if suffix in (".js", ".jsx", ".ts", ".tsx", ".css"):
+            body = _re.sub(r"/\*.*?\*/", " ", body, flags=_re.S)
+            body = _re.sub(r"(?m)^\s*//.*$", " ", body)
+        elif suffix == ".py":
+            body = _re.sub(r"(?m)^\s*#.*$", " ", body)
+        return token in body
+    except Exception as exc:
+        from .message_format import warn_once_1201
+        warn_once_1201(
+            "identity_outside_comments_1202rk",
+            "cannot tell a comment from code while reporting a build-identity hit, so the "
+            "gate says the file CARRIES the token without saying whether a visitor sees it",
+            exc)
+        return None
+
+
 def _operator_identity_blockers_1202rj(app_root) -> List[str]:
     """Served files that carry the operator's own identity. Static; `[]` on any failure.
 
@@ -749,18 +783,32 @@ def _operator_identity_blockers_1202rj(app_root) -> List[str]:
                 except Exception:
                     continue
                 for tok in tokens:
-                    if tok in txt:
-                        hits.append("%s carries %r" % (
-                            f.relative_to(app).as_posix(), tok))
-                        break
+                    if tok not in txt:
+                        continue
+                    # #1202rk: a comment is not a render, and saying it is sends the lane
+                    # looking for something no visitor can see. It is still reported -- a
+                    # build identity in a comment is a dev trace (and usually the fossil of a
+                    # literal that WAS rendered until someone bound it) -- but under its own
+                    # description, so the reader knows which thing they are looking at.
+                    _live = _identity_outside_comments_1202rk(f.suffix.lower(), txt, tok)
+                    _label = ("carries (could not tell comment from code)" if _live is None
+                              else "RENDERS" if _live else "mentions (comment only)")
+                    hits.append("%s %s %r" % (
+                        f.relative_to(app).as_posix(), _label, tok))
+                    break
         if not hits:
             return []
-        return ["%d served file(s) carry the identity of the account that BUILT this env, so "
-                "the app renders its builder as one of its own users: %s. The reference "
+        _live_n = sum(1 for h in hits if " RENDERS " in h)
+        return ["%d served file(s) carry the identity of the account that BUILT this env"
+                "%s: %s. The reference "
                 "screenshot was captured from that account and its handle was transcribed as "
                 "component copy (#1202ri splits chrome from data slots upstream). Bind the "
                 "value to the API and seed a person from THIS product's world instead."
-                % (len(hits), join_capped(hits, total=len(hits), cap=5, sep="; "))]
+                % (len(hits),
+                   (", and %d of them RENDER it to visitors" % _live_n) if _live_n
+                   else " (in comments only -- a dev trace, and usually the fossil of a "
+                        "literal that was rendered until someone bound it)",
+                   join_capped(hits, total=len(hits), cap=5, sep="; "))]
     except Exception as exc:
         _gate_absent_792("_operator_identity_blockers_1202rj", exc, "run")
         return []
