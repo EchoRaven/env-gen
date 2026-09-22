@@ -16,7 +16,7 @@
    `agent_prompt_v3(...)`. Side-by-side rollout is the goal.
 #}
 
-{% from "agents/shared/agent_definition.j2" import tool_usage_rules_global %}
+{% from "agents/shared/agent_definition.j2" import tool_usage_rules_global, realism_contract_1202rg %}
 
 
 {# ----- internal helpers (underscore prefix = not for direct call) ----- #}
@@ -334,6 +334,8 @@ Each step runs these stages in order. Each stage is agent-decided — execute or
 {% if include_global_tool_rules %}
 {{ tool_usage_rules_global() }}
 {% endif %}
+
+{{ realism_contract_1202rg() }}
 {%- endmacro %}
 
 

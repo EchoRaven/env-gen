@@ -16,6 +16,62 @@
 {%- endfor %}
 {%- endmacro %}
 
+{# #1202rg: ONE definition of realism, rendered for every agent. An env is a place an AI
+   agent is put to WORK; the moment it can tell the place is a mock, the evaluation is over.
+   The classes below are the ones that actually gave clones away in a manual pass over 67
+   generated environments, and each is a cheap deterministic check, so each is gate-enforced. #}
+{% macro realism_contract_1202rg() -%}
+# Realism Contract (gate-enforced)
+
+An agent will be put to WORK inside what you build, with no hint that it is generated. It must
+not be able to tell. The bar is NOT "looks plausible to a human skimming it" — it is "an agent
+using this for a real task never remarks that it is a demo". One giveaway ends the evaluation,
+so each class below BLOCKS release; none of them is a style preference.
+
+**1. No self-labels.** Nothing rendered, seeded, or served may say the thing is not real:
+`demo`, `sandbox`, `test`, `sample`, `mock`, `staging`, "in this demo", "for testing". This
+covers seeded emails (`demo@…`, `test@…`), usernames, org names, page copy, helper text and
+API descriptions. NEVER print credentials as a hint ("Password: password", "Try user/user") —
+a real product never tells a visitor its passwords.
+
+**2. No source-company or generator leaks.** The environment is its own product. Never emit
+the name of the company the clone was taken from where the real product would not, nor any
+build-side identity: local filesystem paths, repo names, generator or template markers, the
+evaluation team's names, papers or authors. A clone of a public product keeps that product's
+OWN branding where the reference shows it, and nothing about who built the clone.
+
+**3. No session-mirror identity.** Never seed or hardcode the operator's own handle, email
+local-part, or account name — not in a display name, not in an email, not in a token, not in
+a doc string, not as a demo user. Seeded people are characters in this product's world, with
+names drawn from that world. (Measured: a generated profile page shipped the operator's real
+GitHub handle as the signed-in user.)
+
+**4. No placeholder values.** `@company.com`, `@example.com`, `/placeholder/…`, `John Doe`,
+`+1-555-0100`, `lorem ipsum`, `picsum.photos`, `via.placeholder.com`, `admin.user@`,
+`zzz_no_such_*` are textbook fixtures. Use the staged real media and the design-prep dataset;
+where neither exists, write a value this product's real users would have.
+
+**5. No shared persona across environments.** Do not reuse the same invented company, product
+or person you would invent for any other app. Names come from THIS product's domain.
+
+**6. Seeded data must be internally coherent.** Real data is uneven. Avoid: identical or
+near-identical rows repeated to fill a list; every row authored by the same user; uniform or
+round timestamps (all the same minute, all midnight); counts that cannot coexist (an account
+with 0 followers running ads, $0 tax on $12M, an empty chart beside a narrative describing
+its trend); round-number balances everywhere. Vary volume, recency, authorship and length the
+way a live dataset does.
+
+**7. Front-end fidelity tells.** Undecoded HTML entities (`&amp;`, `&#39;`) in rendered text;
+"1 days ago" / "-3 minutes ago" style pluralisation and clock bugs; a garbled or mis-rendered
+logo; icon-font fallback (ligature words or tofu where icons belong); a dev-mode error
+overlay; OS window chrome (traffic lights, title bars) drawn on a web app. Each reads as
+"built for a demo" instantly.
+
+HONEST CEILINGS — do not burn cycles here: a de-branded product with no real counterpart, an
+offline analytics surface whose charts are legitimately empty, and a discontinued product are
+not realism defects. Say so and move on rather than inventing data to fill them.
+{%- endmacro %}
+
 {# Single source of truth for global tool + collaboration rules (used by agent_prompt and agent_definition). #}
 {% macro tool_usage_rules_global() -%}
 # Tool Usage Rules (Global)
@@ -239,6 +295,8 @@ Guidance: Choose stages based on task reality. If you skip a stage, continue wit
 
 {{ tool_usage_rules_global() }}
 
+{{ realism_contract_1202rg() }}
+
 {% if extra_sections %}
 {{ extra_sections }}
 {% endif %}
@@ -353,6 +411,8 @@ Run work in these common stages. Each stage is **agent-decided** (you may execut
 Guidance: Choose stages based on task reality. If you skip a stage, continue with the best next stage for delivery.
 
 {{ tool_usage_rules_global() }}
+
+{{ realism_contract_1202rg() }}
 
 {% if constraints %}
 # Constraints

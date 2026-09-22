@@ -93,15 +93,35 @@ def test_the_skeleton_projection_carries_it():
 
 
 def test_the_merge_projection_carries_it():
+    """What this guards is that `copy` survives the merge. The old form asserted the tuple's
+    EXACT spelling, which is a proxy: it breaks the moment a key is legitimately added beside
+    copy (#1202ri added `data_slots`) while the property it protects still holds. Parse the
+    projection instead and look for the key."""
+    import ast
     s = _src()
-    assert '"role", "build_notes", "state", "copy", "typography", "assets", "crop"' in s
+    tree = ast.parse(s)
+    projections = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.For):
+            continue
+        it = node.iter
+        if not isinstance(it, ast.Tuple):
+            continue
+        keys = [e.value for e in it.elts
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        if "role" in keys and "build_notes" in keys:
+            projections.append(keys)
+    assert projections, "the enrichment merge projection is gone"
+    for keys in projections:
+        assert "copy" in keys, "the merge drops `copy` again (#778)"
+        assert "state" in keys and "typography" in keys
 
 
 def test_the_projection_risk_is_recorded_where_it_bites():
     """The comment has to sit at the projection, not only in this file — that is where the next
     person adds a field."""
     s = _src()
-    i = s.index('"state", "copy", "typography"')
+    i = s.index('"state", "copy"')
     blk = s[max(0, i - 400):i]
     assert "767b" in blk and "771" in blk
 

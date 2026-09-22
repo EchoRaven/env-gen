@@ -211,6 +211,7 @@ def _skeleton_components(spec: Optional[Dict], im=None) -> List[Dict]:
             "role": c.get("role") or "",
             "state": c.get("state") or "",
             "copy": "",                # #778 — filled by the screen pass below
+            "data_slots": [],          # #1202ri — the values that belong to the account, not the design
             "crop": c.get("crop"),
             "build_notes": "",
         })
@@ -461,11 +462,22 @@ _SCREEN_PROMPT = (
     "For EVERY component id in the skeleton, submit one entry with:\n"
     " - build_notes (REQUIRED, 1-3 concrete sentences from the SCREENSHOT: geometry, "
     "paddings/spacing, icon shapes, borders/dividers, states — what a dev needs to copy it)\n"
-    " - copy: if the component shows TEXT, transcribe it VERBATIM — the exact heading, "
+    " - copy: if the component shows CHROME TEXT, transcribe it VERBATIM — the exact heading, "
     "label, placeholder, button caption, link text or notice, character for character, "
     "including punctuation. Do NOT describe it ('muted secondary text', 'static'): the clone "
     "is scored against the reference on COPY, and a description cannot be typed into JSX. "
     "Empty string only when the component genuinely renders no text.\n"
+    "   #1202ri — CHROME TEXT ONLY. Chrome is the wording the product ships for everyone: "
+    "'Edit profile', 'Followers', 'Log in', 'Search'. A value that belongs to whoever was "
+    "signed in when the screenshot was taken is NOT chrome and must NOT go in `copy` — a "
+    "username or handle, a display name, an email, a follower/like/view count, a timestamp, a "
+    "post caption, a balance. Those are DATA. Put them in `data_slots` instead, naming what "
+    "the slot holds, never the value you can see: `[\"signed-in user handle\", \"following "
+    "count\", \"follower count\"]`. The reference was captured from ONE account, so its "
+    "values are an accident of capture, not a fact about the design; a clone that types them "
+    "in renders that person's identity for every visitor and reads as a mock immediately. "
+    "Measured: a profile header transcribed as copy shipped the operator's own real handle "
+    "into four generated runs.\n"
     " - typography (role sizes/weights you can read), and assets (manifest ids this "
     "component should render).\n"
     "Also submit layout (one line) and the GLOBAL scales estimated from the screenshot: "
@@ -513,6 +525,10 @@ _SCREEN_TOOL = [{
                         # `login`, which blocks 73% of runs. The 15% that do quote are burying it
                         # in build_notes prose, which is the tell that the slot was missing.
                         "copy": {"type": "string"},
+                        # #1202ri: the data-bearing counterpart of `copy`. Without a schema
+                        # slot the analyst's answer is discarded at the join and the rule
+                        # becomes advice nobody can follow -- #778's own failure mode.
+                        "data_slots": {"type": "array", "items": {"type": "string"}},
                         "typography": {"type": "object"},
                         "assets": {"type": "array", "items": {"type": "string"}},
                     },
@@ -828,7 +844,8 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
             _matched815 += 1
             # #778: `copy` MUST be in this list. It is the third fixed-key projection on this
             # path, and #767b/#768b/#771 were each a field added at one end and dropped here.
-            for k in ("role", "build_notes", "state", "copy", "typography", "assets", "crop"):
+            for k in ("role", "build_notes", "state", "copy", "data_slots", "typography",
+                      "assets", "crop"):
                 if ec.get(k) is not None:
                     c[k] = ec[k]
             # measured colors are immutable — c["colors"] is never replaced

@@ -97,7 +97,9 @@ def test_every_restricted_role_is_still_restricted():
     restricted = sorted(r for r, d in _roles().items() if d["can_spawn"] is False)
     assert restricted == sorted([
         "analysis_worker", "api_test_user", "browser_test_user", "design_analyst",
-        "mcp_test_user", "review_worker", "worker",
+        # #1202rh: the realism judge is detect-only and cannot spawn, like the test-users
+        # it is modelled on.
+        "mcp_test_user", "realism_judge", "review_worker", "worker",
     ]), restricted
 
 

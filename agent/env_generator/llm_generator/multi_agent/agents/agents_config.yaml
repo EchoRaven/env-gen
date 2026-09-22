@@ -1617,6 +1617,69 @@ profiles:
         hub_commit_gate: 0
         knowledge_sync: 1
 
+  # #1202rh: REALISM JUDGE — an independent subagent, own context, like the test-users.
+  #
+  # It answers one question the lanes cannot answer about themselves: would an agent put to
+  # work in this environment notice it is generated? Kept OUT of the lane processes on
+  # purpose -- a lane that just authored the seed cannot judge the seed, and sharing its
+  # context would tell the judge what to look for. It is DETECT-ONLY: it files defects and
+  # never edits the app, exactly like the test-user squad.
+  #
+  # Two regimes, and the distinction is the whole point:
+  #   M1 unprimed  -- do an ordinary task here and see whether it SPONTANEOUSLY remarks that
+  #                   the place is fake. This is the honest signal.
+  #   M2 primed    -- asked outright "genuine or reproduction?", give p_real 0-100. A ceiling
+  #                   stress-test: priming over-detects, and strong models rate REAL sites
+  #                   25-90, so this number means nothing without the real-site anchor.
+  realism_judge:
+    name: "Realism Judge"
+    reasoning_effort: "high"
+    description: "Uses the running app as an ordinary user, then judges whether it reads as a genuine product or a generated one; reports spontaneous tells (M1) and, when asked, a primed p_real (M2). Detect-only - never edits the app."
+    tool_categories: ["browser", "vision", "api", "reasoning", "file", "communication", "memory", "project", "analysis", "knowledge_read", "verification", "runtime", "workhub", "registryhub", "eventhub", "hub", "bug", "progress"]
+    include_vision: true
+    timeout: 2700
+    prompts:
+      template: "v3/test_user_agent.j2"
+      system_macro: "realism_judge_system_prompt"
+      task_macro: "realism_judge_task_prompt"
+      context_vars: ["api_port", "ui_port"]
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - api_test
+      - runtime_full
+      - verification_tools
+      - browser_tools
+      - vision_tools
+      - workhub_tools
+      - registryhub_tools
+      - eventhub_tools
+      - bug_tools
+    deny_tools:
+      - wait
+      - wait_for_process
+      - codehub_force_merge
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_update_schema
+      - edit
+      - write
+      - apply_patch
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
   browser_test_user:
     name: "Browser Test-User"
     reasoning_effort: "high"

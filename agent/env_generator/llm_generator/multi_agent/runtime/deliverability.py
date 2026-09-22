@@ -668,6 +668,104 @@ def _unscoped_owner_read_blockers(app_root) -> List[str]:
 _JUNK_PAGE_WORDS_1202W = "noop|dummy|placeholder|todo|fixme|untitled|testpage|foobar|temppage"
 
 
+# #1202rj: WHOSE MACHINE BUILT THIS. An env is a place an agent is put to work; the moment it
+# can tell the place was generated, the evaluation is over. The operator's own identity is the
+# sharpest of those tells, and it arrives by a path nobody designed: design-prep transcribes a
+# reference screenshot, the screenshot was taken from the operator's own signed-in account, and
+# #778 tells the lane to render transcribed `copy` character for character. Measured on this
+# corpus: `haibotong7` -- the operator's real handle -- reached the served app in r127, r128,
+# r129 and r131, rendered as the signed-in user of a generated TikTok clone.
+#
+# #1202ri splits chrome copy from data slots so the transcription stops producing it. This is
+# the BACKSTOP, because a prompt rule is not enforcement: this same lane already had "never
+# ship fake data" while shipping 50 picsum URLs in r130.
+#
+# Deliberately narrow. It looks for THIS operator's identity, resolved from the build
+# environment, not for "names that look personal" -- a seeded persona is supposed to have a
+# name, and a detector that cannot tell them apart would block every honest app.
+def _operator_identity_1202rj() -> List[str]:
+    """Identity tokens belonging to whoever is running the build. Never raises; [] when unknown.
+
+    Sources are the build environment itself: the OS user, and git's configured identity. The
+    email's LOCAL-PART matters as much as the whole address -- r127's leak was the bare handle
+    `haibotong7`, never the address.
+    """
+    import subprocess
+    out: List[str] = []
+    try:
+        for val in (os.environ.get("USER"), os.environ.get("LOGNAME")):
+            if val and len(str(val)) >= 4:
+                out.append(str(val).strip())
+    except Exception:
+        pass
+    for arg in ("user.email", "user.name"):
+        try:
+            r = subprocess.run(["git", "config", "--get", arg], capture_output=True,
+                               text=True, timeout=5)
+            v = (r.stdout or "").strip()
+            if not v:
+                continue
+            if "@" in v:
+                local = v.split("@", 1)[0].strip()
+                if len(local) >= 4:
+                    out.append(local)
+            elif len(v) >= 4 and " " not in v:
+                out.append(v)
+        except Exception:
+            continue
+    # de-duplicate, longest first so a compound handle is reported over its own prefix
+    return sorted({t for t in out if t}, key=len, reverse=True)
+
+
+def _operator_identity_blockers_1202rj(app_root) -> List[str]:
+    """Served files that carry the operator's own identity. Static; `[]` on any failure.
+
+    Scans what SHIPS -- the frontend source and the seed the app loads -- not the build
+    metadata under design/, which never reaches a browser (r30 and r16 carry the build PATH
+    there and that is not a leak, which is why this walks app/ alone).
+    `ENVGEN_OPERATOR_IDENTITY_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_OPERATOR_IDENTITY_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        tokens = _operator_identity_1202rj()
+        if not tokens:
+            return []
+        app = Path(app_root)
+        hits: List[str] = []
+        roots = [app / "frontend" / "src", app / "backend"]
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for f in root.rglob("*"):
+                if not f.is_file() or "node_modules" in f.parts:
+                    continue
+                if f.suffix.lower() not in (".js", ".jsx", ".ts", ".tsx", ".json", ".py",
+                                            ".html", ".css"):
+                    continue
+                try:
+                    txt = f.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    continue
+                for tok in tokens:
+                    if tok in txt:
+                        hits.append("%s carries %r" % (
+                            f.relative_to(app).as_posix(), tok))
+                        break
+        if not hits:
+            return []
+        return ["%d served file(s) carry the identity of the account that BUILT this env, so "
+                "the app renders its builder as one of its own users: %s. The reference "
+                "screenshot was captured from that account and its handle was transcribed as "
+                "component copy (#1202ri splits chrome from data slots upstream). Bind the "
+                "value to the API and seed a person from THIS product's world instead."
+                % (len(hits), join_capped(hits, total=len(hits), cap=5, sep="; "))]
+    except Exception as exc:
+        _gate_absent_792("_operator_identity_blockers_1202rj", exc, "run")
+        return []
+
+
 def _placeholder_route_blockers_1202w(app_root) -> List[str]:
     """Routed pages whose NAME says they are placeholders. Static; `[]` on any failure.
 
@@ -1147,6 +1245,7 @@ def compute_deliverability(hub_registry, app_root,
     # scan of the frontend JSX, self-clearing once the fake literal is removed.
     blockers.extend(_invented_field_blockers(app_root))
     blockers.extend(_placeholder_route_blockers_1202w(app_root))
+    blockers.extend(_operator_identity_blockers_1202rj(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
