@@ -290,3 +290,57 @@ def test_a_probe_that_explodes_does_not_reach_the_release(monkeypatch):
     monkeypatch.setattr(sq, "run_realism_probe_1202rt", _boom)
     o = _bound(_milestone_index_1202rt=1, _current_milestone_version="1.0.0")
     asyncio.run(o._maybe_realism_probe_1202rt())  # must not raise
+
+
+# --- the prompt the judge actually receives -------------------------------------------
+
+def _realism_task_macro():
+    import jinja2
+
+    root = (__import__("pathlib").Path(__file__).resolve().parents[1]
+            / "env_generator" / "llm_generator" / "multi_agent" / "prompts")
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(root)))
+    module = env.get_template("v3/test_user_agent.j2").module
+    return getattr(module, "realism_judge_task_prompt")
+
+
+@pytest.mark.parametrize("task_data", [
+    {"description": "x"},                      # what a STRING payload becomes
+    {"description": "x", "regime": ""},
+    {"description": "x", "regime": "unprimed"},
+    {"description": "x", "regime": "something-else"},
+])
+def test_only_an_explicit_primed_regime_primes_the_judge(task_data):
+    """The load-bearing default, and it is load-bearing by accident unless pinned here.
+
+    `#1202rt` dispatches with `metadata={"regime": "unprimed"}`, but the macro branches on
+    `task_data`, and task_data is the TASK PAYLOAD -- a string payload becomes
+    `{"description": ...}` (agents/base.py), so that metadata never reaches the template.
+    What actually keeps the measurement honest is that UNPRIMED IS THE DEFAULT: priming has
+    to be asked for. If that ever inverts, every M1 number silently becomes an M2 number,
+    and M2 over-detects by roughly 4x.
+    """
+    rendered = str(_realism_task_macro()(task_data=task_data)).lower()
+    assert "p_real" not in rendered, "an unprimed dispatch was handed the primed prompt"
+
+
+def test_the_primed_regime_is_still_reachable():
+    """The M2 branch must exist, or the adversarial ceiling can never be measured."""
+    rendered = str(_realism_task_macro()(task_data={"description": "x",
+                                                    "regime": "primed"})).lower()
+    assert "p_real" in rendered
+
+
+def test_the_system_prompt_renders_at_all():
+    """A profile whose prompt fails to render is a judge that runs with nothing to do --
+    the same class of dead mechanism this whole ticket exists to close."""
+    import jinja2
+
+    root = (__import__("pathlib").Path(__file__).resolve().parents[1]
+            / "env_generator" / "llm_generator" / "multi_agent" / "prompts")
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(root)))
+    macro = getattr(env.get_template("v3/test_user_agent.j2").module,
+                    "realism_judge_system_prompt")
+    out = str(macro(workspace_dir="/w", role="realism_judge"))
+    assert len(out) > 2000, "the realism judge's system prompt rendered to nothing"
+    assert "p_real" not in out.lower(), "the system prompt primes every regime"

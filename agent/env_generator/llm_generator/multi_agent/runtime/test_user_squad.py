@@ -1037,6 +1037,14 @@ async def run_realism_probe_1202rt(orch: Any, version: str = "") -> Dict[str, An
                 agent_id="realism_judge_1", agent_type="realism_judge",
                 config_key="realism_judge", task=goal, parent_id="orchestrator",
                 role="realism_judge", resident=False,
+                # The regime here is a RECORD, not a switch. The prompt macro branches on
+                # `task_data.regime`, and task_data is the TASK PAYLOAD (base.py: a string
+                # payload becomes {"description": ...}), so nothing in this metadata reaches
+                # it. What keeps the judge unprimed is that UNPRIMED IS THE DEFAULT BRANCH --
+                # absent, empty or unknown all render the M1 text, and only an explicit
+                # "primed" adds p_real and the real-site calibration. That default is the
+                # load-bearing part and a test pins it; this key is here so the log says
+                # which regime the run believed it was measuring.
                 metadata={"description": goal, "ui_base": ui, "api_base": api,
                           "regime": "unprimed"}))
             ev = getattr(res, "task_done_event", None)
