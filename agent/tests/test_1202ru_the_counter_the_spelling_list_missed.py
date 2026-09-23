@@ -87,12 +87,38 @@ def test_real_data_is_never_overwritten():
     assert align_dataset_field_names(ds, cols)["users"][0]["likes_count"] == 900
 
 
-def test_a_field_that_is_its_own_column_is_not_cannibalized():
-    """`likes` survives as a column; moving it would empty the column the loader keeps."""
+def test_a_twin_column_is_mirrored_not_moved():
+    """#1202rv: both are real columns for one fact. Copy, and leave the source intact.
+
+    r115's models.py declares `likes = Column(Integer)` AND
+    `like_count = Column(Integer, default=0)` on `videos`. The dataset fills `likes` with
+    3,600,000; `like_count` stayed at 0, and which of the two the frontend happened to read
+    decided whether the video showed 3.6M likes or none. 10 of 149 corpus runs declare such a
+    pair, and in 8 exactly one side is seeded -- always the bare noun, never the `_count`.
+    """
     ds = {"users": [{"likes": 5}]}
     cols = {"users": {"likes", "likes_count"}}
     row = align_dataset_field_names(ds, cols)["users"][0]
-    assert row["likes"] == 5 and row.get("likes_count") is None
+    assert row["likes"] == 5, "the source column lost its value"
+    assert row["likes_count"] == 5, "the twin is still served as 0"
+
+
+def test_a_twin_that_is_not_a_counter_is_left_alone():
+    """`title` and `name` can be two different facts; `like_count` and `likes` cannot.
+
+    This is why mirroring is restricted to counter targets rather than applied to every
+    synonym group.
+    """
+    ds = {"sounds": [{"name": "Neon Pop Loop"}]}
+    cols = {"sounds": {"name", "title"}}
+    row = align_dataset_field_names(ds, cols)["sounds"][0]
+    assert row["name"] == "Neon Pop Loop" and row.get("title") is None
+
+
+def test_mirroring_still_never_overwrites():
+    ds = {"videos": [{"likes": 5, "like_count": 900}]}
+    cols = {"videos": {"likes", "like_count"}}
+    assert align_dataset_field_names(ds, cols)["videos"][0]["like_count"] == 900
 
 
 def test_money_does_not_fill_a_count_and_a_count_does_not_fill_money():

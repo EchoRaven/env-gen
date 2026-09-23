@@ -1041,8 +1041,15 @@ def _fill_counter_columns_1202ru(rows: Any, colset: Any) -> int:
         if not isinstance(row, dict):
             continue
         for src, val in list(row.items()):
-            if src in colset:
-                continue  # its own column -- the loader keeps it; taking it would cannibalize
+            # #1202rv: NOT skipped when `src` is itself a column. 10 of 149 corpus runs declare
+            # BOTH `like_count` and `likes` as real Integer columns on one table -- two columns
+            # for one fact -- and in 8 of them exactly one side is seeded: the bare noun on
+            # every row, the `_count` twin on none, left at its Column(Integer, default=0). The
+            # direction never varies. Whichever column the frontend happens to read then decides
+            # whether a video shows 3.6M likes or 0, and r115 serves both numbers in one row.
+            # This mirrors rather than moves -- `src` keeps its value, so nothing is lost -- and
+            # only for counter targets, where a same-stem twin cannot mean a different fact the
+            # way `title` and `name` can.
             if not isinstance(val, int) or isinstance(val, bool):
                 continue  # a count is an integer; this is what keeps money columns out
             stem = _counter_stem_1202ru(src) or _singular_1202ru(str(src).lower())
