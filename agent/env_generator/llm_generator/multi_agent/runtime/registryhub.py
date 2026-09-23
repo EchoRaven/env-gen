@@ -263,6 +263,57 @@ def _tag_parked_probe_1202dw(path, metadata):
     return md
 
 
+
+def _breaking_title_detail_1202sr(breaking: Any, cap: int = 96) -> str:
+    """WHAT changed, for the task title. "" when the payload says nothing nameable. #1202sr
+
+    The title was `Fix breaking change in {endpoint}` and nothing else, so every finding on one
+    endpoint produced the same line. Measured across the 36 runs since `#1202gz`: 270 of 473
+    titles (57%) cover MORE THAN ONE distinct change, and tiktok-r120's
+    `Fix breaking change in GET /api/videos` covers 22 of them. A lane looking at its P0 queue
+    sees 22 identical rows -- it cannot tell which it has already fixed, which to take first,
+    or whether two of them are the same work. That is the category-without-the-instance shape
+    `#1017`, `#982` and `#1178` each removed from a different message.
+
+    `#1202gz` is right to file them separately (the payloads genuinely differ); they just have
+    to be TELLABLE APART once filed.
+    """
+    try:
+        if not isinstance(breaking, dict):
+            return ""
+        # #1034: a capped list must SAY it was capped. `join_capped` renders
+        # "a, b, c (+3 more not shown)" -- a title that silently drops fields is the same
+        # category-without-the-instance problem one level down.
+        from .message_format import join_capped as _jc
+        bits = []
+        removed = [str(x) for x in (breaking.get("removed_response_fields") or [])]
+        typed = [str(x) for x in (breaking.get("type_changed_fields") or [])]
+        required = [str(x) for x in (breaking.get("required_added_in_request") or [])]
+        if removed:
+            bits.append("removed " + _jc(removed, cap=3, sep=", "))
+        if typed:
+            bits.append("type changed " + _jc(typed, cap=3, sep=", "))
+        if required:
+            bits.append("now requires " + _jc(required, cap=3, sep=", "))
+        if breaking.get("auth_added"):
+            bits.append("auth added")
+        if breaking.get("method_changed"):
+            bits.append("method changed")
+        if not bits:
+            return ""
+        out = "; ".join(bits)
+        return out if len(out) <= cap else out[:cap - 1].rstrip(", ;") + "…"
+    except Exception:
+        return ""
+
+
+def _breaking_task_title_1202sr(endpoint_id: Any, breaking: Any) -> str:
+    """The P0's title. Keeps the old prefix EXACTLY -- `_relax` looks tasks up by it."""
+    base = "Fix breaking change in %s" % endpoint_id
+    detail = _breaking_title_detail_1202sr(breaking)
+    return "%s: %s" % (base, detail) if detail else base
+
+
 def _breaking_task_is_new_1202gz(store, endpoint_id, breaking, consumer_agent) -> bool:
     """Has this exact breaking finding already been filed at this consumer, in THIS registry?
 
@@ -1471,7 +1522,10 @@ class RegistryHub:
             # auth_added too (None -> True) but nobody consumed the endpoint yet.
             told = sorted({t.get("assignee") for t in (workhub.list_tasks() or [])
                            if isinstance(t, dict)
-                           and t.get("title") == f"Fix breaking change in {endpoint_id}"
+                           # #1202sr: PREFIX, not equality -- the title now carries what
+                           # changed, and this lookup is the one reader keyed on it.
+                           and str(t.get("title") or "").startswith(
+                               f"Fix breaking change in {endpoint_id}")
                            and "'auth_added': True" in str(t.get("description") or "")
                            and t.get("assignee")})
             if not told:
@@ -1552,7 +1606,7 @@ class RegistryHub:
                     continue          # #1202gz: identical finding, already on this desk
                 try:
                     workhub.create_task(
-                        title=f"Fix breaking change in {endpoint_id}",
+                        title=_breaking_task_title_1202sr(endpoint_id, breaking),
                         description=(
                             f"RegistryHub detected a breaking change in {endpoint_id}: "
                             f"{breaking}. Consumer files: {consumer_files}"
