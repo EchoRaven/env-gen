@@ -886,6 +886,75 @@ def _unreachable_routes_1202rq(app_root) -> List[str]:
         return []
 
 
+# #1202sb: A THIRD PARTY'S EMAIL ADDRESS, PUBLISHED BY A HAND-WRITTEN ROUTE.
+#
+# tiktok-r126, live and unauthenticated: `GET /api/explore` embeds `author.email` --
+# `bts_official_bighit@example.com` -- in every item. An unprimed judge browsing the app
+# reported it without being asked to look for anything of the kind.
+#
+# The framework already forbids exactly this. `#1202jb`'s `_PRIVATE_ACTOR_COLS_1202JB` is the
+# denylist of columns an actor row must not show to anyone who is not that actor, and every
+# PROJECTED read path applies it. `custom_routes.py` is hand-written, so it applies to nothing:
+# r126 selects `u."email" AS author_email` in a join and puts it straight in the response.
+# One fact, many emitters -- so this reads the same list rather than carrying a copy.
+#
+# Narrow twice. The alias must name a THIRD PARTY (`author_`, `host_`, `creator_`), never the
+# caller (`my_`, `own_`, `self_`), because /auth/me returning your own address is correct. And
+# the statement must JOIN, because a row fetched by the caller's own id is the caller's row.
+# 3 of the 170 corpus backends hit it -- r123, r126 and r129, the last of which delivered two
+# milestones with this in it.
+_SELF_PREFIXES_1202SB = frozenset((
+    "my", "own", "self", "me", "current", "your", "caller", "viewer", "requester"))
+
+
+def _third_party_private_columns_1202sb(app_root) -> List[str]:
+    """Hand-written backend routes that publish another actor's private column. `[]` on failure.
+
+    `ENVGEN_PRIVATE_COLUMN_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_PRIVATE_COLUMN_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        import re as _re
+        from .route_projector import _PRIVATE_ACTOR_COLS_1202JB as _private
+        backend = Path(app_root) / "backend"
+        if not backend.is_dir():
+            return []
+        cols = "|".join(sorted(_re.escape(c) for c in _private))
+        pat = _re.compile(r"\b(?:%s)\b\s*[\"']?\s*\)?\s+AS\s+[\"']?(\w+)_(%s)\b"
+                          % (cols, cols), _re.I)
+        hits: List[str] = []
+        for f in sorted(backend.rglob("*.py")):
+            # models.py declares the columns; seed_data.py loads them; schemas.py is shape.
+            # The leak is a READ PATH choosing to emit one.
+            if f.name in ("models.py", "seed_data.py", "schemas.py"):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in pat.finditer(text):
+                if m.group(1).lower() in _SELF_PREFIXES_1202SB:
+                    continue
+                if not _re.search(r"\bJOIN\b", text[max(0, m.start() - 900):m.end() + 200],
+                                  _re.I):
+                    continue  # the caller's own row, fetched by their own id
+                hits.append("%s: %s" % (f.name, m.group(0).strip()))
+        if not hits:
+            return []
+        return ["%d hand-written read path(s) publish another actor's private column: %s. "
+                "The projected read paths cannot do this -- #1202jb's denylist stops them -- "
+                "but custom_routes.py is outside that rule, so r126 served every visitor "
+                "`author.email` on a public GET /api/explore. Drop the column from the SELECT "
+                "and from the response; a product does not publish its users' addresses, and "
+                "an agent reading the API learns an address no screen ever shows."
+                % (len(hits), join_capped(hits))]
+    except Exception as exc:
+        _gate_absent_792("_third_party_private_columns_1202sb", exc, "run")
+        return []
+
+
 def _routes_that_ignore_their_parameter_1202rz(app_root) -> List[str]:
     """A frontend that routes `/video/:id` but never reads a route parameter. `[]` on failure.
 
@@ -1631,6 +1700,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
     blockers.extend(_unreachable_routes_1202rq(app_root))
     blockers.extend(_routes_that_ignore_their_parameter_1202rz(app_root))
+    blockers.extend(_third_party_private_columns_1202sb(app_root))
     blockers.extend(_page_api_declaration_drift_1202rr(hub_registry, app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
