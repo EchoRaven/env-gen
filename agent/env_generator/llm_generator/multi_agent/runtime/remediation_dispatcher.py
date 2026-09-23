@@ -2225,6 +2225,19 @@ class RemediationDispatcher:
                 "and /auth/register are framework-owned, so any override desynchronises login "
                 "from the tokens every other route checks. Delete the reassignment; if login "
                 "behaviour is wrong, report it as a framework defect instead."),
+            # #1202sw: the placeholder-route blocker, routed. The component name in the gate's
+            # prose is the instance, and #983 now replays it beside this body because the token
+            # is stable. FRONTEND owns it: both repairs are edits to the page and its route.
+            "deliverability_placeholder_route": (
+                "frontend", "Replace the placeholder page behind a live route (blocks delivery)",
+                "App.jsx routes a component whose own NAME says it is not a real page "
+                "(placeholder / dummy / noop / todo / untitled). A route a user can reach must "
+                "render the real thing — this is the standing bar: no dead UI, no fake data. "
+                "For EACH component named below, either BUILD the real page (its reference "
+                "layout under design/, real fields from its endpoint, real controls) or REMOVE "
+                "the route from App.jsx AND deregister its ui_page, so nothing routes to it. "
+                "Renaming the component does not fix it — the page behind the route is what "
+                "the user sees."),
             "business_response_key_noncanonical": (
                 "backend", "Fix non-canonical business response_key (blocks delivery)",
                 "a business endpoint declares a response_key the projector never emits — "

@@ -2962,6 +2962,24 @@ def _deliverability_check_token(blocker: str) -> str:
         # or whose component file is absent (round 44 blank-screen
         # class). Deterministic, NOT relaxed on functionally_validated.
         return "deliverability_ui_page_unwired"
+    if "placeholder page(s)" in low:
+        # #1202sw: THE LAST UNOWNED BLOCKER. `_placeholder_route_blockers_1202w` flags a route
+        # a user can reach whose component name says it is not a real page
+        # (`_JUNK_PAGE_WORDS_1202W`), and the corpus has five: instagram-r76
+        # `DummyToGetRegistryList`, tiktok-r61's three `*PlaceholderPage`, r69/r87
+        # `PlaceholderPage`. Unmapped, it became `deliverability_other:<first 80 chars>` —
+        # which embeds the COUNT and the component names, so "1 placeholder page(s) — X" and
+        # "2 placeholder page(s) — X, Y" are one defect under two names. Exactly the shape
+        # #1202lf named for `unscoped owner read` and #1202ou for the two auth-tampering
+        # blockers: an exact-key `_GATE_OWNER.get(name)` can never match a name with prose in
+        # it, so the check declined delivery with "NO remediation owner" and nothing was
+        # dispatched, while the drifting name also defeated the dispatcher's own re-fire guard
+        # (`guard.get(name) == milestone`).
+        #
+        # #1202hp removed the largest false-positive source on this check (an orchestrator
+        # probe registration becoming a page); this gives whatever remains an owner instead of
+        # a dead end — the same division of labour #1202lf recorded with #1202le.
+        return "deliverability_placeholder_route"
     if "framework fallback page" in low:
         # #223: a route-wired generic fallback the REGISTRY can't see (the
         # code-truth sweep). The registered-page variant carries "declared
