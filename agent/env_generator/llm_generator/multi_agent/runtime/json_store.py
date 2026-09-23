@@ -139,6 +139,43 @@ class _MapView:
         return {k: v for k, v in self._data.items() if k != _META_KEY}
 
 
+
+def _serialize_store_1202sj(data: Dict[str, Any]) -> str:
+    """Serialize a store: one TOP-LEVEL KEY PER LINE, values through the C encoder. #1202sj
+
+    `json.dump(..., indent=2)` silently falls back to the PURE-PYTHON encoder -- the C one is
+    used only when `indent is None`. Profiling one update on tiktok-r125's real 6.4MB
+    eventhub_events.json put 93% of the call in `_save_raw` and almost all of that in
+    `_iterencode`, the Python encoder's inner loop. Measured on that file:
+
+        indent=2        167.0 ms    6.43 MB    178,937 lines
+        no indent        79.9 ms    5.26 MB          1 line
+        per key          69.4 ms    5.26 MB      5,004 lines
+
+    2.4x faster and 18% smaller, and every store write in a run pays it -- about 6 minutes of
+    wall clock per run on the events store alone, plus a cheaper read afterwards because the
+    file itself shrank.
+
+    Dropping the indent entirely would be marginally simpler and put the whole store on ONE
+    line, which breaks `grep` over a hub file -- a forensic move this project makes constantly
+    (every cross-run measurement in #673, #693 and this session's own work reads these files).
+    One line per top-level key keeps that and costs nothing.
+
+    NON-STRING KEYS fall back to `json.dump`'s own handling: it stringifies them ("1", "true"),
+    and assembling `1: {...}` by hand would emit INVALID JSON. Hub keys are always strings, so
+    this branch is a guard rather than a path.
+    """
+    if not isinstance(data, dict) or not data:
+        return json.dumps(data, default=str)
+    if not all(isinstance(k, str) for k in data):
+        return json.dumps(data, default=str)
+    parts = [
+        "%s: %s" % (json.dumps(k), json.dumps(v, default=str))
+        for k, v in data.items()
+    ]
+    return "{\n" + ",\n".join(parts) + "\n}"
+
+
 class JsonStore:
     def __init__(self, file_path: Path) -> None:
         self.file_path = Path(file_path)
@@ -301,7 +338,7 @@ class JsonStore:
         tmp_path = self.file_path.with_suffix(self.file_path.suffix + f".{os.getpid()}.tmp")
         try:
             with open(tmp_path, "w") as f:
-                json.dump(data, f, indent=2, default=str)
+                f.write(_serialize_store_1202sj(data))
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, self.file_path)
