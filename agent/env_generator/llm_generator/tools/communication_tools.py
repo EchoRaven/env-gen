@@ -927,15 +927,23 @@ Returns:
             try:
                 hubs = getattr(self.agent, "_hubs", None)
                 if hubs:
-                    for msg in filtered:
-                        if msg.get("eventhub") and msg.get("id"):
-                            # O14/Phase 4.1: thread caller=agent_id so the
-                            # mutation is attributable; self-mutation (caller
-                            # == agent) passes the Phase 4.1 identity gate.
-                            hubs.eventhub.mark_read(
-                                self.agent.agent_id, msg.get("id"),
-                                caller=self.agent.agent_id,
-                            )
+                    # #1202sg: ONE store write, not one per message. `mark_read` costs a
+                    # whole-file read-modify-write under the store lock -- 107ms measured
+                    # against tiktok-r125's real 2.1MB eventhub_inboxes.json -- and this
+                    # loop paid it per message. Twenty messages was 2.14s by that
+                    # benchmark, against a measured median of 2.8s (r121); check_inbox was
+                    # 19-45 minutes of wall clock per run, 19% of a 2.6-hour run. And
+                    # `execute` is synchronous, so every one of those writes blocked the
+                    # event loop -- which is why the slow calls were measured happening
+                    # while the system was QUIETEST: nothing else could run to log.
+                    # O14/Phase 4.1: caller=agent_id keeps the mutation attributable;
+                    # self-mutation (caller == agent) passes the identity gate.
+                    _ids = [msg.get("id") for msg in filtered
+                            if msg.get("eventhub") and msg.get("id")]
+                    if _ids:
+                        hubs.eventhub.mark_read_many_1202sg(
+                            self.agent.agent_id, _ids, caller=self.agent.agent_id,
+                        )
             except Exception:
                 pass
         

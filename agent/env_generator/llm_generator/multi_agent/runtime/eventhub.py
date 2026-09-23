@@ -773,6 +773,55 @@ class EventHub:
         )
         return item
 
+    def mark_read_many_1202sg(
+        self, agent: str, event_ids, *, caller: Optional[str] = None
+    ) -> dict:
+        """Mark SEVERAL inbox items read in ONE store write. #1202sg.
+
+        `mark_read` costs a whole-store read-modify-write: `JsonStore.update` takes the file
+        lock, re-reads the file, serialises and writes it back. Measured against a real
+        corpus store (tiktok-r125's eventhub_inboxes.json, 2.1MB, 36 inboxes, the
+        orchestrator's holding 1,664 items): **107ms per update**, against 16ms for a read.
+
+        `check_inbox(clear=True)` called it once per message. Twenty messages was therefore
+        twenty whole-file rewrites -- 2.14s by that benchmark, against a measured median of
+        2.8s (r121) and 2.0s (r120). `check_inbox` was burning 19-45 minutes of wall clock per
+        run, 19% of a 2.6-hour run, and three earlier hypotheses (slow reads, lock contention,
+        compose starving the loop) were all falsified against the data. The cost was never in
+        reading; it was N writes, and `execute` is synchronous, so each one blocks the event
+        loop. That is also why the measurement showed the system getting QUIETER during slow
+        calls: nothing else could run to log anything.
+
+        Returns `{"read": [ids], "missing": [ids]}`. One write regardless of how many ids.
+        """
+        _subscription_identity_gate("mark_read", agent, caller)
+        ids = [str(e) for e in (event_ids or []) if e]
+        if not ids:
+            return {"read": [], "missing": []}
+        now = time.time()
+        inbox = self._inboxes.get(agent) or {"agent": agent, "items": {}}
+        items = dict(inbox.get("items") or {})
+        read, missing = [], []
+        for event_id in ids:
+            item = items.get(event_id)
+            if not item:
+                missing.append(event_id)
+                continue
+            item = dict(item)
+            item["read"] = True
+            item["read_at"] = now
+            items[event_id] = item
+            read.append(event_id)
+        if not read:
+            return {"read": [], "missing": missing}
+        inbox = dict(inbox)
+        inbox["items"] = items
+        self._inboxes.update(
+            lambda m: m.set(agent, inbox, agent),
+            change_info=_eventhub_change_info(agent, caller),
+        )
+        return {"read": read, "missing": missing}
+
     # ------------------------------------------------------------------
     # Task 4: mark_delivered / mark_all_read / get_event / get_thread
     # ------------------------------------------------------------------
