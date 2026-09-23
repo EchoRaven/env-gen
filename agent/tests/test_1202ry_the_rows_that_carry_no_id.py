@@ -97,37 +97,16 @@ def test_malformed_input_is_a_no_op():
 # --- the guard it exists to satisfy ---------------------------------------------------
 
 def _would_807b_refuse(real, base):
-    """#807b's own test, transcribed from the loader backend_skeleton emits.
+    """#807b's guard, LIFTED OUT OF THE EMITTED MODULE and executed -- not re-implemented.
 
-    Written out here rather than imported because the production copy is a string template
-    inside the generated seed_data.py -- so this test also pins that what I reasoned about is
-    what actually runs. `test_the_refusal_logic_here_matches_the_emitted_loader` checks the
-    emitted source still contains the lines this mirrors.
+    This was a hand-written mirror of the loader's logic, and `#1202sc` proved why that is not
+    good enough: it changed one line of the real guard and the mirror went on asserting the old
+    behaviour, caught only by a separate test pinning two exact source lines. A mirror is a
+    second copy of the fact, and second copies drift. Now there is one.
     """
-    refused = []
-    for table, rows in real.items():
-        if not (isinstance(rows, list) and rows and isinstance(rows[0], dict)):
-            continue
-        new_ids = {r.get("id") for r in rows if isinstance(r, dict)}
-        total = orphan = 0
-        for dep_table, dep_rows in base.items():
-            if dep_table in real or not (isinstance(dep_rows, list) and dep_rows):
-                continue
-            if not isinstance(dep_rows[0], dict):
-                continue
-            for fk in [c for c in dep_rows[0] if str(c).endswith("_id")]:
-                target = str(fk)[:-3]
-                if table not in (target + "s", target, target + "es"):
-                    continue
-                for dep in dep_rows:
-                    if not isinstance(dep, dict) or dep.get(fk) is None:
-                        continue
-                    total += 1
-                    if dep.get(fk) not in new_ids:
-                        orphan += 1
-        if total and orphan * 2 > total:
-            refused.append(table)
-    return refused
+    from test_1202sc_the_same_id_written_two_ways import refuses
+
+    return sorted(refuses(real, base))
 
 
 _LANE = {"comment_likes": [{"comment_id": 1, "user_id": 1}, {"comment_id": 2, "user_id": 2}]}
@@ -153,16 +132,15 @@ def test_a_genuine_id_space_conflict_is_still_refused():
     assert _would_807b_refuse(assign_dataset_ids_1202ry(real, schema), base) == ["titles"]
 
 
-def test_the_refusal_logic_here_matches_the_emitted_loader():
-    """If the loader's guard is rewritten, the mirror above stops proving anything."""
-    import inspect
+def test_this_file_keeps_no_second_copy_of_the_guard():
+    """The mirror that used to live here is gone; if one comes back it will drift again."""
+    import pathlib
 
-    from env_generator.llm_generator.multi_agent.runtime import backend_skeleton
-
-    src = inspect.getsource(backend_skeleton)
-    for line in ("_new_ids = {_r.get('id') for _r in _rows if isinstance(_r, dict)}",
-                 "if _dep_total and _dep_orphan * 2 > _dep_total:"):
-        assert line in src, "the emitted #807b guard changed: %s" % line
+    src = pathlib.Path(__file__).read_text()
+    # Built at runtime: a literal here would be found in this very file, the way a `pgrep`
+    # pattern matches its own command line.
+    for needle in ("_dep" + "_orphan", "_new" + "_ids = {"):
+        assert needle not in src, "a re-implementation of #807b is back in this file: %s" % needle
 
 
 # --- the wiring -----------------------------------------------------------------------
