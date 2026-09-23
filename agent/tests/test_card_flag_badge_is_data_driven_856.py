@@ -109,7 +109,7 @@ def test_multiple_flags_are_ordered_not_dropped():
 
 
 def test_no_helper_contains_a_control_character():
-    """★ #856b, a guard for the whole block rather than for my mistake.
+    r"""★ #856b, a guard for the whole block rather than for my mistake.
 
     `_REF_HELPERS_JS` is a NON-raw triple-quoted Python string, so a single-backslash escape in
     the JS is consumed at import time: `/\\b\\w/g` written as `/\b\w/g` reaches node as a

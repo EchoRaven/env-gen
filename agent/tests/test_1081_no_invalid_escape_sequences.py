@@ -1,4 +1,4 @@
-"""#1081 — two invalid escape sequences in the package, and a ratchet so there are never more.
+r"""#1081 — two invalid escape sequences in the package, and a ratchet so there are never more.
 
 `repair_frontend_escaped_backticks`'s docstring documents the shapes it repairs:
 
@@ -39,10 +39,19 @@ for _p in (str(ROOT), str(LLM_DIR)):
 PKG = ROOT / "env_generator" / "llm_generator"
 
 
-def _invalid_escapes():
+# #1202ta: the tree this ratchet watches. It was PKG alone -- and `tests/` turned out to hold
+# four invalid escape sequences, one of them in THIS FILE's own module docstring, emitting a
+# DeprecationWarning on every suite run since it landed. A rule about Python source has no
+# reason to stop at the package boundary: the tests are compiled by the same interpreter, and
+# `\s` in a docstring becomes a SyntaxError in a future version wherever it sits.
+TESTS = ROOT / "tests"
+
+
+def _invalid_escapes(tree=None):
     out = []
     tmp = tempfile.mkdtemp()
-    for f in sorted(PKG.rglob("*.py")):
+    base = tree or PKG
+    for f in sorted(base.rglob("*.py")):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             try:
@@ -51,7 +60,7 @@ def _invalid_escapes():
                 continue
             for w in caught:
                 if "invalid escape sequence" in str(w.message):
-                    out.append(f"{f.relative_to(PKG)}:{w.lineno} {w.message}")
+                    out.append(f"{f.relative_to(base)}:{w.lineno} {w.message}")
     return out
 
 
@@ -59,6 +68,14 @@ class ThePackageHasNone(unittest.TestCase):
 
     def test_no_module_carries_an_invalid_escape_sequence(self):
         found = _invalid_escapes()
+        self.assertEqual(found, [], "\n".join(found))
+
+    def test_no_TEST_carries_one_either(self):
+        """#1202ta. Four did, and this file was one of them -- the ratchet could not see the
+        tree it lives in. All four are docstrings quoting a regex or JS shape (`\\s`, `\\w`,
+        `\\(`, an escaped backtick) in a non-raw string; `r\"\"\"` renders identically and
+        emits nothing."""
+        found = _invalid_escapes(TESTS)
         self.assertEqual(found, [], "\n".join(found))
 
 

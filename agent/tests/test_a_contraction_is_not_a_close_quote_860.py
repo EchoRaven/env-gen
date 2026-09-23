@@ -62,7 +62,7 @@ def test_a_singular_possessive_survives_too(role, want):
 
 
 def test_a_title_ending_in_a_plural_noun_closes_there():
-    """★ The case that nearly cost 290+ real titles. A PLURAL possessive (`'Kids' Shows'`) is
+    r"""★ The case that nearly cost 290+ real titles. A PLURAL possessive (`'Kids' Shows'`) is
     genuinely ambiguous — no rule settles it from the text — and my first test asserted the
     human reading. Checking the corpus first showed the `s' ` pattern occurs 1483 times and is
     almost entirely **a title ending in a plural noun plus its closing quote**: `'TV Shows'`

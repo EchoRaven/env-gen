@@ -60,7 +60,7 @@ def test_r113s_shape_end_to_end():
 
 
 def test_prose_still_yields_nothing():
-    """Non-vacuity in the other direction: the widening must not invent tables from prose.
+    r"""Non-vacuity in the other direction: the widening must not invent tables from prose.
 
     WHAT ACTUALLY PROTECTS THIS is the plausibility rule two lines below the pattern —
     ">=2 columns and an 'id'" — not the pattern's tightness. Found by counter-proof: widening
