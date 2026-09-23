@@ -265,8 +265,8 @@ gmail's / calendar's:
     <ENV>_OAUTH_CLIENT_ID:     "<static, same every task>"
     <ENV>_OAUTH_CLIENT_SECRET: "<static, same every task>"
     <ENV>_GRANT_TYPE:          "password"           # ← default
-    <ENV>_OAUTH_USER_EMAIL:    "dev@virtueai.com"   # dev fallback
-    <ENV>_OAUTH_USER_PASSWORD: "virtue"             # dev fallback
+    <ENV>_OAUTH_USER_EMAIL:    "dev@<env>.local"   # dev fallback
+    <ENV>_OAUTH_USER_PASSWORD: "dev-local-password"             # dev fallback
 ```
 
 Per-task config.yaml overrides `<ENV>_OAUTH_USER_EMAIL/PASSWORD`

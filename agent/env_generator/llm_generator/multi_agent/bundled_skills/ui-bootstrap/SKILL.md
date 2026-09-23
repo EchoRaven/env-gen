@@ -450,7 +450,7 @@ curl -s -o /dev/null -w "tenant create: %{http_code}\n" -X POST http://localhost
 # 4. Auth works
 curl -s -X POST http://localhost:<UI_PORT>/api/auth/login \
     -H 'Content-Type: application/json' -H 'X-Tenant-ID: default' \
-    -d '{"email":"dev@virtueai.com","password":"virtue"}' | python3 -m json.tool
+    -d '{"email":"dev@<env>.local","password":"dev-local-password"}' | python3 -m json.tool
 ```
 
 ## Reference implementations

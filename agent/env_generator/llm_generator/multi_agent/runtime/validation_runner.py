@@ -1384,7 +1384,7 @@ def run_smoke_validation(
             return d.get("access_token") or d.get("token") or d.get("accessToken")
 
         _cred = {
-            "username": "smoke_user", "email": "smoke@virtueai.com",
+            "username": "smoke_user", "email": "smoke@smoke-test.local",
             "password": "smoke-pw-12345", "name": "Smoke", "full_name": "Smoke User",
         }
         reg = _http("POST", f"{base}/auth/register", body=_cred)
@@ -1393,7 +1393,7 @@ def run_smoke_validation(
             # register may not mint a token, or the user already exists → login.
             # Send username + email both so username- or email-login both resolve.
             login = _http("POST", f"{base}/auth/login",
-                          body={"username": "smoke_user", "email": "smoke@virtueai.com",
+                          body={"username": "smoke_user", "email": "smoke@smoke-test.local",
                                 "password": "smoke-pw-12345"})
             token = _tok(login["body_text"])
         _add("auth_register_login", bool(token),

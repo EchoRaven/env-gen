@@ -285,7 +285,7 @@ seed_<env>() {
   curl -fsS -X POST "http://localhost:${ENV_API_PORT}/auth/register" \
     -H "Content-Type: application/json" \
     -H "X-Tenant-ID: default" \
-    -d '{"email":"dev@virtueai.com","password":"virtue","name":"Dev User"}' \
+    -d '{"email":"dev@<env>.local","password":"dev-local-password","name":"Dev User"}' \
     || echo "<env> dev user already exists, skipping"
 }
 ```
@@ -344,7 +344,7 @@ Add an `OAuthEnv(...)` row to `tests/oauth/test_mcp_gateway_oauth_e2e.py`'s
 `ENVS` list:
 
 ```python
-OAuthEnv("<env>", <MCP_PORT>, "dev@virtueai.com", "virtue",
+OAuthEnv("<env>", <MCP_PORT>, "dev@<env>.local", "dev-local-password",
          ("<expected_tool_keyword_1>", "<keyword_2>", "<keyword_3>"),
          "<env>.read <env>.write"),
 ```

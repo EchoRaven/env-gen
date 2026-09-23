@@ -229,8 +229,11 @@ def _dev_token() -> Optional[str]:
     global _DEV_TOKEN
     if _DEV_TOKEN:
         return _DEV_TOKEN
-    email = os.getenv("DEV_USER_EMAIL", "dev@virtueai.com")
-    password = os.getenv("DEV_USER_PASSWORD", "virtue")
+    # #1202sa: named after the ENV, never after whoever ran the generator -- this default
+    # registers a real user row in the delivered app's database, so the generator's own
+    # company has no business appearing on a profile the app then lists.
+    email = os.getenv("DEV_USER_EMAIL", "dev@__ENV_NAME__.local")
+    password = os.getenv("DEV_USER_PASSWORD", "dev-local-password")
     tid = X_TENANT_ID or "default"
     with httpx.Client(timeout=15.0) as c:
         for path in ("/auth/login", "/auth/register"):
