@@ -2127,6 +2127,11 @@ class Orchestrator:
                     # §4: expose the current milestone dict (its acceptance[] + slice) so the
                     # delivery gate + the test-user squad can scope to THIS milestone.
                     self._current_milestone = _milestone if isinstance(_milestone, dict) else {}
+                    # #1202rt: _m_idx is 1-based and was only ever a local. The realism probe
+                    # samples every Nth milestone and needs to know which one this is; stamping
+                    # it here beats re-deriving it at the release point from a dict that does
+                    # not carry it.
+                    self._milestone_index_1202rt = _m_idx
                     # Stamp milestone-completeness onto the orchestrator AGENT so the
                     # deliver_project tool can reject a premature FINAL delivery during an
                     # earlier milestone (deliver_project ends the run; earlier milestones
@@ -4837,6 +4842,33 @@ class Orchestrator:
             int(_grant), source, int(self._fwdeliver_deferral_credit_1133),
             int(FWVAL_NO_DELIVER_ABORT_S))
 
+    async def _maybe_realism_probe_1202rt(self) -> None:
+        """#1202rt: dispatch the realism judge for a sampled milestone. Never raises.
+
+        `#1202rh` built the judge -- profile, prompts, the realism contract in every lane's
+        definition -- and nothing that called it. Advisory findings are only worth the run if
+        somebody actually runs them, so this is the caller.
+        """
+        try:
+            from .runtime.test_user_squad import (
+                realism_probe_due_1202rt, run_realism_probe_1202rt)
+            _idx = int(getattr(self, "_milestone_index_1202rt", 1) or 1) - 1  # _m_idx is 1-based
+            _ver = str(getattr(self, "_current_milestone_version", "") or "")
+            if not realism_probe_due_1202rt(_idx):
+                return
+            # Once per milestone. The release point can be reached more than once for the same
+            # version (a deferred tick that later falls through), and a second probe would cost
+            # its whole deadline again to re-observe an app that has not changed.
+            if getattr(self, "_realism_probed_1202rt", None) == (_idx, _ver):
+                return
+            self._realism_probed_1202rt = (_idx, _ver)
+            _rep = await run_realism_probe_1202rt(self, _ver)
+            if not _rep.get("ran"):
+                self._logger.info("#1202rt realism probe did not run: %s",
+                                  _rep.get("reason") or "(no reason given)")
+        except Exception as _exc:  # advisory: nothing here may take a release down with it
+            self._logger.debug("#1202rt realism probe error (ignored): %s", _exc)
+
     async def _maybe_framework_deliver(self) -> None:
         """Deterministically DELIVER when the delivery gate is fully clear.
 
@@ -5733,6 +5765,13 @@ class Orchestrator:
                     _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0)
                     if _tu_outcome == "pass":
                         self._tu_squad_passed = True  # clean -> fall through to release
+                        # #1202rt: the last honest look at a stack that is still up. The squad
+                        # has just driven it, so it serves; the release is decided, so nothing
+                        # found here can be mistaken for a blocker (a judge that could block
+                        # would be primed to find something, and priming over-detects ~4x).
+                        # Costs one bounded wait per sampled milestone -- the only alternative
+                        # is racing the release's own teardown for a stack to look at.
+                        await self._maybe_realism_probe_1202rt()
                     elif _tu_outcome == "retry":
                         # #179: the squad couldn't run yet (app ports not resolved / empty
                         # contract) — defer WITHOUT burning an attempt so flaky first-attempt

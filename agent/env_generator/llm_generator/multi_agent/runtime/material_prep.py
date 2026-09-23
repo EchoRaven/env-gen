@@ -22,7 +22,7 @@ import re
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 Region = Tuple[float, float, float, float]  # (x0,y0,x1,y1) as 0..1 fractions
 
@@ -983,6 +983,77 @@ def model_columns_from_models_py(models_py_path) -> Dict[str, set]:
     return out
 
 
+# ── #1202ru — a counter column the dataset spells as a bare noun ──────────────
+# `#483`'s groups enumerate SPELLINGS, and enumeration is exactly what fails here: tiktok-r131's
+# own schema spells the video counter `like_count` and the user counter `likes_count`. The group
+# ("like_count", "likes") matches neither a column named `likes_count` nor anything else on that
+# table, so `align_dataset_field_names` skipped it, `User.likes_count` kept its
+# `Column(Integer, default=0)`, and a creator with 24.1M followers served `likes_count: 0`.
+# That contradiction is what an unprimed M1 judge flagged on r131 while simply using the app --
+# a profile page cannot have 74M followers and zero total likes and still read as a real account.
+#
+# Measured over generated/: 23 of 131 runs carrying both a dataset and a lane seed lose at least
+# one counter this way; `users.likes_count <- likes` alone in 19 of them.
+#
+# So this pass matches STRUCTURE instead of spelling: a column that READS AS A COUNTER is filled
+# from a dataset field naming the same thing. Deliberately narrow, three ways:
+#   * only names carrying an explicit count marker are counter targets, so a text column named
+#     `comment` is never mistaken for `comment_count`;
+#   * `_total` is NOT a marker -- `order_total` is money, and `orders` must not fill it;
+#   * the value must be an int. Tightening from (int, float) and dropping `_total`/`num_` cost
+#     zero true positives across all 131 runs, which is the whole argument for the narrowness.
+_COUNT_SUFFIXES_1202RU = ("_counts", "_count", "_num")
+_COUNT_PREFIXES_1202RU = ("num_",)
+
+
+def _singular_1202ru(word: str) -> str:
+    return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
+
+
+def _counter_stem_1202ru(name: Any) -> Optional[str]:
+    """The thing being counted, or None when the name does not read as a counter."""
+    text = str(name or "").lower()
+    marked = False
+    for prefix in _COUNT_PREFIXES_1202RU:
+        if text.startswith(prefix):
+            text, marked = text[len(prefix):], True
+            break
+    for suffix in _COUNT_SUFFIXES_1202RU:
+        if text.endswith(suffix):
+            text, marked = text[:-len(suffix)], True
+            break
+    if not (marked and text):
+        return None
+    return _singular_1202ru(text)
+
+
+def _fill_counter_columns_1202ru(rows: Any, colset: Any) -> int:
+    """Same safety envelope as #483: additive, never overwrites, never cannibalizes a column."""
+    targets: Dict[str, str] = {}
+    for col in sorted(colset):
+        stem = _counter_stem_1202ru(col)
+        if stem:
+            targets.setdefault(stem, col)
+    if not targets:
+        return 0
+    filled = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for src, val in list(row.items()):
+            if src in colset:
+                continue  # its own column -- the loader keeps it; taking it would cannibalize
+            if not isinstance(val, int) or isinstance(val, bool):
+                continue  # a count is an integer; this is what keeps money columns out
+            stem = _counter_stem_1202ru(src) or _singular_1202ru(str(src).lower())
+            target = targets.get(stem)
+            if not target or target == src or row.get(target) is not None:
+                continue  # unset targets only -- NEVER overwrite real data
+            row[target] = val
+            filled += 1
+    return filled
+
+
 def align_dataset_field_names(dataset, columns_by_table) -> Dict[str, List]:
     """#483 — map each dataset row's fields onto the ORM model's column names via
     ``_FIELD_SYNONYM_GROUPS``. ADDITIVE + BEST-EFFORT (the crux of its safety): a target
@@ -1014,9 +1085,21 @@ def align_dataset_field_names(dataset, columns_by_table) -> Dict[str, List]:
                         if syn == target or syn in colset:
                             continue  # don't cannibalize a field that is its own column
                         val = row.get(syn)
-                        if val is not None:
-                            row[target] = val
-                            break
+                        if val is None:
+                            continue
+                        if (_counter_stem_1202ru(target)
+                                and (not isinstance(val, int) or isinstance(val, bool))):
+                            # #1202ru: the spelling path had no type guard, so a dataset field
+                            # holding comment TEXT (or a list of comment objects) could land in
+                            # Column(Integer) comment_count -- a row the loader then drops. It
+                            # has never fired: 0 rows across the 131 corpus runs. Added because
+                            # the structural pass below enforces this and a spelling path that
+                            # does not is the same hole with a different name.
+                            continue
+                        row[target] = val
+                        break
+            # #1202ru: then the structural pass, for the counters no spelling list caught.
+            _fill_counter_columns_1202ru(rows, colset)
         return dataset
     except Exception:
         return dataset

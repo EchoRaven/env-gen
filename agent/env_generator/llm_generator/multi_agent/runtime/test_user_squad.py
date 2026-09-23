@@ -930,6 +930,140 @@ def squad_gate_tick_action(*, task_exists: bool, task_done: bool) -> str:
     return "consume"
 
 
+# #1202rt: WHEN THE REALISM JUDGE RUNS.
+#
+# #1202rh built the judge -- an independent subagent that uses the app for an ordinary task and
+# reports whether anything gave away that it is generated -- and left it with no dispatch. A
+# mechanism nobody calls is the defect class this session has spent the day removing, so this
+# is its trigger.
+#
+# Three constraints decide the moment, and they are not the squad's:
+#   * SAMPLED, not every tick. It is an LLM judging a live app; the proposal that specified it
+#     asked for periodic sampling for exactly this reason.
+#   * The stack must be SERVING. M1 is defined as noticing while working; there is nothing to
+#     notice against a stack that does not answer.
+#   * ADVISORY. It reports "someone would see through this", not "the build is broken", so it
+#     records findings and never holds a release. A judge that can block would be primed to
+#     find something.
+#
+# The squad-gate release point satisfies all three: the squad has just driven the stack, so it
+# is up; the release is about to be cut, so this is the last honest look; and the decision is
+# already made, so nothing here can be mistaken for a blocker.
+# Corpus (generated/, 20 runs whose name records the count): 16 ship 4 milestones, 3 ship 3,
+# 1 ships 2. Sampling every 3rd starting at the first lands on milestones 1 and 4 of a 4-run --
+# the first release, whose seed/copy/imagery every later one inherits, and the final one, which
+# is what actually ships. A 3-run gets milestone 1 only.
+_REALISM_EVERY_N_1202RT = 3
+# NOT a measurement: a POLICY cap on how long a release may wait for an advisory observation.
+# The judge's own profile budget is 2700s (agents_config.yaml realism_judge.timeout); this is
+# far tighter because unlike that budget, this wait sits on the release path holding the stack
+# lease. On expiry the release proceeds and the finding is simply lost -- the right trade for
+# something that is never allowed to block.
+_REALISM_DEADLINE_1202RT = 420.0
+
+
+def realism_probe_due_1202rt(milestone_index: Any, every_n: int = _REALISM_EVERY_N_1202RT,
+                             enabled_env: Any = None) -> bool:
+    """Should the realism judge run for this milestone? Pure; False on anything unreadable.
+
+    Samples every Nth milestone starting with the FIRST -- the first release is the one whose
+    seed, copy and imagery every later milestone inherits, so a tell found there is a tell
+    found before it propagates.
+    """
+    import os as _os
+    env = _os.environ if enabled_env is None else enabled_env
+    try:
+        if str(env.get("ENVGEN_REALISM_PROBE", "1")).strip().lower() in (
+                "0", "false", "off", "no"):
+            return False
+        n = max(1, int(every_n))
+        i = int(milestone_index)
+    except (TypeError, ValueError):
+        return False
+    return i >= 0 and i % n == 0
+
+
+async def run_realism_probe_1202rt(orch: Any, version: str = "") -> Dict[str, Any]:
+    """Dispatch ONE realism judge against the running app. Advisory; never raises.
+
+    Unprimed (M1): the briefing is an ordinary information-gathering task, and the word
+    "realism" does not appear in it. Priming over-detects by roughly 4x -- a judge told it is
+    hunting for fakery finds tells no working agent would ever have met -- so what this
+    measures is whether anything surfaces WHILE WORKING.
+    """
+    report: Dict[str, Any] = {"ran": False}
+    try:
+        from ..agent_spawn_service import AgentSpawnRequest
+    except Exception as exc:
+        report["reason"] = "spawn service unavailable: %s" % exc
+        return report
+    spawn = getattr(orch, "spawn_service", None)
+    if spawn is None:
+        report["reason"] = "orchestrator has no spawn_service"
+        return report
+    logger = getattr(orch, "_logger", None)
+    try:
+        # #1202rt: gather_squad_inputs, not a name I remembered. The first draft called
+        # _delivery_inputs, which does not exist -- it would have raised into the except
+        # below and reported "no app address resolved" on every run, a probe that never
+        # probes. Third time today a guessed name nearly shipped a silent no-op.
+        inp = gather_squad_inputs(orch)
+        ui, api = inp.get("ui_base") or "", inp.get("api_base") or ""
+    except Exception:
+        ui = api = ""
+    if not (ui or api):
+        report["reason"] = "no app address resolved"
+        return report
+    # The stack must be SERVING: M1 is noticing while working, and there is nothing to notice
+    # against a stack that does not answer. Same probe the squad uses (#1202qu's budget).
+    reach = targets_reachable_625(ui, api)
+    if not (reach.get("ui") and reach.get("api")):
+        report["reason"] = "env_unavailable: ui=%s api=%s" % (reach.get("ui"), reach.get("api"))
+        if logger:
+            logger.info("#1202rt realism probe skipped: %s", report["reason"])
+        return report
+    goal = ("Use this app to answer a question a real user would ask of it: find the most "
+            "prominent items or people it features, open one, and report what it shows about "
+            "them. Work through the UI.")
+    try:
+        # Local, like run_squad_for_delivery's -- stack_lease_1202nx is NOT a module-level
+        # name here. Referencing it bare raised NameError straight into the except below,
+        # which would have reported a reason string and never spawned anything.
+        import asyncio as _aio
+        from .compose_mutex import stack_lease_1202nx
+        with stack_lease_1202nx(Path(str(getattr(orch, "output_dir", ".") or ".")),
+                                "realism probe"):
+            res = await spawn.spawn(AgentSpawnRequest(
+                agent_id="realism_judge_1", agent_type="realism_judge",
+                config_key="realism_judge", task=goal, parent_id="orchestrator",
+                role="realism_judge", resident=False,
+                metadata={"description": goal, "ui_base": ui, "api_base": api,
+                          "regime": "unprimed"}))
+            ev = getattr(res, "task_done_event", None)
+            if ev is not None:
+                # Bounded. This runs at the release point holding the stack lease: an
+                # unbounded wait on a judge that hangs would hold the lease and stall the
+                # release it was only ever meant to observe. Advisory work never blocks.
+                try:
+                    await _aio.wait_for(ev.wait(), timeout=_REALISM_DEADLINE_1202RT)
+                except _aio.TimeoutError:
+                    report["timed_out"] = True
+                    if logger:
+                        logger.info("#1202rt realism probe hit its %.0fs deadline; "
+                                    "releasing anyway", _REALISM_DEADLINE_1202RT)
+        report["ran"] = True
+        if logger:
+            logger.warning(
+                "#1202rt REALISM PROBE (v%s) ran unprimed against %s — its findings are "
+                "ADVISORY and recorded as bugs, never a release blocker: a judge that could "
+                "block would be primed to find something.", version or "?", ui)
+    except Exception as exc:
+        report["reason"] = "%s: %s" % (type(exc).__name__, exc)
+        if logger:
+            logger.info("#1202rt realism probe did not run: %s", report["reason"])
+    return report
+
+
 async def run_squad_for_delivery(orch: Any, version: str = "",
                                  *, max_concurrent: int = 4) -> Dict[str, Any]:
     """#1202nx: the squad tests a RUNNING stack for minutes; hold the stack lease so a validation
