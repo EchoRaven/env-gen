@@ -80,8 +80,13 @@ def test_it_does_not_use_the_slow_encoder():
 
     assert "indent" not in _kwargs(json_store._serialize_store_1202sj), \
         "an indent= argument is back on the store's writer"
+    # #1202sz: the writer now builds BYTES and `_serialize_store_1202sj` is a `str` wrapper
+    # over it, so the indent check has to follow the mechanism to where it went.
+    assert "indent" not in _kwargs(json_store._serialize_store_bytes_1202sz)
     assert "indent" not in _kwargs(json_store.JsonStore._save_raw)
-    assert "_serialize_store_1202sj(" in inspect.getsource(json_store.JsonStore._save_raw)
+    assert "_serialize_store_bytes_1202sz(" in inspect.getsource(json_store.JsonStore._save_raw), \
+        "#1202sj's one-line-per-key writer must still be what _save_raw calls (#1202sz moved " \
+        "it to the bytes builder; the property it protects is unchanged)"
 
 
 # --- and the store still works end to end ---------------------------------------------
@@ -123,7 +128,13 @@ def test_a_value_json_can_encode_takes_the_fast_path():
 
     from env_generator.llm_generator.multi_agent.runtime import json_store
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(json_store._serialize_store_1202sj)))
+    # #1202sz: the per-key writer builds BYTES now and `_serialize_store_1202sj` is a `str`
+    # wrapper over it, so the property lives in the bytes builder and its value helper. Follow
+    # the mechanism; the thing being protected -- a keyword-free `dumps()` on the common path
+    # -- has not changed.
+    src = "".join(textwrap.dedent(inspect.getsource(fn)) for fn in (
+        json_store._serialize_store_bytes_1202sz, json_store._dumps_value_bytes_1202sz))
+    tree = ast.parse(src)
     calls = [n for n in ast.walk(tree)
              if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "dumps"]
     plain = [c for c in calls if not c.keywords]

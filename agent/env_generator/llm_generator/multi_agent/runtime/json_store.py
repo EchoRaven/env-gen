@@ -177,12 +177,27 @@ def _dumps_value_1202so(value: Any) -> str:
         return json.dumps(value, default=str)
 
 
-def _loads_text_1202so(text: str) -> Any:
+def _loads_text_1202so(text: Any) -> Any:
+    """Parse a store from `bytes` (what `_load_raw` reads) or `str`.
+
+    #1202sy: the two encoders want DIFFERENT input, and the stdlib one wants the opposite of
+    what orjson wants. Measured on tiktok-r130's real 6.15MB eventhub_events.json, median of
+    15, parse only:
+
+        orjson.loads(bytes)   32.9 ms        orjson.loads(str)   29.1 ms
+        json.loads(str)       36.5 ms        json.loads(bytes)   48.2 ms
+
+    orjson is near enough indifferent; the stdlib parser is NOT -- handing it bytes makes it
+    sniff the encoding and decode, costing 32%. So bytes go straight to orjson and the
+    fallback decodes once first, which leaves no-orjson environments exactly where they were.
+    """
     if _orjson is not None:
         try:
             return _orjson.loads(text)
         except Exception:
             pass   # fall through to stdlib, which owns the error handling this module expects
+    if isinstance(text, (bytes, bytearray)):
+        text = bytes(text).decode("utf-8")
     return json.loads(text)
 
 
@@ -211,19 +226,52 @@ def _serialize_store_1202sj(data: Dict[str, Any]) -> str:
     and assembling `1: {...}` by hand would emit INVALID JSON. Hub keys are always strings, so
     this branch is a guard rather than a path.
     """
+    return _serialize_store_bytes_1202sz(data).decode("utf-8")
+
+
+def _dumps_value_bytes_1202sz(value: Any) -> bytes:
+    """One value -> compact JSON BYTES, through whichever encoder is available. #1202sz"""
+    if _orjson is not None:
+        try:
+            return _orjson.dumps(value)
+        except TypeError:
+            return _orjson.dumps(value, default=str)
+    try:
+        return json.dumps(value).encode("utf-8")
+    except (TypeError, ValueError):
+        return json.dumps(value, default=str).encode("utf-8")
+
+
+def _serialize_store_bytes_1202sz(data: Dict[str, Any]) -> bytes:
+    """`_serialize_store_1202sj`'s format, built as BYTES. Byte-identical output.
+
+    #1202sz: the str version decoded orjson's bytes back to `str` once per top-level key
+    (5,001 of them on the events store), joined the pieces into one 4.85MB `str`, and then
+    `_save_raw` encoded the whole thing back to UTF-8 to write it. Nothing needed the `str`.
+    Measured on tiktok-r130's real 6.15MB eventhub_events.json, median of 15, run twice, the
+    two outputs asserted byte-identical:
+
+        build str, then .encode()    47.1 / 45.7 ms
+        build bytes                   9.0 /  8.4 ms        ~5.4x
+
+    KEYS deliberately stay on `json.dumps`: orjson writes non-ASCII raw where the stdlib
+    escapes it, so using it for keys would change the bytes on disk. It is not even a
+    trade -- measured, stdlib keys are marginally FASTER here (14.7ms vs 17.7ms), and no
+    top-level key in 400 corpus hub stores is non-ASCII, so the difference is invisible
+    either way. Keeping it means this function's output is byte-for-byte what #1202sj wrote.
+    """
     if not isinstance(data, dict) or not data:
-        return json.dumps(data, default=str)
+        return json.dumps(data, default=str).encode("utf-8")
     if not all(isinstance(k, str) for k in data):
-        return json.dumps(data, default=str)
+        return json.dumps(data, default=str).encode("utf-8")
     # #1202sk: `default=` is what costs on the stdlib path. Whole-object dumps pays for it
     # once (40.1ms either way on the 6.4MB store), but PER KEY it is paid 5,002 times: 68.5ms
     # with it against 43.1ms without. Almost every value is plain JSON, so both encoders take
     # the fast path and let the rare one pay for itself (#1202so).
-    parts = [
-        "%s: %s" % (json.dumps(key), _dumps_value_1202so(value))
+    return b"{\n" + b",\n".join(
+        json.dumps(key).encode("utf-8") + b": " + _dumps_value_bytes_1202sz(value)
         for key, value in data.items()
-    ]
-    return "{\n" + ",\n".join(parts) + "\n}"
+    ) + b"\n}"
 
 
 class JsonStore:
@@ -313,11 +361,40 @@ class JsonStore:
                 }, self.file_path)   # #866: land it with the run
             return {}
         try:
-            with open(self.file_path, "r") as f:
-                # #1202so: read the text and hand it to whichever parser is available; the
-                # stdlib path is byte-for-byte the previous behaviour, including its errors.
+            with open(self.file_path, "rb") as f:
+                # #1202sy: read BYTES. The cost is not the parse -- it is `TextIOWrapper`
+                # decoding the whole file into a `str` on the way in, only for the parser to
+                # want UTF-8 anyway. Measured on tiktok-r130's real 6.15MB
+                # eventhub_events.json, median of 11, repeated three times, results asserted
+                # equal:
+                #
+                #     open("r") .read() + parse    72.5 / 74.5 / 91.2 ms
+                #     open("rb").read() + parse    26.7 / 29.7 / 26.8 ms        ~2.7x
+                #
+                # The profiler says where it went: of 81 ms in `_load_raw`, 45 ms was
+                # `TextIOWrapper.read` (16 ms of that in `_codecs.utf_8_decode`) against 35 ms
+                # of actual parsing. Parsing bytes is not itself faster (32.9 ms vs 29.1 ms on
+                # a `str`) -- the decode simply stops happening.
+                #
+                # Both `update()` and `value()` load, so the run-level figure is large: r121's
+                # stores carry 150 GB of `version x final size` -- an upper bound, since the
+                # files grow through the run, so the truth is nearer half -- which is ~17 min
+                # of loading at the text path's 82 MB/s against ~6 min at 227 MB/s.
+                #
+                # `_loads_text_1202so` keeps the stdlib fallback on `str`, where it is faster
+                # (its docstring has the numbers), so an environment without orjson is
+                # unchanged. The old `open(..., "r")` also used the LOCALE encoding rather
+                # than UTF-8 explicitly; reading bytes removes that as a side effect.
                 data = _loads_text_1202so(f.read())
-        except (json.JSONDecodeError, OSError) as e:
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+            # #1202sy: `UnicodeDecodeError` is a `ValueError`, so it did NOT match this
+            # handler and ESCAPED, crashing the caller with no copy kept -- the one outcome
+            # #1202an exists to prevent. Reachable, and measured rather than assumed: a store
+            # holding an invalid byte raises it from `open(..., "r").read()` on the old path
+            # and from `json.loads(bytes)` on the stdlib one (orjson answers JSONDecodeError,
+            # which was always caught). A TRUNCATED store -- netflix-r19's
+            # eventhub_inboxes.json, cut at exactly 144KB -- answers JSONDecodeError on every
+            # path, so that case was already covered; this closes the invalid-byte one.
             # Round 8h Stage 2 follow-up: smoke #21 suspect path. If
             # this fires + the next ``update()`` saves an empty pages
             # dict, the meeting page vanishes. Log loud + diagnostic.
@@ -389,8 +466,10 @@ class JsonStore:
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.file_path.with_suffix(self.file_path.suffix + f".{os.getpid()}.tmp")
         try:
-            with open(tmp_path, "w") as f:
-                f.write(_serialize_store_1202sj(data))
+            # #1202sz: binary, so the serialized bytes are not decoded and re-encoded on
+            # the way out. `open(..., "w")` also used the LOCALE encoding, never UTF-8.
+            with open(tmp_path, "wb") as f:
+                f.write(_serialize_store_bytes_1202sz(data))
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, self.file_path)
