@@ -700,6 +700,76 @@ _JUNK_PAGE_WORDS_1202W = "noop|dummy|placeholder|todo|fixme|untitled|testpage|fo
 # The check is a contradiction, not a threshold: business endpoints EXIST in the registry and
 # not one page claims to use any. An app with no business endpoints at all is a different
 # thing and is not flagged.
+# #1202rr: THE PAGE CALLS AN API AND ITS REGISTRATION SAYS IT CALLS NONE.
+#
+# #1202rm catches the all-empty case, where every page declares nothing and the checks built
+# on `apis_used` switch off together. It cannot see the partial one: a page whose own file
+# plainly contains `api.get(...)` while its registration carries `apis_used: []`. Everything
+# downstream then reasons from a registry that contradicts the code -- #151 skips the page
+# (no `apis`), the consumer-wiring audit has nothing to reconcile for it, and its
+# implemented-flip stops asking whether its APIs are referenced.
+#
+# Found by running today's gates across other domains to check they were not tiktok-shaped:
+# googlemaps gmrun4, a SUCCESSFUL four-milestone delivery, has 4 pages registered with no APIs
+# and 2 of them call one. That run passed every gate. Domain-agnostic by construction -- it
+# compares a page's own source against its own registration, and names no product vocabulary.
+def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
+    """Pages whose source calls an API while their registration declares none. `[]` on failure.
+
+    The reverse direction (declared but not called) is NOT flagged: a lane may register the
+    contract it is about to consume, and Phase A does exactly that. Only code-says-yes /
+    registry-says-no is a contradiction the registry loses information by.
+    `ENVGEN_PAGE_API_DRIFT_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_PAGE_API_DRIFT_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        import re as _re
+        rh = getattr(hub_registry, "registryhub", None)
+        if rh is None or not hasattr(rh, "list_ui_pages"):
+            return []
+        pages = {k: v for k, v in (rh.list_ui_pages() or {}).items()
+                 if k != "_meta" and isinstance(v, dict)}
+        if not pages:
+            return []
+        src = Path(app_root) / "frontend" / "src"
+        if not src.is_dir():
+            return []
+        call = _re.compile(r"\b(?:await\s+)?(?:api|axios)\s*\.\s*"
+                           r"(?:get|post|put|patch|delete)\s*\(|\bfetch\s*\(|"
+                           r"\b(?:apiGet|apiPost|apiPut|apiDelete)\s*\(")
+        drift = []
+        for name, rec in sorted(pages.items()):
+            if rec.get("apis_used") or []:
+                continue
+            comp = str(rec.get("component") or "")
+            if not comp:
+                continue
+            for cand in (src / "pages" / f"{comp}.jsx", src / "components" / f"{comp}.jsx",
+                         src / "pages" / f"{comp}.tsx"):
+                if not cand.is_file():
+                    continue
+                try:
+                    if call.search(cand.read_text(encoding="utf-8", errors="ignore")):
+                        drift.append("%s (%s)" % (name, cand.name))
+                except Exception:
+                    pass
+                break
+        if not drift:
+            return []
+        return ["%d registered ui_page(s) declare `apis_used: []` while their own source calls "
+                "an API: %s. Everything downstream then reasons from a registry that "
+                "contradicts the code — #151 skips the page for having no `apis`, the "
+                "consumer-wiring audit has nothing to reconcile, and the implemented-flip "
+                "stops asking whether its endpoints are referenced. Register the endpoints "
+                "each page actually calls."
+                % (len(drift), join_capped(drift, total=len(drift), cap=6))]
+    except Exception as exc:
+        _gate_absent_792("_page_api_declaration_drift_1202rr", exc, "run")
+        return []
+
+
 def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
     """Registered pages when the backend has a contract and none of them declares an API.
 
@@ -1434,6 +1504,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_operator_identity_blockers_1202rj(app_root))
     blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
     blockers.extend(_unreachable_routes_1202rq(app_root))
+    blockers.extend(_page_api_declaration_drift_1202rr(hub_registry, app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
