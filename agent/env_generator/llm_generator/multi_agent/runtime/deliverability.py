@@ -683,6 +683,84 @@ _JUNK_PAGE_WORDS_1202W = "noop|dummy|placeholder|todo|fixme|untitled|testpage|fo
 # Deliberately narrow. It looks for THIS operator's identity, resolved from the build
 # environment, not for "names that look personal" -- a seeded persona is supposed to have a
 # name, and a detector that cannot tell them apart would block every honest app.
+# #1202rm: EVERY PAGE DECLARES NO API, WHILE THE BACKEND HAS A CONTRACT.
+#
+# `apis_used` is read in 103 places across six modules -- the page projector, the registry, the
+# frontend audit, the remediation dispatcher, kickoff and the scaffolder. Several judgements
+# are built on it being non-empty: #151's decoy-twin check requires `apis` before it looks at
+# what the route renders, the consumer-wiring audit has nothing to reconcile without it, and a
+# page's defined->implemented flip stops asking whether its own APIs are referenced.
+#
+# So a lane that registers every page with `apis_used: []` does not fail those checks -- it
+# switches them off, silently and all at once. Measured, and getting worse: r128 7 of 10 pages
+# empty, r129 8 of 13, r130 14 of 14, r131 13 of 13. r131 is the run where an unprimed agent
+# found nine of twelve pages rendering a mock module (#1202rl); nothing in the framework had
+# said a word about a video app whose every page claims to need no data.
+#
+# The check is a contradiction, not a threshold: business endpoints EXIST in the registry and
+# not one page claims to use any. An app with no business endpoints at all is a different
+# thing and is not flagged.
+def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
+    """Registered pages when the backend has a contract and none of them declares an API.
+
+    Static; `[]` on any failure. `ENVGEN_PAGE_API_DECLARATION_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_PAGE_API_DECLARATION_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        rh = getattr(hub_registry, "registryhub", None)
+        if rh is None or not hasattr(rh, "list_ui_pages"):
+            return []
+        pages = rh.list_ui_pages() or {}
+        pages = {k: v for k, v in pages.items()
+                 if k != "_meta" and isinstance(v, dict)}
+        if not pages:
+            return []
+        declared = [k for k, v in pages.items() if (v.get("apis_used") or [])]
+        if declared:
+            return []                     # at least one page names an endpoint
+        # Only a contradiction when there IS a contract to consume.
+        # #1202rm: the method is get_endpoints, not list_endpoints. The first draft guessed,
+        # the AttributeError landed in the outer except, and the gate returned [] on every
+        # run -- passing r130 and r131, the two it was written for. Verified against the real
+        # object, not from memory.
+        _get = getattr(rh, "get_endpoints", None) or getattr(rh, "list_endpoints", None)
+        if _get is None:
+            return []
+        eps = _get() or {}
+        # `kind` alone is not enough: a registration that omits it leaves an empty string,
+        # and the fixed surface (/health, /auth/*, /oauth/*, the tenant control plane) is then
+        # counted as business. A regression test registering only /health and /auth/register
+        # caught this -- two control-plane routes read as "a contract with 2 business
+        # endpoints". The PATH is the reliable signal, so both are applied.
+        _fixed = ("/health", "/auth/", "/oauth/", "/.well-known/", "/api/v1/tenants",
+                  "/api/v1/reset", "/api/v1/admin/")
+        business = []
+        for _k, _e in ((eps.items() if isinstance(eps, dict) else
+                        ((str(x.get("path") or ""), x) for x in eps if isinstance(x, dict)))):
+            if not isinstance(_e, dict):
+                continue
+            if str(_e.get("kind") or "").lower() in ("infra", "auth", "oauth"):
+                continue
+            _path = str(_e.get("path") or _k or "")
+            if any(_f in _path for _f in _fixed):
+                continue
+            business.append(_e)
+        if len(business) < 2:
+            return []
+        return ["all %d registered ui_page(s) declare `apis_used: []` while the contract "
+                "carries %d business endpoint(s). An app whose every page needs no data is "
+                "not a thing this contract describes, and the emptiness is not inert: "
+                "`apis_used` is what #151's decoy-twin check, the consumer-wiring audit and "
+                "the page implemented-flip all read, so an all-empty registration turns those "
+                "checks OFF rather than failing them. Declare, on each page, the endpoints it "
+                "actually calls." % (len(pages), len(business))]
+    except Exception as exc:
+        _gate_absent_792("_no_page_declares_an_api_1202rm", exc, "run")
+        return []
+
+
 def _operator_identity_1202rj() -> List[str]:
     """Identity tokens belonging to whoever is running the build. Never raises; [] when unknown.
 
@@ -1299,6 +1377,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_invented_field_blockers(app_root))
     blockers.extend(_placeholder_route_blockers_1202w(app_root))
     blockers.extend(_operator_identity_blockers_1202rj(app_root))
+    blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
