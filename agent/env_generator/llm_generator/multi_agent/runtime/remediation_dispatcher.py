@@ -2759,7 +2759,16 @@ class RemediationDispatcher:
                 # branch has set something better. Set first so a bespoke branch overrides.
                 try:
                     _prose = (getattr(orch, "_gate_blocker_prose_983", None) or {}).get(name) or []
-                    if _prose:
+                    # #1202sv: FALLBACK, not override. #983's own comment says "Set first so a
+                    # bespoke branch overrides" -- but it sits BELOW two branches that set
+                    # `_extra` (#154's bare_authed_fetch call sites, #799's uncovered
+                    # endpoints), so position cannot deliver what it promises. Harmless today
+                    # only by luck: the one check where both fire (deliverability_bare_authed_
+                    # fetch) reads its prose from `frontend_audit.bare_authed_fetch_blockers`
+                    # on BOTH paths, so the two strings are the same function's output. The
+                    # next bespoke branch added above this line would have been silently
+                    # replaced. Guard by emptiness, which holds wherever the block sits.
+                    if _prose and not _extra:
                         _extra = ("\n\nWHAT THE GATE ACTUALLY REPORTED:\n- "
                                   + "\n- ".join(str(x) for x in _prose[:8]))
                 except Exception:
