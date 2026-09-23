@@ -443,6 +443,87 @@ def _instanced_gate_title_1202ss(base_title: str, instances: Optional[Sequence[A
     return "%s: %s" % (base_title, join_capped(names, cap=_TITLE_INSTANCE_CAP_1202SS, sep=", "))
 
 
+def _ui_flow_records_1202su(orch) -> List[tuple]:
+    """Every ui_flow evidence record this run, as ``(flow_name, status)`` (#1202su).
+
+    Same accessor `_ui_evidence_failed_pages` uses — `#1178` proved the getattr-guessed
+    alternatives are dead on the real orchestrator."""
+    try:
+        _results = None
+        _getter = getattr(orch, "_get_validation_results", None)
+        if callable(_getter):
+            _results = _getter(limit=9999)
+        if not _results:
+            _results = (getattr(orch, "_last_validation_results", None)
+                        or getattr(orch, "_validation_results", None))
+        out: List[tuple] = []
+        for r in (_results or []):
+            if not isinstance(r, Mapping):
+                continue
+            name = str(r.get("name") or r.get("task_id") or "")
+            kind = str((r.get("metadata") or {}).get("check") or "")
+            if kind != "ui_flow" and ":ui_flow:" not in name:
+                continue
+            out.append((name.rsplit(":", 1)[-1], str(r.get("status") or "").strip().lower()))
+        return out
+    except Exception as _exc_1202su:
+        _swallowed_1152("_ui_flow_records_1202su", _exc_1202su,
+                        "[] = the name-keyed note is omitted")
+        return []
+
+
+def name_keyed_supersede_1202su(orch, failing: Sequence[Any]) -> str:
+    """#1202su: say that the evidence store is keyed by the record NAME, or '' .
+
+    `_ui_evidence_breadth_739` keeps the LATEST record per name (`#757`) and only then asks
+    whether any is failing, so a failing record is retired by a later record **with the same
+    name** — not by a passing walk of the same page under a different one. The remediation
+    said "re-run the walk (run_validation)", which is what the verifier does; it then records
+    the result under whatever name that walk used, and the failing key is never revisited.
+
+    Measured over the 40 most recent corpus runs (`shared/hubs/codehub_checks.json` +
+    `registryhub_ui_pages.json`):
+      * 66 failing `validation:ui_flow:*` records in 24 runs; **27 of them (40%) name a flow
+        that is not a declared ui_page**, so no walk will ever produce that name again;
+      * in **15 of those 24 runs** a ui_flow PASS was recorded AFTER the failure under a
+        DIFFERENT name and the failure still stood (r130: 12 passes, the newest 52 s after
+        the failure; googlemaps-r16: 11 stuck records; gmrun4 shipped 4 milestones with one);
+      * **62 of 66 (93%) carry no `metadata.url`**, which is why `#1202fq`'s route-keyed
+        supersede — written for exactly this latch — cannot match them either.
+    Three domains (tiktok / netflix / googlemaps), so this is not env-specific.
+
+    Says only what the framework already knows; `''` when there is nothing to say."""
+    try:
+        names = [str(f).strip() for f in (failing or []) if str(f).strip()]
+        if not names:
+            return ""
+        recs = _ui_flow_records_1202su(orch)
+        passed = [n for n, st in recs if st in ("passed", "success", "pass")]
+        if not passed:
+            return ""
+        other = [n for n in dict.fromkeys(passed) if n not in names]
+        if not other:
+            return ""
+        return (
+            "\n\n\u2605 THE RECORD IS KEYED BY ITS NAME. `validation:ui_flow:<name>` is "
+            "last-write-wins, and the gate keeps only the NEWEST record per name — so %s "
+            "stay(s) the newest word on their own key until a record with the SAME name says "
+            "otherwise. This run has already recorded %d passing ui_flow record(s) under "
+            "OTHER names (%s), and none of them retires the failure(s) above. Re-walk the "
+            "named flow and record the result under the SAME name: "
+            "codehub_record_check(pr_id='main', name='validation:ui_flow:%s', "
+            "status='success', evidence={'metadata': {'check': 'ui_flow', 'flow': '%s', "
+            "'url': '<the page URL you walked>'}, ...}). Include that `url` — it is what "
+            "lets the gate supersede the record by ROUTE when the next walk names the flow "
+            "differently."
+            % (join_capped(names, cap=3, sep=", "), len(set(other)),
+               join_capped(sorted(set(other)), cap=4, sep=", "), names[0], names[0]))
+    except Exception as _exc_su:
+        _swallowed_1152("name_keyed_supersede_1202su", _exc_su,
+                        "'' = the generic remediation text stands")
+        return ""
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -2698,7 +2779,10 @@ class RemediationDispatcher:
                                   # #1182: and answer any 'control is missing' claim with the markup.
                                   + control_absence_contradicted_1182(orch, _fp)
                                   # #1185: and say when a login needs two submits.
-                                  + two_step_login_1185(orch, _fp))
+                                  + two_step_login_1185(orch, _fp)
+                                  # #1202su: and say that a pass under another name does
+                                  # not retire this record.
+                                  + name_keyed_supersede_1202su(orch, _fp))
                 if name == "deliverability_ui_flow_failed":
                     # #981: the sibling branch below has named its instances since FIX #284;
                     # this one never did, so the verifier was handed the check name alone.
@@ -2715,7 +2799,8 @@ class RemediationDispatcher:
                                   # decision. It self-gates on a failing ui_smoke record, so it
                                   # is silent when this branch's flows are the only failures.
                                   + ui_smoke_refresh_1177(orch, _ff)
-                                  + two_step_login_1185(orch, _ff))
+                                  + two_step_login_1185(orch, _ff)
+                                  + name_keyed_supersede_1202su(orch, _ff))
                 if name == "deliverability_ui_flow_missing":
                     # FIX #284: hand the verifier the EXACT missing flow names + the
                     # contradiction that broke r68 (it broadcast "already recorded" for
