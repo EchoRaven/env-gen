@@ -761,6 +761,61 @@ def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
         return []
 
 
+# #1202rq: ROUTES NOBODY CAN REACH.
+#
+# `deliverability_ui_page_unwired` asks whether a declared page got a route. Nothing asked the
+# other half: whether anything in the app can NAVIGATE to that route. tiktok-r131 wired 12
+# routes and shipped ZERO navigation affordances -- no <a>, no <Link>, no navigate() anywhere
+# in src. Every page existed and only the address bar could reach it. An unprimed agent hit
+# exactly this: "nothing in the app is a real link -- creator names and avatars are not
+# clickable, which is why there's no path to a profile."
+#
+# It is not the normal state and the corpus says so: r129 has 16 navigation sites, r130 has 46,
+# r131 has 0. A threshold would be arbitrary; zero-against-many is not.
+def _unreachable_routes_1202rq(app_root) -> List[str]:
+    """Routed pages with no navigation affordance anywhere in the frontend. `[]` on failure.
+
+    Deliberately the ZERO case only. A page reachable solely from one other page is a design
+    choice; an app where nothing is clickable is a build that was never wired together.
+    `ENVGEN_ROUTE_REACHABILITY_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_ROUTE_REACHABILITY_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        import re as _re
+        src = Path(app_root) / "frontend" / "src"
+        app_jsx = src / "App.jsx"
+        if not src.is_dir() or not app_jsx.is_file():
+            return []
+        routes = _re.findall(r"""<Route\s[^>]*\bpath\s*=\s*['"]([^'"]+)['"]""",
+                             app_jsx.read_text(encoding="utf-8", errors="ignore"))
+        routes = [r for r in routes if r not in ("*", "/")]
+        if len(routes) < 3:
+            return []                     # too small to conclude anything
+        nav = 0
+        for f in src.rglob("*.jsx"):
+            if "node_modules" in f.parts:
+                continue
+            try:
+                t = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            nav += len(_re.findall(r"<a\s|<Link\s|useNavigate\s*\(|\bnavigate\s*\(", t))
+        if nav:
+            return []
+        return ["App.jsx routes %d page(s) and the frontend contains NO navigation affordance "
+                "at all — no <a>, no <Link>, no navigate() anywhere under src. Every page "
+                "exists and only the address bar can reach it, so a user (or an agent) "
+                "browsing the app can never leave the landing route. The corpus shows this is "
+                "not the normal shape: sibling runs carry 16 and 46 such sites. Wire the nav "
+                "rail, and make the names and avatars that stand for a record link to it."
+                % len(routes)]
+    except Exception as exc:
+        _gate_absent_792("_unreachable_routes_1202rq", exc, "run")
+        return []
+
+
 def _operator_identity_1202rj() -> List[str]:
     """Identity tokens belonging to whoever is running the build. Never raises; [] when unknown.
 
@@ -1378,6 +1433,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_placeholder_route_blockers_1202w(app_root))
     blockers.extend(_operator_identity_blockers_1202rj(app_root))
     blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
+    blockers.extend(_unreachable_routes_1202rq(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
