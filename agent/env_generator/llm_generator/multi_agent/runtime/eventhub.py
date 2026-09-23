@@ -300,6 +300,15 @@ class EventHub:
         # store) but get NO inbox item and NO bridge wakeup — agents read the contract
         # via the registry pulse section. See _PULSE_ONLY_EVENT_TYPES.
         _pulse_only = event_type in self._PULSE_ONLY_EVENT_TYPES
+        # #1202sh: ONE store write for the whole fan-out, not one per recipient. Same shape as
+        # #1202sg on the read side: `JsonStore.update` is a whole-file read-modify-write under
+        # the lock -- 107ms measured against a real 2.1MB eventhub_inboxes.json -- and this
+        # loop paid it per recipient, so a broadcast to the 23-agent roster cost 2.5 seconds
+        # of blocked event loop. Counted from the corpus's own inbox stores: r125 wrote 6,404
+        # inbox entries for 4,251 events and r130 wrote 4,373 for 1,893, so collapsing the
+        # fan-out saves 2,153 and 2,480 whole-store writes -- about 3.8 and 4.4 minutes of
+        # wall clock per run.
+        _fanout = {}
         for agent in (() if _pulse_only else recipients):
             inbox = self._inboxes.get(agent) or {"agent": agent, "items": {}}
             inbox.setdefault("items", {})[event_id] = {
@@ -310,7 +319,14 @@ class EventHub:
                 "priority": priority,
                 "received_at": now,
             }
-            self._inboxes.update(lambda m: m.set(agent, inbox, actor), change_info={"agent": actor})
+            _fanout[agent] = inbox
+        if _fanout:
+            def _deliver(m, _boxes=_fanout, _actor=actor):
+                for _agent, _box in _boxes.items():
+                    m = m.set(_agent, _box, _actor)
+                return m
+
+            self._inboxes.update(_deliver, change_info={"agent": actor})
 
         # Best-effort bridge delivery (sync or async context). Each bridge is
         # isolated: an exception from one must not prevent another from
