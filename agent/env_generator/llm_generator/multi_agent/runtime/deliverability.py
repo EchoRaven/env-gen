@@ -1262,6 +1262,11 @@ def compute_deliverability(hub_registry, app_root,
     if app_root and os.environ.get("ENVGEN_MASKED_FAILURE_GATE", "1") not in ("0", "false", "no"):
         from .frontend_audit import masked_api_failure_blockers_1202qn
         blockers.extend(masked_api_failure_blockers_1202qn(Path(app_root) / "frontend" / "src"))
+        # #1202rl: the sibling shape #1202qn structurally cannot see -- a page that renders a
+        # hardcoded data module and never calls the server at all, so nothing fails and
+        # nothing is masked. Found by an unprimed agent doing an ordinary task, not by a scan.
+        from .frontend_audit import static_twin_blockers_1202rl
+        blockers.extend(static_twin_blockers_1202rl(Path(app_root) / "frontend" / "src"))
 
     # BARE-FETCH-NO-TOKEN gate (#154, gmrun4 root cause). Like the ui_page gate
     # above, NOT relaxed on a functionally-validated app: api_smoke probes the

@@ -75,7 +75,7 @@ from .route_projector import _express_to_fastapi, _norm_path
 # package (no cycle), and a function-local import here would raise INSIDE the `except Exception:
 # pass` that wraps the ui_page audit, silently disabling every blocker it produces (#827's shape).
 from .flow_coverage import _is_navigable_page
-from .message_format import join_capped  # #1034
+from .message_format import join_capped, warn_once_1201  # #1034
 
 # Tokens that prove a page does real work (a handler or an API call), used by both the
 # dead-controls check and the "declared apis but built nothing" stub check.
@@ -1063,6 +1063,76 @@ def masked_api_failures_1202qn(text: str) -> List[tuple]:
         if _MASK_API_1202QN.search(seg):
             out.append((text.count("\n", 0, m.start()) + 1, m.group(0).strip()[:80]))
     return out
+
+
+# #1202rl: A STATIC TWIN IS NOT A MASKED FAILURE, AND #1202qn CANNOT SEE IT.
+#
+# #1202qn looks for a page that CALLS the API and answers a failure with substitute rows
+# (`catch { return fallbackVideos }`). tiktok-r131 shipped the other shape: nine of twelve
+# pages never call the API at all, and render a module of hardcoded rows instead. There is no
+# catch, no failure and nothing masked -- so the detector found nothing, and the pages shipped.
+#
+# An unprimed agent, asked an ordinary question ("who are the three most-followed creators"),
+# hit it immediately and said the app could not answer it truthfully. What the mock module
+# held: `followers_count: 156000000` for a real creator, viewer figures unrelated to the
+# seeded live streams, and `jul.spamz.fr` -- a creator that does not exist in the database,
+# wearing another user's avatar file. Trusting the UI would have produced a confident wrong
+# answer, which is worse than a blank page: a blank page is visibly broken.
+#
+# The rule is narrow on purpose. A module of constants is fine (copy, nav items, category
+# chips, icon maps); what is not fine is a page rendering ROWS from one while making no
+# request of its own. So: the page imports a local data module AND contains no API call.
+_STATIC_DATA_MODULE_1202RL = re.compile(
+    r"""from\s+['"][^'"]*\b(fallback|mock|sample|static|demo|seed|dummy|fixture)[\w-]*"""
+    r"""(data|rows|items|content|records)?['"]""", re.I)
+
+
+def static_twin_blockers_1202rl(frontend_src: Any, limit: int = 10) -> List[str]:
+    """Pages that render a hardcoded data module and never call the API. `[]` on any failure.
+
+    `ENVGEN_STATIC_TWIN_GATE=0` disables.
+    """
+    import os as _os
+    if str(_os.environ.get("ENVGEN_STATIC_TWIN_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        root = Path(str(frontend_src))
+        if root.name != "src":
+            root = root / "src"
+        if not root.is_dir():
+            return []
+        hits: List[str] = []
+        for sub in ("pages", "components"):
+            d = root / sub
+            if not d.is_dir():
+                continue
+            for f in sorted(d.rglob("*.jsx")) + sorted(d.rglob("*.tsx")):
+                try:
+                    txt = f.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    continue
+                m = _STATIC_DATA_MODULE_1202RL.search(txt)
+                if not m:
+                    continue
+                if _API_CALL_RE.search(txt):
+                    continue          # it asks the server too -- not a twin
+                hits.append("%s renders %s and makes no API call"
+                            % (f.relative_to(root).as_posix(), m.group(0)[:60]))
+        if not hits:
+            return []
+        return ["%d page/component(s) render a hardcoded data module WITHOUT asking the "
+                "server: %s. This is not a masked failure (#1202qn finds those) -- the request "
+                "is never made, so nothing fails and nothing is logged, and the screen shows "
+                "numbers that contradict the database. r131's mock held 156,000,000 followers "
+                "for a creator the API reports with 0, and a creator absent from the database "
+                "entirely. Wire the page to its endpoint, or delete the module and render the "
+                "real rows." % (len(hits), join_capped(hits, total=len(hits), cap=limit))]
+    except Exception as exc:
+        warn_once_1201("static_twin_blockers_1202rl",
+                       "cannot scan for static-twin pages, so a page that renders mock rows "
+                       "without calling the server will not be reported", exc)
+        return []
 
 
 def masked_api_failure_blockers_1202qn(frontend_src: Any, limit: int = 10) -> List[str]:
