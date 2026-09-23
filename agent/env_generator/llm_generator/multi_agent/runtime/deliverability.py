@@ -886,6 +886,68 @@ def _unreachable_routes_1202rq(app_root) -> List[str]:
         return []
 
 
+def _routes_that_ignore_their_parameter_1202rz(app_root) -> List[str]:
+    """A frontend that routes `/video/:id` but never reads a route parameter. `[]` on failure.
+
+    tiktok-r126, observed by an unprimed judge that was only asked to find the most-commented
+    video: `/video/21`, `/video/24` and `/video/32` all rendered video 1. The page never called
+    a per-video endpoint -- it called `GET /api/feed?limit=12` and rendered `items[0]`. Every
+    item beyond the first was unreachable through the UI, and the judge had to fall back to the
+    API to finish an ordinary browsing task.
+
+    ZERO case only, the same discipline as `#1202rq`: one page that happens to ignore its
+    parameter can be a deliberate redirect, and proving it per-page needs the component
+    resolution that made my first detector fire on code fragments. But a frontend that declares
+    parameterised routes and contains NO `useParams` / `match.params` / `router.query` anywhere
+    has no way to read one, so every such route is decorative by construction.
+
+    6 of the 137 corpus frontends that declare a parameterised route are in this state --
+    r115, r128, r131, r46, r54, r85. `ENVGEN_ROUTE_PARAM_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_ROUTE_PARAM_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        import re as _re
+        src = Path(app_root) / "frontend" / "src"
+        if not src.is_dir():
+            return []
+        routes: List[str] = []
+        body = []
+        for f in src.rglob("*"):
+            if f.suffix not in (".jsx", ".js", ".tsx", ".ts") or "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            body.append(text)
+            routes += [r for r in _re.findall(
+                r"""<Route\b[^>]*\bpath\s*=\s*["'{`]([^"'`}]+)""", text) if ":" in r]
+        # One list, one count (#1034). The first draft counted `routes` -- which holds one
+        # entry per FILE the route appears in -- while printing the deduped set, and
+        # join_capped's second positional is `total`, not a cap: the message said
+        # "1 parameterised page(s) (/video/:video_id/comments (+3 more not shown))".
+        routes = sorted(set(routes))
+        if not routes or not body:
+            return []
+        joined = "\n".join(body)
+        if _re.search(r"\buseParams\b|\bmatch\.params\b|\buseRouteMatch\b"
+                      r"|router\.query|\bprops\.params\b|\bparams\.\w+", joined):
+            return []
+        return ["the frontend routes %d parameterised page(s) (%s) and NEVER reads a route "
+                "parameter — no useParams, no match.params, no router.query anywhere under "
+                "src. Each of those pages therefore renders the same thing whatever id is in "
+                "the address, which is what r126 shipped: /video/21, /video/24 and /video/32 "
+                "all showed video 1, because the page called GET /api/feed and rendered "
+                "items[0]. Every record past the first is unreachable through the UI. Read the "
+                "parameter and fetch THAT record."
+                % (len(routes), join_capped(routes))]
+    except Exception as exc:
+        _gate_absent_792("_routes_that_ignore_their_parameter_1202rz", exc, "run")
+        return []
+
+
 # #1202rs: THE RESERVED DOCUMENTATION DOMAIN, SEEDED AS REAL PEOPLE'S ADDRESSES.
 #
 # `example.com` is RFC 2606's reserved documentation domain. No product's user has an address
@@ -1568,6 +1630,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_reserved_email_domain_blockers_1202rs(app_root))
     blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
     blockers.extend(_unreachable_routes_1202rq(app_root))
+    blockers.extend(_routes_that_ignore_their_parameter_1202rz(app_root))
     blockers.extend(_page_api_declaration_drift_1202rr(hub_registry, app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
