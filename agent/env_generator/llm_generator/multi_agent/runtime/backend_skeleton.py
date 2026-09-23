@@ -450,8 +450,9 @@ def _infer_fk_target_1162(col_name: str, known_tables: Iterable[str]) -> Optiona
 
 def _render_column(col: Dict[str, Any],
                    infer_fk_tables: Optional[Iterable[str]] = None) -> Optional[str]:
-    from .database_scaffold import _counter_default
+    from .database_scaffold import _counter_default, _record_timestamp_default_1202rx
     col = _counter_default(col)   # FIX #97: *_count integers default 0 by construction
+    col = _record_timestamp_default_1202rx(col)  # #1202rx: created_at/updated_at fill themselves
     name = str(col.get("name") or "").strip()
     if not name or _is_constraint_pseudo_column(col):
         return None

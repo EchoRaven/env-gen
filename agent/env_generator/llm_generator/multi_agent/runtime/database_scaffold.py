@@ -598,6 +598,43 @@ def _counter_default(col: Any) -> Any:
     return col
 
 
+def _record_timestamp_default_1202rx(col: Any) -> Any:
+    """#1202rx — a row created THROUGH THE APP needs a creation time too.
+
+    `#1202rw` fills the SEED's `created_at`, which leaves the sharper half of the same tell:
+    the column is emitted as a bare `Column(DateTime)` with no default, and in 129 of the 149
+    corpus runs no handler assigns one either. So a comment a user posts right now lands with
+    created_at NULL and renders as "None" (r131/r115) or as 1/1/1970 (instagram-run77) beside
+    seeded rows that do carry a date -- a contrast the seed fix makes MORE visible, not less.
+
+    Same construction as `#97`'s counter default, and it reuses the same tested rendering
+    path: `default="now()"` already becomes `default=datetime.utcnow` +
+    `server_default=_sa_text('now()')` in the ORM renderer and `DEFAULT now()` in the DDL.
+    `#407` does this today, but only for a NOT NULL column; every corpus occurrence is
+    nullable, so that guard never fires on the ones that matter.
+
+    Restricted to the lifecycle names (see `_RECORD_TIME_NAMES_1202RW` for the count behind
+    that list): for `read_at`, `ended_at`, `deleted_at` and the rest, NULL is the answer, and
+    defaulting them would seed every notification already read and every stream already over.
+    """
+    if not isinstance(col, dict):
+        return col
+    try:
+        from .material_prep import _RECORD_TIME_NAMES_1202RW as _names
+    except Exception:
+        return col
+    name = str(col.get("name") or "").strip().lower()
+    ctype = str(col.get("type") or "").strip().lower()
+    if (name in _names
+            and col.get("default") is None
+            and not (col.get("primary_key") or col.get("pk"))
+            and not (col.get("references") or col.get("fk"))
+            and ("timestamp" in ctype or "datetime" in ctype)
+            and "default" not in ctype):  # an embedded default is folded in downstream
+        return {**col, "default": "now()"}
+    return col
+
+
 def _col_is_pk(col: Any) -> bool:
     """#517 — True if a real column is a PRIMARY KEY (flag or inline in its type string).
     Mirrors _render_column's _is_pk detection, for composite-PK grouping in render_schema_sql."""
@@ -618,6 +655,7 @@ def _render_column(table_name: str, col: Any, suppress_pk: bool = False) -> str:
             f"database_scaffold: table {table_name!r} has a non-mapping column: {col!r}"
         )
     col = _counter_default(col)
+    col = _record_timestamp_default_1202rx(col)  # #1202rx
     cname = str(col.get("name") or "").strip()
     ctype = str(col.get("type") or "").strip()
     if not cname:

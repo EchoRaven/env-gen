@@ -1281,6 +1281,14 @@ def model_schema_from_models_py(models_py_path) -> Dict[str, Dict[str, Dict]]:
 # -- accounts, then their videos, then the comments on them -- so every child row is later
 # than every parent row by construction.
 _TIME_TYPES_1202RW = frozenset({"datetime", "date", "timestamp"})
+# ONLY the row's own lifecycle, and the list is short on purpose. Across the corpus the `_at`
+# columns are created_at (963 table-occurrences), updated_at (39), last_message_at (36),
+# started_at (16), read_at (16), added_at (3), last_watched_at, checked_at, ended_at. For all
+# but the first two a NULL is not a gap, it is the ANSWER: read_at null means unread, ended_at
+# null means still live, started_at null means not yet begun. Filling those would seed every
+# notification already read and every stream already over -- a contradiction the app then
+# serves as fact. The two that survive cover 1002 of the 1076 occurrences.
+_RECORD_TIME_NAMES_1202RW = ("created_at", "updated_at", "modified_at", "inserted_at")
 # ONLY a record timestamp -- when the row came to exist -- never a CONTENT date. netflix-r12
 # and r5 declare `titles.release_date` as a null Date while the same row carries `year: 2026`;
 # banding titles at depth 0 would have dated those films to 2025 and contradicted their own
@@ -1288,7 +1296,6 @@ _TIME_TYPES_1202RW = frozenset({"datetime", "date", "timestamp"})
 # for exactly this distinction (created_at/updated_at/posted_at vs release_date/birth_date),
 # and it covers 21,239 of the 21,654 rows this pass fills across the corpus -- the 415 it
 # gives up are `release_date` (120, the dangerous ones) and one run's `created_time` (295).
-_RECORD_TIME_SUFFIX_1202RW = ("_at",)
 # Fixed by necessity (see above). It ages: a run generated long after this date ships content
 # whose newest item is dated then. That is the price of a stable fingerprint, and it is only
 # paid when the dataset itself carries no timestamp to anchor on -- when one exists, the
@@ -1384,7 +1391,7 @@ def enrich_seed_timestamps_1202rw(dataset, schema) -> Dict[str, List]:
                 c for c, meta in cols.items()
                 if isinstance(meta, dict) and not meta.get("pk")
                 and str(meta.get("type") or "").lower() in _TIME_TYPES_1202RW
-                and c.lower().endswith(_RECORD_TIME_SUFFIX_1202RW)
+                and c.lower() in _RECORD_TIME_NAMES_1202RW
                 and all(r.get(c) is None for r in drows))  # author value -> byte-identical
             if tcols:
                 todo[table] = (drows, tcols)

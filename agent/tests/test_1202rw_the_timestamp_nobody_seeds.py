@@ -253,3 +253,29 @@ def test_the_staging_path_actually_calls_it():
     # and after the ranking fill, so both run on the same staged dataset
     assert (src.index("real = enrich_ranking_seed(real, _schema)")
             < src.index("real = enrich_seed_timestamps_1202rw(real, _schema)"))
+
+
+# --- a null that is the answer, not a gap --------------------------------------------
+
+@pytest.mark.parametrize("name", ["read_at", "ended_at", "started_at", "last_message_at",
+                                  "deleted_at", "expires_at", "banned_at", "archived_at"])
+def test_a_null_that_means_something_is_left_null(name):
+    """For these a NULL is not a missing value, it is the answer.
+
+    read_at null means unread; ended_at null means the stream is still live; deleted_at null
+    means the row is alive. Corpus counts: read_at appears on 16 tables, started_at 16,
+    last_message_at 36. Filling them seeds every notification already read and every stream
+    already over -- which the app then serves as fact.
+    """
+    schema = {"t": {"id": _col("integer", pk=True), name: _col("datetime"),
+                    "created_at": _col("datetime")}}
+    out = enrich_seed_timestamps_1202rw({"t": [{"id": 1}]}, schema)
+    assert out["t"][0].get(name) is None, "%s was filled; its null carried meaning" % name
+    assert out["t"][0]["created_at"], "the row's own creation time is still filled"
+
+
+def test_the_two_lifecycle_columns_are_filled():
+    schema = {"t": {"id": _col("integer", pk=True), "created_at": _col("datetime"),
+                    "updated_at": _col("datetime")}}
+    row = enrich_seed_timestamps_1202rw({"t": [{"id": 1}]}, schema)["t"][0]
+    assert row["created_at"] and row["updated_at"]
