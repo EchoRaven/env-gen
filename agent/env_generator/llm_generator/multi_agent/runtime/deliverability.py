@@ -886,6 +886,69 @@ def _unreachable_routes_1202rq(app_root) -> List[str]:
         return []
 
 
+# #1202rs: THE RESERVED DOCUMENTATION DOMAIN, SEEDED AS REAL PEOPLE'S ADDRESSES.
+#
+# `example.com` is RFC 2606's reserved documentation domain. No product's user has an address
+# there, so a seeded `alice@example.com` tells any agent reading the database that the people
+# are invented. It is the single most recurrent realism tell in this corpus and nothing has
+# ever checked it: 8 of 8 SUCCESSFUL instagram deliveries carry it, 41 addresses in all, and
+# no other deterministic tell (picsum, John Doe, lorem, +1-555) appears in any of them.
+#
+# It also reproduces on demand: in a controlled A/B this session, the arm WITHOUT the realism
+# contract seeded 8 `@example.com` addresses and the arm with it seeded none. The contract
+# works on this and a prompt rule is not enforcement, which is what this gate is for.
+#
+# Narrow: the RFC-reserved names plus the two hosts that mean "not a real place". A product's
+# own invented domain is NOT flagged -- `@acme-video.com` is what a clone's users should have.
+_RESERVED_EMAIL_DOMAINS_1202RS = (
+    "@example.com", "@example.org", "@example.net", "@example.edu",
+    "@test.com", "@test.example", "@invalid", "@localhost",
+)
+
+
+def _reserved_email_domain_blockers_1202rs(app_root) -> List[str]:
+    """Seeded addresses on a reserved documentation domain. `[]` on any failure.
+
+    Scans what SHIPS -- the seed the app loads and the frontend source -- not tests or docs.
+    `ENVGEN_RESERVED_EMAIL_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_RESERVED_EMAIL_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        import re as _re
+        app = Path(app_root)
+        pat = _re.compile("|".join(_re.escape(d) for d in _RESERVED_EMAIL_DOMAINS_1202RS),
+                          _re.I)
+        hits: List[str] = []
+        for root in (app / "backend", app / "frontend" / "src"):
+            if not root.is_dir():
+                continue
+            for f in root.rglob("*"):
+                if (not f.is_file() or "node_modules" in f.parts
+                        or f.suffix.lower() not in (".json", ".py", ".js", ".jsx",
+                                                    ".ts", ".tsx")):
+                    continue
+                try:
+                    n = len(pat.findall(f.read_text(encoding="utf-8", errors="ignore")))
+                except Exception:
+                    continue
+                if n:
+                    hits.append("%s (%d)" % (f.relative_to(app).as_posix(), n))
+        if not hits:
+            return []
+        return ["%d served file(s) carry addresses on a RESERVED documentation domain: %s. "
+                "`example.com` and its siblings are reserved by RFC 2606 precisely so that "
+                "nothing real uses them, so a seeded `alice@example.com` tells any agent "
+                "reading this database that its people are invented — and it is the most "
+                "recurrent tell in this corpus, present in 8 of 8 successful deliveries. Give "
+                "the seeded people addresses on THIS product's own domain."
+                % (len(hits), join_capped(hits, total=len(hits), cap=6))]
+    except Exception as exc:
+        _gate_absent_792("_reserved_email_domain_blockers_1202rs", exc, "run")
+        return []
+
+
 def _operator_identity_1202rj() -> List[str]:
     """Identity tokens belonging to whoever is running the build. Never raises; [] when unknown.
 
@@ -1502,6 +1565,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_invented_field_blockers(app_root))
     blockers.extend(_placeholder_route_blockers_1202w(app_root))
     blockers.extend(_operator_identity_blockers_1202rj(app_root))
+    blockers.extend(_reserved_email_domain_blockers_1202rs(app_root))
     blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
     blockers.extend(_unreachable_routes_1202rq(app_root))
     blockers.extend(_page_api_declaration_drift_1202rr(hub_registry, app_root))
