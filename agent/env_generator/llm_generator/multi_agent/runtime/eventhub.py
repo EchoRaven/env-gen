@@ -340,8 +340,13 @@ class EventHub:
         # fan-out saves 2,153 and 2,480 whole-store writes -- about 3.8 and 4.4 minutes of
         # wall clock per run.
         _fanout = {}
+        # #1202sn: read ONCE too. `#1202sh` collapsed the WRITES and left `get` in the loop,
+        # and `JsonStore.get` is a whole-store parse -- 23.3ms against the real 2.1MB
+        # eventhub_inboxes.json, so a 23-recipient broadcast re-parsed it 23 times for 0.53s
+        # before writing anything. `value()` hands back the whole map for 13.0ms once.
+        _boxes = self._inboxes.value() if not _pulse_only and recipients else {}
         for agent in (() if _pulse_only else recipients):
-            inbox = self._inboxes.get(agent) or {"agent": agent, "items": {}}
+            inbox = _boxes.get(agent) or {"agent": agent, "items": {}}
             inbox.setdefault("items", {})[event_id] = {
                 "event_id": event_id,
                 "thread_id": thread_id,

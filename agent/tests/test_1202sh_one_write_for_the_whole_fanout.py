@@ -113,3 +113,55 @@ def test_the_loop_no_longer_writes_per_recipient():
         "the per-recipient write is back inside the loop"
     # ...and the batched write is still there, after it
     assert "self._inboxes.update(" in src[src.index("if _fanout:"):]
+
+
+# --- #1202sn: the read was still in the loop -------------------------------------------
+
+def _store_reads(hub, monkeypatch):
+    """Count whole-store parses, which is what `JsonStore.get`/`value` each cost."""
+    seen = []
+    real_get, real_value = hub._inboxes.get, hub._inboxes.value
+
+    def counted_get(*a, **kw):
+        seen.append("get")
+        return real_get(*a, **kw)
+
+    def counted_value(*a, **kw):
+        seen.append("value")
+        return real_value(*a, **kw)
+
+    monkeypatch.setattr(hub._inboxes, "get", counted_get)
+    monkeypatch.setattr(hub._inboxes, "value", counted_value)
+    return seen
+
+
+def test_a_broadcast_reads_the_inbox_store_once(tmp_path, monkeypatch):
+    """`#1202sh` collapsed the WRITES and left the read per recipient. `JsonStore.get` is a
+    whole-store parse — 23.3ms against the real 2.1MB eventhub_inboxes.json — so a
+    23-recipient broadcast re-parsed it 23 times, 0.53s, before writing anything."""
+    hub = EventHub(tmp_path)
+    reads = _store_reads(hub, monkeypatch)
+    _publish(hub, _ROSTER)
+    assert len(reads) == 1, "%d store reads for %d recipients: %s" % (
+        len(reads), len(_ROSTER), reads)
+
+
+def test_a_pulse_only_event_reads_nothing(tmp_path, monkeypatch):
+    """Pulse-only types get no inbox item at all, so they must not pay for the map either."""
+    hub = EventHub(tmp_path)
+    pulse = sorted(hub._PULSE_ONLY_EVENT_TYPES)
+    if not pulse:
+        pytest.skip("no pulse-only event types declared")
+    reads = _store_reads(hub, monkeypatch)
+    _publish(hub, _ROSTER, event_type=pulse[0])
+    assert not reads
+
+
+def test_an_existing_inbox_is_extended_not_replaced(tmp_path):
+    """Reading the map once must still see what earlier events put there."""
+    hub = EventHub(tmp_path)
+    first = _publish(hub, ["a0", "a1"])
+    second = _publish(hub, ["a0"])
+    items = hub._inboxes.get("a0")["items"]
+    assert _eid(first) in items and _eid(second) in items
+    assert _eid(first) in hub._inboxes.get("a1")["items"]
