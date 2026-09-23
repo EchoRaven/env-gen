@@ -1437,6 +1437,60 @@ def _seed_row_rank_1202rw(row: Any, idx: int):
     return (0, float(value), "", idx)
 
 
+
+# ── #1202ry — the dataset rows that carry no id at all ───────────────────────
+# tiktok-r126, live, from the backend's own log:
+#
+#   [seed] #807b REFUSED the dataset swap for comments: it would orphan 2 of 2 dependent
+#   row(s) -- the two sources do not share an id space (lane ids look like 1, dataset ids
+#   like None). Keeping the lane rows.
+#
+# The database then held 26 comments. The dataset staged into that same image holds 295 real
+# ones. 283 authentic comments were discarded to keep 2 comment_likes rows resolvable.
+#
+# `#807b` is right about the case it was written for -- r145's lane keyed titles on TEXT
+# slugs while the dataset supplied integers 1..60, two REAL and incompatible id spaces, and
+# swapping orphaned 93 dependent rows. This is not that. Design-prep's comments carry NO id
+# field at all, because scraped comments have no natural one; the model's PK is autoincrement
+# and the database assigns it on insert. `_new_ids` then collapses to `{None}`, every
+# dependent row counts as orphaned, and the majority test fires every time.
+#
+# So the repair is upstream of the test rather than a loosening of it: give those rows ids
+# before anything reasons about the id space. Measured over generated/: 50 of 131 runs have
+# the comments swap refused for exactly this reason, discarding 13,588 real rows between
+# them. Refusals where the two sources genuinely differ (videos 17 runs, users 4) are
+# untouched -- those datasets do carry ids.
+def assign_dataset_ids_1202ry(dataset, schema) -> Dict[str, List]:
+    """Number a dataset table whose rows carry NO primary key at all. Never renumbers.
+
+    Deliberately all-or-nothing per table: one author-supplied id anywhere in the table means
+    the author had an id space in mind, and a partial fill would invent collisions inside it.
+    Integer PKs only -- a TEXT key is a slug, and a slug is content we cannot invent.
+    """
+    try:
+        if not isinstance(dataset, dict) or not isinstance(schema, dict):
+            return dataset
+        for table, rows in dataset.items():
+            cols = schema.get(table)
+            if not isinstance(cols, dict) or not isinstance(rows, list):
+                continue
+            pks = [c for c, m in cols.items() if isinstance(m, dict) and m.get("pk")]
+            if len(pks) != 1:
+                continue  # no PK, or a composite one: not a row number
+            pk = pks[0]
+            meta = cols.get(pk) or {}
+            if str(meta.get("type") or "").lower() not in _SEED_INT_TYPES:
+                continue
+            drows = [r for r in rows if isinstance(r, dict)]
+            if not drows or any(r.get(pk) is not None for r in drows):
+                continue  # author ids -> byte-identical
+            for number, row in enumerate(drows, 1):
+                row[pk] = number
+        return dataset
+    except Exception:
+        return dataset
+
+
 def _seed_order_keyfn(col, numeric, descending):
     """Deterministic sort key over ``(index, row)`` pairs by ``col``. None values sort
     LAST; numeric=True coerces to float (non-numeric → treated as absent); descending=True
@@ -1626,4 +1680,5 @@ __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palett
            "color_distance", "spec_color_deviations", "theme_inversion",
            "ingest_assets", "ingest_dataset", "assemble_seed_dataset",
            "model_schema_from_models_py", "enrich_ranking_seed",
-           "enrich_seed_timestamps_1202rw"]
+           "enrich_seed_timestamps_1202rw",
+           "assign_dataset_ids_1202ry"]

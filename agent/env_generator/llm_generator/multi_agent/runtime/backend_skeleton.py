@@ -3051,11 +3051,17 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
             # fingerprint stays stable (no re-seed loop).
             try:
                 from .material_prep import (model_schema_from_models_py,
+                                            assign_dataset_ids_1202ry,
                                             enrich_ranking_seed,
                                             enrich_seed_timestamps_1202rw,
                                             align_dataset_id_types)
                 _schema = model_schema_from_models_py(be / "models.py")
                 if _schema:
+                    # #1202ry FIRST, because everything after it reasons about the id space --
+                    # and so does the emitted loader's #807b guard, which refuses the whole
+                    # swap when the dataset's ids are all None. r126 shipped 26 comments over
+                    # a staged dataset of 295 for exactly that reason.
+                    real = assign_dataset_ids_1202ry(real, _schema)
                     real = enrich_ranking_seed(real, _schema)
                     # #1202rw: and fill a DECLARED time column no row populates -- 85 of the
                     # 129 corpus runs ship every row's created_at NULL, which 111 of the 170
