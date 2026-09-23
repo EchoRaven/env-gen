@@ -1580,6 +1580,21 @@ class HealPipeline:
             # parses. Un-escape delimiter backticks before anything else (run-13: this
             # wedged docker_up for many cycles, fixed one file at a time). Runs before each
             # api_smoke docker_up (framework_validation) AND at delivery.
+            # #1202sd: a route React Router cannot match, wherever the LANE wrote it.
+            # #1202iy fixed the framework's own emitter; every run from r119 through r130
+            # still shipped the lane's `/@:username`, so no profile page was reachable from
+            # anywhere in the app. Runs beside the other deterministic repairs, before the
+            # build that would otherwise ship it.
+            try:
+                from .frontend_scaffold import repair_frontend_unmatchable_routes_1202sd
+                _ur = repair_frontend_unmatchable_routes_1202sd(fe)
+                if _ur.get("repaired"):
+                    orch._logger.warning(
+                        "#1202sd rewrote %s <Route path> that React Router cannot match "
+                        "(a `:` must follow a `/`, so `/@:username` compiles to a literal and "
+                        "the page is unreachable): %s", _ur.get("routes"), _ur.get("repaired"))
+            except Exception as _ur_err:
+                orch._logger.debug("#1202sd route repair skipped: %s", _ur_err)
             _eb = repair_frontend_escaped_backticks(fe)
             if _eb.get("repaired"):
                 orch._logger.warning(

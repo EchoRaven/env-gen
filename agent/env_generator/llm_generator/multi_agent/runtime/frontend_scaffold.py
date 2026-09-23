@@ -483,6 +483,77 @@ def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
         return {"repaired": repaired or False, "conflicts": all_conflicts}
 
 
+def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]:
+    r"""#1202sd — rewrite a `<Route path>` React Router cannot match, wherever the LANE wrote it.
+
+    `#1202iy` established the rule and the rewrite: `@remix-run/router`'s compilePath takes a
+    param only via `.replace(/\/:([\w-]+)(\?)?/g, ...)`, so the `:` must directly follow a
+    `/`. In `/@:username` it follows `@`, no param is extracted, and the path compiles to the
+    literal `^/@:username` -- it matches that exact URL and nothing else. React Router warns
+    about a mid-segment `*` and is silent about this one.
+
+    `#1202iy` applied the rewrite where the FRAMEWORK emits routes. The lane writes App.jsx,
+    and its spelling survives untouched: every run from r119 (2026-09-12, the day after the
+    repair) through r130 ships `/@:username`, 11 for 11. An unprimed judge sent through r122
+    found the consequence without being told to look -- `/@zachking`, `/@charlidamelio` and the
+    sidebar's OWN "Profile" link all land back on the feed, so no creator page is reachable
+    from anywhere in the app, and the profile the judge was asked to write had to be assembled
+    from the API.
+
+    The rewrite moves the literal INTO the param, so no URL changes: `/@bob` still routes and
+    the param carries `@bob`. Nothing that matched before stops matching -- these paths matched
+    only their own literal spelling, which nobody navigates to. Best-effort, idempotent, never
+    raises.
+    """
+    result: Dict[str, object] = {"repaired": [], "routes": 0}
+    try:
+        src = Path(frontend_dir) / "src"
+        if not src.is_dir():
+            src = Path(frontend_dir)
+        if not src.is_dir():
+            return result
+        pat = re.compile(r"""(<Route\b[^>]*?\bpath\s*=\s*)(["'])([^"']+)\2""")
+        touched: List[str] = []
+        total = 0
+        for f in sorted(src.rglob("*")):
+            if f.suffix not in (".jsx", ".js", ".tsx", ".ts") or "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if "<Route" not in text:
+                continue
+            changed = [0]
+
+            def _sub(m):
+                raw = m.group(3)
+                # A route path carrying a QUERY STRING is unmatchable for a different reason,
+                # and #1202iy's rewrite is actively harmful on it: r79's
+                # `/?comments=1&video=:id` becomes `/:id`, a TOP-LEVEL dynamic route that then
+                # shadows /explore, /login and every other static path. The rewrite is safe for
+                # the shape it was designed for -- a literal prefixing the `:` inside one
+                # segment -- and this is not that shape. Left alone, loudly unfixed.
+                if "?" in raw or "&" in raw:
+                    return m.group(0)
+                fixed = _router_matchable_route_1202iy(raw)
+                if fixed == raw:
+                    return m.group(0)
+                changed[0] += 1
+                return "%s%s%s%s" % (m.group(1), m.group(2), fixed, m.group(2))
+
+            new = pat.sub(_sub, text)
+            if changed[0] and new != text:
+                _fw_write_1202cw(f, new, encoding="utf-8")
+                touched.append("%s (%d)" % (f.name, changed[0]))
+                total += changed[0]
+        result["repaired"] = touched
+        result["routes"] = total
+        return result
+    except Exception:
+        return result
+
+
 def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
     # #1081: RAW docstring. `\`` is not an escape — Python warns today and a future version
     # makes it a SyntaxError; and its neighbour `\"` IS one, so the second shape used to
