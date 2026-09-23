@@ -502,8 +502,19 @@ def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]
 
     The rewrite moves the literal INTO the param, so no URL changes: `/@bob` still routes and
     the param carries `@bob`. Nothing that matched before stops matching -- these paths matched
-    only their own literal spelling, which nobody navigates to. Best-effort, idempotent, never
-    raises.
+    only their own literal spelling, which nobody navigates to.
+
+    ONE CONSEQUENCE WORTH STATING, because it is a real behaviour change and not a free lunch.
+    `/:username` is a one-segment DYNAMIC route, so it now also takes one-segment paths that
+    declare no route of their own. r122's sidebar links `/shop` and `/upload`, neither of which
+    has a `<Route>`: before, they fell through to `<Route path="*">` and redirected home;
+    after, they render the profile page for a user named "shop". Both are broken nav items
+    either way, and the trade is a page that was unreachable in EVERY run since r119 against a
+    dead link that now fails differently -- which is the same trade #1202iy made for the
+    framework's own routes. React Router still ranks declared static paths above the param, so
+    nothing that has a route loses it.
+
+    Best-effort, idempotent, never raises.
     """
     result: Dict[str, object] = {"repaired": [], "routes": 0}
     try:
