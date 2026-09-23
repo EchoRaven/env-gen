@@ -1535,8 +1535,24 @@ class HealPipeline:
         if broken:
             try:
                 fb = format_feedback(report)
+                # #1202st: name the PAGES in the title, same class as #1202ss one layer over
+                # (the gate-repair table). This title hid 88 distinct defect sets across 17
+                # corpus runs, and it is filed once per pre-release walk with no de-dup, so a
+                # lane reading the workhub listing saw N identical rows for N different apps'
+                # worth of defects. The body already carries the full report; the title
+                # carries the pages so the listing is readable. Every list here holds plain
+                # page NAMES (test_user_runner builds them as `p["name"]`).
+                _pages_1202st = [
+                    _p for _k in ("blank_pages", "error_pages", "auth_redirect_pages",
+                                  "visual_mismatches", "fake_map_pages")
+                    for _p in (report.get(_k) or [])]
+                if not _pages_1202st and not report.get("auth_ok"):
+                    _pages_1202st = ["login"]   # the walk broke before any page was reached
+                from .remediation_dispatcher import _instanced_gate_title_1202ss
                 orch.hubs.workhub.create_task(
-                    title="Test-user found UI defects (browser walkthrough) — fix",
+                    title=_instanced_gate_title_1202ss(
+                        "Test-user found UI defects (browser walkthrough) — fix",
+                        _pages_1202st),
                     description=("A real-browser test-user walked the running app and found "
                                  "issues. Fix EACH, then finish:\n" + fb),
                     assignee="frontend", agent="orchestrator", priority="P0")

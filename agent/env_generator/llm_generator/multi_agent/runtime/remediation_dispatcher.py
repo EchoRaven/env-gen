@@ -395,6 +395,54 @@ def contract_and_surface_annotations_1202ld(orch) -> str:
         return ""
 
 
+# --- #1202ss: the gate-repair task TITLE names the failing INSTANCE ------------------
+# Every branch below spends real effort computing WHICH chain / page / flow / endpoint
+# failed, and puts it in the task BODY. The TITLE stayed the check's category name, and
+# the title is what the lane, the workhub listing and `#794`'s de-duplication all read
+# first. Measured over the 36 runs since `#1202gz` collapsed same-title remediation:
+# `Make business_chain pass (blocks delivery)` hid 126 distinct instances across 22 runs,
+# `Re-verify the failing UI evidence records (blocks delivery)` 53 across 20. `#1202sr`
+# fixed the breaking-change title one row at a time; this does the whole table at the one
+# site that files the task, so a check nobody has hit yet is covered too.
+_TITLE_INSTANCE_CAP_1202SS = 3
+
+
+def _instance_name_1202ss(item: Any) -> str:
+    """The INSTANCE name at the head of one remediation detail line, or '' (#1202ss).
+
+    Deliberately refuses anything that does not LOOK like a name: the same `_extra` lists
+    also carry `#811`'s "… and N more" continuation and, for some checks, whole sentences
+    of prose. A title reading `Make business_chain pass: frontend calls an authed API via`
+    is worse than the generic one, so an unrecognised head yields '' and the title is left
+    alone.
+    """
+    if item is None:
+        return ""                       # `str(None)` would title the task "None"
+    s = " ".join(str(item).split())
+    if not s or s.startswith(("\u2026", "...", "\u26a0")):
+        return ""
+    s = s.split(" -> ", 1)[0].strip()   # `<chain> -> step '...': GET /x returned 422`
+    if not s or len(s) > 48 or len(s.split(" ")) > 2:
+        return ""
+    return s
+
+
+def _instanced_gate_title_1202ss(base_title: str, instances: Optional[Sequence[Any]]) -> str:
+    """``base_title`` with the failing instances appended, or unchanged (#1202ss).
+
+    The base title is kept as a PREFIX: `_gate_still_fails_on_1202pg` (workhub) matches it
+    by substring, and `#794`'s open-task lookup matches it by prefix — both keep working.
+    """
+    names: List[str] = []
+    for it in (instances or ()):
+        n = _instance_name_1202ss(it)
+        if n and n not in names:
+            names.append(n)
+    if not names:
+        return base_title
+    return "%s: %s" % (base_title, join_capped(names, cap=_TITLE_INSTANCE_CAP_1202SS, sep=", "))
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -2522,16 +2570,19 @@ class RemediationDispatcher:
                     _persist[name] = 0
                 owner, title, how = spec
                 _extra = ""
+                _inst: List[Any] = []       # #1202ss: the instances this title will name
                 # #799: two more entries in this table told the lane to go and find something the
                 # framework already computes — the same defect #798 fixed one row up.
                 if name == "business_chain_api_coverage":
                     _unc799 = _uncovered_endpoints_799(orch)
                     if _unc799:
+                        _inst = list(_unc799)
                         _extra = ("\n\nTHE UNCOVERED ENDPOINTS (computed by the same check that "
                                   "blocked you — cover THESE):\n- " + "\n- ".join(_unc799))
                 elif name == "verification_checklist_not_ready":
                     _red799 = _red_checklist_checks_799(orch)
                     if _red799:
+                        _inst = list(_red799)
                         _extra = ("\n\nTHE CHECK(S) THAT ARE NOT GREEN right now:\n- "
                                   + "\n- ".join(_red799))
                 if name == "business_chain_failing":
@@ -2540,6 +2591,7 @@ class RemediationDispatcher:
                     # re-author — route the P0 to the lane that can add it.
                     _act = _chain_action_404s(orch)
                     if _act:
+                        _inst = list(_act)
                         owner = "backend"
                         title = ("Implement the registered ACTION endpoint(s) — "
                                  "the projection serves a deliberate 404 stub "
@@ -2561,6 +2613,7 @@ class RemediationDispatcher:
                         # instead of telling the verifier to go and look it up.
                         _brk798 = _chain_broken_detail_798(orch)
                         if _brk798:
+                            _inst = list(_brk798)
                             _extra = ("\n\nTHE BROKEN STEP(S), from the chain registry's own "
                                       "last_result — fix THESE, do not re-author the chain:\n- "
                                       + "\n- ".join(_brk798))
@@ -2594,6 +2647,7 @@ class RemediationDispatcher:
                                      if n != "_meta" and isinstance(rec, dict) and rec.get("steps")]
                         _unc = _uncovered_business_endpoints(_rh, _authored)
                         if _unc:
+                            _inst = list(_unc)
                             _extra = (
                                 "\n\nThese endpoints are exercised by NO chain yet — author ONE "
                                 "dedicated coverage chain (auth round-trip first, then a step per "
@@ -2633,6 +2687,7 @@ class RemediationDispatcher:
                     # #982: the other half of r159's terminal pair. Same shape as #981.
                     _fp = _ui_evidence_failed_pages(orch)
                     if _fp:
+                        _inst = list(_fp)
                         # #1176: append the contract-vs-public-route diagnosis when the
                         # failing record names a 401/403. Empty string when it does not
                         # apply, so the #982 text is unchanged in every other case.
@@ -2649,6 +2704,7 @@ class RemediationDispatcher:
                     # this one never did, so the verifier was handed the check name alone.
                     _ff = _ui_flow_failed_names(orch)
                     if _ff:
+                        _inst = list(_ff)
                         # #1176: same 401/403 diagnosis, other check -- a failing ui_flow
                         # record carries the same evidence shape. Silent when the flow name
                         # does not resolve to a declared ui_page route.
@@ -2667,6 +2723,7 @@ class RemediationDispatcher:
                     # nothing to refute; the specific names + "re-read the hub" do.
                     _mf = _ui_flow_missing_names(orch)
                     if _mf:
+                        _inst = list(_mf)
                         _extra = _ui_flow_missing_extra(_mf)
                 # #794: re-dispatch NAGS; it must not clone the task. The decline counter
                 # deliberately re-dispatches a still-failing check every few minutes, and each
@@ -2676,10 +2733,17 @@ class RemediationDispatcher:
                 # inflates with clones of one problem, and an agent can claim copy #9 while
                 # #10-13 sit unclaimed looking like unstarted work. The nag itself is kept —
                 # only the duplicate row goes. Present in 8 of the last 22 corpus runs.
+                # #1202ss: name the instance in the title. Kept as a PREFIX of the base so
+                # `#794`'s open-task lookup (prefix, below) and `_gate_still_fails_on_1202pg`
+                # (substring) both still match — and so a re-dispatch whose instance set has
+                # CHANGED re-wakes the existing task instead of filing r130's 13th clone.
+                _base_title_1202ss = title
+                title = _instanced_gate_title_1202ss(title, _inst)
                 _open794 = None
                 try:
                     for _t in (orch.hubs.workhub.list_tasks() or []):
-                        if (isinstance(_t, Mapping) and str(_t.get("title")) == title
+                        if (isinstance(_t, Mapping)
+                                and str(_t.get("title")).startswith(_base_title_1202ss)
                                 and str(_t.get("status")) in ("pending", "in_progress", "open")):
                             _open794 = _t
                             break
