@@ -3051,10 +3051,17 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
             try:
                 from .material_prep import (model_schema_from_models_py,
                                             enrich_ranking_seed,
+                                            enrich_seed_timestamps_1202rw,
                                             align_dataset_id_types)
                 _schema = model_schema_from_models_py(be / "models.py")
                 if _schema:
                     real = enrich_ranking_seed(real, _schema)
+                    # #1202rw: and fill a DECLARED time column no row populates -- 85 of the
+                    # 129 corpus runs ship every row's created_at NULL, which 111 of the 170
+                    # frontends then render as "None", as 1/1/1970, or replace with a
+                    # timestamp the page invents client-side. Before the id-type alignment,
+                    # so row order is still the ids design-prep authored.
+                    real = enrich_seed_timestamps_1202rw(real, _schema)
                     # #808: and align the ID TYPES. #483 aligned field NAMES and #552 fills a
                     # ranking column; nothing checked that design-prep's integer ids match a PK
                     # the lane declared TEXT. r145 declared `titles.id TEXT` with every dependent

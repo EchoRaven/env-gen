@@ -1246,10 +1246,188 @@ def model_schema_from_models_py(models_py_path) -> Dict[str, Dict[str, Dict]]:
             ctype = (ttok.group(1) if ttok else "").lower()
             is_pk = "primary_key=true" in args.lower().replace(" ", "")
             nullable = not is_pk and "nullable=false" not in args.lower().replace(" ", "")
-            cols[cname] = {"type": ctype, "nullable": nullable, "pk": is_pk}
+            # #1202rw: the FK target ("table.col"), so a consumer can order tables by
+            # dependency. Additive -- every existing reader takes type/nullable/pk by name.
+            _fk = _re.search(r"ForeignKey\(\s*['\"]([^'\"]+)['\"]", args)
+            cols[cname] = {"type": ctype, "nullable": nullable, "pk": is_pk,
+                           "fk": _fk.group(1) if _fk else None}
         if cols:
             out[tm.group(1)] = cols
     return out
+
+
+
+# ── #1202rw — a declared timestamp that no seed ever fills ────────────────────
+# 85 of the 129 corpus runs carrying a dataset declare a DateTime column that NOT ONE row
+# fills: users.created_at in 74 of them, comments.created_at in 59, videos.created_at in 46.
+# The column is emitted as a bare `Column(DateTime)` with no default, so the value is NULL
+# forever -- and 111 of the 170 generated frontends render a timestamp field. Three distinct
+# visible tells follow, each observed in the corpus:
+#   * r131 and r115 render `<span>{c.created_at}</span>` while the backend serialises
+#     `str(created)`, so the line beside every comment literally reads "None";
+#   * instagram-run77 renders `new Date(post.created_at).toLocaleDateString()`, and null
+#     gives the epoch -- the post is dated 1/1/1970;
+#   * that same frontend's HomeFeedPage then fabricates `Date.now() - 5h` client-side, which
+#     is the static-twin class `#1202rl` exists to catch.
+#
+# DETERMINISTIC, and that is not a stylistic preference: the emitted loader re-seeds whenever
+# the fingerprint changes, with TRUNCATE ... RESTART IDENTITY. A wall-clock anchor would
+# therefore wipe the database on every re-staging. No clock, no random -- a CRC of the row's
+# own identity supplies the spread.
+#
+# FK-AWARE, because the obvious implementation produces a WORSE tell than the one it removes:
+# fill each table on its own and comments land before the videos they reply to, which is a
+# contradiction no amount of NULL ever was. Tables are banded by their depth in the FK graph
+# -- accounts, then their videos, then the comments on them -- so every child row is later
+# than every parent row by construction.
+_TIME_TYPES_1202RW = frozenset({"datetime", "date", "timestamp"})
+# ONLY a record timestamp -- when the row came to exist -- never a CONTENT date. netflix-r12
+# and r5 declare `titles.release_date` as a null Date while the same row carries `year: 2026`;
+# banding titles at depth 0 would have dated those films to 2025 and contradicted their own
+# year field, which is a sharper tell than the null it replaces. `_at` is the ORM convention
+# for exactly this distinction (created_at/updated_at/posted_at vs release_date/birth_date),
+# and it covers 21,239 of the 21,654 rows this pass fills across the corpus -- the 415 it
+# gives up are `release_date` (120, the dangerous ones) and one run's `created_time` (295).
+_RECORD_TIME_SUFFIX_1202RW = ("_at",)
+# Fixed by necessity (see above). It ages: a run generated long after this date ships content
+# whose newest item is dated then. That is the price of a stable fingerprint, and it is only
+# paid when the dataset itself carries no timestamp to anchor on -- when one exists, the
+# newest value in the data wins, which keeps a freshly generated run current for free.
+_SEED_TIME_ANCHOR_1202RW = "2026-09-20T12:00:00"
+# One band per FK depth. 180d over three typical depths (accounts -> posts -> comments) puts
+# the oldest account ~18 months back and the newest comment at the anchor, which is the shape
+# of every corpus app that does carry dates ('2023-01-01' through '2026-09-18').
+_SEED_TIME_BAND_DAYS_1202RW = 180.0
+
+
+def _parse_ts_1202rw(value: Any):
+    """An ISO-8601 string -> naive datetime, or None. The emitted loader coerces with
+    ``datetime.fromisoformat(v.replace('Z', '+00:00'))``, so this accepts what it accepts."""
+    from datetime import datetime as _dt
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        out = _dt.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return out.replace(tzinfo=None)
+
+
+def _seed_time_anchor_1202rw(dataset: Any):
+    """The newest timestamp the data already carries, else the fixed anchor."""
+    newest = None
+    for rows in (dataset or {}).values():
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for value in row.values():
+                got = _parse_ts_1202rw(value)
+                if got is not None and (newest is None or got > newest):
+                    newest = got
+    return newest or _parse_ts_1202rw(_SEED_TIME_ANCHOR_1202RW)
+
+
+def _fk_depth_1202rw(schema: Any, tables: Any) -> Dict[str, int]:
+    """Depth of each table in the FK graph, counting only edges between `tables`.
+
+    Cycles (a self-FK like comments.parent_comment_id, or two tables referencing each other)
+    are simply not followed twice -- the walk is bounded by the table count, so a cycle
+    settles at a depth instead of hanging.
+    """
+    parents: Dict[str, set] = {}
+    for table in tables:
+        cols = schema.get(table)
+        got = set()
+        if isinstance(cols, dict):
+            for meta in cols.values():
+                target = (meta or {}).get("fk") if isinstance(meta, dict) else None
+                if not isinstance(target, str):
+                    continue
+                other = target.split(".", 1)[0]
+                if other in tables and other != table:
+                    got.add(other)
+        parents[table] = got
+    depth = {t: 0 for t in tables}
+    for _ in range(len(tables)):
+        changed = False
+        for table, ps in parents.items():
+            want = max([depth[p] + 1 for p in ps], default=0)
+            if want > depth[table]:
+                depth[table], changed = want, True
+        if not changed:
+            break
+    return depth
+
+
+def enrich_seed_timestamps_1202rw(dataset, schema) -> Dict[str, List]:
+    """#1202rw — fill a DECLARED time column that no row populates. See the note above.
+
+    Same envelope as `#552`: additive, keyed off the declared column rather than any table or
+    product name, byte-identical when the table declares no time column or the seed already
+    carries one value for it, and deterministic so the runtime seed fingerprint stays stable.
+    """
+    from datetime import timedelta as _td
+    try:
+        if not isinstance(dataset, dict) or not isinstance(schema, dict):
+            return dataset
+        todo = {}
+        for table, rows in dataset.items():
+            cols = schema.get(table)
+            if not isinstance(cols, dict) or not isinstance(rows, list):
+                continue
+            drows = [r for r in rows if isinstance(r, dict)]
+            if not drows:
+                continue
+            tcols = sorted(
+                c for c, meta in cols.items()
+                if isinstance(meta, dict) and not meta.get("pk")
+                and str(meta.get("type") or "").lower() in _TIME_TYPES_1202RW
+                and c.lower().endswith(_RECORD_TIME_SUFFIX_1202RW)
+                and all(r.get(c) is None for r in drows))  # author value -> byte-identical
+            if tcols:
+                todo[table] = (drows, tcols)
+        if not todo:
+            return dataset
+        anchor = _seed_time_anchor_1202rw(dataset)
+        if anchor is None:
+            return dataset
+        depth = _fk_depth_1202rw(schema, set(todo))
+        deepest = max(depth.values()) if depth else 0
+        band = _SEED_TIME_BAND_DAYS_1202RW
+        for table in sorted(todo):
+            drows, tcols = todo[table]
+            end = anchor - _td(days=band * (deepest - depth.get(table, 0)))
+            start = end - _td(days=band)
+            span = (end - start).total_seconds()
+            order = sorted(range(len(drows)), key=lambda i: _seed_row_rank_1202rw(drows[i], i))
+            total = len(order)
+            step = span / (total + 1)
+            for slot, idx in enumerate(order):
+                row = drows[idx]
+                # CRC of the row's own identity, not `hash()` -- PYTHONHASHSEED randomises
+                # that per process, and a seed that changes between stagings re-seeds the DB.
+                import zlib as _zlib
+                key = "%s:%s:%s" % (table, row.get("id", idx), slot)
+                jitter = (_zlib.crc32(key.encode("utf-8")) % 1000) / 1000.0 - 0.5
+                when = start + _td(seconds=step * (slot + 1 + jitter * 0.8))
+                stamp = when.replace(microsecond=0).isoformat()
+                for col in tcols:
+                    row[col] = stamp
+        return dataset
+    except Exception:
+        return dataset
+
+
+def _seed_row_rank_1202rw(row: Any, idx: int):
+    """Oldest first, by id where there is one. In a real database the primary key grows with
+    time, so id order IS creation order -- the only ordering assumption available that the
+    schema itself justifies."""
+    value = (row or {}).get("id")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return (1, 0.0, str(value), idx)
+    return (0, float(value), "", idx)
 
 
 def _seed_order_keyfn(col, numeric, descending):
@@ -1440,4 +1618,5 @@ __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palett
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
            "ingest_assets", "ingest_dataset", "assemble_seed_dataset",
-           "model_schema_from_models_py", "enrich_ranking_seed"]
+           "model_schema_from_models_py", "enrich_ranking_seed",
+           "enrich_seed_timestamps_1202rw"]
