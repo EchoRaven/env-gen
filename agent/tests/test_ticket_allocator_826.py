@@ -131,8 +131,19 @@ def test_a_number_the_repo_carries_is_reported_taken():
     if not n:
         pytest.skip("no numbered ticket tests in this checkout")
     r = _run(n)
-    assert r.returncode == 1, f"#{n} is used by agent/tests but was not refused: {r.stdout}"
-    assert "TAKEN" in r.stdout
+    # #1202sm: this test and its sibling below have each flaked ONCE inside a full suite run
+    # and never in 30 consecutive isolated runs. The cause is NOT diagnosed. What made those
+    # failures useless was that the message said only "was not refused" -- so say everything
+    # needed to diagnose the next one instead of chasing it now.
+    assert r.returncode == 1, (
+        f"#{n} is carried by agent/tests but ticket.sh did not refuse it.\n"
+        f"  returncode: {r.returncode}\n"
+        f"  stdout: {r.stdout[:600]!r}\n"
+        f"  stderr: {r.stderr[:600]!r}\n"
+        f"  the file that supplied the number still exists: "
+        f"{sorted((_ROOT / 'agent' / 'tests').glob(f'test_*_{n}.py'))}\n"
+        f"  cwd handed to the tool: {_ROOT}")
+    assert "TAKEN" in r.stdout, r.stdout
 
 
 @pytest.mark.parametrize("n,what", [("999", "a CSS hex colour"),
@@ -188,3 +199,46 @@ def test_it_says_where_a_taken_number_was_claimed():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1202sm: an empty claim scan is a failed scan ------------------------------------------
+
+
+def test_a_scan_that_contradicts_itself_refuses_to_answer(tmp_path):
+    """Every stage of `_claimed` ends in `|| true`, which is right on its own -- one
+    unavailable source must not sink the others. But the caller read "no claims" as "this
+    number is free", so a failure downstream of the sources would make the tool hand out a
+    number already in use: the one thing it exists to prevent, and the `#1202ah` shape.
+
+    "Empty" alone is not the signal -- `#1118`'s fixtures are a tree whose only test file
+    carries no number, and FREE is correct there. The signal is the two views DISAGREEING:
+    the filename listing found claims and the aggregate lost them.
+
+    Simulated by shadowing `tr`, which appears only in the aggregate's final stage and not in
+    the filename listing -- a faithful stand-in for any stage failing under load, which is
+    the class this guards (the flake in this file is still undiagnosed; see above).
+    """
+    import subprocess
+
+    shadow = tmp_path / "bin"
+    shadow.mkdir()
+    (shadow / "tr").write_text("#!/bin/sh\nexit 1\n")
+    (shadow / "tr").chmod(0o755)
+
+    env = dict(os.environ, TICKET_LEDGER="/dev/null",
+               PATH="%s:%s" % (shadow, os.environ.get("PATH", "")))
+    r = subprocess.run(["bash", str(_TOOL), "691"], cwd=str(_ROOT), env=env,
+                       capture_output=True, text=True)
+    assert r.returncode == 2, (
+        "a self-contradicting scan answered instead of refusing: "
+        "rc=%s stdout=%r stderr=%r" % (r.returncode, r.stdout[:300], r.stderr[:300]))
+    assert "CONTRADICTS" in r.stderr
+    assert "FREE" not in r.stdout
+
+
+def test_a_working_scan_still_answers_both_ways():
+    taken = _a_ticket_this_repo_actually_carries()
+    if taken:
+        assert _run(taken).returncode == 1
+    free = _run("3999")
+    assert free.returncode == 0 and "FREE" in free.stdout

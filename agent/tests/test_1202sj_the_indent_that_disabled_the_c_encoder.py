@@ -109,3 +109,46 @@ def test_the_version_still_counts_writes(tmp_path):
     for i in range(4):
         s.update(lambda m, i=i: m.set("k%d" % i, {"i": i}, "actor"), change_info=None)
     assert s.get_version() == 4
+
+
+# --- #1202sk: `default=` is paid per call, and the per-key writer makes 5,002 of them ------
+
+def test_a_value_json_can_encode_takes_the_fast_path():
+    """Whole-object dumps pays for `default=` once (40.1ms either way on the 6.4MB store).
+    Per key it is paid 5,002 times: 68.5ms with it against 43.1ms without, 1.6x. Almost every
+    value is plain JSON, so the common path must not carry it."""
+    import ast
+    import inspect
+    import textwrap
+
+    from env_generator.llm_generator.multi_agent.runtime import json_store
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(json_store._serialize_store_1202sj)))
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "dumps"]
+    plain = [c for c in calls if not c.keywords]
+    assert plain, "every dumps() carries a keyword; the fast path is gone"
+
+
+def test_the_slow_path_still_catches_what_json_cannot_encode():
+    import datetime
+
+    out = json.loads(serialize({"when": datetime.datetime(2026, 9, 23), "n": 1}))
+    assert out["n"] == 1
+    assert isinstance(out["when"], str) and "2026-09-23" in out["when"]
+
+
+def test_one_unencodable_value_does_not_poison_its_neighbours():
+    out = json.loads(serialize({"ok": [1, 2], "bad": object(), "also_ok": {"a": None}}))
+    assert out["ok"] == [1, 2] and out["also_ok"] == {"a": None}
+    assert isinstance(out["bad"], str)
+
+
+def test_a_store_holding_an_unencodable_value_still_writes(tmp_path):
+    """End to end: the fallback has to work through JsonStore, not just the helper."""
+    import datetime
+
+    s = JsonStore(tmp_path / "x.json")
+    s.update(lambda m: m.set("k", {"at": datetime.datetime(2026, 1, 2)}, "actor"),
+             change_info=None)
+    assert "2026-01-02" in JsonStore(tmp_path / "x.json").get("k")["at"]

@@ -169,10 +169,17 @@ def _serialize_store_1202sj(data: Dict[str, Any]) -> str:
         return json.dumps(data, default=str)
     if not all(isinstance(k, str) for k in data):
         return json.dumps(data, default=str)
-    parts = [
-        "%s: %s" % (json.dumps(k), json.dumps(v, default=str))
-        for k, v in data.items()
-    ]
+    parts = []
+    for key, value in data.items():
+        try:
+            # #1202sk: `default=` is what costs here. Whole-object dumps pays for it once
+            # (40.1ms either way on the 6.4MB store), but PER KEY it is paid 5,002 times:
+            # 68.5ms with it against 43.1ms without, 1.6x. Almost every value is plain JSON,
+            # so take the fast path and let the rare one pay for itself.
+            encoded = json.dumps(value)
+        except (TypeError, ValueError):
+            encoded = json.dumps(value, default=str)
+        parts.append("%s: %s" % (json.dumps(key), encoded))
     return "{\n" + ",\n".join(parts) + "\n}"
 
 

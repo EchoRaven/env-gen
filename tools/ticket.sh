@@ -106,9 +106,53 @@ _claimed() {   # every number claimed, one per line
   } | grep -o '#[0-9]\{1,4\}' | tr -d '#' | sort -n -u
 }
 
+# #1202sm: AN EMPTY CLAIM SET IS A FAILED SCAN, NOT AN EMPTY NAMESPACE.
+#
+# Every stage of `_claimed` ends in `|| true`, which is right on its own — one unavailable
+# source must not sink the others. But the CALLER below reads "no claims" as "this number is
+# free", so any failure that empties every stage at once (run from outside the work tree, a
+# fork that fails under memory pressure mid-suite, a checkout with no history) makes the tool
+# hand out a number that is already in use. That is the single thing it exists to prevent, and
+# it is the `#1202ah` shape: a silent empty return read as a confident answer.
+#
+# This repo carries 400+ numbered test files and thousands of commits. Zero claims is not a
+# state it can be in, so say so and exit non-zero rather than answer.
+_claimed_from_filenames() {   # the one source that cannot fail quietly: a directory listing
+  ls agent/tests 2>/dev/null | sed -n \
+      -e 's/^test_.*_\([0-9]\{3,4\}\)\.py$/\1/p' \
+      -e 's/^test_\([0-9]\{3,4\}\)_.*\.py$/\1/p' | sort -n -u
+}
+
+_claimed_or_die() {
+  local out names missing
+  out=$(_claimed)
+  names=$(_claimed_from_filenames)
+  # A genuinely empty namespace is fine — #1118's fixtures are exactly that, a tree whose
+  # only test file carries no number, and FREE is the right answer there. What is NOT fine is
+  # the two views DISAGREEING: the filename listing found claims and the aggregate lost them.
+  # Only a failure downstream of the listing can produce that, and the caller reads the empty
+  # aggregate as "free" — issuing a number already in use, the one thing this tool exists to
+  # prevent (#1202ah: a silent empty return read as a confident answer).
+  if [ -n "$names" ]; then
+    # grep, not comm: `_claimed` sorts NUMERICALLY and comm demands lexical order, so the
+    # first version died with "file 2 is not in sorted order" on the real repo.
+    missing=$(printf '%s\n' "$names" | grep -vxF -f <(printf '%s\n' "$out") || true)
+    if [ -n "$missing" ]; then
+      echo "#$1: REFUSING TO ANSWER — the claim scan CONTRADICTS itself." >&2
+      echo "  agent/tests carries these numbers in its filenames, and the aggregate scan" >&2
+      echo "  did not return them: $(printf '%s' "$missing" | tr '\n' ' ')" >&2
+      echo "  That can only be a failure downstream of the listing, and answering from the" >&2
+      echo "  short list is how an in-use number gets issued twice. pwd=$(pwd)" >&2
+      return 2
+    fi
+  fi
+  printf '%s\n' "$out"
+}
+
 if [ $# -ge 1 ]; then
   n="${1#\#}"
-  if _claimed | grep -qx "$n"; then
+  _all=$(_claimed_or_die "$n") || exit 2
+  if printf '%s\n' "$_all" | grep -qx "$n"; then
     echo "#$n is TAKEN — claimed in:"
     _where "$n"
     exit 1
