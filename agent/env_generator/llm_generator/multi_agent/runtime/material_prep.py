@@ -909,6 +909,19 @@ def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
 # silently fails its per-row insert → empty table → chains 404 → 0 release (r55, live: 0
 # titles seeded from a 60-title dataset). Each group's FIRST element is the canonical/contract
 # name; the rest are common domain synonyms design-prep tends to emit.
+# #1202ro: the first eight groups are all film vocabulary -- poster_url, release_year,
+# average_rating, runtime -- because #483 was written against a netflix clone. A short-video
+# env shares none of them, so its dataset lost every column whose name differed by a suffix.
+# Measured across r129/r130/r131, all three, the dataset swap dropped 18-22 columns per run:
+# `likes` never reached `like_count`, `thumbnail` never reached `thumbnail_url`, `cover` never
+# reached `cover_url`. The data WAS there; the names did not line up and the swap replaces a
+# table wholesale, so the column simply ceased to exist. An unprimed agent found the far end
+# of that: every engagement figure 0 while the video_likes rows sat in the database, and a
+# login form that could not log in because `users.email` had been dropped on the same path.
+#
+# The groups below are deliberately domain-NEUTRAL -- count/url/time suffix pairs any product
+# has -- rather than another vertical's vocabulary. Adding tiktok words here would repeat the
+# original mistake one env later.
 _FIELD_SYNONYM_GROUPS = (
     ("title", "name"),
     ("description", "synopsis", "summary", "overview"),
@@ -918,6 +931,29 @@ _FIELD_SYNONYM_GROUPS = (
     ("backdrop_url", "backdrop"),
     ("average_rating", "rating"),
     ("duration_minutes", "duration", "runtime"),
+    # engagement counters: the dataset carries the bare noun, the model the _count column
+    ("like_count", "likes"),
+    ("comment_count", "comments"),
+    ("share_count", "shares"),
+    ("save_count", "saves", "favorites"),
+    ("view_count", "views"),
+    ("follower_count", "followers", "followers_count"),
+    ("following_count", "following"),
+    ("reply_count", "replies"),
+    ("viewer_count", "viewers"),
+    # media/image references: bare noun vs the _url/_image column
+    ("thumbnail_url", "thumbnail", "thumb"),
+    ("cover_url", "cover", "cover_image"),
+    ("avatar_url", "avatar", "profile_image", "profile_pic"),
+    ("image_url", "image", "photo"),
+    ("video_url", "video", "media_url"),
+    ("banner_url", "banner"),
+    ("logo_url", "logo"),
+    # identity and time
+    ("display_name", "displayname", "full_name"),
+    ("username", "handle", "screen_name"),
+    ("created_at", "created", "timestamp", "posted_at", "published_at"),
+    ("updated_at", "updated", "modified_at"),
 )
 
 
