@@ -2135,6 +2135,27 @@ class RegistryHub:
                         out.append(_x)
             return out
 
+        # #1202rn: SAY IT AT REGISTRATION, not at the delivery cut. An empty `apis_used` is
+        # not an omission the framework tolerates quietly -- it is read in 103 places, and the
+        # decoy-twin check (#151), the consumer-wiring audit and the page's implemented-flip
+        # only run when it is non-empty. Empty switches them off rather than failing them, so
+        # a page rendering invented rows ships unexamined. r130 registered 14 of 14 pages
+        # empty against 26 business endpoints; r131 13 of 13 against 34, nine of them
+        # rendering a mock module that an unprimed agent spotted in minutes (#1202rl/#1202rm).
+        # #1202rm blocks it at the cut; this is the same fact at the moment it is created,
+        # where the lane can still act on it cheaply. Advisory, never raises.
+        try:
+            from .message_format import warn_once_1201
+            if not (apis_used or existing.get("apis_used")):
+                warn_once_1201(
+                    "ui_page_no_apis_1202rn:%s" % name,
+                    "ui_page %r registered with no `apis_used`. If this page shows anything "
+                    "from the backend, name its endpoints: an empty list does not fail the "
+                    "decoy-twin / consumer-wiring / implemented-flip checks, it turns them "
+                    "off, and the page then ships without them ever looking at it. Empty is "
+                    "correct only for a page that genuinely reads no data." % name, None)
+        except Exception:
+            pass
         rec = {
             **existing,
             "id": f"page:ui:{name}", "name": name, "kind": "ui_page",

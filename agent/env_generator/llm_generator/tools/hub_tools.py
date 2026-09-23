@@ -2693,7 +2693,17 @@ class KickoffDeclareUiPageTool(_KickoffDeclareBase):
                       "React component name implementing this page, e.g. BoardListPage"},
         "apis_used": {"type": "array", "items": {"type": "string"}, "description":
                       "endpoints this page calls, e.g. ['GET /api/boards', 'POST /api/boards'] "
-                      "— drives the page's defined→implemented lifecycle"},
+                      "— drives the page's defined→implemented lifecycle. #1202rn: LEAVING "
+                      "THIS EMPTY IS NOT NEUTRAL. It is read in 103 places, and several "
+                      "checks only run when it is non-empty — the decoy-twin check that "
+                      "catches a route wired to a hardcoded mock, the consumer-wiring audit, "
+                      "and the page's own implemented-flip. An empty list does not fail them, "
+                      "it switches them off, so a page that renders invented rows ships "
+                      "unexamined (r130: 14 of 14 pages empty against 26 business endpoints; "
+                      "r131: 13 of 13 against 34, nine of them rendering a mock module). "
+                      "Empty is correct ONLY for a page that genuinely reads no data — a "
+                      "static legal or about page. If the page shows anything from the "
+                      "backend, name the endpoints here."},
         # #727: HOW TO REACH THE STATE A REFERENCE SHOWS. Measured on r148: of 20 reference
         # screens, 8 have no page at all — account_menu, browse_home_rows, card_hover_preview,
         # card_preview, player_controls, rate_dialog, shows_genres_menu, title_episodes. Every
