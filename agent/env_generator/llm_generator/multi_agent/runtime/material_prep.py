@@ -1010,6 +1010,27 @@ def _singular_1202ru(word: str) -> str:
     return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
 
 
+def _stem_candidates_1202se(word: Any) -> tuple:
+    """Every singular this plural could be. #1202se.
+
+    English writes two plurals that matter here and they disagree: `reply -> replies` drops the
+    `y`, `movie -> movies` just adds the `s`. A single rule gets one of them wrong -- stripping
+    the `s` turns `replies` into `replie` (which is why `comments.reply_count` stayed empty in
+    9 corpus runs, 2,655 rows), and the `-ies -> -y` rule turns `movies` into `movy`.
+
+    So both are offered and the SCHEMA decides: a candidate that names no declared column
+    matches nothing and costs nothing. Widening the match can only find more true pairs, never
+    invent one, because the target still has to be a real counter column on that table.
+    """
+    text = str(word or "").lower()
+    out = [text]
+    if text.endswith("s") and not text.endswith("ss"):
+        out.append(text[:-1])
+    if text.endswith("ies") and len(text) > 4:
+        out.append(text[:-3] + "y")
+    return tuple(dict.fromkeys(out))
+
+
 def _counter_stem_1202ru(name: Any) -> Optional[str]:
     """The thing being counted, or None when the name does not read as a counter."""
     text = str(name or "").lower()
@@ -1031,8 +1052,10 @@ def _fill_counter_columns_1202ru(rows: Any, colset: Any) -> int:
     """Same safety envelope as #483: additive, never overwrites, never cannibalizes a column."""
     targets: Dict[str, str] = {}
     for col in sorted(colset):
-        stem = _counter_stem_1202ru(col)
-        if stem:
+        marked = _counter_stem_1202ru(col)
+        if not marked:
+            continue
+        for stem in _stem_candidates_1202se(marked):   # #1202se
             targets.setdefault(stem, col)
     if not targets:
         return 0
@@ -1052,8 +1075,12 @@ def _fill_counter_columns_1202ru(rows: Any, colset: Any) -> int:
             # way `title` and `name` can.
             if not isinstance(val, int) or isinstance(val, bool):
                 continue  # a count is an integer; this is what keeps money columns out
-            stem = _counter_stem_1202ru(src) or _singular_1202ru(str(src).lower())
-            target = targets.get(stem)
+            marked = _counter_stem_1202ru(src)
+            target = None
+            for stem in _stem_candidates_1202se(marked or src):   # #1202se
+                target = targets.get(stem)
+                if target:
+                    break
             if not target or target == src or row.get(target) is not None:
                 continue  # unset targets only -- NEVER overwrite real data
             row[target] = val

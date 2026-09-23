@@ -155,3 +155,50 @@ def test_malformed_input_is_still_a_no_op():
     assert align_dataset_field_names(None, {}) is None
     assert align_dataset_field_names({"t": "notalist"}, {"t": {"a_count"}}) == {"t": "notalist"}
     assert align_dataset_field_names({"t": [None, 3]}, {"t": {"a_count"}}) == {"t": [None, 3]}
+
+
+# --- #1202se: the two English plurals that disagree -----------------------------------
+
+def test_a_reply_count_is_filled_from_replies():
+    """`reply -> replies` drops the y, so stripping the `s` gives `replie` and matches
+    nothing. 9 corpus runs left `comments.reply_count` empty on 2,655 rows for that reason,
+    which is what an unprimed judge saw as a comment thread whose reply counts were all blank.
+    """
+    ds = {"comments": [{"replies": 95, "likes": 7}]}
+    cols = {"comments": {"reply_count", "like_count", "replies", "likes"}}
+    row = align_dataset_field_names(ds, cols)["comments"][0]
+    assert row["reply_count"] == 95
+    assert row["like_count"] == 7, "the plain plural still works"
+
+
+def test_the_other_english_plural_still_resolves():
+    """`movie -> movies` just adds the s, so an `-ies -> -y` rule alone would look for
+    `movy`. Both candidates are offered and the SCHEMA picks."""
+    ds = {"sounds": [{"movies": 12}]}
+    cols = {"sounds": {"movie_count"}}
+    assert align_dataset_field_names(ds, cols)["sounds"][0]["movie_count"] == 12
+
+
+def test_a_candidate_that_names_no_column_costs_nothing():
+    """`series -> sery` is wrong English and that is fine: a candidate the table does not
+    declare matches nothing. Widening can find more true pairs, never invent one."""
+    ds = {"shows": [{"series": 4}]}
+    cols = {"shows": {"episode_count"}}
+    assert align_dataset_field_names(ds, cols)["shows"][0].get("episode_count") is None
+
+
+@pytest.mark.parametrize("plural,singular", [("replies", "reply"), ("stories", "story"),
+                                             ("categories", "category")])
+def test_the_ies_plural_offers_its_y_singular(plural, singular):
+    from env_generator.llm_generator.multi_agent.runtime.material_prep import (
+        _stem_candidates_1202se)
+
+    assert singular in _stem_candidates_1202se(plural)
+
+
+@pytest.mark.parametrize("word", ["likes", "comments", "movies"])
+def test_the_plain_plural_is_still_offered(word):
+    from env_generator.llm_generator.multi_agent.runtime.material_prep import (
+        _stem_candidates_1202se)
+
+    assert word[:-1] in _stem_candidates_1202se(word)
