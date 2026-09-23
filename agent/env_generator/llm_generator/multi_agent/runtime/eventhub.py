@@ -10,6 +10,37 @@ from typing import Any, Dict, List, Optional
 from .json_store import JsonStore
 
 
+
+def _supersede_agent_status_1202si(view, event_id: str, event: dict, actor: str):
+    """Drop this agent's EARLIER agent_status events; the newest one supersedes them.
+
+    Narrow on purpose. Only `source_hub == "system"` + `event_type == "agent_status"` for the
+    SAME `payload.agent_id` is superseded, pinned events are never touched, and the event just
+    written is never its own victim. Anything else in the stream is history and stays.
+    """
+    try:
+        if not isinstance(event, dict):
+            return view
+        if event.get("source_hub") != "system" or event.get("event_type") != "agent_status":
+            return view
+        agent_id = (event.get("payload") or {}).get("agent_id")
+        if not agent_id:
+            return view   # cannot tell whose status this is -> supersede nothing
+        for eid, ev in list(view.value().items()):
+            if eid == event_id or not isinstance(ev, dict):
+                continue
+            if ev.get("source_hub") != "system" or ev.get("event_type") != "agent_status":
+                continue
+            if (ev.get("payload") or {}).get("agent_id") != agent_id:
+                continue
+            if ev.get("pinned") or (ev.get("payload") or {}).get("pinned"):
+                continue
+            view = view.delete(eid, actor)
+        return view
+    except Exception:
+        return view
+
+
 def _events_retention_cap() -> int:
     """Max number of events retained in the EventHub events store.
 
@@ -366,6 +397,24 @@ class EventHub:
         anchors can opt out. A cap <= 0 disables eviction entirely.
         """
         view.set(event_id, event, actor)
+        # #1202si: A STATUS IS A CURRENT VALUE, NOT A STREAM. Every reader of `agent_status`
+        # takes only the latest -- `get_agent_status` returns the most recent,
+        # `get_all_agent_statuses` the latest per agent, and human_console filters heartbeats
+        # out of the transcript entirely. Yet each one was kept forever, and `#673` measured
+        # them at 55% of the corpus's 288,562 events (median 53% per run, up to 97%).
+        #
+        # That is not just wasted space. `JsonStore.update` rewrites the WHOLE file on every
+        # publish -- 247.6ms measured against tiktok-r125's real 6.4MB eventhub_events.json --
+        # so every superseded heartbeat is re-serialised on all 4,251 of that run's publishes.
+        # Dropping them supersedes ~55% of the store, roughly halving the cost of every write
+        # that follows: about 9 minutes of wall clock per run.
+        #
+        # `#673` reached the same conclusion one step short: it made heartbeats the FIRST
+        # thing evicted at the cap ("a stale heartbeat is neither recent nor unread"). This
+        # removes the redundancy at the source instead of waiting for the cap, which also
+        # returns that ring-buffer budget to the substantive events #673 measured being
+        # crowded out.
+        view = _supersede_agent_status_1202si(view, event_id, event, actor)
         cap = _events_retention_cap()
         if cap <= 0:
             return view
