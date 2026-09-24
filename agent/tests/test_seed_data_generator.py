@@ -91,11 +91,16 @@ class SeedGeneratorTests(unittest.TestCase):
         self.assertLess(self.order.index("videos"), self.order.index("comments"))
 
     def test_fk_columns_reference_existing_parent_ids(self):
+        # #1202tz: against the parent's ACTUAL row count, not a hardcoded 6. Row counts now
+        # vary per table (every table holding exactly six was its own realism tell), and a
+        # literal `range(1, 7)` could not tell a dangling reference from a table that simply
+        # grew -- which is the only thing this test exists to catch.
+        n = {t: len(rows) for t, rows in self.seed.items()}
         for v in self.seed["videos"]:
-            self.assertIn(v["channel_id"], range(1, 7))  # channels has 6 rows
+            self.assertIn(v["channel_id"], range(1, n["channels"] + 1))
         for c in self.seed["comments"]:
-            self.assertIn(c["video_id"], range(1, 7))
-            self.assertIn(c["user_id"], range(1, 6))  # users has 5
+            self.assertIn(c["video_id"], range(1, n["videos"] + 1))
+            self.assertIn(c["user_id"], range(1, n["users"] + 1))
 
     def test_no_placeholder_words(self):
         for t, rows in self.seed.items():
@@ -128,12 +133,21 @@ class SeedGeneratorTests(unittest.TestCase):
         # but it still provides a real (non-null, non-placeholder) title so the UI fills
         self.assertTrue(v.get("title") and "test" not in v["title"].lower())
 
-    def test_pk_and_timestamps_omitted(self):
-        # PK is SERIAL, created_at is DB default → not in seed rows
+    def test_pk_is_omitted_and_record_timestamps_are_seeded(self):
+        # PK stays SERIAL. `created_at` USED to be omitted too, and #1202ty changed that: left
+        # to the DB default every row took ONE instant at load, which is the realism rubric's
+        # dimension 3 in its strongest form ("variance ~ 0"). It is now seeded, ISO-formatted
+        # (the loader parses it -- #600 added `fromisoformat`), and it VARIES.
+        import datetime as _dt
+        stamps = []
         for rows in self.seed.values():
             for r in rows:
                 self.assertNotIn("id", r)
-                self.assertNotIn("created_at", r)
+                if "created_at" in r:
+                    _dt.datetime.fromisoformat(str(r["created_at"]))   # must parse
+                    stamps.append(r["created_at"])
+        self.assertTrue(stamps, "no table seeded a record timestamp")
+        self.assertGreater(len(set(stamps)), 1, "every row shares one timestamp")
 
     def test_fk_matches_text_pk_parent(self):
         # a parent table with a TEXT primary key: the child FK must reference the parent's

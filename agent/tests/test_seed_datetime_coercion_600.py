@@ -98,19 +98,58 @@ def test_it_is_deterministic_and_ordering_is_stable():
     assert a == sorted(a), a          # monotonic, so ORDER BY the column is meaningful
 
 
-def test_a_NULLABLE_timestamp_is_still_left_to_the_database():
+def _stamps(seed, table="titles"):
+    return [r["created_at"] for r in seed[table] if "created_at" in r]
+
+
+def test_a_nullable_record_timestamp_is_seeded_and_parseable():
+    """#1202ty reversed what this test used to assert, and the reason is worth keeping.
+
+    It pinned "left to the database" because #599/#600 feared a driver-level bind failure on a
+    DateTime column handed an ISO string. #600 itself removed that fear -- the emitted loader
+    now calls `fromisoformat` and DROPS an unparseable key rather than losing the row. What
+    "left to the database" actually produced was every row taking the DB default at load, i.e.
+    ONE timestamp for the whole table, which is the realism rubric's dimension 3 in its
+    strongest form. So the invariant this file protects is not "omit it" -- it is "whatever is
+    seeded must survive the loader's coercion", and that is what is asserted now.
+    """
+    import datetime as _dt
     seed, *_ = _build_seed_rows({
         "titles": {"columns": [_ID, {"name": "name", "type": "text", "nullable": False},
                                {"name": "created_at", "type": "timestamp"}]}})
-    assert all("created_at" not in r for r in seed["titles"])
+    vals = _stamps(seed)
+    assert vals, "a nullable record timestamp is no longer seeded at all"
+    for v in vals:
+        _dt.datetime.fromisoformat(str(v))        # the loader's own parse must succeed
+    assert len(set(vals)) > 1, f"every row shares one timestamp: {vals}"
 
 
-def test_a_timestamp_with_a_server_default_is_still_left_alone():
+def test_a_timestamp_with_a_server_default_is_seeded_too():
+    """A `server_default: now()` is the sharpest form of the same tell -- it guarantees every
+    row lands on one instant. An explicit value is what makes them differ."""
+    import datetime as _dt
     seed, *_ = _build_seed_rows({
         "titles": {"columns": [_ID, {"name": "name", "type": "text", "nullable": False},
                                {"name": "created_at", "type": "timestamp",
                                 "nullable": False, "server_default": "now()"}]}})
-    assert all("created_at" not in r for r in seed["titles"])
+    vals = _stamps(seed)
+    assert vals and len(set(vals)) > 1, vals
+    for v in vals:
+        _dt.datetime.fromisoformat(str(v))
+
+
+def test_a_semantic_null_timestamp_is_still_left_alone():
+    """★ The discriminator #1202rw paid for: `read_at` NULL means UNREAD and `ended_at` NULL
+    means STILL LIVE. Filling those says every notification was read at birth and every stream
+    ended when it started -- a sharper contradiction than the gap it replaces."""
+    seed, *_ = _build_seed_rows({
+        "streams": {"columns": [_ID, {"name": "name", "type": "text", "nullable": False},
+                                {"name": "created_at", "type": "timestamp"},
+                                {"name": "read_at", "type": "timestamp"},
+                                {"name": "ended_at", "type": "timestamp"}]}})
+    for r in seed["streams"]:
+        assert "read_at" not in r, r
+        assert "ended_at" not in r, r
 
 
 def test_the_other_declined_types_are_unchanged():

@@ -82,13 +82,16 @@ def _tables_with_bare_user_id():
 def test_generated_seed_populates_owner_fk():
     src = render_seed_data(_tables_with_bare_user_id())
     seed = _seed_dict(src)
-    # every folder + message row carries a real owner in 1..5 (the seeded user ids)
+    # every folder + message row carries a real owner. #1202tz: bounded by the parent's ACTUAL
+    # row count -- seed sizes now vary per table, and a literal `range(1, 7)` cannot tell a
+    # dangling reference from a table that simply grew, which is all this is here to catch.
     assert seed["folders"], "folders should be seeded"
+    _n = {t: len(rows) for t, rows in seed.items()}
     for r in seed["folders"]:
-        assert r.get("user_id") in range(1, 6), f"folder owner not seeded: {r}"
+        assert r.get("user_id") in range(1, _n["users"] + 1), f"folder owner not seeded: {r}"
     for r in seed["messages"]:
-        assert r.get("user_id") in range(1, 6), f"message owner not seeded: {r}"
-        assert r.get("folder_id") in range(1, 7), f"message folder not seeded: {r}"
+        assert r.get("user_id") in range(1, _n["users"] + 1), f"message owner not seeded: {r}"
+        assert r.get("folder_id") in range(1, _n["folders"] + 1), f"message folder: {r}"
     # the first seeded user (id 1 — the demo/test-user login) owns at least one row,
     # so the authenticated landing page is never blank
     assert any(r.get("user_id") == 1 for r in seed["folders"])

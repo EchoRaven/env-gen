@@ -3247,7 +3247,6 @@ def _seed_password_hash() -> str:
         (_SEED_PASSWORD + _SEED_PASSWORD_SALT).encode("utf-8")).hexdigest()
 
 
-_SEED_PEOPLE = ["Ava Chen", "Liam Patel", "Noah Kim", "Mia Garcia", "Ethan Brooks", "Sofia Rossi"]
 # #1202tu: THE FRAMEWORK'S OWN SEED MUST NOT TRIP THE FRAMEWORK'S OWN REALISM GATE.
 #
 # This fallback minted `<slug>@example.com`, and #1202rs (added 09-23) declines delivery on any
@@ -3272,13 +3271,72 @@ def _seed_email_domain_1202tu(i: int) -> str:
         return _SEED_EMAIL_DOMAINS_1202TU[0]
 # Neutral, domain-agnostic labels for name/title columns — read fine as a task title, a
 # document name, a board, a product, or a message subject (NOT video/media-platform shaped).
-_SEED_TITLES = ["Getting Started", "Project Overview", "Weekly Summary",
-                "Quarterly Plan", "Team Update", "Field Report"]
-_SEED_SENTENCES = ["A short overview of what this is and how it works.",
-                   "Everything you need to get started, one step at a time.",
-                   "A few quick highlights and notes from this week.",
-                   "Thanks for following along — more to come.",
-                   "A brief walkthrough with notes you can follow."]
+# #1202tw: EVERY ENVIRONMENT SHIPPED THE SAME SIX PEOPLE.
+#
+# `_SEED_PEOPLE` held six names and every seed took `pool[i % len(pool)]`, so Ava Chen was a
+# TikTok creator, a Netflix subscriber, an Instagram user AND a Google Maps reviewer.
+# MEASURED over the 150 delivered seed_data.py files in generated/: 150 of 150 carry these
+# names, across five domains. 102 of 150 carry one literal filler sentence and 125 of 150
+# carry the same six titles.
+#
+# The Realism Contract the lanes are held to says, in clause 5, do not reuse the same invented
+# person across environments -- and in clause 6, that real data is uneven. The framework's own
+# fallback broke both, universally, which is the same shape as #1202tu: the contract binds the
+# agents while the framework exempts itself.
+#
+# Two changes. The pools are large enough that repetition inside one environment is rare, and
+# a per-ENVIRONMENT deterministic shuffle picks each environment's own cast, so two runs share
+# a name only by coincidence. Domain-agnostic on purpose: no product-specific vocabulary,
+# because the pipeline must stay 100% domain-agnostic and a per-domain word list is exactly
+# the binding #483's film-only synonym table already cost us.
+_SEED_PEOPLE = [
+    "Ava Chen", "Liam Patel", "Noah Kim", "Mia Garcia", "Ethan Brooks", "Sofia Rossi",
+    "Priya Raman", "Marcus Webb", "Hana Sato", "Diego Moreno", "Zoe Whitfield", "Omar Haddad",
+    "Lena Kowalski", "Tomas Alvarez", "Ines Ferreira", "Jonah Adeyemi", "Clara Lindqvist",
+    "Rafael Souza", "Nadia Petrova", "Samuel Okonkwo", "Yuki Tanaka", "Elena Vasquez",
+    "Aaron Feldman", "Maya Krishnan", "Felix Bergmann", "Rosa Delgado", "Ibrahim Toure",
+    "Grace Mwangi", "Daniel Novak", "Amara Nwosu", "Lucas Meier", "Sana Qureshi",
+    "Theo Laurent", "Bianca Ricci", "Kofi Mensah", "Astrid Dahl", "Nikhil Verma",
+    "Camila Rojas", "Ruben Santos", "Leyla Demir", "Oscar Lindgren", "Fatima Zahra",
+    "Victor Ilunga", "Nora Haugen", "Arjun Mehta", "Elif Yilmaz", "Mateo Bianchi",
+    "Chiara Esposito",
+]
+_SEED_TITLES = [
+    "Getting Started", "Project Overview", "Weekly Summary", "Quarterly Plan",
+    "Team Update", "Field Report", "Site Walkthrough", "Handover Notes",
+    "Budget Review", "Onboarding Checklist", "Incident Recap", "Vendor Comparison",
+    "Roadmap Draft", "Customer Feedback", "Release Notes", "Travel Plan",
+    "Inventory Count", "Design Critique", "Hiring Loop", "Renewal Terms",
+    "Maintenance Window", "Support Digest", "Kickoff Agenda", "Retrospective",
+]
+# Concrete rather than filler, and varied in length -- the realism rubric's dimension 1 asks
+# for "named counterparties, dates, amounts, IDs that resolve to specific events" and rates
+# "bodies that describe nothing concrete" as one of the strongest single tells. Every line
+# below names something; none of them names a PRODUCT, so they stay domain-agnostic.
+_SEED_SENTENCES = [
+    "Rescheduled to Thursday — Priya has the updated deck.",
+    "Second attempt worked after we cleared the cache.",
+    "Numbers are in: 412 this week, up from 380.",
+    "Still waiting on the signed copy from legal.",
+    "Short version — it works, but not on the old firmware.",
+    "Left a note with the front desk in case you get in late.",
+    "Marcus flagged the duplicate line on invoice 2214.",
+    "Can we push this to next sprint? Nothing is blocked on it.",
+    "Fixed. It was the timezone, not the query.",
+    "Three of the six came back incomplete, chasing the rest.",
+    "Nice work on the turnaround — that was quick.",
+    "Agreed on the scope, but the date is going to slip a week.",
+    "Took longer than expected; the export was 1.8GB.",
+    "Adding Hana so she sees the thread from the start.",
+    "Closing this out — the vendor confirmed on Friday.",
+    "Not urgent, but worth a look before the next review.",
+    "The second batch is cleaner. First one had bad rows.",
+    "Confirmed with the team, we are good to proceed.",
+    "Heads up: the window moved to 02:00, not 04:00.",
+    "That link expired. Reposting with a fresh one.",
+    "Down to two options now, leaning toward the second.",
+    "Checked it twice — the totals reconcile.",
+]
 _SEED_OMIT = object()
 
 # Tables/columns that denote a PERSON → their name/label seeds from _SEED_PEOPLE, not the
@@ -3496,10 +3554,37 @@ def _seed_infer_fk(col: str, known_tables) -> Optional[str]:
     return None
 
 
+def _tbl_ord_1202tz(table: str) -> int:
+    """A stable small integer for a table NAME -- crc32, never `hash()` (#1202tv's reason)."""
+    return zlib.crc32(("tbl\x1f%s" % (table or "")).encode("utf-8")) % 9973
+
+
+def _env_cast_1202tw(pool: List[str], salt: Any) -> List[str]:
+    """This environment's own ordering of `pool` -- a deterministic shuffle keyed by `salt`.
+
+    #1202tw: the pools were indexed `pool[i % len(pool)]`, so every environment ever generated
+    drew the same first six names in the same order. Measured: 150 of 150 delivered
+    seed_data.py files carry Ava Chen / Liam Patel / Noah Kim, across five unrelated domains.
+    The Realism Contract's clause 5 forbids exactly that reuse -- for the lanes.
+
+    A full Fisher-Yates rather than a rotation: rotating a pool leaves long shared runs between
+    two environments, which is the thing being fixed. `zlib.crc32` keeps it byte-stable across
+    processes for the reason #1202tv documents (the loader replays the table on a fingerprint
+    change), and an empty salt is a legitimate default -- it just means "the unsalted cast".
+    """
+    out = list(pool)
+    key = str(salt or "")
+    for k in range(len(out) - 1, 0, -1):
+        j = zlib.crc32(("%s\x1f%d" % (key, k)).encode("utf-8")) % (k + 1)
+        out[k], out[j] = out[j], out[k]
+    return out
+
+
 def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Dict[str, int],
                *, fk_ordinal: int = 0,
                pk_name: Optional[str] = None, pk_type: Optional[str] = None,
-               pk_types: Optional[Dict[str, str]] = None):
+               pk_types: Optional[Dict[str, str]] = None,
+               env_salt: str = ""):   # #1202tw
     """A realistic, deterministic value for one column of seed row ``i`` — or
     ``_SEED_OMIT`` to leave it (PK/timestamp/unknown → DB default/null). Value is
     chosen by COLUMN NAME first (domain-agnostic), then type-ish fallbacks.
@@ -3509,6 +3594,21 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
     if fk_table:
         if fk_table == "tenants":
             return "default"
+        if str(fk_table) == str(table):
+            # #1202tx: A SELF-REFERENTIAL FK POINTED AT THE ROW'S OWN ID. `parent_comment_id`
+            # on `comments`, `reply_to_id` on `messages`, `manager_id` on `employees`: `idx`
+            # was `i`, so row 0 got parent 1 -- itself. A delivered r132 seed had all six
+            # comments parented to themselves, a cycle no real table can contain and one an
+            # agent reading two rows would notice.
+            #
+            # Real trees are mostly ROOTS with a few replies, and a reply always points
+            # BACKWARD at an existing row. Roots omit the column (NULL is its real meaning
+            # here, and #599's required-column fallback still covers a NOT NULL one).
+            if i == 0 or _seed_spread_1202tv(col, i, 0, 9) < 6:
+                return _SEED_OMIT
+            _par = _seed_spread_1202tv(col + "#parent", i, 0, max(0, i - 1))
+            _ppk2 = _seed_pk_value(fk_table, _par, (pk_types or {}).get(fk_table))
+            return _ppk2 if _ppk2 is not None else _par + 1
         m = max(1, int(counts.get(fk_table, 1)))
         # #1069: OFFSET BY THE COLUMN, not just the row. This used to be `i % m`, so
         # two FK columns pointing at the SAME parent got the same parent in every row
@@ -3532,10 +3632,12 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
     if n in ("created_at", "updated_at") or n.endswith("_at"):
         return _SEED_OMIT  # DB default now()/nullable — avoid datetime coercion
     if n == "email" or n.endswith("_email"):  # email, from_email, sender_email, to_email…
-        return (_seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
+        _cast = _env_cast_1202tw(_SEED_PEOPLE, env_salt)          # #1202tw
+        return (_seed_slug(_cast[i % len(_cast)])
                 + "@" + _seed_email_domain_1202tu(i))   # #1202tu
     if n in ("username", "handle") or n.endswith("_handle") or n.endswith("_username"):
-        return "@" + _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
+        _cast = _env_cast_1202tw(_SEED_PEOPLE, env_salt)          # #1202tw
+        return "@" + _seed_slug(_cast[i % len(_cast)])
     if (n.endswith("_url") or n in ("url", "avatar", "thumbnail", "banner", "image", "photo")
             or any(k in n for k in ("avatar", "thumbnail", "banner", "image_url", "photo", "video_url", "audio_url"))):
         # #993: an INLINE placeholder, not a website. This line used to emit
@@ -3556,14 +3658,29 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
         _svg = (f"<svg xmlns='http://www.w3.org/2000/svg' width='{w}' height='{h}'>"
                 f"<rect width='100%' height='100%' fill='hsl({_hue},45%,28%)'/></svg>")
         return "data:image/svg+xml;utf8," + _quote(_svg, safe="")
+    # #1202tx: a COUNT column is a number even when its name contains a text keyword. The text
+    # branch below matches "comment"/"message"/"text" as SUBSTRINGS and ran first, so
+    # `comment_count` was seeded a whole sentence -- wrong type AND, in a delivered r132 seed,
+    # `'comment_count': 'A short overview of what this is and how it works.'` sitting beside
+    # the numeric `comments`. Suffix wins over substring.
+    if n.endswith(("_count", "_total", "_qty", "_num", "_number")):
+        return _seed_number(n, i)
+    if n.endswith("_id"):
+        # #1202tx: an unresolved KEY column must not become prose. `parent_comment_id` with no
+        # inferable parent fell through to the text branch on the substring "comment" and was
+        # seeded a whole sentence. NULL is the honest value for a key we cannot point anywhere;
+        # inventing an integer would only manufacture a dangling reference.
+        return _SEED_OMIT
     if any(k in n for k in ("description", "bio", "summary", "about", "caption",
                             "content", "body", "message", "text", "comment")):
-        return _SEED_SENTENCES[i % len(_SEED_SENTENCES)]
+        _pool = _env_cast_1202tw(_SEED_SENTENCES, env_salt)       # #1202tw
+        return _pool[i % len(_pool)]
     if (n in ("name", "title", "display_name", "full_name", "label", "subject",
               "headline", "topic", "heading") or n.endswith("_name") or n.endswith("_title")):
         # a person's name (sender/contact/author/attendee, or a name on a people table) reads
         # as a PERSON; everything else (folder/board/event/document titles) as a neutral title.
-        pool = _SEED_PEOPLE if _is_person_name(n, table) else _SEED_TITLES
+        pool = _env_cast_1202tw(                                   # #1202tw
+            _SEED_PEOPLE if _is_person_name(n, table) else _SEED_TITLES, env_salt)
         return pool[i % len(pool)]
     if any(k in n for k in ("count", "total", "amount", "quantity", "number", "duration",
                             "seconds", "length", "runtime", "position", "rank", "order",
@@ -3572,18 +3689,33 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
                             "subscriber", "follower", "play", "stream", "download",
                             "impression", "share", "watch", "reach", "visit", "year")):
         return _seed_number(n, i)
+    # #1202tx: UNIFORM STATE. Every row carried status=active, role=member,
+    # visibility=public, type=standard, and the Realism Contract's own clause 6 names this as
+    # "the quiet version" of unreal data: "in the real product the flag is what makes a row
+    # DIFFERENT from its neighbours". The framework's fallback was doing exactly what it tells
+    # the lanes not to. Distributions below are skewed the way a live population is, not
+    # uniform -- most rows keep the common value.
     if n in ("status", "state"):
-        return "active"
+        return ("active", "active", "active", "active", "archived", "active",
+                "pending", "active")[_seed_spread_1202tv(n, i, 0, 7)]
     if n == "role":
-        return "member"
+        return ("member", "member", "member", "member", "member", "admin",
+                "member", "owner")[_seed_spread_1202tv(n, i, 0, 7)]
     if n in ("kind", "type", "category"):
         # no enum/CHECK metadata in the contract → a NEUTRAL non-null token, never a
         # domain literal like 'video'/'short' (which is wrong for non-video apps).
         return "standard"
     if n == "visibility":
-        return "public"
+        return ("public", "public", "public", "public", "public", "private",
+                "public", "unlisted")[_seed_spread_1202tv(n, i, 0, 7)]
     if n.startswith("is_") or n.endswith("_flag") or n.endswith("_enabled") or n.startswith("has_") or n in ("active", "enabled", "is_read"):
-        return (i % 2 == 0)
+        # #1202tx: `i % 2 == 0` alternated True/False/True/False down every table -- a visible
+        # regularity AND the wrong RATE. Clause 6 again: a badge flag set on half the rows
+        # still reads as "a switch turned on for the demo". A capability flag (active,
+        # enabled) is usually on; a badge (verified, premium, featured, pinned) is usually not.
+        _badge = any(k in n for k in ("verified", "premium", "featured", "pinned", "starred",
+                                      "official", "pro", "vip", "highlight", "sponsored"))
+        return _seed_spread_1202tv(n, i, 0, 9) < (2 if _badge else 7)
     return _SEED_OMIT
 
 
@@ -3652,7 +3784,7 @@ def _seed_required_fallback(sa_type: Any, i: int) -> Any:
     return _SEED_OMIT
 
 
-def _build_seed_rows(tables: Dict[str, Any]):
+def _build_seed_rows(tables: Dict[str, Any], env_salt: str = ""):   # #1202tw
     """Build the deterministic default seed ``{table: [rows]}`` + the metadata the loader
     needs (class map, per-table owner column, whether the user PK is integer). Shared by
     render_seed_data (embedded fallback) and render_seed_json (the agent-editable artifact)."""
@@ -3661,7 +3793,15 @@ def _build_seed_rows(tables: Dict[str, Any]):
     n_users = 5
     counts: Dict[str, int] = {"users": n_users, "tenants": 1}
     for t in order:
-        counts.setdefault(t, 6)
+        # #1202tz: EVERY TABLE HAD EXACTLY SIX ROWS. In a delivered r107 seed, 15 of 16
+        # tables were 6 -- the realism rubric's dimension 5 names "suspiciously round counts
+        # (exactly 3 notes, exactly 10 users)" and "no lurkers / no noise" as the tell, and a
+        # workspace where every collection is the same size is not a workspace. The band keeps
+        # the floor high enough that a list screen still reads as populated (the gate's bar is
+        # "domain-REALISTIC populated screens") while _DEMO_FLOOR = 8 still tops up the tables
+        # the demo user owns, exactly as before.
+        counts.setdefault(t, _seed_spread_1202tv(
+            "rowcount#" + str(env_salt), _tbl_ord_1202tz(t), 5, 12))
     pk_types = {t: meta[t].get("pk_type") for t in meta}
     seed: Dict[str, List[Dict[str, Any]]] = {}
     full_order = (["users"] if "users" in meta else []) + [t for t in order if t != "users"]
@@ -3688,7 +3828,8 @@ def _build_seed_rows(tables: Dict[str, Any]):
                 _fk = fks.get(c) or _seed_infer_fk(c, known_tables)
                 v = _seed_cell(c, t, i, _fk, counts,
                                fk_ordinal=_fk_ordinals.get(c, 0),
-                               pk_name=_pk_name, pk_type=_pk_type, pk_types=pk_types)
+                               pk_name=_pk_name, pk_type=_pk_type, pk_types=pk_types,
+                               env_salt=env_salt)   # #1202tw
                 if v is _SEED_OMIT and c in (meta[t].get("required") or ()):
                     # #599: `_seed_cell` omits a column it has no naming rule for, and the
                     # loader then drops the ENTIRE row on the NOT NULL — silently, by design
@@ -3717,6 +3858,29 @@ def _build_seed_rows(tables: Dict[str, Any]):
                 rows.append(row)
         if rows:
             seed[t] = rows
+    # #1202ty: THE FALLBACK SEED HAD NO TIMESTAMPS AT ALL.
+    #
+    # `_seed_cell` omits every `_at` column ("DB default now()/nullable"), so in this path each
+    # table's rows all took the DB default at load time -- one instant, zero variance, which is
+    # the realism rubric's dimension 3 in its strongest form ("every item at the same round
+    # time ... variance ~ 0"). #1202rw already solved this for the DATASET path and paid for
+    # two near-misses doing it: `read_at`/`ended_at` must stay NULL because there the NULL IS
+    # the answer (unread / still live), and a CONTENT date like `release_date` must not be
+    # banded because it contradicts the row's own `year`. So this REUSES that function rather
+    # than growing a second implementation with its own version of those lessons to relearn.
+    try:
+        from .material_prep import enrich_seed_timestamps_1202rw
+        _schema_ty = {
+            t: {c: {"pk": (c == (meta[t].get("pk") or "")),
+                    "type": str((meta[t].get("types") or {}).get(c) or ""),
+                    "fk": (meta[t].get("fks") or {}).get(c)}
+                for c in (meta[t].get("cols") or [])}
+            for t in seed}
+        seed = enrich_seed_timestamps_1202rw(seed, _schema_ty)
+    except Exception as _e1202ty:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_skeleton.seed_timestamps_1202ty",
+                       "the fallback seed's record timestamps (#1202ty)", _e1202ty)
     classmap = {t: meta[t]["cls"] for t in seed}
     # Per-table owner column via the SAME resolver the READ side scopes on, so the loader
     # can backfill a missing owner → owner-scoped reads are never empty even if an
@@ -3845,7 +4009,8 @@ def audit_agent_seed(backend_dir) -> Dict[str, Any]:
     return out
 
 
-def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[str, Any]]] = None) -> str:
+def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[str, Any]]] = None,
+                     env_salt: str = "") -> str:   # #1202tw
     """Project seed_data.py — the framework-owned LOADER. It loads the DATA from the
     sibling ``seed_data.json`` (authored by the backend agent) when present + non-empty,
     else the embedded deterministic ``_SEED`` (so the app is never blank). For each EMPTY
@@ -3857,7 +4022,8 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
     lane's handlers (``Folder.name == "Sent"``). After seeding, the loader ensures EVERY
     existing user has each such row — idempotent, so an agent seed that omits the canonical
     folder no longer 500s reply/forward/delete on a real, correct handler."""
-    seed, classmap, owner_col, image_col, owner_child_fk, pk_meta, unique_cols = _build_seed_rows(tables)
+    seed, classmap, owner_col, image_col, owner_child_fk, pk_meta, unique_cols = _build_seed_rows(
+        tables, env_salt)   # #1202tw
     bootstrap_spec = list(bootstrap_spec or [])
     body = (
         '"""Seed LOADER (framework-owned). The DATA lives in the sibling seed_data.json,\n'
@@ -5049,7 +5215,10 @@ def write_backend_skeleton(
 
     w("database.py", _DATABASE_PY)
     w("models.py", render_models(tables))
-    w("seed_data.py", render_seed_data(tables, _bootstrap_spec))  # framework LOADER (code; embeds _SEED fallback)
+    # #1202tw: the run directory name IS this environment's identity, so two environments
+    # draw different casts from the same pools.
+    w("seed_data.py", render_seed_data(tables, _bootstrap_spec,
+                                       env_salt=Path(str(output_dir)).name))
     import json as _json_bs
     w("user_bootstrap.json", _json_bs.dumps(_bootstrap_spec, indent=2, ensure_ascii=False))  # FIX #72: create_user reads this
     # The framework deliberately does not write seed_data.json's CONTENT — that DATA file is
