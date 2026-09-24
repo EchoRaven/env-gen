@@ -10144,9 +10144,21 @@ def reroute_inline_stub_routes(frontend_dir) -> Dict[str, object]:
 
 def _pascal_case(name: str) -> str:
     """snake/kebab/space → PascalCase component name. ``youtube_home`` →
-    ``YoutubeHome``; falls back to ``Page`` for empty input."""
+    ``YoutubeHome``; falls back to ``Page`` for empty input.
+
+    #1202th: a LEADING DIGIT is prefixed, because the result becomes a JS identifier --
+    `function 404Page()`, `import 404Page from …` -- and esbuild fails the whole build on it,
+    the same total failure `_RESERVED_APP_IDENTS` below exists to prevent ("an agent
+    registered a ui_page named 'App' … the frontend build failed every cycle → run wedged on
+    docker_up"). `404_page` and `2fa_setup_page` are ordinary names for a lane to choose; the
+    corpus has none yet, so this is hardening, and it mirrors what `backend_skeleton._attr_name`
+    has always done on the Python side (`col_` for a leading digit). Idempotent: `Page404Page`
+    starts with a letter and is returned unchanged.
+    """
     parts = re.split(r"[^A-Za-z0-9]+", str(name or ""))
     out = "".join(p[:1].upper() + p[1:] for p in parts if p)
+    if out[:1].isdigit():
+        out = "Page" + out
     return out or "Page"
 
 
