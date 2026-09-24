@@ -235,11 +235,16 @@ def test_the_release_branch_stamps_before_it_announces():
 def test_counterproof_removing_the_return_goes_red():
     """Delete the retry's `return` and the ordering assertion above must fail."""
     seg = _deliver_src()
-    mutated = seg.replace(
-        "                            self._final_recapture_cap_1202lk())\n"
-        "                        return\n",
-        "                            self._final_recapture_cap_1202lk())\n", 1)
-    assert mutated != seg, "the mutation landmark moved — this counter-proof is vacuous"
+    # #1202tk records WHICH hold stopped a clear gate, so a one-line note now sits between
+    # the log call and this `return`. The counter-proof still deletes the RETURN, which is
+    # the thing the ordering assertion above depends on; the landmark just grew a line.
+    import re as _re
+    mutated, _n = _re.subn(
+        r"(self\._final_recapture_cap_1202lk\(\)\)\n"
+        r"(?:[^\n]*_note_delivery_hold_1202tk[^\n]*\n)?)\s*return\n",
+        r"\1", seg, count=1)
+    assert _n == 1 and mutated != seg, (
+        "the mutation landmark moved — this counter-proof is vacuous")
     node = _retry_branch(mutated)
     assert node is not None
     assert not isinstance(node.body[-1], ast.Return)

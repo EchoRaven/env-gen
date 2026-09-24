@@ -78,6 +78,43 @@ def _tick_delivery_line_1202pt(lane) -> str:
     return "If validation has passed and deliverables are ready, call deliver_project(). "
 
 
+def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
+    """Append one line to ``logs/delivery_hold.jsonl``: WHY a clear gate did not ship. #1202tk
+
+    `delivery_gate.jsonl` records the gate, and `#948` added it for exactly this reason -- so a
+    run can be asked afterwards what stopped it. But the gate is only the FIRST of fourteen
+    conditions in `_maybe_framework_deliver`: once `failed_checks` is empty, stale build
+    evidence, the visual gate, the test-user squad (six separate deferrals), the browser
+    walkthrough, route consolidation and the fresh pre-cut smoke can each still hold the
+    release. None of those was written down anywhere durable -- they went to the run log, and a
+    run log is not kept.
+
+    So "the gate was green and nothing shipped" was unanswerable from a run directory, which is
+    the single most consequential question this system has. Measured over the 77 gate ledgers:
+    41 runs reach a fully-green gate and never deliver, tiktok-r130 among them -- eight green
+    windows totalling ~50 minutes, including 21.7 minutes immediately before its budget abort,
+    with 0 releases cut and no record of which hold fired.
+
+    Best-effort and silent on failure: an observability write must never be able to stop a
+    delivery.
+    """
+    try:
+        import json as _j1202tk
+        import time as _t1202tk
+        from pathlib import Path as _P1202tk
+        out = _P1202tk(getattr(orch, "output_dir", ".")) / "logs" / "delivery_hold.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202tk.dumps({
+                "at": _t1202tk.time(),
+                "hold": str(hold),
+                "detail": str(detail)[:400],
+                "milestone": str(getattr(orch, "_current_milestone_version", "") or ""),
+            }) + "\n")
+    except Exception:
+        pass
+
+
 def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> None:
     """Append one line per delivery-gate evaluation to ``logs/delivery_gate.jsonl``.
 
@@ -5362,6 +5399,7 @@ class Orchestrator:
                 # answer -- otherwise return as before and let the next validation decide.
                 _gate1202qx = self._validate_delivery_gate()
                 if _gate1202qx.get("failed_checks"):
+                    _note_delivery_hold_1202tk(self, "gate_failed_checks")   # #1202tk
                     return  # not deliverable yet
                 from .runtime.framework_validation import stack_known_serving_1202qx
                 if not stack_known_serving_1202qx(
@@ -5371,6 +5409,7 @@ class Orchestrator:
                         "failing %s) but no recent validation has seen the stack serve, so "
                         "the green rests on stale build evidence -- holding for the next "
                         "validation rather than releasing over it.", _shown)
+                    _note_delivery_hold_1202tk(self, "stale_build_evidence")   # #1202tk
                     return  # not deliverable yet
                 self._logger.warning(
                     "#1202qx the framework's own repairs cleared the gate in this tick (was "
@@ -5477,6 +5516,7 @@ class Orchestrator:
                         except Exception as _pb_d_exc:
                             self._logger.error(
                                 "unbuilt-pages dispatch failed: %s", _pb_d_exc)
+                        _note_delivery_hold_1202tk(self, "unbuilt_pages")   # #1202tk
                         return
                     # release: escape fired — deliver with the fallback, loudly.
                     self._logger.warning(
@@ -5538,6 +5578,7 @@ class Orchestrator:
                     # by lane churn — PIPE-C3), the per-source attempt cap, or the
                     # per-milestone total-judgment cap.
                     await self._maybe_run_visual_fidelity()
+                    _note_delivery_hold_1202tk(self, "visual_fidelity")   # #1202tk
                     return
                 if _vf_decision == "fast_release":
                     # FIX #558: the gating blocking_average has cleared the min bar for N
@@ -5618,6 +5659,7 @@ class Orchestrator:
                             str(self._compute_app_source_signature())[:12],
                             getattr(self._vf_gate, "final_recaptures_1202lk", 0),
                             self._final_recapture_cap_1202lk())
+                        _note_delivery_hold_1202tk(self, "visual_final_recapture")   # #1202tk
                         return
                     else:
                         # release: an escape fired — deliver anyway, loudly, below-threshold.
@@ -5718,6 +5760,7 @@ class Orchestrator:
                                     "TEST-USER SQUAD re-launch HELD: %s. Deferring this tick "
                                     "instead; the wall-clock escape still releases the gate.",
                                     _wait1202rd)
+                                _note_delivery_hold_1202tk(self, "squad_wait")   # #1202tk
                                 return
                         from .runtime.test_user_squad import squad_launch_held_1202qw
                         _held1202qw = squad_launch_held_1202qw(
@@ -5727,6 +5770,7 @@ class Orchestrator:
                                 "TEST-USER SQUAD launch HELD: %s. Ten agents against a stack "
                                 "that does not answer file the stack's state, not the app's.",
                                 _held1202qw)
+                            _note_delivery_hold_1202tk(self, "squad_stack_unanswered")   # #1202tk
                             return
                         # SINGLE-FLIGHT: exactly one background squad run, then defer.
                         self._tu_squad_task = asyncio.create_task(
@@ -5737,11 +5781,13 @@ class Orchestrator:
                             "deferred) — deferring this delivery tick; the coordination loop "
                             "keeps running while it tests.",
                             int(_now - self._tu_squad_deferred_since))
+                        _note_delivery_hold_1202tk(self, "squad_launched_background")   # #1202tk
                         return  # defer this tick; do NOT await the squad inline
                     if _tu_action == "defer":
                         # A squad run is in flight but not finished → defer WITHOUT spawning a
                         # second (single-flight) and WITHOUT awaiting it inline; re-check
                         # task.done() next tick. The loop stays live meanwhile.
+                        _note_delivery_hold_1202tk(self, "squad_inflight")   # #1202tk
                         return
                     # 'consume': the background squad finished → read its result exactly ONCE,
                     # clear the handle (so it is never re-read and a later 'launch' re-arms it
@@ -5779,6 +5825,7 @@ class Orchestrator:
                         self._logger.info(
                             "test-user squad not ready (%s) — deferring without burning an "
                             "attempt", _tu_result.get("reason"))
+                        _note_delivery_hold_1202tk(self, "squad_not_ready")   # #1202tk
                         return
                     else:  # 'defect' — squad ran and filed P0s: burn an attempt and defer
                         self._tu_squad_attempts = (getattr(self, "_tu_squad_attempts", 0) or 0) + 1
@@ -5788,6 +5835,7 @@ class Orchestrator:
                             "re-testing after the fix lands. modalities=%s", _p0,
                             self._tu_squad_attempts, int(_now - self._tu_squad_deferred_since),
                             _tu_result.get("modalities"))
+                        _note_delivery_hold_1202tk(self, "squad_defects")   # #1202tk
                         return  # block this milestone's release until the defects clear
                 else:
                     # squad_release_decision escape fired (wall-clock 900s / attempt cap) →
@@ -5875,6 +5923,7 @@ class Orchestrator:
                             ", ".join(f"{_k}={_v!r}" for _k, _v in _bg_signals.items()),
                             self._tu_browser_attempts,
                             int(_bg_now - self._tu_browser_deferred_since))
+                        _note_delivery_hold_1202tk(self, "browser_ui_unusable")   # #1202tk
                         return  # hold this milestone's release until the UI is usable
                     self._logger.warning(
                         "Browser test-user gate RELEASED (escape after %ss deferred / %s "
@@ -5930,6 +5979,7 @@ class Orchestrator:
                             "escapes after the cap. Set ENVGEN_ROUTE_CONSISTENCY_GATE=0 to "
                             "disable.", len(_rc_dups), [d.get("paths") for d in _rc_dups],
                             self._rc_attempts, int(_rc_now - self._rc_deferred_since))
+                        _note_delivery_hold_1202tk(self, "route_consolidation")   # #1202tk
                         return  # hold this milestone's release until the routes consolidate
                     self._logger.warning(
                         "Route-consistency gate RELEASED (escape after %ss deferred / %s "
@@ -5990,6 +6040,7 @@ class Orchestrator:
             try:
                 from .runtime.framework_validation import ensure_fresh_smoke_before_cut
                 if not await ensure_fresh_smoke_before_cut(self):
+                    _note_delivery_hold_1202tk(self, "fresh_smoke")   # #1202tk
                     return  # held: post-smoke backend drift failed the fresh smoke
             except Exception as _fs_exc:
                 self._logger.debug("fresh-smoke-before-cut skipped: %s", _fs_exc)
