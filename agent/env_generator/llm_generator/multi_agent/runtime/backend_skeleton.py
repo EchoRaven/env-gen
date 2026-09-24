@@ -18,6 +18,7 @@ become generic lists; richer business logic is a later lane-override extension).
 from __future__ import annotations
 
 import ast
+import json as _json_1202ti   # #1202ti: emitted string literals are quoted by json
 import keyword
 import logging
 import re
@@ -490,7 +491,9 @@ def _render_column(col: Dict[str, Any],
         except Exception:
             fk = None
     if fk:
-        args.append(f'ForeignKey("{fk}")')
+        # #1202ti: the FK target becomes a Python string literal, so quote it with
+        # something that knows the rules -- the DDL side already does, via `_quote_ident`.
+        args.append("ForeignKey(%s)" % _json_1202ti.dumps(str(fk)))
     kw = []
     if col.get("primary_key") or col.get("pk"):
         kw.append("primary_key=True")
@@ -735,7 +738,7 @@ def _temporal_synonym_lines(real: List[Dict[str, Any]]) -> List[str]:
             sib = nm[:-5] + "_at"
         if sib and sib.lower() not in names and sib.lower() != low:
             names.add(sib.lower())   # a second temporal col won't re-alias the same name
-            out.append(f'    {sib} = synonym("{nm}")')
+            out.append("    %s = synonym(%s)" % (sib, _json_1202ti.dumps(str(nm))))
     return out
 
 
@@ -850,7 +853,7 @@ def render_models(tables: Dict[str, Any]) -> str:
         lines += _temporal_synonym_lines(real)   # #61: _at↔_time drift aliases
         body = "\n".join(lines) or "    pass"
         blocks.append(f'class {_cls_map_1096.get(table) or _class_name(table)}(Base):\n'
-                      f'    __tablename__ = "{table}"\n{body}')
+                      '    __tablename__ = %s\n%s' % (_json_1202ti.dumps(str(table)), body))
 
     emit("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
     emit("users", _merge_cols(_SPINE_USER_COLS, by_name.get("users", [])))
