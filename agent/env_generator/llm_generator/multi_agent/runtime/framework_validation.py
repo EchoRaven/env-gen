@@ -1997,7 +1997,7 @@ class FrameworkValidation:
                             priority="P0",
                         )
                         from tools.communication_tools import _create_message
-                        await orch.message_bus.send(_create_message(
+                        _wake_1202tc = _create_message(
                             source_agent_id="orchestrator",
                             target_agent_id="verifier",
                             content=(
@@ -2010,7 +2010,16 @@ class FrameworkValidation:
                             priority="urgent",
                             persist=True,
                             tags=["verification_chains", "remediation"],
-                        ))
+                        )
+                        # #1202tc: this wake is admitted TODAY only because the word
+                        # "run_validation" happens to be in the prose and "validation" is one
+                        # of the policy's `payload_keywords`. Its tags miss `accepted_tags`
+                        # and `_create_message` never sets a phase, so rewording this sentence
+                        # -- the most editable thing in the file -- would silently stop the
+                        # verifier being woken, which is #1202gt's shape: a mechanism switched
+                        # off by an edit that looks harmless. Say it in metadata instead.
+                        _wake_1202tc.metadata["validation_phase"] = True
+                        await orch.message_bus.send(_wake_1202tc)
                         orch._logger.warning(
                             "CHAIN-AUTHORING remediation dispatched to verifier "
                             "(task %s).", (_ct or {}).get("id"))

@@ -1901,14 +1901,33 @@ class RemediationDispatcher:
                         "check green. Fix it, then finish."),
                     assignee=owner, agent="orchestrator", priority="P0")
                 guard[name] = milestone
-                await orch.message_bus.send(_create_message(
+                _wake_1202tc = _create_message(
                     source_agent_id="orchestrator", target_agent_id=owner,
                     content=(
                         f"URGENT: delivery is blocked on `{name}`. Claim task "
                         f"{(task or {}).get('id')} and fix it NOW, then finish. "
                         f"Detail: {detail[:300]}"),
                     msg_type="task_ready", priority="urgent", persist=True,
-                    tags=[str(name), "remediation"]))
+                    tags=[str(name), "remediation"])
+                # #1202tc: the SIBLING emitter of the V29 fix. `dispatch_gate_level_checks`
+                # sets this flag when it wakes the verifier, with a documented run loss behind
+                # it ("the wake bounced 38x and the run STUCK-ABORTed"); this table routes
+                # `docker_up` to the verifier too and never got it. Simulated against the real
+                # `agents_config.yaml` policy and the real `_create_message`: this wake is
+                # REJECTED every time -- from_agent is right, but the flag is unset, no phase
+                # is ever set on these messages, `["docker_up", "remediation"]` misses
+                # `accepted_tags`, and the payload carries none of the `payload_keywords`
+                # ("blocked" is not "blocker"). 72 of these tasks exist across 49 corpus runs,
+                # every one assigned to the verifier.
+                #
+                # NOT a dead end, and worth saying so: 64 of the 72 ended `completed`, so the
+                # verifier reaches the task through its own polling. What the bounce costs is
+                # the urgency -- and a log line reading "verifier requires explicit
+                # validation-phase trigger", which describes the policy rather than the
+                # missing flag, so it reads as correct behaviour.
+                if owner == "verifier":
+                    _wake_1202tc.metadata["validation_phase"] = True
+                await orch.message_bus.send(_wake_1202tc)
                 orch._logger.warning(
                     "FAILING-CHECK remediation dispatched to %s (task %s): %s — %s",
                     owner, (task or {}).get("id"), name, detail[:160])
