@@ -20,6 +20,7 @@ _LOG_700 = logging.getLogger(__name__)
 
 # #1067: one-shot latch so a per-tick failure cannot flood the log.
 _DUPE_REPORT_FAILED_1067 = {"said": False}
+_WIRING_REPORT_FAILED_1202TM = {"said": False}   # #1202tm, beside its sibling
 _SEED_REPAIR_FAILED_1068 = {"said": False}
 # #760: groups already announced this process. See the call site for why a module-level set is
 # the right shape here and why item 78's dual-import bound (<=2 announcements) is acceptable.
@@ -495,7 +496,26 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
                 type(_dupe_exc_1067).__name__, str(_dupe_exc_1067)[:200])
     try:
         return ui_page_delivery_blockers(Path(app_root) / "frontend" / "src", workhub)
-    except Exception:
+    except Exception as _wiring_exc_1202tm:
+        # #1202tm: this is the producer of `deliverability_ui_page_unwired` -- the most
+        # frequent blocker in the corpus -- and returning [] means the GATE SEES ZERO UNWIRED
+        # PAGES. "Could not look" and "nothing to find" are the same answer to every reader.
+        #
+        # The right treatment is ten lines above, in this same function: #1067 says of the
+        # duplicate-route reporter that "this run has no duplicate-route findings because the
+        # reporter raised, not because there are none." One fact, two emitters, the guard on
+        # one of them.
+        #
+        # The VERDICT is left alone, exactly as #1067 left it: turning a detector fault into a
+        # blocker would wedge a run on the framework's own error, which is the opposite of what
+        # a gate is for. Only the silence goes.
+        if not _WIRING_REPORT_FAILED_1202TM["said"]:
+            _WIRING_REPORT_FAILED_1202TM["said"] = True
+            _LOG_700.warning(
+                "#1202tm ui_page wiring report SKIPPED: %s: %s. The gate verdict below is "
+                "unaffected, but this run has no unwired-page findings because the reporter "
+                "raised, not because every page is wired. Logged once per process.",
+                type(_wiring_exc_1202tm).__name__, str(_wiring_exc_1202tm)[:200])
         return []
 
 
