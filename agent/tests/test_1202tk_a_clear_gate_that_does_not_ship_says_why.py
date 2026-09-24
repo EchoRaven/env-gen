@@ -81,27 +81,69 @@ def test_it_can_never_break_a_delivery():
     note(types.SimpleNamespace(output_dir="/proc/nonexistent/nope"), "y")
 
 
-def _method_span(src):
-    i = src.index("async def _maybe_framework_deliver")
-    j = min(x for x in (src.find("\n    async def ", i + 10), src.find("\n    def ", i + 10))
-            if x > 0)
-    return src[:i].count("\n") + 1, src[:j].count("\n") + 1
+def _deliver_fn():
+    """The method as an AST node.
+
+    #1202to reformatted one of the calls across five lines and the previous line-scraping
+    versions of the two checks below both broke -- the ratchet was pinned to the FORMATTING,
+    not to the property. Parsing states the property directly and cannot be broken by a
+    reflow.
+    """
+    tree = ast.parse(ORCH_PY.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) \
+                and node.name == "_maybe_framework_deliver":
+            return node
+    raise AssertionError("_maybe_framework_deliver is gone")
+
+
+def _is_note(stmt):
+    return (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+            and isinstance(stmt.value.func, ast.Name)
+            and stmt.value.func.id == "_note_delivery_hold_1202tk")
+
+
+def _note_calls(fn):
+    return [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name) and n.func.id == "_note_delivery_hold_1202tk"]
+
+
+def _gate_line(fn):
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Name) and n.id == "_gate1202qx":
+            return n.lineno
+    raise AssertionError("#1202qx's gate call is gone")
+
+
+def _returns_without_a_hold(body, covered, gate, out):
+    """Walk the block tree; a return is covered when a hold was recorded earlier on its path.
+
+    `covered` is True once an unconditional note has run in this block or any enclosing one --
+    which is exactly "every path to here recorded a hold", the property the ledger needs. A
+    4-line text window only approximated it.
+    """
+    seen = covered
+    for stmt in body:
+        if _is_note(stmt):
+            seen = True
+            continue
+        if isinstance(stmt, ast.Return):
+            if stmt.lineno > gate and not seen:
+                out.append(f"orchestrator.py:{stmt.lineno}")
+            continue
+        for field in ("body", "orelse", "finalbody"):
+            inner = getattr(stmt, field, None)
+            if isinstance(inner, list) and inner and isinstance(inner[0], ast.stmt):
+                _returns_without_a_hold(inner, seen, gate, out)
+        for handler in getattr(stmt, "handlers", []):
+            _returns_without_a_hold(handler.body, seen, gate, out)
 
 
 def test_every_post_gate_return_records_its_hold():
     """The rule, not the instance: a fifteenth hold added tomorrow must say so too."""
-    src = ORCH_PY.read_text(encoding="utf-8")
-    lines = src.split("\n")
-    start, end = _method_span(src)
-    gate = next(n for n in range(start, end)
-                if "_gate1202qx = self._validate_delivery_gate()" in lines[n - 1])
+    fn = _deliver_fn()
     missing = []
-    for n in range(gate, end):
-        if not lines[n - 1].strip().startswith("return"):
-            continue
-        window = "\n".join(lines[max(gate, n - 4):n])
-        if "_note_delivery_hold_1202tk" not in window:
-            missing.append(f"orchestrator.py:{n}: {lines[n - 1].strip()[:70]}")
+    _returns_without_a_hold(fn.body, False, _gate_line(fn), missing)
     assert missing == [], (
         "these hold the release after a CLEAR gate and record nothing, so a run cannot be "
         "asked why it did not ship: %s" % missing)
@@ -109,11 +151,14 @@ def test_every_post_gate_return_records_its_hold():
 
 def test_the_holds_are_named_distinctly():
     """A ledger of fourteen `hold: "deferred"` lines answers nothing."""
-    src = ORCH_PY.read_text(encoding="utf-8")
-    start, end = _method_span(src)
-    lines = src.split("\n")
-    names = [ast.literal_eval(l.strip().split("(self, ")[1].split(")")[0].split(",")[0])
-             for l in lines[start:end] if "_note_delivery_hold_1202tk(self," in l]
+    names = []
+    for call in _note_calls(_deliver_fn()):
+        assert len(call.args) >= 2, ast.dump(call)
+        name = call.args[1]
+        assert isinstance(name, ast.Constant) and isinstance(name.value, str), (
+            "the hold name must be a literal, or the ledger cannot be read without running "
+            "the pipeline: %s" % ast.dump(name))
+        names.append(name.value)
     assert len(names) >= 14, names
     assert len(set(names)) == len(names), f"duplicate hold names: {names}"
 

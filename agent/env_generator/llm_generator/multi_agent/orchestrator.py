@@ -78,6 +78,9 @@ def _tick_delivery_line_1202pt(lane) -> str:
     return "If validation has passed and deliverables are ready, call deliver_project(). "
 
 
+import time as _t1202to   # #1202to: the visual hold records its own counters
+
+
 def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
     """Append one line to ``logs/delivery_hold.jsonl``: WHY a clear gate did not ship. #1202tk
 
@@ -5578,7 +5581,28 @@ class Orchestrator:
                     # by lane churn — PIPE-C3), the per-source attempt cap, or the
                     # per-milestone total-judgment cap.
                     await self._maybe_run_visual_fidelity()
-                    _note_delivery_hold_1202tk(self, "visual_fidelity")   # #1202tk
+                    # #1202to: the visual hold is the one that matters -- 16 of the corpus's 18
+                    # visual releases came from the WALL CLOCK (median 3448s deferred, ~57 min)
+                    # and only 2 from a plateau, while the runs had judged just 3-12 times
+                    # (median ~5). The soft plateau needs 4 consecutive no-improvement
+                    # judgments and the hard one 8, so the hard escape sits ABOVE the number of
+                    # judgments most runs ever make.
+                    #
+                    # Whether that is worth re-tuning turns on a number nothing records: how
+                    # many of those judgments actually showed no improvement. verdict.json is
+                    # overwritten every round, so the corpus cannot answer it and neither could
+                    # I -- snapshot sampling is not per-round. #647 wants a measured rationale
+                    # before a constant moves, so this records the counters instead of guessing
+                    # at them.
+                    _vfg1202to = getattr(self, "_vf_gate", None)
+                    _note_delivery_hold_1202tk(
+                        self, "visual_fidelity",
+                        "attempts=%s plateau_rounds=%s judged=%s deferred_s=%s" % (
+                            getattr(_vfg1202to, "attempts", "?"),
+                            getattr(_vfg1202to, "plateau_rounds", "?"),
+                            getattr(_vfg1202to, "total_judgments", "?"),
+                            int(_t1202to.time() - (getattr(_vfg1202to, "deferred_since", None)
+                                                   or _t1202to.time()))))
                     return
                 if _vf_decision == "fast_release":
                     # FIX #558: the gating blocking_average has cleared the min bar for N
