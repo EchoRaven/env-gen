@@ -66,7 +66,14 @@ def test_it_says_what_it_restored():
     """Silently re-adding a route is the #691 mistake: a correct action nobody can
     audit."""
     h = TPL[TPL.index("async def _fw_restore_unserved_dropped_1166"):]
-    assert "#1166 restored" in h and "warning(" in h
+    # #1202tf: the property is that the restore ANNOUNCES itself, not that the announcement
+    # carries our ticket number. The message ships in the delivered app's logs, where a
+    # framework ticket means nothing to the reader and leaks our internals -- the standing
+    # rule against internal tags in generated output. The ticket stays in the surrounding
+    # framework comment, which is where the next reader of THIS file needs it.
+    assert "restored %d lane route(s)" in h and "warning(" in h
+    assert "#1166" not in h.split("warning(")[1][:400], (
+        "a framework ticket must not ship inside a served log message")
 
 
 def _predicate():

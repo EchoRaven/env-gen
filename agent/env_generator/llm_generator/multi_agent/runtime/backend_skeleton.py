@@ -2254,7 +2254,7 @@ try:
             _cr_log.getLogger("custom_routes").warning(
                 "custom_routes: %d route(s) NOT registered because they duplicate "
                 "standard CRUD — the framework's projected handler serves them, and it "
-                "enforces the OWNER and SUBJECT foreign keys (#1202db) and whatever the "
+                "enforces the OWNER and SUBJECT foreign keys and whatever the "
                 "DB column declares NOT NULL. It does NOT know a constraint the contract "
                 "never stated: a nullable column your handler validated is now "
                 "unvalidated — declare it in the contract or give the path an action "
@@ -2299,7 +2299,7 @@ try:
                 _back.append("%s %s" % (_m1166, _p1166))
             if _back:
                 _l1166.getLogger("custom_routes").warning(
-                    "#1166 restored %d lane route(s) that were dropped for a projected "
+                    "restored %d lane route(s) that were dropped for a projected "
                     "handler that does not exist — nothing else serves them, so dropping "
                     "them would have left a DECLARED endpoint answering 404: %s",
                     len(_back), _back)
@@ -2307,7 +2307,7 @@ try:
             try:
                 import logging as _l2
                 _l2.getLogger("custom_routes").warning(
-                    "#1166 restore skipped: %s", _e1166)
+                    "lane-route restore skipped: %s", _e1166)
             except Exception:
                 pass
 
@@ -2334,16 +2334,16 @@ try:
                 _back.append(str(getattr(_r1202ki, "path", "?")))
             if _back:
                 _l1202ki.getLogger("custom_routes").warning(
-                    "#1202ki restored %d FRAMEWORK route(s) a lane removed from the router: "
+                    "restored %d FRAMEWORK route(s) a lane removed from the router: "
                     "%s. The fixed auth/oauth/control surface is framework-owned — the test "
                     "harness drives it and its contract is registered kind=auth|oauth|infra — "
-                    "so a lane handler cannot replace it. Put back FIRST so #528's ordering "
-                    "guarantee holds again.", len(_back), _back)
+                    "so a lane handler cannot replace it. Put back FIRST so the framework's "
+                    "ordering guarantee holds again.", len(_back), _back)
         except Exception as _e1202ki:    # never let the repair break startup
             try:
                 import logging as _l3
                 _l3.getLogger("custom_routes").warning(
-                    "#1202ki restore skipped: %s", _e1202ki)
+                    "framework-route restore skipped: %s", _e1202ki)
             except Exception:
                 pass
 except ImportError as _custom_imp:
@@ -4081,7 +4081,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                             if not isinstance(_x, dict) or _x.get(_fk) is None\n"
         "                             or _x.get(_fk) in _live]\n"
         "                    if len(_kept) != len(_rows):\n"
-        "                        print('[seed] #807 pruned %d of %d %s row(s) whose %s no longer '\n"
+        "                        print('[seed] pruned %d of %d %s row(s) whose %s no longer '\n"
         "                              'resolves after the dataset replaced %s -- a stale link is '\n"
         "                              'dropped, never remapped'\n"
         "                              % (len(_rows) - len(_kept), len(_rows), _t, _fk, _tgt))\n"
@@ -4514,7 +4514,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                # seeded id range, run-41) and skip re-seeding.\n"
         "                _sync_sequences(db)\n"
         "                return\n"
-        "            print('seed: fingerprint matched but a seed-provided table is EMPTY (partial wipe / orphan pollution) — re-seeding (FIX #130)')\n"
+        "            print('seed: fingerprint matched but a seed-provided table is EMPTY (partial wipe / orphan pollution) — re-seeding')\n"
         "        if applied is not None:\n"
         "            _reset_seeded_tables(db)\n"
         "        # #1105: BEFORE the first insert — users cannot land without their\n"
