@@ -3055,6 +3055,29 @@ def _deliverability_check_token(blocker: str) -> str:
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.
+    # #1202tu: a check that can DECLINE delivery but mints no mappable name dispatches
+    # NOBODY -- `deliverability_other:<prose>` is a composite key and `_GATE_OWNER` is an exact
+    # lookup, so it can never match. r132 measured that: the reserved-domain blocker sat in
+    # 67/67 gate snapshots with "NO remediation owner" while all ten other checks were being
+    # dispatched normally. Both tokens below were added 09-23 (#1202rs realism, #1202ri/rj
+    # operator identity) WITHOUT a mapping, which is how a new check silently becomes a wall.
+    # The five below are the rest of what #1202tu's ratchet found unroutable -- #1202rm/rq/rr
+    # from the same 09-23 sweep plus two older ones. The apis_used pair is ordered
+    # most-specific-first: both carry "apis_used: []" and only the tail separates them.
+    if "apis_used: []` while their own source calls" in low:
+        return "deliverability_page_apis_understated"
+    if "apis_used: []` while the contract" in low:
+        return "deliverability_all_page_apis_empty"
+    if "contains no navigation affordance" in low:
+        return "deliverability_no_navigation_affordance"
+    if "publish another actor's private column" in low:
+        return "deliverability_private_column_published"
+    if "never reads a route" in low:
+        return "deliverability_route_param_unread"
+    if "reserved documentation domain" in low:
+        return "deliverability_reserved_email_domain"
+    if "identity of the account that built this env" in low:
+        return "deliverability_operator_identity_leak"
     return f"deliverability_other:{str(blocker)[:80]}"
 
 

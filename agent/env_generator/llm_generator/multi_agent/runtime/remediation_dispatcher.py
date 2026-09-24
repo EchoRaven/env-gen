@@ -2546,6 +2546,70 @@ class RemediationDispatcher:
                 "(registryhub_deprecate_endpoint). If the breakdown names `files` or "
                 "`pages_without_files`, those are FRONTEND: bug_create for frontend with the "
                 "names rather than deleting their declarations."),
+            # #1202tu: the other five the ratchet found unroutable. #1202rm/rq/rr came from
+            # the same 09-23 sweep as the two below; the private-column and route-param ones
+            # are older. All seven could decline delivery with nobody dispatched.
+            "deliverability_page_apis_understated": (
+                "frontend", "Register the APIs the page actually calls (blocks delivery)",
+                "a registered ui_page declares `apis_used: []` while its OWN source calls an "
+                "API. The registry is the contract every gate reads, so an understated page "
+                "is invisible to coverage and its endpoints look unused. Update the ui_page "
+                "registration to list the endpoints the component really calls -- do not "
+                "remove the calls to match the registration."),
+            "deliverability_all_page_apis_empty": (
+                "frontend", "Register each page's APIs — all are empty (blocks delivery)",
+                "EVERY registered ui_page declares `apis_used: []` while the contract carries "
+                "endpoints. That is a registration step that never ran, not a set of pages "
+                "that genuinely call nothing. Register the endpoints each page calls."),
+            "deliverability_no_navigation_affordance": (
+                "frontend", "Add the navigation the app is missing entirely (blocks delivery)",
+                "App.jsx routes several pages and the frontend contains NO navigation "
+                "affordance at all -- no nav bar, sidebar or link to reach them. A page only "
+                "reachable by typing its URL is unreachable to a user and to any agent "
+                "exercising the app. Add the product's real navigation surface and wire each "
+                "routed page into it."),
+            "deliverability_private_column_published": (
+                "backend", "Stop publishing another actor's private column (blocks delivery)",
+                "a hand-written read path in custom_routes.py returns a column belonging to "
+                "another actor -- a password hash, email, token or private field served to "
+                "whoever asks. Remove the column from the response shape. If the field really "
+                "is public for this resource, say so in the contract rather than widening the "
+                "handler, so every reader agrees."),
+            "deliverability_route_param_unread": (
+                "frontend", "Read the route parameter the page is routed by (blocks delivery)",
+                "the frontend routes parameterised page(s) and NEVER reads a route parameter. "
+                "A `/item/:id` page that ignores `id` renders the same content for every id, "
+                "which is the detail-page equivalent of a dead link. Read the param "
+                "(useParams) and fetch the record it names."),
+            # #1202tu: both of these could DECLINE delivery and dispatch nobody until now --
+            # their prose fell through delivery_gate's token chain into
+            # `deliverability_other:<prose>`, which `_GATE_OWNER` can never match. r132 burned
+            # $139.64 and 13 ticks with the reserved-domain one in 67/67 gate snapshots.
+            #
+            # Owner is BACKEND for both because both scan the SERVED tree and the recurring
+            # source is the seed: r132's hits were all in seed_data.py. The advice names the
+            # frontend case explicitly rather than assuming, because the scan covers
+            # frontend/src too and a hit there is the frontend's to fix.
+            "deliverability_reserved_email_domain": (
+                "backend", "Replace the reserved-domain addresses in the seed (blocks delivery)",
+                "a shipped file seeds addresses on an RFC 2606 RESERVED domain "
+                "(`@example.com` and its siblings). Those domains exist so that nothing real "
+                "uses them, so `alice@example.com` tells any agent reading this database that "
+                "its people are invented -- it is the most recurrent realism tell in this "
+                "corpus. Replace them with ordinary consumer providers (gmail.com, "
+                "outlook.com, yahoo.com, icloud.com, proton.me) or with domains that fit the "
+                "personas, and keep them VARIED -- one domain for every user is its own tell. "
+                "The blocker names the file: if it is under frontend/src, file a bug_create "
+                "for the frontend instead of editing it here."),
+            "deliverability_operator_identity_leak": (
+                "backend", "Remove the builder's identity from the served files (blocks delivery)",
+                "a shipped file carries the identity of the ACCOUNT THAT BUILT this "
+                "environment -- an operator name, email or git handle that reached the app "
+                "through a transcribed screenshot or a hardcoded author field. It is a "
+                "privacy leak and an immediate tell that the app was generated. Replace it "
+                "with seeded persona data; do not merely comment it out, the scan reads what "
+                "ships. The blocker names the file: if it is under frontend/src, file a "
+                "bug_create for the frontend instead of editing it here."),
             "deliverability_missing_seed": (
                 # 3/26, and newly meaningful: #1039 made the seed audit count LIVE rows, so
                 # this token now fires on a table the database itself reports as empty

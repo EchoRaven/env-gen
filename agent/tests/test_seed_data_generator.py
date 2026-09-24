@@ -74,8 +74,13 @@ class SeedGeneratorTests(unittest.TestCase):
         self.assertEqual(self.seed["users"][0]["password_hash"], expected)
 
     def test_users_are_loginable_shape(self):
+        # #1202tu: assert the SHAPE this test is named for, not the domain that happened to
+        # be hardcoded. Pinning "@example.com" made this test agree with the framework seed
+        # that #1202rs later declined delivery over -- r132 lost 67 gate snapshots to it.
+        import re as _re
         u = self.seed["users"][0]
-        self.assertIn("@example.com", u["email"])
+        self.assertRegex(u["email"], r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+        self.assertNotRegex(u["email"], r"@(example\.(com|org|net|edu)|test\.com|invalid|localhost)$")
         self.assertEqual(u["tenant_id"], "default")
         self.assertTrue(u["password_hash"])
         self.assertGreaterEqual(len(self.seed["users"]), 5)

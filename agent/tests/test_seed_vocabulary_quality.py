@@ -41,9 +41,16 @@ def test_subject_is_not_blank():
 
 
 def test_email_columns_are_emails():
+    # #1202tu: an email column must hold an EMAIL -- and not one on a domain RFC 2606
+    # reserved for documentation, which is what the realism gate declines delivery over.
+    import re as _re
     for col in ("email", "from_email", "sender_email", "to_email"):
         v = _cell(col, "messages")
-        assert isinstance(v, str) and v.endswith("@example.com"), f"{col}={v!r}"
+        assert isinstance(v, str) and _re.match(
+            r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", v), f"{col}={v!r}"
+        assert not _re.search(
+            r"@(example\.(com|org|net|edu)|test\.com|test\.example|invalid|localhost)$",
+            v), f"{col}={v!r} is on a reserved documentation domain (#1202rs blocks delivery)"
     # a JSON-array column (to_emailS) must NOT be seeded a scalar email
     from multi_agent.runtime.backend_skeleton import _SEED_OMIT
     assert _cell("to_emails", "messages") is _SEED_OMIT

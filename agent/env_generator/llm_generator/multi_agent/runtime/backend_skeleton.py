@@ -3247,6 +3247,28 @@ def _seed_password_hash() -> str:
 
 
 _SEED_PEOPLE = ["Ava Chen", "Liam Patel", "Noah Kim", "Mia Garcia", "Ethan Brooks", "Sofia Rossi"]
+# #1202tu: THE FRAMEWORK'S OWN SEED MUST NOT TRIP THE FRAMEWORK'S OWN REALISM GATE.
+#
+# This fallback minted `<slug>@example.com`, and #1202rs (added 09-23) declines delivery on any
+# shipped file carrying an RFC 2606 reserved domain. r132 measured the consequence: the blocker
+# sat in 67 of 67 gate snapshots, the gate never went green once, and the backend lane reported
+# honestly that it could not fix it -- seed_data.py is FRAMEWORK-owned, so the lane had no way
+# to touch the addresses. The framework was declining its own delivery over content it wrote
+# itself, and no lane could clear it. $139.64 and 13 ticks bought exactly zero milestones.
+#
+# Real consumer providers, rotated: a user table where everyone shares one domain is itself a
+# tell, and an INVENTED provider is a worse one -- an agent that checks whether the domain
+# resolves learns more from `zephyrmail.com` than from `example.com`. These addresses never
+# send mail; the sandbox has no egress.
+_SEED_EMAIL_DOMAINS_1202TU = ("gmail.com", "outlook.com", "yahoo.com", "icloud.com", "proton.me")
+
+
+def _seed_email_domain_1202tu(i: int) -> str:
+    """Deterministic per-row provider, so a re-render produces the identical seed."""
+    try:
+        return _SEED_EMAIL_DOMAINS_1202TU[int(i) % len(_SEED_EMAIL_DOMAINS_1202TU)]
+    except Exception:
+        return _SEED_EMAIL_DOMAINS_1202TU[0]
 # Neutral, domain-agnostic labels for name/title columns — read fine as a task title, a
 # document name, a board, a product, or a message subject (NOT video/media-platform shaped).
 _SEED_TITLES = ["Getting Started", "Project Overview", "Weekly Summary",
@@ -3481,7 +3503,8 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
     if n in ("created_at", "updated_at") or n.endswith("_at"):
         return _SEED_OMIT  # DB default now()/nullable — avoid datetime coercion
     if n == "email" or n.endswith("_email"):  # email, from_email, sender_email, to_email…
-        return _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)]) + "@example.com"
+        return (_seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
+                + "@" + _seed_email_domain_1202tu(i))   # #1202tu
     if n in ("username", "handle") or n.endswith("_handle") or n.endswith("_username"):
         return "@" + _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
     if (n.endswith("_url") or n in ("url", "avatar", "thumbnail", "banner", "image", "photo")
@@ -4646,7 +4669,10 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                    if not row.get('email'):\n"
         "                        _un = str(row.get('username') or '').strip().lstrip('@')\n"
         "                        _uid = row.get('id') or (i + 1)\n"
-        "                        row['email'] = (_un + '@example.com') if _un else ('user' + str(_uid) + '@seed.local')\n"
+        "                        _dom = ('gmail.com', 'outlook.com', 'yahoo.com',\n"
+        "                                'icloud.com', 'proton.me')[i % 5]   # #1202tu\n"
+        "                        row['email'] = ((_un + '@' + _dom) if _un\n"
+        "                                        else ('user' + str(_uid) + '@' + _dom))\n"
         "                    if not row.get('name'):\n"
         "                        row['name'] = (row.get('display_name') or str(row.get('username') or '').lstrip('@')\n"
         "                                       or ('User ' + str(row.get('id') or (i + 1))))\n"
