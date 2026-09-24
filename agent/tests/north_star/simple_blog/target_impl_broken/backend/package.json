@@ -1,0 +1,14 @@
+{
+  "name": "simple-blog-target-broken",
+  "version": "1.0.0",
+  "description": "simple_blog target_impl_broken — target_impl + single-line auth-middleware mutation (R2 round-10 Q2)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.3.x",
+    "express": "4.21.x",
+    "jsonwebtoken": "9.0.x"
+  }
+}

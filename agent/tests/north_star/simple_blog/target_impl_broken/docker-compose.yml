@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      # Ephemeral port via RUNNER_HOST_PORT (R2 round-11 pre-pilot:
+      # static port = INADMISSIBLE for env.port_conflict V9).
+      - "${RUNNER_HOST_PORT:-8003}:3000"
+    # R2 round-13 by-construction symmetric mem_limit. Docker Compose v2
+    # honors top-level mem_limit regardless of the `version:` key; if a
+    # future toolchain enforces strict v3 swarm semantics, swap to
+    #   deploy:
+    #     resources:
+    #       limits:
+    #         memory: ${RUNNER_MEM_LIMIT:-2g}
+    mem_limit: ${RUNNER_MEM_LIMIT:-2g}
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
