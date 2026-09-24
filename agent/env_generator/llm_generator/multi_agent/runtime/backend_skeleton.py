@@ -22,6 +22,7 @@ import json as _json_1202ti   # #1202ti: emitted string literals are quoted by j
 import keyword
 import logging
 import re
+import zlib   # #1202tv: crc32 is the stable digest; hash() is salted per process
 from urllib.parse import quote as _quote
 import sys
 from pathlib import Path
@@ -3304,6 +3305,29 @@ def _is_person_name(col: str, table: str) -> bool:
     return n in ("name", "display_name", "full_name") and (table or "").lower() in _PERSON_TABLES
 
 
+def _seed_spread_1202tv(col: str, i: int, lo: int, hi: int) -> int:
+    """A deterministic but IRREGULAR integer in [lo, hi], de-correlated by column name.
+
+    #1202tv: every branch of `_seed_number` was linear in `i` -- `(i + 1) * 137 % 4000 + 120`
+    and friends -- and a seed is 5-6 rows, so the modulo never wrapped and every numeric
+    column shipped a perfect ARITHMETIC PROGRESSION. Measured in delivered environments
+    (tiktok-r107): `users.followers`, `users.likes` and `live_rooms.viewers` were all
+    [257, 394, 531, 668, 805] with step 137 -- the same sequence, in three unrelated columns --
+    and `sounds.video_count` was [3, 10, 17, 24, 31, 38], step 7. One subtraction gives the
+    game away, and the realism rubric this implements ranks numeric/ID regularity as a
+    standing synthetic tell (dimension 6).
+
+    `zlib.crc32`, never `hash()`: str hashing is salted per process (PYTHONHASHSEED), and the
+    seed must be byte-identical across renders because the generated loader replays the whole
+    table when the fingerprint changes -- the same constraint #1202rw worked under.
+
+    The column NAME is in the digest, so two columns of the same shape stop sharing one
+    sequence; the BAND is the caller's, so #74's "unread_count=1773" lesson is preserved.
+    """
+    span = max(1, int(hi) - int(lo) + 1)
+    return int(lo) + (zlib.crc32(("%s\x1f%d" % (col or "", i)).encode("utf-8")) % span)
+
+
 def _seed_number(col: str, i: int):
     """A BELIEVABLE deterministic number for a numeric column, by name. The old single
     formula gave 42–9842 for EVERYTHING, so a folder shipped ``unread_count=1773`` (outlook
@@ -3312,21 +3336,26 @@ def _seed_number(col: str, i: int):
     column may be Integer and a float would coerce/truncate or error)."""
     n = (col or "").lower()
     if "rating" in n:
-        return (i % 5) + 1                                  # 1..5
+        # Real rating distributions are J-shaped -- mostly 4s and 5s, a thin low tail.
+        return (5, 4, 5, 3, 5, 4, 2, 5, 4, 1, 5, 4)[_seed_spread_1202tv(col, i, 0, 11)]
     if "year" in n:
-        return 2018 + (i % 7)                               # 2018..2024
+        return _seed_spread_1202tv(col, i, 2018, 2024)
     if any(k in n for k in ("view", "like", "subscriber", "follower", "play", "stream",
                             "download", "impression", "share", "watch", "reach", "visit")):
-        return (i + 1) * 137 % 4000 + 120                   # engagement: ~120..4100
+        return _seed_spread_1202tv(col, i, 120, 4100)       # engagement band, unchanged
     if any(k in n for k in ("price", "amount", "cost", "revenue", "balance", "fee", "salary", "budget")):
-        return (i + 1) * 10 + 9                             # 19, 29, 39… (whole units)
+        # Keep the retail convention (ends in 9) -- that reads as priced, not as generated --
+        # while the leading digits vary. A round $1,000.00 is its own tell.
+        return _seed_spread_1202tv(col, i, 1, 24) * 10 + 9  # 19..249, irregular
     if any(k in n for k in ("duration", "seconds", "length", "runtime", "elapsed")):
-        return (i + 1) * 53 % 600 + 30                      # 30..630
+        return _seed_spread_1202tv(col, i, 30, 630)
     if "score" in n:
-        return (i * 17 + 30) % 100                          # 0..99
+        return _seed_spread_1202tv(col, i, 0, 99)
     if any(k in n for k in ("position", "rank", "order", "index", "priority", "page", "sort", "step")):
+        # NOT spread: a rank/position column IS sequential in a real table, and scattering it
+        # would make the list order contradict the column that states it.
         return i + 1                                        # 1,2,3…
-    return (i * 7 + 3) % 40                                 # generic count/qty/total/unread: 3..39
+    return _seed_spread_1202tv(col, i, 3, 39)               # generic count/qty/total/unread
 _SEED_PERSON_NAME = _is_person_name  # alias kept for readability at call sites
 
 
