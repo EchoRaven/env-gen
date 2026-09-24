@@ -27,6 +27,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# #1202td: this projector appends into the LANE's api module, so its writes belong at the same
+# choke point the other three projectors use — #1202cw's ratchet listed three filenames and
+# this one, despite its name, was not among them.
+try:
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except Exception:   # pragma: no cover - standalone import without package context
+    def _fw_write_1202cw(_p, _text, **_kw):
+        Path(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
+        return True
+
 _PAGE_MARKER = "// framework-generated page (frontend_page_projector) — edits are overwritten"
 
 # #221: a REFERENCE-STRUCTURED projection (measured regions + real data) is a
@@ -54,8 +64,9 @@ def _ensure_api_helpers(api_js: Path) -> bool:
             ln for ln in src.splitlines()
             if not (("apiGet" in ln or "apiPost" in ln)
                     and "not implemented (auto-stub)" in ln))
-        api_js.write_text(src + ("\n" if not src.endswith("\n") else ""),
-                          encoding="utf-8")
+        _fw_write_1202cw(api_js, src + ("\n" if not src.endswith("\n") else ""),
+                         clobber_ok="FIX #37: strips the throwing auto-stubs this projector "
+                                    "itself installed, so the real helpers can go in")
         src = api_js.read_text(encoding="utf-8")
     if "export async function apiGet" in src or "export const apiGet" in src:
         if "_bcAuthRedirect" in src or "// === BY-CONSTRUCTION" not in src:
@@ -108,5 +119,7 @@ def _ensure_api_helpers(api_js: Path) -> bool:
             "export async function apiPost(path, body) {\n"
             "  return _bcFetch(path, { method: 'POST', body: JSON.stringify(body) });\n}\n"
         )
-    api_js.write_text(src.rstrip() + helpers, encoding="utf-8")
+    _fw_write_1202cw(api_js, src.rstrip() + helpers,
+                     clobber_ok="FIX #37: installs the framework's apiGet/apiPost helpers "
+                                "into the lane's api module")
     return True

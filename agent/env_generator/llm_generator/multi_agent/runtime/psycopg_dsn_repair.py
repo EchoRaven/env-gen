@@ -28,6 +28,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+
+# #1202td: `_TARGET_FILES` includes `custom_routes.py`, which `path_is_lane_owned_1202cw`
+# reports LANE-OWNED — so this module rewrites lane work and belongs at the choke point.
+try:
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except Exception:   # pragma: no cover - standalone import without package context
+    def _fw_write_1202cw(_p, _text, **_kw):
+        Path(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
+        return True
 from typing import Any, Dict
 
 # The FIRST psycopg.connect argument — an os.getenv/environ lookup, a call like
@@ -78,7 +87,9 @@ def _repair_one(py_file: Path) -> int:
             insert_at = i + 1
     new_src = "".join(lines[:insert_at]) + _HELPER + "".join(lines[insert_at:])
 
-    py_file.write_text(new_src, encoding="utf-8")
+    _fw_write_1202cw(py_file, new_src,
+                     clobber_ok="#1202td: this repair EXISTS to rewrite the lane's backend "
+                                "modules — its own docstring says lane-owned")
     return n
 
 

@@ -36,9 +36,25 @@ def _write_py_995(path, text, *, what: str = ""):
     try:
         from .safe_code_write import write_py_if_still_parses as _w
     except Exception:
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8")  # raw: #995 documented degradation
         return True
     return _w(path, text, what=what)
+
+
+# #1202td: this module REPAIRS lane files (the seed, page components, App.jsx), so its writes
+# belong at the same choke point the three projectors use. #1202cw's ratchet enforced that on a
+# hardcoded list of three filenames, and this module was not on it. Imported defensively, for
+# the standalone-import case #995 documents just above.
+try:
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except Exception:   # pragma: no cover - standalone import without package context
+    def _fw_write_1202cw(_p, _text, **_kw):
+        # `Path` is imported per-function in this module (`from pathlib import Path as _P`),
+        # never at module level -- #940's ratchet caught the first version reading a name that
+        # is not bound here, which is the class this project keeps paying for.
+        from pathlib import Path as _P1202td
+        _P1202td(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
+        return True
 
 
 _ROUTE_FILE_SUFFIXES = (".jsx", ".tsx", ".js", ".ts", ".vue", ".mjs", ".css", ".html", ".json")
@@ -165,7 +181,9 @@ def reconcile_integration_seed(repo_root, logger=None) -> dict:
         if best is None or best_rows == 0:
             return {}
         integ.parent.mkdir(parents=True, exist_ok=True)
-        integ.write_text(_P(best).read_text(encoding="utf-8"), encoding="utf-8")
+        _fw_write_1202cw(integ, _P(best).read_text(encoding="utf-8"),
+                         clobber_ok="#322: integration must carry the seed the lane "
+                                    "authored in its own worktree")
         if logger is not None:
             try:
                 logger.warning(
@@ -285,7 +303,9 @@ def reconcile_integration_frontend_pages(repo_root, logger=None) -> dict:
                 continue
             try:
                 integ_file.parent.mkdir(parents=True, exist_ok=True)
-                integ_file.write_text(wt_text, encoding="utf-8")
+                _fw_write_1202cw(integ_file, wt_text,
+                                 clobber_ok="#566b: restores the lane's real page into "
+                                            "integration")
                 reconciled.append(name)
             except Exception:
                 continue
@@ -331,7 +351,9 @@ def reconcile_integration_frontend_app_jsx(repo_root, ui_pages, logger=None) -> 
             return {}
         new_text, injected = project_missing_ui_routes(text, list(ui_pages or []))
         if injected and new_text != text:
-            app.write_text(new_text, encoding="utf-8")
+            _fw_write_1202cw(app, new_text,
+                             clobber_ok="#566e: injects the routes the lane's own "
+                                        "ui_pages declare")
             if logger is not None:
                 try:
                     logger.warning(
@@ -505,7 +527,10 @@ def distribute_seed_media(repo_root, logger=None) -> dict:
         n = _distribute_media_over_seed(seed, posters, backdrops)
         if n <= 0:
             return {}
-        seed_path.write_text(_json.dumps(seed, indent=2, ensure_ascii=False), encoding="utf-8")
+        _fw_write_1202cw(seed_path,
+                         _json.dumps(seed, indent=2, ensure_ascii=False),
+                         clobber_ok="#512: rewrites degenerate poster/backdrop fields "
+                                    "in the lane's seed")
         if logger is not None:
             try:
                 logger.warning(
@@ -1030,7 +1055,7 @@ class HealPipeline:
             for t in list(dict.fromkeys(targets)):  # dedup, keep order
                 try:
                     t.parent.mkdir(parents=True, exist_ok=True)
-                    t.write_text(ddl_sql, encoding="utf-8")
+                    _fw_write_1202cw(t, ddl_sql)   # framework-owned DDL; no clobber
                     written.append(str(t))
                 except Exception:
                     continue

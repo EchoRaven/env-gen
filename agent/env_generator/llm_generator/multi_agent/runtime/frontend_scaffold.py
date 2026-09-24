@@ -34,7 +34,7 @@ try:  # #1202cw
 except ImportError:  # pragma: no cover - only when this file is loaded BY PATH (two tests)
     def _fw_write_1202cw(_p, _text, **_kw):
         from pathlib import Path as _P
-        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))
+        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
         return True
 
 _EXPORT_RE = re.compile(
@@ -10466,7 +10466,13 @@ def repair_default_import_of_named_export_632(src_dir: Any) -> List[str]:
 
             new_text = _DEFAULT_IMPORT_632.sub(_sub, text)
             if new_text != text:
-                Path(path).write_text(new_text, encoding="utf-8")
+                # #1202td: this was the one raw write left in the projectors, and the
+                # #1202cw ratchet could not see it -- its regex needs an identifier before
+                # `.write_text(`, and `Path(path).write_text(...)` has a `)` there. Green
+                # for its whole life over a live hole in the file it guards.
+                _fw_write_1202cw(path, new_text,
+                                 clobber_ok="#632: rewrites the lane's own default imports "
+                                            "into named ones, which is the repair itself")
                 files[path] = new_text
     except Exception:
         return out

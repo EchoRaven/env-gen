@@ -22,7 +22,7 @@ try:  # #1202cw
 except ImportError:  # pragma: no cover - only when this file is loaded BY PATH (two tests)
     def _fw_write_1202cw(_p, _text, **_kw):
         from pathlib import Path as _P
-        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))
+        _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
         return True
 
 _AUTH_DEPENDENCY_PY = '''"""Framework-owned auth dependency: real RS256 JWT verification.
