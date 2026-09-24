@@ -45,10 +45,17 @@ RUNTIME = Path("env_generator/llm_generator/multi_agent/runtime")
 # only FRAMEWORK-owned paths, where the guard would return True and change nothing.
 PROJECTORS = ("frontend_scaffold.py", "backend_scaffold.py", "route_projector.py",
               "heal_pipeline.py", "frontend_page_projector.py", "psycopg_dsn_repair.py",
-              "frontend_audit.py")   # #1202tr
+              "frontend_audit.py",                                      # #1202tr
+              "deliverability.py", "backend_skeleton.py")                # #1202ts
 
 # Writes only framework-owned paths (schema.sql, main.py, docker-compose.yml, the run ledger,
 # reports). Verified per file against `path_is_lane_owned_1202cw`, not assumed from the name.
+# #1202ts: two more claims here were false the same way -- `deliverability.py` ("writes
+# reports, never app sources") restores app/backend/seed_data.json, and `backend_skeleton.py`
+# ("emits the framework's own skeleton files") AMPLIFIES the lane's authored seed and writes it
+# back under #84. seed_data.json is lane-owned by the same frozenset as custom_routes.py. Three
+# of 26 claims wrong is why test_1202ts now CHECKS each claim against the predicate.
+#
 # #1202tr: `frontend_audit.py` sat here reading "audit output" until the claim was checked
 # against the real ownership predicate. `repair_fabricated_fallbacks` rewrites page and
 # component sources IN PLACE; replaying it over the corpus rewrites 87 files across 31 of 170
@@ -59,10 +66,8 @@ _FRAMEWORK_ONLY_WRITERS_1202TD = {
     "reference_materials.py": "design/reference material, outside app/",
     "visual_fidelity.py": "screenshots and verdicts under logs/",
     "scaffolder.py": "first-run scaffold: main.py, docker-compose.yml, .gitignore, README",
-    "backend_skeleton.py": "emits the framework's own skeleton files",
     "kickoff_driver.py": "kickoff artefacts under shared/",
     "safe_code_write.py": "IS the other write primitive (#995); guards its own target",
-    "deliverability.py": "writes reports, never app sources",
     "design_prep.py": "design-prep artefacts, outside app/",
     "run_budget.py": "the run ledger",
     "database_scaffold.py": "app/database/schema.sql — framework-owned",

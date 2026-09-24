@@ -3019,7 +3019,7 @@ def _record_dropped_deps_1202mk(be_dir: Any, dropped: List[str]) -> None:
         out = root / "logs" / "inferred_deps_refused_1202mk.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
         prev = out.read_text(encoding="utf-8") if out.is_file() else ""
-        out.write_text(
+        out.write_text(  # raw: logs/, outside app/ (#1202ts)
             prev + _json.dumps({"at": _time.time(), "dropped": list(dropped)}) + "\n",
             encoding="utf-8")
     except Exception:
@@ -3131,8 +3131,8 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
             except Exception:
                 pass
             import json as _json
-            (be / "seed_dataset.json").write_text(
-                _json.dumps(real, indent=2) + "\n", encoding="utf-8")
+            (be / "seed_dataset.json").write_text(  # raw: framework-staged, not the lane's
+                _json.dumps(real, indent=2) + "\n", encoding="utf-8")  # seed_data.json (#1202ts)
             return True
     except Exception:
         pass
@@ -3142,7 +3142,9 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
 def _ensure_seed_json(be: Path, amplify: bool = False) -> None:
     p = be / "seed_data.json"
     if not p.exists():
-        p.write_text("{}\n", encoding="utf-8")
+        # #1202ts: creating the lane's seed where none exists is not a clobber -- #1202cw
+        # allows an unoccupied path unconditionally, so routing it would only add a no-op.
+        p.write_text("{}\n", encoding="utf-8")  # raw: creates, never overwrites (#1202ts)
         return
     if not amplify:
         return
@@ -3157,9 +3159,22 @@ def _ensure_seed_json(be: Path, amplify: bool = False) -> None:
         data = _json.loads(p.read_text(encoding="utf-8"))
         amped = amplify_authored_seed(data)
         if amped is not None:
-            p.write_text(_json.dumps(amped, indent=2) + "\n", encoding="utf-8")
-    except Exception:
-        pass
+            # #1202ts: this OVERWRITES the lane's authored seed, which is the one thing
+            # #1202cw exists to route and record. The module writes its own skeleton files
+            # directly on purpose (see _scrub_1202mi above), but that decision is about
+            # FRAMEWORK-owned files; seed_data.json is lane-owned, so this one declares.
+            from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+            _fw_write_1202cw(
+                p, _json.dumps(amped, indent=2) + "\n",
+                clobber_ok="#84 (instagram run-5): a lane-authored seed below the density "
+                           "floor wedged the seed-quality gate for 7 remediation cycles; "
+                           "the framework owns the floor and writes the amplified rows back")
+    except Exception as _e1202ts:
+        # #883/#1201: a swallow in this module must say so, or an amplification that never
+        # ran is indistinguishable from a seed that needed none.
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_skeleton.amplify_authored_seed_1202ts",
+                       "the authored-seed amplification (#84)", _e1202ts)
 
 _RESET_SH = '''#!/usr/bin/env bash
 # Framework-generated business-data reset (best-effort; keeps tenancy/identity spine).
@@ -3205,7 +3220,7 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
-        (be / name).write_text(
+        (be / name).write_text(  # raw: all three framework-owned (#1202ts)
             _scrub_1202mi(content, name), encoding="utf-8")
         written[name] = str(be / name)
     return {"written": list(written), "backend_dir": str(be)}
@@ -4952,7 +4967,10 @@ def write_backend_skeleton(
         pass
 
     def w(name: str, content: str) -> None:
-        (be / name).write_text(
+        # #1202ts: every caller below passes a framework-owned name -- database/models/
+        # seed_data.PY (the loader, not the lane's .json)/user_bootstrap/auth_dependency/
+        # main/schemas/pyproject/Dockerfile/reset.sh. None is lane-owned.
+        (be / name).write_text(  # raw: framework skeleton only (#1202ts)
             _scrub_1202mi(content, name), encoding="utf-8")
         written[name] = str(be / name)
 

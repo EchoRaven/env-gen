@@ -464,7 +464,8 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
                     "components": list(_g.get("components") or []),
                     "task_filed": bool(_f708),
                 }
-                _f959.write_text(_j959.dumps(_prev959, indent=1, sort_keys=True), encoding="utf-8")
+                _f959.write_text(  # raw: design/, outside app/ (#1202ts)
+                    _j959.dumps(_prev959, indent=1, sort_keys=True), encoding="utf-8")
             except Exception as _e959:
                 # #883's rule, applied to my own handler: a swallow in a gate file must say so.
                 # Its guard caught this within the hour — the write is best-effort (observability
@@ -1813,9 +1814,20 @@ def compute_deliverability(hub_registry, app_root,
                             isinstance(v, list) and v for v in _head.values()):
                         _data = _head
                         try:  # repair the working tree so the docker build ships the seed
+                            # #1202ts: seed_data.json is LANE-OWNED by the same frozenset that
+                            # makes custom_routes.py lane-owned, and "empty" here means empty of
+                            # ROWS, not of bytes -- a contract with tables declared and no rows
+                            # is ~33 bytes, which #1202cw treats as occupied and refuses. So the
+                            # overwrite declares the ticket that argued for it, and the census
+                            # that run_budget.json carries can finally see it.
+                            from .path_routed_workspace import (
+                                framework_write_1202cw as _fw_write_1202cw)
                             _seed_path.parent.mkdir(parents=True, exist_ok=True)
-                            _seed_path.write_text(
-                                _json.dumps(_head, indent=2) + "\n", encoding="utf-8")
+                            _fw_write_1202cw(
+                                _seed_path, _json.dumps(_head, indent=2) + "\n",
+                                clobber_ok="#1068: the working-tree seed is empty of rows and "
+                                           "the committed integration HEAD is what the delivery "
+                                           "snapshot ships")
                         except Exception as _repair_exc_1068:
                             # #1068: the VERDICT above is already decided from HEAD — the tree
                             # the delivery snapshot ships — so a failed repair does not change
