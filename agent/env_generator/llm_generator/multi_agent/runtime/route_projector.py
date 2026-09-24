@@ -33,6 +33,7 @@ specific routes the lane wrote.
 from __future__ import annotations
 
 import ast
+import json as _json_1202tg
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
@@ -1649,6 +1650,23 @@ def _serialize_expr(var: str, cols: List[str]) -> str:
         return f'{{"id": getattr({var}, "id", None)}}'
     parts = []
     for c in cols:
+        # #1202tg: the column name becomes a Python STRING LITERAL here, so it has to be
+        # quoted by something that knows the rules. Interpolating it raw broke two ways, both
+        # found by rendering the skeleton over adversarial contracts rather than by reading:
+        #
+        #   a"b     -> `"a"b": getattr(r, "a"b", None)`  SyntaxError; the app never imports
+        #   a-b_at  -> `r.a-b_at.isoformat()`            PARSES, and is a SUBTRACTION --
+        #                                                NameError at request time, so the
+        #                                                projected read 500s exactly the way
+        #                                                FIX #214 describes
+        #
+        # `json.dumps` emits a valid Python string literal for any str, and the `_at` branch
+        # drops its attribute access in favour of `getattr`, which needs no identifier at all.
+        # The corpus carries no such name today (2,009 names, 3 non-identifiers, all
+        # hyphenated tables) -- this is the same hardening #214 and #216 did for this
+        # generator after a codegen stress-audit, where the cost of being wrong is that the
+        # backend never boots.
+        _lit = _json_1202tg.dumps(str(c))
         if c.endswith("_at"):
             # FIX #214 (r16: GET /api/messages 500): a ``*_at`` value is not always a
             # datetime — a TEXT column or a pre-serialized string arrives as ``str``,
@@ -1657,13 +1675,13 @@ def _serialize_expr(var: str, cols: List[str]) -> str:
             # ``.isoformat()`` when the value actually has it; otherwise pass it through
             # (a string stays a string, ``None`` stays ``None``).
             parts.append(
-                f'"{c}": ({var}.{c}.isoformat() '
-                f'if hasattr(getattr({var}, "{c}", None), "isoformat") '
-                f'else getattr({var}, "{c}", None))')
+                f'{_lit}: (getattr({var}, {_lit}, None).isoformat() '
+                f'if hasattr(getattr({var}, {_lit}, None), "isoformat") '
+                f'else getattr({var}, {_lit}, None))')
         elif c == "password_hash":
             continue  # never serialise secrets
         else:
-            parts.append(f'"{c}": getattr({var}, "{c}", None)')
+            parts.append(f'{_lit}: getattr({var}, {_lit}, None)')
     return "{" + ", ".join(parts) + "}"
 
 
