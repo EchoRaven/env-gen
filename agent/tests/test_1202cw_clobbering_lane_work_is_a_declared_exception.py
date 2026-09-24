@@ -44,10 +44,17 @@ RUNTIME = Path("env_generator/llm_generator/multi_agent/runtime")
 # guarded (no raw `write_text`) or exempt with a reason. The exemptions are files that write
 # only FRAMEWORK-owned paths, where the guard would return True and change nothing.
 PROJECTORS = ("frontend_scaffold.py", "backend_scaffold.py", "route_projector.py",
-              "heal_pipeline.py", "frontend_page_projector.py", "psycopg_dsn_repair.py")
+              "heal_pipeline.py", "frontend_page_projector.py", "psycopg_dsn_repair.py",
+              "frontend_audit.py")   # #1202tr
 
 # Writes only framework-owned paths (schema.sql, main.py, docker-compose.yml, the run ledger,
 # reports). Verified per file against `path_is_lane_owned_1202cw`, not assumed from the name.
+# #1202tr: `frontend_audit.py` sat here reading "audit output" until the claim was checked
+# against the real ownership predicate. `repair_fabricated_fallbacks` rewrites page and
+# component sources IN PLACE; replaying it over the corpus rewrites 87 files across 31 of 170
+# runs and `path_is_lane_owned_1202cw` calls every one lane-owned. The sweep below was already
+# general -- what was wrong was the FACT fed into it, which is the failure mode an exemption
+# list has that a rule does not: it states something falsifiable and nothing re-checks it.
 _FRAMEWORK_ONLY_WRITERS_1202TD = {
     "reference_materials.py": "design/reference material, outside app/",
     "visual_fidelity.py": "screenshots and verdicts under logs/",
@@ -57,7 +64,6 @@ _FRAMEWORK_ONLY_WRITERS_1202TD = {
     "safe_code_write.py": "IS the other write primitive (#995); guards its own target",
     "deliverability.py": "writes reports, never app sources",
     "design_prep.py": "design-prep artefacts, outside app/",
-    "frontend_audit.py": "audit output",
     "run_budget.py": "the run ledger",
     "database_scaffold.py": "app/database/schema.sql — framework-owned",
     "handler_fk_repair.py": "#995 fallback only; the live path is write_py_if_still_parses",

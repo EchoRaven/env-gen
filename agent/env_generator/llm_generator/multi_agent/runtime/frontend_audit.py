@@ -25,6 +25,25 @@ import logging
 
 _LOG_791 = logging.getLogger(__name__)
 
+# #1202tr: this module REPAIRS lane files -- `repair_fabricated_fallbacks` rewrites page and
+# component sources in place -- so its write belongs at the same choke point the projectors and
+# #1202td's heal_pipeline use. #1202cw's sweep classified this module as "audit output", which
+# was simply untrue: replaying the real `repair_fabricated_fallbacks` over the corpus rewrites
+# 87 files across 31 of 170 runs, and `path_is_lane_owned_1202cw` calls every one of them
+# lane-owned. Those writes reached neither the census that #1011 measured at ~22,000 and that
+# `run_budget.json` now carries, nor the provenance scrub. Imported defensively, for the
+# standalone-import case #995 documents.
+try:
+    from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+except Exception as _e1202tr:                        # pragma: no cover - standalone import
+    _fw_write_1202cw = None
+    # #883/#1201: an empty default in a gate/audit module must say so at the point it is
+    # taken. Silent, this reads as "no guard needed" instead of "the guard is missing", and
+    # the repair below would look like it simply found nothing to fix.
+    _LOG_791.warning(
+        "#1202tr: framework_write_1202cw is unavailable (%r) — the fabricated-fallback "
+        "repair (#496/#1202mp) will leave lane files untouched this process.", _e1202tr)
+
 # --- #791: a blocker scan that throws must not ERASE the blockers it already found -------------
 # `routed_fallback_page_blockers` and `bare_authed_fetch_blockers` collect into `blockers` inside
 # a try and returned `[]` from the handler — so an exception on file 6 discarded the five real
@@ -1944,7 +1963,7 @@ def inject_auth_fetch_wrapper(frontend_dir: Any) -> bool:
             html = html.replace("</head>", _AUTH_FETCH_WRAPPER + "\n</head>", 1)
         else:
             html = _AUTH_FETCH_WRAPPER + "\n" + html
-        idx.write_text(html, encoding="utf-8")
+        idx.write_text(html, encoding="utf-8")  # raw: index.html is framework-owned (#1202tr)
         return True
     except Exception:
         return False
@@ -2529,11 +2548,20 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
                 changed = True
             new_lines.append(new)
         if changed:
-            try:
-                f.write_text("".join(new_lines), encoding="utf-8")
-                repaired.append(f.name)
-            except Exception:
+            # #1202tr: declared, because rewriting the lane's own line IS the repair -- a
+            # fabricated literal is what the user sees, and only an in-place edit removes it.
+            if _fw_write_1202cw is None:
+                from .message_format import warn_once_1201
+                warn_once_1201("frontend_audit.fallback_repair_write_1202tr",
+                               "the fabricated-fallback repair (#496/#1202mp)",
+                               RuntimeError("framework_write_1202cw is unavailable"))
                 continue
+            if _fw_write_1202cw(
+                    f, "".join(new_lines),
+                    clobber_ok="#496/#1202mp: a fabricated fallback literal is the lane's "
+                               "own line; only rewriting it in place removes the fake value "
+                               "the user sees"):
+                repaired.append(f.name)
     return {"repaired": repaired, "sites": sites}
 
 
