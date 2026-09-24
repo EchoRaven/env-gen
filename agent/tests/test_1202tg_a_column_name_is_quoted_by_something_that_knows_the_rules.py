@@ -16,11 +16,26 @@ Two failures, and the second is the worse one:
 `json.dumps` emits a valid Python string literal for any `str`, and the `_at` branch now uses
 `getattr` throughout, so no identifier is required anywhere.
 
-HOW LIKELY: the corpus carries 2,009 table/column names, of which 3 are non-identifiers —
-`suggested-creators`, `continue-watching` (twice), all TABLE names, no quotes. So this is
-hardening, not a live incident, and it is recorded as such. It is worth doing because nothing
-upstream validates the name and the cost of being wrong is total: a backend that cannot be
-imported, or a read that 500s on every call.
+★ CORRECTING THIS FILE'S OWN CLAIM (found the same day, by #1202ti's audit). The first
+version said the `a-b_at` case means "the projected read 500s" — stated as a consequence when
+it is only a possibility. It is NOT REACHABLE in production, and the reason is worth knowing
+because it is a good design:
+
+    the ORM emits   a_b = Column('a"b', String)
+
+the SANITISED Python attribute bound to the real DB column name, which travels inside a
+properly quoted literal. `_orm_models` then parses `models.py` with `ast` and collects
+ATTRIBUTE names, so every `cols` entry reaching `_serialize_expr` is a Python identifier by
+construction. Proved by rendering a contract carrying `a"b` and `a-b_at` and reading back what
+the projector sees: `a_b`, `a_b_at`.
+
+So this is defence in depth on a function whose input is already constrained — worth keeping,
+because the constraint lives in another module and nothing stated it, but NOT a live defect.
+The test at the bottom now pins that invariant. The sibling #1202ti IS reachable: a table name
+reaches `__tablename__` straight from the registry with no such sanitiser in between.
+
+Corpus context either way: 2,009 table/column names, 3 non-identifiers (`suggested-creators`,
+`continue-watching` ×2), all TABLE names, none carrying a quote.
 
 WHAT MUST NOT CHANGE: FIX #214's properties. A `*_at` that holds a string passes through, a
 missing attribute yields None rather than raising, and `password_hash` is never serialised.
@@ -121,3 +136,25 @@ def test_the_name_is_not_interpolated_raw_any_more():
     body = src[src.index("parts = []"):]
     assert '"{c}"' not in body, "the column name is being interpolated raw again"
     assert "{_lit}" in body
+
+
+def test_the_invariant_that_makes_this_unreachable_in_production():
+    """The correction above, pinned. `_serialize_expr` takes its columns from `_orm_models`,
+    which parses `models.py` and collects Python ATTRIBUTE names — identifiers by construction,
+    whatever the contract called the column. If that ever stops holding, the quoting above is
+    what keeps the generated app importable."""
+    import tempfile
+    from pathlib import Path as _P
+    from multi_agent.runtime.backend_skeleton import render_models
+    from multi_agent.runtime.route_projector import _orm_models
+
+    tables = {"videos": {"columns": [{"name": "id", "type": "integer", "primary_key": True},
+                                     {"name": 'a"b', "type": "string"},
+                                     {"name": "a-b_at", "type": "datetime"}]}}
+    src = render_models(tables)
+    assert "Column('a" in src, "the raw column name should travel as a quoted literal"
+    d = _P(tempfile.mkdtemp())
+    (d / "models.py").write_text(src, encoding="utf-8")
+    cols = [c for meta in _orm_models(d).values() for c in (meta.get("cols") or [])]
+    assert cols, "the parse found nothing — this check would pass vacuously"
+    assert all(str(c).isidentifier() for c in cols), cols

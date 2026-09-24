@@ -738,7 +738,18 @@ def _temporal_synonym_lines(real: List[Dict[str, Any]]) -> List[str]:
             sib = nm[:-5] + "_at"
         if sib and sib.lower() not in names and sib.lower() != low:
             names.add(sib.lower())   # a second temporal col won't re-alias the same name
-            out.append("    %s = synonym(%s)" % (sib, _json_1202ti.dumps(str(nm))))
+            # #1202tj: the LEFT side is an ORM ATTRIBUTE, so it needs the same sanitize the
+            # `Column(...)` line beside it already uses. A hyphenated temporal column emitted
+            # `a-b_time = synonym("a-b_at")` -- a SyntaxError in models.py, so `import models`
+            # fails and the backend never boots, which is the gmrun6 wedge `safe_column_name`
+            # was written for. The Column line was safe (`a_b_at = Column('a-b_at', …)`) and
+            # this one, two lines away, was not.
+            #
+            # It also fails SILENTLY further out: `route_projector._orm_models` parses
+            # models.py and returns {} on SyntaxError, so the projector then projects nothing
+            # and says nothing. Found because an unrelated fixture of mine tripped it.
+            out.append("    %s = synonym(%s)"
+                       % (safe_column_name(sib), _json_1202ti.dumps(safe_column_name(nm))))
     return out
 
 
