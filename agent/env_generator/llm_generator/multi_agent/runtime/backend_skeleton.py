@@ -135,13 +135,37 @@ _FK_RE = re.compile(
     re.IGNORECASE)
 
 
+def _valid_class_ident_1202tp(name: str) -> str:
+    """A PascalCase class name that Python can actually parse.
+
+    #1202tp: PascalCasing a table name does not guarantee an IDENTIFIER. A table called
+    ``2fa_tokens`` -- an ordinary name for any app with two-factor auth -- yields
+    ``2faToken``, and the emitted ``class 2faToken(Base):`` is a SyntaxError (*invalid
+    decimal literal*). models.py then imports nowhere and the backend crashes on EVERY
+    boot: the same total failure ``safe_column_name`` has guarded against for COLUMNS
+    since #158 (gmrun6's backend_health wedge) and ``_pascal_case`` for frontend
+    COMPONENTS since #1202th. Table classes were the one identifier of the three still
+    unguarded.
+
+    ``Model`` is the prefix because ``_class_name`` already returns exactly that for an
+    empty name, so the fallback spelling stays consistent. IDEMPOTENT: the result starts
+    with a letter, so re-applying it changes nothing.
+
+    MEASURED: 172 run directories carry 112 distinct table names and NONE starts with a
+    digit (three contain one -- ``top10``, ``titles_top10``, ``design_analyst_1`` -- and
+    none leads with it), so this is hardening and a no-op on the whole corpus, exactly as
+    #1202th recorded for its own case."""
+    return ("Model" + name) if name[:1].isdigit() else (name or "Model")
+
+
 def _class_name(table: str) -> str:
     """``user_posts`` → ``UserPosts``; singularise a trailing plural ``s``."""
     base = re.sub(r"[^A-Za-z0-9]+", "_", str(table)).strip("_")
     parts = [p for p in base.split("_") if p]
     if parts and parts[-1].endswith("s") and not parts[-1].endswith("ss"):
         parts[-1] = parts[-1][:-1]
-    return "".join(p[:1].upper() + p[1:] for p in parts) or "Model"
+    return _valid_class_ident_1202tp(
+        "".join(p[:1].upper() + p[1:] for p in parts) or "Model")   # #1202tp
 
 
 # --- #1202h: the surface the gates never see ------------------------------------------
@@ -328,7 +352,19 @@ def _lane_owner_scoped_read_tables_1200(backend_dir: Any, tables: Any) -> set:
     except Exception:
         return found
     try:
-        names = {t: _class_name(t) for t in (tables or {})}
+        # #1202tq: the class this greps for must be the one models.py EMITS. #1096 replaced
+        # `_class_name` with the shared map precisely because two tables can collapse onto
+        # one name, and the plural of a colliding pair takes its PLURAL spelling
+        # (`messages` -> `Messages`). The lane imports from models.py, so the lane writes
+        # `query(Messages)`; grepping `query(Message)` matches nothing (the paren makes the
+        # two non-overlapping) and this guard silently goes off -- shipping the unscoped
+        # `db.query(...).limit(100).all()` that is r23's leak, the exact harm it exists to
+        # prevent. #1096's own rule: the mapping is computed ONCE and shared. render_models
+        # keys it by the lowercased name, so look it up the same way.
+        _cls1202tq = _class_names_1096(
+            {str(t).lower() for t in (tables or {})} | {"tenants", "users"})
+        names = {t: _cls1202tq.get(str(t).lower()) or _class_name(t)
+                 for t in (tables or {})}
         # Split on route decorators so each handler body is bounded by the NEXT one — a
         # landmark, not a byte window (#943).
         marks = [(m.start(), m.group(1).lower()) for m in _ROUTE_DECOR_1200.finditer(src)]
@@ -384,7 +420,8 @@ def _class_names_1096(tables: Any) -> Dict[str, str]:
             used[name] = table
             continue
         parts = [p for p in re.sub(r"[^A-Za-z0-9]+", "_", table).strip("_").split("_") if p]
-        alt = "".join(p[:1].upper() + p[1:] for p in parts) or (name + "Table")
+        alt = _valid_class_ident_1202tp(                                    # #1202tp
+            "".join(p[:1].upper() + p[1:] for p in parts) or (name + "Table"))
         if alt not in used:
             out[table] = alt
             used[alt] = table
