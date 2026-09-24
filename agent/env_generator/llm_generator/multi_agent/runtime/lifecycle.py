@@ -111,8 +111,24 @@ def is_business(rec: Mapping[str, Any]) -> bool:
         from .kickoff.contract import is_control_surface_path
         if is_control_surface_path(p):
             return False
-    except Exception:
-        pass
+    except Exception as _exc_1202tl:
+        # #1202tl: this guard answers TRUE when it is blind -- "yes, a business endpoint" --
+        # and the docstring above says what that costs: a control-surface path mis-classified
+        # as business "gets REQUIRED for implementation AND for business_chain COVERAGE …
+        # outlook M2 wedged on exactly this: 7 stuck cycles -> abort". Simulated by breaking
+        # the helper: /api/v1/tenants, /api/v1/reset and /api/v1/admin/init-tenant all flip to
+        # business at once.
+        #
+        # The ANSWER is deliberately left alone -- the path net only ever removes, so failing
+        # open is the safer direction, and #1202gd's lesson is that the damage came from the
+        # silence, not from the default. What changes is that the silence ends: #1201's channel
+        # exists so a dead exemption path is findable instead of being read as "no exemptions
+        # applied".
+        from .message_format import warn_once_1201
+        warn_once_1201("lifecycle.is_business.control_surface",
+                       "the control-surface exemption (#1202tl) — every framework-owned path "
+                       "is now classified as a BUSINESS endpoint and required for "
+                       "implementation and chain coverage", _exc_1202tl)
     return True
 
 
