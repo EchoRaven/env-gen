@@ -1718,6 +1718,50 @@ class LaneIdleCircuitBreakerPolicy(BaseWorkflowPolicy):
         event_type, priority, suggestion = tier_meta.get(
             tier, ("lane_idle_warning", "normal", "")
         )
+        # #1202tn: SAY WHICH KIND OF IDLE THIS IS.
+        #
+        # The counter advances on every finish that produced no files and grew no hub -- which
+        # is equally true of a lane that is STUCK and of a lane that has NOTHING ASSIGNED. The
+        # tier-3 text asserted the first ("the agent is unable to self-recover") for both.
+        # Measured across the corpus's 65 tier-3 halts: 31 of them (48%) have the lane's own
+        # finish message in the preceding lines saying it has no work -- "no pending or
+        # in-progress backend tasks remain", "Backend wind-down complete … no pending or
+        # in-progress backend tasks were present". 60 of the 65 are the backend lane, which
+        # finishes early and then has nothing to do while the run waits on the gate.
+        #
+        # Telling the orchestrator to escalate a lane whose queue is empty points it at the
+        # wrong thing; the run is waiting on something else. The signal is already computed
+        # next door, by LaneWindDownPolicy, so this reads it rather than inventing one.
+        # ★ ZERO IS ONLY MEANINGFUL IF THE STORES ANSWERED. Both helpers below are
+        # deliberately tolerant -- `_collect_in_progress_claimed` documents "[] on error so a
+        # misconfigured hub can't itself block finish", and `_unread_inbox` returns 0 the same
+        # way -- so an UNREADABLE hub and an EMPTY queue reach this code as the same 0. Using
+        # that 0 would re-create, one level down, the exact conflation this item is about.
+        # So the raw stores are touched here, where an exception can be seen, and the friendly
+        # wording is used only when both positively answered.
+        _n_claimed = -1
+        _n_unread = -1
+        _known = False
+        try:
+            _wh = getattr(hubs, "workhub", None)
+            if _wh is None:
+                raise RuntimeError("no workhub")
+            _wh.stores.tasks.value()                     # raises if unreadable
+            eventhub.list_inbox(str(getattr(agent, "agent_id", "")))   # ditto
+            _n_claimed = len(LaneWindDownPolicy._collect_in_progress_claimed(
+                _wh, str(getattr(agent, "agent_id", ""))) or [])
+            _n_unread = int(LaneWindDownPolicy._unread_inbox(agent) or 0)
+            _known = True
+        except Exception:
+            _known = False                               # unknown, and said so below
+        _has_work = (not _known) or _n_claimed > 0 or _n_unread > 0
+        if tier >= 3 and _known and _n_claimed == 0 and _n_unread == 0:
+            suggestion = (
+                "This lane has NO claimed tasks and an EMPTY inbox: it is idle because "
+                "nothing is assigned to it, not because it is stuck. Do not triage the lane "
+                "— look at what the run is waiting on (the delivery gate's failed checks, or "
+                "another lane) and route work here if this lane owns any of it."
+            )
         try:
             eventhub.publish_event(
                 source_hub=str(getattr(agent, "agent_id", "agent")),
@@ -1727,6 +1771,10 @@ class LaneIdleCircuitBreakerPolicy(BaseWorkflowPolicy):
                     "idle_steps": idle_steps,
                     "tier": tier,
                     "suggestion": suggestion,
+                    # #1202tn: the evidence behind the sentence above.
+                    "claimed_in_progress": _n_claimed,
+                    "unread_inbox": _n_unread,
+                    "has_work": _has_work,
                 },
                 recipients=["orchestrator"],
                 priority=priority,
@@ -1738,7 +1786,11 @@ class LaneIdleCircuitBreakerPolicy(BaseWorkflowPolicy):
             agent._logger.warning(
                 f"[{agent.agent_id}] LaneIdleCircuitBreaker "
                 f"tier={tier} idle_steps={idle_steps} "
-                f"event={event_type}"
+                f"event={event_type} "
+                # #1202tn: without these two numbers the line cannot be read afterwards --
+                # "idle" alone does not say whether the lane was stuck or simply had nothing.
+                f"claimed_in_progress={_n_claimed} unread_inbox={_n_unread} "
+                f"has_work={_has_work}"
             )
         except Exception:
             pass
