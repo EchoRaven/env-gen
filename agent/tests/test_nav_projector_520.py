@@ -102,6 +102,9 @@ def test_projector_builds_default_export_component(tmp_path):
     # link href, not mere substring presence.
     assert 'href="/browse"' in src and 'href="/shows"' in src and 'href="/movies"' in src
     assert 'href="/login"' not in src and "/title/:id" not in src
+    # #1202te: `src` here is the projector's RETURN VALUE, never written, so it still carries
+    # the ticket -- the scrub is a property of the write path, not of the template. The
+    # on-disk half of this distinction is asserted in the test below.
     assert "framework-projected nav (#520)" in src
 
 
@@ -124,7 +127,11 @@ def test_recover_agent_nav_overwrites_lane_nav_and_rewires(tmp_path):
     rep = recover_agent_nav(fe)
     assert rep.get("projected_nav") is True, rep
     nav_src = (fe / "src" / "components" / "TopNavBar.jsx").read_text(encoding="utf-8")
-    assert "framework-projected nav (#520)" in nav_src   # lane nav replaced
+    # #1202te: read from DISK, so the write path has scrubbed the ticket out of the served
+    # comment. Production keys on the prose -- frontend_scaffold's own reader tests
+    # `"framework-projected nav" in txt`, never the number -- so that is what is asserted.
+    assert "framework-projected nav" in nav_src         # lane nav replaced
+    assert "#520" not in nav_src, "a framework ticket must not ship in a served file"
     assert "LANE NAV" not in nav_src
     assert "2px solid red" not in nav_src                # the lane's red underline gone
     # projector page rewired to the (now framework) shared component:

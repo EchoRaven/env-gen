@@ -12869,6 +12869,20 @@ XMLHttpRequest.prototype.send = function (...args) {
 };
 """
 
+def _scrubbed_for_compare_1202te(path, text: str) -> str:
+    """What `framework_write_1202cw` would actually leave on disk for ``path``. #1202te
+
+    Idempotence checks compare disk against a template; the writer scrubs provenance out of
+    comments on the way through. Without this the two can never agree and the caller reports
+    a change forever.
+    """
+    try:
+        from .path_routed_workspace import _scrubbed_1202mi
+        return _scrubbed_1202mi(text, getattr(path, "name", str(path)))
+    except Exception:
+        return text
+
+
 _BASELINE_FILES = {
     "Dockerfile": _BASELINE_DOCKERFILE,
     "nginx.conf.template": _BASELINE_NGINX,
@@ -12993,7 +13007,13 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         changed: List[str] = []
         for rel, content in _FRONTEND_FORCE_INFRA.items():
             p = fe / rel
-            if (not p.exists()) or p.read_text(encoding="utf-8", errors="ignore") != content:
+            # #1202te: compare against what the WRITER will actually put on disk. The writer
+            # scrubs framework provenance out of comments, so comparing the raw template makes
+            # a settled file look changed on every pass -- r42's 72 repeats, re-formed by the
+            # scrub rather than by the pin. Any "is this already what we would write?" check
+            # has to apply the same transform the write applies.
+            _wanted_1202te = _scrubbed_for_compare_1202te(p, content)
+            if (not p.exists()) or p.read_text(encoding="utf-8", errors="ignore") != _wanted_1202te:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 _fw_write_1202cw(p, content, encoding="utf-8")
                 changed.append(rel)
@@ -13043,7 +13063,10 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         # regardless of how the lane wrote its api helpers.
         try:
             bc_auth = fe / "src" / "bc_auth.js"
-            if not bc_auth.exists() or bc_auth.read_text(encoding="utf-8") != _BC_AUTH_GUARD_JS:
+            # #1202te: same rule as the loop above -- compare against what the writer leaves.
+            if (not bc_auth.exists()
+                    or bc_auth.read_text(encoding="utf-8")
+                    != _scrubbed_for_compare_1202te(bc_auth, _BC_AUTH_GUARD_JS)):
                 _fw_write_1202cw(bc_auth, _BC_AUTH_GUARD_JS, encoding="utf-8")
                 changed.append("src/bc_auth.js (401 → /login guard)")
             if main_jsx.exists():

@@ -160,22 +160,66 @@ def _tidy_1202mi(text: str) -> str:
     # starting "#:", which is a Sphinx attribute-doc marker and means something
     # else. Drop the orphaned punctuation the removal exposed.
     text = re.sub(r"(?m)^([ \t]*#)[ \t]*[:,;][ \t]*", r"\1 ", text)
+    # #1202te: the same exposure with the JS comment marker. `// FIX #130: text` becomes
+    # `//: text` without this, and a stray `//:` reads as a typo in a served file.
+    text = re.sub(r"(?m)^([ \t]*//)[ \t]*[:,;][ \t]*", r"\1 ", text)
     return text
+
+
+_JS_SUFFIXES_1202TE = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
+
+
+def _js_whole_line_comment_spans_1202te(src: str) -> List[Tuple[int, int]]:
+    """Spans of JS comments that occupy a WHOLE line, and nothing else. #1202te
+
+    Deliberately not a JS tokenizer. `//` appears inside ordinary string literals
+    (`"http://host"`) and inside regex literals, and rewriting one of those would corrupt a
+    served file -- the failure this module's own docstring refuses ("shipping a tag is better
+    than shipping a broken file"). A line whose first non-space characters are `//` cannot be
+    inside a string, so that case is safe without parsing anything.
+
+    Measured before choosing the rule: every framework tag that reached a served `.js/.jsx`
+    file across the 8 most recent corpus runs -- 8 of them, all in `vite.config.js` -- is a
+    whole-line `//` comment. A trailing `// #1202xx` after code is left alone rather than
+    guessed at; if one ever ships, it will show up in the same census that found these.
+    """
+    spans: List[Tuple[int, int]] = []
+    pos = 0
+    for line in src.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith("//"):
+            start = pos + (len(line) - len(stripped))
+            spans.append((start, pos + len(line.rstrip("\r\n"))))
+        pos += len(line)
+    return spans
 
 
 def scrub_provenance_1202mi(text: str, filename: str = "") -> str:
     """Return ``text`` with framework provenance removed from its comments and
-    docstrings. Python only; anything else is returned unchanged.
+    docstrings. Python, plus whole-line ``//`` comments in JS/TS (#1202te);
+    anything else is returned unchanged.
 
     Never raises and never rewrites code: on a parse failure the original text
     is returned, because shipping a tag is better than shipping a broken file.
     """
-    if not text or (filename and not str(filename).endswith(".py")):
+    name = str(filename or "")
+    is_js = bool(name) and name.endswith(_JS_SUFFIXES_1202TE)
+    if not text or (name and not name.endswith(".py") and not is_js):
         return text
     if not (_TAG_PREFIXED_1202MI.search(text) or _TAG_BARE_1202MI.search(text)
             or _RUN_1202MI.search(text)):
         return text
-    spans = _comment_and_docstring_spans_1202mi(text)
+    # #1202te: JS has no docstrings and cannot be tokenised by `tokenize`, so it takes the
+    # whole-line-comment path. An empty result there means "this file has no such comment",
+    # not "this file could not be parsed", so it must not fall into the unparsed branch below
+    # -- that branch exists to REPORT blindness, and reporting it for a file that is simply
+    # comment-free would make the census lie.
+    if is_js:
+        spans = _js_whole_line_comment_spans_1202te(text)
+        if not spans:
+            return text
+    else:
+        spans = _comment_and_docstring_spans_1202mi(text)
     if not spans:
         # The text carries provenance but could not be parsed, so there is no
         # safe way to tell a tag from a colour. Say so rather than guessing
