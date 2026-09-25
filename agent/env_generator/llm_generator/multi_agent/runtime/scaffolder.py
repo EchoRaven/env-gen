@@ -132,6 +132,137 @@ def record_unregistered_routes_1202ui(out_dir, routes) -> bool:
         return False
 
 
+def _fe_res_1202uv():
+    """The three patterns, compiled on first use. `scaffolder` has no module-level `re`
+    import and this is not worth adding one for -- the caller is a once-per-pass report."""
+    import re as _re
+    lit = r"(?:`[^`]*`|'[^']*'|\"[^\"]*\")"
+    return (
+        _re.compile(r"request\(\s*(" + lit + r")\s*(?:,\s*(\{[^;]{0,200}?\})\s*)?\)", _re.S),
+        _re.compile(r"method:\s*['\"`](GET|POST|PUT|PATCH|DELETE)['\"`]", _re.I),
+        # a ternary whose BOTH branches are literals is still exact, not a guess:
+        #   method: liked ? 'POST' : 'DELETE'  ->  {POST, DELETE}
+        _re.compile(r"method:\s*[^?,}]{0,60}\?\s*['\"`](GET|POST|PUT|PATCH|DELETE)['\"`]\s*:"
+                    r"\s*['\"`](GET|POST|PUT|PATCH|DELETE)['\"`]", _re.I),
+    )
+
+
+def _norm_api_path_1202uv(p):
+    """`/api/videos/${encodeURIComponent(id)}/like?x=1` -> `/api/videos/{}/like`, or None.
+
+    None means "I could not resolve this without guessing" -- an unresolved `$` outside a
+    complete `${...}`. Under-reporting is the point: this writes an artifact a lane may act
+    on, so a wrong entry costs more than a missing one.
+    """
+    try:
+        import re as _re
+        q = _re.sub(r"\$\{[^}]*\}", "{}", str(p or ""))
+        if "$" in q:
+            return None
+        q = q.split("?")[0]
+        q = _re.sub(r"\{[^}]*\}", "{}", q)
+        q = _re.sub(r"\{\}$", "", q)         # a trailing query template is not a path segment
+        return (q.rstrip("/").lower() or None)
+    except Exception:
+        return None
+
+
+def frontend_calls_without_backend_1202uv(out_dir, endpoints):
+    """(METHOD, path) pairs the frontend's service module calls that NO endpoint implements.
+
+    #1202uv: THE OPPOSITE DIRECTION FROM #1202h. That one reports routes the backend SERVES
+    and the contract never declared; this reports calls the FRONTEND MAKES that nothing serves.
+    Nothing in the framework looked this way, and it ships broken affordances:
+
+    MEASURED by starting the DELIVERED r135 stack and driving it with a seeded login --
+    `setVideoLiked` issues `POST /api/videos/{id}/like`, which returns 404 with a valid token,
+    and so does `/save`. The rail's heart fills optimistically, the call 404s, the `catch`
+    reverts it: a Like button that springs back. The contract has 25 endpoints and none of them
+    is like, save, follow or share.
+
+    WHY NOTHING SAW IT. `apis_used` for `fyp_feed` carries three entries and not that one --
+    non-empty but INCOMPLETE, so `_page_api_declaration_drift_1202rr` (which only examines
+    pages whose `apis_used` is EMPTY) skips it; and even unskipped it reads the PAGE's own
+    file, while `ForYouFeedPage.jsx` makes no call at all and delegates to `EngagementRail`.
+    `backfill_page_apis` (#579) matches endpoint NAMES and never reads source. So no path in
+    the framework turns frontend source into "what this app tries to call".
+
+    MEASURED ACROSS 155 runs with this extractor: 29 (18%) call at least one endpoint nothing
+    implements, 66 in total. VALIDATED IN BOTH DIRECTIONS against live stacks before being
+    trusted -- r135 reports 6 and its `/like` and `/save` really do 404; r132 reports 0 and its
+    `/like` really does answer 200.
+
+    REPORTS, NEVER BLOCKS. It writes an artifact, exactly as #1202ui does for #1202h. Whether
+    a missing endpoint should stop a release is a separate decision with real risk in both
+    directions -- an app may legitimately ship a milestone whose later slices are unbuilt --
+    and it deserves a live run to settle. What it must not be is invisible after the run.
+
+    Pure + best-effort: any error, or no service module yet, returns [].
+    """
+    try:
+        from pathlib import Path as _P
+        src = _P(str(out_dir)) / "app" / "frontend" / "src"
+        svc = [f for f in (src / "services").glob("api*.js")] if (src / "services").is_dir() else []
+        if not svc:
+            return []
+        have = set()
+        for ep in (endpoints or []):
+            if not isinstance(ep, dict):
+                continue
+            q = _norm_api_path_1202uv(ep.get("path"))
+            if q:
+                have.add((str(ep.get("method") or "GET").upper(), q))
+        if not have:
+            return []                      # no contract to compare against: say nothing
+        _CALL, _METH, _TERN = _fe_res_1202uv()
+        called = set()
+        for f in svc:
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _CALL.finditer(text):
+                raw = m.group(1)[1:-1]
+                if not raw.startswith("/"):
+                    continue
+                q = _norm_api_path_1202uv(raw)
+                if not q:
+                    continue
+                opts = m.group(2) or ""
+                mt = _TERN.search(opts)
+                mm = _METH.search(opts)
+                if mt:
+                    called.add((mt.group(1).upper(), q))
+                    called.add((mt.group(2).upper(), q))
+                elif mm:
+                    called.add((mm.group(1).upper(), q))
+                elif not opts:
+                    called.add(("GET", q))
+                # a method this cannot read as a literal is SKIPPED, never guessed
+        return sorted("%s %s" % (m, q) for (m, q) in called if (m, q) not in have)
+    except Exception:
+        return []
+
+
+def record_frontend_calls_without_backend_1202uv(out_dir, calls) -> bool:
+    """Land #1202uv's finding in an artifact. Same shape and same guard as #1202ui."""
+    if not out_dir or not calls:
+        return False
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        out = _P(str(out_dir)) / "logs" / "frontend_calls_without_backend_1202uv.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(),
+                               "count": len(calls or []),
+                               "calls": [str(c) for c in (calls or [])][:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def persist_backfilled_apis_1202ub(registryhub, ui_pages, before, logger=None) -> int:
     """Write the backfilled `apis_used` back to the REGISTRY, not just into the projection.
 
@@ -801,6 +932,24 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("unregistered_routes_1202h",
                                "the unregistered-route report (#1202h)", _e1202h)
+            # #1202uv: the OTHER direction — calls the FRONTEND makes that nothing serves.
+            # Reports only; see the helper for why blocking is a separate decision. Own try
+            # (#1201), and silent until the frontend's service module exists.
+            try:
+                from .message_format import join_capped as _jc1202uv
+                _fe1202uv = frontend_calls_without_backend_1202uv(out_dir, endpoints)
+                if _fe1202uv:
+                    orch._logger.warning(
+                        "#1202uv %d endpoint(s) the FRONTEND calls are implemented by nobody, "
+                        "so the affordance ships broken — r135 delivered a Like button whose "
+                        "POST /api/videos/{id}/like 404s with a valid token and whose optimistic "
+                        "heart springs back: %s",
+                        len(_fe1202uv), _jc1202uv(_fe1202uv, total=len(_fe1202uv)))
+                    record_frontend_calls_without_backend_1202uv(out_dir, _fe1202uv)
+            except Exception as _e1202uv:
+                from .message_format import warn_once_1201
+                warn_once_1201("frontend_calls_without_backend_1202uv",
+                               "the unimplemented-call report (#1202uv)", _e1202uv)
             # #1202ad: this states an unchanging fact once per scaffold pass — r30/r31/r32
             # logged 281 copies between them. Report the STATE (what was written for which
             # contract size); a contract that grows is news, a re-run of the same one is not.
