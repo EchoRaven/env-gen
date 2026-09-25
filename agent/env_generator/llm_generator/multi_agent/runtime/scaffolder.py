@@ -263,6 +263,112 @@ def record_frontend_calls_without_backend_1202uv(out_dir, calls) -> bool:
         return False
 
 
+def _reads_route_param_1202uw(root, rel, depth=2, seen=None):
+    """Does this component, or anything it imports within `depth` hops, read a route param?
+
+    Depth 2 because a page that delegates (`Page -> View -> Rail`) is the common shape --
+    measured in #1202uv, 15% of pages make no call in their own file at all.
+    """
+    import re as _re
+    seen = seen if seen is not None else set()
+    if rel in seen or depth < 0:
+        return False
+    seen.add(rel)
+    try:
+        src = (root / rel).read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return False
+    if _re.search(r"useParams\s*\(|useSearchParams\s*\(|useLocation\s*\(|"
+                  r"match\.params|props\.params", src):
+        return True
+    import os as _os
+    for spec in _re.findall(r"from\s+['\"](\.[^'\"]+)['\"]", src):
+        base = _os.path.normpath(_os.path.join(_os.path.dirname(rel), spec))
+        for cand in (base, base + ".jsx", base + ".js", base + "/index.jsx"):
+            if (root / cand).is_file():
+                if _reads_route_param_1202uw(root, cand, depth - 1, seen):
+                    return True
+                break
+    return False
+
+
+def route_params_ignored_1202uw(out_dir):
+    """Routes whose path carries a `:param` that the component subtree never reads.
+
+    #1202uw: the parameter cannot change what renders, so every address under that route
+    shows the same thing -- silently, with no error.
+
+    FOUND ON THE DELIVERED r135 STACK: `/@charlidamelio` renders "0 Following 0 Followers 0
+    Likes / No bio yet. / Upload your first video". `ProfileOwnPage` passes straight to
+    `ProfileView`, which takes `user` from props -- the LOGGED-IN user -- and never reads
+    `useParams().username`, so every profile URL shows the viewer's own (here empty) shell.
+    The registry calls the route `/@:username`, which promises somebody else's page.
+
+    MEASURED over 155 runs: 22 of 292 parameterised routes ignore their parameter, in 17 runs
+    (10%). r131's is a comments panel at `/video/:video_id/comments` that cannot tell which
+    video it is showing.
+
+    ★ VALIDATED IN BOTH DIRECTIONS before being trusted, because a NAME-based attempt at a
+    related check ran at 32% and both samples I checked were false (`/p/:id` is served by
+    `/api/posts/{id}`; `/profile/:id` by `/api/users/{username}`). This one reads source, not
+    names: on r135 it flags `/:username` (verified by loading the page) and does NOT flag
+    `/video/:id` or `/comments/:id`, whose components do read `useParams`.
+
+    REPORTS, NEVER BLOCKS -- same standing as #1202uv. A route may legitimately carry a
+    parameter a later milestone will use. What it must not be is invisible.
+
+    Pure + best-effort: anything unreadable returns [].
+    """
+    try:
+        import re as _re
+        from pathlib import Path as _P
+        root = _P(str(out_dir)) / "app" / "frontend" / "src"
+        app = root / "App.jsx"
+        if not app.is_file():
+            return []
+        src = app.read_text(encoding="utf-8", errors="ignore")
+        imports = {}
+        for m in _re.finditer(r"import\s+(\w+)\s+from\s+['\"](\.[^'\"]+)['\"]", src):
+            imports[m.group(1)] = m.group(2)
+        out = []
+        for m in _re.finditer(r'<Route\s+path=["\']([^"\']*:[^"\']*)["\'][^>]*element=\{<\s*(\w+)',
+                              src):
+            path, comp = m.group(1), m.group(2)
+            spec = imports.get(comp)
+            if not spec:
+                continue
+            import os as _os
+            base = _os.path.normpath(_os.path.join("", spec))
+            rel = next((c for c in (base, base + ".jsx", base + ".js", base + "/index.jsx")
+                        if (root / c).is_file()), None)
+            if not rel:
+                continue
+            if not _reads_route_param_1202uw(root, rel):
+                out.append("%s -> %s" % (path, comp))
+        return sorted(set(out))
+    except Exception:
+        return []
+
+
+def record_route_params_ignored_1202uw(out_dir, routes) -> bool:
+    """Land #1202uw's finding in an artifact. Same shape and guard as #1202ui/#1202uv."""
+    if not out_dir or not routes:
+        return False
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        out = _P(str(out_dir)) / "logs" / "route_params_ignored_1202uw.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(),
+                               "count": len(routes or []),
+                               "routes": [str(r) for r in (routes or [])][:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def persist_backfilled_apis_1202ub(registryhub, ui_pages, before, logger=None) -> int:
     """Write the backfilled `apis_used` back to the REGISTRY, not just into the projection.
 
@@ -950,6 +1056,22 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("frontend_calls_without_backend_1202uv",
                                "the unimplemented-call report (#1202uv)", _e1202uv)
+            # #1202uw: a route parameter the component subtree never reads. Reports only.
+            try:
+                from .message_format import join_capped as _jc1202uw
+                _rp1202uw = route_params_ignored_1202uw(out_dir)
+                if _rp1202uw:
+                    orch._logger.warning(
+                        "#1202uw %d route(s) carry a parameter nothing reads, so every address "
+                        "under them renders the same thing — r135 delivered `/@:username` whose "
+                        "ProfileView takes the LOGGED-IN user from props and never reads the "
+                        "name, so every profile URL showed an empty own-profile shell: %s",
+                        len(_rp1202uw), _jc1202uw(_rp1202uw, total=len(_rp1202uw)))
+                    record_route_params_ignored_1202uw(out_dir, _rp1202uw)
+            except Exception as _e1202uw:
+                from .message_format import warn_once_1201
+                warn_once_1201("route_params_ignored_1202uw",
+                               "the ignored-route-param report (#1202uw)", _e1202uw)
             # #1202ad: this states an unchanging fact once per scaffold pass — r30/r31/r32
             # logged 281 copies between them. Report the STATE (what was written for which
             # contract size); a contract that grows is news, a re-run of the same one is not.
