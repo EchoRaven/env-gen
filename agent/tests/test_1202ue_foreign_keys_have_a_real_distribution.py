@@ -116,6 +116,50 @@ def test_1069_still_holds_for_two_fks_on_one_parent():
     assert same == 0, f"{same} self-referential pairs"
 
 
+def test_two_fks_on_one_parent_do_not_share_a_distribution():
+    """#1202uj: #1202ue kept the two columns DISTINCT per row and made their SHAPES identical.
+
+    Measured in r134's delivered seed: `follows.follower_id` and `follows.following_id` were
+    both [7, 1, 1, 1], and `notifications.user_id` and `notifications.actor_id` were both
+    [5, 3, 1] -- so "who receives most" and "who causes most" produce the same ranking, which
+    real data does not do. The cause was the offset being the ordinal itself against a base
+    shared by the row.
+
+    I first recorded this as an unavoidable trade against #1069's guarantee. It is not: an
+    offset of `ordinal * step` where `gcd(step, m) == 1` is still injective over ordinals, so
+    the guarantee holds, and drawing the step PER ROW moves the two columns off a fixed
+    distance, which decorrelates the shapes.
+    """
+    tables = {"users": PARENT,
+              "follows": {"columns": [
+                  {"name": "id", "type": "integer", "primary_key": True},
+                  {"name": "follower_id", "type": "integer", "fk": "users.id"},
+                  {"name": "followee_id", "type": "integer", "fk": "users.id"},
+                  {"name": "body", "type": "text"}]}}
+    identical = 0
+    for k in range(40):
+        rows = _build_seed_rows(tables, f"d{k}")[0]["follows"]
+        a = sorted(collections.Counter(r["follower_id"] for r in rows).values(), reverse=True)
+        b = sorted(collections.Counter(r["followee_id"] for r in rows).values(), reverse=True)
+        identical += (a == b)
+    assert identical <= 8, f"{identical}/40 environments still share one shape"
+
+
+def test_the_step_keeps_1069s_guarantee():
+    """★ The property the decorrelation could most easily have cost, re-asserted directly."""
+    tables = {"users": PARENT,
+              "follows": {"columns": [
+                  {"name": "id", "type": "integer", "primary_key": True},
+                  {"name": "follower_id", "type": "integer", "fk": "users.id"},
+                  {"name": "followee_id", "type": "integer", "fk": "users.id"},
+                  {"name": "body", "type": "text"}]}}
+    same = 0
+    for k in range(40):
+        rows = _build_seed_rows(tables, f"g{k}")[0]["follows"]
+        same += sum(1 for r in rows if r.get("follower_id") == r.get("followee_id"))
+    assert same == 0, f"{same} self-referential pairs"
+
+
 def test_it_is_deterministic():
     a = _seed("same")
     b = _seed("same")

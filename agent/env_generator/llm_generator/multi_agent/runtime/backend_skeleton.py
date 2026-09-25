@@ -3363,6 +3363,14 @@ def _is_person_name(col: str, table: str) -> bool:
     return n in ("name", "display_name", "full_name") and (table or "").lower() in _PERSON_TABLES
 
 
+def _gcd_1202uj(a: int, b: int) -> int:
+    """Plain Euclid -- `math.gcd` would do, but this file imports no math and one loop is
+    cheaper to read than a new import at the top of a 5,000-line module."""
+    while b:
+        a, b = b, a % b
+    return a
+
+
 def _seed_spread_1202tv(col: str, i: int, lo: int, hi: int) -> int:
     """A deterministic but IRREGULAR integer in [lo, hi], de-correlated by column name.
 
@@ -3643,7 +3651,23 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
         # base per row, `fk_ordinal` separates the columns exactly as it did before.
         _r1202ue = (zlib.crc32(("fk\x1f%s\x1f%d" % (table, i)).encode("utf-8"))
                     % 10000) / 10000.0
-        idx = (int((_r1202ue ** 2) * m) + int(fk_ordinal or 0)) % m
+        # #1202uj: the ordinal offset uses a per-ROW step that is COPRIME with m.
+        #
+        # #1202ue offset by the ordinal itself, which keeps two FK columns onto one parent
+        # distinct (#1069) but makes their distributions IDENTICAL: r134's `follows` shipped
+        # follower_id and following_id both [7,1,1,1], and `notifications` had user_id and
+        # actor_id both [5,3,1] -- so "who receives most" and "who causes most" produce the
+        # same ranking, a correlation real data does not have.
+        #
+        # A step coprime with m gives both properties at once: `k * step (mod m)` is distinct
+        # for every k < m, so the #1069 guarantee is unchanged, and because the step varies by
+        # ROW the two columns are no longer a fixed distance apart, which decorrelates their
+        # shapes. Chosen by walking up from a per-row draw until the gcd is 1 -- m is 5..12
+        # here, so this terminates immediately.
+        _step = 1 + (zlib.crc32(("fkstep\x1f%s\x1f%d" % (table, i)).encode("utf-8")) % max(1, m - 1))
+        while m > 1 and _gcd_1202uj(_step, m) != 1:
+            _step += 1
+        idx = (int((_r1202ue ** 2) * m) + int(fk_ordinal or 0) * _step) % m
         _ppk = _seed_pk_value(fk_table, idx, (pk_types or {}).get(fk_table))
         return _ppk if _ppk is not None else idx + 1  # text/uuid parent key, else SERIAL 1..N
     if pk_name is not None and col == pk_name:
