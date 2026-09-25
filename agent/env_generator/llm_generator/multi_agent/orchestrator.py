@@ -81,6 +81,28 @@ def _tick_delivery_line_1202pt(lane) -> str:
 import time as _t1202to   # #1202to: the visual hold records its own counters
 
 
+def _squad_detail_1202uh(orch) -> str:
+    """The squad hold's own counters, in the shape #1202to gave the visual hold.
+
+    #1202tk records WHICH of the fourteen holds stopped a release; r133 was the first run to
+    produce that ledger, and it named the squad 12 times out of 13 post-gate holds -- every one
+    of them at milestone 1.0.0, and every one with an EMPTY detail. So the ledger could say the
+    squad held the release and could not say what was in flight or for how long, which is the
+    same gap #1202to closed for the visual gate.
+
+    Deliberately tolerant: an advisory line may never be the reason a delivery fails.
+    """
+    try:
+        import time as _t
+        _since = getattr(orch, "_tu_squad_deferred_since", 0) or 0
+        return "attempts=%s deferred_s=%s defects=%s" % (
+            getattr(orch, "_tu_squad_attempts", "?"),
+            int(_t.time() - _since) if _since else "?",
+            len(getattr(orch, "_tu_squad_open_p0", None) or ()) or "?")
+    except Exception:
+        return ""
+
+
 def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
     """Append one line to ``logs/delivery_hold.jsonl``: WHY a clear gate did not ship. #1202tk
 
@@ -5784,7 +5806,8 @@ class Orchestrator:
                                     "TEST-USER SQUAD re-launch HELD: %s. Deferring this tick "
                                     "instead; the wall-clock escape still releases the gate.",
                                     _wait1202rd)
-                                _note_delivery_hold_1202tk(self, "squad_wait")   # #1202tk
+                                _note_delivery_hold_1202tk(self, "squad_wait",
+                                                            _squad_detail_1202uh(self))   # #1202uh
                                 return
                         from .runtime.test_user_squad import squad_launch_held_1202qw
                         _held1202qw = squad_launch_held_1202qw(
@@ -5794,7 +5817,8 @@ class Orchestrator:
                                 "TEST-USER SQUAD launch HELD: %s. Ten agents against a stack "
                                 "that does not answer file the stack's state, not the app's.",
                                 _held1202qw)
-                            _note_delivery_hold_1202tk(self, "squad_stack_unanswered")   # #1202tk
+                            _note_delivery_hold_1202tk(self, "squad_stack_unanswered",
+                                                            _squad_detail_1202uh(self))   # #1202uh
                             return
                         # SINGLE-FLIGHT: exactly one background squad run, then defer.
                         self._tu_squad_task = asyncio.create_task(
@@ -5805,13 +5829,15 @@ class Orchestrator:
                             "deferred) — deferring this delivery tick; the coordination loop "
                             "keeps running while it tests.",
                             int(_now - self._tu_squad_deferred_since))
-                        _note_delivery_hold_1202tk(self, "squad_launched_background")   # #1202tk
+                        _note_delivery_hold_1202tk(self, "squad_launched_background",
+                                                            _squad_detail_1202uh(self))   # #1202uh
                         return  # defer this tick; do NOT await the squad inline
                     if _tu_action == "defer":
                         # A squad run is in flight but not finished → defer WITHOUT spawning a
                         # second (single-flight) and WITHOUT awaiting it inline; re-check
                         # task.done() next tick. The loop stays live meanwhile.
-                        _note_delivery_hold_1202tk(self, "squad_inflight")   # #1202tk
+                        _note_delivery_hold_1202tk(self, "squad_inflight",
+                                                            _squad_detail_1202uh(self))   # #1202uh
                         return
                     # 'consume': the background squad finished → read its result exactly ONCE,
                     # clear the handle (so it is never re-read and a later 'launch' re-arms it
@@ -5849,7 +5875,8 @@ class Orchestrator:
                         self._logger.info(
                             "test-user squad not ready (%s) — deferring without burning an "
                             "attempt", _tu_result.get("reason"))
-                        _note_delivery_hold_1202tk(self, "squad_not_ready")   # #1202tk
+                        _note_delivery_hold_1202tk(self, "squad_not_ready",
+                                                            _squad_detail_1202uh(self))   # #1202uh
                         return
                     else:  # 'defect' — squad ran and filed P0s: burn an attempt and defer
                         self._tu_squad_attempts = (getattr(self, "_tu_squad_attempts", 0) or 0) + 1
@@ -5859,7 +5886,8 @@ class Orchestrator:
                             "re-testing after the fix lands. modalities=%s", _p0,
                             self._tu_squad_attempts, int(_now - self._tu_squad_deferred_since),
                             _tu_result.get("modalities"))
-                        _note_delivery_hold_1202tk(self, "squad_defects")   # #1202tk
+                        _note_delivery_hold_1202tk(self, "squad_defects",
+                                                            _squad_detail_1202uh(self))   # #1202uh
                         return  # block this milestone's release until the defects clear
                 else:
                     # squad_release_decision escape fired (wall-clock 900s / attempt cap) →
