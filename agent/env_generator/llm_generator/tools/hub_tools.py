@@ -2042,6 +2042,47 @@ class WorkhubListUiComponentsTool(HubTool):
         return ToolResult(data=self._hubs.workhub.get_ui_components())
 
 
+def _effective_auth_1202up(ep):
+    """The auth the FRAMEWORK will actually enforce for this endpoint.
+
+    Always a bool when it can be computed: `resolve_endpoint_auth` is the whole decision, not
+    just the stated value -- an endpoint that states nothing gets r58's shape-based default
+    (a write or a self/personalised read needs auth, a plain read does not). `None` here means
+    only that the resolver could not be reached, which is why this reports rather than guesses.
+
+    #1202up: `auth_required` is written in up to three places on one endpoint record -- the
+    top level, `schema`, and the `metadata` mirror -- and they disagree. MEASURED over 155
+    run directories: 4852 endpoints, 2257 carry two copies, 400 of them CONTRADICT each other,
+    and 388 more state it only in `schema`. r135 was carrying 3 contradictions out of the 4
+    endpoints that had both, live, while this was written.
+
+    The framework already settles it: `route_projector.resolve_endpoint_auth` is the single
+    canonical precedence (top level, then `schema` -- what the LANE writes and what #1202ga
+    made win -- then the mirror), with #906's measurement behind it, and every framework
+    reader delegates to it.
+
+    THE AGENT WAS THE ONE READER LEFT OUT. `registryhub_get_endpoint` returned the raw record
+    (19,970 calls across the corpus), so a lane reading it saw two contradictory booleans and
+    no way to know which one the app will behave by; and `registryhub_list_endpoints` (20,481
+    calls) omitted auth from its compact row entirely, so the only way to ask was one
+    `get_endpoint` per endpoint. The dominant direction of the disagreement is
+    `schema=False, metadata=True` -- the lane declared a public read -- so an agent trusting
+    the mirror builds a login wall in front of an endpoint the framework serves to anonymous
+    callers, which is the logged-out-landing-page failure #1202kg/#1202kh exist to prevent.
+
+    This REPORTS, it does not rewrite: the raw record is returned unchanged beside it, so a
+    lane that needs to see the disagreement still can.
+    """
+    try:
+        from multi_agent.runtime.route_projector import resolve_endpoint_auth
+    except Exception:
+        return None
+    try:
+        return resolve_endpoint_auth(ep.get("method"), ep.get("path"), ep, ep.get("metadata"))
+    except Exception:
+        return None
+
+
 class RegistryHubListEndpointsTool(HubTool):
     NAME = "registryhub_list_endpoints"
     DESCRIPTION = "List all RegistryHub endpoints, optionally filtered by status or provider."
@@ -2063,16 +2104,23 @@ class RegistryHubListEndpointsTool(HubTool):
         # per-endpoint schema+metadata are ~85% of each row, rarely needed in a
         # LIST, and this tool is re-fetched dozens of times per run. Full detail
         # (schema/request/response) stays recoverable via registryhub_get_endpoint(id).
+        # #1202up: `auth_required_effective` joins the compact row. It is ONE boolean against
+        # #303's ~85% saving, and without it the only way to ask whether an endpoint is public
+        # was one `registryhub_get_endpoint` per endpoint -- which then answered with two
+        # contradictory copies anyway.
         compact = {
             k: {"id": v.get("id", k), "method": v.get("method"),
                 "path": v.get("path"), "status": v.get("status"),
-                "provider": v.get("provider")}
+                "provider": v.get("provider"),
+                "auth_required_effective": _effective_auth_1202up(v)}
             for k, v in endpoints.items() if isinstance(v, dict)
         }
         return ToolResult(data={
             "endpoints": compact,
             "_detail": "compact list — call registryhub_get_endpoint(id) for "
-                       "schema/request/response",
+                       "schema/request/response. `auth_required_effective` is the auth the "
+                       "framework will enforce (null = unstated); the record's own "
+                       "`schema`/`metadata` copies can disagree with each other.",
         })
 
 
@@ -2107,7 +2155,11 @@ class RegistryHubGetEndpointTool(HubTool):
                 endpoint = None
         if not endpoint:
             return ToolResult(success=False, error_message=f"Endpoint not found: {endpoint_id}")
-        return ToolResult(data=endpoint)
+        # #1202up: report the resolved value BESIDE the raw record, never in place of it -- a
+        # lane that needs to see the two copies disagree still can.
+        _out = dict(endpoint)
+        _out["auth_required_effective"] = _effective_auth_1202up(endpoint)
+        return ToolResult(data=_out)
 
 
 class RegistryHubGetDependenciesForFileTool(HubTool):
