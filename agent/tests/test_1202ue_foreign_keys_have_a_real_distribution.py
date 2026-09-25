@@ -36,6 +36,7 @@ LOCAL-ONLY (gitignored)."""
 from __future__ import annotations
 
 import collections
+import math
 import sys
 from pathlib import Path
 
@@ -183,3 +184,68 @@ def test_it_is_domain_agnostic():
         assert len(counts) < len(seed[parent]), (parent, counts)   # a tail with none
         assert 1 in counts, (parent, counts)                       # first parent populated
         assert all(1 <= v <= len(seed[parent]) for v in counts), (parent, counts)
+
+
+def test_a_third_column_onto_one_parent_is_still_distinct():
+    r"""★ #1202uj's coprimality correction, asserted where it is the ONLY thing holding.
+
+    I shipped `while gcd(step, m) != 1: step += 1` and then falsified the whole file against
+    a build with that loop disabled: 9 passed, 0 red. The correction had zero proving power
+    here, because BOTH #1069 tests above use exactly TWO columns -- and with two columns the
+    loop is provably dead code. `_step` is drawn as `1 + crc % (m - 1)`, so it lies in
+    [1, m-1] and can never be `0 mod m`; ordinals 0 and 1 therefore always differ whether or
+    not the step shares a factor with `m`.
+
+    A third column is where a shared factor bites: ordinals 0 and 2 collide exactly when
+    `2 * step == 0 mod m`, i.e. `step == m/2`. MEASURED over the draw itself, with the
+    correction removed, for the row counts #1202tz actually emits (5..12):
+
+        m = 6   ->  19.5% of rows have two of the three columns on one parent
+        m = 12  ->   9.0%
+        m = 4   ->  34.3%
+
+    and with the correction, 0 across every (m, columns) pair up to six columns.
+
+    Three columns onto one parent is not exotic -- an `assignments` row carrying `author_id`,
+    `reviewer_id` and `approver_id`, or a `transfers` row carrying `from_id`, `to_id` and
+    `initiated_by`. A collision there seeds a review someone gave their own work, which is
+    dimension 2's "implausible relationship" tell and the same class of defect #1069 exists
+    to prevent.
+
+    Asserted as EXHAUSTIVE rather than statistical: not one row, in any environment, may
+    repeat a parent across the three columns.
+    """
+    tables = {"people": PARENT,
+              "assignments": {"columns": [
+                  {"name": "id", "type": "integer", "primary_key": True},
+                  {"name": "author_id", "type": "integer", "fk": "people.id"},
+                  {"name": "reviewer_id", "type": "integer", "fk": "people.id"},
+                  {"name": "approver_id", "type": "integer", "fk": "people.id"},
+                  {"name": "body", "type": "text"}]}}
+    cols = ("author_id", "reviewer_id", "approver_id")
+    clashes = []
+    for k in range(60):
+        for r in _build_seed_rows(tables, f"three{k}")[0]["assignments"]:
+            picks = [r.get(c) for c in cols]
+            if len(set(picks)) != len(picks):
+                clashes.append((k, picks))
+    assert clashes == [], f"{len(clashes)} rows repeat a parent across three columns: {clashes[:4]}"
+
+
+def test_the_correction_terminates_for_every_row_count():
+    """★ The risk the correction itself introduces: an unbounded `while`.
+
+    `_step += 1` with no ceiling is only safe because some `step` coprime to `m` is always
+    reachable -- `m + 1` is congruent to 1. Asserted over the whole range of row counts the
+    seeder emits rather than trusting that argument, and with a wide-enough table that every
+    ordinal exercises the loop.
+    """
+    for m in range(2, 40):
+        step = 1 + (m * 7919) % max(1, m - 1)
+        for _ in range(m + 2):
+            if m <= 1 or math.gcd(step, m) == 1:
+                break
+            step += 1
+        else:
+            raise AssertionError(f"no coprime step reached for m={m}")
+        assert m <= 1 or math.gcd(step, m) == 1, (m, step)

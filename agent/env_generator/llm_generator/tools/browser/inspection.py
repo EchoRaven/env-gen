@@ -285,6 +285,45 @@ class BrowserWaitForUrlTool(BaseTool):
             return ToolResult.fail(f"Wait for URL failed: {str(e)}")
 
 
+def _widen_to_accessible_names_1202um(scope, query, text_loc):
+    """#1202um: the recovery path this tool IS could not see the controls that need it.
+
+    `browser_click`'s failure hint tells the agent, in so many words, "Try using
+    browser_find() first to check if element exists". browser_find searched VISIBLE TEXT
+    only -- so for an icon button, whose whole identity is `aria-label`, the recommended
+    recovery returns nothing and the agent concludes the control is absent.
+
+    MEASURED on a live generated app (r132 home), per query, text search vs accessible name:
+
+        'Like'          get_by_text 0   aria-label 1     ("Like video")
+        'Comment'       get_by_text 0   aria-label 1     ("Open comments")
+        'Toggle sound'  get_by_text 0   aria-label 1
+        'Explore'       get_by_text 1   aria-label 0     (a text nav link)
+
+    The two are COMPLEMENTARY, not redundant: text search finds the navigation, accessible
+    names find the action controls, and the tool offered only the first. 765 browser_find
+    calls across 66 runs went through it.
+
+    Widening only ADDS matches -- the text results are still in the union and still first --
+    so a query that worked before works identically. Regex mode is left alone: its pattern is
+    written against page text, and silently applying it to attributes would change what an
+    existing regex means.
+    """
+    try:
+        q = str(query or "")
+        if not q or '"' in q:
+            # A quote would break out of the attribute selector; the text result stands
+            # rather than risking a malformed selector on a recovery path.
+            return text_loc
+        attrs = ", ".join(
+            f'[{a}*="{q}" i]' for a in ("aria-label", "title", "placeholder", "alt", "name")
+        )
+        return text_loc.or_(scope.locator(attrs))
+    except Exception:
+        # Runs on a recovery path: a failure here must cost the widening, not the search.
+        return text_loc
+
+
 class BrowserFindTool(BaseTool):
     NAME = "browser_find"
     """Find elements by text (substring) or regex for reliable targeting"""
@@ -341,6 +380,7 @@ class BrowserFindTool(BaseTool):
                 loc = scope.get_by_text(pattern)
             else:
                 loc = scope.get_by_text(query, exact=False)
+                loc = _widen_to_accessible_names_1202um(scope, query, loc)
 
             count = await loc.count()
             out = []

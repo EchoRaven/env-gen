@@ -31,7 +31,10 @@ def _unescape_model_selector(selector: str) -> str:
 
 
 _CANDIDATE_SELECTOR = "input, textarea, select, button, a[href], [role='button'], [contenteditable]"
-_CANDIDATE_ATTRS = ("name", "id", "placeholder", "aria-label", "type", "data-testid")
+# #1202uk: `title` joins the list, and the element's visible TEXT is collected separately
+# below (it is not an attribute). Both are real locators, and without them a control whose
+# only identity is what it says on screen was reported as `{type='button'}` or dropped.
+_CANDIDATE_ATTRS = ("name", "id", "placeholder", "aria-label", "type", "data-testid", "title")
 
 
 def _candidates_hint_688(cands: str) -> str:
@@ -47,8 +50,15 @@ def _candidates_hint_688(cands: str) -> str:
 # still means "could not look". Callers must render these two differently.
 _EMPTY_PAGE_688 = "\x00empty-page"
 
+# #1202uk: how many elements the probe examines before ranking. MEASURED over 21 live pages
+# across three running generated environments (r122/r126/r132; home, explore, login, profile,
+# settings, messages, notifications): 6 to 47 interactable controls, median 19, busiest page
+# 47. 400 leaves eight times the busiest page observed; the bound exists only so a
+# pathological DOM cannot stall an error report, never to cut a real page short.
+_SCAN_CAP_1202UK = 400
 
-async def describe_interactive_candidates(page, limit: int = 12) -> str:
+
+async def describe_interactive_candidates(page, limit: int = 12, wanted: str = "") -> str:
     """A short list of what IS interactable on the page (#362).
 
     A selector miss returned only "Timeout 5000ms exceeded", so the model had no
@@ -81,7 +91,13 @@ async def describe_interactive_candidates(page, limit: int = 12) -> str:
     if not els:
         return _EMPTY_PAGE_688
     out = []
-    for el in (els or [])[:limit * 3]:
+    # #1202uk: `limit * 3` capped how many elements were EXAMINED, and the ranking below
+    # runs afterwards -- so on a page with more controls than the cap, the one the agent asked
+    # for could never reach the ranking no matter how well it matched. The cap now bounds the
+    # per-element `inner_text` round-trips (this runs on an already-failing path) rather than
+    # the answer: generous enough that a real page fits, finite so a pathological one cannot
+    # stall the error report.
+    for el in (els or [])[:_SCAN_CAP_1202UK]:
         try:
             attrs = {}
             for a in _CANDIDATE_ATTRS:
@@ -91,14 +107,81 @@ async def describe_interactive_candidates(page, limit: int = 12) -> str:
                     v = None
                 if v:
                     attrs[a] = str(v)[:40]
+            # #1202uk: A CONTROL WHOSE ONLY IDENTITY IS ITS VISIBLE TEXT WAS DROPPED HERE.
+            # `_CANDIDATE_ATTRS` carries no text, so `<button>For You</button>` produced an
+            # empty `attrs` and this `continue` deleted it from the list entirely. MEASURED
+            # against a live generated app: the page offers 19 controls, this reported 10, and
+            # the 9 it silently omitted were the ENTIRE left navigation -- For You, Shop,
+            # Explore, Following, LIVE, Upload, Profile, More, Log in. Four more survived only
+            # as `{type='button'}`, which names nothing and cannot be turned into a selector.
+            #
+            # That is the exact prose r134's verifier wrote onto eight delivery-blocking
+            # checks: "only unlabeled buttons were interactable". It was reading this list.
+            # The app was correct -- the controls were on screen in the verifier's own saved
+            # screenshot -- so the frontend was sent P0s to add labels that already existed,
+            # and the next rerun read the same noise. Across 151 run logs: 538 browser
+            # click/fill failures, 230 carrying this list, and 90 of those (39%) majority
+            # `{type='...'}` entries.
+            #
+            # #362 built this list so the model would stop GUESSING selectors. A list that
+            # omits the page's primary navigation does the opposite. Text and `title` are
+            # both real Playwright locators (`text=`, `[title=...]`), so an entry carrying
+            # them is addressable in the same sense the attributes are.
+            _text = ""
+            try:
+                _text = " ".join(((await el.inner_text()) or "").split())[:40]
+            except Exception:
+                _text = ""
+            if _text:
+                attrs["text"] = _text
+            # The skip stays exactly what it was -- ONLY an element with no attribute AND no
+            # text. My first version of this required one of the NAMING keys, which skipped
+            # `{type='button'}`; on a page whose controls are all unlabelled icon buttons that
+            # empties `out`, and an empty `out` returns "" -- which #688 defines as "could not
+            # look", so the caller drops the hint entirely. That is the exact failure #688
+            # exists to prevent, reintroduced. `{type='button'}` is poor, but "this page has
+            # controls I cannot name" is a true and useful thing to say; the ranking below is
+            # what keeps it from crowding out the answer.
             if not attrs:
                 continue          # nothing addressable — a selector cannot name it
-            out.append("{" + ", ".join(f"{k}={v!r}" for k, v in attrs.items()) + "}")
-            if len(out) >= limit:
-                break
+            out.append(attrs)
         except Exception:
             continue
-    return "; ".join(out)
+    # #1202uk PART TWO: DOM ORDER PUTS THE CHROME FIRST AND TRUNCATES AWAY THE ANSWER.
+    # Naming the text-only controls (above) made the list complete and therefore LONGER, and
+    # `limit` then cut it at the navigation -- on the live page the agent asking for "Like"
+    # got a list ending at "Get App", with the Like button three entries past the cut. That
+    # is worse than the omission it replaced, so the list is now ranked by what was ASKED FOR
+    # before it is truncated.
+    #
+    # It also repairs the mismatch that produced r134's eight blocked flows on its own. Agents
+    # ask for the VERB (`name="Like"`) while generated apps label the control with verb plus
+    # object ("Like video", "Open comments", "Toggle sound") -- and `role=button[name="Like"]`,
+    # the selector the role branch builds, is an EXACT match, so it misses. Ranking surfaces
+    # `{aria-label='Like video', data-testid='like-video'}` first, which hands the agent the
+    # real string instead of leaving it to guess a second time.
+    #
+    # Substring both ways, case-folded: the wanted text may be shorter than the label ("Like"
+    # in "Like video") or longer ("Add friend" where the control says "Add"). Ties keep DOM
+    # order, so with no `wanted` the list is exactly what it was.
+    _w = " ".join(str(wanted or "").split()).casefold()
+    if _w:
+        def _rank(item):
+            for _v in item.values():
+                _v = str(_v).casefold()
+                if _v == _w:
+                    return 0
+                if _w in _v or _v in _w:
+                    return 1
+            return 2
+        out = sorted(out, key=_rank)
+    _shown = out[:limit]
+    _rendered = ["{" + ", ".join(f"{k}={v!r}" for k, v in a.items()) + "}" for a in _shown]
+    if len(out) > len(_shown):
+        # #883: a truncated list that does not say so reads as an exhaustive one, and the
+        # agent concludes the control is absent.
+        _rendered.append(f"... and {len(out) - len(_shown)} more")
+    return "; ".join(_rendered)
 
 
 class BrowserClickTool(BaseTool):
@@ -197,6 +280,30 @@ Features:
         # Build the selector to use
         final_selector = None
         selector_type = None
+        # #1202ul: `role=button[name="Like"]` -- the string the role branch builds -- is an
+        # EXACT match on the accessible name. `page.get_by_role("button", name="Like")`, the
+        # API this tool's own description advertises ("role + name: ARIA role with accessible
+        # name"), defaults to a case-insensitive SUBSTRING. The two disagree on exactly the
+        # shape generated apps produce.
+        #
+        # MEASURED on a live generated app (r132), same page, same button:
+        #     role=button[name="Like"]                -> 0 matches
+        #     get_by_role("button", name="Like")      -> 1   (the control is "Like video")
+        #     get_by_role("button", name="Comment")   -> 1   (the control is "Open comments")
+        # ACROSS THE CORPUS: 2287 aria-labels in generated frontends, 927 of them (40%) are
+        # multi-word verb-object labels -- "Previous video", "Close comments", "Add to My
+        # List", "Email address", "Forward 10 seconds" -- spanning TikTok, Netflix and the
+        # rest; and 814 of 2337 browser_click calls (34%), over 60 runs, pass role+name.
+        #
+        # THE COST, in r134: eight delivery-blocking ui_flow checks, each reported as "cannot
+        # locate accessible Like/Comment/Follow control" while the control was on screen in
+        # the check's own saved screenshot and carried the label in source. The frontend was
+        # sent P0s to add labels that already existed.
+        #
+        # `.first` keeps the non-strict "first match wins" semantics `page.click(selector)`
+        # already had for every other branch -- get_by_role returns a strict Locator, and
+        # clicking it directly would turn two matches into a new class of failure.
+        role_query = None
         
         if testid:
             final_selector = f'[data-testid="{testid}"]'
@@ -209,6 +316,7 @@ Features:
             if name:
                 final_selector += f'[name="{name}"]'
             selector_type = f"role={role}" + (f" name={name}" if name else "")
+            role_query = (role, name)   # #1202ul
         elif selector:
             final_selector = _unescape_model_selector(selector)
             selector_type = f"selector={final_selector}"
@@ -224,19 +332,37 @@ Features:
             try:
                 page = self.browser.state.page
                 
+                # #1202ul: the role branch goes through the API, not the selector string.
+                _target = None
+                if role_query is not None:
+                    try:
+                        _r, _n = role_query
+                        _loc = page.get_by_role(_r, name=_n) if _n else page.get_by_role(_r)
+                        _target = _loc.first
+                    except Exception:
+                        # An unknown role, or any construction failure, falls back to the
+                        # string form rather than losing the attempt.
+                        _target = None
+
                 # First, wait for element to be visible if requested
                 if wait_for_visible and attempt == 0:
                     try:
-                        await page.wait_for_selector(
-                            final_selector, 
-                            state="visible", 
-                            timeout=timeout
-                        )
+                        if _target is not None:
+                            await _target.wait_for(state="visible", timeout=timeout)
+                        else:
+                            await page.wait_for_selector(
+                                final_selector,
+                                state="visible",
+                                timeout=timeout
+                            )
                     except Exception:
                         pass  # Continue to click attempt even if wait fails
                 
                 # Attempt click
-                await page.click(final_selector, timeout=timeout)
+                if _target is not None:
+                    await _target.click(timeout=timeout)
+                else:
+                    await page.click(final_selector, timeout=timeout)
                 
                 # Success
                 result_msg = f"Clicked element ({selector_type})"
@@ -296,7 +422,8 @@ Features:
         error_msg = f"Click failed after {retry} attempts: {last_error}"
         # #362: same reasoning as the fill path above.
         _cands = await describe_interactive_candidates(
-            getattr(getattr(self.browser, "state", None), "page", None))
+            getattr(getattr(self.browser, "state", None), "page", None),
+            wanted=name or aria_label or text or testid or "")   # #1202uk
         error_msg += _candidates_hint_688(_cands)   # #688: same distinction for click
         if error_hints:
             error_msg += "\n\nHints:\n- " + "\n- ".join(error_hints)
@@ -347,7 +474,8 @@ class BrowserFillTool(BaseTool):
         except Exception as e:
             # #362: name what IS on the page so one failure answers the question
             # instead of seeding N more selector guesses.
-            _cands = await describe_interactive_candidates(self.browser.state.page)
+            _cands = await describe_interactive_candidates(
+                self.browser.state.page, wanted=selector or "")   # #1202uk
             _hint = _candidates_hint_688(_cands)
             return ToolResult.fail(f"Fill failed: {str(e)}.{_hint}")
 
