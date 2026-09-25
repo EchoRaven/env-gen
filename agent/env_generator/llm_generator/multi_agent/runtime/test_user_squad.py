@@ -859,19 +859,42 @@ def squad_gate_enabled(env: Mapping[str, Any]) -> bool:
     return str(env.get("ENVGEN_TESTUSER_SQUAD", "1")).strip().lower() in ("1", "true", "yes", "on")
 
 
-def squad_gate_outcome(*, ran: bool, p0: int) -> str:
+def squad_gate_outcome(*, ran: bool, p0: int, completed: Optional[int] = None) -> str:
     """#179: classify a squad result into the delivery-gate action.
 
-    - 'pass'   : squad ran and filed zero P0 → the milestone may release.
+    - 'pass'   : squad ran, at least one agent finished, and zero P0 → the milestone may release.
     - 'defect' : squad ran and filed P0 defect(s) → defer AND burn an escape-budget attempt.
     - 'retry'  : squad could not run (app ports not resolved yet / empty contract / crash →
-                 ran=False) → defer but do NOT burn an attempt, so flaky first-attempt port
-                 timing can't erode the defer/escape budget. squad_release_decision's wall-clock
-                 remains the escape backstop, so a genuinely-never-ready app still releases.
+                 ran=False), OR it ran and NO agent finished → defer but do NOT burn an
+                 attempt, so flaky first-attempt port timing can't erode the defer/escape
+                 budget. squad_release_decision's wall-clock remains the escape backstop, so a
+                 genuinely-never-ready app still releases.
+
+    #1202ur: THE VERDICT READ THE P0 COUNT AND NOTHING ELSE, so a squad where no agent finished
+    filed no P0 and therefore PASSED. `report["completed"]` was computed and logged at every
+    wave and never consulted -- while the per-goal ledger three lines away DOES require it
+    (`"passed": bool(completed and mod_p0 == 0)`).
+
+    MEASURED over 30 squad verdicts in 21 runs: completion is 0-6 of 12 agents, median ~2, and
+    never above 6. Two verdicts were a PASS with ZERO agents completed (r120, r135 -- r135
+    live, 12 spawned, three waves each logging "0 completed", verdict=PASS with by-source={}).
+    It is rare only because some OTHER source usually has an open P0 (#630 widened `p0` beyond
+    test-users); when the app is otherwise clean, this gate passes having tested nothing.
+
+    `completed=None` means UNKNOWN and keeps the old behaviour -- a restored or older result
+    shape carries no report, and #1202tn's rule is that a fault-tolerant helper's 0 cannot be
+    used as a fact. Only an explicit zero routes to 'retry'.
+
+    P0s win over zero-completion: defects that WERE filed are real evidence and must still burn
+    an attempt.
     """
     if not ran:
         return "retry"
-    return "pass" if int(p0 or 0) == 0 else "defect"
+    if int(p0 or 0) > 0:
+        return "defect"
+    if completed is not None and int(completed) <= 0:
+        return "retry"
+    return "pass"
 
 
 def squad_relaunch_blocked_1202rd(app_sig, last_verdict_sig, open_p0: int) -> str:

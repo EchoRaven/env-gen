@@ -5899,7 +5899,12 @@ class Orchestrator:
                             self._compute_app_source_signature(), _p0)
                     except Exception:
                         self._tu_squad_verdict_sig_1202rd = None
-                    _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0)
+                    # #1202ur: a PASS with zero finished agents is a pass from no evidence.
+                    # `.get("completed")` is None when the result carries no report (restored
+                    # or older shape), which keeps the previous behaviour.
+                    _tu_completed = (_tu_result.get("report") or {}).get("completed")
+                    _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0,
+                                                     completed=_tu_completed)
                     if _tu_outcome == "pass":
                         self._tu_squad_passed = True  # clean -> fall through to release
                         # #1202rt: the last honest look at a stack that is still up. The squad
