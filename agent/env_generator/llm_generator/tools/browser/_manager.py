@@ -50,6 +50,32 @@ def is_dead_driver_error_1202y(exc: Any) -> bool:
     return any(m in t for m in _DEAD_DRIVER_MARKS_1202Y)
 
 
+def _request_method_1202uq(response) -> str:
+    """The request's method, or "" if the request object has gone away. See below."""
+    try:
+        return str(response.request.method or "")
+    except Exception:
+        return ""
+
+
+def _authorization_sent_1202uq(response) -> bool:
+    """True if the request behind this response carried an `Authorization` header.
+
+    #1202uq: separates "the app called a protected endpoint with no credentials" from "the
+    browser is still carrying a token from an earlier flow". Both produce a 401 and the record
+    could not tell them apart, so a verifier reported the second as the first.
+
+    Runs inside a response event handler: it must never raise, or a diagnostic costs the
+    capture. `request.headers` is the synchronous view and carries headers the page SET --
+    verified against a live page: a fetch with `Authorization` reads True, the same fetch
+    without it reads False.
+    """
+    try:
+        return bool((response.request.headers or {}).get("authorization"))
+    except Exception:
+        return False
+
+
 class BrowserManager:
     """Manages browser lifecycle and state"""
     
@@ -258,8 +284,33 @@ class BrowserManager:
             self.state.network_errors.append({
                 "url": response.url,
                 "status": response.status,
-                "method": response.request.method,
+                # #1202uq: `response.request.method` was read UNGUARDED inside an event
+                # handler. A request object that has gone away raises here, which loses the
+                # whole record AND throws inside Playwright's dispatch -- found by asserting
+                # the handler never raises, not by reading it.
+                "method": _request_method_1202uq(response),
                 "type": "http_error",
+                # #1202uq: DID THIS REQUEST CARRY CREDENTIALS? The record held url, status and
+                # method, so a 401 said nothing about WHY. r135's verifier wrote "unexpected
+                # anonymous GET /auth/me 401" onto ELEVEN of its fifteen delivery-blocking UI
+                # flows -- and "anonymous" was an INFERENCE it had no way to check. The
+                # generated client only calls /auth/me when a decodable, unexpired JWT is in
+                # localStorage, and it attaches `Authorization` whenever a token exists, so a
+                # genuinely anonymous page cannot issue that request at all. The likelier
+                # story is a token left by an earlier flow in the SAME browser context (the
+                # verifier's context is created once per run and never reset; test_user_runner
+                # and visual_fidelity each open their own).
+                #
+                # The agent already has the means to act -- `browser_eval` is called 13,673
+                # times across the corpus and can clear storage -- but `localStorage.clear`
+                # appears ZERO times, because nothing ever told it there was state to clear.
+                # This is the missing fact, not a missing capability.
+                #
+                # Cookie-borne sessions are NOT covered: the browser adds `Cookie` after this
+                # header view is taken, and calling a cookie an auth credential would be a
+                # guess. Generated clients use bearer tokens (`Authorization: Bearer`), which
+                # is what this sees.
+                "authorization_sent": _authorization_sent_1202uq(response),
             })
     
     def _on_request_failed(self, request):

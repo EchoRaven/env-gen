@@ -402,7 +402,7 @@ class BrowserGetNetworkErrorsTool(BaseTool):
             "type": "function",
             "function": {
                 "name": "browser_network_errors",
-                "description": "Get network errors (4xx, 5xx status codes) from the current page. Use this to see API failures.",
+                "description": "Get network errors (4xx, 5xx status codes) from the current page. Use this to see API failures. Each entry carries `authorization_sent`: false means the request went out with NO bearer token, true means it carried one that the backend rejected \u2014 a 401 with authorization_sent=true is a stale or invalid token (often left in localStorage by an earlier flow in this same browser), not an anonymous call. Clear it with browser_eval(\"localStorage.clear()\") before judging a logged-out flow.",
                 "parameters": {
                     "type": "object",
                     "properties": {},
