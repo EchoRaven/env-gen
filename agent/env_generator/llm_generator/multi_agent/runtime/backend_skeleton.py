@@ -3619,7 +3619,31 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
         # because no row ever had a recipient who was not the sender.
         # `fk_ordinal` is the column's position among this table's FK columns
         # targeting this parent, so ordinal 0 (every single-FK table) is unchanged.
-        idx = (i + int(fk_ordinal or 0)) % m
+        # #1202ue: SKEW THE PARENT, do not walk it.
+        #
+        # `(i + ordinal) % m` walks the parents in lockstep, so with 8 comments over 9 videos
+        # every video got EXACTLY ONE comment. MEASURED in the delivered r133 seed:
+        # comments.video_id = [1..8] and likes.video_id = [1..8], each parent used exactly
+        # once. That is not only the numeric regularity of rubric dimension 6 -- one
+        # subtraction reads it -- it is dimension 5's "uneven participation" missing entirely:
+        # no video has two comments and none has none, which no real table looks like, and a
+        # "most liked" ordering over a column where every row is 1 means nothing.
+        #
+        # The skew is drawn from crc32 of (child table, column, row) -- it knows nothing about
+        # what either table MEANS, so `comments -> videos` and `orders -> customers` take the
+        # identical path. Squaring a unit fraction concentrates the draw on the earlier
+        # parents, which is the shape real participation has (a few popular rows, a long tail),
+        # and `fk_ordinal` still offsets the column so #1069's two-FK case is unchanged: two
+        # columns pointing at the same parent still get different parents in the same row.
+        # The draw keys on (child table, row) and deliberately NOT on the column: two FK
+        # columns onto the same parent must land on DIFFERENT parents in one row, and that has
+        # to be guaranteed, not likely. Including the column gave each its own base, so
+        # base_a + 0 could equal base_b + 1 by chance -- #1069's self-follow / note-to-self
+        # came back probabilistically, and the test for it caught the regression. With one
+        # base per row, `fk_ordinal` separates the columns exactly as it did before.
+        _r1202ue = (zlib.crc32(("fk\x1f%s\x1f%d" % (table, i)).encode("utf-8"))
+                    % 10000) / 10000.0
+        idx = (int((_r1202ue ** 2) * m) + int(fk_ordinal or 0)) % m
         _ppk = _seed_pk_value(fk_table, idx, (pk_types or {}).get(fk_table))
         return _ppk if _ppk is not None else idx + 1  # text/uuid parent key, else SERIAL 1..N
     if pk_name is not None and col == pk_name:

@@ -128,7 +128,40 @@ class TwoPartyRowsHaveTwoParties(unittest.TestCase):
 class SingleFkTablesAreUnchanged(unittest.TestCase):
     """The ordinal is 0 for the only FK to a parent, so nothing else moves."""
 
-    def test_a_plain_child_still_cycles_the_parents(self):
+    def test_a_second_fk_to_another_parent_does_not_move_this_one(self):
+        """#1202ue replaced the VALUES this used to pin, so it now pins the PROPERTY.
+
+        The old assertion was `[(i % n_users) + 1 ...]` -- the parents cycled in lockstep, and
+        #1202ue removed exactly that, because it gave every parent exactly one child (measured
+        in the delivered r133 seed: comments.video_id = [1..8], likes.video_id = [1..8]). The
+        cycle was never what #1069 owned; the docstring above says what is: the ordinal is 0
+        for the only FK onto a parent, so nothing else moves it.
+
+        That is asserted here directly. Adding a second FK onto a DIFFERENT parent must leave
+        the first column's values untouched, because ordinals are counted per parent.
+        """
+        one = _seed({
+            "users": _USERS,
+            "posts": {"schema": {"columns": [
+                _col("id", primary_key=True),
+                _col("author_id", references="users.id"),
+                _col("title", type="text")]}},
+        })
+        two = _seed({
+            "users": _USERS,
+            "topics": {"schema": {"columns": [
+                _col("id", primary_key=True), _col("title", type="text")]}},
+            "posts": {"schema": {"columns": [
+                _col("id", primary_key=True),
+                _col("author_id", references="users.id"),
+                _col("topic_id", references="topics.id"),
+                _col("title", type="text")]}},
+        })
+        self.assertEqual([r["author_id"] for r in one["posts"]],
+                         [r["author_id"] for r in two["posts"]])
+
+    def test_a_plain_child_still_references_real_parents(self):
+        """The integrity half, which #1202ue must never cost."""
         seed = _seed({
             "users": _USERS,
             "posts": {"schema": {"columns": [
@@ -137,8 +170,8 @@ class SingleFkTablesAreUnchanged(unittest.TestCase):
                 _col("title", type="text")]}},
         })
         n_users = len(seed["users"])
-        got = [r["author_id"] for r in seed["posts"]]
-        self.assertEqual(got, [(i % n_users) + 1 for i in range(len(got))])
+        for row in seed["posts"]:
+            self.assertIn(row["author_id"], range(1, n_users + 1))
 
 
 if __name__ == "__main__":
