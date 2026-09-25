@@ -103,6 +103,44 @@ def _squad_detail_1202uh(orch) -> str:
         return ""
 
 
+# #1202uo: WHICH HOLDS MEAN "SOMETHING MUST CHANGE" AND WHICH MEAN "NOT THIS TICK".
+#
+# `delivery_hold.jsonl` exists to answer "the gate was green and nothing shipped". It wrote
+# every hold under one name, and several of the thirteen are the release WORKING: the
+# test-user squad runs in the background and delivery defers a tick by design (single-flight),
+# the visual capture re-shoots, the pre-cut smoke runs. Counting holds to find blockers
+# therefore gives the wrong answer, and MEASURED on the only run in the ledger that DELIVERED:
+#
+#     r133: 13 post-gate holds = 12 designed waits + 1 real block (squad_defects)
+#
+# So reading that ledger as "thirteen things stopped delivery" is 92% wrong for the one run
+# that succeeded -- and I misread it exactly that way before writing this.
+#
+# Each entry below was checked at its own call site rather than guessed from its name:
+#   squad_inflight            "a squad run is in flight but not finished -> defer"
+#   squad_launched_background  just launched; defer this tick, single-flight
+#   squad_wait                 a wait condition, not a verdict
+#   squad_not_ready            #179: ports unresolved / empty contract -> defer WITHOUT
+#                              burning an attempt, so flaky first attempts do not count
+#   visual_final_recapture     "delivery capture, not a remediation round" (#1202lk)
+#   fresh_smoke                runs ONE smoke on the exact release tree and holds while it does
+#
+# Everything else is blocking: gate_failed_checks, stale_build_evidence, unbuilt_pages,
+# squad_stack_unanswered, squad_defects, browser_ui_unusable, route_consolidation.
+#
+# Same distinction as #1202tn, where the idle breaker treated "stuck" and "nothing to do" as
+# one state. A membership test, so a hold added later defaults to `blocking` -- the safe
+# direction: a new hold is reported as needing attention until someone says otherwise.
+_WAITING_HOLDS_1202UO = frozenset({
+    "squad_inflight",
+    "squad_launched_background",
+    "squad_wait",
+    "squad_not_ready",
+    "visual_final_recapture",
+    "fresh_smoke",
+})
+
+
 def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
     """Append one line to ``logs/delivery_hold.jsonl``: WHY a clear gate did not ship. #1202tk
 
@@ -133,6 +171,9 @@ def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
             fh.write(_j1202tk.dumps({
                 "at": _t1202tk.time(),
                 "hold": str(hold),
+                # #1202uo: "waiting" = the release is progressing and will retry on its own;
+                # "blocking" = it will not ship until something changes.
+                "kind": ("waiting" if str(hold) in _WAITING_HOLDS_1202UO else "blocking"),
                 "detail": str(detail)[:400],
                 "milestone": str(getattr(orch, "_current_milestone_version", "") or ""),
             }) + "\n")

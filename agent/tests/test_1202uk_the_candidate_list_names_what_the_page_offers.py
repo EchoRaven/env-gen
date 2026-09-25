@@ -211,3 +211,29 @@ def test_the_answer_is_ranked_even_when_it_sits_late_in_the_dom():
     els = [_El({"type": "button"}) for _ in range(60)] + [LIKE]
     out = _run(els, limit=4, wanted="Like")
     assert "like-video" in out.split(";")[0], out
+
+
+def test_a_category_attribute_cannot_outrank_a_name():
+    r"""★ The inversion my own ranking introduced, on the path #1202un then wired.
+
+    `_rank` compared `wanted` against EVERY collected value, and `type` is one of them. But
+    `type` is a CATEGORY, never an identifier -- and `browser_fill` passes its raw CSS
+    selector as `wanted`. So `wanted="button.submit"` matched every bare `{type='button'}`,
+    which then tied with (and by DOM order beat) the one element carrying
+    `aria-label='Submit'` and `data-testid='submit-btn'`.
+
+    Measured on the shape a live page produces -- 8 unnamed buttons then one real control --
+    the real match came LAST: the noise this ticket exists to demote, promoted by the fix
+    itself. `type` stays in the DISPLAYED entry, where it is informative; it just cannot rank.
+    """
+    noise = [_El({"type": "button"}) for _ in range(8)]
+    real = _El({"aria-label": "Submit", "type": "submit", "data-testid": "submit-btn"}, "Submit")
+    for wanted in ("button.submit", "Submit", "submit-btn", "input[type='submit']"):
+        out = _run(noise + [real], limit=3, wanted=wanted)
+        assert "submit-btn" in out.split(";")[0], (wanted, out)
+
+
+def test_type_is_still_shown_even_though_it_cannot_rank():
+    """The other half: demoting it from the ranking must not delete it from the entry."""
+    out = _run([_El({"type": "button"})])
+    assert "type='button'" in out, out

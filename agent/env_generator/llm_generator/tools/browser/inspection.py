@@ -310,13 +310,23 @@ def _widen_to_accessible_names_1202um(scope, query, text_loc):
     existing regex means.
     """
     try:
-        q = str(query or "")
-        if not q or '"' in q:
-            # A quote would break out of the attribute selector; the text result stands
-            # rather than risking a malformed selector on a recovery path.
+        # ESCAPE, do not refuse. My first version returned unwidened whenever the query held a
+        # `"` -- which left two shapes that still produced a MALFORMED selector, and Playwright
+        # validates lazily, so the error surfaced at `.count()` in the CALLER, outside this
+        # try. Probed against a live page:
+        #     query 'a\\'  -> Unexpected token "" while parsing css selector [aria-label*="a\\"
+        #     query 'a\nb'  -> Unsupported token "BADSTRING"
+        # A recovery path that raises is worse than one that finds nothing, and this function's
+        # own contract says it must never raise.
+        #
+        # Collapsing whitespace also removes newlines and tabs, which CSS strings cannot hold
+        # raw, and matches how an accessible name is normalised anyway.
+        q = " ".join(str(query or "").split())
+        if not q:
             return text_loc
+        esc = q.replace("\\", "\\\\").replace('"', '\\"')
         attrs = ", ".join(
-            f'[{a}*="{q}" i]' for a in ("aria-label", "title", "placeholder", "alt", "name")
+            f'[{a}*="{esc}" i]' for a in ("aria-label", "title", "placeholder", "alt", "name")
         )
         return text_loc.or_(scope.locator(attrs))
     except Exception:
@@ -395,7 +405,16 @@ class BrowserFindTool(BaseTool):
                       const text = (el.innerText || el.textContent || '').trim().slice(0, 200);
                       const href = el.getAttribute ? el.getAttribute('href') : null;
                       const role = el.getAttribute ? el.getAttribute('role') : null;
-                      return { tag, id, className, text, href, role };
+                      // #1202um: the ATTRIBUTES A SELECTOR CAN BE BUILT FROM. Widening the
+                      // search to accessible names (above) without returning them would hand
+                      // the model a match it cannot act on: an icon button's `text` is empty,
+                      // so the result would say "found 1" and name nothing to click. That is
+                      // the half-fix shape -- one reader updated, the other left behind.
+                      const g = (n) => (el.getAttribute ? el.getAttribute(n) : null) || null;
+                      return { tag, id, className, text, href, role,
+                               ariaLabel: g('aria-label'), testid: g('data-testid'),
+                               placeholder: g('placeholder'), title: g('title'),
+                               name: g('name') };
                     }"""
                 )
                 out.append(meta)

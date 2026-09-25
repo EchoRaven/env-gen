@@ -52,13 +52,61 @@ def test_empty_and_none_are_safe():
     assert _f(None) == ''
 
 
+class _FakePage:
+    """Records the selector string that actually reaches Playwright."""
+
+    def __init__(self):
+        self.seen = []
+
+    async def click(self, sel, **kw):
+        self.seen.append(sel)
+
+    async def fill(self, sel, value, **kw):
+        self.seen.append(sel)
+
+    async def wait_for_selector(self, sel, **kw):
+        return None
+
+    async def evaluate(self, *a, **k):
+        return None
+
+    async def query_selector_all(self, *a, **k):
+        return []
+
+
+class _FakeBrowser:
+    def __init__(self, page):
+        self.state = type("S", (), {"page": page})()
+
+
 def test_both_click_and_fill_apply_it():
-    """Two entry points take a model-authored selector; both must sanitise."""
-    import inspect
-    src = inspect.getsource(bi)
-    assert src.count('_unescape_model_selector(') >= 3, "click + fill + the def"
-    fill = inspect.getsource(bi.BrowserFillTool.execute)
-    assert '_unescape_model_selector(selector)' in fill, fill
+    """Two entry points take a model-authored selector; both must sanitise.
+
+    ASSERTED AS BEHAVIOUR, not as source text. This used to count occurrences of
+    `_unescape_model_selector(` in the module and require the literal call inside
+    `BrowserFillTool.execute`. #1202un then moved the locator construction into ONE builder
+    shared by click and fill -- precisely so the two could not drift apart, which is what #581
+    is about -- and the grep went red while the property it names was untouched and now holds
+    in one place instead of two.
+
+    A structural assertion cannot tell a refactor from a regression. Driving both tools and
+    reading what reaches the page can, and it is strictly stronger: it would also catch a
+    sanitiser that is called and whose result is thrown away.
+    """
+    import asyncio
+
+    bad = r'input[placeholder=\"Email or phone number\"]'
+    good = 'input[placeholder="Email or phone number"]'
+
+    page = _FakePage()
+    asyncio.run(bi.BrowserClickTool(_FakeBrowser(page)).execute(
+        selector=bad, retry=1, timeout=20))
+    assert page.seen == [good], page.seen
+
+    page = _FakePage()
+    asyncio.run(bi.BrowserFillTool(_FakeBrowser(page)).execute(
+        selector=bad, value="x"))
+    assert page.seen == [good], page.seen
 
 
 if __name__ == "__main__":  # pragma: no cover

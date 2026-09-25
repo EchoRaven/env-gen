@@ -167,7 +167,16 @@ async def describe_interactive_candidates(page, limit: int = 12, wanted: str = "
     _w = " ".join(str(wanted or "").split()).casefold()
     if _w:
         def _rank(item):
-            for _v in item.values():
+            for _k, _v in item.items():
+                # `type` is a CATEGORY, never an identifier, and ranking on it inverts the
+                # list: `browser_fill` passes its raw CSS selector as `wanted`, so
+                # `wanted="button.submit"` matched every bare `{type='button'}` and pushed
+                # `{aria-label='Submit', data-testid='submit-btn'}` below them -- the noise
+                # this ticket exists to demote, promoted by the fix itself. Measured on the
+                # shape a live page produces: 8 unnamed buttons + 1 real match, and the real
+                # match came LAST. It stays in the displayed entry, where it is informative.
+                if _k == "type":
+                    continue
                 _v = str(_v).casefold()
                 if _v == _w:
                     return 0
@@ -182,6 +191,79 @@ async def describe_interactive_candidates(page, limit: int = 12, wanted: str = "
         # agent concludes the control is absent.
         _rendered.append(f"... and {len(out) - len(_shown)} more")
     return "; ".join(_rendered)
+
+
+def _api_locator_1202un(page, query):
+    """Resolve a builder query onto Playwright's PUBLIC locator API.
+
+    The builder returns a query instead of a selector string wherever the string form is
+    weaker than the API. `role` because `role=button[name="X"]` matches the accessible name
+    EXACTLY while `get_by_role` defaults to a case-insensitive substring (#1202ul, measured:
+    the string 0 matches, the API 1, on the same button labelled "Like video"). `label`
+    because the only selector-engine equivalent is the undocumented `internal:label=`.
+    """
+    kind = query[0]
+    if kind == "label":
+        return page.get_by_label(query[1])
+    _, role, name = query
+    return page.get_by_role(role, name=name) if name else page.get_by_role(role)
+
+
+def _build_locator_1202un(*, testid=None, aria_label=None, role=None, name=None,
+                          selector=None, text=None, placeholder=None, label=None):
+    """Turn the preferred locators into one Playwright target. Shared by click and fill.
+
+    #1202un: THIS LOGIC EXISTED ONLY INSIDE `browser_click`, AND `browser_fill` HAD NONE OF IT.
+
+    `browser_click`'s own description ranks locators for the model: "PREFERRED (stable,
+    recommended): testid, aria_label, role + name" and "FALLBACK: selector, text".
+    `browser_fill` accepted `selector` and `value`, nothing else -- so the framework told the
+    agent CSS selectors are the fallback and then handed it only the fallback for every form
+    field in the run.
+
+    MEASURED across 151 run logs:
+
+        browser_fill   3169 calls   685 failed (21%)   1 locator kind    no retry
+        browser_click  2346 calls   545 failed (23%)   5 locator kinds   3 retries
+
+    Filling is the MORE used tool and was given the least. r134's login flow died on exactly
+    this: `browser_fill(input[type='email'], input[name='email'])` -- two CSS guesses in one
+    call, because there was no way to ask for the field by its label or test id.
+
+    Returning `role_query` alongside the string keeps #1202ul's API path: a quoted `name` in
+    `role=button[name="X"]` is an EXACT match, while `get_by_role` defaults to a
+    case-insensitive substring, and generated apps label controls "Like video"/"Email
+    address". The caller uses the query when it is present and the string otherwise.
+
+    RETRY IS DELIBERATELY NOT CHANGED HERE. `browser_fill` retries zero times and
+    `browser_click` three; that is a second asymmetry, but nothing in the corpus says fill
+    failures are transient, and #647 does not let me pick a retry count from symmetry alone.
+
+    Returns `(final_selector, selector_type, role_query)`, or `(None, None, None)` when the
+    caller passed no locator at all.
+    """
+    if testid:
+        return f'[data-testid="{testid}"]', f"testid={testid}", None
+    if aria_label:
+        return f'[aria-label="{aria_label}"]', f"aria-label={aria_label}", None
+    if role:
+        sel = f'role={role}'
+        if name:
+            sel += f'[name="{name}"]'
+        return sel, f"role={role}" + (f" name={name}" if name else ""), ("role", role, name)
+    if placeholder:
+        return f'[placeholder="{placeholder}"]', f"placeholder={placeholder}", None
+    if label:
+        # A <label for=...> is how a form field is named to a human. Routed through the
+        # PUBLIC `get_by_label` API rather than the `internal:label=` selector-engine string:
+        # that string works today and is undocumented, and a locator the framework depends on
+        # must not rest on a Playwright internal.
+        return f"label={label}", f"label={label}", ("label", label)
+    if selector:
+        return _unescape_model_selector(selector), f"selector={_unescape_model_selector(selector)}", None
+    if text:
+        return f"text={text}", f"text={text}", None
+    return None, None, None
 
 
 class BrowserClickTool(BaseTool):
@@ -305,25 +387,11 @@ Features:
         # clicking it directly would turn two matches into a new class of failure.
         role_query = None
         
-        if testid:
-            final_selector = f'[data-testid="{testid}"]'
-            selector_type = f"testid={testid}"
-        elif aria_label:
-            final_selector = f'[aria-label="{aria_label}"]'
-            selector_type = f"aria-label={aria_label}"
-        elif role:
-            final_selector = f'role={role}'
-            if name:
-                final_selector += f'[name="{name}"]'
-            selector_type = f"role={role}" + (f" name={name}" if name else "")
-            role_query = (role, name)   # #1202ul
-        elif selector:
-            final_selector = _unescape_model_selector(selector)
-            selector_type = f"selector={final_selector}"
-        elif text:
-            final_selector = f"text={text}"
-            selector_type = f"text={text}"
-        else:
+        # #1202un: ONE builder, shared with browser_fill. It used to live only here.
+        final_selector, selector_type, role_query = _build_locator_1202un(
+            testid=testid, aria_label=aria_label, role=role, name=name,
+            selector=selector, text=text)
+        if final_selector is None:
             return ToolResult.fail("Provide one of: testid, aria_label, role, selector, or text")
         
         last_error = None
@@ -336,9 +404,7 @@ Features:
                 _target = None
                 if role_query is not None:
                     try:
-                        _r, _n = role_query
-                        _loc = page.get_by_role(_r, name=_n) if _n else page.get_by_role(_r)
-                        _target = _loc.first
+                        _target = _api_locator_1202un(page, role_query).first
                     except Exception:
                         # An unknown role, or any construction failure, falls back to the
                         # string form rather than losing the attempt.
@@ -445,32 +511,84 @@ class BrowserFillTool(BaseTool):
             "type": "function",
             "function": {
                 "name": "browser_fill",
-                "description": "Fill an input field with text.",
+                "description": """Fill an input field with text.
+
+PREFERRED locators (stable, recommended):
+- testid: data-testid attribute (most reliable)
+- aria_label: aria-label attribute
+- label: the field's visible <label> text
+- placeholder: placeholder attribute
+- role + name: ARIA role with accessible name (e.g. role='textbox')
+
+FALLBACK locators:
+- selector: CSS selector
+""",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "selector": {
                             "type": "string",
-                            "description": "CSS selector for the input field"
+                            "description": "Fallback: CSS selector for the input field"
+                        },
+                        "testid": {
+                            "type": "string",
+                            "description": "Preferred: data-testid value"
+                        },
+                        "aria_label": {
+                            "type": "string",
+                            "description": "Preferred: aria-label value"
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "Preferred: the field's visible <label> text"
+                        },
+                        "placeholder": {
+                            "type": "string",
+                            "description": "Preferred: placeholder text"
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": "Preferred: ARIA role (e.g. 'textbox')"
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Accessible name used with role-based queries"
                         },
                         "value": {
                             "type": "string",
                             "description": "Text to fill"
                         }
                     },
-                    "required": ["selector", "value"]
+                    "required": ["value"]   # #1202un: any ONE locator, not only CSS
                 }
             }
         }
     
-    async def execute(self, selector: str, value: str, **kwargs) -> ToolResult:
+    async def execute(self, value: str, selector: Optional[str] = None,
+                      testid: Optional[str] = None, aria_label: Optional[str] = None,
+                      label: Optional[str] = None, placeholder: Optional[str] = None,
+                      role: Optional[str] = None, name: Optional[str] = None,
+                      **kwargs) -> ToolResult:
         if not self.browser.state.page:
             return ToolResult.fail("No page open. Use browser_navigate first.")
-        
-        selector = _unescape_model_selector(selector)   # #581
+
+        # #1202un: the same preferred locators browser_click has had all along. `_unescape`
+        # (#581) still runs, inside the shared builder, on the CSS branch only -- where it
+        # always did.
+        final_selector, selector_type, role_query = _build_locator_1202un(
+            testid=testid, aria_label=aria_label, label=label, placeholder=placeholder,
+            role=role, name=name, selector=selector)
+        if final_selector is None:
+            return ToolResult.fail(
+                "Provide one of: testid, aria_label, label, placeholder, role, or selector")
+        selector = final_selector
         try:
-            await self.browser.state.page.fill(selector, value, timeout=5000)
-            return ToolResult.ok(f"Filled {selector} with '{value}'")
+            page = self.browser.state.page
+            if role_query is not None:
+                await _api_locator_1202un(page, role_query).first.fill(value, timeout=5000)
+            else:
+                await page.fill(selector, value, timeout=5000)
+            return ToolResult.ok(f"Filled {selector_type} with '{value}'")
         except Exception as e:
             # #362: name what IS on the page so one failure answers the question
             # instead of seeding N more selector guesses.

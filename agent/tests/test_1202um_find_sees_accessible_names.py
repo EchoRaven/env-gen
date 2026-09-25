@@ -88,13 +88,37 @@ def test_the_match_is_case_insensitive():
     assert scope.located[0].count('" i]') == scope.located[0].count("*=")
 
 
-def test_a_quote_in_the_query_is_not_injected_into_the_selector():
-    """★ This runs on a RECOVERY path. A malformed selector there would replace a useful
-    miss with an exception, so a query that cannot be embedded safely is left alone."""
+def test_a_hostile_query_cannot_malform_the_selector():
+    r"""★ This runs on a RECOVERY path, and its own contract says it must never raise.
+
+    My first version REFUSED to widen whenever the query held a `"`. That was not enough: two
+    other shapes still produced a malformed selector, and Playwright validates lazily, so the
+    error surfaced at `.count()` in the CALLER -- outside this function's try. Probed against
+    a live page BEFORE the fix:
+
+        query 'a\\'   -> Error: Unexpected token "" while parsing css selector [aria-label*="a\"
+        query 'a\nb'  -> Error: Unsupported token "BADSTRING"
+
+    A recovery path that raises is worse than one that finds nothing. Escaping (rather than
+    refusing) also makes a quoted query WORK instead of being dropped, so this is strictly
+    stronger than the assertion it replaces. Re-probed live after the fix: all eight hostile
+    shapes return a count instead of raising.
+    """
     scope = _Scope()
     out = _widen_to_accessible_names_1202um(scope, 'bad"quote', _Loc("text"))
-    assert scope.located == [], scope.located
-    assert out.ored is None, "widened with an unsafe query"
+    assert out.ored is not None, "a quoted query is now escaped, not dropped"
+    # The property, not a magic count: the quote inside the VALUE is escaped, so every
+    # attribute clause still closes on its own delimiter.
+    assert '[aria-label*="bad\\"quote" i]' in scope.located[0], scope.located[0]
+
+    scope = _Scope()
+    _widen_to_accessible_names_1202um(scope, "a\\", _Loc("text"))
+    assert '\\\\' in scope.located[0], scope.located[0]
+
+    scope = _Scope()
+    _widen_to_accessible_names_1202um(scope, "a\nb\tc", _Loc("text"))
+    assert "\n" not in scope.located[0] and "\t" not in scope.located[0], scope.located[0]
+    assert '"a b c"' in scope.located[0], scope.located[0]
 
 
 def test_an_empty_query_is_left_alone():
@@ -134,3 +158,35 @@ def test_regex_mode_is_not_widened():
     regex_branch, _, text_branch = tail.partition("else:")
     assert "_widen_to_accessible_names_1202um" not in regex_branch, regex_branch
     assert "_widen_to_accessible_names_1202um" in text_branch, text_branch
+
+
+def test_the_result_carries_what_a_selector_can_be_built_from():
+    r"""★ THE HALF-FIX I ALMOST SHIPPED, caught by asking whether the change is usable
+    end-to-end rather than whether it matches.
+
+    Widening the SEARCH to accessible names made `browser_find("Like")` return 1 match on a
+    live generated app -- and the per-match metadata was `{tag, id, className, text, href,
+    role}`. An icon button's `text` is EMPTY, and its identity lives entirely in `aria-label`
+    and `data-testid`. So the result would have said "found 1" and named nothing the model
+    could click: a match it cannot act on is the same dead end as no match, one step later.
+    That is #1202's "fixing one reader is worse than none" shape, in my own change.
+
+    Verified live after adding the fields:
+
+        browser_find('Like')    -> {tag: button, text: '672K',
+                                    ariaLabel: 'Like video', testid: 'like-video'}
+        browser_find('Comment') -> {ariaLabel: 'Open comments', testid: 'open-comments'}
+        browser_find('Explore') -> {tag: span, text: 'Explore'}     (unchanged)
+
+    Asserted against the evaluated JS source, since the projection runs in the page.
+    """
+    import inspect
+
+    from tools.browser.inspection import BrowserFindTool
+
+    src = inspect.getsource(BrowserFindTool.execute)
+    _, _, body = src.partition("el.tagName")
+    assert body, "the metadata projection moved; this assertion no longer reads what it names"
+    returned, _, _ = body.partition('"""')
+    for field in ("aria-label", "data-testid", "placeholder", "title"):
+        assert field in returned, f"{field} is matched on but never returned: {returned[:400]}"
