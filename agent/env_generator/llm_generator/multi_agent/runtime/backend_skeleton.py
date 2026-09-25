@@ -3442,6 +3442,28 @@ def _is_image_col(col: str) -> bool:
     return any(w in n for w in _IMAGE_WORDS)
 
 
+_MEDIA_WORDS_1202UU = ("video", "audio", "media", "clip", "stream", "track", "song",
+                       "movie", "film", "recording", "attachment", "file")
+
+
+def _is_media_col_1202uu(col: str) -> bool:
+    """True if a STRING column names the ASSET a row IS, not decoration about it.
+
+    #1202uu: separate from `_is_image_col`, which finds avatars and thumbnails -- decoration
+    that two rows may legitimately share. This finds the column that makes a row a distinct
+    piece of content: `video_url`, `media_url`, `stream_url`, `audio_src`. Two rows with the
+    same one are the SAME item, whoever owns them.
+    """
+    n = (col or "").lower()
+    if any(k in n for k in ("count", "total", "num", "width", "height", "size", "_id")):
+        return False
+    if not (n.endswith("_url") or n.endswith("_uri") or n.endswith("_src") or n == "url"):
+        return False
+    if any(w in n for w in ("thumb", "avatar", "cover", "poster", "icon", "logo", "banner")):
+        return False        # decoration: sharing one is normal
+    return any(w in n for w in _MEDIA_WORDS_1202UU) or n in ("url", "src")
+
+
 def _seed_slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s).lower()) or "demo"
 
@@ -4072,6 +4094,28 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
     folder no longer 500s reply/forward/delete on a real, correct handler."""
     seed, classmap, owner_col, image_col, owner_child_fk, pk_meta, unique_cols = _build_seed_rows(
         tables, env_salt)   # #1202tw
+    # #1202uu: the columns that make a row a distinct PIECE OF CONTENT, as opposed to the
+    # decoration `_IMAGE_COL` finds. FIX #74's clone copies every non-PK, non-unique column,
+    # so on a media table it mints a byte-identical second copy of someone else's item under a
+    # different owner. MEASURED on the delivered r135 database: the feed served 39 videos from
+    # a 35-row dataset -- four charlidamelio clips present TWICE, once as charlidamelio
+    # (author_id 2) and once as bts_official_bighit (author_id 1), same `created_at` to the
+    # second -- and the logged-out landing page bylined a Charli clip to BTS. Across 146
+    # generated backends, 105 (71%) carry a media URL on an owner-scoped content table.
+    #
+    # Derived from `tables` rather than threaded out of `_build_seed_rows`, whose 7-tuple
+    # return other callers unpack positionally.
+    media_col: Dict[str, List[str]] = {}
+    for _t, _spec in (tables or {}).items():
+        _cols = _spec.get("columns") if isinstance(_spec, dict) else None
+        if isinstance(_cols, dict):
+            _names = list(_cols.keys())
+        else:
+            _names = [c.get("name") if isinstance(c, dict) else c for c in (_cols or [])]
+        _meds = [n for n in _names if isinstance(n, str) and _is_media_col_1202uu(n)]
+        if _meds:
+            media_col[_t] = _meds
+
     bootstrap_spec = list(bootstrap_spec or [])
     body = (
         '"""Seed LOADER (framework-owned). The DATA lives in the sibling seed_data.json,\n'
@@ -4102,6 +4146,8 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         f"_CLASS = {classmap!r}\n"
         f"_OWNER_COL = {owner_col!r}\n"
         f"_IMAGE_COL = {image_col!r}\n"
+        f"_MEDIA_COL = {media_col!r}\n"           # #1202uu: content-identity columns
+
         f"_OWNER_CHILD_FK = {owner_child_fk!r}\n"   # FIX #74: {{table: {{fk_col: child_table}}}}
         f"_PK = {pk_meta!r}\n"                       # FIX #74: {{table: [pk_name, category]}}
         f"_UNIQUE = {unique_cols!r}\n"               # FIX #74: {{table: [unique string cols]}}
@@ -4624,7 +4670,18 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "            try:\n"
         "                demo_rows = db.query(cls).filter(ocol == demo_uid).all()\n"
         "                have = len(demo_rows)\n"
-        "                if have >= _DEMO_FLOOR:\n"
+        "                # #1202uu: ON A MEDIA TABLE THE FLOOR IS 'NOT EMPTY', NOT EIGHT.\n"
+        "                # FIX #74's clone copies every non-PK, non-unique column, so on a table\n"
+        "                # whose rows ARE an asset it mints a byte-identical second copy of\n"
+        "                # someone else's item under a different owner. Delivered r135: 39 videos\n"
+        "                # from a 35-row dataset, four charlidamelio clips present TWICE -- once\n"
+        "                # as charlidamelio, once as bts_official_bighit, same created_at to the\n"
+        "                # second -- and the landing page bylined a Charli video to BTS. #74's\n"
+        "                # actual complaint was screens that look EMPTY on first load, and one\n"
+        "                # row answers that; eight only matters where rows differ by their text\n"
+        "                # (inbox, calendar), which is exactly where _MEDIA_COL is empty.\n"
+        "                _floor = 1 if _MEDIA_COL.get(t) else _DEMO_FLOOR\n"
+        "                if have >= _floor:\n"
         "                    continue\n"
         "                donors = db.query(cls).filter(ocol != demo_uid).all()\n"
         "            except Exception:\n"
@@ -4666,7 +4723,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                demo_by_kind[ctab] = bykind; demo_any[ctab] = anyids; kind_of[ctab] = kof\n"
         "            col_names = [c.name for c in cls.__table__.columns]\n"
         "            uniq = set(_UNIQUE.get(t, []))\n"
-        "            need = _DEMO_FLOOR - have\n"
+        "            need = (1 if _MEDIA_COL.get(t) else _DEMO_FLOOR) - have   # #1202uu\n"
         "            made, attempts = 0, 0\n"
         "            max_attempts = need * (len(donors) + 2) + 4\n"
         "            while made < need and attempts < max_attempts:\n"
