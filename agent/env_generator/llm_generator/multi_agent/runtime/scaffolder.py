@@ -121,8 +121,23 @@ def persist_backfilled_apis_1202ub(registryhub, ui_pages, before, logger=None) -
                 continue
             name = str(page.get("name") or "")
             apis = [a for a in (page.get("apis_used") or []) if a]
-            if not name or not apis or before.get(name):
-                continue            # already declared -- not ours to write
+            if not name or not apis:
+                continue
+            # #1202ug: persist what the backfill ADDED, not only what it filled from empty.
+            #
+            # The first version skipped any page that already declared something, which threw
+            # away the sharper half. `backfill_page_apis` ends in `_backfill_route_implied_apis`
+            # (#579), whose whole purpose is to enrich a page that declares a WRONG-but-
+            # non-empty list: netflix r142 had `title_detail_page` (/title/:id) declaring only
+            # `GET /api/profiles` while NO page in the draw declared
+            # `/api/titles/{id}/episodes`, so the projected detail page fetched no title and
+            # rendered no episodes. Verified against the real function: that page comes back
+            # with both endpoints added, and the old condition wrote none of it.
+            #
+            # Still additive -- `register_ui_page` unions -- so a declaration the lane made is
+            # never removed, only joined by what the route plainly implies.
+            if not (set(apis) - set(before.get(name) or ())):
+                continue            # nothing was added here
             try:
                 registryhub.register_ui_page(name=name, apis_used=apis, agent="orchestrator")
                 filled += 1

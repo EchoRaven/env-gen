@@ -79,13 +79,40 @@ def test_what_the_backfill_filled_reaches_the_registry():
     assert hub.calls[0]["apis_used"] == filled[0]["apis_used"]
 
 
-def test_a_page_that_declared_its_apis_is_never_overwritten():
+def test_a_page_the_backfill_did_not_change_is_not_rewritten():
     """ADDITIVE only -- the lane's own declaration is the contract, not ours to restate."""
     pages = [{"name": "p", "route": "/x", "component": "P", "apis_used": ["/api/declared"]}]
     before = {"p": ["/api/declared"]}
     hub = _Hub()
     assert persist_backfilled_apis_1202ub(hub, pages, before) == 0
     assert hub.calls == []
+
+
+def test_an_addition_to_a_non_empty_page_is_persisted_too():
+    """#1202ug: the first version skipped ANY page that already declared something, which
+    threw away the sharper half.
+
+    `backfill_page_apis` ends in `_backfill_route_implied_apis` (#579), whose entire purpose
+    is to enrich a page carrying a WRONG-but-non-empty list: netflix r142 had
+    `title_detail_page` (/title/:id) declaring only `GET /api/profiles` while no page in the
+    draw declared `/api/titles/{id}/episodes`, so the projected detail page fetched no title
+    and rendered no episodes. Skipping on "was it empty" discarded exactly that repair.
+    """
+    pages = [{"name": "title_detail_page", "route": "/titles/:id",
+              "component": "TitleDetailPage", "apis_used": ["GET /api/profiles"]}]
+    eps = [{"method": "GET", "path": "/api/titles/{id}"},
+           {"method": "GET", "path": "/api/titles/{id}/episodes"},
+           {"method": "GET", "path": "/api/profiles"}]
+    before = {"title_detail_page": ["GET /api/profiles"]}
+    filled = backfill_page_apis([dict(p) for p in pages], eps)
+    added = set(filled[0]["apis_used"]) - set(before["title_detail_page"])
+    assert added, "#579 no longer enriches a non-empty page -- the premise is gone"
+
+    hub = _Hub()
+    assert persist_backfilled_apis_1202ub(hub, filled, before) == 1, hub.calls
+    persisted = set(hub.calls[0]["apis_used"])
+    assert added <= persisted, (added, persisted)
+    assert "GET /api/profiles" in persisted, "the lane's own declaration was dropped"
 
 
 def test_a_page_the_backfill_could_not_fill_is_left_alone():
