@@ -525,6 +525,7 @@ def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]
             return result
         pat = re.compile(r"""(<Route\b[^>]*?\bpath\s*=\s*)(["'])([^"']+)\2""")
         touched: List[str] = []
+        refused: List[str] = []   # #1202uc
         total = 0
         for f in sorted(src.rglob("*")):
             if f.suffix not in (".jsx", ".js", ".tsx", ".ts") or "node_modules" in f.parts:
@@ -555,11 +556,34 @@ def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]
 
             new = pat.sub(_sub, text)
             if changed[0] and new != text:
-                _fw_write_1202cw(f, new, encoding="utf-8")
-                touched.append("%s (%d)" % (f.name, changed[0]))
-                total += changed[0]
+                # #1202uc: DECLARE the clobber, and BELIEVE THE RETURN VALUE.
+                #
+                # App.jsx is lane-owned, so an undeclared framework write is refused by
+                # #1202cw -- correctly. This call passed no `clobber_ok`, and then appended to
+                # `touched` without looking at what came back, so the repair reported success
+                # for a write that never happened. MEASURED in r133: "#1202sd rewrote 1 <Route
+                # path>" logged 38 times over 1h45m, always the same route, while the DELIVERED
+                # App.jsx still carried `path="/@:username"` -- the page stayed unreachable and
+                # the log said it had been fixed, every tick, for the life of the run.
+                #
+                # The overwrite is exactly what clobber_ok exists for: the lane wrote a path
+                # React Router cannot compile, the URL is unchanged by the rewrite, and no
+                # amount of lane iteration finds it because the app builds and the route simply
+                # never matches.
+                if _fw_write_1202cw(
+                        f, new, encoding="utf-8",
+                        clobber_ok="#1202sd/#1202iy: the lane's `<Route path>` puts `:` "
+                                   "somewhere compilePath cannot read it, so the route matches "
+                                   "only its own literal spelling and the page is unreachable; "
+                                   "the rewrite moves the literal INTO the param and no URL "
+                                   "changes"):
+                    touched.append("%s (%d)" % (f.name, changed[0]))
+                    total += changed[0]
+                else:
+                    refused.append(f.name)
         result["repaired"] = touched
         result["routes"] = total
+        result["refused"] = refused
         return result
     except Exception:
         return result

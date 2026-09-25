@@ -93,6 +93,57 @@ PY
 '''
 
 
+def persist_backfilled_apis_1202ub(registryhub, ui_pages, before, logger=None) -> int:
+    """Write the backfilled `apis_used` back to the REGISTRY, not just into the projection.
+
+    #1202ub: `backfill_page_apis` works out which GET endpoints a page with an empty
+    `apis_used` really reads, projects a real component from it -- and then throws the answer
+    away. It is assigned to a local list and nothing persists it, so the registry keeps
+    `apis_used: []` and everything reading the CONTRACT stays blind.
+
+    That is not cosmetic, because an empty list does not FAIL the decoy-twin /
+    consumer-wiring / implemented-flip checks, it TURNS THEM OFF -- each is a
+    `for a in (page.get("apis_used") or [])` whose body then never runs. MEASURED in r133:
+    13 of 13 registered ui_pages empty, so that whole family was off for every page in the
+    run, and `deliverability_all_page_apis_empty` was the ONE failing check still standing at
+    the delivery cut -- a blocker asking the lane to redo work the framework had already done
+    and discarded.
+
+    ADDITIVE and domain-agnostic: only pages that WERE empty and that the backfill filled are
+    written, and the backfill is pure token overlap between the page's own name/route/component
+    and the registered GET paths. No product vocabulary anywhere, so a `comments` page and an
+    `orders` page travel the identical code path.
+    """
+    filled = 0
+    try:
+        for page in (ui_pages or []):
+            if not isinstance(page, dict):
+                continue
+            name = str(page.get("name") or "")
+            apis = [a for a in (page.get("apis_used") or []) if a]
+            if not name or not apis or before.get(name):
+                continue            # already declared -- not ours to write
+            try:
+                registryhub.register_ui_page(name=name, apis_used=apis, agent="orchestrator")
+                filled += 1
+            except Exception:
+                continue
+    except Exception as _exc_ub:
+        from .message_format import warn_once_1201
+        warn_once_1201("scaffolder.persist_backfilled_apis_1202ub",
+                       "the apis_used backfill write-back (#1202ub)", _exc_ub)
+        return filled
+    if filled and logger is not None:
+        try:
+            logger.warning(
+                "#1202ub persisted a backfilled `apis_used` onto %d ui_page(s) the registry "
+                "had empty - the decoy-twin / consumer-wiring / implemented-flip checks can "
+                "now see them.", filled)
+        except Exception:
+            pass
+    return filled
+
+
 def _public_content_task_body_1202hf(tables) -> str:
     """The #1202gv task body, with the one thing r103 showed the lane could not know.
 
@@ -1287,7 +1338,12 @@ volumes:
                     # Backfill apis_used for pages that declared none (e.g. kickoff's
                     # profiles/search) so they project a REAL data floor, not a fallback
                     # stub the delivery gate rejects (deliverability_frontend_fallback_page).
+                    _before_1202ub = {
+                        str(_p.get("name") or ""): list(_p.get("apis_used") or [])
+                        for _p in (ui_pages or []) if isinstance(_p, dict)}
                     ui_pages = backfill_page_apis(ui_pages, _eps)
+                    persist_backfilled_apis_1202ub(registryhub, ui_pages, _before_1202ub,
+                                                   getattr(orch, "_logger", None))
                 except Exception as _exc:
                     orch._logger.debug("#225 design-screen page seeding skipped: %s", _exc)
             if not ui_pages:

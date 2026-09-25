@@ -75,7 +75,12 @@ _PERSIST_CALLS = {"write_text", "writelines", "dump"}
 # calls `.write_text` — the entry below is backed by a behavioural test that plants a
 # stale lock, runs the real wrapper and reads the jsonl back
 # (test_1202mg_both_git_wrappers_clear_a_stale_lock.py), not by this list asserting it.
-_PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw",
+# #1202ub: a hub WRITER is a persist call too. `register_ui_page` lands the finding in
+# registryhub_ui_pages.json -- verified by calling it against a temp hub and reading the file
+# back -- so a detector that hands its finding to the hub is not log-only. The scan is
+# intra-procedural and cannot follow into the method, which is why the name is listed here
+# rather than the claim being waived.
+_PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw", "register_ui_page",
                          "_record_lock_event_1202mg"}
 _PERSIST_TARGETS = {"_verdict", "row", "rec", "results", "payload", "report", "out",
                     "findings", "data"}
@@ -95,6 +100,12 @@ def _persists(fn):
             if attr in _PERSIST_CALLS:
                 return True
             if getattr(n.func, "id", None) in _PERSIST_FUNCS_1202CW:
+                return True
+            # #1202ub: the same name reached as a METHOD is the same write. `_fw_write_1202cw`
+            # is called bare, but a hub writer is `registryhub.register_ui_page(...)`, and
+            # matching only `n.func.id` called that log-only while it was landing the finding
+            # in registryhub_ui_pages.json.
+            if attr in _PERSIST_FUNCS_1202CW:
                 return True
             owner = getattr(getattr(n.func, "value", None), "id", None)
             if attr in ("setdefault", "append", "update") and owner and durable(owner):

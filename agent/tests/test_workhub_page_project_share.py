@@ -57,6 +57,10 @@ class TestUiPages(unittest.TestCase):
         FRAMEWORK's verdict (mechanism #54) — agent self-claims downgrade,
         the orchestrator-audit write sticks."""
         hub = self.workhub
+        # #1202ud: give the fixture the surface a real page has -- an empty shell cannot be
+        # implemented, because the audit decides that by reading the component file and the
+        # App.jsx route, and with neither there is nothing for it to have looked at.
+        hub.update_ui_page("home", {"route": "/home"}, agent="frontend")
         hub.update_ui_page("home", {"status": "defined"}, agent="frontend")
         hub.update_ui_page("home", {"status": "implemented"}, agent="frontend")
         self.assertEqual(hub.get_ui_pages()["home"]["status"], "defined")

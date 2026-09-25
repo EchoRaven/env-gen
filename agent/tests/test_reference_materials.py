@@ -906,6 +906,11 @@ class UiPageLifecycleTests(unittest.TestCase):
         reg.workhub.create_task(title="impl.page.board_list", task_id="impl.page.board_list",
                                 description="", assignee="frontend", agent="orchestrator",
                                 kind="implement_page")
+        # #1202ud: a page with no route AND no component cannot be audited as implemented --
+        # the audit decides that by reading the component file and the App.jsx route. This
+        # test is about the TASK completing on the flip, so give it the surface a real page
+        # has rather than exercising the flip on an empty shell.
+        reg.workhub.update_ui_page("board_list", {"route": "/boards"}, agent="orchestrator")
         reg.workhub.update_ui_page("board_list", {"status": "defined"}, agent="orchestrator")
         self.assertEqual(reg.workhub.get_task("impl.page.board_list")["status"], "pending")
         reg.workhub.update_ui_page("board_list", {"status": "implemented"}, agent="orchestrator")
@@ -1127,6 +1132,9 @@ class UiPageStatusAuthorityTests(unittest.TestCase):
         import tempfile
         from multi_agent.runtime.hub_registry import HubRegistry
         reg = HubRegistry(Path(tempfile.mkdtemp(prefix="upsa_")))
+        # #1202ud: a page with no route AND no component cannot be audited as implemented, so a
+        # fixture for the LIFECYCLE mechanism needs a surface like the real record has.
+        reg.workhub.update_ui_page("login", {"route": "/login"}, agent="frontend")
         reg.workhub.update_ui_page("login", {"status": "implemented"}, agent="frontend")
         self.assertEqual(reg.workhub.get_ui_pages()["login"]["status"], "defined")
         reg.workhub.update_ui_page("login", {"status": "implemented"}, agent="orchestrator")

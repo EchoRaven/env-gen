@@ -2179,6 +2179,39 @@ class RegistryHub:
                     _alias, name = name, _k       # keep the FIRST-registered key stable
                     break
         existing = _pages_now.get(name) or {}
+        _refused_1202ud = ""
+        # #1202ud: A PAGE WITH NEITHER A ROUTE NOR A COMPONENT CANNOT BE "IMPLEMENTED".
+        #
+        # There is nothing to render and nothing to navigate to, so no audit can have seen it
+        # working. r133 delivered `__noop_invalid_do_not_create__` -- route "", component "",
+        # apis_used [] -- carrying status `implemented`, which inflates the implemented count
+        # and satisfies coverage with an empty shell.
+        #
+        # STRUCTURAL, not a name blacklist: rejecting that particular sentinel string would
+        # bind the framework to one agent's private convention and miss the next one. "Has
+        # somewhere to live" is the property that actually distinguishes a page, and it holds
+        # in any domain. Registration itself stays permissive -- a name may be reserved first
+        # and filled in later -- only the IMPLEMENTED claim is refused.
+        if str(status or "").lower() == "implemented" and not (
+                (route or existing.get("route") or "").strip()
+                or (component or existing.get("component") or "").strip()):
+            status = "defined"
+            # #947: the finding must reach an ARTIFACT, not only a logger -- a measurement
+            # that exists only in a log line is not a measurement. It goes onto the record
+            # itself, so anyone holding `registryhub_ui_pages.json` can see why this page is
+            # still `defined` without needing the run's stdout.
+            _refused_1202ud = ("implemented claimed with no route and no component; "
+                               "nothing to render or navigate to")
+            try:
+                from .message_format import warn_once_1201
+                warn_once_1201(
+                    "ui_page_implemented_without_a_surface_1202ud:%s" % name,
+                    "ui_page %r was claimed IMPLEMENTED with no route and no component. There "
+                    "is nothing to render or navigate to, so nothing can have been verified; "
+                    "it is held at `defined`. Give it a route or a component, or do not "
+                    "register it." % name, None)
+            except Exception:
+                pass
 
         def _union(old: Any, new: Any) -> list:
             """Order-preserving union — the fuller contract, no duplicates."""
@@ -2226,6 +2259,8 @@ class RegistryHub:
             "metadata": {
                 **(existing.get("metadata") or {}),
                 **(metadata or {}),
+                **({"implemented_refused_1202ud": _refused_1202ud}
+                   if _refused_1202ud else {}),
                 # #593: the alias stays on the record — a reader looking for the name the
                 # other seeding path used must still be able to find this page.
                 **({"merged_route_aliases": _union(
