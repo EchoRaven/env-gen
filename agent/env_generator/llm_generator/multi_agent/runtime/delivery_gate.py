@@ -3467,8 +3467,12 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed "
             "%s / failed %s. The check is existential (#287) and never consults a failing "
             "record, so one working page certifies the whole UI. r148 read True off landing + "
-            "login while the SPA crashed on 12 of 14 pages and released v1.0.0. Reported, not "
-            "enforced — the matrix that would consume it is itself skipped (#671).",
+            "login while the SPA crashed on 12 of 14 pages and released v1.0.0. "
+            "#1202uf: the CONTRADICTION is now enforced separately — #752 raises "
+            "validation_ui_evidence_failed on any failing record, unconditionally and without "
+            "#671's matrix, so this release is already held. What stays unenforced is the "
+            "MISSING case (no UI evidence at all), which #671 left behind tasks/tasks.yaml "
+            "because blocking 45% of runs for absent evidence is a stop, not a quality bar.",
             _breadth739["passed_records"], _breadth739["failed_records"],
             ", ".join(_breadth739["pages_passed"][:6]) or "-",
             ", ".join(_breadth739["pages_failed"][:6]) or "-")
