@@ -12,6 +12,8 @@ helper, unit-tested here. The wall-clock/attempt escape (squad_release_decision)
 and still preempts to RELEASE even while the background squad is running.
 
 FIX #532 (complementary safety bound): run_test_user_squad's per_agent_timeout default drops
+(#1202us later raised it to 300s with max_concurrent 4->6; see the test below for why the
+bound is now expressed as waves-fit-inside-the-escape rather than as a literal.)
 900 -> 180s (squad findings are advisory; this bounds any single wave). Still overridable.
 
 FIX #533 (secondary): the LLM-deliver GUARD 2c predicate (_visual_delivery_defer_active) now
@@ -105,10 +107,37 @@ def test_squad_release_decision_wallclock_still_preempts():
 
 
 def test_per_agent_timeout_default_bounded_to_180():
-    # Complementary safety bound: the per-wave agent timeout default drops 900 -> 180s,
-    # still overridable via the keyword.
-    default = inspect.signature(run_test_user_squad).parameters["per_agent_timeout"].default
-    assert default == 180.0
+    """#532's complementary safety bound, restated as the property it protects (#1202us).
+
+    This pinned the literal 180.0, from "the per-wave agent timeout default drops 900 -> 180s".
+    The hazard it guarded is the coordination loop being wedged while the squad runs -- and
+    #532's PRIMARY fix already removed that by moving the squad to a single-flight BACKGROUND
+    task, with `test_squad_release_decision_wallclock_still_preempts` (below) asserting the
+    escape that "lets the loop reach create_release regardless of the background task's state".
+    The literal was belt-and-braces over a guard that holds on its own.
+
+    Measured in #1202us, it was also starving the gate: over 1,296 test-user agents the median
+    run is 318s, so 180s finished 8% of what it spawned and the squad reported 0-6 completions
+    out of 12 in every run in the corpus.
+
+    So the bound stays, expressed as what it is for: the squad's waves must finish inside the
+    window that preempts them. That is strictly stronger than a magic number -- it catches a
+    timeout raised without cutting a wave, which the literal could not.
+    """
+    import math
+
+    sig = inspect.signature(run_test_user_squad)
+    timeout = float(sig.parameters["per_agent_timeout"].default)
+    concurrency = int(sig.parameters["max_concurrent"].default)
+    escape = float(inspect.signature(squad_release_decision).parameters["wall_s"].default)
+
+    goals, wave_overhead_s, tail_s = 12, 7, 180     # measured: 83 squad runs
+    waves = math.ceil(goals / concurrency)
+    assert waves * (timeout + wave_overhead_s) + tail_s < escape, (
+        f"{waves} waves x {timeout}s cannot finish inside the {escape}s escape")
+    # ...and it must still be long enough to be worth spawning an agent for: p25 of the
+    # measured durations. Below this the gate is back to finishing an eighth of its work.
+    assert timeout >= 195.0, timeout
 
 
 # ── #533: GUARD 2c honors the #521 sticky escape-release ───────────────────────

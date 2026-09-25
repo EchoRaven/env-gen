@@ -44,9 +44,14 @@ SQUAD_HOLDS = ("squad_wait", "squad_stack_unanswered", "squad_launched_backgroun
 
 
 def test_it_reports_the_counters_the_ledger_was_missing():
+    # #1202ut: this used to set `_tu_squad_open_p0=["a", "b"]` -- an attribute the real
+    # orchestrator NEVER HAS. Nothing in the package assigns it, so the field it fed could only
+    # ever print "?", and this test went green against a stand-in while production stayed dead
+    # for a whole session. 8 of 8 hold records in the corpus said `defects=?`. The name below is
+    # the one the orchestrator actually writes, next to where it computes the count.
     orch = types.SimpleNamespace(_tu_squad_attempts=3,
                                  _tu_squad_deferred_since=time.time() - 120,
-                                 _tu_squad_open_p0=["a", "b"])
+                                 _tu_squad_last_p0_1202ut=2)
     out = detail(orch)
     assert "attempts=3" in out, out
     assert "defects=2" in out, out

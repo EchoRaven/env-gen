@@ -483,8 +483,35 @@ async def run_test_user_squad(
     ui_base: str,
     api_base: str,
     identity: Optional[str] = None,
-    max_concurrent: int = 4,
-    per_agent_timeout: float = 180.0,
+    # #1202us: BOTH OF THESE WERE BARE DEFAULTS, AND TOGETHER THEY KILLED 92% OF THE SQUAD.
+    #
+    # MEASURED over 1,296 test-user agents in the run logs -- spawn to `run_loop completed`:
+    #
+    #     median 318s    p25 195s    p75 609s    p90 907s    max 3875s
+    #     finished within the old 180s timeout:  8%
+    #
+    # So eleven of every twelve agents were terminated mid-work and their spend discarded, and
+    # the squad's own report recorded 0-6 completions out of 12 in every run in the corpus.
+    # That is the evidence gap #1202ur had to route around.
+    #
+    # THE TIMEOUT COULD NOT SIMPLY BE RAISED. `squad_release_decision` preempts to RELEASE 900s
+    # after the first defer and is evaluated ABOVE the whole squad block, so with 12 goals in
+    # waves of 4 -- three waves -- any larger timeout makes the squad outlive its own budget and
+    # the milestone ships with no verdict at all, which is worse than a thin one.
+    #
+    # MEASURED over 83 squad runs: total wall clock median 616s, per wave median 187s -- only
+    # ~7s of overhead above the timeout itself. Two waves therefore afford ~353s each inside the
+    # 900s escape. 12 goals in waves of SIX is two waves, and 300s leaves margin:
+    #
+    #     2 x (300 + 7) + ~180s tail  =  ~794s  <  900s escape
+    #     agents finishing within 300s:  48%   (up from 8%)
+    #
+    # Six is half the headroom, not all of it: `dynamic_team_rules.yaml` sets
+    # `max_active_per_parent: 8`, `E_PARENT_ACTIVE_CAP_REACHED` appears in ZERO run logs, and a
+    # spawn refusal is caught per goal (`rec["error"] = "spawn failed: ..."`) rather than
+    # failing the squad.
+    max_concurrent: int = 6,
+    per_agent_timeout: float = 300.0,
 ) -> Dict[str, Any]:
     """Spawn one `test_user` agent per goal, concurrently in waves of ``max_concurrent``.
 

@@ -81,6 +81,15 @@ def _tick_delivery_line_1202pt(lane) -> str:
 import time as _t1202to   # #1202to: the visual hold records its own counters
 
 
+def _squad_p0_1202ut(orch):
+    """The squad's last known open-P0 count, or "?" before any verdict exists. See #1202ut."""
+    try:
+        v = getattr(orch, "_tu_squad_last_p0_1202ut", None)
+        return int(v) if v is not None else "?"
+    except Exception:
+        return "?"
+
+
 def _squad_detail_1202uh(orch) -> str:
     """The squad hold's own counters, in the shape #1202to gave the visual hold.
 
@@ -98,7 +107,18 @@ def _squad_detail_1202uh(orch) -> str:
         return "attempts=%s deferred_s=%s defects=%s" % (
             getattr(orch, "_tu_squad_attempts", "?"),
             int(_t.time() - _since) if _since else "?",
-            len(getattr(orch, "_tu_squad_open_p0", None) or ()) or "?")
+            # #1202ut: THIS READ AN ATTRIBUTE NOTHING EVER SETS. `_tu_squad_open_p0` appears
+            # exactly once in the whole package -- here -- so `defects=` was structurally
+            # unable to be anything but "?", and every record in the corpus proves it: 8 of 8
+            # hold lines across r132-r135 read `defects=?`, including the ones written AFTER a
+            # verdict existed. A counter added so the ledger could say what the squad was
+            # holding on, that can only ever say "unknown". My own #1202uh, one session old,
+            # and the same shape as the mechanisms-built-never-wired class.
+            #
+            # `?` at LAUNCH is correct and is kept: there is no verdict yet. What was wrong is
+            # `?` afterwards, when the orchestrator has already computed the count three lines
+            # from the hold that reports it.
+            _squad_p0_1202ut(orch))
     except Exception:
         return ""
 
@@ -5892,6 +5912,9 @@ class Orchestrator:
                     finally:
                         self._tu_squad_task = None  # consumed — single-flight may re-arm
                     _p0 = int((_tu_result.get("bugs") or {}).get("p0", 0))
+                    # #1202ut: the one place this number exists. Recording it here is what
+                    # lets the hold ledger's `defects=` be anything but "?".
+                    self._tu_squad_last_p0_1202ut = _p0
                     # #1202rd: remember WHAT THE APP WAS when this verdict was reached, so the
                     # next launch can tell "the lanes fixed something" from "nothing moved".
                     try:
