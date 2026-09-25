@@ -93,6 +93,45 @@ PY
 '''
 
 
+def record_unregistered_routes_1202ui(out_dir, routes) -> bool:
+    """Land #1202h's finding in an artifact, not only in a log line.
+
+    #1202ui: `unregistered_routes_1202h` finds routes the backend SERVES that the contract
+    never declared, and its own warning states the cost exactly -- "no gate sees them: not
+    auth, not owner-scoping, not coverage". A served endpoint that no gate examines is not a
+    reporting nicety in an environment built to measure what an agent can do.
+
+    It wrote a logger line and nothing else. #947's rule is that a measurement existing only
+    in a log line is not a measurement, and a run log is not kept -- the same gap that made
+    #1202tk necessary. MEASURED across the corpus logs: 15 runs carry this warning, up to 7
+    routes in one run, and r134 raised it on five REAL business routes
+    (`GET /api/feed/for-you`, `POST /api/videos/{}/like`, ...), not the debug scaffolding the
+    warning's own example names.
+
+    This does NOT change the gate. Whether an unregistered route should block delivery is a
+    separate decision with real risk in both directions; what it cannot be is invisible after
+    the run.
+    """
+    if not out_dir or not routes:
+        # `str(None)` is the string "None", and Path("None") is a real relative directory --
+        # this helper would have created a folder literally named `None` beside the process.
+        # Same shape as #1202ss, where `str(None)` titled a remediation task "None".
+        return False
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        out = _P(str(out_dir)) / "logs" / "unregistered_routes_1202h.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(),
+                               "count": len(routes or []),
+                               "routes": [str(r) for r in (routes or [])][:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def persist_backfilled_apis_1202ub(registryhub, ui_pages, before, logger=None) -> int:
     """Write the backfilled `apis_used` back to the REGISTRY, not just into the projection.
 
@@ -757,6 +796,7 @@ volumes:
                         "shipped (/api/debug_routes2, /api/admin/fix). Register them or "
                         "remove them: %s",
                         len(_un1202h), join_capped(_un1202h, total=len(_un1202h)))
+                    record_unregistered_routes_1202ui(out_dir, _un1202h)
             except Exception as _e1202h:
                 from .message_format import warn_once_1201
                 warn_once_1201("unregistered_routes_1202h",
