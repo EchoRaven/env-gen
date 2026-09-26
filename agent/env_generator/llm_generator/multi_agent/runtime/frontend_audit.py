@@ -523,15 +523,91 @@ def _rendered_components_909(frontend_src: Path, page: Mapping[str, Any],
         return set()
 
 
+def _ui_components_1202vg(workhub: Any) -> Dict[str, Any]:
+    """The ui_component registry, or ``{}`` when it cannot be read.
+
+    #1202vg / #883: ``{}`` here is the PRE-#1202vg behaviour exactly -- the reachability
+    probe falls back to the page's own declarations -- so it is neither fail-open nor
+    fail-closed, it is "no change". Announced anyway, because a reader looking at a page
+    that passed needs to be able to tell "its components declared nothing" from "the
+    component registry could not be read".
+    """
+    try:
+        get = getattr(workhub, "get_ui_components", None)
+        if not callable(get):
+            return {}
+        return {k: v for k, v in (get() or {}).items()
+                if k != "_meta" and isinstance(v, dict)}
+    except Exception as exc:
+        _LOG_791.warning("#1202vg could not read the ui_component registry (%s: %s) — the page "
+                     "API reachability probe falls back to each page's OWN apis_used, which "
+                     "is the pre-#1202vg behaviour, not a pass.", type(exc).__name__, exc)
+        return {}
+
+
+def _effective_page_apis_1202vg(page: Mapping[str, Any],
+                                components: Mapping[str, Any]) -> set:
+    """Endpoints a page consumes: its own, plus its declared components' (transitively),
+    minus the authorization-server namespace.
+
+    #1202vg. `/auth/*` and `/oauth/*` are excluded because a shared auth control is
+    registered once and rendered by every page, so ONE over-declaration there propagates
+    to all of them: across 155 runs, 70 of the ~80 newly-unreachable declarations were
+    `/auth/session`, `/auth/signout`, `/auth/signup`, `/auth/logout` and `/auth/me` from a
+    single component per run. `audit_ui_component` already asks whether a component's own
+    apis are referenced, so charging every composing page for it is two checks chasing one
+    cause (#1032) with a blast radius of dozens of pages. Business endpoints do not have
+    that shape -- a feed provider is rendered by the pages that actually show a feed.
+    """
+    try:
+        from .deliverability import effective_page_apis_1202vf as _eff
+        from .chain_executor import _is_authorization_server_path_1202vc as _is_as
+    except Exception:
+        return set(page.get("apis_used") or [])
+    own = set(page.get("apis_used") or [])
+    try:
+        # The exclusion applies ONLY to what a page INHERITS. A page that declared an
+        # `/auth/*` endpoint ITSELF and never calls it is a contradiction this probe has
+        # always caught, and filtering it here would silently retire that: measured, it
+        # would have flipped 10 pages across 6 runs from correctly-failing to passing.
+        inherited = {a for a in _eff(page, components) if a not in own}
+        return own | {a for a in inherited
+                      if not _is_as(str(a).split(" ", 1)[-1])}
+    except Exception:
+        return own
+
+
 def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                   *, _src_cache: Optional[Dict[str, str]] = None,
+                  components: Optional[Mapping[str, Any]] = None,
                   ) -> Tuple[bool, List[str]]:
-    """One page → (implemented?, missing list). Purely static."""
+    """One page → (implemented?, missing list). Purely static.
+
+    ``components`` (#1202vg) is the ui_component registry. When given, the REACHABILITY
+    probe below asks about the endpoints this page consumes THROUGH the components it
+    declares as well as its own -- which is what the frontend prompt tells the lane to
+    register ("declare each API on the component where the call actually lives"). Without
+    it a composing page declares nothing, so that probe asks nothing: tiktok-r133 flipped
+    all 17 of its pages to `implemented` with this criterion vacuous. Optional, so every
+    existing caller keeps its exact behaviour.
+    """
     missing: List[str] = []
     component = str(page.get("component") or "").strip()
     route = str(page.get("route") or "").strip()
     apis = [a for a in (_norm_api(x) for x in (page.get("apis_used") or []))
             if a]
+    # #1202vg: the effective set is used ONLY for reachability, never for the stub /
+    # inert-page criteria below, which stay keyed on what the PAGE ITSELF declared.
+    # Measured across 155 runs before this shipped: feeding the effective set into `apis`
+    # wholesale flipped 20 pages implemented -> not, and 18 of those had no unreferenced
+    # API at all -- they tripped `_declared_but_inert` and the #1077 branch, which read
+    # `bool(apis)` as "this page claims to fetch something itself". Scoped to the probe,
+    # 605 pages gain a criterion that was vacuous and exactly 2 flip, both on a business
+    # endpoint their own closure really never references.
+    reach_apis = apis
+    if components is not None:
+        _eff = _effective_page_apis_1202vg(page, components)
+        reach_apis = sorted({a for a in (_norm_api(x) for x in _eff) if a})
 
     # #907: `if not _src_cache`, not `is None`. Passed a dict, this function trusts it as the WHOLE
     # source tree — `_src_cache.get(str(canonical))` is the only place it looks for a component — so
@@ -720,7 +796,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                 r"element=\{\s*<" + re.escape(component or "") + r"[\s/>]")
             if not (component and _elem_re.search(app_jsx)):
                 missing.append(f"route `{route}` not wired in App.jsx")
-    for api in apis:
+    for api in reach_apis:
         # Match the declared path against the source allowing each {param}/:param to be
         # ANY single path segment. The lane writes the call as `/api/posts/${postId}/like`
         # or `/api/posts/`+id+`/like`, so a MID-PATH param must be a wildcard, not removed.
@@ -1565,7 +1641,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                 out.setdefault("components_pending", {})[cname] = cmissing
         for name, page in pages.items():
             status = str(page.get("status") or "").lower()
-            ok, missing = audit_ui_page(frontend_src, page, _src_cache=cache)
+            ok, missing = audit_ui_page(frontend_src, page, _src_cache=cache,
+                                        components=_ui_components_1202vg(workhub))
             _pm = _contract_misses(page)
             if _pm:
                 ok = False
@@ -1782,7 +1859,8 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
             # EMPTY `_src_cache`, which that function treats as the whole tree — item 251).
             if not isinstance(page, dict) or not _is_navigable_page(page):
                 continue
-            _ok, missing = audit_ui_page(src, page, _src_cache=cache)
+            _ok, missing = audit_ui_page(src, page, _src_cache=cache,
+                                         components=_ui_components_1202vg(workhub))
             hard = [m for m in missing if _is_hard_miss(m)]
             if hard:
                 blockers.append(
