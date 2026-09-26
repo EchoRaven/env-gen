@@ -5,11 +5,19 @@ registration says `apis_used: []`. It recognised `api.get(` / `axios.get(` / `fe
 `apiGet(` — and the framework's own projected frontend uses none of those. It routes every
 call through `services/api.js` named exports.
 
-Measured over the corpus's 508 pages that declare `apis_used: []` and have a locatable
-source file: the old patterns catch 118 across 53 runs; adding the api-client shape takes
-the check to 196 pages across 79 runs (+78 / +26). Spot-checked: netflix-r1 GamesPage
-imports `{ getGames }` and calls it, netflix-r12 PlayerPage calls `getProfiles()` and
-`getTitles()`, googlemaps-r16 MoviesPage calls `listTitles()` — each with `apis_used: []`.
+Over the corpus's 508 pages that declare `apis_used: []` with a locatable source file, the
+old patterns catch 118 across 53 runs; delegating to the shared predicate takes the check
+to 260 pages across 89 runs.
+
+★ The first draft of this ticket reimplemented the shape instead of reusing
+`frontend_audit._has_real_api_call`, which already existed and is a strict superset: it
+also handles the service-object method (`feed.get()`) and #1202gk's hand-off to a hook
+(`useApiList(getVideos, [])`). It also carried a filter restricting the answer to exports
+whose body names `request`/`fetch`/`axios`, and the corpus proved that filter wrong —
+r102's `getVideos`, r100's `getUser` and r119's `getVideos` all issue requests through
+module-local wrappers (`authed`, `publicRequest`, `authedGet`), so it rejected real API
+functions. Measured over the same pages: mine 123, the shared one 142, and mine caught
+nothing it missed. Two copies of one rule drift (#1032), so there is one.
 """
 import pathlib
 from types import SimpleNamespace as NS
@@ -17,109 +25,62 @@ from types import SimpleNamespace as NS
 import pytest
 
 from env_generator.llm_generator.multi_agent.runtime.deliverability import (
-    _requesting_exports_1202vk as requesting,
     _api_client_calls_1202vk as calls,
     _page_api_declaration_drift_1202rr as drift,
 )
 
-# The generated services/api.js exports both kinds side by side.
-_API_JS = """
-export function getStoredUser(){ return localStorage.getItem('access_token'); }
-export function hasAuthToken(){ return Boolean(getStoredUser()); }
-export function setToken(v){ localStorage.setItem('access_token', v); }
-export async function getForYouFeed({ cursor } = {}){
-  const data = await request(`/api/feed/foryou`);
-  return { items: data.items || [] };
-}
-export const listTitles = (params) => request('/api/titles');
-export const getMyList = async (profileId) => {
-  const data = await request(`/api/my-list?profile_id=${profileId}`);
-  return data.items || [];
-};
-"""
+_SRC = pathlib.Path(
+    __file__).resolve().parents[1] / (
+    "env_generator/llm_generator/multi_agent/runtime/deliverability.py")
+
+_IMPORT = "import { listTitles } from '../services/api';\n"
 
 
-def test_only_the_request_issuing_exports_are_recognised():
-    """A page that calls `hasAuthToken()` has not called an API. The corpus confirms the
-    rule excludes the right names: getToken, formatCount, isAuthed, isAuthenticated,
-    isLoggedIn."""
-    assert requesting(_API_JS) == {"getForYouFeed", "listTitles", "getMyList"}
+@pytest.mark.parametrize("body, why", [
+    (_IMPORT + "export default function P(){ listTitles(); return <div/>; }",
+     "the direct call — the shape the framework's own client generates"),
+    ("import { feed } from '../services/api';\n"
+     "export default function P(){ feed.get(); return <div/>; }",
+     "the service-object method; run v11 false-flagged every page using it"),
+    ("import { getVideos } from '../services/api';\n"
+     "export default function P(){ const d = useApiList(getVideos, []); return <div/>; }",
+     "#1202gk's hand-off to a hook; tiktok-r98's ExploreGridPage was called a STATIC MOCK"),
+])
+def test_every_shape_the_shared_predicate_knows_is_seen(body, why):
+    assert calls(body) is True, why
 
 
-def test_a_multiline_arrow_body_is_not_clipped():
-    """A first pass read `export const` through a 400-character window and dropped
-    `getVideos`, `getMyList` and `addMyList` — exactly the ones that matter."""
-    long_body = ("export const getVideos = async (a, b) => {\n"
-                 + "  // padding\n" * 120
-                 + "  return request('/api/videos');\n};\n")
-    assert "getVideos" in requesting(long_body)
+def test_importing_without_using_is_not_a_call():
+    assert calls(_IMPORT + "export default function P(){ return <div/>; }") is False
 
 
-def _project(tmp_path, page_src, api_src=_API_JS, page_name="MoviesPage.jsx"):
+def test_an_unrelated_module_is_not_an_api_client():
+    assert calls("import { fmt } from '../utils/format';\n"
+                 "export default function P(){ fmt(1); return <div/>; }") is False
+
+
+def test_a_request_through_a_local_wrapper_still_counts():
+    """r102/r100/r119 route through `authed(...)` / `publicRequest(...)` / `authedGet(...)`
+    rather than naming `request` or `fetch`. A filter keyed on those three names rejected
+    real API functions — the first draft's mistake, pinned here so it is not re-made."""
+    assert calls("import { getVideos } from '../services/api';\n"
+                 "export default function P(){ getVideos(); return <div/>; }") is True
+
+
+def _project(tmp_path, page_src):
     src = tmp_path / "frontend/src"
     (src / "pages").mkdir(parents=True)
     (src / "services").mkdir(parents=True)
-    (src / "services/api.js").write_text(api_src)
-    f = src / "pages" / page_name
-    f.write_text(page_src)
-    return tmp_path, f
-
-
-def test_the_framework_shape_is_now_seen(tmp_path):
-    d, f = _project(tmp_path,
-                    "import { listTitles } from '../services/api.js';\n"
-                    "export default function MoviesPage(){ listTitles(); return <div/>; }\n")
-    assert calls(f.read_text(), f) is True
-
-
-def test_importing_without_calling_is_not_a_call(tmp_path):
-    d, f = _project(tmp_path,
-                    "import { listTitles } from '../services/api.js';\n"
-                    "export default function MoviesPage(){ return <div/>; }\n")
-    assert calls(f.read_text(), f) is False
-
-
-def test_calling_only_a_non_request_helper_is_not_a_call(tmp_path):
-    """`hasAuthToken()` reads localStorage. Counting it would flag every logged-out
-    landing page in the corpus."""
-    d, f = _project(tmp_path,
-                    "import { hasAuthToken } from '../services/api.js';\n"
-                    "export default function MoviesPage(){ if (hasAuthToken()) return null; "
-                    "return <div/>; }\n")
-    assert calls(f.read_text(), f) is False
-
-
-def test_an_import_from_an_unrelated_module_is_ignored(tmp_path):
-    d, f = _project(tmp_path,
-                    "import { formatCount } from '../utils/format';\n"
-                    "export default function MoviesPage(){ formatCount(1); return <div/>; }\n")
-    assert calls(f.read_text(), f) is False
-
-
-def test_a_missing_api_module_does_not_raise(tmp_path):
-    src = tmp_path / "frontend/src/pages"
-    src.mkdir(parents=True)
-    f = src / "MoviesPage.jsx"
-    f.write_text("import { listTitles } from '../services/api.js';\n"
-                 "export default function P(){ listTitles(); return <div/>; }\n")
-    assert calls(f.read_text(), f) is False
-
-
-def test_an_aliased_import_is_resolved(tmp_path):
-    d, f = _project(tmp_path,
-                    "import { listTitles as fetchTitles } from '../services/api.js';\n"
-                    "export default function MoviesPage(){ fetchTitles(); return <div/>; }\n")
-    # the ALIAS is what the page calls, so the alias must be what is tested
-    assert calls(f.read_text(), f) is False, (
-        "an alias is not the exported name; flagging it would need the alias mapped back, "
-        "and claiming support without it would be the false positive")
+    (src / "services/api.js").write_text(
+        "export async function getForYouFeed({ cursor, limit = 5 } = {}) {\n"
+        "  return (await authed(`/api/feed/foryou`)).items || [];\n}\n"
+        "export const listTitles = (p) => request('/api/titles');\n")
+    (src / "pages" / "MoviesPage.jsx").write_text(page_src)
+    return tmp_path
 
 
 def test_the_gate_predicate_reports_the_page(tmp_path):
-    """End to end through the real predicate, with the registration that says none."""
-    d, f = _project(tmp_path,
-                    "import { listTitles } from '../services/api.js';\n"
-                    "export default function MoviesPage(){ listTitles(); return <div/>; }\n")
+    d = _project(tmp_path, _IMPORT + "export default function MoviesPage(){ listTitles(); return <div/>; }")
     rh = NS(list_ui_pages=lambda: {"movies_page": {"component": "MoviesPage",
                                                    "route": "/movies", "apis_used": []}})
     out = drift(NS(registryhub=rh), d)
@@ -127,9 +88,7 @@ def test_the_gate_predicate_reports_the_page(tmp_path):
 
 
 def test_a_page_that_declares_its_apis_is_not_reported(tmp_path):
-    d, f = _project(tmp_path,
-                    "import { listTitles } from '../services/api.js';\n"
-                    "export default function MoviesPage(){ listTitles(); return <div/>; }\n")
+    d = _project(tmp_path, _IMPORT + "export default function MoviesPage(){ listTitles(); return <div/>; }")
     rh = NS(list_ui_pages=lambda: {"movies_page": {"component": "MoviesPage",
                                                    "route": "/movies",
                                                    "apis_used": ["GET /api/titles"]}})
@@ -138,51 +97,32 @@ def test_a_page_that_declares_its_apis_is_not_reported(tmp_path):
 
 def test_the_original_patterns_still_fire(tmp_path):
     """#1202rr's own shape must keep working — this widens, it does not replace."""
-    d, f = _project(tmp_path,
-                    "export default function MoviesPage(){ fetch('/api/titles'); return <div/>; }\n")
+    d = _project(tmp_path, "export default function MoviesPage(){ fetch('/api/titles'); return <div/>; }")
     rh = NS(list_ui_pages=lambda: {"movies_page": {"component": "MoviesPage",
                                                    "route": "/movies", "apis_used": []}})
     assert drift(NS(registryhub=rh), d)
 
 
-def test_a_destructured_default_parameter_does_not_break_the_body_match():
-    """The generated client's own signature: `getForYouFeed({ cursor, limit = 5 } = {})`.
-    Taking the first `{` after the name starts the brace match inside the PARAMETER list
-    and closes it before the body begins — the first draft did that and missed this
-    function entirely."""
-    src = ("export async function getForYouFeed({ cursor, limit = 5 } = {}) {\n"
-           "  const data = await request(`/api/feed/foryou`);\n"
-           "  return { items: data.items || [] };\n}\n")
-    assert "getForYouFeed" in requesting(src)
-
-
-def test_a_destructured_default_on_a_non_requesting_function_stays_excluded():
-    src = ("export function pickLabel({ a, b = 1 } = {}) {\n"
-           "  return a || b;\n}\n")
-    assert requesting(src) == set()
+def test_there_is_one_implementation_not_two():
+    """The ticket's whole correction: delegate, do not reimplement. A future edit that
+    inlines a regex here would recreate the drift #1032 cost."""
+    src = _SRC.read_text()
+    block = src[src.index("def _api_client_calls_1202vk"):
+                src.index("def _page_api_declaration_drift_1202rr")]
+    assert "_has_real_api_call" in block
+    assert "re.compile" not in block and "_re.compile" not in block
+    assert "_requesting_exports_1202vk" not in src, (
+        "the request-name filter was measurably wrong and must not come back")
 
 
 def test_a_crash_in_the_probe_announces_itself(monkeypatch):
-    """#1202ah: a silent `return False` makes a CRASHED probe read as a page that calls
-    nothing — the one answer indistinguishable from a pass. Once per process, because this
-    runs per page per import."""
+    """#1202ah: a silent False makes a CRASHED probe read as a page that calls nothing —
+    the one answer indistinguishable from a pass."""
     import env_generator.llm_generator.multi_agent.runtime.message_format as mf
-    from env_generator.llm_generator.multi_agent.runtime import deliverability as dl
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
     seen = []
-    monkeypatch.setattr(mf, "warn_once_1201",
-                        lambda site, what, exc: seen.append(site))
-    monkeypatch.setattr(dl, "_requesting_exports_1202vk",
+    monkeypatch.setattr(mf, "warn_once_1201", lambda site, what, exc: seen.append(site))
+    monkeypatch.setattr(fa, "_has_real_api_call",
                         lambda _t: (_ for _ in ()).throw(RuntimeError("boom")))
-    d = pathlib.Path(__file__).parent      # any real path; the crash happens before use
-    bad = ("import { listTitles } from './api';\n"
-           "export default function P(){ listTitles(); return <div/>; }\n")
-    api = d / "api.js"
-    created = not api.exists()
-    if created:
-        api.write_text("export const listTitles = () => request('/api/titles');\n")
-    try:
-        assert calls(bad, d / "P.jsx") is False
-        assert seen == ["_api_client_calls_1202vk"]
-    finally:
-        if created:
-            api.unlink()
+    assert calls(_IMPORT + "listTitles();") is False
+    assert seen == ["_api_client_calls_1202vk"]
