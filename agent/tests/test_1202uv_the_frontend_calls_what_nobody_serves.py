@@ -153,3 +153,57 @@ def test_it_is_wired_where_the_sibling_report_is():
     src = (LLM_DIR / "multi_agent" / "runtime" / "scaffolder.py").read_text(encoding="utf-8")
     assert "record_frontend_calls_without_backend_1202uv(out_dir, _fe1202uv)" in src
     assert "frontend_calls_without_backend_1202uv(out_dir, endpoints)" in src
+
+
+def test_a_template_expression_containing_braces_resolves(tmp_path):
+    r"""★ #1202uz: `${...}` CAN CONTAIN BRACES, and a non-greedy `\$\{[^}]*\}` stops at the
+    first one.
+
+    netflix-r30's search call is
+
+        request(`/api/search${query({ q: searchQuery || '' })}`)
+
+    and the old normaliser stopped at the object literal's `}`, leaving `/api/search{})}` --
+    reported as an endpoint nobody serves while the contract plainly has `GET /api/search`.
+    Found by running this detector across OTHER DOMAINS after shipping it, which is the point
+    of doing that: three false positives across netflix-r30, netflix-r45 and googlemaps-r16,
+    and the corpus count fell from 29 runs / 66 endpoints to 13 / 23 once it was fixed.
+
+    A brace counter handles arbitrary nesting; the strict-path check after it is the safety
+    net, because a WRONG entry in this artifact costs more than a missing one.
+    """
+    out = frontend_calls_without_backend_1202uv(_app(tmp_path, """
+      export const search = (q) => request(`/api/search${query({ q: q || '' })}`);
+    """), [{"method": "GET", "path": "/api/search"}])
+    assert out == [], out
+
+
+def test_deep_nesting_still_resolves(tmp_path):
+    assert _norm_api_path_1202uv("/api/a${f({b:{c:1}})}/z") == "/api/a{}/z"
+    assert _norm_api_path_1202uv("/api/search${query({ q: x })}") == "/api/search"
+
+
+def test_an_unterminated_template_is_refused(tmp_path):
+    """A `${` with no closing brace means the literal was cut; naming that path would be a
+    guess."""
+    assert _norm_api_path_1202uv("/api/x${broken") is None
+
+
+def test_a_path_that_cannot_be_a_url_is_refused():
+    """★ The safety net, asserted directly: whatever the parser leaves behind, only something
+    a URL path could actually hold may be reported."""
+    for bad in ("/api/search{})}", "/api/x)y", "/api/x'y", "/api/x|y", "not-a-path"):
+        assert _norm_api_path_1202uv(bad) is None, bad
+
+
+def test_the_frameworks_own_auth_surface_is_excluded(tmp_path):
+    """★ #1202uz: `/auth/*` and `/oauth/*` are served by the framework and declared only in
+    part -- that incompleteness is what #1202h reports from the other side. Comparing a call
+    against a deliberately-partial declaration says something about the declaration, not the
+    app. r95 and r118 were flagged for `POST /auth/logout` that way."""
+    out = frontend_calls_without_backend_1202uv(_app(tmp_path, """
+      export const out = () => request('/auth/logout', { method: 'POST', body: {} });
+      export const reg = () => request('/oauth/register', { method: 'POST', body: {} });
+      export const gone = () => request('/api/nowhere', { method: 'POST', body: {} });
+    """), [{"method": "GET", "path": "/auth/logout"}, {"method": "GET", "path": "/api/x"}])
+    assert out == ["POST /api/nowhere"], out

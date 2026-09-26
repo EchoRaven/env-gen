@@ -156,13 +156,43 @@ def _norm_api_path_1202uv(p):
     """
     try:
         import re as _re
-        q = _re.sub(r"\$\{[^}]*\}", "{}", str(p or ""))
+        raw = str(p or "")
+        # #1202uz: `${...}` CAN CONTAIN BRACES. `/api/search${query({ q: x })}` made a
+        # non-greedy `\$\{[^}]*\}` stop at the object literal's `}`, leaving `/api/search{})}`
+        # -- reported against netflix-r30 as an endpoint nobody serves while the contract has
+        # `GET /api/search`. Found by running this detector across other domains after
+        # shipping it, which is the point of doing that. Scan with a brace counter instead.
+        out = []
+        i = 0
+        while i < len(raw):
+            if raw.startswith("${", i):
+                depth, j = 1, i + 2
+                while j < len(raw) and depth:
+                    if raw[j] == "{":
+                        depth += 1
+                    elif raw[j] == "}":
+                        depth -= 1
+                    j += 1
+                if depth:
+                    return None            # unterminated: the literal was cut
+                out.append("{}")
+                i = j
+            else:
+                out.append(raw[i])
+                i += 1
+        q = "".join(out)
         if "$" in q:
             return None
         q = q.split("?")[0]
         q = _re.sub(r"\{[^}]*\}", "{}", q)
         q = _re.sub(r"\{\}$", "", q)         # a trailing query template is not a path segment
-        return (q.rstrip("/").lower() or None)
+        q = q.rstrip("/").lower()
+        # The safety net, kept even though the counter above should make it unnecessary:
+        # anything a URL path cannot hold means the parse went wrong, and a WRONG entry in
+        # this artifact costs more than a missing one.
+        if not q or not _re.fullmatch(r"/[a-z0-9/_.{}:-]*", q):
+            return None
+        return q
     except Exception:
         return None
 
@@ -239,7 +269,15 @@ def frontend_calls_without_backend_1202uv(out_dir, endpoints):
                 elif not opts:
                     called.add(("GET", q))
                 # a method this cannot read as a literal is SKIPPED, never guessed
-        return sorted("%s %s" % (m, q) for (m, q) in called if (m, q) not in have)
+        # #1202uz: `/auth/*` and `/oauth/*` are the FRAMEWORK's own surface and their contract
+        # declaration is partial by design -- it serves routes it never registers, which is the
+        # very thing #1202h reports from the other side. Comparing a frontend call against a
+        # deliberately-incomplete declaration produces a finding about the declaration, not
+        # about the app. r95 and r118 were flagged for `POST /auth/logout` that way.
+        return sorted("%s %s" % (m, q) for (m, q) in called
+                      if (m, q) not in have
+                      and not q.startswith(("/auth/", "/oauth/"))
+                      and q not in ("/auth", "/oauth"))
     except Exception:
         return []
 
