@@ -496,8 +496,22 @@ class EventHub:
                 return False
             return bool(ev.get("pinned") or (ev.get("payload") or {}).get("pinned"))
 
+        # #1202vm: EXCLUDE the event just published from the CANDIDATES, not from the
+        # deletion loop. `overflow` is computed once, and the old code skipped `event_id`
+        # with a `continue` INSIDE the loop -- so whenever the new event landed in the first
+        # `overflow` entries, one slot went unspent and the store settled at `cap + 1`
+        # forever. Reproduced with cap=20: 25 `task_created` publishes leave exactly 20, and
+        # the next `agent_status` leaves 21 and stays there. It is the low-value types that
+        # trigger it, because #673 sorts them FIRST and a brand-new event otherwise sorts
+        # last by `created_at`.
+        #
+        # The docstring above says the rewrite "never serializes more than ``cap`` events".
+        # That was false by one, which is the kind of absolute claim worth testing rather
+        # than trusting. `_set_and_prune_threads_1202vj` already had the correct form; this
+        # makes the two agree.
         evictable = [
-            (eid, ev) for eid, ev in data.items() if not _is_pinned(ev)
+            (eid, ev) for eid, ev in data.items()
+            if eid != event_id and not _is_pinned(ev)
         ]
         # #673: EVICT HEARTBEATS BEFORE COORDINATION ANCHORS.
         # Eviction was oldest-first across the whole stream, and the stream is dominated by
@@ -529,8 +543,6 @@ class EventHub:
             kv[0]))
         overflow = len(data) - cap
         for eid, _ev in evictable[:overflow]:
-            if eid == event_id:
-                continue  # never evict the event we just published
             view.delete(eid, actor)
         return view
 
