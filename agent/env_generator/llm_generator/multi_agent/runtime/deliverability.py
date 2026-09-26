@@ -734,6 +734,117 @@ _JUNK_PAGE_WORDS_1202W = "noop|dummy|placeholder|todo|fixme|untitled|testpage|fo
 # googlemaps gmrun4, a SUCCESSFUL four-milestone delivery, has 4 pages registered with no APIs
 # and 2 of them call one. That run passed every gate. Domain-agnostic by construction -- it
 # compares a page's own source against its own registration, and names no product vocabulary.
+_API_MODULE_IMPORT_1202VK = None      # compiled lazily, see _api_client_calls_1202vk
+
+
+def _requesting_exports_1202vk(module_text: str) -> set:
+    """Names this api-client module exports whose BODY issues an HTTP request. #1202vk.
+
+    The generated `services/api.js` exports both kinds side by side -- `getForYouFeed`
+    issues one, `hasAuthToken`/`setToken`/`getTenant` only touch localStorage -- so a page
+    that calls `isAuthed()` has not called an API. Corpus check: the request test correctly
+    excluded `getToken`, `formatCount`, `isAuthed`, `isAuthenticated`, `isLoggedIn`.
+
+    Bodies are brace-matched, not window-clipped: a first pass read `export const` with a
+    400-character window and dropped `getVideos`, `getMyList` and `addMyList`, which are
+    exactly the ones that matter.
+    """
+    import re as _re
+    out = set()
+    req = _re.compile(r"\b(?:request|fetch|axios)\s*[\(\.]")
+
+    def _body(text, open_idx, open_ch="{", close_ch="}"):
+        depth = 0
+        for j in range(open_idx, len(text)):
+            if text[j] == open_ch:
+                depth += 1
+            elif text[j] == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return text[open_idx:j + 1]
+        return text[open_idx:]
+
+    try:
+        for m in _re.finditer(r"export\s+(?:async\s+)?function\s+(\w+)\s*\(", module_text):
+            # Close the PARAMETER list first. `getForYouFeed({ cursor, limit = 5 } = {})`
+            # is the generated client's own shape, and a destructured default puts a `{`
+            # inside the parens -- taking the first `{` after the name starts the brace
+            # match in the parameter list and closes it before the body begins. My own
+            # test caught that on the real signature.
+            params = _body(module_text, m.end() - 1, "(", ")")
+            brace = module_text.find("{", m.end() - 1 + len(params))
+            if brace == -1:
+                continue
+            if req.search(_body(module_text, brace)):
+                out.add(m.group(1))
+        # `export const f = (a) => request(...)` and `= async (a) => { ... }`
+        for m in _re.finditer(r"export\s+const\s+(\w+)\s*=", module_text):
+            tail = module_text[m.end():m.end() + 4000]
+            stop = tail.find("\nexport ")
+            if stop != -1:
+                tail = tail[:stop]
+            if req.search(tail):
+                out.add(m.group(1))
+    except Exception:
+        return out
+    return out
+
+
+def _api_client_calls_1202vk(page_text: str, page_file) -> bool:
+    """Does this page CALL a request-issuing export of the app's api client? #1202vk.
+
+    `#1202rr` recognises `api.get(` / `axios.get(` / `fetch(` / `apiGet(` -- and the
+    framework's own projected frontend uses none of them. It routes every call through
+    `services/api.js` named exports (`getForYouFeed()`, `listTitles()`, `getMyList()`), so
+    the shape the framework itself generates was invisible to the check built to catch it.
+
+    Measured over the corpus's 508 pages that declare `apis_used: []` and have a locatable
+    source file: the existing patterns catch 118 across 53 runs, and this catches 122 more
+    across 45 -- MORE misses than hits. Unambiguous instances: `MoviesPage.jsx` calling
+    `listTitles()`, `MyListPage.jsx` calling `getMyList()`, `PlayerPage.jsx` calling
+    `getProfiles()` and `getTitles()`, each with `apis_used: []`.
+    """
+    import re as _re
+    try:
+        for m in _re.finditer(
+                r"import\s*\{([^}]*)\}\s*from\s*['\"]([^'\"]*)['\"]", page_text):
+            spec = m.group(2)
+            # Narrowed to modules whose PATH names an api client. Measured: removing this
+            # finds 0 additional pages anywhere in the corpus -- every request-issuing
+            # client module in it has `api` in its path -- so it costs nothing today and
+            # keeps a module that wraps `fetch` for something else (a static JSON asset)
+            # out of the answer. #647: widening it would be an unmeasured change.
+            if "api" not in spec.lower():
+                continue
+            names = [n.strip().split(" as ")[-1].strip()
+                     for n in m.group(1).split(",") if n.strip()]
+            called = [n for n in names
+                      if n and _re.search(r"\b" + _re.escape(n) + r"\s*\(", page_text)]
+            if not called:
+                continue
+            base = Path(page_file).parent / spec
+            mod = next((c for c in (base, base.with_suffix(".js"), base.with_suffix(".jsx"),
+                                    base.with_suffix(".ts"), base.with_suffix(".tsx"))
+                        if c.is_file()), None)
+            if mod is None:
+                continue
+            if set(called) & _requesting_exports_1202vk(
+                    mod.read_text(encoding="utf-8", errors="ignore")):
+                return True
+    except Exception as exc:
+        # #1202ah: a silent False here makes a CRASHED check read as a page that calls
+        # nothing, which is the one answer that cannot be distinguished from a pass. Once
+        # per process, because this runs per page per import and a per-call warning would
+        # bury the run's log.
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("_api_client_calls_1202vk", "the api-client call probe", exc)
+        except Exception:
+            pass
+        return False
+    return False
+
+
 def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
     """Pages whose source calls an API while their registration declares none. `[]` on failure.
 
@@ -772,7 +883,11 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
                 if not cand.is_file():
                     continue
                 try:
-                    if call.search(cand.read_text(encoding="utf-8", errors="ignore")):
+                    _txt1202vk = cand.read_text(encoding="utf-8", errors="ignore")
+                    # #1202vk: ...or a call to a request-issuing export of the api client,
+                    # which is the shape the framework's OWN projected frontend uses.
+                    if (call.search(_txt1202vk)
+                            or _api_client_calls_1202vk(_txt1202vk, cand)):
                         drift.append("%s (%s)" % (name, cand.name))
                 except Exception:
                     pass
