@@ -369,20 +369,40 @@ def route_params_ignored_1202uw(out_dir):
         for m in _re.finditer(r"import\s+(\w+)\s+from\s+['\"](\.[^'\"]+)['\"]", src):
             imports[m.group(1)] = m.group(2)
         out = []
-        for m in _re.finditer(r'<Route\s+path=["\']([^"\']*:[^"\']*)["\'][^>]*element=\{<\s*(\w+)',
-                              src):
-            path, comp = m.group(1), m.group(2)
-            spec = imports.get(comp)
-            if not spec:
+        # #1202va: THE ELEMENT IS OFTEN A WRAPPER, NOT THE PAGE.
+        #     <Route path="/watch/:titleId" element={<ProtectedRoute><PlayerPage /></ProtectedRoute>} />
+        # Taking only the first component name reads `ProtectedRoute`, which is declared inside
+        # App.jsx and so is not in the import map at all -- the route was then skipped in
+        # SILENCE. Measured across the corpus: 113 of 292 parameterised routes (38%) in 43 runs
+        # use a wrapper, so the detector was blind to more than a third of what it exists to
+        # examine. netflix-r30's `/watch/:titleId` came back clean for that reason, and only
+        # accidentally: `PlayerPage` really does read `useParams().titleId`.
+        # Every component named in the element counts, and the route is reported only when NONE
+        # of them reads the address.
+        for m in _re.finditer(
+                r'<Route\s+path=["\']([^"\']*:[^"\']*)["\'][^>]*element=\{(.{0,400}?)\}\s*/?>',
+                src, _re.S):
+            path, element = m.group(1), m.group(2)
+            comps = _re.findall(r"<\s*([A-Z]\w*)", element)
+            if not comps:
                 continue
             import os as _os
-            base = _os.path.normpath(_os.path.join("", spec))
-            rel = next((c for c in (base, base + ".jsx", base + ".js", base + "/index.jsx")
-                        if (root / c).is_file()), None)
-            if not rel:
-                continue
-            if not _reads_route_param_1202uw(root, rel):
-                out.append("%s -> %s" % (path, comp))
+            resolved, any_reads = [], False
+            for comp in comps:
+                spec = imports.get(comp)
+                if not spec:
+                    continue          # declared in App.jsx itself, or from a package
+                base = _os.path.normpath(_os.path.join("", spec))
+                rel = next((c for c in (base, base + ".jsx", base + ".js", base + "/index.jsx")
+                            if (root / c).is_file()), None)
+                if not rel:
+                    continue
+                resolved.append(comp)
+                if _reads_route_param_1202uw(root, rel):
+                    any_reads = True
+                    break
+            if resolved and not any_reads:
+                out.append("%s -> %s" % (path, "/".join(resolved)))
         return sorted(set(out))
     except Exception:
         return []

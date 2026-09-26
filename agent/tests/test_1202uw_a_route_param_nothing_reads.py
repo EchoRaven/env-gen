@@ -168,3 +168,71 @@ def test_it_is_wired():
     src = (LLM_DIR / "multi_agent" / "runtime" / "scaffolder.py").read_text(encoding="utf-8")
     assert "route_params_ignored_1202uw(out_dir)" in src
     assert "record_route_params_ignored_1202uw(out_dir, _rp1202uw)" in src
+
+
+WRAPPED = """
+import ProtectedRoute from './components/ProtectedRoute';
+import PlayerPage from './pages/PlayerPage';
+export default function App() {
+  return (<Routes>
+    <Route path="/watch/:titleId" element={<ProtectedRoute><PlayerPage /></ProtectedRoute>} />
+  </Routes>);
+}
+"""
+
+
+def test_a_wrapped_page_is_examined_not_skipped(tmp_path):
+    r"""★ #1202va: THE ELEMENT IS OFTEN A WRAPPER, NOT THE PAGE.
+
+        <Route path="/watch/:titleId" element={<ProtectedRoute><PlayerPage /></ProtectedRoute>} />
+
+    Taking only the first component name reads `ProtectedRoute`, which netflix declares INSIDE
+    App.jsx and so is absent from the import map -- the route was then skipped in SILENCE.
+    Measured across the corpus: 113 of 292 parameterised routes (38%) in 43 runs use a
+    wrapper, so the detector was blind to more than a third of what it exists to examine, and
+    netflix-r30/r45 and googlemaps-r16 reported clean for that reason rather than on merit.
+
+    Fixing it moved the corpus count from 17 runs / 22 routes to 22 / 31 -- nine routes that
+    were being skipped, including r101's `/video/:id/comments -> CommentsPage`.
+
+    The rule: every component named in the element counts, and the route is reported only when
+    NONE of them reads the address.
+    """
+    out = route_params_ignored_1202uw(_app(tmp_path / "ignores", WRAPPED, {
+        "components/ProtectedRoute.jsx": "export default ({children}) => children;",
+        "pages/PlayerPage.jsx": "export default () => 'player';",
+    }))
+    assert out and out[0].startswith("/watch/:titleId ->"), out
+
+
+def test_a_wrapped_page_that_reads_the_param_is_clean(tmp_path):
+    """★ netflix-r30's real shape, and the true negative that makes the positive believable:
+    `PlayerPage` does call `useParams().titleId`, so the route is fine -- and now it is fine
+    because it was EXAMINED, not because it was skipped."""
+    out = route_params_ignored_1202uw(_app(tmp_path / "reads", WRAPPED, {
+        "components/ProtectedRoute.jsx": "export default ({children}) => children;",
+        "pages/PlayerPage.jsx": "import { useParams } from 'react-router-dom';\n"
+                                "export default () => useParams().titleId;",
+    }))
+    assert out == [], out
+
+
+def test_a_wrapper_that_reads_the_param_itself_is_enough(tmp_path):
+    """Some wrappers do the reading (a guard that redirects on a bad id). Any component in the
+    element counts."""
+    out = route_params_ignored_1202uw(_app(tmp_path / "guard", WRAPPED, {
+        "components/ProtectedRoute.jsx": "import { useParams } from 'react-router-dom';\n"
+                                         "export default ({children}) => useParams() && children;",
+        "pages/PlayerPage.jsx": "export default () => 'player';",
+    }))
+    assert out == [], out
+
+
+def test_a_route_whose_components_all_resolve_to_nothing_is_skipped(tmp_path):
+    """★ Unchanged from before: when NOTHING in the element can be read, say nothing. An
+    inline wrapper plus a package import is exactly that case."""
+    out = route_params_ignored_1202uw(_app(tmp_path / "opaque", """
+      import { Guard } from 'some-package';
+      export default () => <Route path="/x/:id" element={<Guard><Thing /></Guard>} />;
+    """))
+    assert out == [], out
