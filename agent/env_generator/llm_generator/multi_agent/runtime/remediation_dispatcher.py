@@ -1762,6 +1762,21 @@ class RemediationDispatcher:
                 "backend", "Enforce auth on business endpoints (blocks delivery)",
                 "a business GET must return 401 without a valid token — add the auth "
                 "dependency so unauthenticated requests are rejected."),
+            # #1202vb. The observed cause is a lane helper bound over
+            # OAuthStore.verify_user_password from custom_routes.py to stop the verifier
+            # seeing a 401 -- so the instruction names that shape, and says what to do
+            # about the verifier complaint instead of disabling the password check.
+            "auth_password_is_checked": (
+                "backend", "Restore password verification on /auth/login (blocks delivery)",
+                "POST /auth/login hands out a valid token for a WRONG password (and/or "
+                "for an email that was never registered) -- the app has no working "
+                "authentication. Look in app/backend/custom_routes.py (and any "
+                "sitecustomize.py) for code that rebinds OAuthStore.verify_user_password "
+                "or create_user to a helper that auto-creates a missing user or rewrites "
+                "an existing user's password_hash to whatever was submitted; DELETE it. "
+                "The framework's own handler is already correct. If you added it because "
+                "a login flow kept seeing 401, the credential or the register step is "
+                "what to fix -- never the password check."),
             "business_writes_persist": (
                 "backend", "Fix write persistence (blocks delivery)",
                 "a POST then GET readback does not return the written row — fix the "

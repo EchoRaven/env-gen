@@ -98,6 +98,53 @@ _BUILD_RETRIES = int(os.environ.get("ENVGEN_DOCKER_BUILD_RETRIES", "1") or 1)
 _BUILDS_OK_1046: int = 0
 
 
+def wrong_password_verdict_1202vb(register: int, good: int, wrong: int,
+                                  ghost: int) -> "tuple[str, str]":
+    """Does this app's /auth/login actually CHECK the password? → (verdict, detail).
+
+    #1202vb. `auth_enforced_401` asks whether a business GET refuses a request with NO
+    token. Nothing asked the prior question: whether the token is only handed out to
+    someone who proved who they are. netflix-r30 live: register → 201, correct password
+    → 200, **wrong password → 200 with a valid JWT**, and an email that was never
+    registered → 200 as well. The framework's own /auth/login handler and
+    OAuthStore.verify_user_password are both correct there; the backend lane rebound
+    verify_user_password from custom_routes.py (a file it owns) to a helper that resets
+    an existing user's password to whatever was typed and auto-creates a missing one,
+    to stop the verifier's login flow from seeing a 401. Its own comment says so. So the
+    harm does not live in any one file the framework could guard -- it lives in the
+    VALUE, which is why this probes behaviour over the wire and not source. See the
+    standing rule that a fallback must never mask the failure it hides.
+
+    Both non-`pass` verdicts matter, and they are NOT the same:
+    - ``skip``: the probe could not establish a known-good credential, so a refusal here
+      would prove nothing. Refusing EVERY login is a real defect, but it is a different
+      one, already owned by the chain/login checks -- reporting it twice sends two lanes
+      at one cause (#1032's scar).
+    - ``fail``: a credential the app itself never issued was accepted.
+    """
+    def _ok(code: int) -> bool:
+        return 200 <= int(code or 0) < 300
+
+    if not _ok(register):
+        return ("skip", f"could not create a probe account (POST /auth/register -> "
+                        f"{register}); with no known-good credential a wrong-password "
+                        f"probe cannot tell a password check from a blanket refusal")
+    if not _ok(good):
+        return ("skip", f"the probe account's own correct password was refused (POST "
+                        f"/auth/login -> {good}); that is a login defect, not a "
+                        f"password-check defect, and other checks own it")
+    accepted = []
+    if _ok(wrong):
+        accepted.append(f"a WRONG password was accepted (-> {wrong})")
+    if _ok(ghost):
+        accepted.append(f"an email that was NEVER registered was accepted (-> {ghost})")
+    if accepted:
+        return ("fail", "POST /auth/login issues a token without verifying credentials: "
+                        + "; ".join(accepted)
+                        + ". Anyone can obtain a valid session as any user.")
+    return ("pass", "")
+
+
 def _note_build_ok_1046() -> None:
     global _BUILDS_OK_1046
     _BUILDS_OK_1046 += 1
@@ -1573,6 +1620,33 @@ def run_smoke_validation(
                       "states auth_required=true, so there is no declared denial to "
                       "verify. Probing a contract-public read for a 401 is the wedge this "
                       "replaced.", len(_gets_1202ih))
+
+        # 5.4b #1202vb: does /auth/login CHECK the password at all? `auth_enforced_401`
+        # above proves a business GET refuses a request carrying NO token -- it says
+        # nothing about who the token is handed to. Over the wire, with an account this
+        # probe itself creates, so it is domain-agnostic and needs no seed user.
+        _pw_probe_email = f"pwcheck_1202vb_{int(time.time() * 1000) % 100000000}@example.com"
+        _pw_good = "Pwcheck-1202vb-Good"
+        _pw_reg = _http("POST", base + "/auth/register",
+                        body={"email": _pw_probe_email, "password": _pw_good,
+                              "name": "Password Check Probe",
+                              "username": _pw_probe_email.split("@", 1)[0]})
+        _pw_ok = _http("POST", base + "/auth/login",
+                       body={"email": _pw_probe_email, "password": _pw_good})
+        _pw_wrong = _http("POST", base + "/auth/login",
+                          body={"email": _pw_probe_email,
+                                "password": _pw_good + "-NOT-THE-PASSWORD"})
+        _pw_ghost = _http("POST", base + "/auth/login",
+                          body={"email": f"never_registered_1202vb_{_pw_probe_email}",
+                                "password": _pw_good})
+        _pw_verdict, _pw_detail = wrong_password_verdict_1202vb(
+            _pw_reg["status"], _pw_ok["status"], _pw_wrong["status"], _pw_ghost["status"])
+        if _pw_verdict == "skip":
+            # Logged, never silent: a skipped guard that leaves no trace is a guard whose
+            # absence nobody can audit afterwards.
+            _LOG.info("#1202vb auth_password_is_checked skipped: %s", _pw_detail)
+        else:
+            _add("auth_password_is_checked", _pw_verdict == "pass", _pw_detail)
 
         # 5.5 VERIFIER CHAIN TEST (user decision 2026-06-11): real API-chain
         # coverage belongs to the VERIFIER's validation, not post-release
