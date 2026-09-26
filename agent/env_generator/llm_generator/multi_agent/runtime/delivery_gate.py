@@ -2785,8 +2785,35 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
         path = call.split(" ", 1)[1] if " " in call else call
         if any(path == pre or path.startswith(pre + "/") for pre in _EXTERNAL):
             continue
-        if declared_path_keys and _pa_path(
-                _strip_source_fragment_1202dn(call)) not in declared_path_keys:
+        # #1202vd: DECIDE with the same normaliser the message REPORTS with.
+        #
+        # `_strip_source_fragment_1202dn` cuts the path at the helper call and throws away
+        # everything after it, so all three of tiktok-r129's distinct calls
+        #
+        #     GET /api/users/:encodeURIComponent(id)/follow
+        #     GET /api/users/:encodeURIComponent(username)
+        #     GET /api/users/:encodeURIComponent(username)/videos
+        #
+        # collapse to `/api/users`, which that run never registered -- while the three paths
+        # they actually denote, `/api/users/{id}/follow`, `/api/users/{username}` and
+        # `/api/users/{username}/videos`, were ALL registered, and `_registerable_path_1202lt`
+        # reconstructs them correctly two lines below for the error text. So the gate decided
+        # with the lossy reading and printed the faithful one: the lane was handed its own
+        # registry entries and told to register them.
+        #
+        # Measured over every run since #1202lt landed: 120 of 3594 reported items across 57
+        # gate snapshots in 4 runs (r121, r129, r133, r135) name a path that WAS registered at
+        # the time the snapshot was written, and every single one of the 120 carries the
+        # "(source spells it ...)" marker -- i.e. every false positive is this shape.
+        #
+        # Accepting either reading can only REMOVE reports, never add one, and it removes
+        # exactly the calls the contract already covers. #1202lr is the cost of not doing it:
+        # a lane registered `GET /api/videos/{encodeURIComponent}(id)`, deprecated it once it
+        # saw what it was, and the retired registration manufactured required tasks that
+        # helped end the run.
+        _readings_1202vd = {_pa_path(_strip_source_fragment_1202dn(call)),
+                            _pa_path(_registerable_path_1202lt(call))}
+        if declared_path_keys and not (_readings_1202vd & declared_path_keys):
             unregistered_calls.append(call)
     if unregistered_calls:
         # #1202lt: name the path to REGISTER, and keep the raw scrape beside it so the lane
