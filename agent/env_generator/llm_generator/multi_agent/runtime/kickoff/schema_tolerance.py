@@ -241,6 +241,41 @@ def pick_feature_inventory(
 # ---------------------------------------------------------------------------
 
 
+# #1202vh: keys a ui_page declaration carries beyond the ones mapped explicitly above.
+# Excluded: the identity/lifecycle keys the framework owns (a declaration must not be able
+# to set its own `status`), the ones already mapped, and anything private.
+_DECLARED_EXTRAS_SKIP_1202VH = frozenset({
+    "id", "name", "route", "component", "components", "apis_used", "apis", "status",
+    "kind", "owner", "summary", "description", "depends_on", "metadata", "ui_page",
+    # ui_component's own mapped keys (#1202vh): `children` is copied explicitly and
+    # `kind` is stored as `comp_kind`, so neither may ride through a second time.
+    "children", "comp_kind",
+})
+
+
+def _declared_extras_1202vh(page: Mapping[str, Any]) -> dict:
+    """Everything else the lane declared, JSON-safe and bounded. ``{}`` on any fault."""
+    out: dict = {}
+    try:
+        for key, value in (page or {}).items():
+            k = str(key)
+            if k in _DECLARED_EXTRAS_SKIP_1202VH or k.startswith("_"):
+                continue
+            if value in (None, "", [], {}):
+                continue
+            if isinstance(value, (list, tuple)):
+                out[k] = [str(v)[:400] for v in value][:60]
+            elif isinstance(value, (str, int, float, bool)):
+                out[k] = value if not isinstance(value, str) else value[:2000]
+            # a nested dict/object is not a declared field shape; skipping keeps the
+            # record JSON-flat, which is what every reader of `metadata` assumes.
+            if len(out) >= 24:
+                break
+    except Exception:
+        return {}
+    return out
+
+
 def synthesize_task_tree(contract: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Build a minimum-viable task_tree from the contract.
 
@@ -455,6 +490,12 @@ def synthesize_task_tree(contract: Mapping[str, Any]) -> List[Dict[str, Any]]:
                 "component": str(c.get("component") or ""),
                 "apis_used": [str(a) for a in (c.get("apis_used") or [])],
                 "children": [str(x) for x in (c.get("children") or [])],
+                # #1202vh: the same closed list, one entity over. Every one of the
+                # corpus's 1682 ui_component declarations across 85 runs carries
+                # `purpose`, and it reached 0 of 2123 registered components. Fixing
+                # pages and leaving components enumerated is how two copies of one
+                # rule drift apart (#1032).
+                **_declared_extras_1202vh(c),
             },
             "depends_on": [],
             "status": "pending",
@@ -504,6 +545,28 @@ def synthesize_task_tree(contract: Mapping[str, Any]) -> List[Dict[str, Any]]:
                     # without this (silent failure, found in the round-37
                     # data-flow audit).
                     "components": [str(r) for r in (p.get("components") or [])],
+                    # #1202vh: AND EVERYTHING ELSE THE LANE DECLARED.
+                    #
+                    # The comment directly above is this same defect, found once and
+                    # patched by adding ONE more key. A closed list silently discards
+                    # whatever the declaration carries next, and `kickoff_declare_ui_page`
+                    # accepts `purpose`, `must_have`, `reference` and `reach` — all four
+                    # documented in the frontend prompt, none of them ever reaching the
+                    # registry. Across the corpus's 1699 ui_page declarations in 140 runs:
+                    # purpose 1698 (99%), must_have 764 (51%), reference 321, reach 108,
+                    # reference_image 27, path 8, critical 7 — every one erased, on every
+                    # page of every run.
+                    #
+                    # It is not inert. `_is_map_page` reads `page["must_have"]` to decide
+                    # whether a screen is a map surface, and that branch has been dead on
+                    # 2702 of 2702 registered pages: restoring it identifies 8 real map
+                    # surfaces across 3 runs (search_results, directions, place_detail,
+                    # saved_places) that the name/route signal misses.
+                    #
+                    # `update_ui_page` already documents the destination -- "any remaining
+                    # keys ride through as **metadata onto the contract record" -- so this
+                    # stops enumerating rather than adding a sixth name to the list.
+                    **_declared_extras_1202vh(p),
                 },
                 "depends_on": _page_deps,
                 "status": "pending",

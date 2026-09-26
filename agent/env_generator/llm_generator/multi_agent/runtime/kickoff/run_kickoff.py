@@ -82,6 +82,7 @@ from .roadmap_validator import validate_roadmap
 # Round 8h refactor: schema-tolerance helpers consolidated; aliases
 # preserve the private names this module's call sites have used.
 from .schema_tolerance import (
+    _declared_extras_1202vh,
     api_call_key as _api_call_key,
     augment_drafts_for_coverage as _augment_drafts_for_coverage,
     endpoint_key as _endpoint_key,
@@ -2458,6 +2459,10 @@ def finalize_kickoff(
                         "comp_kind": str(_c.get("kind") or ""),
                         "apis_used": [str(a) for a in (_c.get("apis_used") or [])],
                         "children": [str(c) for c in (_c.get("children") or [])],
+                        # #1202vh: and the rest of what the lane declared, for the same
+                        # reason as the ui_page write below. `update_ui_component` is the
+                        # same shape: "any remaining keys ride through as **metadata".
+                        **_declared_extras_1202vh(_c),
                     }, agent="orchestrator")
     except Exception:
         pass
@@ -2777,12 +2782,22 @@ def finalize_kickoff(
                 _pname = str(task.get("ui_page") or "").strip()
                 _pmeta = task.get("metadata") if isinstance(task.get("metadata"), Mapping) else {}
                 if _pname:
+                    # #1202vh: the SECOND closed list on the same path. The task
+                    # metadata now carries everything the lane declared
+                    # (purpose/must_have/reference/reach); re-enumerating here would
+                    # drop it again one step later. `update_ui_page` documents the
+                    # destination: "any remaining keys ride through as **metadata".
+                    _pextra = {k: v for k, v in (_pmeta or {}).items()
+                               if k not in ("status", "route", "component",
+                                            "apis_used", "components")
+                               and not str(k).startswith("_")}
                     hubs.workhub.update_ui_page(_pname, {
                         "status": "defined",
                         "route": _pmeta.get("route") or "",
                         "component": _pmeta.get("component") or "",
                         "apis_used": list(_pmeta.get("apis_used") or []),
                         "components": list(_pmeta.get("components") or []),
+                        **_pextra,
                     }, agent="orchestrator")
             except Exception:
                 pass

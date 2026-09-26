@@ -1794,7 +1794,14 @@ def _is_map_page(name: str, page: Mapping[str, Any]) -> bool:
     toks = _map_tokens(name) | _map_tokens(page.get("route")) | _map_tokens(page.get("name"))
     if "map" in toks:
         return True
-    mh = " ".join(str(x) for x in (page.get("must_have") or []))
+    # #1202vh: `must_have` arrives in `metadata`, not at the top level -- extras that a
+    # ui_page declaration carries beyond route/component/apis_used/components ride through
+    # `register_ui_page(**metadata)`. Reading only the top level is why this branch was
+    # dead on 2702 of 2702 registered pages even after the declaration was preserved.
+    _md = page.get("metadata")
+    _md = _md if isinstance(_md, Mapping) else {}
+    mh = " ".join(str(x) for x in
+                  (page.get("must_have") or _md.get("must_have") or []))
     return "map" in _map_tokens(mh)
 
 
