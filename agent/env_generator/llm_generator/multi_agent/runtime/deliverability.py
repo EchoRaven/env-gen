@@ -791,6 +791,59 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
         return []
 
 
+def _component_key_1202vf(name) -> str:
+    """One spelling for a ui_component, whichever of its three names you arrived by.
+
+    #1202vf. A ui_component carries three names -- the hub key (`shell_header`), the id
+    (`component:ui:shell_header`) and the code name (`ShellHeader`) -- and pages reference
+    the code name. Matching on any single one of those misses. Validated against a real
+    run's hubs before it was written here: indexing all three resolves 50 of the 51
+    component references its pages make, and the 51st names a component that run never
+    registered at all.
+
+    Normalising is NOT sufficient on its own and the record's own fields are what bridge
+    the gap: a key spelled `appshell` and a code name spelled `AppShell` normalise to
+    different strings, because where the word boundary falls is not recoverable from
+    either spelling alone.
+    """
+    import re as _re
+    t = str(name or "").strip().split(":")[-1]
+    t = _re.sub(r"(?<!^)(?=[A-Z])", "_", t)
+    return _re.sub(r"_+", "_", t.lower().replace("-", "_"))
+
+
+def effective_page_apis_1202vf(page, components) -> set:
+    """The endpoints a page consumes: its OWN `apis_used` plus those of the ui_components
+    it declares, followed transitively through each component's `children`.
+
+    #1202vf. This is the shape the frontend prompt MANDATES -- "a component OWNS the API
+    calls it makes (apis_used) ... Declare each API on the component where the call
+    actually lives, don't pile every API onto the page" -- so a page that composes is
+    SUPPOSED to declare none of its own.
+    """
+    own = set(page.get("apis_used") or []) if isinstance(page, dict) else set()
+    index = {}
+    for key, rec in (components or {}).items():
+        if not isinstance(rec, dict):
+            continue
+        for spelling in (key, rec.get("id"), rec.get("component")):
+            if spelling:
+                index.setdefault(_component_key_1202vf(spelling), rec)
+    seen, stack = set(), [_component_key_1202vf(c)
+                          for c in ((page.get("components") or []) if isinstance(page, dict) else [])]
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        rec = index.get(cur)
+        if not rec:
+            continue
+        own |= set(rec.get("apis_used") or [])
+        stack.extend(_component_key_1202vf(c) for c in (rec.get("children") or []))
+    return own
+
+
 def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
     """Registered pages when the backend has a contract and none of them declares an API.
 
@@ -811,6 +864,50 @@ def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
         declared = [k for k, v in pages.items() if (v.get("apis_used") or [])]
         if declared:
             return []                     # at least one page names an endpoint
+        # #1202vf: A PAGE THAT COMPOSES IS SUPPOSED TO DECLARE NOTHING OF ITS OWN.
+        #
+        # The frontend prompt's UI MODEL is explicit: "a component OWNS the API calls it
+        # makes (apis_used) ... Declare each API on the component where the call actually
+        # lives -- don't pile every API onto the page." This check read ui_pages only, so a
+        # lane that followed that instruction EXACTLY was told, in the same run, to do the
+        # thing the instruction forbids: "Declare, on each page, the endpoints it actually
+        # calls." tiktok-r133 is that run -- 17 pages each declaring `apis_used: []` while
+        # listing their components, 3 of which carry the APIs (`feed_data_provider` ->
+        # `GET /api/feed`, `comments_panel`, `login_modal`) -- and it sat in 211 of its 268
+        # gate snapshots. r123 (20 of 23 pages) and r109 (11 of 11) have the same shape and
+        # predate this check. A lane cannot satisfy two contradictory framework
+        # instructions, so this one yields: it is the one that is wrong about the model.
+        _comps = {}
+        try:
+            if hasattr(rh, "list_ui_components"):
+                _comps = {k: v for k, v in (rh.list_ui_components() or {}).items()
+                          if k != "_meta" and isinstance(v, dict)}
+        except Exception as _exc_1202vf:
+            # #883: an empty default here is FAIL-CLOSED -- with no components read, no page
+            # has effective APIs and the original blocker below still fires -- but a reader
+            # must be able to tell "this lane declared nowhere" from "the component walk
+            # could not run", because only the first is lane work.
+            _gate_absent_792("_no_page_declares_an_api_1202rm/list_ui_components",
+                             _exc_1202vf, "blocking as if no component declared one")
+            _comps = {}
+        _via_components = sorted(k for k, v in pages.items()
+                                 if effective_page_apis_1202vf(v, _comps))
+        if _via_components:
+            # Never silently: the page-level readers (#151's decoy-twin check, the
+            # consumer-wiring audit and `audit_ui_page`'s API criterion) still read
+            # `page["apis_used"]` alone and do NOT walk the component tree, so for these
+            # pages that criterion is still vacuous -- r133 flipped all 17 to `implemented`
+            # without it. That is a FRAMEWORK gap in those readers, not lane work, and
+            # blocking delivery over it dispatches a lane that cannot fix it (#1202tm).
+            _LOG_700.warning(
+                "#1202vf %d of %d registered ui_page(s) declare `apis_used: []` but DO "
+                "consume endpoints through the ui_components they declare (%s) -- the "
+                "frontend prompt requires exactly that, so this is not a lane defect and "
+                "delivery is not blocked on it. The page-level readers still look only at "
+                "`page['apis_used']`, so their API criterion is vacuous for these pages.",
+                len(_via_components), len(pages),
+                join_capped(_via_components, total=len(_via_components), cap=6))
+            return []
         # Only a contradiction when there IS a contract to consume.
         # #1202rm: the method is get_endpoints, not list_endpoints. The first draft guessed,
         # the AttributeError landed in the outer except, and the gate returned [] on every
