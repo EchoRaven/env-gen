@@ -49,12 +49,31 @@ _BUSINESS = [("GET", "/api/feed"), ("GET", "/api/videos/{id}/comments"),
 
 @pytest.mark.parametrize("spelling", [
     "feed_data_provider", "FeedDataProvider", "component:ui:feed_data_provider",
-    "feed-data-provider", "  FeedDataProvider  ",
+    "  FeedDataProvider  ",
 ])
 def test_one_component_is_reachable_by_all_the_names_it_carries(spelling):
     """r133 registers it under a hub key, an id and a code name, and its pages reference
     the code name. Matching any single spelling misses."""
     assert key(spelling) == key("feed_data_provider")
+
+
+def test_hyphens_are_left_alone_because_both_sides_spell_them_the_same():
+    """A kebab spelling is NOT folded to underscores. 34 of the corpus's 8027 component
+    names/references carry a hyphen (`app-shell`, `left-sidebar`, `tiktok-logo`), and in
+    ZERO of them does one side spell it with a hyphen while the other uses an underscore —
+    so folding buys nothing and would diverge from `RegistryHub._ui_snake`, the function
+    that mints these keys. The first draft folded, and asserted it in a test; the corpus
+    says the assertion was inventing a shape."""
+    assert key("app-shell") == "app-shell"
+    assert key("app-shell") != key("app_shell")
+
+
+def test_the_acronym_rule_is_the_registry_s_own():
+    """#1079: `(?<!^)(?=[A-Z])` turns `FYPFeedPage` into `f_y_p_feed_page` and `NetflixUI`
+    into `netflix_u_i`. The first draft used exactly that rule; it only worked because it
+    was applied to BOTH sides so the mangling cancelled."""
+    assert key("FYPFeedPage") == "fyp_feed_page"
+    assert key("NetflixUI") == "netflix_ui"
 
 
 def test_a_composing_page_consumes_what_its_components_declare():

@@ -358,11 +358,20 @@ def _breaking_task_is_new_1202gz(store, endpoint_id, breaking, consumer_agent) -
 def _framework_auth_surface_1202gr(path) -> bool:
     """Is this a path the FRAMEWORK serves, where requiring auth is a contradiction?
 
-    Same net as `lifecycle.is_business`'s auth exclusion, asked from the other side; imported
-    rather than re-listed so the two cannot drift (#906).
+    Same net as `lifecycle.is_business`'s auth exclusion, asked from the other side.
+
+    #1202vl: this docstring used to end "imported rather than re-listed so the two cannot
+    drift (#906)" while the body re-listed the prefixes -- and they HAD drifted, because
+    #1202ov added `/.well-known/` on the lifecycle side only. Now it really is imported.
     """
-    p = str(path or "")
-    return p.startswith(("/auth/", "/oauth/", "/api/auth/", "/api/oauth/"))
+    try:
+        from .lifecycle import FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl as _pfx
+    except Exception:
+        # Fail CLOSED to the old net rather than to True: answering True here suppresses a
+        # breaking-change report, and a silent suppression is the one answer that cannot be
+        # told from "there was nothing to report".
+        _pfx = ("/auth/", "/oauth/", "/api/auth/", "/api/oauth/")
+    return str(path or "").startswith(_pfx)
 
 
 def _resolved_auth_1202gr(rec) -> bool:

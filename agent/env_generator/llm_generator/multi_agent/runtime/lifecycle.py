@@ -83,6 +83,27 @@ def endpoint_kind(rec: Mapping[str, Any]) -> str:
     return ""
 
 
+# #1202vl: THE ONE LIST, because a second copy of it had already drifted.
+#
+# `registryhub._framework_auth_surface_1202gr` says in its own docstring: "Same net as
+# `lifecycle.is_business`'s auth exclusion, asked from the other side; imported rather than
+# re-listed so the two cannot drift (#906)". It was RE-LISTED, and it had drifted: #1202ov
+# added `/.well-known/` here (the OAuth discovery documents -- jwks.json and
+# oauth-authorization-server -- were classifying as BUSINESS and blocking delivery in 9
+# runs) and did not add it there. So the guard that suppresses a false "auth was added to a
+# framework surface" breaking change -- 147 such P0s across 29 runs, every one filed at a
+# lane that does not own the endpoint (#1202gr) -- still reports one for a discovery
+# document.
+#
+# `/health` is NOT here: it is framework-served but it is not the auth surface, and
+# #1202gr is narrow on purpose (#647). Neither is the control-surface set, for the same
+# reason -- `is_business` consults `is_control_surface_path` separately, and folding that
+# in would widen a guard past what its ticket measured.
+FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl = (
+    "/auth/", "/oauth/", "/api/auth/", "/api/oauth/", "/.well-known/",
+)
+
+
 def is_business(rec: Mapping[str, Any]) -> bool:
     """A business endpoint is one NOT on the fixed surface (kind unset/business) AND not a
     framework-owned control-surface / auth / oauth PATH.
@@ -104,8 +125,7 @@ def is_business(rec: Mapping[str, Any]) -> bool:
     # required for implementation and for business_chain coverage, and their validate tasks
     # blocked delivery in 9 runs — 10 of 11 with no contract-test record for those paths, closed
     # by hand. This only removes a framework-owned path from the business set, never adds one.
-    if p.startswith(("/auth/", "/oauth/", "/api/auth/", "/api/oauth/", "/.well-known/")) \
-            or p == "/health":
+    if p.startswith(FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl) or p == "/health":
         return False
     try:
         from .kickoff.contract import is_control_surface_path

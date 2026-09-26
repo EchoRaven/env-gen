@@ -844,22 +844,26 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
 def _component_key_1202vf(name) -> str:
     """One spelling for a ui_component, whichever of its three names you arrived by.
 
-    #1202vf. A ui_component carries three names -- the hub key (`shell_header`), the id
-    (`component:ui:shell_header`) and the code name (`ShellHeader`) -- and pages reference
-    the code name. Matching on any single one of those misses. Validated against a real
-    run's hubs before it was written here: indexing all three resolves 50 of the 51
-    component references its pages make, and the 51st names a component that run never
-    registered at all.
+    #1202vf. A component carries a hub key (`shell_header`), an id
+    (`component:ui:shell_header`) and a code name (`ShellHeader`), and pages reference the
+    code name. Validated against a real run's hubs: indexing all three resolves 50 of the
+    51 component references its pages make.
 
-    Normalising is NOT sufficient on its own and the record's own fields are what bridge
-    the gap: a key spelled `appshell` and a code name spelled `AppShell` normalise to
-    different strings, because where the word boundary falls is not recoverable from
-    either spelling alone.
+    #1202vl: the camel->snake rule is `RegistryHub._ui_snake`, which is the function that
+    MINTS these keys. The first draft rolled its own `(?<!^)(?=[A-Z])` -- the exact rule
+    #1079 documents as wrong, because it splits before EVERY capital and turns an acronym
+    like `APIKeyPanel` into `a_p_i_key_panel` instead of `api_key_panel`. Measured over the
+    corpus's 5904 page->component references it differs on 203, and the effective-API
+    totals come out IDENTICAL (4160 both ways) -- because that draft applied its own rule
+    to BOTH the index and the lookup, so the mangling cancelled. That symmetry is an
+    accident of these two call sites, not a property of the rule, and the next caller that
+    matches a hub key directly would not have it. Use the minting function.
     """
-    import re as _re
-    t = str(name or "").strip().split(":")[-1]
-    t = _re.sub(r"(?<!^)(?=[A-Z])", "_", t)
-    return _re.sub(r"_+", "_", t.lower().replace("-", "_"))
+    try:
+        from .registryhub import RegistryHub
+        return RegistryHub._ui_snake(str(name or "").strip().split(":")[-1])
+    except Exception:
+        return str(name or "").strip().split(":")[-1].lower().replace("-", "_")
 
 
 def effective_page_apis_1202vf(page, components) -> set:

@@ -2223,7 +2223,33 @@ def _is_authorization_server_path_1202vc(path: str) -> bool:
     if q.startswith("/api/"):
         q = q[4:]
     head = q.lstrip("/").split("/", 1)[0]
-    return head in ("auth", "oauth", ".well-known")
+    return head in _as_namespaces_1202vl()
+
+
+def _as_namespaces_1202vl() -> frozenset:
+    """The AS namespaces, DERIVED from the one shared prefix list. #1202vl.
+
+    The membership question -- which namespaces the framework's own AS serves -- is the
+    same one `lifecycle.FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl` answers, and that list had
+    already drifted once from a second copy of itself. Deriving keeps the MATCHING here
+    (first path segment, case-folded, `/api/` prefix stripped -- stricter than a prefix
+    test, so `/api/oauth_clients` stays a business route) while the SET comes from one
+    place: today it yields exactly {auth, oauth, .well-known}, and a prefix added there
+    arrives here for free.
+    """
+    try:
+        from .lifecycle import FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl as _pfx
+    except Exception:
+        return frozenset({"auth", "oauth", ".well-known"})
+    out = set()
+    for pref in _pfx:
+        seg = str(pref).strip("/")
+        if seg.startswith("api/"):
+            seg = seg[4:]
+        head = seg.split("/", 1)[0].lower()
+        if head:
+            out.add(head)
+    return frozenset(out) or frozenset({"auth", "oauth", ".well-known"})
 
 
 def _denial_scope_verdict_663(sent_body, body_text) -> str:
