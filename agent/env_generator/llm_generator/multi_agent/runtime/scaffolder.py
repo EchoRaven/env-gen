@@ -427,96 +427,6 @@ def record_route_params_ignored_1202uw(out_dir, routes) -> bool:
         return False
 
 
-def dataset_rows_with_nowhere_to_land_1202uy(out_dir, tables):
-    """Tables the design dataset has CONTENT for whose registered schema is only an ``id``.
-
-    #1202uy: the seeder builds its insert order, class map and PK map from the REGISTERED
-    columns. A table registered with nothing but `id` contributes no row shape, so it is
-    absent from that order and never inserted -- and every table whose FK points at it then
-    fails too.
-
-    FOUND BY STARTING THE DELIVERED netflix-local-r30 STACK and counting rows:
-
-        titles 0, episodes 0, title_genres 0, my_list 0, ratings 0, continue_watching 0
-        seed_dataset.json has titles: 60; the lane's seed has my_list 22, ratings 14
-        registryhub says  titles.schema = {"columns": [{"name": "id", "type": "integer"}]}
-        while models.Title exists with its full column list
-
-    A Netflix clone with zero titles, released as v1.0.0. The seeder reports success on every
-    boot -- it even logs FIX #130's "a seed-provided table is EMPTY, re-seeding" and then
-    inserts nothing, because `titles` is not in `_ORDER`.
-
-    The framework saw only SYMPTOMS: r30's gate logged `business_chain_failing` 68 times and
-    `validation_ui_evidence_failed` 133 times across 168 snapshots and never once named the
-    cause. Naming it is the whole point (#1202h/#1202uv's standing).
-
-    MEASURED over the 136 runs that carry a dataset: 3 hit this -- r30 and
-    netflix-resume-validate lose 60 titles each, and tiktok-r81 loses its ENTIRE dataset
-    (videos 35, sounds 8, comments 295). Rare and total: the app ships with no content at all.
-
-    The rule is narrow ON PURPOSE. A stub schema alone is not the defect -- `users`, `tenants`
-    and `oauth_clients` are registered that way in 8 runs and the framework bootstraps them
-    itself, and a join table legitimately carries only foreign keys. What cannot be anything
-    but broken is a table the DATASET has rows for that the schema cannot hold.
-
-    Pure + best-effort: returns [] on anything unreadable.
-    """
-    try:
-        import json as _j
-        from pathlib import Path as _P
-        ds_file = _P(str(out_dir)) / "app" / "backend" / "seed_dataset.json"
-        if not ds_file.is_file():
-            return []
-        ds = _j.loads(ds_file.read_text(encoding="utf-8", errors="ignore"))
-        if not isinstance(ds, dict):
-            return []
-        have = {k: len(v) for k, v in ds.items() if isinstance(v, list) and v}
-        if not have:
-            return []
-        out = []
-        for name, spec in (tables or {}).items():
-            if name not in have or not isinstance(spec, dict):
-                continue
-            # BOTH SHAPES. The scaffolder passes the full registry RECORD
-            # (`{id, name, schema: {columns: [...]}, status, metadata}`), while a caller
-            # holding a bare spec passes `{columns: [...]}`. Reading only the second is how a
-            # check passes its own unit test and sees nothing in production.
-            cols = spec.get("columns")
-            if cols is None:
-                _sch = spec.get("schema")
-                cols = _sch.get("columns") if isinstance(_sch, dict) else None
-            if isinstance(cols, dict):
-                names = {str(c) for c in cols}
-            else:
-                names = {str(c.get("name")) for c in (cols or [])
-                         if isinstance(c, dict) and c.get("name")}
-            if names and names == {"id"}:
-                out.append("%s (%d dataset row(s) have nowhere to land: the table is "
-                           "registered with only an `id` column)" % (name, have[name]))
-        return sorted(out)
-    except Exception:
-        return []
-
-
-def record_dataset_rows_with_nowhere_to_land_1202uy(out_dir, items) -> bool:
-    """Land #1202uy's finding in an artifact. Same shape and guard as #1202ui/#1202uv/#1202uw."""
-    if not out_dir or not items:
-        return False
-    try:
-        import json as _j
-        import time as _t
-        from pathlib import Path as _P
-        out = _P(str(out_dir)) / "logs" / "dataset_nowhere_to_land_1202uy.jsonl"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with open(out, "a", encoding="utf-8") as fh:
-            fh.write(_j.dumps({"at": _t.time(),
-                               "count": len(items or []),
-                               "tables": [str(i) for i in (items or [])][:50]}) + "\n")
-        return True
-    except Exception:
-        return False
-
-
 def persist_backfilled_apis_1202ub(registryhub, ui_pages, before, logger=None) -> int:
     """Write the backfilled `apis_used` back to the REGISTRY, not just into the projection.
 
@@ -1220,25 +1130,6 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("route_params_ignored_1202uw",
                                "the ignored-route-param report (#1202uw)", _e1202uw)
-            # #1202uy: dataset content whose table is registered with only an `id`. The
-            # seeder's insert order comes from the registered columns, so those rows can
-            # never land and every FK onto them fails. Reports only.
-            try:
-                from .message_format import join_capped as _jc1202uy
-                _nl1202uy = dataset_rows_with_nowhere_to_land_1202uy(out_dir, tables)
-                if _nl1202uy:
-                    orch._logger.error(
-                        "#1202uy %d table(s) have DATASET CONTENT that can never be inserted: "
-                        "their registryhub schema declares only `id`, so they are absent from "
-                        "the seeder's insert order and every FK onto them fails. netflix-r30 "
-                        "shipped v1.0.0 with titles/episodes/my_list/ratings ALL EMPTY this "
-                        "way. Register the table's real columns: %s",
-                        len(_nl1202uy), _jc1202uy(_nl1202uy, total=len(_nl1202uy)))
-                    record_dataset_rows_with_nowhere_to_land_1202uy(out_dir, _nl1202uy)
-            except Exception as _e1202uy:
-                from .message_format import warn_once_1201
-                warn_once_1201("dataset_nowhere_to_land_1202uy",
-                               "the unseedable-dataset report (#1202uy)", _e1202uy)
             # #1202ad: this states an unchanging fact once per scaffold pass — r30/r31/r32
             # logged 281 copies between them. Report the STATE (what was written for which
             # contract size); a contract that grows is news, a re-run of the same one is not.
