@@ -387,6 +387,20 @@ def _resolved_auth_1202gr(rec) -> bool:
         rec.get("method"), rec.get("path"), rec, rec.get("metadata")))
 
 
+def _same_consumer_1202vi(prior, current) -> bool:
+    """Is this consumer re-registration a no-op? #1202vi.
+
+    Compares everything except the write timestamps — `created_at` and `_updated_at` move
+    on every call by construction, so including them would make every record look changed
+    and the check would never fire.
+    """
+    if not isinstance(prior, dict) or not isinstance(current, dict):
+        return False
+    _skip = ("created_at", "_updated_at")
+    return ({k: v for k, v in prior.items() if k not in _skip}
+            == {k: v for k, v in current.items() if k not in _skip})
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -1071,11 +1085,32 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        _prior_1202vi = (self._consumers.value() or {}).get(key)
         self._consumers.update(
             lambda m: m.set(key, consumer, agent),
             change_info={"agent": agent},
         )
-        self._emit("consumer_registered", consumer, recipients=[])
+        # #1202vi: EMIT THE FIRST REGISTRATION, NOT THE 9 REPEATS OF IT.
+        #
+        # Lanes re-register the same consumer every pass. The durable store dedups on
+        # `key`, so the fact is written once; `_emit` fired on every call. tiktok-r133's
+        # event store holds 1875 `consumer_registered` events for 192 distinct consumer
+        # records (netflix-r30: 1961 for 99, ~20x; r135: 520 for 36). Every one of the
+        # 1875 went to ZERO recipients -- no subscription in that run matches the type and
+        # nothing in the framework reads it -- while occupying 1.19 MB of a 4.91 MB events
+        # file that JsonStore rewrites IN FULL on every publish by every agent.
+        #
+        # Measured on that store: one publish_event is 3 whole-file updates, the events
+        # one costs 79 ms of it (46 ms parse + 27 ms serialize), and under 5 concurrent
+        # writers the lock serializes them to a 709 ms median. So this payload is charged
+        # to every broadcast and send_message for the rest of the run.
+        #
+        # The FIRST registration still emits, so "when did this consumer appear" survives;
+        # only a re-registration that changes nothing but the timestamps is dropped. The
+        # store write above is untouched -- `#693` reads `_meta.version` as a forensic
+        # instrument across the corpus and there is a ratchet on it.
+        if not _same_consumer_1202vi(_prior_1202vi, consumer):
+            self._emit("consumer_registered", consumer, recipients=[])
         return consumer
 
     def record_api_test(self, endpoint_id: str, result: dict, evidence: Optional[dict] = None, agent: str = "verifier") -> dict:
@@ -2584,11 +2619,17 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        _prior_1202vi = (self._table_consumers.value() or {}).get(key)
         self._table_consumers.update(
             lambda m: m.set(key, consumer, agent),
             change_info={"agent": agent},
         )
-        self._emit("table_consumer_registered", consumer, recipients=[])
+        # #1202vi: the same guard as its endpoint sibling above. This path has fired 0
+        # times in the whole corpus, so there is no measured repeat to suppress here --
+        # it is kept identical ONLY so the two copies of one rule cannot drift (#1032),
+        # and it can only ever suppress an emit that changes nothing.
+        if not _same_consumer_1202vi(_prior_1202vi, consumer):
+            self._emit("table_consumer_registered", consumer, recipients=[])
         return consumer
 
     def get_table_consumers(self, table_name: str) -> List[dict]:
