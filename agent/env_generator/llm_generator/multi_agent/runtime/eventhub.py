@@ -211,6 +211,67 @@ def _subscription_identity_gate(
     )
 
 
+def _set_and_prune_threads_1202vj(view, thread_id: str, thread: dict, actor: str):
+    """Set the thread, then evict the oldest past the cap. Mirrors ``_set_and_prune_events``.
+
+    #1202vj. The events store has been a bounded ring buffer since #6, for a reason its
+    own docstring states: "JsonStore rewrites the WHOLE file on every publish, so
+    unbounded growth makes publishing O(n^2)". The THREADS store, written in the SAME
+    publish, was never bounded. It holds more RECORDS than the capped store it is written
+    beside — not more bytes; thread records are smaller (tiktok-r107: 13640 threads /
+    3.25 MB against 5001 events / 5.88 MB) — and the ratio grows with run length while
+    the events side stays pinned at the cap: 2.7x in the longest run, and 23 of 155 runs
+    already past 5000 threads.
+
+    99% of the corpus's 445254 threads hold exactly ONE event, because a standalone
+    publish derives its thread id from its own event id, so the record mostly restates
+    what the event already carries. In the largest stores 37-63% of threads reference
+    ONLY events the cap has already evicted — `get_thread_transcript` on them is provably
+    empty — and they were re-serialised on every publish for the rest of the run anyway.
+
+    ONLY single-event threads are evicted, which mirrors the events cap's `pinned`
+    exemption: a thread that ever carried a second event is a real conversation. That
+    distinction is load-bearing, not decorative. tiktok-r107's 13640 threads are 13635
+    singletons plus five `thread:agent:<name>` conversations of 184-805 events, and those
+    five sort NEWEST because every agent event refreshes them — but r125 has 34
+    conversations of which 12 are finished test-user agents, long idle, and a plain
+    oldest-first rule evicts exactly those. Measured across all 23 over-cap runs: the
+    singletons alone are always enough to reach the cap, so no conversation is ever lost.
+
+    Cap comes from the same setting as the events cap (they are 1:1 in 99% of cases);
+    ``<= 0`` disables eviction, as it does there.
+    """
+    view.set(thread_id, thread, actor)
+    cap = _events_retention_cap()
+    if cap <= 0:
+        return view
+    data = view.value()
+    if len(data) <= cap:
+        return view
+
+    def _age(item):
+        rec = item[1] if isinstance(item[1], dict) else {}
+        for key in ("updated_at", "created_at"):
+            val = rec.get(key)
+            if isinstance(val, (int, float)):
+                return val
+        return 0.0
+
+    def _is_conversation(rec) -> bool:
+        return isinstance(rec, dict) and len(rec.get("event_ids") or []) > 1
+
+    # Never evict a real conversation, and never the thread this publish just wrote —
+    # whatever its timestamp says.
+    evictable = sorted(
+        (it for it in data.items()
+         if it[0] != thread_id and not _is_conversation(it[1])),
+        key=_age,
+    )
+    for tid, _rec in evictable[: max(0, len(data) - cap)]:
+        view.delete(tid, actor)
+    return view
+
+
 class EventHub:
     """Gmail-like durable event, thread, subscription, and inbox hub."""
 
@@ -326,7 +387,10 @@ class EventHub:
         thread["event_ids"] = list(dict.fromkeys([*thread.get("event_ids", []), event_id]))
         thread["participants"] = sorted(set([*thread.get("participants", []), *recipients]))
         thread["updated_at"] = now
-        self._threads.update(lambda m: m.set(thread_id, thread, actor), change_info={"agent": actor})
+        self._threads.update(
+            lambda m: _set_and_prune_threads_1202vj(m, thread_id, thread, actor),
+            change_info={"agent": actor},
+        )
         # PULSE-ONLY: registry contract-lifecycle events are recorded above (events
         # store) but get NO inbox item and NO bridge wakeup — agents read the contract
         # via the registry pulse section. See _PULSE_ONLY_EVENT_TYPES.
