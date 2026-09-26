@@ -2174,6 +2174,24 @@ def _contract_public_note_1202ib(method: str, path: str, endpoints) -> str:
     Reuses `_stated_auth_1202hi`, the projector's own reader, so this sentence and the
     generated handler can never disagree about what the contract says.
     """
+    if _is_authorization_server_path_1202vc(path):
+        # #1202vc. Every sentence below rests on one premise: "the PROJECTED handler
+        # carries no guard". The AS namespace is not projected from the contract at all
+        # -- /auth/* and /oauth/* are framework-owned handlers in oauth_routes.py that
+        # verify credentials whatever the contract says, and auth_required=False on
+        # /auth/login is DEFINITIONAL (it is the endpoint you call without a token).
+        # So the premise is false here and the conclusion inverts: netflix-r30 live
+        # answered 200 to a wrong password AND to an email that was never registered,
+        # and this note told the only check that caught it that the probe was "probably
+        # mis-authored". A true finding arriving with a framework-authored dismissal
+        # attached is worse than no note (see the one-way-hint oscillation engine).
+        return ("AUTHORIZATION-SERVER ENDPOINT: auth_required=False is DEFINITIONAL here "
+                "— this is an endpoint you call WITHOUT a token, so it says nothing about "
+                "whether bad input must be refused, and this handler is framework-owned "
+                "(oauth_routes.py), not projected from the contract. A 2xx to a denial "
+                "probe here means the app accepted a credential it never issued. Do NOT "
+                "dismiss this probe and do NOT change the contract; see the "
+                "`auth_password_is_checked` check. ")
     try:
         from .route_projector import _stated_auth_1202hi
     except Exception:
@@ -2191,6 +2209,21 @@ def _contract_public_note_1202ib(method: str, path: str, endpoints) -> str:
     except Exception:
         return ""
     return ""
+
+
+def _is_authorization_server_path_1202vc(path: str) -> bool:
+    """Is this path served by the framework's own OAuth2 AS rather than projected?
+
+    #1202vc. The whole `/auth/*` + `/oauth/*` namespace (with or without the `/api`
+    prefix some frontends mount everything under) is written by oauth_routes.py from
+    framework source -- no part of it is generated from the registered contract, so no
+    statement about what "the projected handler" does can be true of it.
+    """
+    q = str(path or "").split("?", 1)[0].strip().rstrip("/").lower()
+    if q.startswith("/api/"):
+        q = q[4:]
+    head = q.lstrip("/").split("/", 1)[0]
+    return head in ("auth", "oauth", ".well-known")
 
 
 def _denial_scope_verdict_663(sent_body, body_text) -> str:
