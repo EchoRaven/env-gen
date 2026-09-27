@@ -296,7 +296,14 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
                     str(name),
                     result={"broken": ch.get("broken") or [],
                             "environment_1202od": ch.get("environment_1202od") or [],
-                            "steps": ch.get("steps") or []},
+                            "steps": ch.get("steps") or [],
+                            # #1202vn: carry the build-currency verdict INTO the durable
+                            # record. `run_chains` computes it once and returns it, and the
+                            # log warns -- but the delivery gate reads these per-chain
+                            # records, so the caveat never reached the blocker the lane
+                            # acts on. Free: already computed, one small dict per chain.
+                            "build_currency_1202ex": (
+                                report.get("build_currency_1202ex") or {})},
                     agent="",  # framework/system authority (see docstring)
                 )
                 n += 1

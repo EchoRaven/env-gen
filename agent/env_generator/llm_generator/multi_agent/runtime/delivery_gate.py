@@ -2359,7 +2359,8 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        "endpoint) before delivery."
                        + _contract_denial_contradictions_1202kr(rh, authored, hubs)
                        + _contract_materials_disagreement_1202ky(rh, authored, hubs)
-                       + _failing_surface_1202lb(authored)),
+                       + _failing_surface_1202lb(authored)
+                       + _build_currency_caveat_1202vn(authored)),
         }
     # #510 GUARD: not_passing excludes never-run chains, so an authored set that is ALL
     # never-run would otherwise fall through to GREEN with nothing actually verified. Require
@@ -2912,6 +2913,52 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
 # #1202of: chain statuses that are NOT a lane's failure to fix — `framework_blocked` (#272,
 # a projected handler crashed) and `environment_blocked` (#1202od, the app was unreachable).
 _NOT_A_LANE_FAILURE_1202OF = ("passing", "framework_blocked", "environment_blocked")
+
+
+def _build_currency_caveat_1202vn(authored) -> str:
+    """Say, in the BLOCKER, when these verdicts may not be about the code on disk. #1202vn
+
+    `#1202ex` measures whether the running image was built from the source now on disk, and
+    its own docstring names the case it exists for: "googlemaps-r16 ... 12 chain steps died
+    on a projected create whose handler, run against the authored body, passes. Its image
+    fingerprint does not match its source. Nothing in the run said so, and the run spent its
+    remaining budget on the app."
+
+    It still did not reach the lane. tiktok-r136, live: the warning fired 36 times into the
+    log while 43 gate snapshots carried a `business_chain_failing` detail and NOT ONE of
+    them mentioned it -- the lane was handed `GET /api/videos/feed -> 422` with no hint that
+    the container may predate the fix, on a run whose source orders that literal route
+    ahead of the `{id}` route it was being swallowed by.
+
+    This does NOT suppress the blocker: #1202ex is explicit that "a `changed` reading does
+    not make a failure fake -- it makes it unattributable". Blocking on an unattributable
+    failure is right; hiding that it is unattributable is not.
+
+    Costs nothing: `run_chains` already computes the verdict and #1202vn carries it into
+    each chain's `last_result`. Recomputing here would be 1.07s per gate tick measured on
+    r136, which at that run's 127 snapshots is over two minutes of wall clock.
+    """
+    try:
+        for rec in (authored or []):
+            cur = ((rec.get("last_result") or {}).get("build_currency_1202ex") or {})
+            if str(cur.get("verdict") or "") != "changed":
+                continue
+            return (" BUILD CURRENCY: " + str(cur.get("detail") or "")
+                    + " — so a failing step here may be about code the container does not "
+                      "have yet. Rebuild and recreate the stack, re-run the validation, and "
+                      "only then dispatch a lane at the step.")
+    except Exception as exc:
+        # #1202ah: an empty string here is the PRE-#1202vn behaviour, not a pass — but a
+        # reader comparing two blockers cannot tell "the image is current" from "the caveat
+        # could not be read". Once per process; this runs on every gate tick.
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("_build_currency_caveat_1202vn",
+                           "the build-currency caveat", exc)
+        except Exception:
+            pass
+        return ""
+    return ""
 
 
 def _first_broken_step_1202ox(authored, not_passing) -> str:
