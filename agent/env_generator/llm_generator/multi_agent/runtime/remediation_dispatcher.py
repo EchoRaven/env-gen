@@ -1819,6 +1819,18 @@ class RemediationDispatcher:
                 # real failure — but it now opens with the fact that the route is already
                 # mounted, so the lane stops trying to add it and the operator sees a
                 # framework defect instead of a lane that "cannot fix a 405".
+                # #1202vx: the classification below reads the WHOLE detail (a fragment
+                # trimmed away cannot be classified) but its prose is applied AFTER the
+                # salient trim, because the trim's budget belongs to the failures.
+                #
+                # The order was the other way round, so the framework's own explanation
+                # competed with the evidence for 600 characters and won. Measured on a
+                # realistic detail -- 6 endpoints, each with its `custom_routes.py`
+                # traceback, 520 chars -- the #1006 prose left 4 of the 6 fragments, and
+                # with #1202vq's notice as well only 1 of 6 survived. #978 exists to hand
+                # the lane "the salient line, not a blind prefix"; spending that line on a
+                # lecture is the same defect it was written to end.
+                _notices_1202vx: List[str] = []
                 if name == "business_endpoints_reachable":
                     try:
                         from .backend_audit import unreachable_but_mounted
@@ -1830,12 +1842,13 @@ class RemediationDispatcher:
                                 "#1006 FRAMEWORK DEFECT (not a lane bug): %s — main.py already "
                                 "mounts these and the app still refuses them. main.py is "
                                 "framework-owned; no lane can repair this.", join_capped(_fw, len(_fw), cap=4))
-                            detail = (
+                            # #1202vx: stashed, not prepended. See `_notices_1202vx`.
+                            _notices_1202vx.append(
                                 "FRAMEWORK DEFECT — main.py ALREADY MOUNTS these routes and the "
                                 "running app still refuses them: " + join_capped(_fw, len(_fw), cap=4) +
                                 ". Do NOT try to add them; main.py is framework-owned and your "
                                 "writes to it are denied. Report what the running app returns "
-                                "(status + Allow header) and move on. || " + detail)
+                                "(status + Allow header) and move on.")
                         # #1202vq: the sibling case #1006 used to swallow. A fragment whose
                         # arrow is followed by an exception instead of a status means nothing
                         # ANSWERED -- the stack was gone, not wrong (#1202od). Two of the 23
@@ -1852,12 +1865,13 @@ class RemediationDispatcher:
                                 "request never got an answer, so nothing here says the handler "
                                 "is wrong. Re-run once the stack is up.",
                                 join_capped(_gone, len(_gone), cap=4))
-                            detail = (
+                            # #1202vx: stashed, not prepended. See `_notices_1202vx`.
+                            _notices_1202vx.append(
                                 "THE APP DID NOT ANSWER these \u2014 the request raised at the "
                                 "socket, so none of them is evidence about your code: " +
                                 join_capped(_gone, len(_gone), cap=4) +
                                 ". Do NOT edit a handler for these. Check the stack is up and "
-                                "re-run the validation. || " + detail)
+                                "re-run the validation.")
                     except Exception as _e1202vq:
                         # #1202ah: this block classifies a failure for a lane. Swallowing the
                         # classifier means the lane silently gets the raw detail back, which is
@@ -1909,6 +1923,10 @@ class RemediationDispatcher:
                     detail = _salient_978(detail, cap=600) or detail
                 except Exception:
                     pass
+                # #1202vx: now that the evidence has had the whole budget, say what the
+                # framework concluded about it.
+                if _notices_1202vx:
+                    detail = " || ".join(_notices_1202vx + [detail])
                 if name == "docker_up":
                     # #1202de: a host fault is not lane-actionable, and asking anyway is
                     # worse than leaving the blocker open. netflix-r43 asked a backend
