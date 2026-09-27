@@ -4157,11 +4157,18 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
     # return other callers unpack positionally.
     media_col: Dict[str, List[str]] = {}
     for _t, _spec in (tables or {}).items():
-        _cols = _spec.get("columns") if isinstance(_spec, dict) else None
-        if isinstance(_cols, dict):
-            _names = list(_cols.keys())
-        else:
-            _names = [c.get("name") if isinstance(c, dict) else c for c in (_cols or [])]
+        # #1202w8: through `_columns_of`, NOT `_spec["columns"]`. A SchemaHub table record
+        # keeps its columns under `schema` (finalize_kickoff stores the contract table minus
+        # `name` there); the flattened `columns` key this loop used to read is only the shape
+        # `_columns_of` TOLERATES, so on every real run `_cols` was None and `_MEDIA_COL`
+        # shipped EMPTY -- the #1202uu floor stayed at _DEMO_FLOOR = 8 for media tables and
+        # went on cloning. MEASURED: r136 and r137 (both built after #1202uu landed) ship
+        # `_MEDIA_COL = {}` in seed_data.py while `_IMAGE_COL` on the SAME videos table is
+        # populated, and models.py declares `video_url` -- the only difference between the
+        # two is this accessor. The #1202uu test built its fixture in the flattened shape,
+        # so it passed against a mechanism that had never fired.
+        _cols = _columns_of(_spec) if isinstance(_spec, dict) else None
+        _names = [c.get("name") if isinstance(c, dict) else c for c in (_cols or [])]
         _meds = [n for n in _names if isinstance(n, str) and _is_media_col_1202uu(n)]
         if _meds:
             media_col[_t] = _meds
