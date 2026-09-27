@@ -2927,6 +2927,56 @@ def _stamp_spec_visibility_1202og(models: Dict[str, Dict[str, Any]], project_roo
     return stamped
 
 
+def announce_shape_override_1202vt(method: Any, path: Any, models: Dict[str, Dict[str, Any]],
+                                  explicit_public: bool) -> bool:
+    """#1202vt/#1202vu — say that a table's SHAPE just reversed an explicit public contract.
+
+    ONE copy for BOTH emitters. #1202vt announced this at the skeleton, which is the primary
+    `main.py` generator; `project_missing_routes` runs the identical release-then-override
+    pair and was still silent, so an endpoint registered after the skeleton ran got the 401
+    with no explanation — the asymmetry #1032 exists to prevent, and the one #1202my already
+    had to fix once for the subject-FK guard on these same two call sites.
+
+    #1202kx announces the sibling case (the MATERIALS contradict the endpoint's
+    `auth_required=False`) and its own comment says why it must: "a lane that knew WHY it was
+    being refused had no reason to build that." This is the case where the materials say
+    NOTHING and the shape decides alone, so the way out is different — there is no verdict to
+    correct, there is one to add.
+
+    Returns whether it spoke, so a caller can be tested without reading the log.
+    """
+    if not explicit_public:
+        return False        # only a REVERSAL is news
+    try:
+        import logging as _lg1202vt
+        _res = _resource_model(path, models) or ("?", {})
+        _fks = (_res[1] or {}).get("fks") or {}
+        _lg1202vt.getLogger(__name__).warning(
+            "#1202vt SHAPE OVERRODE AN EXPLICIT PUBLIC on %s %s: the endpoint states "
+            "auth_required=False, the materials declare NOTHING about `%s`, and its shape "
+            "reads as per-user-private (#598: a users FK beside another entity's FK — %s). "
+            "So this route is projected WITH an actor and an owner filter and will refuse an "
+            "anonymous caller, reversing what the contract said. The schema cannot tell a "
+            "published feed from a private list (#1202gd), so the shape is the only signal "
+            "left when the materials are silent. One way out: give that entity a "
+            "`visibility` in the materials — `public` if the rows are meant to be read by "
+            "people who did not write them, `owner` if they are not. Appending to the "
+            "framework's public list from custom_routes.py is not a way out; it serves the "
+            "rows to anyone and the chains fail it as a denial-probe success.",
+            str(method).upper(), path, str(_res[0]),
+            ", ".join(f"{c}->{t}" for c, t in sorted(_fks.items())) or "no FKs")
+        return True
+    except Exception as _e1202vt:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("route_projector.announce_shape_override_1202vt",
+                           "the notice that a table's shape reversed an explicit public "
+                           "contract, so the lane sees only the 401", _e1202vt)
+        except Exception:
+            pass
+        return False
+
+
 def project_missing_routes(
     backend_dir: Any,
     declared_endpoints: List[Mapping[str, Any]],
@@ -3031,6 +3081,8 @@ def project_missing_routes(
         # decision that they should be informing. 4 of 45 delivered backends ship an
         # UNAUTHENTICATED `GET /api/search` over `continue_watching` for exactly this reason.
         if _structurally_private_resource_633(method, path, models):
+            # #1202vu: the second emitter, which was silent. See the helper's docstring.
+            announce_shape_override_1202vt(method, path, models, _explicit_public)
             _owner_scoped = True
         # An owner-scoped resource is per-user PRIVATE (notes/email/drafts): its reads
         # can only be scoped to ``owner_fk == the caller``, which REQUIRES an actor. #271

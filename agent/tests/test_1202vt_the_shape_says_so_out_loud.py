@@ -124,5 +124,92 @@ def test_the_swallowed_classifier_announces():
     assert "warn_once_1201" in body
 
 
+# --- #1202vu: the OTHER emitter, and only one copy of the notice ------------------------
+
+_MODELS_PY = (
+    "from sqlalchemy import Column, Integer, String, ForeignKey\n"
+    "from sqlalchemy.orm import declarative_base\n"
+    "Base = declarative_base()\n"
+    "class Feeditem(Base):\n"
+    "    __tablename__ = 'feed_items'\n"
+    "    id = Column(Integer, primary_key=True)\n"
+    "    user_id = Column(Integer, ForeignKey('users.id'))\n"
+    "    topic_id = Column(Integer, ForeignKey('topics.id'))\n"
+    "    body = Column(String)\n"
+    "class User(Base):\n"
+    "    __tablename__ = 'users'\n"
+    "    id = Column(Integer, primary_key=True)\n"
+    "class Topic(Base):\n"
+    "    __tablename__ = 'topics'\n"
+    "    id = Column(Integer, primary_key=True)\n"
+)
+
+
+def _backend(tmp_path):
+    be = tmp_path / "backend"
+    be.mkdir()
+    (be / "models.py").write_text(_MODELS_PY, encoding="utf-8")
+    (be / "main.py").write_text(
+        "from fastapi import FastAPI, Depends, Query\n"
+        "from auth_dependency import get_current_user\n"
+        "app = FastAPI()\n", encoding="utf-8")
+    return be
+
+
+def test_the_delivery_time_projector_announces_too(tmp_path, caplog):
+    """#1202vu. `render_skeleton_main` is the primary generator, but an endpoint registered
+    after it ran is emitted HERE — and this emitter runs the identical release-then-override
+    pair. Fixing one of two doors is the asymmetry #1032 exists to prevent."""
+    from multi_agent.runtime import route_projector as RP
+
+    be = _backend(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=RP.__name__):
+        RP.project_missing_routes(
+            be, [{"method": "GET", "path": "/api/feed_items", "auth_required": False,
+                  "metadata": {"auth_required": False}}])
+    assert [r for r in caplog.records if "#1202vt" in r.getMessage()], (
+        "the delivery-time projector demoted an explicit public read and said nothing")
+
+
+def test_the_notice_exists_once_in_the_runtime():
+    """One copy, not two. Both emitters call the same function, so the wording cannot drift
+    apart the way #1202my had to repair across these very two call sites."""
+    runtime = pathlib.Path(BS.__file__).parent
+    marker = "SHAPE OVERRODE AN EXPLICIT PUBLIC"
+    owners = []
+    for py in sorted(runtime.glob("*.py")):
+        if marker in py.read_text(encoding="utf-8"):
+            owners.append(py.name)
+    assert owners == ["route_projector.py"], (
+        f"the notice should live in exactly one module, found: {owners}")
+
+
+def test_both_emitters_call_the_one_notice():
+    """Structural, by AST: each emitter must reach the shared helper, so neither can be
+    left silent by an edit to the other."""
+    for mod, fn_name in ((BS, "render_skeleton_main"),
+                         (__import__("multi_agent.runtime.route_projector",
+                                     fromlist=["x"]), "project_missing_routes")):
+        tree = ast.parse(inspect.getsource(mod))
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and n.name == fn_name)
+        body = ast.unparse(fn)
+        assert "_structurally_private_resource_633" in body, fn_name
+        assert "announce_shape_override_1202vt" in body, (
+            f"{fn_name} overrides on shape without reaching the notice")
+
+
+def test_the_notice_holds_its_tongue_when_nothing_was_reversed(tmp_path, caplog):
+    from multi_agent.runtime import route_projector as RP
+
+    be = _backend(tmp_path)
+    models = RP._orm_models(be)
+    with caplog.at_level(logging.WARNING, logger=RP.__name__):
+        spoke = RP.announce_shape_override_1202vt("GET", "/api/feed_items", models, False)
+    assert spoke is False
+    assert not [r for r in caplog.records if "#1202vt" in r.getMessage()]
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

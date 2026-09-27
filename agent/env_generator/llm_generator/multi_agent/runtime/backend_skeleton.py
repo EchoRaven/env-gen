@@ -2734,29 +2734,13 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
                 # Announce only; the demotion is unchanged. The way out differs from
                 # #1202kx's and that is the point -- there is no materials verdict to
                 # correct here, there is one to ADD.
-                if _explicit_public_1097:
-                    try:
-                        _res1202vt = _resource_model(path, meta) or ("?", {})
-                        _fks1202vt = (_res1202vt[1] or {}).get("fks") or {}
-                        import logging as _lg1202vt
-                        _lg1202vt.getLogger(__name__).warning(
-                            "#1202vt SHAPE OVERRODE AN EXPLICIT PUBLIC on %s %s: the endpoint "
-                            "states auth_required=False, the materials declare NOTHING about "
-                            "`%s`, and its shape reads as per-user-private (#598: a users FK "
-                            "beside another entity's FK — %s). So this route is projected WITH "
-                            "an actor and an owner filter and will refuse an anonymous caller, "
-                            "reversing what the contract said. The schema cannot tell a "
-                            "published feed from a private list (#1202gd), so the shape is the "
-                            "only signal left when the materials are silent. One way out: give "
-                            "that entity a `visibility` in the materials — `public` if the rows "
-                            "are meant to be read by people who did not write them, `owner` if "
-                            "they are not. Appending to the framework's public list from "
-                            "custom_routes.py is not a way out; it serves the rows to anyone "
-                            "and the chains fail it as a denial-probe success.",
-                            str(method).upper(), path, str(_res1202vt[0]),
-                            ", ".join(f"{c}->{t}" for c, t in sorted(_fks1202vt.items())) or "no FKs")
-                    except Exception:
-                        pass
+                # #1202vu: ONE copy of the notice, in route_projector, because the other
+                # emitter (`project_missing_routes`) runs the identical release-then-override
+                # pair and was silent too. Two copies of this message would drift the way
+                # #1032 describes and #1202my already had to repair once across these very
+                # two call sites.
+                from .route_projector import announce_shape_override_1202vt
+                announce_shape_override_1202vt(method, path, meta, _explicit_public_1097)
                 _owner_scoped = True
         except Exception as _e1202vt:
             # #1202ah: this decides whether a route takes an actor. Swallowing it silently
