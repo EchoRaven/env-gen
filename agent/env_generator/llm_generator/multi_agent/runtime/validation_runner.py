@@ -870,6 +870,34 @@ def _form_retry_warranted(body: Optional[dict], status: Optional[int],
 # `total`, capped -- and it stops without reporting if the cap is hit, because an unfinished
 # walk proves nothing.
 _PAGE_WALK_CAP_1202W0 = 12
+# #1202wa: the ceiling on the one corroborating request. Above it the endpoint is asked for
+# nothing -- a `limit=250000` is a denial of service against the app under test, not a probe --
+# and the walk's own verdict stands.
+_LIMIT_PROBE_CAP_1202WA = 500
+
+
+def _reachable_by_limit_1202wa(base: str, path: str, token, total: int) -> bool:
+    """True when ONE `limit=<total>` request returns the whole `total`, so nothing is lost.
+
+    See the note at the report site (#1202wa). Every failure to establish that -- an
+    out-of-range total, a non-200, an unparseable body, a short page -- returns False and
+    therefore KEEPS the finding: this function answers "is reachability proven?", never
+    "is the endpoint fine?", so an inconclusive probe must not clear it.
+    """
+    if isinstance(total, bool) or not isinstance(total, int):
+        return False
+    if total <= 0 or total > _LIMIT_PROBE_CAP_1202WA:
+        return False
+    sep = "&" if "?" in path else "?"
+    res = _http("GET", base + path + sep + "limit=" + str(total), token=token)
+    if res.get("status") != 200:
+        return False
+    try:
+        page = _json.loads(res.get("body_text") or "")
+    except Exception:
+        return False
+    rows = page.get("items") if isinstance(page, dict) else None
+    return isinstance(rows, list) and len(rows) >= total
 
 
 def record_list_total_unreachable_1202w0(project_dir, findings) -> bool:
@@ -932,6 +960,20 @@ def _list_total_unreachable_1202w0(base: str, path: str, token, body_text) -> st
     if walked >= _PAGE_WALK_CAP_1202W0:
         return ""                    # unfinished walk: inconclusive, say nothing
     if seen >= total:
+        return ""
+    # #1202wa: A CURSOR IS NOT THE ONLY WAY OUT. MEASURED over the 19 `items`/`total`
+    # endpoints of four delivered stacks: 17 (89%) carry no `next_cursor` key at all, so
+    # the walk above ends immediately and every one of them whose `total` exceeds a page
+    # would be reported here on no evidence that anything is actually out of reach.
+    #   r126 /api/creators/suggested -- total=92, first page 20, no cursor -- `limit=92`
+    #     returns all 92. The rows are reachable; only the cursor is missing.
+    #   r135 /api/feed/foryou -- total=39, first page 8, HAS a cursor -- `limit=39` is
+    #     refused with 400 (the handler caps limit at 20) and the walk ends at 8 of 39,
+    #     because two INNER JOINs drop 31 rows that `total` counts. Genuinely unreachable.
+    # So prove it with one request before saying it: ask for `total` rows outright, and
+    # stay silent when they arrive. Anything other than a 200 carrying them keeps the
+    # finding -- a probe that cannot run is not evidence of reachability.
+    if _reachable_by_limit_1202wa(base, path, token, total):
         return ""
     return "%s total=%d reachable=%d" % (path, total, seen)
 
