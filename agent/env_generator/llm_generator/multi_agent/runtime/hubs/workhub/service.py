@@ -71,6 +71,52 @@ def _transition_payload_679(task):
         return task
 
 
+# #1202vv: the CLOSING notice does not need to re-send the thing that closed.
+#
+# #679 measured the sender side for task lifecycle events and left `task_created` untouched
+# (#274's wedge case verbatim: the first delivery is the one the recipient needs). The meeting
+# pair has the same two halves and only the first was ever considered.
+#
+# Measured over the corpus, `meeting_closed` payloads: 269 events, 10.8M chars of `document`,
+# and `document["metadata"]` is 10.66M of it -- 98.6%, mean 39,631 chars. Every other key in
+# the record together is ~370 chars. Median payload 31,931, p90 74,926, and it fans out to 3
+# recipients, so this one event type carries ~182K chars per run.
+#
+# It is a re-send, on #679's own argument. Of 269 closed meetings, 264 go to exactly the
+# agents that already received `meeting_created` for that meeting, and 268 of the 269 had
+# `meeting_decision_added` delivered incrementally -- a median of 27 per meeting. The bulk
+# was paid for once already.
+#
+# Recoverable, which is the condition #274's wedge failed: `meeting_id` is a valid key of the
+# documents store in 269 of 269 cases, so `workhub_get_document(document_id=<meeting_id>)`
+# returns the whole record. Verified against the artifacts, not assumed.
+#
+# Narrow on purpose: ONE key is replaced and the record's shape is untouched, so a reader
+# doing `payload["document"]["status"]` -- which the existing #679-era test does -- still
+# works. Below the threshold nothing changes at all, which is why that test's small mock
+# document passes through byte-identical.
+_MEETING_METADATA_CHARS_1202vv = 2000
+
+
+def _closed_meeting_document_1202vv(document, meeting_id):
+    """A closed meeting's record for the NOTICE: whole when small, else metadata -> pointer."""
+    try:
+        if not isinstance(document, dict):
+            return document
+        meta = document.get("metadata")
+        if meta is None or len(str(meta)) <= _MEETING_METADATA_CHARS_1202vv:
+            return document
+        return {**document, "metadata": {
+            "_body_omitted": (
+                f"meeting-closed notice — the meeting's metadata ({len(str(meta))} chars: "
+                f"agenda, requirements, decisions and the rest) was delivered when the "
+                f"meeting was CREATED and decision by decision as it ran, and the whole "
+                f"record is fetchable with "
+                f"workhub_get_document(document_id={meeting_id!r})")}}
+    except Exception:
+        return document
+
+
 def _coerce_milestone_index_1120(value, what: str):
     """Normalise an LLM-authored ``milestone_index`` before validating it.
 
@@ -1628,7 +1674,9 @@ class WorkHub:
             {
                 "meeting_id": meeting_id,
                 "produced_artifacts": artifacts_snapshot,
-                "document": document_after,
+                # #1202vv: see `_closed_meeting_document_1202vv`. The store keeps the whole
+                # record; only the NOTICE trades the metadata for a pointer to it.
+                "document": _closed_meeting_document_1202vv(document_after, meeting_id),
             },
             recipients=document_after.get("attendees", []),
         )
