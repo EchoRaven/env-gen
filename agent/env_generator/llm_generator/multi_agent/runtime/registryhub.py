@@ -149,11 +149,54 @@ def _declared_schema_keys_732() -> frozenset:
 _KNOWN_SCHEMA_KEYS_731 = _declared_schema_keys_732()
 
 
-def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: Any) -> None:
-    """Say when a schema carries sub-keys nothing reads. Best-effort; never raises."""
+def record_unknown_schema_keys_1202w5(hub_dir, rows) -> bool:
+    """Land #731's finding in an artifact. Same shape and same guard as #1202uv/#1202w0.
+
+    #947: a measurement that exists only in a log line is not a measurement -- and #731's own
+    docstring says of a typo "this line is where it shows up", which made the line the ONLY
+    place it showed up."""
+    if not hub_dir or not rows:
+        return False
     try:
-        if not isinstance(schema, dict) or logger is None:
+        import json as _j1202w5
+        import time as _t1202w5
+        out = Path(str(hub_dir)).parents[1] / "logs" / "unknown_schema_keys_1202w5.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202w5.dumps({"at": _t1202w5.time(),
+                                     "count": len(rows or []),
+                                     "endpoints": list(rows or [])[:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: Any,
+                                  hub_dir: Any = None) -> None:
+    """Say when a schema carries sub-keys nothing reads. Best-effort; never raises.
+
+    #1202w5: this could never fire. Its only call site passes `getattr(self, "_logger", None)`
+    and `RegistryHub` has no `_logger` -- the name appears exactly once in this module, in that
+    `getattr` -- so `logger` was always None and the guard below returned immediately. It fired
+    0 times across every run log in the corpus.
+
+    What it would have said, measured over 4940 stored endpoint schemas: 189 unknown keys
+    across 23 runs. Most are harmless prose (`description` 45, `summary` 24, `notes` 18), but
+    ~34 are a lane writing a shape under a name NOTHING reads -- `path_params` 14,
+    `response_shape` 10, `query_params` 3, `params` 3, `request_body` 2, `body` 1 -- against a
+    framework that reads `query`, `response` and `request`. Those declarations are silently
+    ignored by the probe body, the chain synth and the frontend, which is #730's defect under
+    a different spelling.
+
+    Falls back to this module's logger rather than staying mute, and lands the finding in an
+    artifact (#947) so which aliases deserve a fold in `_merge_query_alias_730` is a question
+    the run's files can answer."""
+    try:
+        if not isinstance(schema, dict):
             return
+        if logger is None:
+            import logging as _lg1202w5
+            logger = _lg1202w5.getLogger(__name__)
         unknown = sorted(k for k in schema
                          if str(k) not in _KNOWN_SCHEMA_KEYS_731 and not str(k).startswith("_"))
         if not unknown:
@@ -165,6 +208,8 @@ def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: A
             "reason). If the name is better than the one we read, the fold belongs in "
             "_merge_query_alias_730; if it is a typo, this line is where it shows up.",
             str(method or "?").upper(), path, ", ".join(unknown))
+        record_unknown_schema_keys_1202w5(
+            hub_dir, ["%s %s: %s" % (str(method or "?").upper(), path, ", ".join(unknown))])
     except Exception:
         pass
 
@@ -789,7 +834,7 @@ class RegistryHub:
         # #731: say when a schema carries sub-keys nothing reads. Best-effort, after the record
         # exists so a logging fault can never lose a registration.
         _warn_unknown_schema_keys_731(method, path, endpoint.get("schema"),
-                                      getattr(self, "_logger", None))
+                                      getattr(self, "_logger", None), self.hub_dir)
         # PROPOSAL #50: enforce the canonical response envelope key (item/items — what the
         # projector emits + the delivery gate requires) for BUSINESS endpoints on EVERY
         # registration. #46 canonicalizes at KICKOFF, but the backend registers endpoints
