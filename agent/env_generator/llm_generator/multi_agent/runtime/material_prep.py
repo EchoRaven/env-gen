@@ -1422,6 +1422,35 @@ _LOG_1202VZ = _logging_1202vz.getLogger(__name__)
 _FK_MATCH_FLOOR_1202VZ = 0.8
 
 
+def _sibling_fk_column_1202w9(drows, declared, target_ids):
+    """#1202w9: the one UNDECLARED `<x>_id` column whose every value is an id of the target.
+
+    The natural-key path above needs the rows to carry the link under the FK's own base name
+    (`sound` for `sound_id`). A dataset may instead carry it ALREADY RESOLVED under a different
+    name: MEASURED in 6 corpus runs including the two most recent (r136, r137), `videos.user_id`
+    is a declared FK to `users` that no dataset row fills while every row carries a populated
+    `author_id` pointing at real user ids -- so the owner column loaded NULL for all 35 real
+    videos and any owner-scoped read over it returns nothing.
+
+    No synonym table: the evidence is in the data. A candidate must be undeclared (a declared
+    column is the dataset's own business and may point elsewhere -- this is what keeps a
+    populated `sound_id` from being copied into `user_id` when the two id spaces happen to
+    overlap), populated in EVERY row, and resolve entirely inside the target's id set. Ties are
+    refused rather than guessed: across all 136 datasets the criterion produced exactly one
+    candidate 6 times and never two, so there is no precedent for picking among them.
+    """
+    cands = []
+    for k in sorted({k for r in drows for k in r}):
+        if not (isinstance(k, str) and k.endswith("_id")) or k in declared:
+            continue
+        vals = [r.get(k) for r in drows]
+        if any(v in (None, "", 0) for v in vals):
+            continue
+        if all(str(v) in target_ids for v in vals):
+            cands.append(k)
+    return cands[0] if len(cands) == 1 else None
+
+
 def resolve_dataset_fks_1202vz(dataset, schema) -> Dict[str, List]:
     """Fill a DECLARED FK column no dataset row populates, when the rows carry the link under
     the FK's base name and it resolves against the staged target rows. See the note above."""
@@ -1468,6 +1497,20 @@ def resolve_dataset_fks_1202vz(dataset, schema) -> Dict[str, List]:
                 elif tid is None:
                     _why = "`%s` rows carry no `id` to point at" % target
                 if _why:
+                    # #1202w9: before settling for NULL, the link may already be RESOLVED in
+                    # the rows under another name. Only when the natural-key path cannot even
+                    # start -- otherwise the FK's own base name stays authoritative.
+                    _alt = _sibling_fk_column_1202w9(
+                        drows, set(cols),
+                        {str(t.get("id")) for t in trows if t.get("id") is not None})
+                    if _alt:
+                        for r in drows:
+                            r[col] = r.get(_alt)
+                        _LOG_1202VZ.info(
+                            "#1202w9 filled %s.%s -> %s for all %d rows from their `%s`, the "
+                            "one undeclared `_id` column whose every value is a `%s` id (%s)",
+                            table, col, target, len(drows), _alt, target, _why)
+                        continue
                     _LOG_1202VZ.warning(
                         "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, and "
                         "%s. It stays NULL, so any join over it drops every one of these %d "
