@@ -185,6 +185,37 @@ def test_each_converted_module_still_imports(mod):
     importlib.import_module(f"env_generator.llm_generator.multi_agent.runtime.{mod[:-3]}")
 
 
+def _code_only_1202w3(line: str) -> str:
+    """The line with any trailing/whole-line comment removed, quotes respected.
+
+    Deliberately simple: a `#` inside a string literal is kept, everything from an unquoted
+    `#` is dropped. That is enough to stop prose from answering a question about code.
+    """
+    out = []
+    quote = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\":
+                if i + 1 < len(line):
+                    out.append(line[i + 1])
+                    i += 2
+                    continue
+            elif ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+        elif ch == "#":
+            break
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _joins_of_a_sliced_list(path):
     """`.join(...)` calls whose argument is cut by a constant-upper slice.
 
@@ -235,7 +266,13 @@ def _capped_lists(with_count):
     for f in sorted(glob.glob(os.path.join(_RUNTIME, "*.py"))):
         lines = pathlib.Path(f).read_text(encoding="utf-8", errors="ignore").splitlines()
         for lineno, text in _joins_of_a_sliced_list(f):
-            window = " ".join(lines[max(0, lineno - 4):lineno + 4])
+            # #1202w3: the window is CODE, not commentary. The marker check reads the
+            # surrounding eight lines, and a COMMENT that happens to contain "more" silenced
+            # it -- found while fixing #1202w2, whose natural comment is `join_capped appends
+            # the "+N more" this used to omit`. Writing that sentence blinded the guard to the
+            # bare slice three lines below it. A cut declares itself to the READER OF THE
+            # OUTPUT, and a comment is not output.
+            window = " ".join(_code_only_1202w3(ln) for ln in lines[max(0, lineno - 4):lineno + 4])
             if "more" in window or "…" in window or "..." in window:
                 continue  # the cut declares itself
             counted = "len(" in window or "%d" in window or "count" in window.lower()
