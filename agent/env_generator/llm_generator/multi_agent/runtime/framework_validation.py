@@ -176,6 +176,12 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
                 "pre-cut fresh api_smoke — waiting for a lane fix (the failing run's "
                 "checks are dispatched); not re-booting docker on an unchanged tree. "
                 "Set ENVGEN_FRESH_SMOKE_GATE=0 to disable.")
+            # #1202wc: the hold ledger's call site has only this function's bool, so the
+            # reason is stashed where it is known. Without it `fresh_smoke` joins the 79% of
+            # hold records that name a hold and then say nothing about it.
+            orch._fresh_smoke_hold_reason_1202wc = (
+                "backend still matches the tree that FAILED the pre-cut fresh api_smoke; "
+                "waiting for a lane fix, not re-booting an unchanged tree")
             return False
         orch._logger.warning(
             "PRE-CUT FRESH SMOKE: backend source changed AFTER the last passing "
@@ -203,6 +209,10 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
             "class). The failing run is recorded; remediation routes to the lane. "
             "A backend source change re-arms this check.",
             _failed or (getattr(res, "error_message", "") or "?")[:160])
+        orch._fresh_smoke_hold_reason_1202wc = (   # #1202wc
+            "post-smoke backend edit FAILS a fresh api_smoke (%d failing check(s)): %s"
+            % (len(_failed),
+               ", ".join(_failed) or (getattr(res, "error_message", "") or "?")[:160]))
         return False
     except Exception as _exc:
         try:

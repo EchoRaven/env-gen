@@ -5485,7 +5485,15 @@ class Orchestrator:
                 # answer -- otherwise return as before and let the next validation decide.
                 _gate1202qx = self._validate_delivery_gate()
                 if _gate1202qx.get("failed_checks"):
-                    _note_delivery_hold_1202tk(self, "gate_failed_checks")   # #1202tk
+                    # #1202wc: NAME THEM. This ledger exists to answer "what stopped the
+                    # run", and measured over r135/r136/r137 it recorded 103 holds of this
+                    # kind with an EMPTY detail -- 79% of every hold those three runs wrote
+                    # -- while the failing check names sat in the line above. The count goes
+                    # first so a truncated list is still honest about what it left out (#1034).
+                    _fc1202wc = [str(c) for c in (_gate1202qx.get("failed_checks") or [])]
+                    _note_delivery_hold_1202tk(   # #1202tk
+                        self, "gate_failed_checks",
+                        "%d failed check(s): %s" % (len(_fc1202wc), ", ".join(_fc1202wc)))
                     return  # not deliverable yet
                 from .runtime.framework_validation import stack_known_serving_1202qx
                 if not stack_known_serving_1202qx(
@@ -5495,7 +5503,12 @@ class Orchestrator:
                         "failing %s) but no recent validation has seen the stack serve, so "
                         "the green rests on stale build evidence -- holding for the next "
                         "validation rather than releasing over it.", _shown)
-                    _note_delivery_hold_1202tk(self, "stale_build_evidence")   # #1202tk
+                    _note_delivery_hold_1202tk(   # #1202tk
+                        self, "stale_build_evidence",
+                        # #1202wc: the same `_shown` the line above logs -- what the gate
+                        # HAD been failing, which is the whole reason this green is suspect.
+                        "green rests on stale build evidence; was failing: %s"
+                        % ", ".join(str(s) for s in (_shown or [])))
                     return  # not deliverable yet
                 self._logger.warning(
                     "#1202qx the framework's own repairs cleared the gate in this tick (was "
@@ -5602,7 +5615,12 @@ class Orchestrator:
                         except Exception as _pb_d_exc:
                             self._logger.error(
                                 "unbuilt-pages dispatch failed: %s", _pb_d_exc)
-                        _note_delivery_hold_1202tk(self, "unbuilt_pages")   # #1202tk
+                        _note_delivery_hold_1202tk(   # #1202tk
+                            self, "unbuilt_pages",
+                            # #1202wc: count first, then the names (#1034).
+                            "%d unbuilt page(s) after %s attempt(s): %s"
+                            % (len(_unbuilt), self._pages_gate_attempts,
+                               ", ".join(str(p) for p in _unbuilt)))
                         return
                     # release: escape fired — deliver with the fallback, loudly.
                     self._logger.warning(
@@ -5766,7 +5784,15 @@ class Orchestrator:
                             str(self._compute_app_source_signature())[:12],
                             getattr(self._vf_gate, "final_recaptures_1202lk", 0),
                             self._final_recapture_cap_1202lk())
-                        _note_delivery_hold_1202tk(self, "visual_final_recapture")   # #1202tk
+                        _note_delivery_hold_1202tk(   # #1202tk
+                            self, "visual_final_recapture",
+                            # #1202wc: which signature the verdict was taken on, which the
+                            # source is now, and where in the re-capture budget this sits.
+                            "judged sig %s != source sig %s; final re-capture %s/%s"
+                            % (str(getattr(self._vf_gate, "last_judged_sig", None))[:12],
+                               str(self._compute_app_source_signature())[:12],
+                               getattr(self._vf_gate, "final_recaptures_1202lk", 0),
+                               self._final_recapture_cap_1202lk()))
                         return
                     else:
                         # release: an escape fired — deliver anyway, loudly, below-threshold.
@@ -6044,7 +6070,15 @@ class Orchestrator:
                             ", ".join(f"{_k}={_v!r}" for _k, _v in _bg_signals.items()),
                             self._tu_browser_attempts,
                             int(_bg_now - self._tu_browser_deferred_since))
-                        _note_delivery_hold_1202tk(self, "browser_ui_unusable")   # #1202tk
+                        _note_delivery_hold_1202tk(   # #1202tk
+                            self, "browser_ui_unusable",
+                            # #1202wc: the signals themselves -- 6 of these landed in
+                            # r135/r136 with an empty detail, so the ledger could say the UI
+                            # was unusable but never in what way.
+                            "attempt %s; signals: %s"
+                            % (self._tu_browser_attempts,
+                               ", ".join("%s=%r" % (_k, _v)
+                                         for _k, _v in (_bg_signals or {}).items())))
                         return  # hold this milestone's release until the UI is usable
                     self._logger.warning(
                         "Browser test-user gate RELEASED (escape after %ss deferred / %s "
@@ -6100,7 +6134,12 @@ class Orchestrator:
                             "escapes after the cap. Set ENVGEN_ROUTE_CONSISTENCY_GATE=0 to "
                             "disable.", len(_rc_dups), [d.get("paths") for d in _rc_dups],
                             self._rc_attempts, int(_rc_now - self._rc_deferred_since))
-                        _note_delivery_hold_1202tk(self, "route_consolidation")   # #1202tk
+                        _note_delivery_hold_1202tk(   # #1202tk
+                            self, "route_consolidation",
+                            # #1202wc: count first, then the paths (#1034).
+                            "%d duplicate route(s) after %s attempt(s): %s"
+                            % (len(_rc_dups), self._rc_attempts,
+                               "; ".join(str(_d.get("paths")) for _d in _rc_dups)))
                         return  # hold this milestone's release until the routes consolidate
                     self._logger.warning(
                         "Route-consistency gate RELEASED (escape after %ss deferred / %s "
@@ -6161,7 +6200,12 @@ class Orchestrator:
             try:
                 from .runtime.framework_validation import ensure_fresh_smoke_before_cut
                 if not await ensure_fresh_smoke_before_cut(self):
-                    _note_delivery_hold_1202tk(self, "fresh_smoke")   # #1202tk
+                    _note_delivery_hold_1202tk(   # #1202tk
+                        self, "fresh_smoke",
+                        # #1202wc: set inside ensure_fresh_smoke_before_cut, which is where
+                        # the two reasons are distinguishable; only its bool reaches here.
+                        str(getattr(self, "_fresh_smoke_hold_reason_1202wc", "")
+                            or "pre-cut fresh api_smoke did not pass"))
                     return  # held: post-smoke backend drift failed the fresh smoke
             except Exception as _fs_exc:
                 self._logger.debug("fresh-smoke-before-cut skipped: %s", _fs_exc)

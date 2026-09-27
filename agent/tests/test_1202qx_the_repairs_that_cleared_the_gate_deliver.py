@@ -60,15 +60,29 @@ def test_the_re_ask_comes_after_the_repairs():
 
 
 def test_a_gate_that_is_still_red_still_returns():
-    body = _declined_branch()
-    reask = body.index("_gate1202qx = self._validate_delivery_gate()")
-    tail = body[reask:]
-    # #1202tk inserted a one-line hold-note between the test and its `return`, so the
-    # anchor allows it. The property is unchanged: a still-red gate must RETURN, not fall
-    # through to the release path.
-    assert re.search(
-        r'if _gate1202qx\.get\("failed_checks"\):'
-        r'(?:\n[^\n]*_note_delivery_hold_1202tk[^\n]*)?\s*\n\s*return', tail)
+    """A still-red gate must RETURN, not fall through to the release path.
+
+    Asserted over the AST. The text form of this check listed what was allowed to sit
+    between the `if` and its `return` -- first nothing, then #1202tk's one-line hold note --
+    and #1202wc broke it again by giving that note a second argument and wrapping it, with
+    the branch's behaviour untouched. Whether the branch returns is a property of the
+    branch, not of how many lines precede the return inside it.
+    """
+    import ast
+
+    fn = next(n for n in ast.walk(ast.parse(SRC))
+              if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))
+              and n.name == "_maybe_framework_deliver")
+    guards = [n for n in ast.walk(fn)
+              if isinstance(n, ast.If)
+              and "_gate1202qx" in ast.unparse(n.test)
+              and "failed_checks" in ast.unparse(n.test)]
+    assert len(guards) == 1, (
+        "expected exactly one still-red guard on the re-asked gate, found %d" % len(guards)
+    )
+    assert any(isinstance(s, ast.Return) for s in guards[0].body), (
+        "the still-red branch falls through to the release path instead of returning"
+    )
 
 
 def test_a_cleared_gate_falls_through_to_the_release_path():

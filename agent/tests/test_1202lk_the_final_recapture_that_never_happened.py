@@ -235,16 +235,21 @@ def test_the_release_branch_stamps_before_it_announces():
 def test_counterproof_removing_the_return_goes_red():
     """Delete the retry's `return` and the ordering assertion above must fail."""
     seg = _deliver_src()
-    # #1202tk records WHICH hold stopped a clear gate, so a one-line note now sits between
-    # the log call and this `return`. The counter-proof still deletes the RETURN, which is
-    # the thing the ordering assertion above depends on; the landmark just grew a line.
-    import re as _re
-    mutated, _n = _re.subn(
-        r"(self\._final_recapture_cap_1202lk\(\)\)\n"
-        r"(?:[^\n]*_note_delivery_hold_1202tk[^\n]*\n)?)\s*return\n",
-        r"\1", seg, count=1)
-    assert _n == 1 and mutated != seg, (
-        "the mutation landmark moved — this counter-proof is vacuous")
+    # Locate the `return` STRUCTURALLY and delete the lines it occupies. The text form of
+    # this mutation had to enumerate whatever sat between the log call and the return -- #1202tk
+    # added a one-line hold note, #1202wc wrapped that note over five lines, and each time the
+    # counter-proof went vacuous while the branch it guards was unchanged. What this test needs
+    # is "the retry branch without its return", and the AST says exactly where that is.
+    _node = _retry_branch(seg)
+    assert _node is not None, "the #1202lk retry branch is gone"
+    _ret = _node.body[-1]
+    assert isinstance(_ret, ast.Return), (
+        "the retry branch does not end in a return, so there is nothing to remove")
+    _lines = seg.splitlines(keepends=True)
+    _first = _ret.lineno - 1
+    _last = getattr(_ret, "end_lineno", _ret.lineno)
+    mutated = "".join(_lines[:_first] + _lines[_last:])
+    assert mutated != seg, "the mutation removed nothing — this counter-proof is vacuous"
     node = _retry_branch(mutated)
     assert node is not None
     assert not isinstance(node.body[-1], ast.Return)

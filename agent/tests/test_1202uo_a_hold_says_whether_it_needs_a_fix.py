@@ -90,11 +90,31 @@ def test_an_unknown_hold_defaults_to_blocking(tmp_path):
 
 def test_every_waiting_entry_is_a_real_hold_point():
     """★ #1202tr's lesson: an exemption list is an unchecked claim. Each name here must be one
-    the orchestrator actually records, or the set is guarding spelling rather than behaviour."""
+    the orchestrator actually records, or the set is guarding spelling rather than behaviour.
+
+    Read through the AST, not the source text. This assertion used to require the literal
+    `_note_delivery_hold_1202tk(self, "<name>"` on one line, so #1202wc broke it merely by
+    giving those calls a second argument and wrapping them -- the hold points were unchanged.
+    What the claim is about is which names reach that call, which is a property of the call,
+    not of its layout.
+    """
+    import ast
+
     src = (LLM_DIR / "multi_agent" / "orchestrator.py").read_text(encoding="utf-8")
-    for name in _WAITING_HOLDS_1202UO:
-        assert f'_note_delivery_hold_1202tk(self, "{name}"' in src, (
-            f"{name!r} is exempted but is not a hold this orchestrator ever writes")
+    recorded = set()
+    for node in ast.walk(ast.parse(src)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "_note_delivery_hold_1202tk"):
+            continue
+        if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+            recorded.add(node.args[1].value)
+        for kw in node.keywords:
+            if kw.arg == "hold" and isinstance(kw.value, ast.Constant):
+                recorded.add(kw.value.value)
+    assert recorded, "no hold names resolved from orchestrator.py"
+    missing = sorted(n for n in _WAITING_HOLDS_1202UO if n not in recorded)
+    assert not missing, (
+        f"{missing!r} are exempted but are not holds this orchestrator ever writes")
 
 
 def test_the_existing_fields_are_untouched(tmp_path):
