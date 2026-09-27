@@ -1395,6 +1395,133 @@ def _fk_depth_1202rw(schema: Any, tables: Any) -> Dict[str, int]:
     return depth
 
 
+import logging as _logging_1202vz
+
+_LOG_1202VZ = _logging_1202vz.getLogger(__name__)
+
+
+# ── #1202vz — a declared FK the dataset carries only as a natural key ─────────
+# The dataset states the relationship; the schema declares it under a different name; nothing
+# resolves one into the other, so the column stays NULL and every INNER JOIN over it drops the
+# row. tiktok-r135 shipped it: `videos.sound_id` NULL on 31 of 39 rows, so `GET /api/feed/foryou`
+# -- the app's front page -- served 8 videos while its own `total` said 39. 79% of the delivered
+# content was unreachable, and nothing said so.
+#
+# The link was never missing, only unresolved. The dataset row carries
+# `"sound": "오리지널 사운드 - BTS"` and the staged `sounds` table has that exact `name` on id 1.
+#
+# Measured over the 138 corpus runs that carry a dataset: 40 declared FKs are NULL on every
+# row of a table whose TARGET the same dataset populates, across 31 runs (22%). 31 of the 40
+# resolve by the rule below; the other 9 do not and are announced instead of being left silent.
+# Self-referential FKs are excluded first and are not defects -- a top-level row has no parent,
+# and that accounts for 24 more cases that must not be touched.
+#
+# Same envelope as #1202rw and #552: keyed off the DECLARED column, never a table or product
+# name; byte-identical when the FK is absent, already populated, or unresolvable; deterministic,
+# so the runtime seed fingerprint stays stable.
+_FK_MATCH_FLOOR_1202VZ = 0.8
+
+
+def resolve_dataset_fks_1202vz(dataset, schema) -> Dict[str, List]:
+    """Fill a DECLARED FK column no dataset row populates, when the rows carry the link under
+    the FK's base name and it resolves against the staged target rows. See the note above."""
+    try:
+        if not isinstance(dataset, dict) or not isinstance(schema, dict):
+            return dataset
+        for table, rows in dataset.items():
+            cols = schema.get(table)
+            if not isinstance(cols, dict) or not isinstance(rows, list):
+                continue
+            drows = [r for r in rows if isinstance(r, dict)]
+            if not drows:
+                continue
+            for col, spec in cols.items():
+                if not isinstance(spec, dict):
+                    continue
+                fk = str(spec.get("fk") or "")
+                if not fk:
+                    continue
+                target = fk.split(".", 1)[0].strip()
+                # A self-referential FK is legitimately empty: the top-level rows have no
+                # parent. 24 of the corpus's 64 all-NULL declared FKs are this, and filling
+                # one would invent a hierarchy the materials never described.
+                if not target or target == table:
+                    continue
+                trows = [t for t in (dataset.get(target) or []) if isinstance(t, dict)]
+                if not trows:
+                    continue
+                # NEVER overwrite: one populated row means the dataset owns this column.
+                if any(r.get(col) not in (None, "", 0) for r in drows):
+                    continue
+                base = col[:-3] if col.endswith("_id") else col
+                tid = "id" if any("id" in t for t in trows) else None
+                # The reasons a link cannot be resolved differ, and every one of them ends
+                # with the same silent NULL. Say which (#1202vt): the branch that exits
+                # earliest -- the dataset names nothing to resolve WITH -- is the one a
+                # reader most needs, and the first draft of this function returned from it
+                # without a word.
+                _why = None
+                if base == col:
+                    _why = "the column is not named `<something>_id`, so there is no base name to look for"
+                elif not any(base in r for r in drows):
+                    _why = "no row carries a `%s`" % base
+                elif tid is None:
+                    _why = "`%s` rows carry no `id` to point at" % target
+                if _why:
+                    _LOG_1202VZ.warning(
+                        "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, and "
+                        "%s. It stays NULL, so any join over it drops every one of these %d "
+                        "rows -- which is how a feed serves a fraction of its own `total`.",
+                        table, col, target, _why, len(drows))
+                    continue
+                best, best_hits = None, 0
+                for tcol in sorted({k for t in trows for k in t}):
+                    if tcol == tid:
+                        continue
+                    idx = {}
+                    for t in trows:
+                        v = t.get(tcol)
+                        if v in (None, ""):
+                            continue
+                        # A natural key that repeats cannot identify a row; drop the whole
+                        # candidate column rather than pick the first match.
+                        if str(v) in idx:
+                            idx = None
+                            break
+                        idx[str(v)] = t.get(tid)
+                    if not idx:
+                        continue
+                    hits = sum(1 for r in drows if str(r.get(base)) in idx)
+                    if hits > best_hits:
+                        best, best_hits = idx, hits
+                if best is None or best_hits < len(drows) * _FK_MATCH_FLOOR_1202VZ:
+                    _LOG_1202VZ.warning(
+                        "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, and "
+                        "the rows' `%s` does not identify a `%s` row (%d of %d matched; an "
+                        "ambiguous natural key is refused outright). It stays NULL, so any "
+                        "join over it drops every one of these %d rows -- which is how a feed "
+                        "serves a fraction of its own `total`.",
+                        table, col, target, base, target, best_hits, len(drows), len(drows))
+                    continue
+                for r in drows:
+                    v = best.get(str(r.get(base)))
+                    if v is not None:
+                        r[col] = v
+                _LOG_1202VZ.info(
+                    "#1202vz resolved %s.%s -> %s for %d of %d rows via their `%s`",
+                    table, col, target, best_hits, len(drows), base)
+        return dataset
+    except Exception as _e1202vz:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("material_prep.resolve_dataset_fks_1202vz",
+                           "the natural-key resolution of a declared FK the dataset omits, so "
+                           "joins over it drop every dataset row", _e1202vz)
+        except Exception:
+            pass
+        return dataset
+
+
 def enrich_seed_timestamps_1202rw(dataset, schema) -> Dict[str, List]:
     """#1202rw — fill a DECLARED time column that no row populates. See the note above.
 
@@ -1706,6 +1833,7 @@ __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palett
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
            "ingest_assets", "ingest_dataset", "assemble_seed_dataset",
+           "resolve_dataset_fks_1202vz",
            "model_schema_from_models_py", "enrich_ranking_seed",
            "enrich_seed_timestamps_1202rw",
            "assign_dataset_ids_1202ry"]

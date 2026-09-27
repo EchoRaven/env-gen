@@ -3150,6 +3150,7 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
                                             assign_dataset_ids_1202ry,
                                             enrich_ranking_seed,
                                             enrich_seed_timestamps_1202rw,
+                                            resolve_dataset_fks_1202vz,
                                             align_dataset_id_types)
                 _schema = model_schema_from_models_py(be / "models.py")
                 if _schema:
@@ -3165,6 +3166,11 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
                     # timestamp the page invents client-side. Before the id-type alignment,
                     # so row order is still the ids design-prep authored.
                     real = enrich_seed_timestamps_1202rw(real, _schema)
+                    # #1202vz: and resolve a DECLARED FK the dataset states only as a
+                    # natural key. After #1202ry so the target rows already have the ids
+                    # this writes, and before the type alignment below so the values it
+                    # writes are aligned like every other id.
+                    real = resolve_dataset_fks_1202vz(real, _schema)
                     # #808: and align the ID TYPES. #483 aligned field NAMES and #552 fills a
                     # ranking column; nothing checked that design-prep's integer ids match a PK
                     # the lane declared TEXT. r145 declared `titles.id TEXT` with every dependent
