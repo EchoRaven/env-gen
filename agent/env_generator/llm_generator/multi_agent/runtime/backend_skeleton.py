@@ -2707,9 +2707,69 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         try:
             from .route_projector import _structurally_private_resource_633 as _priv633
             if _priv633(method, path, meta):
+                # #1202vt: #1202kx's sibling door, and it was silent.
+                #
+                # #1202kx announces the demotion when the MATERIALS contradict an explicit
+                # `auth_required=False`. This branch demotes on the table's SHAPE alone,
+                # which is what happens when the materials say nothing about it -- and it
+                # runs AFTER the `_explicit_public_1097` release two lines up, so it quietly
+                # reverses a statement the contract made explicitly.
+                #
+                # Nothing in the system said so. `route_projector` has no logging at all,
+                # and a precise search of every run log finds zero mentions of this decision,
+                # against 615 firings of #1202kx. Measured with the contract, the materials
+                # and the projected source aligned: 23 endpoints across the corpus are
+                # declared public, projected with an actor, and have no materials verdict --
+                # every one of them demoted here without a word.
+                #
+                # r137 is #1202kx's own r117 story repeated through this door. #1202vr fixed
+                # the corrupt verdict that sent it here, but the silence is separate and
+                # outlives it: the lane saw a 401 on a route its contract called public,
+                # #1202kx did not fire because the materials named no verdict to disagree
+                # with, and it went into `_FW_PUBLIC_API_1202KH` from custom_routes.py. The
+                # run ended on `deliverability_guard_tampering` at 81 minutes and $190.
+                # #1202kx already wrote the conclusion: "a lane that knew WHY it was being
+                # refused had no reason to build that."
+                #
+                # Announce only; the demotion is unchanged. The way out differs from
+                # #1202kx's and that is the point -- there is no materials verdict to
+                # correct here, there is one to ADD.
+                if _explicit_public_1097:
+                    try:
+                        _res1202vt = _resource_model(path, meta) or ("?", {})
+                        _fks1202vt = (_res1202vt[1] or {}).get("fks") or {}
+                        import logging as _lg1202vt
+                        _lg1202vt.getLogger(__name__).warning(
+                            "#1202vt SHAPE OVERRODE AN EXPLICIT PUBLIC on %s %s: the endpoint "
+                            "states auth_required=False, the materials declare NOTHING about "
+                            "`%s`, and its shape reads as per-user-private (#598: a users FK "
+                            "beside another entity's FK — %s). So this route is projected WITH "
+                            "an actor and an owner filter and will refuse an anonymous caller, "
+                            "reversing what the contract said. The schema cannot tell a "
+                            "published feed from a private list (#1202gd), so the shape is the "
+                            "only signal left when the materials are silent. One way out: give "
+                            "that entity a `visibility` in the materials — `public` if the rows "
+                            "are meant to be read by people who did not write them, `owner` if "
+                            "they are not. Appending to the framework's public list from "
+                            "custom_routes.py is not a way out; it serves the rows to anyone "
+                            "and the chains fail it as a denial-probe success.",
+                            str(method).upper(), path, str(_res1202vt[0]),
+                            ", ".join(f"{c}->{t}" for c, t in sorted(_fks1202vt.items())) or "no FKs")
+                    except Exception:
+                        pass
                 _owner_scoped = True
-        except Exception:
-            pass
+        except Exception as _e1202vt:
+            # #1202ah: this decides whether a route takes an actor. Swallowing it silently
+            # leaves the endpoint projected public, which is indistinguishable from "the
+            # shape said public" — the one reading that must never be guessed.
+            try:
+                from .message_format import warn_once_1201
+                warn_once_1201("backend_skeleton.structurally_private_633",
+                               "the by-construction privacy of this table, so an owner-private "
+                               "resource may be projected with no actor and no filter",
+                               _e1202vt)
+            except Exception:
+                pass
         # #1098 — #271's guarantee, without which #633's flag means nothing. `_generate_handler`
         # gates the owner filter on AUTH (`owner_fk = _owner_fk(meta) if auth else None`), so a
         # resource that is private BY CONSTRUCTION must force an actor whatever the contract
