@@ -98,6 +98,78 @@ def _transition_payload_679(task):
 _MEETING_METADATA_CHARS_1202vv = 2000
 
 
+# #1202vv/#1202vw: the FIFTH task-state transition. #679 trimmed four -- task_claimed,
+# task_completed, task_failed, task_cancelled -- and `bug_state_changed` is the same shape on
+# the same store (a bug IS a task, `metadata.kind == "bug"`), emitting the whole record on
+# every state change. It was never covered.
+#
+# Measured over the delivered corpus: 8311 notices, 17.1M chars, median 1928. Inside
+# `metadata`, `bug_artifacts` is 43.7% (mean 581), `root_cause_hypothesis` 22.8%,
+# `triage_history` 18.7%, and every field the recipient needs in order to ACT -- bug_state,
+# severity, priority, source, parent_bug_id, kind -- is together 1.7%.
+#
+# #679's own keep-set cannot be reused here, and that is the whole reason this is a separate
+# function: it does not keep `metadata`, so the trimmed notice would omit `bug_state` -- the
+# new state, which is the entire point of a "bug state changed" message.
+#
+# The two big fields also behave OPPOSITELY, so one blanket rule would be wrong either way:
+#
+#   bug_artifacts          3127 of 3127 were already delivered with the bug's `task_created`
+#                          and are unchanged in the first notice; across every LATER notice
+#                          they changed 0 times in 5238. A pure re-send, always.
+#   root_cause_hypothesis  3083 of 3127 first appear in the FIRST `bug_state_changed` -- the
+#                          triage transition IS its first delivery -- and it then changes in
+#                          975 of 5238 later notices. Dropping it on a rule would be #274's
+#                          wedge: the debugger's diagnosis, withheld from its assignee.
+#
+# So the rule is neither "keep" nor "drop" but the only honest one: a field is omitted ONLY
+# when this record's PREVIOUS state carried that exact value, i.e. when it is not news. What
+# changed always travels. `triage_history` keeps its last entry -- the note for THIS
+# transition -- and points at the rest.
+#
+# Recoverable, which is #274's condition: a bug is a task, so `workhub_get_task(task_id=...)`
+# returns the whole record, the same pointer #679 uses.
+_BUG_NOTICE_CHARS_1202vw = 2000
+
+_BUG_NOTICE_OMITTABLE_1202vw = ("bug_artifacts", "root_cause_hypothesis", "repro_steps",
+                                "fix_evidence", "escalation_reason")
+
+
+def _bug_notice_1202vw(updated, prior):
+    """A bug-state notice: everything that CHANGED, plus a pointer for what did not."""
+    try:
+        if not isinstance(updated, dict):
+            return updated
+        if len(str(updated)) <= _BUG_NOTICE_CHARS_1202vw:
+            return updated
+        md = dict(updated.get("metadata") or {})
+        pmd = (prior or {}).get("metadata") or {}
+        if not isinstance(pmd, dict):
+            pmd = {}
+        omitted = []
+        for k in _BUG_NOTICE_OMITTABLE_1202vw:
+            v = md.get(k)
+            if v in (None, "", [], {}):
+                continue
+            if v != pmd.get(k):
+                continue          # changed or new -> it is news, it travels
+            md.pop(k, None)
+            omitted.append("%s (%d chars)" % (k, len(str(v))))
+        hist = md.get("triage_history")
+        if isinstance(hist, list) and len(hist) > 1:
+            omitted.append("triage_history[:-1] (%d earlier entries)" % (len(hist) - 1))
+            md["triage_history"] = hist[-1:]
+        if not omitted:
+            return updated
+        md["_body_omitted"] = (
+            "bug-state notice — these were unchanged from this bug's previous state, so they "
+            "were already delivered: " + "; ".join(omitted) + ". The whole record is "
+            "fetchable with workhub_get_task(task_id=%r)" % (updated.get("id"),))
+        return {**updated, "metadata": md}
+    except Exception:
+        return updated
+
+
 def _closed_meeting_document_1202vv(document, meeting_id):
     """A closed meeting's record for the NOTICE: whole when small, else metadata -> pointer."""
     try:
@@ -940,7 +1012,9 @@ class WorkHub:
         updated["_updated_at"] = time.time()
         self.stores.tasks.update(lambda m: m.set(task_id, updated, agent),
                                   change_info={"agent": agent})
-        self._emit("bug_state_changed", updated,
+        # #1202vw: see `_bug_notice_1202vw`. `task` is this record's state BEFORE the
+        # change, which is what makes "already delivered" a fact rather than a guess.
+        self._emit("bug_state_changed", _bug_notice_1202vw(updated, task),
                     recipients=[updated["assignee"]] if updated.get("assignee") else [],
                     priority="high")
         return updated
