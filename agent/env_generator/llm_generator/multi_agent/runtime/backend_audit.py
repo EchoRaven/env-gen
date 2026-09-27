@@ -1144,6 +1144,23 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
                for name, rec in sorted(empty_flagged_1100.items())])
 
 
+# #1202vq: the statuses that mean the app REFUSED a route it mounts -- the only ones #1006
+# can be about. A 5xx means the handler RAN and raised, which is a different fact with a
+# different owner, and a `status=None` fragment means nothing answered at all (#1202od).
+REFUSED_STATUSES_1202vq = frozenset({404, 405})
+
+
+def fragment_status_1202vq(item: Any) -> "int | None":
+    """The HTTP status a `METHOD path → status ...` fragment reports, or None.
+
+    None covers both "no status in the fragment" and a transport error, where the text after
+    the arrow is an exception rather than a number. Neither can be read as a refusal, so
+    neither is one.
+    """
+    m = re.search(r"(?:\u2192|->)\s*(\d{3})\b", str(item))
+    return int(m.group(1)) if m else None
+
+
 def unreachable_but_mounted(backend_dir: Path, unreachable: Iterable[str]) -> List[str]:
     """#1006: endpoints the smoke could not reach that main.py DOES mount.
 
@@ -1164,6 +1181,28 @@ def unreachable_but_mounted(backend_dir: Path, unreachable: Iterable[str]) -> Li
     CLASSIFICATION is knowable statically and is what this returns.
 
     Accepts the `METHOD path → status` fragments the validation runner already produces.
+
+    #1202vq — only a status that means REFUSED counts. This matched on the route alone and
+    ignored what the app answered, so every failure on a mounted route was reported as a
+    defect nobody can repair. Across the corpus that is what it almost always was: 23
+    firings in 12 runs from r115 to r137, and **not one** of them was the 404/405 case
+    above. 21 were 5xx and 2 were `ConnectionResetError`.
+
+    A 5xx is the opposite situation. The route was REACHED, the handler ran, and it raised
+    -- usually in `custom_routes.py`, which the lane owns and the fragment names:
+
+        POST /api/videos/{video_id}/comments → 500 | backend traceback:
+        custom_routes.py:1154 in create_video_comment — HTTPException: 422: text is required
+
+    The dispatched task opened with "Do NOT try to add them ... Report what the running app
+    returns and move on", about a bug in the lane's own file, on the check that carries 61%
+    of final blockers. Telling a lane to walk away from its own traceback is worse than
+    saying nothing.
+
+    This leaves the classification DORMANT on today's corpus, and that is the honest
+    outcome: the `business_endpoints_reachable` details that feed it report `500` in 466 of
+    474 status-bearing fragments and **never** 404 or 405. It stays armed for the r162 shape
+    it was written for; it had simply never met one.
     """
     mounted = served_routes(backend_dir)
     out: List[str] = []
@@ -1171,13 +1210,17 @@ def unreachable_but_mounted(backend_dir: Path, unreachable: Iterable[str]) -> Li
         m = re.match(r"\s*([A-Z]+)\s+(\S+)", str(item))
         if not m:
             continue
-        if _norm_route(m.group(1), m.group(2)) in mounted:
-            out.append(str(item).strip())
+        if _norm_route(m.group(1), m.group(2)) not in mounted:
+            continue
+        if fragment_status_1202vq(item) not in REFUSED_STATUSES_1202vq:
+            continue
+        out.append(str(item).strip())
     return out
 
 
 __all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError",
-           "stub_handler_blockers", "unreachable_but_mounted"]
+           "stub_handler_blockers", "unreachable_but_mounted",
+           "fragment_status_1202vq", "REFUSED_STATUSES_1202vq"]
 
 
 # --- #1202s: lane code must not take over authentication -------------------------------

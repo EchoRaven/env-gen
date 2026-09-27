@@ -1823,8 +1823,8 @@ class RemediationDispatcher:
                     try:
                         from .backend_audit import unreachable_but_mounted
                         _be = Path(getattr(orch, "output_dir", ".")) / "app" / "backend"
-                        _fw = unreachable_but_mounted(
-                            _be, [s.strip() for s in detail.split(";") if s.strip()])
+                        _frags_1202vq = [f.strip() for f in detail.split(";") if f.strip()]
+                        _fw = unreachable_but_mounted(_be, _frags_1202vq)
                         if _fw:
                             orch._logger.warning(
                                 "#1006 FRAMEWORK DEFECT (not a lane bug): %s — main.py already "
@@ -1836,8 +1836,40 @@ class RemediationDispatcher:
                                 ". Do NOT try to add them; main.py is framework-owned and your "
                                 "writes to it are denied. Report what the running app returns "
                                 "(status + Allow header) and move on. || " + detail)
-                    except Exception:
-                        pass
+                        # #1202vq: the sibling case #1006 used to swallow. A fragment whose
+                        # arrow is followed by an exception instead of a status means nothing
+                        # ANSWERED -- the stack was gone, not wrong (#1202od). Two of the 23
+                        # #1006 firings were this, and each was told "main.py already mounts
+                        # these", which is true and has nothing to do with why it failed.
+                        # Saying the true thing matters because the action differs: a refusal
+                        # is a framework defect to report, an empty socket is a re-run.
+                        from .chain_executor import is_transport_failure_1202od
+                        _gone = [f for f in _frags_1202vq
+                                 if is_transport_failure_1202od({"status": None, "error": f})]
+                        if _gone:
+                            orch._logger.warning(
+                                "#1202vq UNREACHED (not a defect of the app): %s \u2014 the "
+                                "request never got an answer, so nothing here says the handler "
+                                "is wrong. Re-run once the stack is up.",
+                                join_capped(_gone, len(_gone), cap=4))
+                            detail = (
+                                "THE APP DID NOT ANSWER these \u2014 the request raised at the "
+                                "socket, so none of them is evidence about your code: " +
+                                join_capped(_gone, len(_gone), cap=4) +
+                                ". Do NOT edit a handler for these. Check the stack is up and "
+                                "re-run the validation. || " + detail)
+                    except Exception as _e1202vq:
+                        # #1202ah: this block classifies a failure for a lane. Swallowing the
+                        # classifier means the lane silently gets the raw detail back, which is
+                        # exactly the pre-#1006 behaviour and reads identically to "there was
+                        # nothing to classify". Once per process.
+                        try:
+                            from .message_format import warn_once_1201
+                            warn_once_1201("remediation_dispatcher.endpoint_reachability_class",
+                                           "the mounted/unreached classification of a failing "
+                                           "endpoint", _e1202vq)
+                        except Exception:
+                            pass
                 # #1002 (instrumentation, not a fix): name the builder of this `detail`.
                 #
                 # Item 411 records station three of r162's evidence path: the dispatched
