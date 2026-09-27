@@ -3960,6 +3960,16 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # with 24 passing UI records and ONE failing flow, having come down 7 → 2 → 1 across
         # the session's runs. The count is already computed here; it just never left.
         "ui_evidence_failed_records": int(_breadth739.get("failed_records") or 0),
+        # #1202wh: AND WHICH PAGES. The count travelled; the names did not, although
+        # `_breadth739` has carried `pages_failed` the whole time and the UNREACHABLE
+        # category two lines below -- the one that never blocks -- names its pages. So the
+        # gate log answered "4 UI records failed" and nothing more, while the reported-only
+        # sibling answered "which". Over r135 and r136 this check is the second most frequent
+        # blocker (135 of ~390 gate evaluations), and its `unreachable_records` was 0 in every
+        # single one, so the failures were real and none of them is diagnosable from a run
+        # directory afterwards. Same fix as #1202wc, same reason: a blocker that records only
+        # a number cannot be investigated once the run is over.
+        "ui_evidence_failed_pages": list(_breadth739.get("pages_failed") or []),
         # #1154: UI records whose failure was the origin being unreachable, not the product
         # being wrong. Travels with the verdict for the same reason #790's errored checks do.
         "ui_evidence_unreachable_records": int(_breadth739.get("unreachable_records") or 0),
