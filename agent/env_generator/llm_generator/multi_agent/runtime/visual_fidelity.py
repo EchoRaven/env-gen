@@ -1291,6 +1291,51 @@ def visual_gate_verdict(*, results, owned=None):
     return {"passed": all_scoped_pass, "unjudged": [], "reason": ""}
 
 
+def record_screen_coverage_1202w4(project_dir, coverage, milestone_label="") -> bool:
+    """Land #351's visual-coverage measurement in an artifact.
+
+    #947's rule, and #946 is the precedent that made it a rule: an APPROVED PLAN was silently
+    voided because the measurement it depended on was a log line and appeared in zero
+    artifacts. #351 carries exactly such a plan -- "turning this into a blocker comes after the
+    page-seeding fix, or every run would start failing a gate it cannot yet satisfy" -- and its
+    own numbers reached only `_LOG.warning`, so nobody holding a run's artifacts could tell
+    whether the precondition had been met.
+
+    Measured across the 31 run logs that still carry the line: coverage is a median 73% and
+    never above 82%, so about a quarter of the reference is never judged, and the SAME screens
+    are skipped -- `settings_more_menu` in 31 of 31 runs, `profile_own` in 20,
+    `notifications_activity` in 17. That is the evidence the deferred decision needs, and it
+    was evaporating with each run's console.
+
+    Reports only; the verdict above is untouched, exactly as #351 requires."""
+    # An empty mapping is not a measurement: writing a row of nulls would pollute the very
+    # artifact the deferred decision reads. Same guard shape as #1202uv's recorder.
+    if not project_dir or not isinstance(coverage, dict):
+        return False
+    try:
+        if not int(coverage.get("measured") or 0):
+            return False
+    except (TypeError, ValueError):
+        return False
+    try:
+        import json as _j1202w4
+        import time as _t1202w4
+        out = Path(str(project_dir)) / "logs" / "visual_screen_coverage_1202w4.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202w4.dumps({
+                "at": _t1202w4.time(),
+                "milestone": str(milestone_label or ""),
+                "judged": coverage.get("judged"),
+                "measured": coverage.get("measured"),
+                "coverage": coverage.get("coverage"),
+                "unjudged": [str(x) for x in (coverage.get("unjudged") or [])][:50],
+            }) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def screen_coverage(*, results, measured, owned=None):
     """How much of the reference the visual gate actually judged (#351).
 
@@ -4050,6 +4095,9 @@ async def run_visual_fidelity(
     _coverage = screen_coverage(
         results=results, measured=[s.get("name") for s in screens])
     if _coverage["unjudged"]:
+        # #1202w4: land it before saying it. #351's plan to promote this to a blocker needs
+        # the numbers to survive the run, and they only existed in the line below.
+        record_screen_coverage_1202w4(project_dir, _coverage, milestone_label)
         _LOG.warning(
             "VISUAL COVERAGE: judged %d/%d measured reference screen(s) "
             "(%.0f%%). NOT judged: %s — an unmapped screen is skipped, not "
