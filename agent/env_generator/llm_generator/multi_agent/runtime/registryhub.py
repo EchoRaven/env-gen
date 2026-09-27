@@ -690,8 +690,23 @@ class RegistryHub:
                 and _guard_actor and _guard_actor != "orchestrator"):
             _p = self._canonical_path(path)
             _old_kind = str(((old or {}).get("metadata") or {}).get("kind") or "").strip().lower()
-            _reserved_kind = _old_kind in {
-                "auth", "oauth", "infra", "spine", "control_plane", "control", "health"}
+            # #1202vo: IMPORT the set, do not re-list it. `contract.FIXED_ENDPOINT_KINDS`
+            # says in its own comment "All gates point here instead of redefining it" --
+            # and this guard redefined it. The two are identical TODAY, which is the only
+            # reason nothing is broken; a kind added there would simply not reach the
+            # reserved-path guard, and a lane could then overwrite a framework endpoint
+            # carrying it. That is the same false "cannot drift" claim #1202vl found one
+            # module over, where the drift had already happened (`/.well-known/` was added
+            # on the lifecycle side only). contract.py is a pure import-safe leaf, stated
+            # there precisely so every gate can import this without a cycle.
+            try:
+                from .kickoff.contract import FIXED_ENDPOINT_KINDS as _fixed_kinds_1202vo
+            except Exception:
+                # Fail to the historical set rather than to an empty one: an empty set
+                # makes `_reserved_kind` always False, which DISARMS the guard silently.
+                _fixed_kinds_1202vo = frozenset({
+                    "auth", "oauth", "infra", "spine", "control_plane", "control", "health"})
+            _reserved_kind = _old_kind in _fixed_kinds_1202vo
             _reserved_path = (
                 _p in ("/", "/health", "/auth", "/oauth")
                 or _p.startswith(("/auth/", "/oauth/", "/.well-known"))
