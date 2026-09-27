@@ -132,6 +132,127 @@ def record_unregistered_routes_1202ui(out_dir, routes) -> bool:
         return False
 
 
+def _request_calls_1202wd(text):
+    """Yield ``(path_literal, options_text)`` for every ``request(<literal>, …)`` in ``text``.
+
+    #1202wd: A TEMPLATE LITERAL CAN CONTAIN A TEMPLATE LITERAL, and the regex this replaces
+    could not. Its backtick pattern was ```[^`]*```, which stops at the FIRST inner
+    backtick, so a call like
+
+        request(`/api/feed/foryou${params.toString() ? `?${params}` : ''}`)
+
+    -- r135's landing feed -- matched nothing at all and the whole call vanished. MEASURED
+    across the corpus's 157 api clients: 298 of 2515 real `request(` call sites (11%) were
+    invisible, in 85 of the 157 runs, 75 of them this exact shape.
+
+    A scanner rather than a cleverer regex: the nesting is genuinely recursive (`${` may hold
+    an object literal, which may hold another template), and #1202uz already records what
+    happens when a non-greedy pattern is asked to count braces. One implementation, because
+    two copies of one rule drift (#1032) -- both the #1202uv artifact and the #1202wd
+    per-page resolver read through here.
+
+    Non-literal first arguments (`request(url)`) yield nothing: there is no path to report
+    without guessing, which is the same bargain `_norm_api_path_1202uv` strikes.
+    """
+    import re as _re
+    i, n = 0, len(text)
+    while True:
+        i = text.find("request(", i)
+        if i < 0:
+            return
+        start = i
+        i += len("request(")
+        # `function request(` / `async function request(` is the definition, not a call.
+        if _re.search(r"function\s+$", text[max(0, start - 20):start]):
+            continue
+        j = i
+        while j < n and text[j] in " \t\r\n":
+            j += 1
+        if j >= n or text[j] not in "`'\"":
+            continue                     # `request(url)`: no literal path to report
+        lit, j = _scan_js_literal_1202wd(text, j)
+        if lit is None:
+            return                       # unterminated literal: the file is truncated
+        k, par = j, 1
+        while k < n and par:
+            c = text[k]
+            if c == "(":
+                par += 1
+            elif c == ")":
+                par -= 1
+            elif c in "`'\"":
+                _sub, k = _scan_js_literal_1202wd(text, k)
+                if _sub is None:
+                    return
+                continue
+            k += 1
+        yield lit, text[j:max(j, k - 1)]
+        i = k
+
+
+def _scan_js_literal_1202wd(text, i):
+    """``(contents, index_after_close)`` for the JS string literal starting at ``text[i]``.
+
+    ``${...}`` is preserved verbatim -- `_norm_api_path_1202uv` counts its braces itself --
+    and a template literal nested inside an interpolation is scanned recursively, which is
+    the case the regex could not express. ``(None, i)`` when the literal never closes.
+    """
+    n = len(text)
+    quote = text[i]
+    i += 1
+    out = []
+    if quote in ("'", '"'):
+        while i < n:
+            c = text[i]
+            if c == "\\":
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if c == quote:
+                return "".join(out), i + 1
+            out.append(c)
+            i += 1
+        return None, i
+    while i < n:                                   # a template literal
+        c = text[i]
+        if c == "\\":
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if c == "`":
+            return "".join(out), i + 1
+        if text[i:i + 2] == "${":
+            out.append("${")
+            i += 2
+            depth = 1
+            while i < n and depth:
+                d = text[i]
+                if d == "\\":
+                    out.append(text[i:i + 2])
+                    i += 2
+                    continue
+                if d in "`'\"":
+                    sub, i = _scan_js_literal_1202wd(text, d and i)
+                    if sub is None:
+                        return None, i
+                    out.append(d + sub + d)
+                    continue
+                if d == "{":
+                    depth += 1
+                elif d == "}":
+                    depth -= 1
+                    if depth == 0:
+                        out.append("}")
+                        i += 1
+                        break
+                out.append(d)
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return None, i
+
+
 def _fe_res_1202uv():
     """The three patterns, compiled on first use. `scaffolder` has no module-level `re`
     import and this is not worth adding one for -- the caller is a once-per-pass report."""
@@ -185,7 +306,16 @@ def _norm_api_path_1202uv(p):
             return None
         q = q.split("?")[0]
         q = _re.sub(r"\{[^}]*\}", "{}", q)
-        q = _re.sub(r"\{\}$", "", q)         # a trailing query template is not a path segment
+        # A trailing query template is not a path segment -- but a trailing PATH SEGMENT is.
+        # #1202we: this stripped every trailing `{}`, so `/api/users/${id}` came out as
+        # `/api/users` and an ITEM endpoint was reported as the COLLECTION. The two are
+        # different endpoints: a contract carrying `GET /api/users/{id}` and not
+        # `GET /api/users` would see the call as unimplemented, and one carrying the
+        # collection would hide a genuinely missing item route. The distinction is in the
+        # text the rule was already reading -- `${...}` after a `/` is a segment,
+        # `/api/search${qs}` is a suffix -- and 288 calls across 117 corpus runs land on the
+        # wrong side of it.
+        q = _re.sub(r"(?<!/)\{\}$", "", q)
         q = q.rstrip("/").lower()
         # The safety net, kept even though the counter above should make it unnecessary:
         # anything a URL path cannot hold means the parse went wrong, and a WRONG entry in
@@ -251,14 +381,19 @@ def frontend_calls_without_backend_1202uv(out_dir, endpoints):
                 text = f.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            for m in _CALL.finditer(text):
-                raw = m.group(1)[1:-1]
+            # #1202wd: through the scanner, not `_CALL`. Its backtick pattern stopped at the
+            # first INNER backtick, so a nested template literal -- r135's own feed call,
+            # `request(`/api/feed/foryou${params.toString() ? `?${params}` : \'\'}`)` -- matched
+            # nothing and the call was invisible here. 298 of the corpus's 2515 real call
+            # sites (11%) were lost that way, across 85 of 157 runs. The scanner now reads
+            # every literal-first-argument call; what it still skips is `request(path)` inside
+            # a generic wrapper, which carries no path to report.
+            for raw, opts in _request_calls_1202wd(text):
                 if not raw.startswith("/"):
                     continue
                 q = _norm_api_path_1202uv(raw)
                 if not q:
                     continue
-                opts = m.group(2) or ""
                 mt = _TERN.search(opts)
                 mm = _METH.search(opts)
                 if mt:
