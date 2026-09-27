@@ -41,6 +41,8 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
 from .message_format import join_capped  # #1034
 
+import json as _json
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -848,6 +850,92 @@ def _form_retry_warranted(body: Optional[dict], status: Optional[int],
     return False
 
 
+# ── #1202w0 — a list endpoint whose own `total` its own pagination cannot reach ──
+# Found by probing the stacks of DELIVERED runs that are still up. Two of the nine public
+# list endpoints across them break it, and both shipped:
+#
+#   tiktok-r135  GET /api/feed/foryou         total=39  reachable=8   (the app's FRONT PAGE)
+#   tiktok-r126  GET /api/creators/suggested  total=92  reachable=20
+#
+# Different root causes -- r135's handler INNER JOINs a table whose FK the dataset left NULL
+# (#1202vz), r126's `next_cursor` never advances and its `cursor`/`offset` params are ignored
+# -- and ONE observable invariant: a client that follows the endpoint's own pagination reaches
+# a fraction of the count the same response advertises. Neither app said a word about it.
+#
+# REPORTED, NOT BLOCKED, following #1202uv's precedent. Nine endpoints is a small sample and a
+# `total` that legitimately counts a broader set than it pages would be a false positive; the
+# log makes the next runs the evidence for whether this becomes a check.
+#
+# Costs one GET per page walked, only for a 2xx whose body carries BOTH `items` and an int
+# `total`, capped -- and it stops without reporting if the cap is hit, because an unfinished
+# walk proves nothing.
+_PAGE_WALK_CAP_1202W0 = 12
+
+
+def record_list_total_unreachable_1202w0(project_dir, findings) -> bool:
+    """Land #1202w0's finding in an artifact. Same shape and same guard as #1202uv.
+
+    #947 is why this exists and not just the log line: "a measurement that exists only in a
+    log line is not a measurement." This one is REPORTED rather than blocked, so the artifact
+    is the whole of its output -- the next runs' files are the evidence for whether it earns a
+    gate check."""
+    if not project_dir or not findings:
+        return False
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        out = _P(str(project_dir)) / "logs" / "list_total_unreachable_1202w0.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(),
+                               "count": len(findings or []),
+                               "endpoints": [str(f) for f in (findings or [])][:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def _list_total_unreachable_1202w0(base: str, path: str, token, body_text) -> str:
+    """`"total=N reachable=M"` when the endpoint's own cursor cannot reach its own total."""
+    try:
+        first = _json.loads(body_text or "")
+    except Exception:
+        return ""
+    if not isinstance(first, dict):
+        return ""
+    items, total = first.get("items"), first.get("total")
+    if not isinstance(items, list) or isinstance(total, bool) or not isinstance(total, int):
+        return ""
+    if total <= len(items):
+        return ""
+    seen = len(items)
+    cursor = first.get("next_cursor")
+    walked = 0
+    while cursor not in (None, "", 0) and walked < _PAGE_WALK_CAP_1202W0:
+        res = _http("GET", base + path + "?cursor=" + str(cursor), token=token)
+        if res.get("status") != 200:
+            break
+        try:
+            page = _json.loads(res.get("body_text") or "")
+        except Exception:
+            break
+        rows = page.get("items") if isinstance(page, dict) else None
+        if not isinstance(rows, list) or not rows:
+            break
+        seen += len(rows)
+        nxt = page.get("next_cursor")
+        if nxt == cursor:            # a cursor that does not advance is its own dead end
+            break
+        cursor = nxt
+        walked += 1
+    if walked >= _PAGE_WALK_CAP_1202W0:
+        return ""                    # unfinished walk: inconclusive, say nothing
+    if seen >= total:
+        return ""
+    return "%s total=%d reachable=%d" % (path, total, seen)
+
+
 def _http(method: str, url: str, *, token: Optional[str] = None,
           body: Optional[dict] = None, timeout: int = 10,
           form: bool = False,
@@ -1459,6 +1547,7 @@ def run_smoke_validation(
         unreachable: List[str] = []
         unimplemented: List[str] = []
         shape_violations: List[str] = []
+        _unreachable_totals_1202w0: List[str] = []
         for ep in business_endpoints or []:
             method = str(ep.get("method") or "GET").upper()
             path = str(ep.get("path") or "")
@@ -1505,6 +1594,13 @@ def run_smoke_validation(
                                    ep_status=ep.get("status"))
             if _sv:
                 shape_violations.append(_sv)
+            # #1202w0: and, on the same 2xx, whether a client following this endpoint's own
+            # pagination can reach the count the same response advertises. Reported, not
+            # blocked (see the note on the helper).
+            if method == "GET" and res.get("status") == 200:
+                _pw = _list_total_unreachable_1202w0(base, path, token, res.get("body_text"))
+                if _pw:
+                    _unreachable_totals_1202w0.append(_pw)
         # FIX #157: on a 5xx (backend crash-in-handler, not a mere 404), pull the
         # backend log tail and attach the salient traceback line — the remediation
         # task then carries the ROOT CAUSE (file:line + exception), not just "→ 500"
@@ -1513,6 +1609,18 @@ def run_smoke_validation(
         if unreachable and any(
                 (r.get("status_code") or 0) >= 500 for r in endpoint_results):
             _salient = extract_salient_traceback(_backend_logs_tail(compose_file, cwd))
+        if _unreachable_totals_1202w0:
+            record_list_total_unreachable_1202w0(project_dir, _unreachable_totals_1202w0)
+            _LOG.warning(
+                "#1202w0 %d list endpoint(s) advertise a `total` their OWN pagination cannot "
+                "reach: %s. A client that follows `next_cursor` stops early and the rest of "
+                "the data is unreachable through the app -- tiktok-r135 shipped its front "
+                "page serving 8 of 39, tiktok-r126 shipped 20 of 92. Either the handler "
+                "drops rows the count includes (a join over a column the seed left NULL is "
+                "the usual cause, see #1202vz) or the cursor never advances. Reported, not "
+                "blocking.",
+                len(_unreachable_totals_1202w0),
+                join_capped(_unreachable_totals_1202w0, len(_unreachable_totals_1202w0), cap=6))
         _add("business_endpoints_reachable", not unreachable,
              compose_unreachable_detail(unreachable, _salient) if unreachable
              else f"{len(business_endpoints or [])} endpoint(s) reachable")

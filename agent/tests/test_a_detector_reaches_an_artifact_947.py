@@ -80,8 +80,16 @@ _PERSIST_CALLS = {"write_text", "writelines", "dump"}
 # back -- so a detector that hands its finding to the hub is not log-only. The scan is
 # intra-procedural and cannot follow into the method, which is why the name is listed here
 # rather than the claim being waived.
+# #1202w0 is the same shape as #1202mg's entry: a REPORT-ONLY detector whose whole output is
+# its artifact, handed to one recorder so the log line and the file cannot say different
+# things. `record_list_total_unreachable_1202w0` opens `logs/list_total_unreachable_1202w0.jsonl`
+# and appends -- the same `open(...)`/`write` pair #1202uv's recorder uses, which this
+# intra-procedural scan does not count. Backed by a behavioural test that calls the real
+# recorder against a temp dir and reads the row back
+# (test_1202w0_a_total_its_own_pagination_cannot_reach.py), not by this list asserting it.
 _PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw", "register_ui_page",
-                         "_record_lock_event_1202mg"}
+                         "_record_lock_event_1202mg",
+                         "record_list_total_unreachable_1202w0"}
 _PERSIST_TARGETS = {"_verdict", "row", "rec", "results", "payload", "report", "out",
                     "findings", "data"}
 _LOGGERS = {"_LOG", "logger", "_LOGGER", "_log939"}
