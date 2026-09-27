@@ -3063,3 +3063,169 @@ def orphan_auth_page_findings_1202cj(frontend_src: Any, limit: int = 12) -> List
     except Exception:
         return out
     return out
+
+
+# #1202wd: WHICH endpoints a page reaches, not merely whether it reaches one.
+#
+# `_has_real_api_call` above answers a yes/no, and every framework path built on it inherits
+# that: `_page_api_declaration_drift_1202rr` can say "this page declares `apis_used: []` while
+# its own source calls an API" and cannot say WHICH, so the remediation it dispatches asks the
+# lane to work out what the framework just measured. Across r135/r136/r137 that blocker fired
+# 93 times, the fifth most frequent of ~390 gate evaluations.
+#
+# The reason no path did this is that the generated frontends delegate at every layer, in TWO
+# different ways, and a resolver has to follow both. MEASURED on r136:
+#
+#   LiveDiscoverPage (9 lines) -> LiveDiscoverContent (95) -> getFeed -> getVideoFeed
+#     -> request('/api/videos/feed')
+#
+# (1) COMPONENT IMPORTS: the page renders a content component that holds the calls (r135's
+#     landing route is `ForYouFeedPage` -> `AppShell` -> `TikTokFeed`, three files, the first
+#     two five lines each).
+# (2) INTRA-MODULE EXPORT DELEGATION: `export async function getFeed(p) { return
+#     getVideoFeed(p); }` -- the export a page imports need not be the one issuing the request.
+#
+# A first draft of this resolver missed (2) and reported "0 of 4 pages resolvable" for r136; the
+# chain-following was fine, the export map was not. Under-report rather than guess: a path that
+# `_norm_api_path_1202uv` cannot resolve is dropped, exactly as #1202uv does, because these
+# names go into a blocker a lane will act on.
+_MAX_HOPS_1202WD = 4
+
+
+def _module_functions_1202wd(api_src: str):
+    """`{function_name: (paths, callees)}` for every MODULE-LEVEL function in the api client.
+
+    Helpers are mapped too, not only exports: an export may delegate through a module-local
+    wrapper (`authed`, `publicRequest`), which is the same shape #1202vk had to learn.
+    """
+    import re as _re
+    # Column 0 is the module level in generated JS; a nested function is indented.
+    heads = [(m.group(1) or m.group(2), m.start()) for m in _re.finditer(
+        r"^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|const\s+(\w+)\s*=)",
+        api_src, _re.M)]
+    from .scaffolder import (_fe_res_1202uv, _norm_api_path_1202uv,
+                             _request_calls_1202wd)
+    _call_unused, meth_re, tern_re = _fe_res_1202uv()
+    out = {}
+    for i, (name, pos) in enumerate(heads):
+        if not name:
+            continue
+        end = heads[i + 1][1] if i + 1 < len(heads) else len(api_src)
+        body = api_src[pos:end]
+        paths = set()
+        for lit, opts in _request_calls_1202wd(body):
+            q = _norm_api_path_1202uv(lit)
+            if not q:
+                continue
+            tm = tern_re.search(opts)
+            if tm:
+                methods = {tm.group(1).upper(), tm.group(2).upper()}
+            else:
+                mm = meth_re.search(opts)
+                methods = {mm.group(1).upper()} if mm else {"GET"}
+            for meth in methods:
+                paths.add("%s %s" % (meth, q))
+        callees = {c for c in _re.findall(r"\b(\w+)\s*\(", body) if c != name}
+        out[name] = (paths, callees)
+    return out
+
+
+def _resolve_function_1202wd(name, funcs, seen=None, depth=0):
+    """The endpoints `name` reaches, following intra-module delegation."""
+    if seen is None:
+        seen = set()
+    if name in seen or depth > _MAX_HOPS_1202WD or name not in funcs:
+        return set()
+    seen.add(name)
+    paths, callees = funcs[name]
+    out = set(paths)
+    for c in callees:
+        if c in funcs:
+            out |= _resolve_function_1202wd(c, funcs, seen, depth + 1)
+    return out
+
+
+def page_api_endpoints_1202wd(app_root, component):
+    """`sorted(["GET /api/videos", ...])` the page's component tree reaches. `[]` when unknown.
+
+    Best-effort and pure. An empty list means "could not resolve", never "calls nothing" --
+    the yes/no question is `_has_real_api_call`'s and this must not be read as answering it.
+    """
+    try:
+        import re as _re
+        from pathlib import Path as _P
+        src = _P(str(app_root)) / "frontend" / "src"
+        if not src.is_dir():
+            return []
+        svc = sorted((src / "services").glob("api*.js")) if (src / "services").is_dir() else []
+        if not svc:
+            return []
+        funcs = {}
+        for f in svc:
+            try:
+                funcs.update(_module_functions_1202wd(f.read_text(encoding="utf-8",
+                                                                  errors="ignore")))
+            except Exception:
+                continue
+        if not funcs:
+            return []
+
+        def _locate(comp):
+            for cand in (src / "pages" / ("%s.jsx" % comp), src / "components" / ("%s.jsx" % comp),
+                         src / "pages" / ("%s.tsx" % comp),
+                         src / "components" / ("%s.tsx" % comp)):
+                if cand.is_file():
+                    return cand
+            return None
+
+        found = set()
+        seen_comp = set()
+
+        def _walk(comp, depth):
+            if not comp or comp in seen_comp or depth > _MAX_HOPS_1202WD:
+                return
+            seen_comp.add(comp)
+            path = _locate(comp)
+            if path is None:
+                return
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                return
+            # api-client identifiers this file imports, then USES somewhere other than the
+            # import line itself -- a hand-off like `useApiList(getVideos, [])` never calls
+            # the name, which is the #1202gk shape, so a mention is enough.
+            own = set()
+            for m in _re.finditer(r"import\s*\{([^}]*)\}\s*from\s*['\"][^'\"]*services/api[^'\"]*['\"]",
+                                  text):
+                stmt = m.group(0)
+                for raw in m.group(1).split(","):
+                    ident = raw.split(" as ")[-1].strip()
+                    if not ident or ident not in funcs:
+                        continue
+                    rest = text.replace(stmt, "")
+                    if _re.search(r"\b%s\b" % _re.escape(ident), rest):
+                        own.update(_resolve_function_1202wd(ident, funcs))
+            found.update(own)
+            # A FILE THAT CALLS THE API IS THE ANSWER; ITS CHILDREN ARE CHROME.
+            # r89's FriendsSuggestedCreatorsPage is 119 lines that call `getForYouFeed` and
+            # also render `LoginModal` -- a component 7 of its 16 pages import. Descending
+            # anyway gave three unrelated pages the SAME four endpoints, three of them
+            # `/auth/*` from that modal, which is worse in a blocker than saying nothing.
+            # Descend only from a file that makes no call of its own, which is exactly the
+            # delegating wrapper this resolver exists for: r135's five-line ForYouFeedPage
+            # holds nothing but `<AppShell/>`, and the feed is two hops below it.
+            if own:
+                return
+            # A component import is identifiable by its Capitalized default-import name, not
+            # by the directory: r135's `AppShell` reaches the feed through `./TikTokFeed`, a
+            # SIBLING import, and a `components/|pages/` path filter walked straight past it,
+            # leaving the run's landing page resolving to nothing.
+            for m in _re.finditer(
+                    r"import\s+([A-Z]\w*)\s+from\s+['\"](\.[^'\"]*?)(?:\.\w+)?['\"]", text):
+                _walk(m.group(2).rsplit("/", 1)[-1], depth + 1)
+
+        _walk(str(component or ""), 0)
+        return sorted(found)
+    except Exception:
+        return []

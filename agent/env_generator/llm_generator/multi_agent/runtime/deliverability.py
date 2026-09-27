@@ -823,7 +823,37 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
                     # which is the shape the framework's OWN projected frontend uses.
                     if (call.search(_txt1202vk)
                             or _api_client_calls_1202vk(_txt1202vk, cand)):
-                        drift.append("%s (%s)" % (name, cand.name))
+                        # #1202wd: NAME THE ENDPOINTS. This blocker fired 93 times across
+                        # r135/r136/r137 saying a page "calls an API" and never which one, so
+                        # the remediation asked the lane to work out what the framework had
+                        # just measured. `page_api_endpoints_1202wd` follows the two kinds of
+                        # delegation these frontends use -- component imports and intra-module
+                        # export hand-offs -- and resolves 128 of the corpus's 260 flagged
+                        # pages (49%) across 89 runs. It NEVER backfills: `apis_used` staying
+                        # empty is what keeps this check firing, and a half-resolved list
+                        # written into the registry would silence it while the contradiction
+                        # stood. Reporting only, so a page it cannot resolve reads exactly as
+                        # it did before.
+                        _eps1202wd = []
+                        try:
+                            from .frontend_audit import page_api_endpoints_1202wd
+                            _eps1202wd = page_api_endpoints_1202wd(app_root, comp) or []
+                        except Exception as _exc1202wd:
+                            # #883: an empty list here is not "this page calls nothing" -- the
+                            # blocker fires either way and only its prose is poorer -- but a
+                            # resolver that crashed must still say so, or the difference
+                            # between "unresolvable" and "broken" disappears.
+                            _gate_absent_792("page_api_endpoints_1202wd", _exc1202wd, "run")
+                            _eps1202wd = []
+                        if _eps1202wd:
+                            _shown1202wd = _eps1202wd[:4]
+                            _tail1202wd = ("" if len(_eps1202wd) <= 4
+                                           else " +%d more" % (len(_eps1202wd) - 4))
+                            drift.append("%s (%s) calls %d: %s%s" % (
+                                name, cand.name, len(_eps1202wd),
+                                ", ".join(_shown1202wd), _tail1202wd))
+                        else:
+                            drift.append("%s (%s)" % (name, cand.name))
                 except Exception:
                     pass
                 break
