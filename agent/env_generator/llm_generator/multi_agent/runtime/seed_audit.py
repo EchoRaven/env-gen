@@ -371,6 +371,90 @@ def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, in
     return counts
 
 
+# ── #1202w7 — the run's own test users ship inside the product ──────────────
+# Every validation flow that signs up, every chain that needs a second actor, every
+# password probe writes a row into the delivered app's actor table, and nothing removes or
+# marks them. Counted against the four delivered stacks still running:
+#
+#     tiktok-r135   12 users,   9 seeded,   3 added by the run   (25%)
+#     tiktok-r132   12 users,   9 seeded,   3 added               (25%)
+#     tiktok-r126   92 users,   9 seeded,  83 added               (90%)
+#     netflix-r30  231 users,   6 seeded, 225 added               (97%)
+#
+# It is user-visible, not just untidy: r126's `GET /api/creators/suggested` reports
+# `total: 92`, so nine real creators sit in a list that is ninety percent `verifier_sender_3`,
+# `signup_flow_user` and `smoke_user`. That is the realism cost this project already pays for
+# elsewhere -- `@example.com` is the corpus's most recurrent tell.
+#
+# COUNTED, NOT CLEANED, and the reason is that neither repair is safe from here. Deleting
+# rows at delivery risks the FKs every other seeded table points through, and there is no
+# live run to validate it against. Marking them at creation needs the names the VERIFIER
+# invents at runtime -- `verifier_sender_N`, `..._flow_user` -- which the framework cannot
+# enumerate from its own source, so a name matcher would be guessing.
+#
+# The count needs neither. `delivered - seeded` is arithmetic on two numbers the framework
+# already holds, and it does not depend on what anything was named. (`created_at IS NULL`
+# separates them perfectly today, which is worse than useless as a rule: it works only
+# because #1202rw's seeds leave that column empty, so it would break the day that is fixed.)
+_ACTOR_TABLE_CANDIDATES_1202W7 = ("users",)
+
+
+def run_created_actor_rows_1202w7(project_dir: Any, *, timeout: int = 30) -> Dict[str, Any]:
+    """How much of the delivered actor table the run wrote itself. `{}` when not measured."""
+    from pathlib import Path as _P
+    import json as _j1202w7
+    try:
+        counts = live_row_counts_1039(project_dir, timeout=timeout)
+        if not counts:
+            return {}
+        table = next((t for t in _ACTOR_TABLE_CANDIDATES_1202W7 if t in counts), None)
+        if table is None:
+            return {}
+        delivered = int(counts.get(table) or 0)
+        seeded = 0
+        be = _P(project_dir) / "app" / "backend"
+        for name in ("seed_dataset.json", "seed_data.json"):
+            f = be / name
+            if not f.is_file():
+                continue
+            try:
+                rows = (_j1202w7.loads(f.read_text(encoding="utf-8", errors="ignore"))
+                        or {}).get(table)
+            except Exception:
+                continue
+            if isinstance(rows, list):
+                seeded = max(seeded, len(rows))
+        if delivered <= 0 or seeded <= 0:
+            return {}                     # nothing to compare: not measured, not "clean"
+        added = max(0, delivered - seeded)
+        return {"table": table, "delivered": delivered, "seeded": seeded,
+                "added_by_run": added,
+                "share": round(added / delivered, 4)}
+    except Exception:
+        return {}
+
+
+def record_run_created_actor_rows_1202w7(project_dir: Any, reading: Any) -> bool:
+    """Land #1202w7's reading in an artifact. Same shape and guard as #1202uv/#1202w0/#1202w4.
+
+    #947: a measurement that exists only in a log line is not a measurement -- and this one
+    exists to be the evidence a future cleanup decision is made on, exactly as #1202w4 is for
+    #351. A reading that evaporates with the console cannot play that part."""
+    if not project_dir or not isinstance(reading, dict) or not reading.get("delivered"):
+        return False
+    try:
+        import json as _json1202w7
+        import time as _t1202w7
+        from pathlib import Path as _P2
+        out = _P2(str(project_dir)) / "logs" / "run_created_actor_rows_1202w7.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_json1202w7.dumps({**reading, "at": _t1202w7.time()}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def orphan_fk_rows_1168(project_dir: Any, *, timeout: int = 30) -> Dict[str, int]:
     """Seeded rows whose owner FK points at a parent that does not exist.
 
