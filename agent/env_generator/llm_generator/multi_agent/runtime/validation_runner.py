@@ -924,6 +924,101 @@ def record_list_total_unreachable_1202w0(project_dir, findings) -> bool:
         return False
 
 
+# #1202wg: the ids a list serves must be fetchable from that list's OWN item endpoint.
+#
+# MEASURED over the corpus's verification chains: 324 fail across 43 runs, and the dominant
+# family is `GET /<resource>/{id} -> 404` -- users 26, videos 21, sounds 15 and more, 90
+# occurrences across 15 runs, the most recent being r137. r137's three failing chains are one
+# shape: step 1 takes `items.0.id` from the feed, step 2 asks for that id and gets 404 while
+# the framework's own marker reports the table holds 39 live rows and the route ran.
+#
+# Its root cause there was an owner-scoped projected item read over a column the dataset never
+# filled (`_OWNER_COL['videos'] == 'user_id'`, 0 of 35 rows), so `None != caller` denied every
+# row to every caller while the unscoped list served them. That particular cause is fixed
+# (#1202w9, #1202wb), but the INVARIANT is worth holding directly: it is domain-agnostic, the
+# chains only stumble into it by accident, and it names the resource instead of one id.
+#
+# Reported, never blocking, same bargain as #1202w0: an app may legitimately ship a milestone
+# whose item route is a later slice, and a 404 for one id is not on its own a reason to hold a
+# release. What it must not be is invisible.
+_ITEM_PROBE_CAP_1202WG = 5
+
+
+def _list_ids_the_item_denies_1202wg(base: str, path: str, token, body_text,
+                                     endpoints) -> str:
+    """`"GET /api/x/{id} denied 3 of 5 ids that GET /api/x served: 7, 8, 9"` or `""`.
+
+    Pairs a list only with its OWN item endpoint (`/api/x` with `/api/x/{p}`). A
+    cross-resource pairing -- r137's feed serving video ids -- would have to be guessed, and
+    a wrong pairing here reports a defect that does not exist.
+    """
+    try:
+        body = _json.loads(body_text or "")
+    except Exception:
+        return ""
+    items = body.get("items") if isinstance(body, dict) else (
+        body if isinstance(body, list) else None)
+    if not isinstance(items, list) or not items:
+        return ""
+    ids = []
+    for row in items:
+        if not isinstance(row, dict):
+            continue
+        rid = row.get("id")
+        if rid is None or isinstance(rid, (dict, list, bool)):
+            continue
+        ids.append(str(rid))
+        if len(ids) >= _ITEM_PROBE_CAP_1202WG:
+            break
+    if not ids:
+        return ""
+    base_path = str(path or "").split("?")[0].rstrip("/")
+    if not base_path or "{" in base_path:
+        return ""
+    item_tpl = ""
+    for ep in (endpoints or []):
+        if not isinstance(ep, dict):
+            continue
+        if str(ep.get("method") or "GET").upper() != "GET":
+            continue
+        cand = str(ep.get("path") or "").split("?")[0].rstrip("/")
+        head, sep, tail = cand.rpartition("/")
+        if sep and head == base_path and tail.startswith("{") and tail.endswith("}"):
+            item_tpl = cand
+            break
+    if not item_tpl:
+        return ""                    # this list has no item endpoint to contradict it
+    denied = []
+    for rid in ids:
+        target = item_tpl[:item_tpl.rindex("/") + 1] + rid
+        res = _http("GET", base + target, token=token)
+        if res.get("status") == 404:
+            denied.append(rid)
+    if not denied:
+        return ""
+    return "%s denied %d of %d id(s) that %s served: %s" % (
+        item_tpl, len(denied), len(ids), base_path, ", ".join(denied))
+
+
+def record_list_ids_the_item_denies_1202wg(project_dir, findings) -> bool:
+    """Land #1202wg's finding in an artifact. Same shape and guard as #1202w0/#1202uv."""
+    if not findings:
+        return False
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        out = _P(str(project_dir)) / "logs" / "list_ids_the_item_denies_1202wg.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(),
+                               "count": len(findings or []),
+                               "endpoints": [str(f) for f in (findings or [])][:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def _list_total_unreachable_1202w0(base: str, path: str, token, body_text) -> str:
     """`"total=N reachable=M"` when the endpoint's own cursor cannot reach its own total."""
     try:
@@ -1590,6 +1685,7 @@ def run_smoke_validation(
         unimplemented: List[str] = []
         shape_violations: List[str] = []
         _unreachable_totals_1202w0: List[str] = []
+        _item_denied_1202wg: List[str] = []
         for ep in business_endpoints or []:
             method = str(ep.get("method") or "GET").upper()
             path = str(ep.get("path") or "")
@@ -1643,6 +1739,12 @@ def run_smoke_validation(
                 _pw = _list_total_unreachable_1202w0(base, path, token, res.get("body_text"))
                 if _pw:
                     _unreachable_totals_1202w0.append(_pw)
+                # #1202wg: and whether this list's OWN item endpoint will hand back the ids
+                # it just served. Same 2xx, same bargain: reported, never blocking.
+                _wg = _list_ids_the_item_denies_1202wg(
+                    base, path, token, res.get("body_text"), business_endpoints)
+                if _wg:
+                    _item_denied_1202wg.append(_wg)
         # FIX #157: on a 5xx (backend crash-in-handler, not a mere 404), pull the
         # backend log tail and attach the salient traceback line — the remediation
         # task then carries the ROOT CAUSE (file:line + exception), not just "→ 500"
@@ -1651,6 +1753,16 @@ def run_smoke_validation(
         if unreachable and any(
                 (r.get("status_code") or 0) >= 500 for r in endpoint_results):
             _salient = extract_salient_traceback(_backend_logs_tail(compose_file, cwd))
+        if _item_denied_1202wg:
+            record_list_ids_the_item_denies_1202wg(project_dir, _item_denied_1202wg)
+            _LOG.warning(
+                "#1202wg %d list endpoint(s) serve ids their OWN item endpoint denies: %s. "
+                "The list and the item disagree about what exists, so a client that opens "
+                "anything from the list gets a 404 -- r137's three failing business chains "
+                "were all this shape, from an owner-scoped item read over a column no "
+                "dataset row filled.",
+                len(_item_denied_1202wg),
+                join_capped(_item_denied_1202wg, len(_item_denied_1202wg), cap=4))
         if _unreachable_totals_1202w0:
             record_list_total_unreachable_1202w0(project_dir, _unreachable_totals_1202w0)
             _LOG.warning(

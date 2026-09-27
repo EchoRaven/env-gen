@@ -89,7 +89,9 @@ _PERSIST_CALLS = {"write_text", "writelines", "dump"}
 # (test_1202w0_a_total_its_own_pagination_cannot_reach.py), not by this list asserting it.
 _PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw", "register_ui_page",
                          "_record_lock_event_1202mg",
-                         "record_list_total_unreachable_1202w0"}
+                         "record_list_total_unreachable_1202w0",
+                         # backed by test_1202wg_the_list_and_the_item_disagree.py
+                         "record_list_ids_the_item_denies_1202wg"}
 _PERSIST_TARGETS = {"_verdict", "row", "rec", "results", "payload", "report", "out",
                     "findings", "data"}
 _LOGGERS = {"_LOG", "logger", "_LOGGER", "_log939"}
