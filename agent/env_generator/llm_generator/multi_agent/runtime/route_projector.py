@@ -2927,6 +2927,90 @@ def _stamp_spec_visibility_1202og(models: Dict[str, Dict[str, Any]], project_roo
     return stamped
 
 
+# ── #1202w2 — a relation with two actors, scoped to one of them ──────────────
+# The projector models ownership as ONE column: `WHERE owner_fk = caller`. A table with two
+# FKs to the actor table has two parties, and the second one cannot see the row.
+#
+# tiktok-r126 delivered it. `dm_conversations(user_id, other_user_id)` -- both FKs to `users`
+# -- and its projected read is `filter(DmConversation.user_id == _fw_owner_val(...))`. Counted
+# in the delivered database: 20 conversations, 18 of them with NO reciprocal row, so the person
+# on the `other_user_id` side can never see the conversation they are in.
+#
+# Measured over 176 backends: 45 tables across 42 runs carry a second actor FK that none of the
+# three name lists classifies -- `user_a_id`/`user_b_id` (26), `peer_id`, `other_user_id`,
+# `participant_user_id` -- and every one is a conversation or messaging table. Most recent r131.
+#
+# REPORTED, NOT REPAIRED, and the asymmetry is the reason. Matching the caller against EITHER
+# column would fix a symmetric relation and over-share a directional one: `follows(follower_id,
+# following_id)` also has two actor FKs, and an OR there shows "who follows me" inside "who I
+# follow". `_TARGET_FK_NAMES` exists to mark the object side of a directional relation precisely
+# so the projector can tell them apart, and these 45 are the cases where nothing marks it.
+# Guessing hides rows in one direction and leaks them in the other, so the framework names the
+# table, the column it chose, and the column it could not classify.
+_TWO_ACTOR_CAP_1202W2 = 50
+
+
+def _join_capped_1202w2(items, total, cap=4):
+    """#1034: never print a count beside a silently cut list. One import site, guarded --
+    `message_format` is a sibling module and this one is imported very early."""
+    try:
+        from .message_format import join_capped as _jc
+        return _jc(list(items), total, cap=cap)
+    except Exception:
+        shown = list(items)[:cap]
+        extra = max(0, int(total) - len(shown))
+        return "; ".join(shown) + (" (+%d more)" % extra if extra else "")
+
+
+def two_actor_relations_1202w2(models: Dict[str, Dict[str, Any]],
+                               actor_table: str = "users") -> List[Dict[str, Any]]:
+    """Tables whose rows name two actors while the projected read can match only one."""
+    out: List[Dict[str, Any]] = []
+    try:
+        classified = (set(_TARGET_FK_NAMES) | set(_ACTOR_ROLE_FK_NAMES_1202NF)
+                      | set(_OWNER_FK_NAMES))
+        for table, meta in (models or {}).items():
+            if not isinstance(meta, Mapping):
+                continue
+            actors = [c for c, tgt in (meta.get("fks") or {}).items() if tgt == actor_table]
+            if len(actors) < 2:
+                continue
+            owner = _owner_fk(meta)
+            if not owner:
+                continue
+            unclassified = [c for c in actors if c != owner and c not in classified]
+            if not unclassified:
+                continue        # a known target or actor role: the projector CAN tell
+            out.append({"table": str(table), "scoped_to": str(owner),
+                        "unclassified": [str(c) for c in unclassified]})
+            if len(out) >= _TWO_ACTOR_CAP_1202W2:
+                break
+    except Exception:
+        return out
+    return out
+
+
+def record_two_actor_relations_1202w2(project_root, findings) -> bool:
+    """Land #1202w2's finding in an artifact. Same shape and same guard as #1202uv/#1202w0.
+
+    #947: a measurement that exists only in a log line is not a measurement. This one is
+    reported rather than repaired, so the artifact IS its output."""
+    if not project_root or not findings:
+        return False
+    try:
+        import json as _j1202w2
+        import time as _t1202w2
+        out = Path(str(project_root)) / "logs" / "two_actor_relations_1202w2.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202w2.dumps({"at": _t1202w2.time(),
+                                     "count": len(findings or []),
+                                     "relations": list(findings or [])[:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def announce_shape_override_1202vt(method: Any, path: Any, models: Dict[str, Dict[str, Any]],
                                   explicit_public: bool) -> bool:
     """#1202vt/#1202vu — say that a table's SHAPE just reversed an explicit public contract.
@@ -3006,6 +3090,30 @@ def project_missing_routes(
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
     _stamp_spec_visibility_1202og(models, _project_root_1202og)   # #1202og
+    # #1202w2: a row that names two actors is scoped to one of them, and the other party
+    # cannot see it. Reported with its artifact; see the detector's note for why the
+    # projector must not guess which way the relation runs.
+    try:
+        _two1202w2 = two_actor_relations_1202w2(models)
+        if _two1202w2:
+            record_two_actor_relations_1202w2(_project_root_1202og, _two1202w2)
+            import logging as _lg1202w2
+            _lg1202w2.getLogger(__name__).warning(
+                "#1202w2 %d table(s) name TWO actors while the projected read can match only "
+                "one, so the second party cannot see the row: %s. tiktok-r126 shipped this "
+                "with 18 of its 20 conversations invisible to the other participant. Mark the "
+                "second column in the contract -- a known target name if the relation is "
+                "directional, an owner name if both parties own the row.",
+                len(_two1202w2),
+                # #1034: a count beside a cut list needs the cut to say so. `join_capped`
+                # appends the "+N more" this used to omit.
+                _join_capped_1202w2(
+                    ["%s (scoped to %s, unclassified: %s)"
+                     % (r["table"], r["scoped_to"], ",".join(r["unclassified"]))
+                     for r in _two1202w2],
+                    len(_two1202w2), cap=4))
+    except Exception:
+        pass
     # #1202ir: actor tables the CONTRACT itself declares publicly readable. Computed once
     # from the same endpoint list the handlers are projected from, so the fold can never
     # publish an actor this app keeps behind auth.
