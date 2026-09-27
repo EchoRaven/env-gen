@@ -3749,9 +3749,13 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 _bugs743["failed_count"]))
     if logger and _bugs743.get("open_p0_bug_count"):
         logger.warning(
-            "#743 %d P0 BUG task(s) are still open at the delivery cut: %s. Corpus: 90 of 129 "
-            "runs end this way and 15 of them released (#755-corrected; 86 runs, not 90), so "
-            "this is reported rather than blocking — 15 of the 29 real releases is a halt.",
+            # #1202vs: the headline number was 90 with "86 runs, not 90" appended after it,
+            # so the operator read both and could not tell which count this run was being
+            # judged against. A correction has to REPLACE the number it corrects.
+            "#743 %d P0 BUG task(s) are still open at the delivery cut: %s. Corpus: 86 of 129 "
+            "runs end this way and 15 of them released (#755 corrected an earlier count of "
+            "90), so this is reported rather than blocking — 15 of the 29 real releases is a "
+            "halt.",
             _bugs743["open_p0_bug_count"],
             _join_capped_1022([str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])],
                               _bugs743["open_p0_bug_count"]))
