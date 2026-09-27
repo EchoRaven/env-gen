@@ -2665,7 +2665,29 @@ def finalize_kickoff(
         # them), and `render_schema_sql` already emits ALTER TABLE ... ADD COLUMN IF NOT
         # EXISTS for every registered `users` column beyond the spine while `render_models`
         # merges them onto the ORM — both halves were built and had nothing to add.
-        if str(name).strip().lower() in _SPINE_OWNED_TABLES_1202HK:
+        # #1202w1: …and a table registered with NOTHING BUT A PRIMARY KEY, which cannot hold
+        # the entity it names. #1202hk reads any entity's fields; only the spine was ever
+        # wired to it.
+        #
+        # netflix-r30 shipped the consequence. The orchestrator registered `titles`, `genres`,
+        # `title_genres` and `episodes` at 13:47 with one column each -- the name-first shape
+        # #90 makes legal -- and the backend lane filled in `profiles` and `my_list` later but
+        # never those four. So `models.py` carried `class TitleGenre(Base): id` with no
+        # `title_id` and no `genre_id`, the lane's own 15 seed rows had no column to land in,
+        # and the delivered database holds 60 titles, 22 genres and ZERO associations between
+        # them. Its own materials say `title_genres: [id, title_id, genre_id]`.
+        #
+        # Scoped to PK-only on purpose, and the scope was measured rather than chosen: over
+        # the 165 corpus runs carrying a spec, backfilling EVERY under-declared table would
+        # append 731 columns across 211 tables -- a table the lane actually shaped is its to
+        # shape. A table with only a primary key has not been shaped by anyone: 33 tables,
+        # 144 columns, across netflix, tiktok and googlemaps runs alike.
+        _cols_w1 = schema.get("columns")
+        _pk_only_1202w1 = (
+            isinstance(_cols_w1, list)
+            and len([_c for _c in _cols_w1 if isinstance(_c, Mapping)]) <= 1)
+        if (str(name).strip().lower() in _SPINE_OWNED_TABLES_1202HK
+                or _pk_only_1202w1):
             _cols1202hk = schema.get("columns")
             if isinstance(_cols1202hk, list):
                 from ..backend_skeleton import _spec_entity_fields_1202hk
