@@ -410,6 +410,14 @@ def _same_consumer_1202vi(prior, current) -> bool:
             == {k: v for k, v in current.items() if k not in _skip})
 
 
+# #1202vr: the per-table privacy verdicts any reader in this system understands. Every
+# reader tests one of these two literally (`== "public"`, `== "owner"`), so a value outside
+# the set is not a stricter verdict -- it is an unread one, with the strictest consequences.
+# Measured: the materials declare `public` 135 times and `owner` 221 times across the corpus
+# and use no other word.
+VISIBILITY_VERDICTS_1202vr = frozenset({"public", "owner"})
+
+
 # #1202vp: the per-run fields `record_chain_result` carries into a chain's `last_result`
 # beyond `broken`/`steps`. Every entry is a key some reader asks that mapping for; keeping
 # them here rather than inline makes the writer's set greppable from the reader's side.
@@ -1901,6 +1909,57 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        # #1202vr: AN UNREADABLE `visibility` IS NOT A VERDICT — and storing one is worse
+        # than storing nothing, because every reader tests `== "public"` / `== "owner"`, so
+        # an unknown word silently means the STRICTEST reading while also blocking the only
+        # thing that could correct it: both spec stamps (`_apply_spec_visibility_1202hh`,
+        # `_stamp_spec_visibility_1202og`) are BACKFILL ONLY and skip any non-empty value.
+        #
+        # tiktok-r137 is the whole cost of that, end to end. The backend lane registered
+        # `videos` with `metadata.visibility = "text"`. `design/reference_spec.json` said
+        # `videos: public`, correctly, and could never be applied over it. So
+        # `_declared_public_content_1202hh` was False, `_structurally_private_resource_633`
+        # decided alone (a users FK beside a sounds FK), `auth = auth or _owner_scoped` put
+        # `Depends(get_current_user)` on `GET /api/feed/for-you`, and the app's front page
+        # answered 401 to a logged-out visitor -- confirmed live against the run's own stack
+        # while the contract said `auth_required=False` and `owner_scoped_reads=False`.
+        #
+        # #1202kx exists to tell the lane which of the two legitimate fixes to apply. It
+        # fires on `public` vs `owner`, so it did not fire here: 0 times in that run. With no
+        # path it could take, the lane reached into `_FW_PUBLIC_API_1202KH` from
+        # `custom_routes.py` -- the "third way" #1202kx names as forbidden -- and the run
+        # abandoned at 81 minutes and $190 on `deliverability_guard_tampering`.
+        #
+        # Measured vocabulary, not an invented one (#647): across the corpus the materials
+        # declare `public` (135) and `owner` (221) and nothing else; the hub additionally
+        # holds `private` (2) and this one `text`, neither of which any reader understands.
+        # Dropped rather than rejected, following this function's own #590 precedent: the
+        # registration still lands, the spec backfill can now supply the real verdict, and
+        # the value that was thrown away stays on the record so it is diagnosable offline.
+        try:
+            _md1202vr = table.get("metadata") or {}
+            _vis1202vr = str(_md1202vr.get("visibility") or "").strip()
+            if _vis1202vr and _vis1202vr.lower() not in VISIBILITY_VERDICTS_1202vr:
+                _md1202vr = dict(_md1202vr)
+                _md1202vr.pop("visibility", None)
+                _md1202vr["visibility_unreadable_1202vr"] = _vis1202vr
+                table["metadata"] = _md1202vr
+                import logging as _lg1202vr
+                _lg1202vr.getLogger(__name__).warning(
+                    "#1202vr `%s`: %s declared visibility=%r, which is not one of %s. No "
+                    "reader understands it, so keeping it would mean the strictest reading "
+                    "(the table is treated as per-user private, its reads get an owner "
+                    "filter and an actor, and a public feed answers 401) while also blocking "
+                    "the materials' own declaration from being stamped over it. Dropped; the "
+                    "reference spec's verdict applies. Re-register with one of %s if the "
+                    "rows really are private.",
+                    table_id, agent or "?", _vis1202vr,
+                    sorted(VISIBILITY_VERDICTS_1202vr), sorted(VISIBILITY_VERDICTS_1202vr))
+        except Exception as _e1202vr:
+            from .message_format import warn_once_1201
+            warn_once_1201("registryhub.visibility_verdict_1202vr",
+                           "an unreadable visibility is stored as written, so the shape "
+                           "heuristics decide this table's privacy alone", _e1202vr)
         # #1202io: REFUSE THE CONTRADICTION AT THE WRITE BOUNDARY.
         #
         # `owner_scoped_reads` projects `WHERE owner = caller`; the materials' `public`
