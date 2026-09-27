@@ -688,6 +688,75 @@ def _declared_public_materials_1202gt(backend_dir, table: str) -> bool:
         return False
 
 
+def _reachable_unauthenticated_1202w6(backend_dir, path: str) -> bool:
+    """#1202w6 -- can a TOKENLESS caller reach this path, or does the middleware refuse it?
+
+    `#1202gc` gets the reach into the message because understating it is the dangerous
+    direction. Its test is `"get_current_user" in body`, which reads the HANDLER -- and a
+    lane handler that carries no dependency is still refused by the framework's blanket auth
+    middleware unless the route is in its public set. r126 is exactly that: the lane's
+    `list_dm_conversations` takes no actor, and a tokenless request gets 401.
+
+    So the handler test alone now overstates in the other direction, which sends a lane after
+    "anyone can read this" when the fact is "every logged-in user can read everyone's rows".
+    The contract is what governs the middleware, so the contract is what this asks."""
+    try:
+        import json as _j1202w6b
+        f = Path(backend_dir).parents[1] / "shared" / "hubs" / "registryhub_endpoints.json"
+        if not f.is_file():
+            return True                 # no contract to consult: keep the louder reading
+        E = _j1202w6b.loads(f.read_text(encoding="utf-8", errors="ignore")) or {}
+        rec = E.get("GET " + str(path))
+        if not isinstance(rec, dict):
+            return True
+        md = rec.get("metadata") or {}
+        sc = rec.get("schema") if isinstance(rec.get("schema"), dict) else {}
+        stated = md.get("auth_required")
+        if stated is None:
+            stated = sc.get("auth_required")
+        return stated is False          # only an explicit public contract opens the route
+    except Exception as _e1202w6:
+        # #1202be: returning True on a crash is the LOUDER reading -- the message would say
+        # "ANY caller", which over-reports rather than under-reports. That is the safe
+        # direction, and it still has to say so: a reader comparing two findings cannot tell
+        # "the contract opens this route" from "the contract could not be read".
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("backend_audit.reachable_unauthenticated_1202w6",
+                           "whether the middleware refuses a tokenless caller, so an owner-read "
+                           "finding reports the wider reach", _e1202w6)
+        except Exception:
+            pass
+        return True
+
+
+def _contract_and_materials_owner_1202w6(backend_dir, table: str) -> bool:
+    """#1202w6 -- do BOTH the contract and the materials call this table's rows per-user private?
+
+    The mirror of `_declared_public_1202gd`, at the same evidence standard and for the opposite
+    decision. #1202gd releases a read only when the spec says `public` AND the contract says
+    `auth_required is False`; this admits one only when the contract says `owner_scoped_reads is
+    True` AND the materials say `visibility == "owner"`. Two independent statements are what keep
+    it off a table the contract merely mislabelled -- the corpus has 13 of those (`videos`,
+    `titles`, `sounds` marked owner-scoped while the materials call them published content), and
+    the second signal drops every one.
+
+    Measured: 2 findings in 1 run of 176, both real."""
+    try:
+        import json as _j1202w6
+        f = Path(backend_dir).parents[1] / "shared" / "hubs" / "registryhub_tables.json"
+        if not f.is_file():
+            return False
+        rec = (_j1202w6.loads(f.read_text(encoding="utf-8", errors="ignore")) or {}).get(table)
+        if not isinstance(rec, dict):
+            return False
+        md = rec.get("metadata") or {}
+        return (md.get("owner_scoped_reads") is True
+                and str(md.get("visibility") or "").strip().lower() == "owner")
+    except Exception:
+        return False
+
+
 def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
     """#919: a served GET that returns rows of an OWNED table without filtering by the caller.
 
@@ -710,10 +779,33 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
     """
     out: List[str] = []
     try:
-        main = Path(backend_dir) / "main.py"
-        if not main.is_file():
+        # #1202w6: read the file the app SERVES, not only the one the framework writes.
+        #
+        # r126 delivered a cross-user read leak this function could not see. Its contract says
+        # `dm_conversations` is `owner_scoped_reads: True` and its materials say
+        # `visibility: "owner"`; `main.py`'s projected handler honours that and filters by
+        # `user_id`; and `custom_routes.py` REPLACES that route with `db.query(DmConversation)`
+        # and no filter. Logged in as user 2 against the running stack, that endpoint returns
+        # rows owned by users 10, 24 and 25.
+        #
+        # This read `main.py` alone, and the lane's file overrides it -- that is what
+        # `_remove_projected_route` is for. The closing note below names the assumption that
+        # had expired: "the handler is framework-projected and the lane cannot add the filter
+        # itself". The lane did not add anything; it replaced the handler.
+        #
+        # BLAST RADIUS, measured over all 176 backends before shipping: 164 unchanged, 12 gain
+        # a finding, and only TWO go from zero to non-zero -- r126 (`dm_conversations`,
+        # `user_settings`) and r118 (`notifications`, `db.query(Notification).all()` in the
+        # lane's file). Both were read by hand and both are real, so the two runs this newly
+        # blocks are two runs that shipped a cross-user read. That is the check #351 is waiting
+        # to become, not the situation #351 is waiting on.
+        src = ""
+        for _rel1202w6 in ("main.py", "custom_routes.py"):
+            _f1202w6 = Path(backend_dir) / _rel1202w6
+            if _f1202w6.is_file():
+                src += _f1202w6.read_text(encoding="utf-8", errors="ignore") + "\n"
+        if not src.strip():
             return []
-        src = main.read_text(encoding="utf-8", errors="ignore")
         tree = ast.parse(src)
         models, cls2tbl = _models_919(backend_dir)
         if not models:
@@ -743,7 +835,13 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
             if not fk:
                 continue                      # a public catalog table -- unfiltered is correct
             if not (_is_per_user_sub_entity_fk(meta, fk, models)
-                    or _is_user_content_relation(meta, fk)):
+                    or _is_user_content_relation(meta, fk)
+                    # #1202w6: ...or the contract AND the materials both say per-user private.
+                    # The shape predicates return False for a table whose only FKs point at
+                    # `users` -- r126's `dm_conversations(user_id, other_user_id)` -- so the
+                    # explicit statement was never consulted and the leak read as ambiguous.
+                    or _contract_and_materials_owner_1202w6(
+                        backend_dir, cls2tbl.get(model or "", ""))):
                 continue                      # ambiguous ownership -- the projector leaves it too
             # #1202gd: ...unless the materials AND the contract both say the rows are
             # published content. Structure cannot tell a feed from a saved list; this is
@@ -758,7 +856,10 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
             # matters, reading as "logged-in users see too much" when it is "anyone does".
             # The reader also needs to know the reach is a CONTRACT decision, because the
             # handler is framework-projected and the lane cannot add the filter itself.
-            _authed_1202gc = "get_current_user" in body
+            # #1202w6: the handler is not the only gate. A lane handler with no actor is
+            # still refused by the blanket middleware unless the CONTRACT opens the route.
+            _authed_1202gc = ("get_current_user" in body
+                              or not _reachable_unauthenticated_1202w6(backend_dir, paths[0]))
             out.append(
                 "%s: GET %s returns every row of `%s` to %s -- the table is "
                 "owned via `%s` and the handler applies no owner filter, while its paired write "
