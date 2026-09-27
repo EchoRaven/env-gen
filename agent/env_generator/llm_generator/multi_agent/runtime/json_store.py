@@ -164,19 +164,6 @@ except Exception:  # pragma: no cover
     _orjson = None
 
 
-def _dumps_value_1202so(value: Any) -> str:
-    """One value -> compact JSON text, through whichever encoder is available."""
-    if _orjson is not None:
-        try:
-            return _orjson.dumps(value).decode("utf-8")
-        except TypeError:
-            return _orjson.dumps(value, default=str).decode("utf-8")
-    try:
-        return json.dumps(value)
-    except (TypeError, ValueError):
-        return json.dumps(value, default=str)
-
-
 def _loads_text_1202so(text: Any) -> Any:
     """Parse a store from `bytes` (what `_load_raw` reads) or `str`.
 

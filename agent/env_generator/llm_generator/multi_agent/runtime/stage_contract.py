@@ -188,17 +188,8 @@ def record_stage_894(
             pass
 
 
-def stage_input_checker_891(progress: Any = None, event_type: Any = None) -> Callable:
-    """Bind ``progress``/``event_type`` once so call sites stay one line."""
-    def _check(stage: str, needs: str, producer: str, present: Any,
-               detail: str = "") -> bool:
-        return require_stage_input_891(stage, needs, producer, present, detail=detail,
-                                       progress=progress, event_type=event_type)
-    return _check
-
-
 __all__ = ["require_stage_input_891", "require_stage_output_891",
-           "stage_input_checker_891", "reset_said_891", "record_stage_894"]
+           "reset_said_891", "record_stage_894"]
 
 
 def llm_ceiling_898(env_var: str, *, factor: float = 1.25, floor: float = 30.0) -> float:

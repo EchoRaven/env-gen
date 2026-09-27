@@ -147,21 +147,6 @@ class GitOps:
             )
         return result
 
-    def _git_dir_1202kw(self, cwd: Optional[Path]) -> Optional[Path]:
-        """Resolve the real .git directory -- a linked worktree's `.git` is a FILE
-        pointing elsewhere, so the lock does not live beside the checkout.
-        `rev-parse` takes no index lock, so it is safe on a locked repo."""
-        try:
-            p = subprocess.run(
-                [GIT, "rev-parse", "--absolute-git-dir"],
-                cwd=str(cwd or self.repo_root), capture_output=True, text=True,
-                timeout=_GIT_TIMEOUT_1075,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
-            out = (p.stdout or "").strip()
-            return Path(out) if p.returncode == 0 and out else None
-        except Exception:
-            return None
-
     def _clear_stale_locks_1202kw(self, cwd: Optional[Path] = None) -> List[str]:
         """Remove lock files older than any bounded git call could still hold.
 

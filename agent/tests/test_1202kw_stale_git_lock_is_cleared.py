@@ -165,7 +165,12 @@ class AStaleLock(unittest.TestCase):
             self.skipTest(f"worktree unsupported: {r.stderr.strip()}")
         try:
             self.assertTrue((wt / ".git").is_file(), "expected a linked worktree")
-            gitdir = self.ops._git_dir_1202kw(wt)
+            # #1202vy: locate the gitdir through the LIVE resolver. This used to call
+            # `GitOps._git_dir_1202kw`, a verbatim twin that #1202mg superseded and
+            # nothing in production called any more.
+            from env_generator.llm_generator.multi_agent.agents.runtime.auto_commit \
+                import _resolve_gitdir_1202mg
+            gitdir = Path(_resolve_gitdir_1202mg(wt))
             self.assertIsNotNone(gitdir)
             self.assertNotEqual(gitdir, self.repo / ".git")
             lock = gitdir / "index.lock"
