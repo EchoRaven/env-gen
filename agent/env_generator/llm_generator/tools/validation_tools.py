@@ -296,6 +296,11 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
                     str(name),
                     result={"broken": ch.get("broken") or [],
                             "environment_1202od": ch.get("environment_1202od") or [],
+                            # #1202vp: the third field the gate reads back out of this
+                            # record (#272's projected-traceback defects). It was the one
+                            # the caller never supplied, so carrying it in the recorder
+                            # alone would have changed nothing on this path.
+                            "framework_defects": ch.get("framework_defects") or [],
                             "steps": ch.get("steps") or [],
                             # #1202vn: carry the build-currency verdict INTO the durable
                             # record. `run_chains` computes it once and returns it, and the

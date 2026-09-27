@@ -410,6 +410,25 @@ def _same_consumer_1202vi(prior, current) -> bool:
             == {k: v for k, v in current.items() if k not in _skip})
 
 
+# #1202vp: the per-run fields `record_chain_result` carries into a chain's `last_result`
+# beyond `broken`/`steps`. Every entry is a key some reader asks that mapping for; keeping
+# them here rather than inline makes the writer's set greppable from the reader's side.
+#
+#   build_currency_1202ex  the gate's stale-image caveat (#1202vn)
+#   framework_defects      #272 -- a 5xx whose body carries a PROJECTED traceback
+#   environment_1202od     #1202od -- steps whose request never reached the app
+#
+# Two of these have never been non-empty in the corpus, for reasons that are NOT this
+# drop: `framework_defect` requires a projected traceback in a 5xx body and that step kind
+# appears 0 times in 27876 recorded steps. Carrying them costs nothing and means the day
+# one does fire, the gate sees it instead of reading None.
+LAST_RESULT_CARRIED_1202vp = (
+    "build_currency_1202ex",
+    "framework_defects",
+    "environment_1202od",
+)
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -3466,10 +3485,31 @@ class RegistryHub:
                    "failed_steps": [st for st in (result.get("steps") or [])
                                     if isinstance(st, dict) and st.get("ok") is False],
                    "at": time.time()}
+        # #1202vp: CARRY the fields a reader asks for, do not rebuild last_result from two
+        # keys. This dict was `{"broken": ..., "steps": ...}` and nothing else, so every
+        # other field the caller passed was dropped here without a word -- including three
+        # that `delivery_gate` reads back out of exactly this record. Corpus before the fix:
+        # 4353 chain records across 150 runs, all three non-empty in ZERO of them.
+        #
+        # The live cost was #1202vn's: `run_chains` reads the build currency as `changed`
+        # (r136: 47 times, r137: 4), logs it, hands it to this recorder -- and the gate detail
+        # the lane acts on still never said the container may predate the fix.
+        #
+        # Carried, not merged: this store is whole-file rewritten on every chain run (#1202sg),
+        # so an unbounded `**result` would put whatever a caller happens to hold into a durable
+        # record. The set is the one `tests/test_1202vp_...` derives from the readers by AST --
+        # add a reader there and that test names the key on the day it is added.
+        _last_1202vp = {"broken": result.get("broken") or [],
+                        "steps": result.get("steps") or []}
+        for _k1202vp in LAST_RESULT_CARRIED_1202vp:
+            _v1202vp = result.get(_k1202vp)
+            if _v1202vp:
+                # Absent stays absent (#883): a reader must keep being able to tell
+                # "never computed" from "computed and clean".
+                _last_1202vp[_k1202vp] = _v1202vp
         rec = {**rec,
                "status": _status,
-               "last_result": {"broken": result.get("broken") or [],
-                               "steps": result.get("steps") or []},
+               "last_result": _last_1202vp,
                "last_run_at": time.time(),
                "flips_1202fa": _flips}
         if _fa:
