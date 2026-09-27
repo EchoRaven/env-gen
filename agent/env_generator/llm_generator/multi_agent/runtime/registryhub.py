@@ -190,7 +190,15 @@ def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: A
 
     Falls back to this module's logger rather than staying mute, and lands the finding in an
     artifact (#947) so which aliases deserve a fold in `_merge_query_alias_730` is a question
-    the run's files can answer."""
+    the run's files can answer.
+
+    TIME-SLICED, because the 189 are not a backlog to clear. Every alias occurrence
+    (`query_params`, `params`, `body`, `request_body`, `response_shape`) is from r57/r71/r90/r94
+    and the prose keys stop at r92 -- the corpus runs to r137, so the class stopped recurring
+    about 43 runs ago. All 19 alias cases also had the canonical key EMPTY, so a fold would have
+    been unambiguous -- and building one now would be code for a defect that no longer happens.
+    This detector's value is forward-looking: if the class returns, the artifact says so on the
+    run it returns in, which is exactly what did not happen for the first 43."""
     try:
         if not isinstance(schema, dict):
             return
