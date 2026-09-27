@@ -40,6 +40,7 @@ from .route_projector import (
     # #919: the ownership vocabulary, shared rather than re-derived — #908 was caused by two
     # functions ten lines apart holding different evidence standards for the same column.
     _owner_fk, _is_per_user_sub_entity_fk, _is_user_content_relation,
+    _TARGET_FK_NAMES,
 )
 # Part B: the ONE shared fixed-surface definition (see kickoff/contract.py).
 # Previously this file redefined ``_FIXED_KINDS`` as {auth,oauth,spine,control,
@@ -730,6 +731,36 @@ def _reachable_unauthenticated_1202w6(backend_dir, path: str) -> bool:
         return True
 
 
+def _handed_to_the_lane_1202w6(meta) -> bool:
+    """#1202w6 -- did the framework step aside and let the LANE serve this table's read?
+
+    `backend_skeleton` builds `_OWNER_SCOPED_RESOURCES` (the set whose projected read wins over
+    a lane GET) and excludes any table with more than one user-principal column:
+
+        if len(_principals) > 1:
+            continue  # multi-principal (DM sender+recipient) -> ambiguous -> keep lane-wins
+
+    with the stated reason that "the lane's OR-correct read still wins" -- a single-owner
+    projected filter would 404 the second party. It is a deliberate handover, and the
+    assumption that the lane's read is OR-correct is never checked. r126 is where it fails:
+    the lane's `dm_conversations` read has no OR and no filter at all, and both parties get
+    the whole table.
+
+    So the finding belongs exactly where the handover happened. Without this the audit also
+    flagged `user_settings`, whose SINGLE principal keeps it inside the set -- the lane's
+    unscoped handler sits in `custom_routes.py` and never serves, and the endpoint returns one
+    row per caller. Verified against the running stack, which is how the false positive was
+    found at all."""
+    try:
+        fks = (meta or {}).get("fks") or {}
+        cols = (meta or {}).get("cols") or []
+        principals = {c for c, tgt in fks.items() if str(tgt).lower() == "users"}
+        principals |= {c for c in cols if str(c).lower() in _TARGET_FK_NAMES}
+        return len(principals) > 1
+    except Exception:
+        return False
+
+
 def _contract_and_materials_owner_1202w6(backend_dir, table: str) -> bool:
     """#1202w6 -- do BOTH the contract and the materials call this table's rows per-user private?
 
@@ -793,12 +824,17 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
         # had expired: "the handler is framework-projected and the lane cannot add the filter
         # itself". The lane did not add anything; it replaced the handler.
         #
-        # BLAST RADIUS, measured over all 176 backends before shipping: 164 unchanged, 12 gain
-        # a finding, and only TWO go from zero to non-zero -- r126 (`dm_conversations`,
-        # `user_settings`) and r118 (`notifications`, `db.query(Notification).all()` in the
-        # lane's file). Both were read by hand and both are real, so the two runs this newly
-        # blocks are two runs that shipped a cross-user read. That is the check #351 is waiting
-        # to become, not the situation #351 is waiting on.
+        # BLAST RADIUS, measured over all 176 backends: 164 unchanged, 12 gain a finding, and
+        # only TWO go from zero to non-zero -- r126 (`dm_conversations`) and r118
+        # (`notifications`, `db.query(Notification).all()` in the lane's file). Both were read
+        # by hand and both are real, so the two runs this newly blocks are two runs that
+        # shipped a cross-user read.
+        #
+        # The first cut also flagged r126's `user_settings` and that was WRONG. It was caught
+        # by probing the running app -- two users get one row each -- not by reading the
+        # source, where the lane's handler looks just as unscoped as the other one. It never
+        # serves: `_handed_to_the_lane_1202w6` is what tells them apart, and the note on that
+        # function says why.
         src = ""
         for _rel1202w6 in ("main.py", "custom_routes.py"):
             _f1202w6 = Path(backend_dir) / _rel1202w6
@@ -836,12 +872,14 @@ def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
                 continue                      # a public catalog table -- unfiltered is correct
             if not (_is_per_user_sub_entity_fk(meta, fk, models)
                     or _is_user_content_relation(meta, fk)
-                    # #1202w6: ...or the contract AND the materials both say per-user private.
-                    # The shape predicates return False for a table whose only FKs point at
-                    # `users` -- r126's `dm_conversations(user_id, other_user_id)` -- so the
-                    # explicit statement was never consulted and the leak read as ambiguous.
-                    or _contract_and_materials_owner_1202w6(
-                        backend_dir, cls2tbl.get(model or "", ""))):
+                    # #1202w6: ...or the contract AND the materials both say per-user private
+                    # AND the framework has handed this table's read to the lane. The shape
+                    # predicates return False for a table whose only FKs point at `users` --
+                    # r126's `dm_conversations(user_id, other_user_id)` -- so the explicit
+                    # statement was never consulted and the leak read as ambiguous.
+                    or (_contract_and_materials_owner_1202w6(
+                            backend_dir, cls2tbl.get(model or "", ""))
+                        and _handed_to_the_lane_1202w6(meta))):
                 continue                      # ambiguous ownership -- the projector leaves it too
             # #1202gd: ...unless the materials AND the contract both say the rows are
             # published content. Structure cannot tell a feed from a saved list; this is

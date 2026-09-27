@@ -165,5 +165,46 @@ def test_a_missing_contract_keeps_the_louder_reading(tmp_path):
     assert "UNAUTHENTICATED" in msg
 
 
+def test_a_single_principal_table_is_left_to_the_projected_read(tmp_path):
+    """#1202w6's false positive, found by probing the running app rather than reading source.
+
+    `backend_skeleton` keeps a SINGLE-principal table inside `_OWNER_SCOPED_RESOURCES`, so the
+    projected scoped read wins and the lane's unscoped handler never serves. r126 has exactly
+    that in `user_settings`: the lane's `db.query(UserSetting).all()` sits in custom_routes.py
+    and the endpoint still returns ONE row per caller, verified against the stack. Flagging it
+    would send a lane after a handler that is not running."""
+    models_one = _MODELS.replace(
+        "    other_user_id = Column(Integer, ForeignKey('users.id'))\n", "")
+    be = tmp_path / "app" / "backend"
+    be.mkdir(parents=True)
+    (be / "models.py").write_text(models_one, encoding="utf-8")
+    (be / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n" + _SCOPED,
+                                encoding="utf-8")
+    (be / "custom_routes.py").write_text(
+        "from fastapi import APIRouter\nrouter = APIRouter()\n" + _UNSCOPED, encoding="utf-8")
+    hubs = tmp_path / "shared" / "hubs"
+    hubs.mkdir(parents=True)
+    import json as _j
+    (hubs / "registryhub_tables.json").write_text(_j.dumps(
+        {"threads": {"name": "threads",
+                     "metadata": {"owner_scoped_reads": True, "visibility": "owner"}}}),
+        encoding="utf-8")
+    (hubs / "registryhub_endpoints.json").write_text(_j.dumps(
+        {"GET /api/threads": {"metadata": {"auth_required": True}}}), encoding="utf-8")
+    assert BA.unscoped_owner_read_findings(be) == [], (
+        "a single-principal table keeps its projected read; the lane handler does not serve")
+
+
+def test_the_handover_predicate_matches_the_skeleton_rule():
+    """The rule is `len(principals) > 1`, and it must stay the same rule the skeleton applies
+    when it builds `_OWNER_SCOPED_RESOURCES` — two copies of one decision is #1032."""
+    one = {"cols": ["id", "user_id"], "fks": {"user_id": "users"}}
+    two = {"cols": ["id", "user_id", "other_user_id"],
+           "fks": {"user_id": "users", "other_user_id": "users"}}
+    assert BA._handed_to_the_lane_1202w6(one) is False
+    assert BA._handed_to_the_lane_1202w6(two) is True
+    assert BA._handed_to_the_lane_1202w6(None) is False
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
