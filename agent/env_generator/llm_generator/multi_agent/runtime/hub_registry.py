@@ -112,6 +112,30 @@ class HubRegistry:
         from .workhub import WorkHub
 
         self.base_dir = Path(base_dir)
+        # #1202wf: ONE LEVEL TOO DEEP IS INDISTINGUISHABLE FROM AN EMPTY PROJECT.
+        # `_resolve_hub_dir` appends `shared/hubs`, so a caller who passes the RUN's `shared`
+        # directory gets `shared/shared/hubs` -- which the next line CREATES, and every hub
+        # then writes its empty default into. The result is a complete, valid-looking,
+        # entirely empty registry: `list_ui_pages()` returns {} and every gate reading it
+        # concludes there is nothing registered and therefore nothing wrong, which is #883's
+        # failure mode at the largest scale this system has. The corpus carries 83 such
+        # directories dated before this ticket, so the mistake is not hypothetical.
+        # The tell is exact rather than heuristic: the real store is `<base>/hubs`, i.e. the
+        # caller handed over the `shared` directory itself. A run root never has a `hubs`
+        # child -- the convention is `shared/hubs` -- so this cannot fire on a correct call,
+        # and it cannot fire on a brand-new run either, where neither path exists yet.
+        try:
+            _probe = self.base_dir / "hubs"
+            if _probe.is_dir() and not (self.base_dir / "shared" / "hubs").is_dir():
+                import logging as _log1202wf
+                _log1202wf.getLogger(__name__).warning(
+                    "#1202wf HubRegistry(%s) looks one level too deep: `%s` already holds the "
+                    "hub store, so this will create and read `%s` -- an EMPTY registry that "
+                    "every gate reads as 'nothing registered, nothing wrong'. Pass the RUN "
+                    "directory (the parent of `shared`), not `shared` itself.",
+                    self.base_dir, _probe, self.base_dir / "shared" / "hubs")
+        except Exception:
+            pass                      # a probe must never be able to stop a run from starting
         self._store_dir = self._resolve_hub_dir(self.base_dir)
         self._store_dir.mkdir(parents=True, exist_ok=True)
 
