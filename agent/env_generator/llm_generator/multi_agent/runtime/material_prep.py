@@ -1872,11 +1872,101 @@ def assemble_seed_dataset(design_dataset_dir) -> Dict[str, List]:
     return out
 
 
+# #1202wb: ONE OWNER, TWO COLUMNS, ONE OF THEM ALWAYS NULL.
+#
+# A contract may declare two FKs to `users` on the same table for the same role -- r136
+# declares BOTH `author_id` and `user_id` on `videos` AND on `comments`. The dataset fills
+# exactly one of each, and in opposite directions: videos carry `author_id` (35/35, user_id
+# 0/35) while comments carry `user_id` (295/295, author_id 0/295). Whichever column a reader
+# picks, half the app reads a column that is NULL for every row -- and the framework's own
+# `_OWNER_COL` picked `user_id` for videos, which is the empty one, so every owner-scoped
+# read and write on r136's videos keyed on NULL. The lane's source names videos.user_id 27
+# times and the projected code 42.
+#
+# #1202w9 above cannot help here: it only harvests an UNDECLARED column, precisely so that a
+# populated `sound_id` is never poured into `user_id`. When BOTH names are declared, the
+# question is instead whether they mean the same thing -- and that is not something to guess
+# from the data, because `follows.follower_id`/`following_id` are two declared FKs to `users`
+# that mean opposite ends of one edge, and mirroring them would make everybody follow
+# themselves. So the test is the framework's OWN owner-column vocabulary, the same
+# `_OWNER_FK_COL_NAMES` `_table_has_owner_fk` keys ownership on: mirror only when EVERY
+# column in the group is a name the framework already treats as "the actor who owns this
+# row". `follower_id`, `following_id`, `actor_id` and `recipient_id` are not in it, which is
+# what excludes follows and notifications; `author_id` and `user_id` both are.
+#
+# Measured across the 136 corpus datasets: 1 run, 2 instances, never an ambiguous group (the
+# owner-name test rejected none of them, so it is insurance rather than a filter today).
+def mirror_redundant_owner_fks_1202wb(dataset, schema) -> Dict[str, List]:
+    """Copy the one populated owner FK into its sibling owner FKs to the same table.
+
+    Requires: two or more declared FKs to ONE target, all of their names in the framework's
+    owner-column vocabulary, exactly one populated in every row and the rest empty in every
+    row. A partially-filled column means the dataset is saying something about individual
+    rows, so the group is left alone. Byte-identical when nothing matches.
+    """
+    try:
+        if not isinstance(dataset, dict) or not isinstance(schema, dict):
+            return dataset
+        try:
+            from .kickoff.run_kickoff import _OWNER_FK_COL_NAMES as _own
+        except Exception as _e1202wb_imp:
+            from .message_format import warn_once_1201
+            warn_once_1201("material_prep.mirror_redundant_owner_fks_1202wb.vocabulary",
+                           "the owner-column vocabulary that decides whether two FKs to one "
+                           "table mean the same actor, so a redundant owner FK stays NULL",
+                           _e1202wb_imp)
+            return dataset
+        for table, rows in dataset.items():
+            cols = schema.get(table)
+            if not (isinstance(cols, dict) and isinstance(rows, list)):
+                continue
+            drows = [r for r in rows if isinstance(r, dict)]
+            if not drows:
+                continue
+            by_target: Dict[str, List[str]] = {}
+            for col, spec in cols.items():
+                if not (isinstance(spec, dict) and spec.get("fk")):
+                    continue
+                by_target.setdefault(
+                    str(spec["fk"]).split(".", 1)[0].strip(), []).append(col)
+            for target, group in by_target.items():
+                if len(group) < 2 or not target or target == table:
+                    continue
+                if not all(c in _own for c in group):
+                    continue
+                filled = [c for c in group
+                          if all(r.get(c) not in (None, "", 0) for r in drows)]
+                empty = [c for c in group
+                         if all(r.get(c) in (None, "", 0) for r in drows)]
+                if len(filled) != 1 or not empty:
+                    continue
+                if len(filled) + len(empty) != len(group):
+                    continue          # a partially-filled sibling: the dataset means it
+                src = filled[0]
+                for col in empty:
+                    for r in drows:
+                        r[col] = r.get(src)
+                _LOG_1202VZ.info(
+                    "#1202wb mirrored %s.%s into %s for all %d rows: every name in the "
+                    "group is an owner column pointing at `%s`, and only one was filled",
+                    table, src, empty, len(drows), target)
+        return dataset
+    except Exception as _e1202wb:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("material_prep.mirror_redundant_owner_fks_1202wb",
+                           "the mirroring of a redundant declared owner FK, so owner-scoped "
+                           "reads over it match no row", _e1202wb)
+        except Exception:
+            pass
+        return dataset
+
+
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
            "ingest_assets", "ingest_dataset", "assemble_seed_dataset",
-           "resolve_dataset_fks_1202vz",
+           "resolve_dataset_fks_1202vz", "mirror_redundant_owner_fks_1202wb",
            "model_schema_from_models_py", "enrich_ranking_seed",
            "enrich_seed_timestamps_1202rw",
            "assign_dataset_ids_1202ry"]

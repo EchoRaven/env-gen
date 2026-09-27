@@ -3151,6 +3151,7 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
                                             enrich_ranking_seed,
                                             enrich_seed_timestamps_1202rw,
                                             resolve_dataset_fks_1202vz,
+                                            mirror_redundant_owner_fks_1202wb,
                                             align_dataset_id_types)
                 _schema = model_schema_from_models_py(be / "models.py")
                 if _schema:
@@ -3171,6 +3172,11 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
                     # this writes, and before the type alignment below so the values it
                     # writes are aligned like every other id.
                     real = resolve_dataset_fks_1202vz(real, _schema)
+                    # #1202wb: and when the contract declares TWO owner FKs to one table for
+                    # one role, mirror the filled one into the empty one. After #1202vz so a
+                    # column it can resolve on its own is never overwritten by a sibling, and
+                    # still before the type alignment so the mirrored ids are aligned too.
+                    real = mirror_redundant_owner_fks_1202wb(real, _schema)
                     # #808: and align the ID TYPES. #483 aligned field NAMES and #552 fills a
                     # ranking column; nothing checked that design-prep's integer ids match a PK
                     # the lane declared TEXT. r145 declared `titles.id TEXT` with every dependent
