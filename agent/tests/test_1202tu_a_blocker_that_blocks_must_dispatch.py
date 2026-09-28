@@ -159,6 +159,74 @@ def test_no_blocker_prose_mints_an_unroutable_name():
         "_deliverability_check_token and an owner in _GATE_OWNER: %s" % unroutable)
 
 
+def _set_literal_1202wy(path, name):
+    """Read a set literal from Python source through the AST, never by delimiter span.
+
+    #1202wy. This read used `src.split("_COVERED_ELSEWHERE = {")[1].split("}")[0]` plus a
+    `"(deliverability_[a-z_]+)"` regex, and was wrong in both directions at once:
+
+      * it OVER-read — the span is text, so the COMMENTS inside the set are part of it. The
+        `"reason"` in `failed_checks.append(business_chain_block["reason"])` was returned as a
+        member. Harmless only because the narrow regex happened to filter it; a comment naming
+        any `deliverability_*` check would have been read as exempting that check.
+      * it UNDER-read — that same regex sees 5 of the set's 11 members, so `ui_page_unwired`,
+        `frontend_navigable`, `incomplete_required_tasks`, `unresolved_failed_tasks`,
+        `database_sql_missing` and `business_chain_environment_blocked` were invisible, and a
+        prose exemption naming one of them would have been reported as routing nobody.
+
+    #1063 already reads this exact set correctly, and says why: "#923 forbids a span locator
+    that ends on a bare bracket, because anything nested inside moves the end." Two readers of
+    one literal, one of them wrong, is #1032's shape; this is the right one.
+
+    The two sibling span-reads of `_FRAMEWORK_ONLY_WRITERS_1202TD` (#1202tr, #1202ts) were
+    checked at the same time and are correct today — 24 of 24 members, no nested brace — so
+    they are recorded here rather than churned."""
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            continue
+        if isinstance(node.value, ast.Set):
+            return {e.value for e in node.value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+        if isinstance(node.value, ast.Dict):
+            return {k.value for k in node.value.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    raise AssertionError("%s literal not found in %s" % (name, path))
+
+
+def test_the_exemption_set_is_read_through_the_ast():
+    """★ The bug this replaced: a comment inside the set was returned as a member."""
+    covered = _set_literal_1202wy(RUNTIME / "remediation_dispatcher.py", "_COVERED_ELSEWHERE")
+    assert "reason" not in covered, (
+        "a name from a COMMENT inside the set is being read as a member: %r" % sorted(covered))
+    assert len(covered) >= 10, (
+        "the read sees only %d members; the deliverability_-only regex saw 5 of 11" % len(covered))
+    for expected in ("ui_page_unwired", "incomplete_required_tasks", "database_sql_missing"):
+        assert expected in covered, (
+            "%s is exempt and the reader cannot see it, so a prose exemption naming it would "
+            "be reported as routing nobody" % expected)
+
+
+def test_the_claim_checker_uses_that_reader():
+    """★ Caught by mutation: testing the helper left its only real consumer unpinned.
+
+    `test_every_named_elsewhere_claim_is_true` is what decides whether an exemption is a dead
+    end. If it goes back to reading the set by delimiter span, the helper beside it stays green
+    while the check it exists for is the one that is wrong."""
+    src = Path(__file__).read_text(encoding="utf-8")
+    fn = next((n for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.FunctionDef)
+               and n.name == "test_every_named_elsewhere_claim_is_true"), None)
+    assert fn is not None
+    body = ast.unparse(fn)
+    assert "_set_literal_1202wy" in body, (
+        "the claim checker no longer reads the exemption set through the AST")
+    assert "_COVERED_ELSEWHERE = {" not in body, (
+        "a delimiter span locator is back: %s" % body[:200])
+
+
 def test_every_named_elsewhere_claim_is_true():
     """#1202ts's rule applied to this file's own exemptions: check the claim, don't believe it.
 
@@ -171,9 +239,7 @@ def test_every_named_elsewhere_claim_is_true():
     # #1202tb's own sweep uses. Leaving _COVERED_ELSEWHERE out of this set is what made this
     # test's first run flag `deliverability_no_successful_run`, a check that fires 1946 times
     # across the corpus and is handled there.
-    disp_src = (RUNTIME / "remediation_dispatcher.py").read_text(encoding="utf-8")
-    covered = set(re.findall(r'"(deliverability_[a-z_]+)"',
-                             disp_src.split("_COVERED_ELSEWHERE = {")[1].split("}")[0]))
+    covered = _set_literal_1202wy(RUNTIME / "remediation_dispatcher.py", "_COVERED_ELSEWHERE")
     exempt_src = (ROOT / "tests"
                   / "test_1202tb_every_gate_check_is_classified.py").read_text(encoding="utf-8")
     classified = set(re.findall(r'"(deliverability_[a-z_]+)"', exempt_src)) | owners | covered
