@@ -94,6 +94,26 @@ PY
 '''
 
 
+def _mcp_spec_aliases_1202xs(output_dir, spec_tool_aliases) -> dict:
+    """The compiled spec's semantic MCP tool names, or {} when there are none.
+
+    ONE reader for the two callers that must agree: `project_mcp`, which writes the
+    server, and `reproject_mcp_if_contract_moved`, which decides whether the written
+    server is still current. Read twice, they can disagree; and a comparison that does
+    not see an input the writer used reports "unchanged" for a file that would change.
+    Every failure here is the absence of aliases, which is also the common case, so {}
+    is the honest answer rather than a swallowed error standing in for one."""
+    from pathlib import Path as _P
+    import json as _json
+    try:
+        spec_path = _P(output_dir) / "design" / "reference_spec.json"
+        if not spec_path.is_file():
+            return {}
+        return spec_tool_aliases(_json.loads(spec_path.read_text(encoding="utf-8"))) or {}
+    except Exception:
+        return {}
+
+
 def record_ddl_behind_models_1202xk(out_dir, rows) -> bool:
     """Append one line to ``logs/ddl_behind_models_1202xk.jsonl``. #1202xk.
 
@@ -1694,7 +1714,9 @@ volumes:
         Returns True when it actually re-projected.
         """
         try:
-            from .mcp_scaffold import business_endpoints, render_mcp_server
+            from .mcp_scaffold import (business_endpoints, render_mcp_server,
+                                       backend_query_params_1202xr,
+                                       spec_tool_aliases)
             orch = self._orch
             endpoints = orch.hubs.registryhub.get_endpoints() or {}
             if not business_endpoints(endpoints):
@@ -1705,7 +1727,15 @@ volumes:
                 # the missing-file read. Stated so the next reader does not take this line as
                 # load-bearing and "simplify" the except away.
                 return False          # never projected yet — kickoff's pass owns that
-            if main_py.read_text(encoding="utf-8") == render_mcp_server(endpoints, "app"):
+            # #1202xr/#1202xs: RENDER WITH THE SAME INPUTS `project_mcp` WRITES WITH.
+            # This comparison is what decides "unchanged", so any input the writer uses
+            # and this does not makes every cycle look changed (churn) -- and an input
+            # this uses and the writer does not makes a real change look unchanged
+            # (the drift #1202ju exists to close). The two must be one set.
+            _aliases = _mcp_spec_aliases_1202xs(orch.output_dir, spec_tool_aliases)
+            if main_py.read_text(encoding="utf-8") == render_mcp_server(
+                    endpoints, "app", tool_aliases=_aliases,
+                    query_params=backend_query_params_1202xr(orch.output_dir)):
                 return False          # contract has not moved; do not touch the tree
         except Exception:
             return False
@@ -1747,17 +1777,10 @@ volumes:
         # (get_profile_info, publish_media, ...) — the 22 mcp_tool_exists
         # deliverability gates then bind by construction instead of failing on
         # derived endpoint-style names.
-        _aliases = {}
-        try:
-            from .mcp_scaffold import spec_tool_aliases
-            import json as _json
-            _spec_path = Path(orch.output_dir) / "design" / "reference_spec.json"
-            if _spec_path.is_file():
-                _aliases = spec_tool_aliases(_json.loads(_spec_path.read_text()))
-                if _aliases:
-                    orch._logger.info("MCP spec tool aliases: %d bound", len(_aliases))
-        except Exception:
-            _aliases = {}
+        from .mcp_scaffold import spec_tool_aliases
+        _aliases = _mcp_spec_aliases_1202xs(orch.output_dir, spec_tool_aliases)
+        if _aliases:
+            orch._logger.info("MCP spec tool aliases: %d bound", len(_aliases))
         result = write_mcp_server(orch.output_dir, endpoints, env_name=env_name,
                                   tool_aliases=_aliases)
 

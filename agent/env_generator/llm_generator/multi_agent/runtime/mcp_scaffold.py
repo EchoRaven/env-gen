@@ -128,23 +128,211 @@ def _norm_ep_key(method: str, path: str) -> str:
     return str(method).upper() + " " + norm
 
 
-def render_tool(ep: Dict[str, Any], alias: Optional[str] = None) -> str:
+def _qp_match_key_1202xr(method: Any, path: Any) -> str:
+    """(METHOD, path) collapsed so a handler and the contract match even when they
+    spell a path parameter differently -- r137 registered `/api/videos/{video_id}/
+    comments` while an earlier record spelled it `{id}`."""
+    p = re.sub(r":(\w+)", r"{\1}", str(path or ""))
+    p = re.sub(r"\{[^}]*\}", "{}", p).rstrip("/") or "/"
+    return str(method).upper() + " " + p
+
+
+def _a_args_1202xr(fn):
+    return list(fn.args.args)
+
+
+def _a_defaults_1202xr(fn):
+    a = fn.args
+    return [None] * (len(a.args) - len(a.defaults)) + list(a.defaults)
+
+
+_SCALAR_ANNOTATIONS_1202XR = ("str", "int", "float", "bool", "UUID", "date", "datetime")
+
+
+def _is_scalar_annotation_1202xr(node: Any) -> bool:
+    """Does this annotation make a defaulted parameter a QUERY parameter to FastAPI?
+
+    ``str``, ``int``, ``str | None``, ``Optional[int]`` yes; ``dict``, ``dict | None``,
+    ``Request``, a model class, or no annotation at all, no. The distinction is the whole
+    point: a body parameter carries the same `= None` default and must not become a query
+    argument."""
+    import ast
+
+    if node is None:
+        return False
+    if isinstance(node, ast.Name):
+        return node.id in _SCALAR_ANNOTATIONS_1202XR
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value.strip().strip("\"'") in _SCALAR_ANNOTATIONS_1202XR
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        parts = (node.left, node.right)
+        return (any(_is_scalar_annotation_1202xr(p) for p in parts)
+                and all(_is_scalar_annotation_1202xr(p)
+                        or (isinstance(p, ast.Constant) and p.value is None)
+                        for p in parts))
+    if isinstance(node, ast.Subscript):
+        head = getattr(node.value, "id", "") or getattr(node.value, "attr", "")
+        if head == "Optional":
+            return _is_scalar_annotation_1202xr(node.slice)
+    return False
+
+
+def backend_query_params_1202xr(output_dir: Any) -> Dict[str, List[str]]:
+    """{match key -> ordered query-parameter names} read from the IMPLEMENTED handlers.
+
+    A tool that cannot be given the parameter its endpoint filters on is a tool that
+    cannot do the job it is named for: the delivered netflix-r30 server exposes
+    ``async def get_search() -> str`` calling ``/api/search`` bare, so the agent this
+    surface exists for can list but never search, filter or paginate. Measured over the
+    corpus when this was written: 462 of 1,760 projected tools -- 26%, across 94 runs --
+    drop at least one query parameter their own backend declares, r137 (the newest run)
+    among them.
+
+    NEITHER the registry NOR the compiled spec models query parameters (no run carries a
+    `query_params` field on an endpoint record, and no spec endpoint carries one), so the
+    handlers are the only source. Read like the DDL check reads models.py: AST over the
+    written backend, never a regex over text.
+
+    TWO FORMS, because FastAPI has two. An explicit ``Query(...)`` default is one; a bare
+    scalar default is the other, and it is the one the lanes actually write for the tool
+    that needed this most -- netflix-r30's ``search_titles(q: str = "", kind: str | None =
+    None, limit: int = 50)`` declares six query parameters and not one ``Query(...)``.
+    Reading only the explicit form found 0 of them and left ``get_search()`` argumentless,
+    which is the delivered defect this exists to fix. Corpus: 403 further parameters in 83
+    runs come from the bare form.
+
+    The bare form is admitted on the ANNOTATION, never on the default alone, because that
+    is what separates a query parameter from a request body: ``body: dict | None = None``
+    has the same default shape and is a BODY. Measured over the corpus, the annotation
+    predicate rejects 932 ``dict`` and 305 ``dict | None`` parameters, every
+    ``Annotated[..., Header(...)]`` and every ``Request`` -- and no run in the corpus
+    writes ``Annotated[..., Query()]``, so that third spelling is deliberately not
+    guessed at here; it would need its own measurement.
+
+    Best-effort and ADDITIVE by construction -- no backend yet (kickoff's first pass),
+    an unparseable module, or handlers with no ``Query(...)`` default all yield {}, and
+    the rendered server is then byte-identical to what it was before this existed."""
+    import ast
+
+    out: Dict[str, List[str]] = {}
+    try:
+        be = Path(output_dir) / "app" / "backend"
+        files = sorted(be.glob("*.py")) if be.is_dir() else []
+    except Exception:
+        return out
+    for f in files:
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue          # one unparseable module must not blind the others
+        # `from fastapi import Query as _Q` is a style the corpus actually uses
+        # (tiktok-r61 writes `limit: int = _Q(20, ge=1, le=100)`), and matching the
+        # name `Query` alone reads those as "no query parameters at all". Resolved by
+        # the IMPORT rather than by widening to "any call default", which would swallow
+        # `Body(...)` and `Header(...)` -- the two things that must not become query
+        # arguments.
+        query_names = {"Query"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and str(node.module or "").startswith("fastapi"):
+                for al in node.names:
+                    if al.name == "Query" and al.asname:
+                        query_names.add(al.asname)
+
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            routes = []
+            for d in fn.decorator_list:
+                if (isinstance(d, ast.Call)
+                        and getattr(d.func, "attr", "") in ("get", "post", "put",
+                                                            "delete", "patch")
+                        and d.args and isinstance(d.args[0], ast.Constant)
+                        and isinstance(d.args[0].value, str)):
+                    routes.append((d.func.attr, d.args[0].value))
+            if not routes:
+                continue
+            # A name the path binds is a PATH parameter on every route this handler
+            # serves, so it is excluded across all of them, not per route.
+            bound = set()
+            for _m, _p in routes:
+                bound |= set(re.findall(r"\{(\w+)", str(_p)))
+            names: List[str] = []
+            for x, d in list(zip(_a_args_1202xr(fn), _a_defaults_1202xr(fn))) + list(
+                    zip(fn.args.kwonlyargs, fn.args.kw_defaults)):
+                if d is None or x.arg in bound or x.arg in names:
+                    continue
+                if isinstance(d, ast.Call):
+                    if getattr(d.func, "id", "") in query_names:
+                        names.append(x.arg)      # explicit form
+                    continue                     # Depends/Body/Header/... are not queries
+                if isinstance(d, ast.Constant) and _is_scalar_annotation_1202xr(x.annotation):
+                    names.append(x.arg)          # bare scalar default
+            if not names:
+                continue
+            for meth, path in routes:
+                key = _qp_match_key_1202xr(meth, path)
+                have = out.setdefault(key, [])
+                for n in names:
+                    if n not in have:
+                        have.append(n)
+    return out
+
+
+def _renderable_query_args_1202xr(names: Any, path_params: List[str]) -> List[str]:
+    """The subset of a handler's query parameters that can become tool arguments.
+
+    Excluded, each for a reason that would otherwise emit code that does not run or
+    that silently shadows: a name that is not a plain identifier or is a Python
+    keyword (``def get_x(from: str | None = None)`` is a SyntaxError), ``body``
+    (the write tools' own argument), and a name the path already binds."""
+    import keyword
+
+    taken = set(path_params) | {"body"}
+    out: List[str] = []
+    for n in (names or []):
+        n = str(n)
+        if n in taken or n in out:
+            continue
+        if keyword.iskeyword(n) or not n.isidentifier():
+            continue
+        out.append(n)
+    return out
+
+
+def render_tool(ep: Dict[str, Any], alias: Optional[str] = None,
+                query_params: Any = None) -> str:
     """Render one ``@mcp.tool`` async function projecting a backend endpoint.
 
     Built with plain string templating (NOT an f-string) so the generated
-    f-string ``f"{API_BASE_URL}{path}"`` and dict literals survive verbatim."""
+    f-string ``f"{API_BASE_URL}{path}"`` and dict literals survive verbatim.
+
+    ``query_params`` (#1202xr) is the endpoint's query-parameter names, from
+    ``backend_query_params_1202xr``. They are rendered as OPTIONAL arguments and
+    only the ones the caller actually passes reach the backend, so a tool with
+    query parameters behaves exactly as it did before when none are supplied.
+    Omitted/empty → the previous output, byte for byte."""
     method = str(ep["method"]).upper()
     path = str(ep["path"])
     op = alias or tool_op_id(method, path)
     params = _path_params(path)
     fpath = _to_fstring_path(path)
     is_write = method in ("POST", "PUT", "PATCH")
+    qargs = _renderable_query_args_1202xr(query_params, params)
 
     args = [f"{p}: str" for p in params]
     if is_write:
         args.append("body: dict | None = None")
+    args += [f"{q}: str | None = None" for q in qargs]
     sig = ", ".join(args)
     call_kw = ", json=(body or {})" if is_write else ""
+    # The dict is built into a local, and a path parameter may legally be named
+    # anything -- including the local. Then the f-string path would interpolate the
+    # DICT and the tool would request a URL nobody serves, silently.
+    qlocal = "_params"
+    while qlocal in params or qlocal in qargs:
+        qlocal += "_q"
+    if qargs:
+        call_kw += ", params=" + qlocal
 
     doc = ep.get("summary") or f"{method} {path}"
     lines = [
@@ -152,6 +340,12 @@ def render_tool(ep: Dict[str, Any], alias: Optional[str] = None) -> str:
         "async def " + op + "(" + sig + ") -> str:",
         '    """' + doc.replace('"', "'") + '"""',
         "    try:",
+    ]
+    if qargs:
+        pairs = ", ".join('"%s": %s' % (q, q) for q in qargs)
+        lines.append("        " + qlocal + " = {k: v for k, v in {" + pairs
+                     + "}.items() if v is not None}")
+    lines += [
         '        resp = await _request("' + method + '", f"{API_BASE_URL}' + fpath + '"' + call_kw + ")",
         "        resp.raise_for_status()",
         "        return json.dumps(resp.json(), ensure_ascii=False)",
@@ -356,16 +550,30 @@ def _scrubbed_1202mi(text: str, filename: str) -> str:
 
 
 def render_mcp_server(endpoints: Dict[str, Any], env_name: str = "app",
-                      tool_aliases: Optional[Dict[str, str]] = None) -> str:
+                      tool_aliases: Optional[Dict[str, str]] = None,
+                      query_params: Optional[Dict[str, List[str]]] = None) -> str:
     """Render the full ``main.py``: fixed skeleton + one tool per business
-    endpoint. Deterministic — same contract in, byte-identical server out."""
+    endpoint. Deterministic — same contract in, byte-identical server out.
+
+    #1202xs: ``tool_aliases`` reaches the RENDERED FILE, not only the registry
+    records. ``write_mcp_server`` took the aliases, handed them to
+    ``mcp_tool_records`` and dropped them here, so a contract whose spec binds
+    semantic tool names registered ``search_places`` while the served file defined
+    ``get_places`` — googlemaps-r16 shipped 26 of its 41 registered tool names
+    absent from the server they name. Both halves now derive from one call.
+
+    #1202xr: ``query_params`` is ``backend_query_params_1202xr``'s map, keyed by
+    ``_qp_match_key_1202xr``. Empty/omitted → unchanged output."""
     title = env_name.replace("_", " ").replace("-", " ").title()
     header = (_SKELETON_HEADER
               .replace("__ENV_UPPER__", env_name.upper())
               .replace("__ENV_TITLE__", title)
               .replace("__ENV_NAME__", env_name))
+    qp = query_params or {}
     tools = "\n".join(
-        render_tool(ep, alias=name)
+        render_tool(ep, alias=name,
+                    query_params=qp.get(_qp_match_key_1202xr(ep.get("method"),
+                                                             ep.get("path"))))
         for ep, name in _resolve_tool_names(endpoints, tool_aliases))
     return header + tools + _SKELETON_FOOTER
 
@@ -389,18 +597,30 @@ def spec_tool_aliases(spec: Dict[str, Any]) -> Dict[str, str]:
 
 
 def mcp_tool_records(endpoints: Dict[str, Any],
-                     tool_aliases: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+                     tool_aliases: Optional[Dict[str, str]] = None,
+                     query_params: Optional[Dict[str, List[str]]] = None
+                     ) -> List[Dict[str, Any]]:
     """The tool registration records (one per business endpoint) the
-    orchestrator feeds to ``mcp_registry.register_mcp_tool``."""
+    orchestrator feeds to ``mcp_registry.register_mcp_tool``.
+
+    #1202xr: the record states the SERVED tool's inputs, query parameters included.
+    These records and the rendered file are the two halves of one projection, and
+    #1202xs is what happens when one half is built from an input the other was not:
+    googlemaps-r16 registered 26 tool names its own server does not define. So both
+    halves take the same ``tool_aliases`` and the same ``query_params``."""
+    qp = query_params or {}
     recs: List[Dict[str, Any]] = []
     for ep, name in _resolve_tool_names(endpoints, tool_aliases):
         method, path = str(ep["method"]).upper(), str(ep["path"])
+        _pp = _path_params(path)
         recs.append({
             "tool_name": name,  # collision-free across the whole contract
             "method": method,
             "path": path,
             "schema": {
-                "input": {"path_params": _path_params(path),
+                "input": {"path_params": _pp,
+                          "query_params": _renderable_query_args_1202xr(
+                              qp.get(_qp_match_key_1202xr(method, path)), _pp),
                           "request": ep.get("schema", {}).get("request", {})},
                 "output": ep.get("schema", {}).get("response", {}),
                 # The response envelope key (item|items) so consumers know the data
@@ -426,15 +646,23 @@ def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
     server_dir = output_dir / "mcp_server" / env_name
     server_dir.mkdir(parents=True, exist_ok=True)
 
+    # ONE read, both halves: the rendered server and the records it is registered
+    # under must describe the same tool.
+    _qp = backend_query_params_1202xr(output_dir)
+
     main_py = server_dir / "main.py"
     main_py.write_text(
-        _scrubbed_1202mi(render_mcp_server(endpoints, env_name), main_py.name),
+        _scrubbed_1202mi(
+            render_mcp_server(endpoints, env_name, tool_aliases=tool_aliases,
+                              query_params=_qp),
+            main_py.name),
         encoding="utf-8")
     (server_dir / "pyproject.toml").write_text(
         _PYPROJECT.replace("__ENV_NAME__", env_name), encoding="utf-8")
     (server_dir / "start.sh").write_text(_START_SH, encoding="utf-8")
 
-    records = mcp_tool_records(endpoints, tool_aliases=tool_aliases)
+    records = mcp_tool_records(endpoints, tool_aliases=tool_aliases,
+                               query_params=_qp)
     return {
         "main_py": main_py,
         "server_dir": server_dir,
@@ -444,6 +672,7 @@ def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
 
 
 __all__ = [
+    "backend_query_params_1202xr",
     "business_endpoints",
     "tool_op_id",
     "render_tool",
