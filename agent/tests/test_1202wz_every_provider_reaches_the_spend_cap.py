@@ -168,3 +168,109 @@ def test_the_normaliser_hands_that_dict_to_the_response():
     body = ast.unparse(fn)
     assert "_anthropic_usage_1202wz" in body, "the response no longer carries the mapping"
     assert "record_response_usage_1202wz" in body, "the response no longer reaches the cap"
+
+# --- #1202xb: the same hole through the other door ----------------------------------------
+#
+# `chat_stream` records nothing on FIVE of the six clients (MetagenClient's delegates to
+# `chat`). Wiring them would be work on dead code: nothing outside `utils/llm.py` and this
+# test suite references `chat_stream` or `LLM.stream` — the engine builds an `LLM` in
+# `orchestrator.py` and `llm_overrides.py` and only ever calls `chat`. AnthropicClient.chat
+# DOES stream internally for large outputs (`_should_stream`), but all four of its request
+# branches converge on `_parse_response`, which #1202wz wired, so that path is covered.
+#
+# So this is a tripwire, not a fix: the day a caller appears, it fails and says to add the
+# recording first. It is a reachability check by name, which cannot see an indirect call —
+# a floor, not a proof, exactly as #1202ts says of a claim-checker.
+import glob  # noqa: E402
+
+_SKIP_1202XB = ("utils/llm.py",)
+
+
+def _stream_callers_1202xb():
+    """Files outside llm.py whose AST calls `chat_stream` or `.stream` on an llm-ish object."""
+    out = []
+    roots = (os.path.join(_AGENT, "env_generator"), os.path.join(_AGENT, "utils"),
+             os.path.join(_AGENT, "tools"))
+    for root in roots:
+        for path in glob.glob(os.path.join(root, "**", "*.py"), recursive=True):
+            rel = os.path.relpath(path, _AGENT).replace(os.sep, "/")
+            if rel in _SKIP_1202XB or "/tests/" in "/" + rel:
+                continue
+            try:
+                with open(path, encoding="utf-8") as fh:      # #1202eu
+                    tree = ast.parse(fh.read())
+            except Exception:
+                continue
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)):
+                    continue
+                if node.func.attr == "chat_stream":
+                    out.append("%s:%d" % (rel, node.lineno))
+                elif node.func.attr == "stream":
+                    owner = ast.unparse(node.func.value).lower()
+                    if "llm" in owner:
+                        out.append("%s:%d" % (rel, node.lineno))
+    return sorted(set(out))
+
+
+def _stream_methods_that_record_1202xb():
+    """{class: bool} for every `chat_stream`, counting a delegation to `chat` as recording."""
+    got = {}
+    for cls in _client_classes():
+        for fn in cls.body:
+            if not (isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and fn.name == "chat_stream"):
+                continue
+            body = ast.unparse(fn)
+            got[cls.name] = ("_record_usage_1163" in body
+                             or "record_response_usage_1202wz" in body
+                             or "self.chat(" in body)
+    return got
+
+
+def test_the_stream_scan_sees_the_methods():
+    got = _stream_methods_that_record_1202xb()
+    assert len(got) >= 5, "the chat_stream scan found almost nothing: %r" % got
+
+
+def test_streaming_is_either_unused_or_capped():
+    """★ The tripwire. Today the left side holds; the day it stops, the right must."""
+    callers = _stream_callers_1202xb()
+    if not callers:
+        return
+    silent = sorted(k for k, ok in _stream_methods_that_record_1202xb().items() if not ok)
+    assert not silent, (
+        "something now streams (%r) and these clients record nothing on that path, so "
+        "ENVGEN_MAX_SPEND_USD cannot trip on it -- wire them the way #1202wz wired `chat`: %r"
+        % (callers, silent))
+
+
+def test_the_anthropic_stream_branch_inside_chat_is_covered():
+    """`_should_stream` makes `chat` itself stream for large outputs. All four of its request
+    branches must converge on the one recorded exit."""
+    cls = next(c for c in _client_classes() if c.name == "AnthropicClient")
+    fn = next(f for f in cls.body
+              if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)) and f.name == "chat")
+    # Only `chat`'s OWN returns. `ast.walk` descends into the nested `_call()` closures,
+    # whose returns hand the response back to `chat` and are not exits from it -- counting
+    # them made this test fail on its own scope before it guarded anything.
+    parent = {}
+    for node in ast.walk(fn):
+        for child in ast.iter_child_nodes(node):
+            parent[child] = node
+
+    def _owner(node):
+        while node in parent:
+            node = parent[node]
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return node
+        return None
+
+    returns = [n for n in ast.walk(fn)
+               if isinstance(n, ast.Return) and n.value is not None and _owner(n) is fn]
+    assert returns, "chat no longer returns anything this test can check"
+    bypass = [ast.unparse(n) for n in returns if "_parse_response" not in ast.unparse(n)]
+    assert not bypass, (
+        "chat has a return that bypasses the recorded exit, so those calls never reach the "
+        "spend cap: %r" % bypass)
