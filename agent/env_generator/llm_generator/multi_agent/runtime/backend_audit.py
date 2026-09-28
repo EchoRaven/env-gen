@@ -1468,6 +1468,110 @@ def _widens_auth_1202s(tree: Any, assign_node: Any) -> bool:
         return False
 
 
+def router_startup_writes_twice_1202wt(backend_dir: Any) -> List[str]:
+    """Lane startup hooks registered on an APIRouter that WRITE. `[]` when there are none.
+
+    #1202wt: a startup handler registered on an `APIRouter` runs TWICE for every
+    `include_router`, while one registered on the app runs once. MEASURED on FastAPI 0.121.0:
+
+        router hook + include_router once  -> fires 2x
+                      include_router twice -> fires 4x
+        app hook                           -> fires 1x
+
+    and the generated `main.py` includes `_as_router` twice (bare, then `prefix="/api"`).
+
+    So a lane hook that inserts rows inserts them twice -- the same shape as #1202uu's
+    duplicated media rows, arriving from a different direction. Across the corpus 46 of 150
+    runs register a lane `on_event`, 66 hooks in all; 4 of them write, and all four are
+    `ensure_*`-style check-then-insert, so there is no live damage today. That is luck, not
+    design, and the next hook that seeds without a guard would double-seed silently.
+
+    REPORTS, NEVER BLOCKS, and only for hooks that WRITE: a hook that reorders routes or
+    re-installs one is harmless when it runs twice, and flagging all 66 would be noise
+    nobody reads.
+    """
+    out: List[str] = []
+    try:
+        import ast as _ast
+        from pathlib import Path as _P
+        src = _P(str(backend_dir)) / "custom_routes.py"
+        if not src.is_file():
+            return out
+        tree = _ast.parse(src.read_text(encoding="utf-8", errors="ignore"))
+    except Exception as exc:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("backend_audit.router_startup_writes_twice_1202wt",
+                           "the router-startup double-fire scan", exc)
+        except Exception:
+            pass
+        return out
+
+    _routers = set()
+    _apps = set()
+    for _n in _ast.walk(tree):
+        if not (isinstance(_n, _ast.Assign) and isinstance(_n.value, _ast.Call)):
+            continue
+        _ctor = _n.value.func
+        _name = getattr(_ctor, "id", None) or getattr(_ctor, "attr", None)
+        if _name not in ("APIRouter", "FastAPI"):
+            continue
+        for _t in _n.targets:
+            if isinstance(_t, _ast.Name):
+                (_routers if _name == "APIRouter" else _apps).add(_t.id)
+
+    def _startup_holder(fn):
+        """The APIRouter a `@X.on_event("startup")` decorator names, or None.
+
+        Only a holder this file assigns from `APIRouter(...)` counts. An `@app.on_event`
+        hook fires ONCE and must not be reported -- the first version keyed on the presence
+        of the decorator alone and flagged app-level hooks too. A holder whose constructor
+        is not visible here is left alone rather than guessed: under-reporting is the bargain
+        this file already strikes elsewhere.
+        """
+        for dec in getattr(fn, "decorator_list", []):
+            if not (isinstance(dec, _ast.Call) and isinstance(dec.func, _ast.Attribute)
+                    and dec.func.attr == "on_event"):
+                continue
+            if not (dec.args and isinstance(dec.args[0], _ast.Constant)
+                    and dec.args[0].value == "startup"):
+                continue
+            holder = dec.func.value
+            if isinstance(holder, _ast.Name) and holder.id in _routers:
+                return holder.id
+        return None
+
+    def _writes(fn):
+        """A DB write inside THIS function only -- the AST bounds it, a text slice does not.
+
+        The first draft cut the body at the next decorator by regex; in r136 that swallowed
+        17,191 characters and twelve further functions, and matched an `INSERT INTO` 270
+        lines below the hook. Two of the six runs it reported were route-reordering hooks
+        that write nothing.
+        """
+        for node in _ast.walk(fn):
+            if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute):
+                if node.func.attr in ("add", "add_all", "commit", "create_all"):
+                    return True
+            if isinstance(node, _ast.Constant) and isinstance(node.value, str):
+                if "insert into" in node.value.lower():
+                    return True
+        return False
+
+    for fn in _ast.walk(tree):
+        if not isinstance(fn, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            continue
+        holder = _startup_holder(fn)
+        if not holder or not _writes(fn):
+            continue
+        out.append(
+            "lane startup hook `%s` is registered on `%s` (an APIRouter) and WRITES: it "
+            "runs twice per include_router, so anything it inserts is inserted twice. "
+            "Register it on the app, or make it idempotent (check-then-insert)."
+            % (fn.name, holder))
+    return out
+
+
 def auth_override_findings_1202s(backend_dir: Any) -> List[str]:
     """Lane-owned code reassigning a framework auth primitive. Static; `[]` on any failure."""
     out: List[str] = []
