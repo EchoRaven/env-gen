@@ -292,8 +292,17 @@ def _tag_parked_probe_1202dw(path, metadata):
     parked `GET /__noop__` at status=deprecated") and noted that both delivered artifacts
     still carried the registration, so it is structural rather than a one-run accident.
 
-    They can never reach `implemented` — nobody should implement them — so every gate that
-    looks for "registered but not implemented" flags them forever. netflix-r44 carried two,
+    #1202xh: THIS SAID "they can never reach `implemented`", AND THE CORPUS SAYS OTHERWISE.
+    Of the 95 parked `__`-probe registrations across 61 runs, 42 carry `status=implemented`,
+    the most recent being r135's `/__noop_orchestrator_read_probe__` — an agent parks the
+    probe and something marks it done. The delivered r135 then SERVES it: 200, and it is one
+    of the 31 paths in the app's public `openapi.json`, so a person opening `/docs` finds a
+    framework probe among the app's endpoints (4 of 176 delivered backends carry one).
+    The tagging below is unaffected and works — every parked probe from r123 onward is tagged
+    `infra` — but it is the exemption that does the work, not this claim.
+
+    What stays true is the harm when the exemption does NOT fire: a gate that looks for
+    "registered but not implemented" flags a parked probe forever. netflix-r44 carried two,
     the ONLY two of its 37 endpoints that were not implemented, and they cost it: the
     response_key gate blocked delivery on one (#1202ds), the seed audit flagged the matching
     probe table (#1202du), and the orchestrator agent authored a P0 telling backend to write

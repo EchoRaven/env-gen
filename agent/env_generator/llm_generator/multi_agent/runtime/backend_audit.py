@@ -659,7 +659,11 @@ def _declared_public_materials_1202gt(backend_dir, table: str) -> bool:
     not an exemption, and it needs the materials half by itself — a table the screenshots and
     docs describe as a public feed must never be told, flatly, to scope itself to the caller.
 
-    Same file and key #1202gd reads, so the two cannot disagree about what was declared.
+    Same file and key #1202gd reads. #1202xh: they CAN still disagree — #1202gd matches the
+    entity name case-SENSITIVELY (`== table`) and this one lowercases both sides — but not
+    on any input the corpus produces: 0 of 1,706 entity names across 165 reference specs,
+    and 0 of 2,084 table names, is anything but lower-case. Stated rather than left as
+    "cannot", because that word is what would stop the next reader checking.
     """
     try:
         import json
