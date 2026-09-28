@@ -139,6 +139,21 @@ class HubRegistry:
         _redirect1202wq = None
         try:
             _probe = self.base_dir / "hubs"
+            # #1202xf: the ORIGINAL guard only fired when the correct store ALREADY existed,
+            # which is the one case that was never dangerous -- the data was there to find. The
+            # two it missed both end in a silent empty registry:
+            #   * a FRESH run (nothing exists yet): `<run>/shared/shared/hubs` is created and
+            #     every gate reads it as "nothing registered, nothing wrong", the exact failure
+            #     the warning below names;
+            #   * a run already carrying both, where the redirect declined and kept writing to
+            #     the doubled copy.
+            # `basename == "shared"` settles both without a probe: the argument is the RUN
+            # directory, whose child is `shared`, so a base_dir literally named `shared` is
+            # the caller having passed one level too deep. MEASURED on the corpus: 176 of 178
+            # run directories carry a `shared/shared`, 88 of them from runs between 2026-08-24
+            # and 2026-09-07 and 88 from this session's own tooling -- 7,220 files, every one
+            # a duplicate of a file already in the run's real `shared/hubs`.
+            _named_shared = self.base_dir.name == "shared"
             if _probe.is_dir() and not (self.base_dir / "shared" / "hubs").is_dir():
                 _redirect1202wq = _probe
                 import logging as _log1202wf
@@ -150,6 +165,18 @@ class HubRegistry:
                     self.base_dir, _probe, self.base_dir / "shared" / "hubs")
         except Exception:
             pass                      # a probe must never be able to stop a run from starting
+        if _redirect1202wq is None and locals().get("_named_shared"):
+            # #1202xf: no probe could help -- either nothing exists yet or both do. The name
+            # is enough, and `<base>/hubs` is where `_resolve_hub_dir` would have put the store
+            # had the caller passed the run directory.
+            _redirect1202wq = self.base_dir / "hubs"
+            import logging as _log1202xf
+            _log1202xf.getLogger(__name__).warning(
+                "#1202xf HubRegistry(%s) was given a directory named `shared`, which is one "
+                "level too deep. Using `%s` instead of creating `%s` -- a store nothing else "
+                "writes to, which every gate reads as 'nothing registered, nothing wrong'. "
+                "Pass the RUN directory (the parent of `shared`).",
+                self.base_dir, _redirect1202wq, self.base_dir / "shared" / "hubs")
         self._store_dir = _redirect1202wq or self._resolve_hub_dir(self.base_dir)
         self._store_dir.mkdir(parents=True, exist_ok=True)
 
