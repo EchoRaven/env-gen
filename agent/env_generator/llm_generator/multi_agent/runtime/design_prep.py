@@ -23,7 +23,7 @@ import json
 import os
 import shutil   # #1202hj
 from pathlib import Path
-from typing import Mapping, Dict, List, Optional
+from typing import Any, Mapping, Dict, List, Optional
 from .message_format import join_capped  # #1034
 
 _IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
@@ -372,7 +372,7 @@ def _img_part(path: str) -> Optional[Dict]:
 _DOCS_BUDGET_817 = 12000
 
 
-def _docs_for_prompt_817(docs_text: str) -> str:
+def _docs_for_prompt_817(docs_text: str, output_dir: Any = None) -> str:
     """#817: the reference spec, cut at a SECTION boundary and never silently.
 
     `docs_text[:4000]` dropped 1,690 of r151's 5,690-char `spec.md` — and every run in the corpus
@@ -400,7 +400,39 @@ def _docs_for_prompt_817(docs_text: str) -> str:
         "design-prep: reference docs are %d chars, over the %d budget — cut at a section "
         "boundary (%d chars kept). The analyst will NOT see: %s",
         len(text), _DOCS_BUDGET_817, cut, dropped or ["<unsectioned tail>"])
+    # #1202wp: AND WRITE DOWN WHAT WAS WITHHELD. #811 already named the dropped sections --
+    # into a log line, and run logs are not kept. What falls past this cut is not filler:
+    # the docstring above records that the 4000-char era dropped the per-screen behaviour
+    # list, the whole data model and seed-data sections, and the Wiring rule that
+    # `frontend_dead_controls` blocks releases over. So when an analyst's spec turns out to
+    # be missing exactly those, the run directory should be able to say whether the analyst
+    # was ever shown them.
+    _record_docs_withheld_1202wp(output_dir, len(text), cut, dropped)
     return text[:cut]
+
+
+def _record_docs_withheld_1202wp(output_dir: Any, total: int, cut: int, dropped: Any) -> bool:
+    """Persist the sections the analyst was not shown. Best-effort; never raises."""
+    try:
+        if output_dir is None:
+            return False
+        import json as _j1202wp
+        import time as _t1202wp
+        names = [str(d) for d in (dropped or [])]
+        out = Path(str(output_dir)) / "logs" / "docs_withheld_1202wp.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202wp.dumps({
+                "at": _t1202wp.time(),
+                "total_chars": int(total),
+                "kept_chars": int(cut),
+                "budget": _DOCS_BUDGET_817,
+                "withheld_count": len(names),
+                "withheld": names[:30] or ["<unsectioned tail>"],
+            }) + "\n")
+        return True
+    except Exception:
+        return False
 
 
 def _round_region_816(region) -> Optional[List[float]]:
@@ -709,7 +741,8 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
         ]
         if docs_text:
             parts.append({"type": "text", "text": "REFERENCE DOCS:\n"
-                                                  + _docs_for_prompt_817(docs_text)})
+                                                  + _docs_for_prompt_817(docs_text,
+                                                                          output_dir)})
         ref = ref_by_name.get(str(s.get("reference") or ""))
         p = _img_part(ref) if ref else None
         if p:
