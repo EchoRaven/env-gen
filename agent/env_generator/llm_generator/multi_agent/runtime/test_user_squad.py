@@ -626,7 +626,55 @@ async def run_test_user_squad(
                                start // wave + 1, report["completed"], report["spawned"])
             except Exception:
                 pass
+    record_squad_outcome_1202wn(orch, report)
     return report
+
+
+def record_squad_outcome_1202wn(orch: Any, report: Any) -> bool:
+    """Land the squad's own completion counts in an artifact. #947's rule.
+
+    `report` carries spawned / completed / timed_out / failed and a per-agent row, it is
+    logged once per wave, and nothing persisted it. So the single number that says what the
+    test-user squad actually did -- MEASURED at 0-6 of 12 agents, median ~2, never above 6
+    across 30 verdicts in 21 runs -- lived only in a run log, and run logs are not kept.
+
+    That is the number the next fix here needs. #1202ur corrected the VERDICT (a squad where
+    nobody finished no longer passes for filing no P0) and deliberately did not touch the
+    completion rate, because "just raise the timeout" is wrong while the 900s escape sits
+    above the squad block -- and deciding where the agents actually die requires this
+    breakdown from a finished run, not a terminal someone happened to be watching.
+
+    Per-agent rows carry the goal and its outcome, capped, with the count beside them so a
+    truncated list is still honest about what it left out (#1034).
+    """
+    try:
+        if not isinstance(report, dict):
+            return False
+        import json as _j1202wn
+        import time as _t1202wn
+        base = getattr(orch, "output_dir", None)
+        if base is None:
+            return False
+        out = Path(str(base)) / "logs" / "test_user_squad_1202wn.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        rows = [r for r in (report.get("agents") or []) if isinstance(r, dict)]
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202wn.dumps({
+                "at": _t1202wn.time(),
+                "spawned": int(report.get("spawned") or 0),
+                "completed": int(report.get("completed") or 0),
+                "timed_out": int(report.get("timed_out") or 0),
+                "failed": int(report.get("failed") or 0),
+                "agent_count": len(rows),
+                "agents": [{"goal": str(r.get("goal") or r.get("name") or "?")[:60],
+                            "kind": str(r.get("kind") or "")[:24],
+                            "completed": bool(r.get("completed")),
+                            "error": str(r.get("error") or "")[:120]}
+                           for r in rows[:20]],
+            }) + "\n")
+        return True
+    except Exception:
+        return False
 
 
 def gather_squad_inputs(orch: Any) -> Dict[str, Any]:
