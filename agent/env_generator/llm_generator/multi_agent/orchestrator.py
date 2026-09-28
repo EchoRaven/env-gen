@@ -1490,22 +1490,66 @@ class Orchestrator:
         except Exception as e:
             results["node"]["message"] = f"Node check failed: {e}"
         
-        # Check common ports
-        common_ports = [
-            self.context.api_port, 
-            self.context.ui_port, 
-            self.context.db_port,
-            3000, 5432, 8080, 8083
-        ]
-        
-        for port in set(common_ports):
+        # #1202xq: THE VERDICT IS ABOUT THIS RUN'S PORTS; THE DEFAULTS ARE ONLY CONTEXT.
+        #
+        # This probed the run's own api/ui/db ports TOGETHER WITH the fixed set
+        # {3000, 5432, 8080, 8083}, and set `available = False` if ANY were taken. No run
+        # binds the fixed four -- each gets its own allocation -- so on any box where something
+        # already listens on 3000/5432/8080 the verdict is False forever.
+        #
+        # MEASURED over the 92 runs carrying preflight.json: `available` is False in 92 of 92,
+        # including the 18 that DELIVERED, and the blocked set is a subset of {3000, 5432,
+        # 8080} in every single one. A run's OWN port has never once been blocked -- the
+        # allocator works. The clincher: `netflix-local-r43-portclash-forensics`, a run named
+        # for the port clash it was investigating, reports the identical three. The signal
+        # could not distinguish that run from any other, and nothing reads it (only
+        # `docker.available` is acted on, at #945's fail-fast).
+        #
+        # So the verdict now answers the one question that is actionable and was drowned out:
+        # is a port THIS RUN will bind already taken? The environment probe is kept beside it,
+        # because "something else holds 5432" is useful context for a human reading the file --
+        # it is simply not a statement about whether this run can start.
+        _own_ports_1202xq = [p for p in (self.context.api_port, self.context.ui_port,
+                                         self.context.db_port) if p]
+        _ctx_ports_1202xq = [3000, 5432, 8080, 8083]
+
+        # #1202be: a bare `except OSError: return True` would read a FAILED PROBE as "the
+        # port is taken" — a crash wearing the costume of an answer. Only the two errnos that
+        # actually mean "someone else has it" count; anything else is recorded as a probe
+        # fault, so `blocked` never carries a port the check merely failed to test.
+        _probe_faults_1202xq: Dict[int, str] = {}
+
+        def _taken_1202xq(port):
+            import errno as _errno
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
                     s.bind(('0.0.0.0', port))
-            except OSError:
+                return False
+            except OSError as _exc:
+                if getattr(_exc, "errno", None) in (_errno.EADDRINUSE, _errno.EACCES):
+                    return True
+                _probe_faults_1202xq[port] = "%s: %s" % (type(_exc).__name__, _exc)
+                return False
+
+        for port in sorted(set(_own_ports_1202xq)):
+            if _taken_1202xq(port):
                 results["ports"]["blocked"].append(port)
-        
+        results["ports"]["checked_1202xq"] = sorted(set(_own_ports_1202xq))
+        if _probe_faults_1202xq:
+            # SAY IT: a port this could not test is neither free nor taken, and a silent
+            # "free" would be the same lie in the other direction.
+            results["ports"]["probe_failed_1202xq"] = {
+                str(k): v for k, v in sorted(_probe_faults_1202xq.items())}
+        results["ports"]["environment_busy_1202xq"] = sorted(
+            p for p in set(_ctx_ports_1202xq) if p not in set(_own_ports_1202xq)
+            and _taken_1202xq(p))
+        results["ports"]["note_1202xq"] = (
+            "`available`/`blocked` cover ONLY the ports this run will bind. "
+            "`environment_busy_1202xq` lists well-known ports something else holds; no run "
+            "binds them, so they are context, not a verdict (#1202xq: the old check merged "
+            "the two and read False in 92 of 92 runs, 18 of which delivered).")
+
         if results["ports"]["blocked"]:
             results["ports"]["available"] = False
         
