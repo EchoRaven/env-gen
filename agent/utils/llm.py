@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, AsyncIterator, Dict, Optional, Union, Tuple, Set
+from collections.abc import Mapping  # #1202wz: usage dicts arrive in several shapes
 import asyncio
 import base64
 import contextvars
@@ -1329,6 +1330,45 @@ def tool_result_bytes() -> Dict[str, Any]:
         return {}
 
 
+def record_response_usage_1202wz(usage: Any) -> None:
+    """Record one response from a client that builds a ``usage`` dict, not raw fields.
+
+    #1202wz — THE SPEND CAP IS ENFORCED INSIDE ``_record_usage_1163`` AND THREE OF THE FIVE
+    PROVIDER CLIENTS NEVER CALLED IT.
+
+    Swept over every ``*Client`` class in this module:
+
+        OpenAIClient      records          GoogleClient    records
+        AnthropicClient   DOES NOT         LocalLLMClient  DOES NOT   MetagenClient  DOES NOT
+
+    On any of those three every call is invisible: ``_LLM_USAGE`` stays at zero, the run's
+    ``run_budget.json`` reports 0 calls and $0.00, and — because ``ENVGEN_MAX_SPEND_USD`` is
+    checked in ``_record_usage_1163`` and nowhere else (verified: one enforcement point in the
+    whole tree) — THE CAP NEVER TRIPS. A run launched on one of them has no budget bound at
+    all, and says so nowhere.
+
+    Reachable, not theoretical: `main.py` offers `--provider anthropic|local|metagen` as
+    documented choices, and `scripts/tiktok_designinput.sh` sets `ANTHROPIC_API_KEY` for
+    `ENVGEN_PROVIDER=anthropic`, refusing only providers it does not know. One environment
+    variable selects an uncapped run. The corpus shows production has been on the
+    OpenAI-compatible path throughout — 268,187 calls across 72 runs, every one of them
+    reporting a cache figure, which only that path's extraction produces — so this has cost
+    nothing yet. It is a live footgun, not a past loss.
+
+    Takes the dict because these three clients already build one; normalising here rather than
+    at each call site keeps one implementation of "what counts" (#1032). Absent is not zero
+    (#1026b): a provider that does not report a cache figure records the omission instead of a
+    false 0, exactly as the OpenAI path does."""
+    try:
+        if not isinstance(usage, Mapping):
+            usage = {}
+        _cached: Any = usage.get("cached_tokens", "n/a")
+        _record_usage_1163(usage.get("prompt_tokens"), _cached,
+                           usage.get("completion_tokens"))
+    except Exception:
+        return
+
+
 def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens: Any) -> None:
     """Accumulate one response. Never raises — accounting must not break a call."""
     # #1174: a successful response means the outage (if any) is over. Clearing here —
@@ -2536,6 +2576,41 @@ class OpenAIClient(BaseLLMClient):
                 yield chunk.choices[0].delta.content
 
 
+def _anthropic_usage_1202wz(u: Any) -> Dict[str, Any]:
+    """Anthropic's usage in this engine's shape, cache fields included.
+
+    #1202wz. The normaliser built `{prompt_tokens: input_tokens, ...}` and dropped
+    `cache_creation_input_tokens` and `cache_read_input_tokens` entirely — so the one provider
+    whose `cache_control` breakpoint this module goes out of its way to set was also the one
+    that could not report whether the breakpoint worked.
+
+    Anthropic's `input_tokens` EXCLUDES cache reads, while this engine's ledger treats `prompt`
+    as the whole prompt and `cached` as a subset of it (`uncached = prompt - cached`, priced in
+    `llm_usage`). So the full prompt is input + read + creation, and `cached` is the read.
+
+    Creation is billed at 1.25x and the ledger has no slot for it, so it lands in `uncached` at
+    1.0x: the figure understates a cache-write-heavy run slightly. Stated rather than hidden —
+    the alternative on this path was $0.00 and no cap at all."""
+    try:
+        _in = int(getattr(u, "input_tokens", 0) or 0)
+        _out = int(getattr(u, "output_tokens", 0) or 0)
+        _read = getattr(u, "cache_read_input_tokens", None)
+        _made = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+    except Exception:
+        return {}
+    _prompt = _in + _made + (int(_read) if _read is not None else 0)
+    out: Dict[str, Any] = {
+        "prompt_tokens": _prompt,
+        "completion_tokens": _out,
+        "total_tokens": _prompt + _out,
+        # #1026b: absent is not zero. A response without the field must record the OMISSION,
+        # not a 0 that reads as "the prefix is never cached".
+        "cached_tokens": int(_read) if _read is not None else "n/a",
+        "cache_creation_tokens_1202wz": _made,
+    }
+    return out
+
+
 class AnthropicClient(BaseLLMClient):
     """Anthropic API Client"""
 
@@ -2574,15 +2649,13 @@ class AnthropicClient(BaseLLMClient):
                     }
                 })
 
+        _usage_1202wz = _anthropic_usage_1202wz(response.usage)
+        record_response_usage_1202wz(_usage_1202wz)   # #1202wz: the spend cap lives here
         return LLMResponse(
             content=content,
             model=response.model,
             finish_reason=response.stop_reason or "stop",
-            usage={
-                "prompt_tokens": response.usage.input_tokens,
-                "completion_tokens": response.usage.output_tokens,
-                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-            },
+            usage=_usage_1202wz,
             tool_calls=tool_calls if tool_calls else None,
             raw_response=response,
             latency=latency,
@@ -2999,15 +3072,17 @@ class LocalLLMClient(BaseLLMClient):
         
         latency = (datetime.now() - start_time).total_seconds()
         
+        _usage_1202wz = {
+            "prompt_tokens": data.get("prompt_eval_count", 0),
+            "completion_tokens": data.get("eval_count", 0),
+            "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0),
+        }
+        record_response_usage_1202wz(_usage_1202wz)   # #1202wz: the spend cap lives here
         return LLMResponse(
             content=data.get("message", {}).get("content", ""),
             model=data.get("model", self.config.model_name),
             finish_reason="stop",
-            usage={
-                "prompt_tokens": data.get("prompt_eval_count", 0),
-                "completion_tokens": data.get("eval_count", 0),
-                "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0),
-            },
+            usage=_usage_1202wz,
             raw_response=data,
             latency=latency,
         )
@@ -3987,6 +4062,7 @@ class MetagenClient(BaseLLMClient):
         resp, parsed = await self._retry_with_backoff(
             self._complete_once, dialog, params, bool(tool_list))
         content, tool_calls, fr, usage, reasoning = parsed
+        record_response_usage_1202wz(usage)           # #1202wz: the spend cap lives here
         return LLMResponse(
             content=content or "", model=self.config.model_name, finish_reason=fr,
             usage=usage, tool_calls=tool_calls or None, raw_response=resp,
