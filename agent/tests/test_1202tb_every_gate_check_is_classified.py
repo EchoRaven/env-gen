@@ -51,6 +51,15 @@ _EXEMPT_1202TB = {
     # "nothing is registered yet" — true at tick 0 of every run, and transient whenever it
     # returns. Never terminal in 77 ledgers. A lane cannot act on "you have not written it
     # yet" any sooner than it already is.
+    # #1202wk: surfaced only once this scan learned to read names appended from a
+    # variable. Its producer says so outright -- "This is a FRAMEWORK defect, not an app
+    # bug -- do not dispatch a lane. Fix the projector/skeleton generator." -- so it is
+    # deliberately ownerless, and deliberately NOT in _COVERED_ELSEWHERE either: #1040
+    # reporting it as having no remediation owner is the correct, useful outcome for a
+    # defect no lane can fix. Never fired in the corpus.
+    "business_chain_framework_defect":
+        "framework-projected handler crashed; producer forbids dispatching a lane, and the "
+        "'no remediation owner' report is the point. 0 fires in the corpus",
     "no_endpoints_in_hub": "pre-implementation state; never terminal",
     "no_implemented_endpoints": "pre-implementation state; 23 fires / 6 runs, terminal in 0",
     "no_implemented_tables": "pre-implementation state; never fired",
@@ -85,6 +94,19 @@ def _emitted_check_names():
             for a in n.args:
                 if isinstance(a, ast.Constant) and isinstance(a.value, str):
                     names.add(a.value)
+    # #1202wk: AND THE NAMES APPENDED FROM A VARIABLE. The gate also writes
+    # `failed_checks.append(business_chain_block["reason"])`, where the name comes out of
+    # `business_chain_blockers`'s returned dict -- six of them. A literal-argument scan
+    # cannot see any, so `business_chain_environment_blocked` sat in no owner list and no
+    # exemption while this test reported everything classified. It fires 11x across 3 runs.
+    for _producer in (dg.business_chain_blockers,):
+        for n in ast.walk(ast.parse(inspect.getsource(_producer))):
+            if not (isinstance(n, ast.Return) and isinstance(n.value, ast.Dict)):
+                continue
+            for k, v in zip(n.value.keys, n.value.values):
+                if (isinstance(k, ast.Constant) and k.value == "reason"
+                        and isinstance(v, ast.Constant) and isinstance(v.value, str)):
+                    names.add(v.value)
     token_src = ast.parse(inspect.getsource(dg._deliverability_check_token))
     for n in ast.walk(token_src):
         if isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) \

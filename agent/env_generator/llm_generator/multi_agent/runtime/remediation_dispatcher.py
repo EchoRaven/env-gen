@@ -2760,6 +2760,19 @@ class RemediationDispatcher:
             # misreport; it does NOT buy silence, because #1040's wedge detector still fires
             # on a covered-elsewhere check that keeps failing (those 2 are the case it is for).
             "database_sql_missing",
+            # #1202wk: INVISIBLE TO THE CLASSIFICATION RATCHET, because the gate appends it
+            # from a variable -- `failed_checks.append(business_chain_block["reason"])` --
+            # and #1202tb reads literal append arguments only. `business_chain_blockers`
+            # can return six such names; five are owned or exempt, and this one reached
+            # neither list because nothing could see it. MEASURED before listing it, because
+            # an exemption list is an unchecked claim (#1202tr): 11 fires across 3 runs and
+            # TERMINAL IN NONE, so it resolved on its own every time.
+            #   business_chain_environment_blocked  11x across 3 runs. #1202of decided this
+            #     one deliberately: its producer's comment reads "Delivery still blocks
+            #     (nothing was verified); nobody is dispatched", because the app was
+            #     unreachable while the chains ran and no lane caused that. It clears when
+            #     the next validation re-runs the chains against a reachable app.
+            "business_chain_environment_blocked",
         }
         orch = self._orch
         try:
