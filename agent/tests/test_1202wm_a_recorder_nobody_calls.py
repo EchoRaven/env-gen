@@ -61,11 +61,23 @@ def _production_files():
     return out
 
 
+def _definition_files():
+    """Where a mechanism may be DEFINED -- the same tree its uses are counted over.
+
+    This scanned `env_generator/llm_generator` only while counting uses across `tools/` and
+    `utils/` too, so a dead mechanism defined in either of those was invisible to it by
+    construction. That is the partial-coverage flaw this sweep exists to catch, in the sweep
+    itself; #1202wr came from the same mistake in a different sweep. Widened: 7 more
+    mechanism methods come into scope, 0 of them dead today.
+    """
+    return _production_files()
+
+
 def _mechanism_methods():
     """`{name: (file, lineno, class)}` for uniquely-named mechanism-shaped methods."""
     seen = {}
     dupes = set()
-    for f in glob.glob(os.path.join(_ROOT, "**", "*.py"), recursive=True):
+    for f in _definition_files():
         try:
             tree = ast.parse(_read(f))
         except Exception:
