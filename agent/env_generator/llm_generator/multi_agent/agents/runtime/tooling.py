@@ -1448,6 +1448,64 @@ class AgentTooling:
             _tail = " ".join(_t) if _t else f"args={list(tool_args.keys())}"
             self._logger.info(f"[{self.agent_id}] 🔧 {tool_name}: {_tail}")
 
+    _FLUSH_EVERY_1202WL = 50
+
+    def _record_tool_ms_1202wl(self, tool_name: str, duration_ms: Any) -> None:
+        """Accumulate per-tool wall clock and flush the totals periodically. Never raises."""
+        if duration_ms is None or isinstance(duration_ms, bool):
+            return                      # an unknown duration recorded as 0 understates
+        try:
+            ms = float(duration_ms)
+        except (TypeError, ValueError):
+            return
+        agg = getattr(self, "_tool_ms_1202wl", None)
+        if agg is None:
+            agg = {}
+            self._tool_ms_1202wl = agg
+        row = agg.get(tool_name)
+        if row is None:
+            row = {"count": 0, "total_ms": 0.0, "max_ms": 0.0}
+            agg[tool_name] = row
+        row["count"] += 1
+        row["total_ms"] += ms
+        if ms > row["max_ms"]:
+            row["max_ms"] = ms
+        self._tool_ms_calls_1202wl = getattr(self, "_tool_ms_calls_1202wl", 0) + 1
+        if self._tool_ms_calls_1202wl % self._FLUSH_EVERY_1202WL:
+            return
+        self._flush_tool_ms_1202wl()
+
+    def _flush_tool_ms_1202wl(self) -> bool:
+        """Write the cumulative per-tool totals. `False` when there is nowhere to write."""
+        agg = getattr(self, "_tool_ms_1202wl", None)
+        if not agg:
+            return False
+        try:
+            import json as _j1202wl
+            base = getattr(getattr(self, "_hubs", None), "base_dir", None)
+            if base is None:
+                # A lane worktree's `workspace` is NOT the run directory (the gate has paid
+                # for that confusion before), so it is the fallback, never the first choice.
+                base = getattr(getattr(self, "workspace", None), "root", None) \
+                    or getattr(self, "workspace", None)
+            if base is None:
+                return False
+            out = Path(str(base)) / "logs" / "tool_timings_1202wl.json"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            ranked = sorted(agg.items(), key=lambda kv: -kv[1]["total_ms"])
+            out.write_text(_j1202wl.dumps({
+                "at": time.time(),
+                "agent": str(getattr(self, "agent_id", "") or ""),
+                "calls": int(getattr(self, "_tool_ms_calls_1202wl", 0)),
+                "tools": {k: {"count": v["count"],
+                              "total_ms": round(v["total_ms"], 1),
+                              "max_ms": round(v["max_ms"], 1)}
+                          for k, v in ranked},
+            }, indent=2), encoding="utf-8")
+            return True
+        except Exception:
+            return False
+
     def _log_tool_result(self, tool_name: str, result: ToolResult, duration_ms: int) -> None:
         """Log tool execution result with appropriate detail level."""
 
@@ -1455,6 +1513,26 @@ class AgentTooling:
             s = str(s)
             return s[:max_len] + "..." if len(s) > max_len else s
 
+        # #1202wl: THE WALL CLOCK REACHES AN ARTIFACT. `duration_ms` is computed for every
+        # tool call and, until now, only formatted into a log line -- and run logs are not
+        # kept, so the pipeline's largest cost could only ever be found while a run was
+        # live. The two measurements that drove the last cost work came from exactly there:
+        # check_inbox at 45 min/run (fixed by #1202sg, 12x) and run_validation at 49 min,
+        # both read off a terminal.
+        #
+        # A per-operation store already exists -- `SystemTools.record_operation_time` keeps
+        # count/total/min/max and persists them -- and it is DEAD three ways: no caller, no
+        # reader, and `system_performance.json` appears in 0 of the corpus's 176 run
+        # directories. It is not reused here because it re-reads and re-writes its whole
+        # JSON file on EVERY call; at ~674 tool calls per run that is the synchronous
+        # read-modify-write storm #1202sg spent a third of the wall clock removing.
+        #
+        # So: aggregate in memory, flush the cumulative totals every 50 calls. Each write is
+        # self-consistent, the I/O is ~14 writes per run, and a run that stops mid-window
+        # loses only the tail (<50 calls of ~674). Reporting only; nothing reads it yet,
+        # which is the point -- the next cost question should be answerable from a run
+        # directory instead of a live terminal.
+        self._record_tool_ms_1202wl(tool_name, duration_ms)
         status = "✅" if result.success else "❌"
         verbose_result_tools = {
             "check_inbox", "get_time", "db_schema", "list_reference_images"
