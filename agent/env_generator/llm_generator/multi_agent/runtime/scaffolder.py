@@ -17,6 +17,7 @@ call site stays unchanged.
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Mapping  # #1202xg
 from typing import Any
 
 # Runnable BASE backend entrypoint, committed to the git base pre-spawn (see
@@ -1236,7 +1237,31 @@ volumes:
             # (#1201), and silent until the frontend's service module exists.
             try:
                 from .message_format import join_capped as _jc1202uv
-                _fe1202uv = frontend_calls_without_backend_1202uv(out_dir, endpoints)
+                # #1202xg: the FULL registry, not `endpoints`. That name holds
+                # `business_endpoints(...)`, which by design drops "the fixed auth/oauth/
+                # infra/spine surface" -- exactly the endpoints a real frontend's login,
+                # logout, signup and tenant calls target. Asked against the business-only
+                # list, this detector answers "nobody implements POST /api/auth/login" about
+                # a route the app serves, and it writes that into an artifact a lane may act
+                # on. Its own docstring sets the bar: "a wrong entry costs more than a
+                # missing one."
+                #
+                # MEASURED on the two runs carrying the artifact: 7 of 7 reported endpoints
+                # are registered VERBATIM -- same method, same normalised path -- and were
+                # reported only because the list they were checked against had them removed.
+                # r136: GET+POST /api/v1/tenants (kind=control), POST /api/auth/login.
+                # r137: GET+POST /api/v1/tenants (kind=infra), POST /api/auth/logout,
+                # POST /api/auth/signup. A 100% false-positive rate.
+                #
+                # The question this asks is "does ANYTHING serve this path", so the answer
+                # has to be computed over everything registered. #1202h beside it is
+                # unaffected: it reads the backend source and reports lane routes.
+                _all_eps_1202xg = [
+                    _ep for _ep in ((registryhub.get_endpoints() or {}).values()
+                                    if registryhub else ())
+                    if isinstance(_ep, Mapping) and str(_ep.get("path") or "").strip()
+                ]
+                _fe1202uv = frontend_calls_without_backend_1202uv(out_dir, _all_eps_1202xg)
                 if _fe1202uv:
                     orch._logger.warning(
                         "#1202uv %d endpoint(s) the FRONTEND calls are implemented by nobody, "
