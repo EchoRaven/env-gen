@@ -13721,7 +13721,39 @@ def unstaged_seed_media_1202xn(output_dir) -> List[str]:
                 if rel.startswith(("icons/", "placeholders/")):
                     continue      # framework-owned, staged elsewhere
                 refs.add("/assets/" + rel)
-        return sorted(u for u in refs if not (pub / u.lstrip("/")).is_file())
+        # #1202xo: ON DISK IS NOT THE SAME AS IN THE IMAGE. A frontend lane that hits a docker
+        # build failure on a large media file repairs the build by excluding the file in
+        # `.dockerignore` -- and leaves the seed row pointing at it. r132 carries the exclusion
+        # with its reason in a comment ("the corrupt large media pair reported by Docker
+        # tar-writer diagnostics"), and r109/r110/r114/r119 carry the WILDCARD
+        # `public/assets/real_videos/*.mp4`, which removes EVERY video: 35, 35, 36 and 35
+        # seeded videos respectively, all present on disk and none of them in the image. Those
+        # four apps show a thumbnail on every card and play nothing.
+        #
+        # The disk check above reports 0 for all four, which is why this is here rather than
+        # left as the stated blind spot it was when #1202xn shipped. No framework code writes
+        # these lines -- grep finds none -- so the repair is the lane's and only half of it.
+        import fnmatch as _fn
+        _ignored: List[str] = []
+        _di = out / "app" / "frontend" / ".dockerignore"
+        if _di.is_file():
+            try:
+                _pats = [ln.strip() for ln in _di.read_text(encoding="utf-8",
+                                                            errors="ignore").splitlines()
+                         if ln.strip() and not ln.strip().startswith("#")
+                         and "assets/" in ln]
+            except Exception:
+                _pats = []
+            for _u in sorted(refs):
+                _rel = "public" + _u          # .dockerignore patterns sit beside package.json
+                if any(_fn.fnmatch(_rel, _p) for _p in _pats):
+                    _ignored.append(_u)
+        _absent = sorted(u for u in refs if not (pub / u.lstrip("/")).is_file())
+        # Name the CAUSE: "not staged" and "staged then excluded from the build" have
+        # different owners, and a reader who cannot tell them apart looks in the wrong place.
+        return ([u + " (not staged)" for u in _absent]
+                + [u + " (excluded from the image by .dockerignore)"
+                   for u in _ignored if u not in _absent])
     except Exception:
         return []
 

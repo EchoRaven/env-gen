@@ -58,7 +58,7 @@ _SEED = {"videos": [
 
 def test_an_unstaged_video_is_reported(tmp_path):
     got = unstaged_seed_media_1202xn(_run(tmp_path, _SEED, staged=["a.mp4"]))
-    assert got == ["/assets/real_videos/b.mp4"], got
+    assert got == ["/assets/real_videos/b.mp4 (not staged)"], got
 
 
 def test_everything_staged_is_silent(tmp_path):
@@ -79,7 +79,7 @@ def test_framework_owned_directories_are_skipped(tmp_path):
     seed = {"x": [{"u": "/assets/placeholders/ph.mp4"}, {"u": "/assets/icons/i.mp4"},
                   {"u": "/assets/real_videos/c.mp4"}]}
     got = unstaged_seed_media_1202xn(_run(tmp_path, seed))
-    assert got == ["/assets/real_videos/c.mp4"], got
+    assert got == ["/assets/real_videos/c.mp4 (not staged)"], got
 
 
 def test_a_missing_or_unreadable_run_is_silent(tmp_path):
@@ -117,3 +117,57 @@ def test_the_detector_runs_after_the_stager_and_reaches_an_artifact():
         assert nm in calls, "%s is never called" % nm
     assert calls["stage_missing_seed_photos"] < calls["unstaged_seed_media_1202xn"], (
         "the report runs before the stager, so it would name files staging then creates")
+
+
+# --- #1202xo: on disk is not the same as in the image -------------------------------------
+
+def _with_dockerignore(tmp_path, lines):
+    fe = tmp_path / "app" / "frontend"
+    fe.mkdir(parents=True, exist_ok=True)
+    (fe / ".dockerignore").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_a_staged_video_excluded_from_the_image_is_reported(tmp_path):
+    """★ r109/r110/r114/r119 each exclude `public/assets/real_videos/*.mp4` -- EVERY video,
+    35/35/36/35 of them, all present on disk. The disk check alone reports 0 for all four."""
+    root = _run(tmp_path, _SEED, staged=["a.mp4", "b.mp4"])
+    _with_dockerignore(root, ["node_modules", "public/assets/real_videos/*.mp4"])
+    got = unstaged_seed_media_1202xn(root)
+    assert len(got) == 2, got
+    assert all("excluded from the image" in g for g in got), got
+
+
+def test_the_r132_shape_a_single_named_exclusion(tmp_path):
+    root = _run(tmp_path, _SEED, staged=["a.mp4", "b.mp4"])
+    _with_dockerignore(root, ["# the corrupt large media pair",
+                              "public/assets/real_videos/b.mp4"])
+    got = unstaged_seed_media_1202xn(root)
+    assert got == ["/assets/real_videos/b.mp4 (excluded from the image by .dockerignore)"], got
+
+
+# A `test_a_comment_line_is_not_a_pattern` stood here and was REMOVED as vacuous. r132's real
+# .dockerignore does carry its reason in comments naming the very files, so the case looked
+# worth pinning -- but a comment can never match as a pattern anyway: `#` is a literal in
+# fnmatch, so `# public/assets/real_videos/a.mp4 was corrupt` matches nothing with or without
+# the `startswith("#")` filter. The test passed under a mutation that removed that filter,
+# which is #1202's rule that a green test proving nothing is not a test. The filter stays in
+# the code as cheap defence; it simply cannot be exercised from behaviour.
+
+
+def test_the_cause_is_named_so_the_owner_is_clear(tmp_path):
+    """★ "not staged" and "staged then excluded" have different owners; a reader who cannot
+    tell them apart looks in the wrong place."""
+    root = _run(tmp_path, _SEED, staged=["a.mp4"])      # b.mp4 absent
+    _with_dockerignore(root, ["public/assets/real_videos/a.mp4"])
+    got = unstaged_seed_media_1202xn(root)
+    assert sorted(got) == [
+        "/assets/real_videos/a.mp4 (excluded from the image by .dockerignore)",
+        "/assets/real_videos/b.mp4 (not staged)",
+    ], got
+
+
+def test_an_unrelated_ignore_entry_changes_nothing(tmp_path):
+    root = _run(tmp_path, _SEED, staged=["a.mp4", "b.mp4"])
+    _with_dockerignore(root, ["node_modules", "dist", "*.log"])
+    assert unstaged_seed_media_1202xn(root) == []
