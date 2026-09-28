@@ -1889,18 +1889,32 @@ def run_smoke_validation(
         # probe itself creates, so it is domain-agnostic and needs no seed user.
         _pw_probe_email = f"pwcheck_1202vb_{int(time.time() * 1000) % 100000000}@example.com"
         _pw_good = "Pwcheck-1202vb-Good"
+        # #1202wu: IN ITS OWN TENANT. This probe creates an account because that is what
+        # makes it domain-agnostic -- it needs no seeded user and no knowledge of the app's
+        # cast. The account then SHIPPED: #1202w7 measured the delivered r132 and r135 at 12
+        # users, 9 seeded and 3 added by the run, and this is one of the three. A person
+        # opening the app finds `pwcheck_1202vb_...@example.com` among its people.
+        #
+        # `/auth/register` and `/auth/login` both take `tenant_id` in the body, and the body
+        # wins over the X-Tenant-Id header, so the whole exchange can happen in a tenant the
+        # app never reads. The verification path is identical -- `verify_user_password(email,
+        # password, tenant_id=...)` -- so the probe still tests exactly what it tested: does
+        # login check the password at all. What changes is that the row lands beside the
+        # app's users instead of among them.
+        _pw_tenant = "fw_pwcheck_1202vb"
         _pw_reg = _http("POST", base + "/auth/register",
                         body={"email": _pw_probe_email, "password": _pw_good,
-                              "name": "Password Check Probe",
+                              "name": "Password Check Probe", "tenant_id": _pw_tenant,
                               "username": _pw_probe_email.split("@", 1)[0]})
         _pw_ok = _http("POST", base + "/auth/login",
-                       body={"email": _pw_probe_email, "password": _pw_good})
+                       body={"email": _pw_probe_email, "password": _pw_good,
+                             "tenant_id": _pw_tenant})
         _pw_wrong = _http("POST", base + "/auth/login",
-                          body={"email": _pw_probe_email,
+                          body={"email": _pw_probe_email, "tenant_id": _pw_tenant,
                                 "password": _pw_good + "-NOT-THE-PASSWORD"})
         _pw_ghost = _http("POST", base + "/auth/login",
                           body={"email": f"never_registered_1202vb_{_pw_probe_email}",
-                                "password": _pw_good})
+                                "tenant_id": _pw_tenant, "password": _pw_good})
         _pw_verdict, _pw_detail = wrong_password_verdict_1202vb(
             _pw_reg["status"], _pw_ok["status"], _pw_wrong["status"], _pw_ghost["status"])
         if _pw_verdict == "skip":
