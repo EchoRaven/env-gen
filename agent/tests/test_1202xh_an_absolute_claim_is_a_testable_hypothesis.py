@@ -94,3 +94,31 @@ def test_the_case_sensitivity_difference_is_still_real():
     assert ".lower() == want" in gt_src, gt_src[-400:]
     assert ".lower() == table" not in gd_src, (
         "#1202gd now lowercases too; the docstrings should be updated to say they agree")
+
+
+# --- #1202xi: the third claim from the same sweep ------------------------------------------
+
+def test_join_capped_no_longer_claims_every_caller_logs():
+    """52 of 87 call sites are not logging paths, and the four biggest files are the
+    lane-facing ones. The swallow is still right; the REASON was wrong."""
+    doc = _doc("message_format.py", "join_capped")
+    assert "every caller is a logging path" in doc, (
+        "the corrected claim should stay QUOTED beside what falsifies it")
+    assert "52 OF THE 87" in doc.upper(), "the measurement that falsifies it is gone"
+    assert "#983" in doc, (
+        "the consequence -- a blocker built from \"\" reads as an empty list -- is unstated")
+
+
+def test_join_capped_still_never_raises_on_a_bad_iterable():
+    """★ The behaviour the docstring promises, exercised rather than read."""
+    from multi_agent.runtime.message_format import join_capped
+    assert join_capped(None) == ""
+    assert join_capped(7) == ""                      # non-iterable
+    assert join_capped(["a", "b"], cap="x") == "a; b"   # bad cap falls back to 6
+    assert join_capped(["a"], total="nope") == "a"      # bad total falls back to len
+
+
+def test_join_capped_declares_the_remainder():
+    from multi_agent.runtime.message_format import join_capped
+    got = join_capped([str(i) for i in range(10)], cap=3)
+    assert got.startswith("0; 1; 2") and "(+7 more not shown)" in got, got

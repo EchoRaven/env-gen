@@ -38,8 +38,20 @@ def join_capped(items: Iterable[Any], total: Optional[Any] = None, cap: int = 6,
     """Join at most ``cap`` items and declare the remainder.
 
     ``total`` is what the caller is PRINTING as the count; when omitted the length of
-    ``items`` is used. Never raises — every caller is a logging path, and a formatting slip
-    must not be able to break a gate or a run.
+    ``items`` is used. Never raises: a formatting slip must not be able to break a gate or
+    a run.
+
+    #1202xi: THAT USED TO SAY "every caller is a logging path", AND 52 OF THE 87 CALL SITES
+    ARE NOT. The four biggest are exactly the lane-facing ones -- delivery_gate 12,
+    deliverability 10, remediation_dispatcher 10, scaffolder 8 -- where the joined text is
+    BLOCKER PROSE, not a log line: `deliverability.py:868` builds "Register the endpoints each
+    page actually calls." and `delivery_gate.py:1945` the contract/chain contradiction message.
+
+    Swallowing is still right, but the consequence is not "a log line is short". The only way
+    this returns "" is a non-iterable `items`, and a blocker built from "" READS AS AN EMPTY
+    LIST -- the #983 shape, a check that fires while naming nothing. A caller assembling
+    blocker prose should treat "" as "the instances could not be rendered", never as "there
+    are none".
     """
     try:
         seq = list(items or [])
