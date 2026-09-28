@@ -382,6 +382,33 @@ def _sent_body_1202ew(body: Any) -> Any:
         return "<unserialisable %s>" % type(body).__name__
 
 
+def route_ran_note_1052(s: Any) -> str:
+    """#1052's warning, at module level so BOTH readers of a broken step can say it.
+
+    #1202wx: this was a closure inside `execute_chain`, reachable only by `_fmt` -- the line
+    the GATE reports. `remediation_dispatcher._chain_broken_detail_798` builds the other one,
+    the body of the task a lane is actually dispatched on ("THE BROKEN STEP(S) ... fix THESE"),
+    and it had no way to reach this text. MEASURED over all 150 chain hubs: of 1617 steps the
+    dispatcher turns into lane work, 69 across 12 runs -- r137, the most recent run, among them
+    -- are 404s where the route RAN. Those tasks say "returned 404, expected 200" and nothing
+    more, which is the reading #1052 exists to prevent: it "sends the backend lane to implement
+    an endpoint it already wrote".
+
+    One definition, two callers (#1032: two copies of one rule drift). Reports only; changes no
+    verdict."""
+    try:
+        if int(s.get("status") or 0) != 404:
+            return ""
+        body = str(s.get("note") or "")
+        if not _route_ran_despite_404_1051(body):
+            return ""
+        return (" ⚠ the route RAN: this 404 is the backend's referenced-row marker, not a "
+                "missing route — the id this step sent does not resolve. Fix the CHAIN's "
+                "captured id or the seed, not the endpoint (#1052).")
+    except Exception:
+        return ""
+
+
 def _drop_unresolved_owner_fks(body: Any) -> tuple:
     """#575 — a body OWNER-FK whose ``${var}`` never resolved must be OMITTED, not guessed.
 
@@ -4255,18 +4282,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     # implement an endpoint it already wrote.
     #
     # Reports only; changes no verdict. The step still failed and business_chain still blocks.
-    def _route_ran_note_1052(s):
-        try:
-            if int(s.get("status") or 0) != 404:
-                return ""
-            body = str(s.get("note") or "")
-            if not _route_ran_despite_404_1051(body):
-                return ""
-            return (" ⚠ the route RAN: this 404 is the backend's referenced-row marker, not a "
-                    "missing route — the id this step sent does not resolve. Fix the CHAIN's "
-                    "captured id or the seed, not the endpoint (#1052).")
-        except Exception:
-            return ""
+    _route_ran_note_1052 = route_ran_note_1052
 
     # #1202hs: the paths the LANE's own router claims, so the ownership note below stops
     # telling a lane it cannot edit a handler it wrote (r106: `GET /api/search` was annotated

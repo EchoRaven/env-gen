@@ -524,6 +524,84 @@ def name_keyed_supersede_1202su(orch, failing: Sequence[Any]) -> str:
         return ""
 
 
+def _route_ran_note_1052_1202wx(st) -> str:
+    """#1052's warning, imported rather than restated -- see chain_executor.route_ran_note_1052.
+
+    Late import, mirroring this module's own `is_transport_failure_1202od` idiom. On an import
+    failure the line loses an annotation and keeps everything else; it must never take the
+    remediation task down with it."""
+    try:
+        from .chain_executor import route_ran_note_1052
+        return route_ran_note_1052(st)
+    except Exception:
+        return ""
+
+
+# #1202wx, over the 1617 actionable step notes in all 150 chain hubs (median length 53): a cap
+# of 320 passes 98.8% of them through WHOLE and cuts 20; the inherited 160 passed 93.4% and cut
+# 106. The step line is one of at most 8 in a task (#811), so the worst case stays ~2.5KB.
+_NOTE_CAP_1202WX = 320
+# #1202wx: the framework's own opening sentence about the step ends at character 160 (median),
+# 176 (p90) — a head of 90, which is what I first wrote, cut that sentence in half.
+_NOTE_HEAD_1202WX = 180
+# #1202wx: the evidence segment (the app's `{"detail": ...}` plus the diagnosis clause beside
+# it, up to the next section marker) is 38 chars at the median and 42 at p75.
+_NOTE_EVIDENCE_KEEP_1202WX = 120
+# #1202wx: fallback when a note carries no evidence marker at all — 27 of the 106 long notes.
+# Half the head, since with no app words to anchor on there is nothing measured to preserve.
+_NOTE_TAIL_1202WX = 90
+# What the app itself said, in the shapes the generated backends use.
+_NOTE_EVIDENCE_MARKS_1202WX = ('{"detail"', '"detail"', "{'detail'")
+
+
+def _note_keeping_the_evidence_1202wx(note: str) -> str:
+    """#1202wx — when a step note is too long, drop the middle, never the app's own words.
+
+    The step line handed to a lane cut the note at 160 characters, silently. MEASURED over all
+    150 chain hubs: of the 1617 steps this function turns into lane work, 106 across 25 runs
+    carry a longer note, and in **40 of them the cut removed the backend's own error message**
+    — the `{"detail": "..."}` the handler returned, the most actionable fragment in the line.
+    The framework's reading of the step sits in front of it and spends the budget first; the
+    median position of that detail is character 160, exactly the cliff. That is #1202vx's rule
+    ("the explanation must not spend the evidence budget") arriving from a second direction,
+    and #1034's ("no count beside a silent truncation") at the same time.
+
+    So the window is anchored on the evidence when there is any: head, marker, then the app's
+    words onward. A plain head/tail cut recovered 33 of the 40, and the 7 it still lost were
+    the RICHEST notes (472–671 chars), where the detail and the framework's diagnosis of it
+    ("you sent place_id=143, and no such row exists") both sit mid-string — the cases a lane
+    most needs. Without a marker it falls back to head and tail.
+
+    The marker states how much went, so a reader knows to open the record for the rest."""
+    try:
+        text = str(note or "")
+        if len(text) <= _NOTE_CAP_1202WX:
+            return text
+        at = -1
+        for mark in _NOTE_EVIDENCE_MARKS_1202WX:
+            at = text.find(mark)
+            if at >= 0:
+                break
+        if at < 0:
+            head, kept = text[:_NOTE_HEAD_1202WX], text[-_NOTE_TAIL_1202WX:]
+        elif at + _NOTE_EVIDENCE_KEEP_1202WX <= _NOTE_HEAD_1202WX:
+            head, kept = text[:_NOTE_HEAD_1202WX], ""      # already whole inside the head
+        elif at <= _NOTE_HEAD_1202WX:
+            # The evidence STRADDLES the head boundary. Extending the head keeps it in one
+            # piece; slicing at the boundary chopped it mid-token (r102 kept `{"deta`).
+            head, kept = text[:at + _NOTE_EVIDENCE_KEEP_1202WX], ""
+        else:
+            head, kept = text[:_NOTE_HEAD_1202WX], text[at:at + _NOTE_EVIDENCE_KEEP_1202WX]
+        dropped = len(text) - len(head) - len(kept)
+        if dropped <= 0:
+            return text
+        return "%s …[%d chars cut; the full note is on the step record]… %s" % (
+            head, dropped, kept) if kept else (
+            "%s …[%d chars cut; the full note is on the step record]" % (head, dropped))
+    except Exception:
+        return str(note or "")[:_NOTE_CAP_1202WX]
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -573,12 +651,14 @@ def _chain_broken_detail_798(orch) -> List[str]:
                         "backend." % (", ".join(sorted(_sib)[:3]),
                                       _canon_endpoint_1135(st.get("method"), st.get("path"))))
                 out.append(
-                    "%s -> step %r: %s %s returned %s, expected %s%s%s" % (
+                    "%s -> step %r: %s %s returned %s, expected %s%s%s%s" % (
                         name, str(st.get("action") or "?"),
                         str(st.get("method") or "?"), str(st.get("path") or "?"),
                         got if got is not None else "no response",
                         exp if exp else "a 2xx",
-                        (" — " + note[:160]) if note else "", _sib_txt))
+                        (" — " + _note_keeping_the_evidence_1202wx(note)) if note else "",
+                        _route_ran_note_1052_1202wx(st),   # #1202wx
+                        _sib_txt))
             if not (lr.get("steps") or []):
                 for b in (lr.get("broken") or []):
                     out.append("%s -> broken: %s" % (name, str(b)[:200]))
