@@ -468,6 +468,19 @@ async def _framework_auth_guard(request, call_next):
         p in ("/", "/health", "/openapi.json", "/docs", "/redoc", "/favicon.ico")
         or p.startswith("/auth/") or p.startswith("/api/v1/")
         or p.startswith("/.well-known") or p.startswith("/oauth")
+        # #1202xp: THE SAME BOTH-PREFIXES ARGUMENT #64 MAKES BELOW, FOR THE TWO IT MISSED.
+        # The AS router is mounted bare AND under /api (include_router(prefix="/api")), so
+        # every one of these answers on both spellings — but only the bare spelling was
+        # public. Measured on four delivered stacks (r135/r132/r126/netflix-r30, identical in
+        # all four): /.well-known/jwks.json 200, /api/.well-known/jwks.json 401; same for
+        # oauth-authorization-server. A JWKS that requires a token is self-contradictory —
+        # RFC 7517/8414 have a client fetch it BEFORE it holds one — and both paths sit in
+        # the app's public openapi.json, so the app advertises an endpoint it then refuses.
+        # No consumer was found on the /api spelling (the MCP server uses the bare one, the
+        # frontend bundle references neither), so this is a published-surface correctness
+        # fix, not an outage. Additive and in the safe direction: these paths are public by
+        # specification, and their bare twins are already public here.
+        or p.startswith("/api/.well-known") or p.startswith("/api/oauth")
         # #64 (outlook run-48, live): the frontend's api.js prefixes EVERY call
         # with /api, so its login/register hit /api/auth/login|register — which
         # the guard walled (only /auth/* was public under the /api umbrella) →
