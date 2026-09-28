@@ -995,7 +995,25 @@ _TERMINAL_ERROR_PHRASES = (
 # Prices are configuration, not knowledge: this file must not carry a guess at a model's
 # rate. Unset -> tokens are still counted and the cost reads 0.0, which is honest ("not
 # priced") rather than wrong.
-_LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unreported": 0}
+_LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unreported": 0,
+              # #1202wr: retries are invisible otherwise. `_retry_with_backoff` measures each
+              # attempt's elapsed seconds and logs it, and nothing counts the attempts, so a
+              # finished run cannot say how much of its wall clock -- or its bill, since a
+              # failed attempt can still be charged for input -- went to re-rolls. These ride
+              # the channel that already exists: run_budget writes `llm_usage()` wholesale,
+              # so a new key here reaches run_budget.json with no further wiring (#1032 --
+              # the alternative was a second reporting path beside a good one).
+              "retries": 0, "retry_sec": 0.0}
+
+
+def record_llm_retry_1202wr(elapsed_sec: Any = 0.0) -> None:
+    """One failed attempt that will be retried, and the seconds it burned. Never raises."""
+    try:
+        _LLM_USAGE["retries"] = int(_LLM_USAGE.get("retries") or 0) + 1
+        _LLM_USAGE["retry_sec"] = round(
+            float(_LLM_USAGE.get("retry_sec") or 0.0) + max(0.0, float(elapsed_sec or 0.0)), 2)
+    except Exception:
+        pass
 
 
 # ---- #1202cr ----------------------------------------------------------------
@@ -1743,6 +1761,7 @@ class BaseLLMClient(ABC):
                 return result
             except Exception as e:
                 elapsed = (datetime.now() - attempt_start).total_seconds()
+                record_llm_retry_1202wr(elapsed)   # #1202wr
                 last_error = e
                 error_type = type(e).__name__
                 error_msg = str(e)[:200]  # Truncate long errors
