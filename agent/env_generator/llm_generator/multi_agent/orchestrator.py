@@ -1073,11 +1073,16 @@ class Orchestrator:
             project_description=getattr(self, "_description", "") or "",
         )
 
-        # System-level metrics (token usage, performance, retries)
-        # Stored under shared/hubs/ directory; no hub runtime dependency.
-        from tools.system_tools import SystemMetrics
-        self.metrics = SystemMetrics(self.output_dir)
-        
+        # #1202wm: `SystemMetrics` was constructed here and never called. All six of its
+        # methods had zero production references, and its three stores --
+        # system_token_usage.json / system_performance.json / system_retries.json -- appear
+        # in 0 of the corpus's 176 run directories. Both halves are superseded: run_budget
+        # tracks spend (and projects it across resumes, which SystemMetrics never did), and
+        # #1202wl records per-tool wall clock without the read-modify-write-per-call that
+        # made this one unusable at ~674 tool calls a run. Removed rather than left in
+        # place, because a facility that looks available and is empty costs a reader more
+        # than no facility: it cost me an hour today.
+
         # Shared spawn runtime: both resident core agents and dynamic agents
         # should go through the same low-level creation/start path.
         self.spawn_service = AgentSpawnService(self)

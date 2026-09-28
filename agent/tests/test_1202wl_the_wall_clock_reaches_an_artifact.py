@@ -13,6 +13,10 @@ synchronous read-modify-write storm #1202sg spent a third of the wall clock remo
 
 So the totals are aggregated in memory and flushed every 50 calls: each write is
 self-consistent, the I/O is ~14 writes per run, and a stopped run loses only the tail.
+
+(A test here used to pin WHY that store was not reused -- it wrote its whole file per call.
+#1202wm then removed the store entirely, so the comparison has no subject and the test went
+with it.)
 """
 import json
 import os
@@ -109,21 +113,6 @@ def test_the_run_directory_wins_over_the_workspace(tmp_path):
         h._record_tool_ms_1202wl("read", 1)
     assert (run / "logs" / "tool_timings_1202wl.json").exists()
     assert not (worktree / "logs").exists()
-
-
-def test_the_dead_store_is_still_dead(tmp_path):
-    """★ The reason this does not call `record_operation_time`: it writes per call.
-
-    If that ever gains a caller, this note and the choice here should be revisited together.
-    """
-    import inspect
-
-    from env_generator.llm_generator.tools import system_tools
-
-    src = inspect.getsource(system_tools.SystemMetrics.record_operation_time)
-    assert "_save(" in src and "_load(" in src, (
-        "the reuse was declined because it is a full read-modify-write per call; if that "
-        "changed, reuse it instead of this aggregate")
 
 
 def test_the_recorder_is_on_the_live_tool_path():
