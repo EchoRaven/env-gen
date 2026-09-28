@@ -1318,6 +1318,40 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             for s in out) or any(
             str(s.get("action", "")).startswith("framework_isolation_probe")
             for s in out)
+        # #1202wj: SAY WHEN THE SUPPRESSION RESTS ON A TOKENLESS 401.
+        # `_has_denial` above is a hand-rolled "401 or 403" test, while this file already
+        # carries `_is_cross_user_denial`, written to mean the opposite of one of those --
+        # its docstring says "NOT an auth-roundtrip 401 (no token)". So a chain whose only
+        # denial is "no token -> 401" counts as isolation coverage and this probe is not
+        # injected, although nothing in it ever asks whether one user may touch another's
+        # row. That is #1202vb's lesson one level up: a refusal of an ANONYMOUS request says
+        # nothing about who a token belongs to.
+        #
+        # MEASURED over the corpus's 4630 chains: 927 have a tokenless 401 and no cross-user
+        # denial, and 217 of those satisfy every other precondition here -- so the probe is
+        # suppressed for them by a denial that does not test what the probe tests.
+        #
+        # It is NOT injected for them anyway. The probe expects 403/404 from "the PROJECTED
+        # owner-safe write handler BY CONSTRUCTION (writes stay projected)" -- and that
+        # premise does not hold in this corpus: of the runs that define an item PUT at all,
+        # netflix-r30 and 20 others define the SAME path in custom_routes.py as well, so the
+        # request may be served by a lane handler whose ownership behaviour is unknown.
+        # Widening a BLOCKING probe onto a premise measured false would trade a silent gap
+        # for false failures. So this reports the gap and changes no verdict.
+        if _has_denial and not any(_is_cross_user_denial(s) for s in out
+                                   if isinstance(s, Mapping)):
+            try:
+                _first1202wj = next(
+                    ("%s %s" % (str(s.get("method", "GET")).upper(), s.get("path"))
+                     for s in out if isinstance(s, Mapping) and s.get("path")), "?")
+                __import__("logging").getLogger(__name__).warning(
+                    "#1202wj a chain starting %s counts as isolation-covered on a TOKENLESS "
+                    "denial only: no step asks whether one user may reach another's row, and "
+                    "the cross-user probe is suppressed because a 401 was found. Nothing in "
+                    "this chain would catch a backend that hands any valid token full "
+                    "access.", _first1202wj)
+            except Exception:
+                pass
         if not _has_denial:
             _probe_target = None
             for s in out:
