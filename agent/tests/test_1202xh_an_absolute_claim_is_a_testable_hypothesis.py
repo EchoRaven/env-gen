@@ -122,3 +122,27 @@ def test_join_capped_declares_the_remainder():
     from multi_agent.runtime.message_format import join_capped
     got = join_capped([str(i) for i in range(10)], cap=3)
     assert got.startswith("0; 1; 2") and "(+7 more not shown)" in got, got
+
+
+# --- #1202xj: a claim that was TRUE but carried its filter in one capital letter ----------
+
+def test_the_module_index_states_its_capitalisation_filter():
+    """Not a false claim -- an implied one. The `Name` in `{Name: [files]}` was the only
+    thing saying lowercase modules are excluded, and reading it loosely (as I did) suggests
+    `api.js` should be indexed and is not."""
+    doc = _doc("frontend_scaffold.py", "_project_modules_1202pl")
+    assert "isupper" in doc or "CAPITALISED" in doc.upper(), (
+        "the filter is implied by one capital letter again")
+    assert ".ts" in doc, "the extension list still omits .ts, which the code accepts"
+
+
+def test_the_module_index_really_skips_lowercase_stems(tmp_path):
+    """★ Exercised, not read -- the docstring now promises this."""
+    from multi_agent.runtime.frontend_scaffold import _project_modules_1202pl
+    src = tmp_path / "src"
+    (src / "pages").mkdir(parents=True)
+    (src / "pages" / "ProfilePage.jsx").write_text("x", encoding="utf-8")
+    (src / "pages" / "api.js").write_text("x", encoding="utf-8")
+    (src / "pages" / "Widget.ts").write_text("x", encoding="utf-8")
+    got = _project_modules_1202pl(src)
+    assert set(got) == {"ProfilePage", "Widget"}, got

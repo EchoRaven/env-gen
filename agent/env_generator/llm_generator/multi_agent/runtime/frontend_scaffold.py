@@ -761,7 +761,16 @@ _ROUTER_NAMES_1202PL = frozenset({
 
 
 def _project_modules_1202pl(src_dir: Path) -> Dict[str, List[Path]]:
-    """``{Name: [files]}`` for every .jsx/.tsx/.js file under src named ``Name.*``."""
+    """``{Name: [files]}`` for every .jsx/.tsx/.js/.ts file under src whose stem is
+    CAPITALISED -- `g.stem[:1].isupper()`, i.e. component modules only.
+
+    #1202xj: the capital in ``Name`` was carrying that filter silently, and a lowercase
+    module (`api`, `bc_auth`, `main`, `media`) is absent from the index by design, not by
+    accident. Measured on four delivered frontends -- r137, r135, netflix-r30, googlemaps-r16
+    -- the index holds 15/37/31/73 names and the same three or four lowercase stems are out
+    of each. Stated because `_import_line_for_1202pl` returns "" for any name this map lacks,
+    so "not in the index" and "ambiguous" reach the caller identically.
+    """
     out: Dict[str, List[Path]] = {}
     for g in src_dir.rglob("*"):
         if (g.suffix in (".jsx", ".tsx", ".js", ".ts") and g.is_file()
