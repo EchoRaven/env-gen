@@ -94,6 +94,28 @@ PY
 '''
 
 
+def record_ddl_behind_models_1202xk(out_dir, rows) -> bool:
+    """Append one line to ``logs/ddl_behind_models_1202xk.jsonl``. #1202xk.
+
+    An artifact, not only a log line: the log is not kept and this is exactly the question
+    ("why does every read of this table 500?") that cannot be answered after the run without
+    one. Mirrors `record_unregistered_routes_1202ui`. Never raises."""
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        if not rows:
+            return False
+        d = _P(str(out_dir)) / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "ddl_behind_models_1202xk.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": round(_t.time(), 3), "count": len(rows),
+                               "tables": list(rows)}, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def record_unregistered_routes_1202ui(out_dir, routes) -> bool:
     """Land #1202h's finding in an artifact, not only in a log line.
 
@@ -1212,6 +1234,30 @@ volumes:
                 warn_once_1201("scaffolder.spec_visibility_1202hh",
                                "the materials' visibility backfill (#1202hh)", _e1202hh)
             res = write_backend_skeleton(out_dir, endpoints, tables)
+            # #1202xk: the DDL and models.py are built from two independent reads of a
+            # mutable schema hub, in two different methods. A table the lane finishes
+            # registering between them lands in models.py and not in the DDL, `create_all`
+            # skips the existing stub, and every read of the absent columns 500s with no
+            # gate saying why. Reports only; own try (#1201). Runs HERE because this is the
+            # first moment both files exist.
+            try:
+                from .database_scaffold import ddl_behind_models_1202xk
+                from .message_format import join_capped as _jc1202xk
+                _ddl1202xk = ddl_behind_models_1202xk(out_dir)
+                if _ddl1202xk:
+                    orch._logger.warning(
+                        "#1202xk %d table(s) have columns models.py maps that the init DDL "
+                        "never creates — `create_all` skips a table that exists, so the stub "
+                        "survives and every read of those columns 500s. The delivered "
+                        "googlemaps-r16 shipped `places` as (id) alone against 13 mapped "
+                        "columns: %s",
+                        len(_ddl1202xk),
+                        _jc1202xk(_ddl1202xk, total=len(_ddl1202xk)))
+                    record_ddl_behind_models_1202xk(out_dir, _ddl1202xk)
+            except Exception as _e1202xk:
+                from .message_format import warn_once_1201
+                warn_once_1201("ddl_behind_models_1202xk",
+                               "the DDL/models drift report (#1202xk)", _e1202xk)
             # #1202h: report routes the app serves that the contract never declared — they are
             # ungated BY CONSTRUCTION, since every gate reads the registry. Own try (#1201).
             try:

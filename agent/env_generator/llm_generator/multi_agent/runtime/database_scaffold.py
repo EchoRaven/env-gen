@@ -404,6 +404,92 @@ def _derived_col_type(spec: Any) -> str:
     return "text"
 
 
+def ddl_behind_models_1202xk(output_dir: Any) -> List[str]:
+    """``["places: lat, lng, rating (+9 more)", ...]`` — columns models.py maps that the init
+    DDL never creates. ``[]`` when both files are absent or agree.
+
+    #1202xk: THE TWO ARE BUILT FROM TWO INDEPENDENT READS OF A MUTABLE HUB. `generate_database`
+    does `schema_hub.list_tables()` -> `synthesize_missing_tables` -> `write_database_scaffold`,
+    and `generate_backend_skeleton` does the same three steps again for `render_models`. They
+    are different methods, invoked at different times, so a table the lane finishes registering
+    between them lands in models.py and not in the DDL.
+
+    What that looks like when it fires, from the delivered googlemaps-r16: the DDL creates
+    `places`, `routes`, `saved_list_items` and `places_autocomplete` as `("id" SERIAL PRIMARY
+    KEY)` and NOTHING ELSE, while models.py maps 13 columns on `places` alone — name, lat, lng,
+    rating, business_status and the rest. `create_all` skips a table that exists, so the stub
+    survives and every read of those columns 500s with no gate saying why.
+
+    MEASURED across the 148 delivered backends carrying both files: 2 are affected --
+    googlemaps-r16 (85 columns) and tiktok-web-r107 (`videos.metadata`, 1). Neither is recent;
+    the newest is 2026-09-07. But the cause is a live race, not a fixed bug, which is why this
+    reports rather than assumes it cannot happen again.
+
+    REPORTS, NEVER BLOCKS -- the same bargain #1202h and #1202uv strike. Pure and best-effort:
+    any error, or either file missing, returns []."""
+    try:
+        import ast as _ast
+        import re as _re
+        from pathlib import Path as _P
+        root = _P(str(output_dir))
+        models = root / "app" / "backend" / "models.py"
+        sql = root / "app" / "database" / "init" / "01_init.sql"
+        if not (models.is_file() and sql.is_file()):
+            return []
+        ddl_text = sql.read_text(encoding="utf-8", errors="ignore")
+        ddl: Dict[str, set] = {}
+        for m in _re.finditer(
+                r"CREATE TABLE(?:\s+IF NOT EXISTS)?\s+[\"']?(\w+)[\"']?\s*\((.*?)\n\);",
+                ddl_text, _re.S | _re.I):
+            cols = set()
+            for line in m.group(2).splitlines():
+                line = line.strip().rstrip(",")
+                if not line or line.upper().startswith(
+                        ("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT", "CHECK")):
+                    continue
+                c = _re.match(r"[\"']?(\w+)[\"']?\s+\S", line)
+                if c:
+                    cols.add(c.group(1).lower())
+            ddl[m.group(1).lower()] = cols
+        # ALTER ... ADD COLUMN counts: a later migration is still the DDL creating it.
+        for m in _re.finditer(
+                r"ALTER TABLE\s+[\"']?(\w+)[\"']?\s+ADD COLUMN(?:\s+IF NOT EXISTS)?\s+[\"']?(\w+)[\"']?",
+                ddl_text, _re.I):
+            ddl.setdefault(m.group(1).lower(), set()).add(m.group(2).lower())
+        out: List[str] = []
+        tree = _ast.parse(models.read_text(encoding="utf-8", errors="ignore"))
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.ClassDef):
+                continue
+            tname = None
+            cols = set()
+            for b in node.body:
+                if not (isinstance(b, _ast.Assign) and len(b.targets) == 1
+                        and isinstance(b.targets[0], _ast.Name)):
+                    continue
+                if b.targets[0].id == "__tablename__" and isinstance(b.value, _ast.Constant):
+                    tname = str(b.value.value).lower()
+                    continue
+                v = b.value
+                if isinstance(v, _ast.Call) and getattr(v.func, "id", "") == "Column":
+                    # `Column('real_name', ...)` wins over the attribute (#216 renames
+                    # `metadata` to `metadata_` and keeps the DB name in the first argument).
+                    name = b.targets[0].id
+                    if v.args and isinstance(v.args[0], _ast.Constant) and isinstance(
+                            v.args[0].value, str):
+                        name = v.args[0].value
+                    cols.add(name.lower())
+            if not tname or tname not in ddl:
+                continue           # a table the DDL never creates at all is a different class
+            missing = sorted(cols - ddl[tname])
+            if missing:
+                from .message_format import join_capped as _jc
+                out.append("%s: %s" % (tname, _jc(missing, total=len(missing), cap=4)))
+        return sorted(out)
+    except Exception:
+        return []
+
+
 def synthesize_missing_tables(tables: Any, endpoints: Any) -> Dict[str, Any]:
     """BY-CONSTRUCTION contract completeness: ADD a backing table for every
     creatable business RESOURCE that has NO registered table, derived from the
