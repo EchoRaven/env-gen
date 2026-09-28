@@ -1,10 +1,22 @@
 """#1202wu: the password probe's account must not land among the app's own users.
 
 #1202vb creates an account because that is what makes it domain-agnostic: it needs no
-seeded user and no knowledge of the app's cast. The account then shipped. #1202w7 measured
-the delivered r132 and r135 at 12 users -- 9 seeded, 3 added by the run -- and this probe is
-one of the three; a person opening either app finds `pwcheck_1202vb_...@example.com` among
-its people.
+seeded user and no knowledge of the app's cast. The account then persists in whatever
+database the probe ran against.
+
+CORRECTION (#1202wv, 2026-09-28). This test originally cited #1202w7's reading of the
+delivered r132 and r135 -- 12 users, 9 seeded, 3 added -- as "a person opening either app
+finds `pwcheck_1202vb_...@example.com` among its people". That reading was MY OWN
+CONTAMINATION. The three rows carry timestamps 2026-09-26 02:19:20.479 / 02:22:10.912 /
+05:34:58.374 in r132 and .751 / 02:22:11.086 / .612 in r135: millisecond-adjacent across two
+independent stacks, i.e. one loop of my own probe scripts hitting both, not two runs. Two of
+the three names (`pwprobe_`, `inv_`) exist nowhere in this repo or its git history, because
+they were throwaway scripts of mine. r132 and r135 shipped 9 users each, all seeded.
+
+What remains true, from the runs' own volumes (created 2026-09-16, never wiped): the
+delivered tiktok-web-r126 carries 16 accounts its own chains registered, netflix-local-r30
+carries 53. So a framework probe's account CAN ship; it is simply not what r132/r135 showed.
+Isolating the exchange costs nothing and removes the question, so the fix stands on that.
 
 `/auth/register` and `/auth/login` both accept `tenant_id` in the body, and the body wins
 over the X-Tenant-Id header, so the whole exchange can happen in a tenant the app never

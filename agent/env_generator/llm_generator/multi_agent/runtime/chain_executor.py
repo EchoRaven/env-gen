@@ -409,6 +409,60 @@ def _drop_unresolved_owner_fks(body: Any) -> tuple:
     return {k: v for k, v in body.items() if k not in dropped}, dropped
 
 
+# #1202wv: a TENANT key is neither an owner FK nor a resource id, and both of the body's
+# unresolved-placeholder fallbacks land it somewhere wrong.
+_TENANCY_KEYS_1202WV = ("tenant_id", "tenantid", "tenant")
+_WHOLE_BRACE_1202WV = re.compile(r"\$\{[^}]+\}|\{[A-Za-z_]\w*\}")
+
+
+def _drop_unresolved_tenancy_1202wv(body: Any) -> tuple:
+    """#1202wv — an unresolved ``${tenant}`` in a body must be OMITTED, like its header.
+
+    #1202qb already drops an unresolved placeholder from a HEADER, on the stated ground that
+    "``${...}`` never names anything real". The identical literal in the BODY was left alone,
+    and #1202wu established that for `/auth/register` and `/auth/login` **the body wins over
+    the header** — so the repair removes the side that loses and keeps the side that decides.
+    r135 records exactly that: `autofilled: ["header-omitted-unresolved:X-Tenant-ID"]` on a
+    step whose body still read ``{"tenant_id": "${tenantA}"}``.
+
+    Two ways it lands, both visible in the delivered tiktok-web-r126 `tenants` table:
+      * the literal survives (no `last_id` yet — a register is usually a chain's FIRST step),
+        and `oauth_store.create_user` does `INSERT INTO tenants ... ON CONFLICT DO NOTHING`,
+        laundering a malformed request into persistent state: three tenant rows named
+        ``${tenantA}`` / ``${tenantId}`` / ``${tenant_id}``, holding 14 of the app's users.
+      * `_resolve_unresolved_dollar_vars` reaches its `return last_id` — ``${tenantA}`` ends
+        in no `_id`, so no resource candidate matches — and files the actor under whatever row
+        was created last: eight more tenants in that same table named `13`, `37`, `39`, `45`,
+        `48`, `49`, `56`, `58`.
+
+    MEASURED over all 150 chain hubs: `tenant_id` is the most common body key authored as a
+    bare placeholder (558 occurrences, 75 runs), and 508 of those — 91%, across 66 runs — name
+    a variable NO PRIOR STEP IN THAT CHAIN SAVES, so they cannot resolve by construction.
+
+    Omitting is safe because every tenant-aware handler resolves the same ladder,
+    ``body -> X-Tenant-Id header -> "default"`` (r135 `custom_routes.py:123`:
+    ``str(body.get("tenant_id") or x_tenant_id or "default").strip() or "default"``; the
+    skeleton's own projection does `row.setdefault("tenant_id", "default")`). An unwired
+    ``${tenantA}`` meant "this actor's tenant", and the default tenant is where the chain's
+    other actors and the seed already live — which is the only tenant in which the chain's
+    later steps can see anything.
+
+    Unconditional, including on a cross-user denial step, which is where #575b's carve-out
+    does NOT carry over: there the unresolved OWNER FK is the probe, but an unresolved TENANT
+    would deny the step for the wrong reason — an empty tenant rather than a foreign owner —
+    and a denial that fires for the wrong reason reads as a pass.
+
+    Returns ``(body, [dropped keys])``; non-mapping bodies pass through untouched."""
+    if not isinstance(body, Mapping):
+        return body, []
+    dropped = [k for k, v in body.items()
+               if str(k).strip().lower() in _TENANCY_KEYS_1202WV and isinstance(v, str)
+               and _WHOLE_BRACE_1202WV.fullmatch(v.strip())]
+    if not dropped:
+        return body, []
+    return {k: v for k, v in body.items() if k not in dropped}, dropped
+
+
 _ROUTE_TABLE_927: Dict[str, Optional[List[tuple]]] = {}
 
 
@@ -3418,6 +3472,9 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             _dropped_owner_fks = []
         else:
             body, _dropped_owner_fks = _drop_unresolved_owner_fks(body)
+        # #1202wv: BEFORE the generic fallback, which would file the actor under an
+        # unrelated row's id. Unconditional -- see the docstring on the denial-step case.
+        body, _dropped_tenancy_1202wv = _drop_unresolved_tenancy_1202wv(body)
         if body is not None and last_id is not None:
             body = _resolve_unresolved_dollar_vars(body, last_id, last_id_by_resource)
         # (``token`` resolved above, before the path fallback that may need it for recovery.)
@@ -3549,6 +3606,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             autofilled.append(_scope_note)  # #566x: SAY it in the record, never silently
         for _dk in _dropped_owner_fks:      # #575: likewise — never a silent body edit
             autofilled.append(f"owner-fk-omitted:{_dk}")
+        for _tk in _dropped_tenancy_1202wv:  # #1202wv: likewise, and paired with #1202qb's
+            autofilled.append(f"tenant-omitted-unresolved:{_tk}")
         for _hk in _hdr_dropped_1202qb:     # #1202qb: likewise for a header
             autofilled.append(f"header-omitted-unresolved:{_hk}")
         for _lv in _ladder_filled:          # #592: likewise — the substitution is on the record
