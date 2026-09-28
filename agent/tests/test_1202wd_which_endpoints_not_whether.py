@@ -62,6 +62,33 @@ def test_the_definition_of_request_is_not_a_call():
     assert list(_request_calls_1202wd(src)) == []
 
 
+def test_an_escaped_quote_inside_the_path_does_not_end_the_literal():
+    """#1202xd: verified while stress-testing the scanner. The literal is walked by hand, so
+    the escape has to be honoured; ending early here would truncate the path and the page
+    would be reported as calling an endpoint that does not exist."""
+    got = list(_request_calls_1202wd(r"request('/api/it\'s')"))
+    assert len(got) == 1, got
+    assert got[0][0] == r"/api/it\'s", got
+
+
+def test_an_unterminated_literal_keeps_the_calls_already_found():
+    """A truncated file must not cost the endpoints read before the truncation."""
+    got = [p for p, _ in _request_calls_1202wd("request('/api/a'); request('/api/unclosed")]
+    assert got == ["/api/a"], got
+
+
+def test_a_regex_literal_containing_a_paren_does_not_swallow_the_next_call():
+    r"""The options scan counts parentheses; a `/\)/` before the call must not unbalance it."""
+    got = [p for p, _ in _request_calls_1202wd("const r = /\\)/; request('/api/a')")]
+    assert got == ["/api/a"], got
+
+
+def test_a_name_that_merely_ends_in_request_is_not_this_helper():
+    got = [p for p, _ in _request_calls_1202wd(
+        "myRequest('/api/ghost'); request('/api/real')")]
+    assert got == ["/api/real"], got
+
+
 def test_two_calls_in_one_body_are_both_found():
     src = ("await request(`/api/a/${id}`);\n"
            "await request('/api/b', { method: 'DELETE' });")
