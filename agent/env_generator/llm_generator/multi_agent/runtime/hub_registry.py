@@ -124,19 +124,33 @@ class HubRegistry:
         # caller handed over the `shared` directory itself. A run root never has a `hubs`
         # child -- the convention is `shared/hubs` -- so this cannot fire on a correct call,
         # and it cannot fire on a brand-new run either, where neither path exists yet.
+        # #1202wq: AND DO NOT CREATE THE WRONG ONE. #1202wf warned and then went on to build
+        # `shared/shared/hubs` anyway, so every wrong call still left a complete, empty,
+        # valid-looking hub store on disk -- 83 such directories predate this work and my own
+        # probing added 88 more in one afternoon. Warning about a directory while creating it
+        # is not a guard.
+        #
+        # Where the tell fires the correct store is not a guess: the caller handed over the
+        # `shared` directory, so the store it means is `<base>/hubs`, which already exists.
+        # Using it is what makes the call work instead of silently reading an empty registry,
+        # and the warning still fires -- the caller is told, loudly, that its path is wrong.
+        # The ambiguous case (both `<base>/hubs` AND `<base>/shared/hubs` present) is left
+        # alone: there the intent cannot be read off the filesystem.
+        _redirect1202wq = None
         try:
             _probe = self.base_dir / "hubs"
             if _probe.is_dir() and not (self.base_dir / "shared" / "hubs").is_dir():
+                _redirect1202wq = _probe
                 import logging as _log1202wf
                 _log1202wf.getLogger(__name__).warning(
-                    "#1202wf HubRegistry(%s) looks one level too deep: `%s` already holds the "
-                    "hub store, so this will create and read `%s` -- an EMPTY registry that "
-                    "every gate reads as 'nothing registered, nothing wrong'. Pass the RUN "
-                    "directory (the parent of `shared`), not `shared` itself.",
+                    "#1202wf HubRegistry(%s) is one level too deep: `%s` already holds the hub "
+                    "store. Reading THAT rather than creating `%s`, which would be an EMPTY "
+                    "registry every gate reads as 'nothing registered, nothing wrong' "
+                    "(#1202wq). Pass the RUN directory (the parent of `shared`), not `shared`.",
                     self.base_dir, _probe, self.base_dir / "shared" / "hubs")
         except Exception:
             pass                      # a probe must never be able to stop a run from starting
-        self._store_dir = self._resolve_hub_dir(self.base_dir)
+        self._store_dir = _redirect1202wq or self._resolve_hub_dir(self.base_dir)
         self._store_dir.mkdir(parents=True, exist_ok=True)
 
         # ---- Project metadata (Cutover 26) ----

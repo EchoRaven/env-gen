@@ -19,6 +19,7 @@ brand-new run, where neither path exists, cannot either.
 import logging
 import os
 import sys
+from pathlib import Path
 
 _AGENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_AGENT, "env_generator", "llm_generator"))
@@ -77,3 +78,43 @@ def test_the_registry_still_works_after_warning(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         reg = HubRegistry(run / "shared")
     assert reg.registryhub is not None
+
+
+def test_no_empty_store_is_created_where_the_real_one_exists(tmp_path):
+    """#1202wq: warning about a directory while creating it is not a guard.
+
+    #1202wf said the path was wrong and then built `shared/shared/hubs` anyway, so every
+    wrong call still left a complete, empty, valid-looking store behind: 83 such directories
+    predate that ticket and one afternoon of my own probing added 88 more.
+    """
+    run = tmp_path / "some-run"
+    (run / "shared" / "hubs").mkdir(parents=True)
+    HubRegistry(run / "shared")
+    assert not (run / "shared" / "shared").exists(), (
+        "the wrong store was created anyway: %s"
+        % sorted(p.name for p in (run / "shared").iterdir()))
+
+
+def test_the_registry_reads_the_store_that_exists(tmp_path):
+    """Redirected, not merely refused -- otherwise the caller still gets an empty registry."""
+    run = tmp_path / "some-run"
+    hubs = run / "shared" / "hubs"
+    hubs.mkdir(parents=True)
+    reg = HubRegistry(run / "shared")
+    assert Path(reg._store_dir).resolve() == hubs.resolve(), reg._store_dir
+
+
+def test_the_correct_call_is_unaffected(tmp_path):
+    run = tmp_path / "some-run"
+    (run / "shared" / "hubs").mkdir(parents=True)
+    reg = HubRegistry(run)
+    assert Path(reg._store_dir).resolve() == (run / "shared" / "hubs").resolve()
+
+
+def test_the_ambiguous_case_is_not_redirected(tmp_path):
+    """Both children present: the intent cannot be read off the filesystem, so leave it."""
+    run = tmp_path / "odd-run"
+    (run / "hubs").mkdir(parents=True)
+    (run / "shared" / "hubs").mkdir(parents=True)
+    reg = HubRegistry(run)
+    assert Path(reg._store_dir).resolve() == (run / "shared" / "hubs").resolve()
