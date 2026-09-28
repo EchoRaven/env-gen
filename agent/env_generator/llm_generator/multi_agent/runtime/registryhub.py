@@ -751,15 +751,28 @@ class RegistryHub:
         # backend CRASH-LOOPS and every validation cycle dies on backend_port.
         # Reject at the source with the fix in the message (the projector also
         # sanitizes defensively for garbage already stored).
+        # #1202xl: THE GUARD ONLY INSPECTED SEGMENTS THAT WERE ALREADY WELL-FORMED.
+        # `startswith("{") and endswith("}")` skips the malformed case entirely, which is the
+        # dangerous one. tiktok-r121's backend lane registered
+        # `GET /api/videos/{encodeURIComponent}(id)` — a JS template expression — and it was
+        # accepted at status=implemented, then shipped into the delivered MCP server as a tool
+        # named `get_videos_by_encodeURIComponent_id` pointing at a path no route can match.
+        # Same shape as #1202xf: a guard that covers the case that was never in danger.
+        #
+        # Now any segment CONTAINING a brace must be a complete, named param. Blast radius
+        # measured before widening: of the 4,940 registered paths in the corpus, exactly 2 are
+        # newly rejected — r121's two. Zero collateral.
         import re as _re
         for _seg in str(path or "").split("/"):
-            if _seg.startswith("{") and _seg.endswith("}"):
-                if not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", _seg[1:-1]):
-                    raise ValueError(
-                        f"invalid path parameter '{_seg}' in '{path}': every "
-                        "{...} must be a NAMED identifier — e.g. "
-                        "/api/messages/{messageId}, not /api/messages/{}. "
-                        "Re-register with a named param.")
+            if "{" not in _seg and "}" not in _seg:
+                continue
+            if not (_seg.startswith("{") and _seg.endswith("}")
+                    and _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", _seg[1:-1])):
+                raise ValueError(
+                    f"invalid path parameter '{_seg}' in '{path}': every "
+                    "{...} must be a NAMED identifier and must be the WHOLE segment — "
+                    "e.g. /api/messages/{messageId}, not /api/messages/{} and not "
+                    "/api/videos/{encodeURIComponent}(id). Re-register with a named param.")
         endpoint_id = self.endpoint_id(method, path)
         actor = agent or provider or "registryhub"
         now = time.time()
