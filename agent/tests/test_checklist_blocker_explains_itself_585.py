@@ -64,10 +64,20 @@ def test_by_component_is_bound_before_the_try_so_the_diagnostic_survives_a_fault
 def test_the_diagnostic_can_never_raise():
     """It runs on an already-failing path; a fault while building a log line must not
     escalate into a gate crash."""
-    src = _src()
-    i = src.index('failed_checks.append("verification_checklist_not_ready")')
-    window = src[i:i + 1200]
-    assert window.count("try:") >= 1 and "except Exception:" in window
+    # Located structurally, not by a fixed byte window (#943). The window form read
+    # `src[i:i+1200]`, so #1202wi pushed the handler past 1200 characters by adding four
+    # lines inside the very try block this is about -- the property was untouched.
+    fn = next(n for n in ast.walk(ast.parse(_src()))
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+              and n.name == "validate_delivery_gate")
+    guard = next(
+        n for n in ast.walk(fn)
+        if isinstance(n, ast.If) and "ready_for_delivery" in ast.unparse(n.test))
+    tries = [t for t in guard.body if isinstance(t, ast.Try)]
+    assert tries, "the diagnostic is no longer wrapped at all"
+    assert any(
+        any(h.type is None or "Exception" in ast.unparse(h.type) for h in t.handlers)
+        for t in tries), "a fault while building the diagnostic would escalate into a crash"
 
 
 def test_the_verdict_logic_is_unchanged():

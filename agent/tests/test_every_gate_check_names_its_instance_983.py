@@ -37,7 +37,19 @@ def test_the_gate_keeps_the_prose():
 
 
 def test_the_gate_returns_it():
-    assert '"blocker_prose": deliverability_blocker_prose,' in inspect.getsource(dg)
+    """The verdict carries the prose map. Asserted over the AST: the text form pinned the
+    exact expression `deliverability_blocker_prose`, so #1202wi broke it merely by merging
+    the gate's own prose into the same key -- strictly more of what this test is about."""
+    import ast as _ast
+    found = False
+    for node in _ast.walk(_ast.parse(inspect.getsource(dg))):
+        if not isinstance(node, _ast.Dict):
+            continue
+        for key, val in zip(node.keys, node.values):
+            if isinstance(key, _ast.Constant) and key.value == "blocker_prose":
+                assert "prose" in _ast.unparse(val), _ast.unparse(val)
+                found = True
+    assert found, "the gate verdict no longer carries a blocker_prose key"
 
 
 def test_the_dispatcher_replays_it():

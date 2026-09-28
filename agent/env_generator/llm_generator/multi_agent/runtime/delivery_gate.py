@@ -3251,6 +3251,20 @@ def enforce_completeness(output_dir, hubs, tables: Dict[str, Any],
     return completeness_results
 
 
+def _merged_prose_1202wi(deliverability_prose, extra_prose):
+    """`blocker_prose` for the whole verdict, not just its deliverability half.
+
+    #1202wi: `#983` built that map from `compute_deliverability`'s blockers alone, so the
+    `deliverability_*` checks name their instances and the validation / chain / task checks
+    never do -- 2123 occurrences across 11 check kinds in the recent ledgers. Merged rather
+    than replaced: a check that produces prose on both paths keeps both, in that order.
+    """
+    out = {k: list(v) for k, v in (deliverability_prose or {}).items()}
+    for key, lines in (extra_prose or {}).items():
+        out.setdefault(key, []).extend(lines)
+    return out
+
+
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                            scaffold_design_readme, get_validation_results,
                            get_validation_summary,
@@ -3268,6 +3282,28 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     """
     # Guarantee the required design doc exists before checking (also scaffolded
     # each heal tick; this covers the resumed-complete checkpoint path).
+    # #1202wi: THE INSTANCE A FAILED CHECK IS ABOUT, for the checks that record only that
+    # they failed. `blocker_prose` (#983) is fed exclusively from compute_deliverability's
+    # blockers, so by construction the `deliverability_*` family names its instances and the
+    # validation / chain / task family never does. MEASURED over the recent gate ledgers: 11
+    # check kinds carry no prose at all, 2123 occurrences -- validation_ui_evidence_failed
+    # 1001, business_chain_failing 368, incomplete_required_tasks 245,
+    # verification_checklist_not_ready 166, contract_alignment_failed 116,
+    # unresolved_failed_tasks 98. Every one of the five below already HAS its instances in
+    # scope: two send them to `logger.warning` and nowhere else (#947's rule), one discards
+    # a `detail` its own producer formatted, and two never surface them.
+    # Declared here because two of the five fire before the deliverability block runs.
+    _prose1202wi: Dict[str, List[str]] = {}
+
+    def _note1202wi(check: str, detail) -> None:
+        """Attach what a failed check is ABOUT. Never raises: prose is not the verdict."""
+        try:
+            text = str(detail or "").strip()
+            if text:
+                _prose1202wi.setdefault(str(check), []).append(text[:400])
+        except Exception:
+            pass
+
     scaffold_design_readme()
     required_files = [
         "docker/docker-compose.yml",
@@ -3323,6 +3359,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     contract_report = validate_contract_alignment(output_dir, hubs)
     if contract_report.get("errors") and not functionally_validated:
         failed_checks.append("contract_alignment_failed")
+        _errs1202wi = [str(e) for e in (contract_report.get("errors") or [])]
+        _note1202wi("contract_alignment_failed", "%d contract error(s): %s" % (
+            len(_errs1202wi), join_capped(_errs1202wi, len(_errs1202wi), cap=5)))
 
     build_report = validate_build_evidence(output_dir, get_validation_results)
     if (build_report.get("frontend_package")
@@ -3429,6 +3468,12 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                      for c, r in (by_component or {}).items()}
             logger.warning("verification_checklist_not_ready — observed %s | build:* "
                            "updated_at %s", _seen, _when)
+            _pend1202wi = sorted("%s=%s" % (k, v) for k, v in _seen.items()
+                                 if str(v or "pending") != "success")
+            _note1202wi("verification_checklist_not_ready",
+                        "%d component(s) not success: %s" % (
+                            len(_pend1202wi),
+                            join_capped(_pend1202wi, len(_pend1202wi), cap=6)))
         except Exception:
             pass
 
@@ -3822,6 +3867,10 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # wrong. That is the same escape any structural blocker already has.
     if _bugs743.get("failed_count"):
         failed_checks.append("unresolved_failed_tasks")
+        _fl1202wi = [str(_f) for _f in (_bugs743.get("failed") or [])]
+        _note1202wi("unresolved_failed_tasks", "%d unresolved: %s" % (
+            int(_bugs743.get("failed_count") or 0),
+            join_capped(_fl1202wi, int(_bugs743.get("failed_count") or len(_fl1202wi)), cap=5)))
     # #795 (2026-08-16): BOTH figures above are corpus-wide and BOTH understate recent builds.
     # Re-measured by build era with the SHIPPED normaliser (#193/#236 flatten) rather than a
     # hand-written re-implementation (#772), with a non-vacuity check (89 of 151 runs carry any
@@ -3877,6 +3926,13 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             except Exception:
                 pass
         failed_checks.append("incomplete_required_tasks")
+        try:
+            _flat1202wi = ["%s: %s" % (_r, ", ".join(_n))
+                           for _r, _n in sorted((_by1009 or {}).items())]
+            _note1202wi("incomplete_required_tasks", "%d reason(s): %s" % (
+                len(_flat1202wi), join_capped(_flat1202wi, len(_flat1202wi), cap=4)))
+        except Exception:
+            pass
 
     # PROMPT-C1 (2026-06-12): response_key by-construction. A projected
     # business endpoint whose declared response_key isn't the canonical
@@ -3907,6 +3963,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     business_chain_block = business_chain_blockers(hubs)
     if business_chain_block:
         failed_checks.append(business_chain_block["reason"])
+        # Its producer already formats the instance -- "N verification chain(s) have NOT
+        # passed: <names>" -- and only `reason` was ever read off the result.
+        _note1202wi(business_chain_block["reason"], business_chain_block.get("detail"))
 
     # #557 R4-core (user-approved) CONTRACT-COMPLETENESS — HEAL-THEN-ENFORCE.
     # Reconcile the app's DECLARED feature-set (feature_inventory ∪ state-bearing
@@ -3979,7 +4038,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "never_matching_filters": never_matching_filters_1139(output_dir),
         # #983: {check_token: [the blocker prose it was derived from, …]} so a remediation
         # can name the instance for checks that have no bespoke branch.
-        "blocker_prose": deliverability_blocker_prose,
+        "blocker_prose": _merged_prose_1202wi(deliverability_blocker_prose, _prose1202wi),
         # #790: checks that could not RUN. Not a failure (the permissive default stands so a
         # hub hiccup cannot wedge every release) and NOT evidence of a pass either — a
         # release cut with this non-empty is unverified on those axes. Travels with the
