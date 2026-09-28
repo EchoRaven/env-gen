@@ -91,3 +91,67 @@ def test_the_r121_shape_is_what_regressed(hub):
         "the fixture no longer reproduces the skip that caused this")
     with pytest.raises(ValueError):
         hub.register_endpoint("GET", "/api/videos/" + seg, provider="backend", agent="backend")
+
+
+# --- #1202xm: the defense for garbage ALREADY stored had the identical hole ----------------
+
+from multi_agent.runtime.route_projector import (  # noqa: E402
+    _sanitize_path_params,
+    _path_params,
+)
+
+
+@pytest.mark.parametrize("path,expect", [
+    ("/api/videos/{id}", "/api/videos/{id}"),
+    ("/api/users/{user_id}/followers", "/api/users/{user_id}/followers"),
+    ("/health", "/health"),
+])
+def test_a_well_formed_path_is_left_alone(path, expect):
+    """★ 4,940 corpus paths, 2 differ under the widened rule. This is that claim."""
+    assert _sanitize_path_params(path) == expect
+
+
+@pytest.mark.parametrize("path", [
+    "/api/videos/{}",
+    "/api/videos/{2id}",
+    "/api/videos/{encodeURIComponent}(id)",
+    "/api/videos/{encodeURIComponent}(id)/comments",
+    "/api/videos/{id",
+    "/api/videos/id}",
+])
+def test_a_malformed_segment_is_rewritten_to_a_positional_param(path):
+    got = _sanitize_path_params(path)
+    assert "param_" in got, got
+    for bad in ("encodeURIComponent", "{}", "{2id}"):
+        assert bad not in got, (path, got)
+
+
+def test_the_rewritten_path_yields_a_usable_param_name():
+    """★ The point of rewriting: the projected handler must have a valid Python parameter.
+    Before this, `{encodeURIComponent}(id)` produced NO param at all while the route text
+    still carried a brace -- a handler whose signature and route disagree."""
+    got = _sanitize_path_params("/api/videos/{encodeURIComponent}(id)")
+    params = _path_params(got)
+    assert params == ["param_4"], params
+    assert all(p.isidentifier() for p in params), params
+
+
+def test_both_doors_are_closed():
+    """★ #1202xl guards registration; this guards what is already stored. Fixing only one is
+    worse than fixing neither, because the stored garbage is what the second one exists for."""
+    bad = "/api/widgets/{zzOpenNeverClosed}(k)"
+
+    # Door 1: registration refuses it. Behavioural, not a source-text match -- the first
+    # draft asserted on the literal `"{" in seg` and failed because the guard spells the
+    # same idea as `"{" not in _seg: continue`. Third time this session that a source-text
+    # assertion measured the spelling instead of the behaviour.
+    import tempfile
+    from multi_agent.runtime.registryhub import RegistryHub as _RH
+    with tempfile.TemporaryDirectory() as d:
+        with pytest.raises(ValueError):
+            _RH(d).register_endpoint("GET", bad, provider="backend", agent="backend")
+
+    # Door 2: what is already stored is rewritten rather than projected verbatim.
+    got = _sanitize_path_params(bad)
+    assert "zzOpenNeverClosed" not in got, got
+    assert _path_params(got) and all(p.isidentifier() for p in _path_params(got)), got

@@ -310,14 +310,24 @@ def _sanitize_path_params(path: str) -> str:
     deterministic positional ``{param_N}``: the handler is valid Python and the
     served route still matches the same URL shapes. Registration now also
     REJECTS such paths (registryhub); this is the defense for garbage already
-    in a hub store."""
+    in a hub store.
+
+    #1202xl/#1202xm: THAT DEFENSE HAD THE SAME HOLE AS THE REGISTRATION GUARD IT BACKS UP.
+    `startswith("{") and endswith("}")` skips a segment that opens a brace and never closes
+    it, so `/api/videos/{encodeURIComponent}(id)` -- the shape tiktok-r121 actually stored,
+    a JS template expression pasted into a contract -- passed through UNSANITISED, which is
+    precisely the garbage this exists for. #1202xl closed the registration door; leaving this
+    one open would be "fixing one reader is worse than fixing none", since the stored garbage
+    is exactly what this function is the defense against.
+    Any segment CONTAINING a brace must now be a complete named param or it is rewritten.
+    Blast radius over the corpus's 4,940 registered paths: 2 differ, r121's two."""
     segs = (path or "").split("/")
     out = []
     for n, seg in enumerate(segs, 1):
-        if seg.startswith("{") and seg.endswith("}"):
-            name = seg[1:-1]
-            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-                seg = "{param_%d}" % n
+        if ("{" in seg or "}" in seg) and not (
+                seg.startswith("{") and seg.endswith("}")
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", seg[1:-1])):
+            seg = "{param_%d}" % n
         out.append(seg)
     return "/".join(out)
 
