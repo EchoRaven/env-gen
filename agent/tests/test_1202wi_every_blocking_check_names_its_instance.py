@@ -37,7 +37,13 @@ _GATE = os.path.join(_AGENT, "env_generator", "llm_generator", "multi_agent", "r
 # The checks measured as carrying no prose whose instances are in scope at the append site.
 _WIRED = ("business_chain_failing", "incomplete_required_tasks",
           "verification_checklist_not_ready", "contract_alignment_failed",
-          "unresolved_failed_tasks")
+          "unresolved_failed_tasks",
+          # #1202ws: the sixth. #1202wi's survey ran over a SUBSET of the gate ledgers
+          # (r13*/r3*) and undercounted the whole class ~5x -- 2123 across 11 kinds became
+          # 10,816 across 24 once all 83 were read -- which is how this one was missed. Its
+          # instances go to `logger` eight at a time and nowhere else; 311 occurrences
+          # across 8 runs, most recent r121.
+          "business_response_key_noncanonical")
 
 
 def _read(path):

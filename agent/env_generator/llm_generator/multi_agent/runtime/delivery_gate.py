@@ -3955,6 +3955,15 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             except Exception:
                 pass
         failed_checks.append("business_response_key_noncanonical")
+        # #1202ws: the sixth of these, missed by #1202wi because that survey ran over a
+        # SUBSET of the gate ledgers (r13*/r3*). Over all 83 of them this check is 311
+        # occurrences across 8 runs, the most recent r121, and its instances -- endpoint,
+        # declared response_key, reason -- go to `logger` eight at a time and nowhere else.
+        _nc1202ws = ["%s declares response_key=%r (%s)" % (
+            _n.get("endpoint"), _n.get("response_key"), _n.get("reason"))
+            for _n in (noncanonical_response_keys or []) if isinstance(_n, dict)]
+        _note1202wi("business_response_key_noncanonical", "%d endpoint(s): %s" % (
+            len(_nc1202ws), join_capped(_nc1202ws, len(_nc1202ws), cap=5)))
 
     # DELIVERY-QUALITY (user 2026-06-24): what ships must be verified by a REAL,
     # PASSING, verifier-authored business-flow chain covering every critical flow
