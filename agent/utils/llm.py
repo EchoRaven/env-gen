@@ -1095,6 +1095,92 @@ def _record_by_label_1202cr(prompt_tokens: Any, cached_tokens: Any,
             pass
     except Exception:
         return
+    _record_cache_gap_1202xa(label, prompt_tokens, cached_tokens)   # #1202xa
+
+
+# #1202xa: WHY the orchestrator caches worse than the lanes, which the totals cannot say.
+#
+# Measured over the 48 runs carrying a per-phase split: the orchestrator's four phases hold
+# 265M of the corpus's 634M uncached prompt tokens — 42% — at a 75-84% hit rate against the
+# lanes' 96-97%. Two explanations fit that equally well and imply OPPOSITE fixes:
+#
+#   volatility  the prompt prefix changes between calls, so there is nothing to hit. The
+#               orchestrator's message list is rewritten by `condense_messages`, by
+#               `_mask_old_observations` (which mutates `m.content` in place for every tool
+#               result older than the last 8, a boundary that advances as the turn grows),
+#               and by the step reminder being deleted from the middle and re-appended.
+#   expiry      an ephemeral cache entry lives ~5 minutes. Lanes call back-to-back; the
+#               orchestrator often thinks for minutes between calls. A cold prefix then has
+#               nothing to do with volatility, and rewriting the message handling would buy
+#               nothing.
+#
+# An aggregate hit rate cannot separate them. The GAP SINCE THE SAME LABEL'S PREVIOUS CALL
+# can: under expiry the rate collapses only in the buckets past the TTL, under volatility it
+# is flat and low everywhere. Three buckets either side of the 5-minute boundary are enough
+# to tell those two curves apart, and cost one dict update per call.
+#
+# Records only. Nothing here changes what is sent, and #1202wz's cap check is untouched.
+_TTL_SEC_1202XA = 300.0
+_GAP_BUCKETS_1202XA = ("first", "<60s", "60-300s", ">300s")
+_CACHE_BY_GAP_1202XA: Dict[str, Dict[str, int]] = {}
+_LAST_CALL_AT_1202XA: Dict[str, float] = {}
+
+
+def _gap_bucket_1202xa(gap: Optional[float]) -> str:
+    if gap is None:
+        return "first"
+    if gap < 60.0:
+        return "<60s"
+    if gap <= _TTL_SEC_1202XA:
+        return "60-300s"
+    return ">300s"
+
+
+def _record_cache_gap_1202xa(label: Any, prompt_tokens: Any, cached_tokens: Any,
+                             now: Optional[float] = None) -> None:
+    """Bucket one call by how long since the previous call carrying the same label.
+
+    Keyed by label because that is the grain a cached prefix actually lives at: two lanes
+    interleaving their calls say nothing about either one's prefix age. Never raises."""
+    try:
+        key = str(label or _UNATTRIBUTED_1202CR)
+        _now = float(now) if now is not None else _time_1174.time()
+        prev = _LAST_CALL_AT_1202XA.get(key)
+        _LAST_CALL_AT_1202XA[key] = _now
+        bucket = _gap_bucket_1202xa(None if prev is None else max(0.0, _now - prev))
+        e = _CACHE_BY_GAP_1202XA.setdefault(
+            bucket, {"calls": 0, "prompt": 0, "cached": 0, "cache_unreported": 0})
+        e["calls"] += 1
+        e["prompt"] += int(prompt_tokens or 0)
+        try:
+            e["cached"] += int(cached_tokens)
+        except (TypeError, ValueError):
+            # #1026b: absent is not zero. Counting an unreported field as a miss would
+            # manufacture exactly the "volatility" signal this exists to test for.
+            e["cache_unreported"] += 1
+    except Exception:
+        return
+
+
+def llm_cache_by_gap_1202xa() -> Dict[str, Dict[str, Any]]:
+    """The buckets, with a hit rate each, in gap order. Empty until a call is recorded."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for bucket in _GAP_BUCKETS_1202XA:
+        e = _CACHE_BY_GAP_1202XA.get(bucket)
+        if not e:
+            continue
+        prompt = int(e.get("prompt") or 0)
+        cached = int(e.get("cached") or 0)
+        out[bucket] = {
+            "calls": int(e.get("calls") or 0),
+            "prompt": prompt,
+            "cached": cached,
+            "uncached": max(0, prompt - cached),
+            "cache_unreported": int(e.get("cache_unreported") or 0),
+            # #1034: the rate beside the counts it is derived from, never on its own.
+            "hit_pct": round(100.0 * cached / prompt, 1) if prompt else None,
+        }
+    return out
 
 
 def llm_usage_by_label_1202cr() -> Dict[str, Dict[str, Any]]:

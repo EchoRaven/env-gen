@@ -466,6 +466,18 @@ class RunBudget:
                         payload["llm_by_phase_1202cr"] = dict(list(_bl.items())[:24])
                 except Exception:
                     pass
+                # #1202xa: the same calls bucketed by how long since the SAME label's
+                # previous one. The per-phase split says the orchestrator caches worse; only
+                # this says whether that is a prefix that changed or one that expired, and
+                # the two imply opposite fixes. Four small buckets; the totals above stay
+                # authoritative and are never derived from these.
+                try:
+                    from utils.llm import llm_cache_by_gap_1202xa
+                    _cg = llm_cache_by_gap_1202xa()
+                    if _cg:
+                        payload["llm_cache_by_gap_1202xa"] = _cg
+                except Exception:
+                    pass
                 # #1202cw: the census of framework writes onto lane files. `is_lane_owned`
                 # measured ~22,000 alternating overwrites across 164 projects and nothing has
                 # been able to SEE them since. "declared" is the count the projectors argue
