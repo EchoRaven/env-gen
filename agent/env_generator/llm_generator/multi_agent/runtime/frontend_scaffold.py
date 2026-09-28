@@ -13653,6 +13653,79 @@ def _fetch_real_seed_photo(query: str, index: int, dest: Any, key: str) -> bool:
     return False
 
 
+_SEED_MEDIA_RE_1202XN = re.compile(
+    r"/assets/([\w./-]+\.(?:mp4|mov|webm|m4v|ogg|mp3|wav))", re.IGNORECASE)
+
+
+def record_unstaged_seed_media_1202xn(output_dir, rows) -> bool:
+    """Append one line to ``logs/unstaged_seed_media_1202xn.jsonl``. #1202xn.
+
+    An artifact, not only a log line: the log is not kept, and "why does this card's video do
+    nothing" is exactly the question that cannot be answered after the run without one
+    (#947). Never raises."""
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        if not rows:
+            return False
+        d = _P(str(output_dir)) / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "unstaged_seed_media_1202xn.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": round(_t.time(), 3), "count": len(rows),
+                               "media": list(rows)}, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def unstaged_seed_media_1202xn(output_dir) -> List[str]:
+    """``["/assets/real_videos/spencerx__765….mp4", …]`` — local MEDIA the seed points at that
+    is not on disk. ``[]`` when everything resolves.
+
+    #1202xn: `stage_missing_seed_photos` guarantees every local IMAGE the seed references
+    exists, and its regex is `jpe?g|png|webp|gif`. The seed also references VIDEO, and a
+    missing video fails the same way for a viewer: the card renders, because its
+    `thumbnail_url` IS an image and therefore IS staged, and the media only fails when played.
+
+    MEASURED across the 154 delivered runs carrying seeded `/assets` references: 246 of 10,227
+    point at a file that is not there, in 16 runs. Time-sliced it is live but thin -- of the
+    last fourteen tiktok runs, r124 (2), r129 (3) and r135 (1) each ship some, the rest none.
+    Confirmed against the running stacks rather than the filesystem alone: r135's
+    `spencerx__7656058026427763973.mp4` answers 404, and r132 has two whose FILES exist on
+    disk yet the container still 404s them -- a staging-versus-build-order fault this cannot
+    see, and does not claim to.
+
+    REPORTS, NEVER BLOCKS, and deliberately does not synthesise a placeholder video: the
+    framework stages REAL media (71 files in r135), a grey stand-in would be worse than a
+    stated gap, and choosing between dropping the row and repointing it is a behaviour change
+    that deserves a live run. Pure and best-effort: any fault returns []."""
+    try:
+        from pathlib import Path as _P
+        out = _P(str(output_dir))
+        be = out / "app" / "backend"
+        pub = out / "app" / "frontend" / "public"
+        if not pub.is_dir():
+            return []
+        refs: set = set()
+        for fn in ("seed_dataset.json", "seed_data.json"):
+            fp = be / fn
+            if not fp.is_file():
+                continue
+            try:
+                txt = fp.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _SEED_MEDIA_RE_1202XN.finditer(txt):
+                rel = m.group(1)
+                if rel.startswith(("icons/", "placeholders/")):
+                    continue      # framework-owned, staged elsewhere
+                refs.add("/assets/" + rel)
+        return sorted(u for u in refs if not (pub / u.lstrip("/")).is_file())
+    except Exception:
+        return []
+
+
 def stage_missing_seed_photos(output_dir) -> List[str]:
     """FIX #168 (gmrun7): guarantee every LOCAL image the SEED references actually exists.
     A seed ``photo_url`` like ``/assets/photos/restaurant_2.jpg`` is a local path, but the
@@ -13865,6 +13938,24 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
         # /assets/photos/*.jpg (seed photo_url with no real photo) 404s → broken <img>.
         try:
             stage_missing_seed_photos(frontend_dir.parent.parent)
+        except Exception:
+            pass
+        # #1202xn: the stager above covers IMAGES (`jpe?g|png|webp|gif`). The seed also
+        # references VIDEO, and a missing video fails the same way for a viewer -- the card
+        # renders, because its `thumbnail_url` is an image and therefore IS staged, and the
+        # media only fails when played. Reports; no placeholder is synthesised (see the
+        # detector's docstring for why). Runs AFTER the stager so it reports only what
+        # staging did not fix.
+        try:
+            _media1202xn = unstaged_seed_media_1202xn(frontend_dir.parent.parent)
+            if _media1202xn:
+                from .message_format import join_capped as _jc1202xn
+                logging.getLogger(__name__).warning(
+                    "#1202xn %d local media file(s) the SEED references are not staged, so "
+                    "those cards render a thumbnail and fail on play: %s",
+                    len(_media1202xn),
+                    _jc1202xn(_media1202xn, total=len(_media1202xn)))
+                record_unstaged_seed_media_1202xn(frontend_dir.parent.parent, _media1202xn)
         except Exception:
             pass
         # FIX #169: stage the icons/placeholders the frontend references but that were never
