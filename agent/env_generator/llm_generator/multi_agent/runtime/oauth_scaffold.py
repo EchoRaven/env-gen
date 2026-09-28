@@ -78,7 +78,28 @@ AS_CONTRACT_ENDPOINTS = [
     {
         "method": "POST", "path": "/auth/register", "kind": "auth",
         "auth_required": False,
-        "summary": "First-party register: create a (email, tenant_id) user + mint an RS256 token.",
+        # #1202xe: the four keys below are what the user object ALWAYS has, not all it has.
+        # `oauth_store.create_user` ends `return dict(row)` -- the whole created row -- and it
+        # even backfills `username` from the email prefix when the contract declares that
+        # column. The declaration said four fields, and `run_kickoff` records that a backend
+        # draft copies this `response` VERBATIM into its own registration, so a lane narrows
+        # its handler to match and the row's other columns stop being returned.
+        #
+        # That is the largest single source of starved chain saves in the corpus: of 278
+        # `save FAILED` steps, 174 are on POST /auth/register, and the most-missed key is
+        # `user.username` -- 74 times across 14 runs -- which the verifier authors because the
+        # contract's `users` TABLE declares it. A starved save then feeds #592's ladder, which
+        # fills the variable from an unrelated last-id and the next step 404s.
+        #
+        # Stated in `summary` rather than in `response`: `response` is machine-read (it becomes
+        # `schema["response"]` on the registration) and a prose key inside it would land in
+        # anything that iterates the shape. Time-sliced: live, every run r124..r137, though
+        # down from 81 occurrences in r125 to 1-6 per run now.
+        "summary": ("First-party register: create a (email, tenant_id) user + mint an RS256 "
+                    "token. The `user` object IS the created row (`create_user` returns "
+                    "`dict(row)`), so it carries every column the contract declares on "
+                    "`users` -- never `password_hash` -- and not only the four named in "
+                    "`response`, which are the ones always present."),
         "request": {"email": "str", "password": "str", "name": "str?", "tenant_id": "str?"},
         "response": {"user": {"id": "int", "email": "str", "name": "str", "tenant_id": "str"},
                      "access_token": "str", "token_type": "Bearer", "expires_in": "int"},
