@@ -403,6 +403,24 @@ class KickoffDriver:
                            and _initial_fewest_missing >= len(expected_attendees))
                 if _nobody and elapsed >= 60.0 and not getattr(self, "_said_silent_862", False):
                     self._said_silent_862 = True
+                    # #1202wo: AND WRITE IT DOWN. The comment above establishes that 7 of 151
+                    # corpus runs end here having built nothing, that the salvage
+                    # (`_derive_missing_essential_sections`) exists, and that its precondition
+                    # -- the stall escape's 240s floor -- was unreachable in five of those
+                    # seven because the run was already over. It also says the right next step
+                    # is blocked: "tuning the floor without knowing why the lanes never spawned
+                    # would be a guess."
+                    #
+                    # Nothing in a finished run answers that. `progress_events.jsonl` records
+                    # the kickoff STARTING with its attendee list and a timestamp, and no
+                    # artifact records how it went; `.agent_logs/` is pruned, so r135 (which
+                    # DELIVERED) and r136 both show four empty lane directories today and the
+                    # two cases are indistinguishable afterwards. This census is the evidence
+                    # that investigation needs, taken at the moment the condition is detected.
+                    _record_kickoff_silence_1202wo(
+                        self._orch, elapsed, expected_attendees,
+                        list(_synth.get("missing") or []), cur_round, poll_count,
+                        self._lane_activity_1202fg())
                     self._orch._logger.warning(
                         "Kickoff: NO attendee has recorded anything after %.0fs — missing %s "
                         "(of %s expected). %s The stall escape cannot act before %.0fs (#862).",
@@ -1174,3 +1192,39 @@ class KickoffDriver:
             len(outputs.get("briefings") or {}),
         )
 
+
+
+
+def _record_kickoff_silence_1202wo(orch, elapsed, expected, missing, rnd, polls,
+                                   lane_activity) -> bool:
+    """Persist the kickoff-silence census. #1202wo -- see the call site for why.
+
+    Best-effort and never raises: an observability write must not be able to stop a kickoff.
+    """
+    try:
+        import json as _j1202wo
+        import time as _t1202wo
+        from pathlib import Path as _P1202wo
+        base = getattr(orch, "output_dir", None)
+        if base is None:
+            return False
+        out = _P1202wo(str(base)) / "logs" / "kickoff_silence_1202wo.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        exp = [str(a) for a in (expected or [])]
+        mis = sorted(str(m) for m in (missing or []))
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1202wo.dumps({
+                "at": _t1202wo.time(),
+                "elapsed_sec": round(float(elapsed or 0), 1),
+                "round": rnd,
+                "polls": polls,
+                "expected_count": len(exp),
+                "expected": exp[:20],
+                "missing_count": len(mis),
+                "missing": mis[:20],
+                "recorded": sorted(set(exp) - set(mis))[:20],
+                "lane_activity": str(lane_activity or "")[:400],
+            }) + "\n")
+        return True
+    except Exception:
+        return False
