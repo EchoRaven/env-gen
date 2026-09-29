@@ -1714,9 +1714,8 @@ volumes:
         Returns True when it actually re-projected.
         """
         try:
-            from .mcp_scaffold import (business_endpoints, render_mcp_server,
-                                       backend_query_params_1202xr,
-                                       spec_tool_aliases)
+            from .mcp_scaffold import (business_endpoints, spec_tool_aliases,
+                                       rendered_as_written_1202xu)
             orch = self._orch
             endpoints = orch.hubs.registryhub.get_endpoints() or {}
             if not business_endpoints(endpoints):
@@ -1727,15 +1726,16 @@ volumes:
                 # the missing-file read. Stated so the next reader does not take this line as
                 # load-bearing and "simplify" the except away.
                 return False          # never projected yet — kickoff's pass owns that
-            # #1202xr/#1202xs: RENDER WITH THE SAME INPUTS `project_mcp` WRITES WITH.
-            # This comparison is what decides "unchanged", so any input the writer uses
-            # and this does not makes every cycle look changed (churn) -- and an input
-            # this uses and the writer does not makes a real change look unchanged
-            # (the drift #1202ju exists to close). The two must be one set.
+            # #1202xr/#1202xs/#1202xu: COMPARE AGAINST WHAT THE WRITER WOULD PUT ON DISK.
+            # Any input the writer uses and this does not makes every cycle look changed
+            # (churn); an input this uses and the writer does not makes a real change look
+            # unchanged (the drift #1202ju exists to close). Three times running, the
+            # divergence was one input: the query-parameter read, the aliases, and then the
+            # SCRUB -- which the writer applies and this did not, so the comparison could
+            # never say "unchanged" at all. One function now produces both.
             _aliases = _mcp_spec_aliases_1202xs(orch.output_dir, spec_tool_aliases)
-            if main_py.read_text(encoding="utf-8") == render_mcp_server(
-                    endpoints, "app", tool_aliases=_aliases,
-                    query_params=backend_query_params_1202xr(orch.output_dir)):
+            if main_py.read_text(encoding="utf-8") == rendered_as_written_1202xu(
+                    orch.output_dir, endpoints, "app", tool_aliases=_aliases):
                 return False          # contract has not moved; do not touch the tree
         except Exception:
             return False
@@ -1954,7 +1954,11 @@ volumes:
                     _before_1202ub = {
                         str(_p.get("name") or ""): list(_p.get("apis_used") or [])
                         for _p in (ui_pages or []) if isinstance(_p, dict)}
-                    ui_pages = backfill_page_apis(ui_pages, _eps)
+                    # #1202xv: hand it the tree, so it can read what each page CALLS
+                    # instead of guessing from the page's name.
+                    ui_pages = backfill_page_apis(
+                        ui_pages, _eps,
+                        app_root=str(Path(orch.output_dir) / "app"))
                     persist_backfilled_apis_1202ub(registryhub, ui_pages, _before_1202ub,
                                                    getattr(orch, "_logger", None))
                 except Exception as _exc:

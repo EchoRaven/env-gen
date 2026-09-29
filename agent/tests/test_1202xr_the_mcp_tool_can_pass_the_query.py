@@ -37,6 +37,7 @@ import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 _AGENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_AGENT, "env_generator", "llm_generator"))
@@ -210,23 +211,28 @@ def _call_keywords(path, fn_name, callee):
 
 
 def test_the_writer_renders_with_both_the_aliases_and_the_query_parameters():
+    """#1202xu moved the render behind `rendered_as_written_1202xu`; the invariant this has
+    always protected is that the writer hands it BOTH inputs (#1202xs was the aliases being
+    taken and then not passed)."""
     kw = _call_keywords(os.path.join(_RUNTIME, "mcp_scaffold.py"),
-                        "write_mcp_server", "render_mcp_server")
+                        "write_mcp_server", "rendered_as_written_1202xu")
     assert kw is not None, "write_mcp_server no longer renders the server"
-    assert {"tool_aliases", "query_params"} <= kw, (
-        "#1202xs was exactly this: the aliases were taken and then not passed; got %r" % kw)
+    assert {"tool_aliases", "query_params"} <= kw, kw
 
 
 def test_the_moved_check_renders_with_the_same_inputs_as_the_writer():
     """A comparison blind to an input the writer uses calls every cycle a change (churn);
     one that sees an input the writer ignores calls a real change no change."""
     scaffolder = os.path.join(_RUNTIME, "scaffolder.py")
-    kw = _call_keywords(scaffolder, "refresh_mcp_1202ju", "render_mcp_server")
+    kw = _call_keywords(scaffolder, "refresh_mcp_1202ju", "rendered_as_written_1202xu")
     assert kw is not None, "the re-projection check no longer renders for comparison"
-    writer = _call_keywords(os.path.join(_RUNTIME, "mcp_scaffold.py"),
-                            "write_mcp_server", "render_mcp_server")
-    assert kw == writer, (
-        "the two renders disagree on their inputs: comparison=%r writer=%r" % (kw, writer))
+    # #1202xu: the two sides may differ in HOW they get the query parameters (the writer has
+    # already read the tree and passes its one read; the comparison has not and lets the
+    # shared function read) -- but they must agree on the aliases, and neither may render
+    # outside the shared function.
+    assert "tool_aliases" in kw, kw
+    assert _call_keywords(scaffolder, "refresh_mcp_1202ju", "render_mcp_server") is None, (
+        "the comparison renders on its own again -- that is how the three divergences began")
 
 
 def test_both_alias_readers_are_the_same_function():
@@ -379,7 +385,7 @@ def test_the_writer_registers_and_renders_from_one_read():
     reads = [c for c in ast.walk(fn) if isinstance(c, ast.Call)
              and getattr(c.func, "id", "") == "backend_query_params_1202xr"]
     assert len(reads) == 1, "expected one read of the backend, found %d" % len(reads)
-    for callee in ("render_mcp_server", "mcp_tool_records"):
+    for callee in ("rendered_as_written_1202xu", "mcp_tool_records"):
         call = next(c for c in ast.walk(fn) if isinstance(c, ast.Call)
                     and getattr(c.func, "id", "") == callee)
         assert any(k.arg == "query_params" for k in call.keywords), (
@@ -464,3 +470,97 @@ def test_the_note_is_not_capped():
     for f in req:
         assert f in doc, "%s was dropped: %r" % (f, doc)
     assert "more" not in doc.lower()
+
+
+# ── #1202xu: the comparison must reproduce what the writer puts on disk ────────
+
+def test_the_scrubber_changes_the_rendered_server():
+    """The premise. If the skeleton were free of ticket tags the old comparison would have
+    worked; it is not -- r138's live render differs from its scrubbed form on exactly the
+    `# #1202sa:` line -- so a comparison that skips the scrub can never say "unchanged"."""
+    from multi_agent.runtime.mcp_scaffold import _scrubbed_1202mi
+
+    eps = {"a": {"method": "GET", "path": "/api/x", "status": "implemented"}}
+    raw = render_mcp_server(eps, "app")
+    assert _scrubbed_1202mi(raw, "main.py") != raw, (
+        "this test's premise is gone: the skeleton no longer carries a scrubbed tag, so "
+        "#1202xu's mechanism cannot fire and this whole guard needs rethinking")
+
+
+def test_the_writer_and_the_comparison_call_one_function():
+    """#1202xr, #1202xs and #1202xu were each one input the two sides did not share. The
+    guard is structural: both must go through `rendered_as_written_1202xu`, by AST."""
+    def _calls(path, fn_name):
+        for node in ast.walk(ast.parse(_read(path))):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn_name:
+                return {getattr(c.func, "id", "") for c in ast.walk(node) if isinstance(c, ast.Call)}
+        return set()
+
+    ms = os.path.join(_RUNTIME, "mcp_scaffold.py")
+    sc = os.path.join(_RUNTIME, "scaffolder.py")
+    writer = _calls(ms, "write_mcp_server")
+    compare = _calls(sc, "refresh_mcp_1202ju")
+    assert "rendered_as_written_1202xu" in writer, (
+        "the writer no longer goes through the shared render: %r" % sorted(writer))
+    assert "rendered_as_written_1202xu" in compare, (
+        "the comparison no longer goes through the shared render: %r" % sorted(compare))
+    # And neither side may reach past it to the raw render again.
+    assert "render_mcp_server" not in compare, (
+        "the comparison renders on its own again -- that is how the three divergences began")
+
+
+def test_a_freshly_written_server_compares_equal():
+    """The end-to-end property the mechanism promises: write, then compare, and get
+    'unchanged'. This is what was false -- every call re-projected."""
+    import tempfile
+    from multi_agent.runtime.mcp_scaffold import (write_mcp_server,
+                                                  rendered_as_written_1202xu)
+
+    eps = {"a": {"method": "GET", "path": "/api/x", "status": "implemented"},
+           "b": {"method": "POST", "path": "/api/x/{id}", "status": "implemented",
+                 "schema": {"request": {"note": "string"}}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        res = write_mcp_server(Path(tmp), eps, "app")
+        on_disk = _read(str(res["main_py"]))
+        assert on_disk == rendered_as_written_1202xu(tmp, eps, "app"), (
+            "the file just written does not equal what the comparison renders, so "
+            "'has the contract moved?' answers yes forever")
+
+
+# ── #1202xy: a header is not a body field ─────────────────────────────────────
+
+def test_a_contract_marked_header_is_listed_as_a_header():
+    """r138's own re-projected server listed `X-Tenant-ID (header string?)` under "Body
+    fields". An agent that puts a tenant in the body gets the default tenant."""
+    ep = {"method": "POST", "path": "/api/x",
+          "schema": {"request": {"email": "string", "X-Tenant-Id": "header string?",
+                                 "Authorization": "header string"}}}
+    doc = ast.get_docstring(_tool_fn(render_tool(ep), "post_x")) or ""
+    assert "Body fields: email (string)" in doc, doc
+    assert "Headers: X-Tenant-Id" in doc and "Authorization" in doc, doc
+    body_part = doc.split("Headers:")[0]
+    assert "X-Tenant-Id" not in body_part, "the header is still named as a body field: %r" % doc
+
+
+def test_headers_only_still_says_so():
+    ep = {"method": "POST", "path": "/api/x",
+          "schema": {"request": {"Authorization": "header string"}}}
+    doc = ast.get_docstring(_tool_fn(render_tool(ep), "post_x")) or ""
+    assert "Headers: Authorization" in doc and "Body fields" not in doc, doc
+
+
+def test_the_written_server_carries_no_framework_ticket_tag():
+    """★ Caught by mutation: `test_a_freshly_written_server_compares_equal` passes even with
+    the scrub REMOVED, because both sides go through one function and stay equal to each
+    other. Equality is only half of it -- the file on disk must also be SCRUBBED, which is
+    the property #1202mi owns and the reason the comparison had to learn about it."""
+    import re as _re
+    import tempfile
+    from multi_agent.runtime.mcp_scaffold import write_mcp_server
+
+    eps = {"a": {"method": "GET", "path": "/api/x", "status": "implemented"}}
+    with tempfile.TemporaryDirectory() as tmp:
+        res = write_mcp_server(Path(tmp), eps, "app")
+        text = _read(str(res["main_py"]))
+    tags = sorted(set(_re.findall(r"#\d{3,4}[a-z]{0,3}\b|#1202[a-z]{1,3}\b", text)))
+    assert not tags, "framework ticket tags shipped in the generated server: %r" % tags

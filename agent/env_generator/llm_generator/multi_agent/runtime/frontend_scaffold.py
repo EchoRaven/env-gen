@@ -4544,7 +4544,25 @@ def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]
     return fuzzy
 
 
-def backfill_page_apis(ui_pages, endpoints):
+def _page_calls_1202xv(app_root, component):
+    """What the page's own source actually calls, as the gate's reader answers it.
+
+    `page_api_endpoints_1202wd` resolves a component's calls THROUGH the shared service
+    module and through the sub-components it delegates to, which is why the delivery gate
+    trusts it enough to BLOCK on. Late import: this module is imported during scaffolding,
+    frontend_audit during auditing, and neither should pull the other in at import time.
+    Best-effort -- no tree, no component, or any error means "nothing known" and the caller
+    falls back to the name heuristic exactly as before."""
+    if not app_root or not component:
+        return []
+    try:
+        from .frontend_audit import page_api_endpoints_1202wd
+        return list(page_api_endpoints_1202wd(str(app_root), str(component)) or [])
+    except Exception:
+        return []
+
+
+def backfill_page_apis(ui_pages, endpoints, app_root=None):
     """A ui_page that declares NO ``apis_used`` falls to a BARE, flagged fallback stub in
     _project_page_component → ``deliverability_frontend_fallback_page`` HARD-blocks delivery
     (netflix r9: `profiles` + `search`, kickoff-registered with empty apis_used and skipped
@@ -4553,7 +4571,33 @@ def backfill_page_apis(ui_pages, endpoints):
     (name/route/component) and the registered GET collections, so the page projects a REAL
     measured floor the lane refines — instead of a stub no lane authored and the gate rejects.
     ADDITIVE: only fills an EMPTY apis_used; never overrides a declared one. Pure, env-agnostic,
-    best-effort (returns the input unchanged on any error)."""
+    best-effort (returns the input unchanged on any error).
+
+    #1202xv: ASK THE SOURCE FIRST. #1202uv's note put the gap plainly -- "`backfill_page_apis`
+    (#579) matches endpoint NAMES and never reads source. So no path in the framework turns
+    frontend source into what this app tries to call" -- and that stopped being true when
+    #1202wd added a reader the delivery gate now BLOCKS on. So the framework holds the right
+    answer and writes a guess.
+
+    r138, live, on the corpus's top blocker: 7 registered pages carry `apis_used: []` and
+    `deliverability_page_apis_understated` is the ONE check left standing. The reader returns
+    `['GET /api/videos/feed']` for every one of them; the name heuristic returns nothing,
+    because the only registered /api/ GET collection is `/api/videos/feed` and its last
+    segment `feed` shares no token with `explore_grid_page`, `live_discover_page` or
+    `messages_dm_empty_page`. Verified end to end on one of them before trusting it:
+    MessagesDmEmptyPage.jsx imports `getVideoFeed` AND calls it (line 26), and `getVideoFeed`
+    requests `/api/videos/feed` -- name present AND name used (#1202w1).
+
+    What an empty list costs is not the blocker alone. #1202ub measured it: the decoy-twin,
+    consumer-wiring and implemented-flip checks are each a `for a in (page.get("apis_used") or
+    [])`, so an empty list does not fail them, it TURNS THEM OFF. Filling it from the source
+    switches all three on with true data.
+
+    The reader answers in brace-NORMALISED form (`DELETE /api/videos/{}/like`) and the registry
+    spells the parameter (`{video_id}`), so each answer is mapped back to the registered
+    spelling and anything with no registered counterpart is dropped -- writing a form no reader
+    of the contract recognises would be worse than writing nothing, and "the frontend calls
+    something nothing serves" is #1202uv's separate report, not this one's to register."""
     try:
         gets: List[str] = []
         for ep in (endpoints or []):
@@ -4568,6 +4612,19 @@ def backfill_page_apis(ui_pages, endpoints):
         if not gets:
             return ui_pages
 
+        # #1202xv: every registered endpoint, indexed by the reader's normalised form.
+        _reg1202xv: Dict[str, str] = {}
+        for ep in (endpoints or []):
+            if not isinstance(ep, dict):
+                continue
+            _m = str(ep.get("method") or "GET").upper()
+            _p = str(ep.get("path") or "")
+            if not _p:
+                continue
+            _reg1202xv.setdefault(
+                _m + " " + (re.sub(r"\{[^}]*\}", "{}", _p).rstrip("/") or "/"),
+                _m + " " + _p)
+
         def _toks(s: str) -> Set[str]:
             t = set(re.findall(r"[a-z]+", str(s).lower()))
             return t | {x[:-1] for x in t if x.endswith("s") and len(x) > 3}
@@ -4576,6 +4633,16 @@ def backfill_page_apis(ui_pages, endpoints):
         for p in (ui_pages or []):
             if not isinstance(p, dict) or (p.get("apis_used") or []):
                 out.append(p)
+                continue
+            # #1202xv: what the page's source says, mapped to the registry's spelling.
+            _hits1202xv = []
+            for _c in _page_calls_1202xv(app_root, p.get("component")):
+                _k = str(_c).strip()
+                _real = _reg1202xv.get(_k) or _reg1202xv.get(_k.rstrip("/"))
+                if _real and _real not in _hits1202xv:
+                    _hits1202xv.append(_real)
+            if _hits1202xv:
+                out.append({**p, "apis_used": _hits1202xv})
                 continue
             ptoks = _toks(f"{p.get('name','')} {p.get('route','')} {p.get('component','')}")
             best, best_score = None, 0

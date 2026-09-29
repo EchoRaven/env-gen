@@ -327,6 +327,7 @@ def _body_fields_note_1202xt(ep: Mapping[str, Any]) -> str:
     if not isinstance(req, Mapping) or not req:
         return ""
     parts: List[str] = []
+    heads: List[str] = []      # #1202xy
     for name, typ in req.items():
         _n = _one_line_1202xt(name)
         if not _n:
@@ -339,8 +340,21 @@ def _body_fields_note_1202xt(ep: Mapping[str, Any]) -> str:
             _t = _one_line_1202xt(typ) or "?"
         else:
             _t = _one_line_1202xt(str(typ)) or "?"
-        parts.append("%s (%s)" % (_n, _t))
-    return ("Body fields: " + ", ".join(parts)) if parts else ""
+        # #1202xy: the contract puts a few HEADERS in `request` and marks them
+        # ("header string?"). Read from r138's own re-projected server, `post_auth_signup`
+        # listed `X-Tenant-ID (header string?)` under "Body fields", which is wrong about
+        # where the value goes -- and an agent that puts a tenant in the body gets the
+        # default tenant. 27 of the corpus's 5,732 request-schema fields are marked this
+        # way (`X-Tenant-Id`, `Authorization`, `X-Profile-Id`), so they are named by the
+        # contract, not guessed at here. Both groups are worth telling the agent; only the
+        # label was wrong.
+        (heads if _t.lower().startswith("header") else parts).append("%s (%s)" % (_n, _t))
+    _out = []
+    if parts:
+        _out.append("Body fields: " + ", ".join(parts))
+    if heads:
+        _out.append("Headers: " + ", ".join(heads))
+    return ". ".join(_out)
 
 
 def _one_line_1202xt(text: Any) -> str:
@@ -691,6 +705,38 @@ def mcp_tool_records(endpoints: Dict[str, Any],
     return recs
 
 
+def rendered_as_written_1202xu(output_dir: Any, endpoints: Dict[str, Any],
+                              env_name: str = "app",
+                              tool_aliases: Optional[Dict[str, str]] = None,
+                              query_params: Optional[Dict[str, List[str]]] = None) -> str:
+    """The server's bytes EXACTLY as `write_mcp_server` puts them on disk.
+
+    `refresh_mcp_1202ju` decides "has the contract moved?" by comparing the file against a
+    render, and its own note says why that is the right shape: "RENDER-THEN-COMPARE rather
+    than write-then-notice ... calling it every cycle would churn mtimes". It compared the
+    file -- which `write_mcp_server` puts through `_scrubbed_1202mi` -- against an UNSCRUBBED
+    render, and the skeleton carries a ticket tag (`# #1202sa:` in the tenant-name comment)
+    that the scrubber removes. One line differs, always, so the comparison could never say
+    "unchanged": every call re-projected, which is precisely the churn it was written to
+    avoid, and the mechanism's stated no-op never existed. Confirmed on r138 by rendering
+    and scrubbing its live contract: the scrubber changes exactly that one line.
+
+    #1202xr and #1202xs were the same class one argument over -- an input the writer used
+    and the comparison did not. Rather than keep the two call sites in step by hand a third
+    time, both now go through here, so no input CAN diverge: the query-parameter read, the
+    aliases and the scrub all happen once, in one place.
+
+    `output_dir` is what the query-parameter read needs; everything else matches
+    `render_mcp_server`. A caller that has ALREADY read the tree passes `query_params` so
+    the write path reads it once -- two reads of a tree the lanes are writing to are two
+    answers (#1032), which is what `write_mcp_server`'s own guard pins."""
+    _qp = backend_query_params_1202xr(output_dir) if query_params is None else query_params
+    return _scrubbed_1202mi(
+        render_mcp_server(endpoints, env_name, tool_aliases=tool_aliases,
+                          query_params=_qp),
+        "main.py")
+
+
 def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
                      env_name: str = "app",
                      tool_aliases: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -709,10 +755,17 @@ def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
     _qp = backend_query_params_1202xr(output_dir)
 
     main_py = server_dir / "main.py"
+    # #1202xu: through the same function the "has it moved?" comparison uses, so the two
+    # cannot drift again. The scrub is part of what lands on disk, so it is part of what a
+    # comparison has to reproduce.
+    # The scrub stays VISIBLE here even though `rendered_as_written_1202xu` already
+    # applies it: #1202mi's ratchet reads this call site to prove no Python write escapes
+    # the scrubber, and an indirection it cannot see is exactly the seventh path it exists
+    # to catch. `scrub_provenance_1202mi` is idempotent (verified), so this costs nothing.
     main_py.write_text(
         _scrubbed_1202mi(
-            render_mcp_server(endpoints, env_name, tool_aliases=tool_aliases,
-                              query_params=_qp),
+            rendered_as_written_1202xu(output_dir, endpoints, env_name,
+                                       tool_aliases=tool_aliases, query_params=_qp),
             main_py.name),
         encoding="utf-8")
     (server_dir / "pyproject.toml").write_text(
@@ -731,6 +784,7 @@ def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
 
 __all__ = [
     "backend_query_params_1202xr",
+    "rendered_as_written_1202xu",
     "business_endpoints",
     "tool_op_id",
     "render_tool",

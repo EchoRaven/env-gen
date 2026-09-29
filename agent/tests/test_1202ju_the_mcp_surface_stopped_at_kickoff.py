@@ -53,10 +53,16 @@ def _scaffolder(out, eps):
 
 
 def _write_server(out, eps):
-    d = pathlib.Path(out) / "mcp_server" / "app"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(MS.render_mcp_server(eps, "app"), encoding="utf-8")
-    return d / "main.py"
+    """#1202xu: through the REAL writer.
+
+    This hand-wrote `render_mcp_server(...)` -- the UNSCRUBBED text -- so the file on disk
+    was one the framework never produces, and the comparison was only ever checked against
+    itself. `write_mcp_server` puts the render through `_scrubbed_1202mi`, which changes the
+    skeleton's `# #1202sa:` line, so a real written file and an unscrubbed render differ on
+    every run: the comparison this module pins could never have answered "unchanged" in
+    production, and this fixture is why nothing noticed."""
+    MS.write_mcp_server(pathlib.Path(out), eps, "app")
+    return pathlib.Path(out) / "mcp_server" / "app" / "main.py"
 
 
 def test_an_unmoved_contract_does_not_touch_the_tree(tmp_path):
