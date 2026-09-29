@@ -701,8 +701,47 @@ def _prompt_split_1202oc(tools: Any, messages: Any) -> str:
             else:
                 hist_chars += n
         tools_chars = len(json.dumps(tools, default=str)) if tools else 0
-        return " split=sys:%d,tools:%d,hist:%d%s" % (sys_chars, tools_chars, hist_chars,
-                                                   _new_content_by_tool_1202pq(messages))
+        # #1202z9: SAY WHEN THESE CHARS ARE NOT TEXT. The split's promise — "arithmetic
+        # instead of inference" — holds only while chars and tokens track each other, and a
+        # base64 image breaks that by two orders of magnitude. Measured on r140 by pairing
+        # every `[LLM Request]` with its `[LLM Response]`: chars/token is 3.5 at the median
+        # and 4.0 at p90, but 240 of 6807 calls (3.5%) carry base64 and run as high as 2546
+        # — and those 240 are 51.4% OF ALL CHARS against 4.7% of all tokens. Attributing
+        # cost by character share therefore hands half the weight to calls worth a
+        # twentieth of it. I did exactly that reading this line, and the number it produced
+        # ("tool results are 19% of uncached") had to be withdrawn.
+        return " split=sys:%d,tools:%d,hist:%d%s%s" % (
+            sys_chars, tools_chars, hist_chars,
+            _nontext_parts_1202z9(messages),
+            _new_content_by_tool_1202pq(messages))
+    except Exception:
+        return ""
+
+
+def _nontext_parts_1202z9(messages: Any) -> str:
+    """`,nontext:N` when the prompt carries N non-text content parts, else "".
+
+    #1202z9. A content list whose part declares a type other than `text` — `image_url`,
+    `input_image`, `input_audio` — is payload whose characters are base64 and whose
+    chars-per-token is nothing like prose. Counting the PARTS rather than their bytes keeps
+    this cheap and leaves every existing number untouched; the flag is there so nobody
+    divides `hist` by 3.5 on a call that carries one.
+
+    One count, not a correction: the reader keeps the chars and learns which calls they
+    cannot convert. A ratio computed here would be a second answer to a question the paired
+    `[LLM Response]` line already answers exactly.
+    """
+    try:
+        n = 0
+        for m in (messages or []):
+            content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+            if not isinstance(content, (list, tuple)):
+                continue
+            for part in content:
+                t = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+                if t and str(t) != "text":
+                    n += 1
+        return ",nontext:%d" % n if n else ""
     except Exception:
         return ""
 
