@@ -35,6 +35,7 @@ from typing import Optional  # noqa: E402  (used above the file's own typing imp
 
 import re
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Dict, List
 
 
@@ -299,6 +300,57 @@ def _renderable_query_args_1202xr(names: Any, path_params: List[str]) -> List[st
     return out
 
 
+def _body_fields_note_1202xt(ep: Mapping[str, Any]) -> str:
+    """One line naming the fields the contract says this write takes, or "".
+
+    FastMCP builds a tool's input schema from the SIGNATURE and its description from the
+    DOCSTRING. Every projected write takes `body: dict | None = None`, which is
+    `{"type": "object"}` with no properties -- so an agent handed this surface must guess
+    the field names. It cannot: the delivered r137 exposes `post_auth_signup` whose
+    contract states username, email, password and display_name and whose tool says only
+    "POST /api/auth/signup". Corpus: 280 of the 357 write tools whose contract HAS a
+    request schema surface none of it, r137 (6 of 11), r135 (4 of 5) and netflix-r30
+    among them.
+
+    THE DOCSTRING, NOT THE SIGNATURE. Turning the contract's fields into typed arguments
+    would make the tool's call shape a promise about the handler, and the two diverge as a
+    matter of record -- `/auth/register` alone has three sources disagreeing about its
+    response. Naming the fields costs nothing if the handler wants others; typing the
+    arguments would turn that divergence into a rejected call.
+
+    No cap: measured over the corpus's 1,968 request schemas the field count is 1-7 for all
+    but 16, the largest being 21, and a truncated field list is worse than none for the one
+    job this has (#1034 -- a cut list has to say it was cut, and here there is nothing to
+    cut). Non-string type values are reported as what they are (48 nested objects, 5 bools
+    across the corpus) rather than guessed at."""
+    req = (ep.get("schema") or {}).get("request") if isinstance(ep.get("schema"), Mapping) else None
+    if not isinstance(req, Mapping) or not req:
+        return ""
+    parts: List[str] = []
+    for name, typ in req.items():
+        _n = _one_line_1202xt(name)
+        if not _n:
+            continue
+        if isinstance(typ, Mapping):
+            _t = "object"
+        elif isinstance(typ, (list, tuple)):
+            _t = "array"
+        elif isinstance(typ, str):
+            _t = _one_line_1202xt(typ) or "?"
+        else:
+            _t = _one_line_1202xt(str(typ)) or "?"
+        parts.append("%s (%s)" % (_n, _t))
+    return ("Body fields: " + ", ".join(parts)) if parts else ""
+
+
+def _one_line_1202xt(text: Any) -> str:
+    """Collapse a contract string to something a docstring can hold verbatim.
+
+    The values come from the contract, so they can carry a quote or a newline; a `"` would
+    close the triple-quoted docstring and a newline would break the one-line note."""
+    return " ".join(str(text or "").replace('"', "'").split())
+
+
 def render_tool(ep: Dict[str, Any], alias: Optional[str] = None,
                 query_params: Any = None) -> str:
     """Render one ``@mcp.tool`` async function projecting a backend endpoint.
@@ -335,10 +387,16 @@ def render_tool(ep: Dict[str, Any], alias: Optional[str] = None,
         call_kw += ", params=" + qlocal
 
     doc = ep.get("summary") or f"{method} {path}"
+    doc = doc.replace('"', "'")
+    # #1202xt: name the body fields the contract states, for the agent that has to send them.
+    if is_write:
+        _bodynote = _body_fields_note_1202xt(ep)
+        if _bodynote:
+            doc = doc.rstrip() + ". " + _bodynote
     lines = [
         "@mcp.tool()",
         "async def " + op + "(" + sig + ") -> str:",
-        '    """' + doc.replace('"', "'") + '"""',
+        '    """' + doc + '"""',
         "    try:",
     ]
     if qargs:

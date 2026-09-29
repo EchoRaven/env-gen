@@ -401,3 +401,66 @@ def test_query_imported_under_another_name_is_still_a_query_parameter():
         got = backend_query_params_1202xr(tmp)
     assert got.get(_qp_match_key_1202xr("GET", "/api/feed")) == ["limit"], (
         "the alias must resolve, and Body must NOT ride along: %r" % got)
+
+
+# ── #1202xt: a write tool must name the fields the contract says it takes ──────
+
+def _doc_of(fn):
+    return ast.get_docstring(fn) or ""
+
+
+def test_a_write_tool_names_its_body_fields():
+    """FastMCP builds the input schema from the SIGNATURE, and every projected write takes
+    `body: dict | None = None` -- `{"type": "object"}` with no properties. The delivered r137
+    exposes `post_auth_signup` whose contract states four fields and whose tool says only
+    "POST /api/auth/signup", so an agent has to guess them."""
+    ep = {"method": "POST", "path": "/api/auth/signup", "summary": "Create an account",
+          "schema": {"request": {"username": "string", "email": "string",
+                                 "password": "string", "display_name": "string?"}}}
+    doc = _doc_of(_tool_fn(render_tool(ep), "post_auth_signup"))
+    for f in ("username", "email", "password", "display_name"):
+        assert f in doc, "%r is not named: %r" % (f, doc)
+    assert doc.startswith("Create an account"), "the summary must survive: %r" % doc
+
+
+def test_the_fields_are_named_in_the_contract_s_own_order():
+    ep = {"method": "POST", "path": "/api/x",
+          "schema": {"request": {"z": "string", "a": "int", "m": "bool"}}}
+    doc = _doc_of(_tool_fn(render_tool(ep), "post_x"))
+    assert doc.index("z (") < doc.index("a (") < doc.index("m ("), doc
+
+
+def test_a_contract_value_cannot_break_out_of_the_docstring():
+    """The types come from the contract, so a `"` would close the triple quote and a newline
+    would split the note."""
+    ep = {"method": "POST", "path": "/api/x",
+          "schema": {"request": {"a": 'a "quoted"\ntype', "b": {"nested": 1}, "c": ["x"],
+                                 "d": True, "": "skipped"}}}
+    src = render_tool(ep)
+    ast.parse(src)                       # would raise on an unescaped quote
+    doc = _doc_of(_tool_fn(src, "post_x"))
+    assert '"' not in doc and "\n" not in doc, doc
+    assert "b (object)" in doc and "c (array)" in doc, doc
+
+
+def test_a_read_tool_gets_no_body_note():
+    ep = {"method": "GET", "path": "/api/x", "schema": {"request": {"q": "string"}}}
+    assert "Body fields" not in _doc_of(_tool_fn(render_tool(ep), "get_x"))
+
+
+def test_no_request_schema_renders_what_it_rendered_before():
+    a = {"method": "POST", "path": "/api/y"}
+    b = {"method": "POST", "path": "/api/y", "schema": {"request": {}}}
+    assert render_tool(a) == render_tool(b)
+
+
+def test_the_note_is_not_capped():
+    """A truncated field list is worse than none for the one job this has: the corpus's
+    largest request schema is 21 fields and only 16 of 1,968 exceed 11, so there is nothing
+    to cut (#1034 -- and a cut list would have to say it was cut)."""
+    req = {("f%02d" % i): "string" for i in range(21)}
+    doc = _doc_of(_tool_fn(render_tool({"method": "POST", "path": "/api/x",
+                                        "schema": {"request": req}}), "post_x"))
+    for f in req:
+        assert f in doc, "%s was dropped: %r" % (f, doc)
+    assert "more" not in doc.lower()
