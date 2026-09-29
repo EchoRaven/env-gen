@@ -259,7 +259,33 @@ Returns list of available tools on success.
                 "message": f"Connected to MCP server with {len(tools)} tools"
             })
         except Exception as e:
-            return ToolResult.fail(f"Failed to connect: {str(e)}")
+            # #1202z6: say WHY this fails, because it fails EVERY time and the caller then
+            # spends the step hunting for a server that is not meant to be up.
+            #
+            # `mcp_server/<env>/start.sh` opens with "Launch the FastMCP server
+            # (agentsuite-red pool runs this as a subprocess)" -- so the generated server is
+            # started by the DOWNSTREAM consumer, on PORT 8890, not by the run that writes
+            # it. Measured over the corpus: 115 runs author that file, ZERO add it to
+            # docker-compose, no MCP container has ever existed, and `mcp_connect` succeeded
+            # 0 times against 9 failures in the last four runs -- `Connection refused`, or
+            # `404 .../mcp/tools` when the caller aims at the backend's port instead.
+            #
+            # Without this, r140's MCP test-user spent 503 log lines grepping for `8890` and
+            # `mcp_server`, then the debugger filed a correctly-diagnosed bug ("MCP server is
+            # not exposed/running in current topology") against BACKEND -- a lane that does
+            # not own the topology. 8 of 180 runs carry such a task. The failure is the same
+            # either way; what changes is whether the reader learns it is expected.
+            _hint_1202z6 = (
+                " — NOTE: the generated MCP server (`mcp_server/<env>/main.py`, started by "
+                "`start.sh` on PORT 8890) is launched by the DOWNSTREAM agent pool, not by "
+                "the generation run. During generation there is normally nothing listening, "
+                "so this failure is expected and is NOT a backend defect: do not file it as "
+                "one. To exercise the surface here, start it yourself "
+                "(`sh mcp_server/<env>/start.sh`, then connect to http://127.0.0.1:8890); "
+                "otherwise verify the endpoints the tools wrap and say the MCP surface was "
+                "not exercised."
+            )
+            return ToolResult.fail(f"Failed to connect: {str(e)}{_hint_1202z6}")
 
 
 class MCPListToolsTool(BaseTool):
