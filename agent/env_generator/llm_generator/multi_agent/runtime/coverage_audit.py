@@ -190,6 +190,30 @@ def scan_dead_endpoints(hub_registry) -> List[dict]:
 # `dead_count_by_kind` and it has received [] in every run since #1023b, so the arithmetic and
 # the report schema are byte-identical. The registration tool comes off the lane bundles in
 # the same change — a tool nobody should call is re-sent in every request that offers it.
+#
+# #1202z3 (2026-09-29): THE REMOVAL STANDS; ONE SENTENCE OF ITS REASONING DOES NOT.
+#
+# Deleting the scan was right — its index is still empty in every run, so it could only ever
+# have been a 100%-false blocker. But "a repaired detector would find nothing here either"
+# was measured on ONE delivered app (r26), and r140 contradicts it. r140 ships two tables
+# with byte-identical columns, `videos` and `feed`. Its live database holds 35 rows in
+# `videos` (35 distinct captions, 35 distinct urls — no clones) and 8 in `feed`, and the two
+# sets are DISJOINT. `GET /api/feed` reads `feed`. The only endpoints touching `videos` are
+# `POST /api/videos/{id}/like|save|comments` — writes. So 35 pieces of prepared content
+# shipped in a RELEASED milestone with no screen able to list them.
+#
+# What a working signal would have to read is therefore NOT the consumer index but the
+# endpoints: resolve each one to its table (`route_projector._resource_model`) and count only
+# the READ methods. That distinction is the whole difficulty — asking "does any endpoint
+# touch this table" answers a different question and calls `videos` reachable, which is
+# exactly the mistake this note's author would have made with a repaired index.
+#
+# NOT BUILT, and deliberately: measured over the corpus, "seeded table no /api/ endpoint
+# reads" fires on 71% of runs and is almost entirely relation tables that are correctly read
+# through a parent (follows, video_likes, comment_likes); narrowing it to "unread while a
+# same-schema sibling is served" drops to 5 of 158 runs and STILL misses r140 for the
+# write-endpoint reason above. Three formulations, none of them a check worth blocking on.
+# The record is corrected so the next person starts from what is true rather than from n=1.
 
 
 def _is_test_file(path_str: str) -> bool:
