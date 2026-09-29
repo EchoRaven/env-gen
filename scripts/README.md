@@ -91,3 +91,35 @@ export ENVGEN_LLM_KEY='LLM|<id>|<secret>'                            # 覆盖 OP
 新 provider 的协议修复**只加在这一处**，四个调用点自动生效（历史上每个修复都要改四遍、且总漏一处）。
 
 Claude on Vertex **要求** `max_tokens`；生成器按模型名解析（`claude-5-fable-vertex-genai` → 8192），也可 `--max-tokens` 显式指定。
+
+## `verify_shipped_fixes.py` — 一个 run 跑完后，逐条回答「我发的修复到底生效了没有」
+
+2026-09-29 有六个行为变更和两个仪器落地，**一个都没有线上验证过**——provider 余额归零，
+r141 起跑 82.7 秒就死在 `429 insufficient_quota`。检验点当时只存在于记忆里的散文，
+意味着余额一恢复，第一件事是我重新推导该打开哪个文件。那是**摩擦恰好落在瓶颈上**，
+所以把它变成一条命令。
+
+```bash
+python scripts/verify_shipped_fixes.py generated/tiktok-web-r142
+python scripts/verify_shipped_fixes.py --self-test     # 对着 r140（早于所有修复）自检
+```
+
+每条检查只给三种判定，且**绝不混淆第三种**：
+
+| 判定 | 含义 |
+|---|---|
+| `CONFIRMED` | 产物说的和修复预测的一致 |
+| `FALSIFIED` | 产物说的相反——预测错了，去读为什么 |
+| `NOT MEASURED` | 产物缺失或为空，这个 run **什么都没说** |
+
+第三种才是要害。只有通过/失败两档的检查器，会把「产物不存在」塞进其中一档，
+而**产物不存在不构成任何一方的证据**——这就是 #1202z5 在另一个模块修的同一个缺陷。
+
+`--self-test` 跑在 `generated/tiktok-web-r140` 上，那个 run **早于这里的每一个修复**：
+仪器类检查必须全部答 `NOT MEASURED`。若它对一个不可能带有修复的 run 报 `CONFIRMED`，
+说明检查器读错了字段。
+
+覆盖：#1202za（哪个工具在重复轮询）、#1202zb（没有端点读的表）、#1202zc（工具菜单是否
+不再每轮重排、32 的上限有没有被顶到）、#1202zd（register 是否返回本 app 的列 + 行是否做了
+JSON 安全转换）、#1202ze（门禁判过而 smoke 为假）、#1202zf（交付树里是否还缺媒体）、
+以及 uncached/cached 的**比例**（不是美元总额——run 越长越贵，效率不变）。
