@@ -110,7 +110,29 @@ class ListSeedIssuesTool(_SeedToolBase):
             {"table": f["table"], "reason": f["reason"], "detail": f["detail"]}
             for f in report.flagged_tables
         ]
-        return ToolResult.ok(data={"issues": issues, "count": len(issues)})
+        # #1202z5: `count: 0` from an audit that INSPECTED NOTHING reads exactly like
+        # `count: 0` from one that checked every table, and this is the tool whose own
+        # description offers it "for the orchestrator's deliver-readiness checklist".
+        #
+        # `SeedReport.measured` exists for this — "False when the audit inspected nothing —
+        # `is_clean` then carries no information" — and #1023d already put it in `to_dict()`
+        # with the note that "a consumer reading is_clean must be able to see whether
+        # anything was read". This sibling rebuilt the payload by hand and dropped it.
+        # Measured: the audit inspects ZERO tables at some point in 42 of the 158 run logs,
+        # including r140 at 03:21 with 11 tables registered — 23 minutes after its M1 was
+        # released. So the blind state is not hypothetical.
+        #
+        # The tool is called 0 times across the 50 runs carrying stage-tool counts (against
+        # 2999 `seed_audit_check` calls), so this changes no live behaviour today. It is
+        # fixed rather than deleted precisely because it is DEAD: a tool that nobody calls
+        # costs a schema, but a tool that would LIE the day somebody calls it costs a wrong
+        # delivery decision — and the whole point of #956/#1023d is that "no issues" and
+        # "nothing examined" must never look the same.
+        return ToolResult.ok(data={
+            "issues": issues, "count": len(issues),
+            "measured": report.measured, "examined": report.examined,
+            "candidates": report.candidates,
+        })
 
 
 _SEED_TOOLS = [RegisterSeedDataTool, SeedAuditCheckTool, ListSeedIssuesTool]
