@@ -201,6 +201,104 @@ def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
         pass
 
 
+
+def _gate_cleared_while_smoke_failed_1202ze(orch, gate) -> None:
+    """#1202ze — the gate says OK while the run's own validation matrix says the smoke failed.
+
+    The gate computes `api_smoke_pass` / `ui_smoke_pass` on EVERY evaluation and publishes them
+    in `validation_runtime`. Whether they are ENFORCED -- appended to `failed_checks` -- sits
+    behind `task_suite_exists = (output_dir/"tasks"/"tasks.yaml").exists()`, which is FALSE in
+    172 of 172 corpus runs; the producer `save_task_suite` is granted to the verifier and has
+    never been called. So the two signals are computed, written down, and acted on by nobody:
+    `failed_checks` is what `_maybe_framework_deliver` reads, and it stays empty.
+
+    MEASURED over the corpus gate ledgers: of 987 evaluations with `ok: true`, **86 in 27 runs**
+    carried `api_smoke_pass` or `ui_smoke_pass` FALSE at the same time. One r119 record reads
+    `ok: True`, `failed_checks: []`, `verification.all_required_passing: True` beside
+    `api_smoke_pass: False` and `failed_top: api_smoke | FAILED: business_chain` -- two sources
+    inside ONE evaluation disagreeing about whether the app works.
+
+    Not an early-run artifact, and not stale data:
+      * position in each run's ledger: median 0.73, and 22 of the 86 fall in the LAST 10%,
+        i.e. at the release cut;
+      * `total_results` at the time is 6..27, so validation HAD run;
+      * `api_smoke_pass` is `any(status == "passed" for r in get_validation_results(limit=200))`
+        -- a rolling window, so False means no passing smoke exists in the last 200 results at
+        all, which a stale record cannot manufacture.
+
+    ★ REPORTS, NEVER BLOCKS, and the verdict is not touched. Enforcing the two signals would
+    turn 86 of 987 passing evaluations into blocks -- an 8.7% blast radius on the delivery gate
+    -- and a gate change gets VERIFIED on a live run before it ships (#1202w6). What is missing
+    today is not the judgement, it is the AUDIENCE: the contradiction is already in the record
+    and nothing reads it, which is the same defect as #1202z0 and #1202z4. So: an artifact for
+    the evidence (#947) and one P1 task for the verifier, who owns validation.
+    """
+    try:
+        if not isinstance(gate, dict) or not gate.get("ok"):
+            return
+        vr = gate.get("validation_runtime") or {}
+        if not isinstance(vr, dict):
+            return
+        bad = [k for k in ("api_smoke_pass", "ui_smoke_pass") if vr.get(k) is False]
+        if not bad:
+            return
+        tops = []
+        for f in (vr.get("failed_top") or [])[:4]:
+            if isinstance(f, dict):
+                tops.append("%s: %s" % (f.get("task_id"), str(f.get("summary") or "")[:110]))
+        rec = {"at": time.time(), "false_signals": bad,
+               "total_results": vr.get("total_results"),
+               "task_suite_exists": vr.get("task_suite_exists"),
+               "failed_top": tops}
+        try:
+            import json as _j1202ze
+            out = Path(orch.output_dir) / "logs" / "gate_passed_while_smoke_failed_1202ze.jsonl"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with open(out, "a", encoding="utf-8") as fh:
+                fh.write(_j1202ze.dumps(rec) + "\n")
+        except Exception:
+            pass          # the task below is the part anyone can act on
+        wh = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if wh is None:
+            return
+        base = "Delivery gate cleared while the validation matrix reports a failed smoke"
+        try:
+            for t in (wh.list_tasks() or []):
+                if (isinstance(t, dict)
+                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("status")) in ("pending", "in_progress", "open")):
+                    return
+        except Exception:
+            pass          # best-effort dedupe; on any fault, file
+        wh.create_task(
+            title="%s (%s)" % (base, ", ".join(bad)),
+            description=(
+                "The delivery gate just returned ok=true with an EMPTY `failed_checks`, and the "
+                "same evaluation carries %s false.\n\n"
+                "`api_smoke_pass` is true when ANY of the last 200 validation results is a "
+                "passed api_smoke/api_health; false means there is no passing smoke in that "
+                "whole window -- there were %s results at the time, so validation had run.\n\n"
+                "%s\n\n"
+                "These two signals are NOT enforced: enforcement sits behind "
+                "`tasks/tasks.yaml`, which no run in the corpus has ever had, because nothing "
+                "calls `save_task_suite`. So nothing will stop a release on this; the gate is "
+                "correct to have cleared by its own rules.\n\n"
+                "Do ONE of: run validation until an api_smoke/ui_smoke result passes, or state "
+                "in a message why it cannot pass for this app. Do NOT edit the gate."
+                % (" and ".join(bad), vr.get("total_results"),
+                   ("Most recent failures:\n" + "\n".join("  - " + t for t in tops))
+                   if tops else "The matrix reported no failure detail.")),
+            assignee="verifier", agent="orchestrator", priority="P1")
+    except Exception as _e1202ze:
+        try:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201(
+                "orchestrator.gate_cleared_while_smoke_failed_1202ze",
+                "the gate clearing while its own validation matrix reports a failed smoke "
+                "stays a field nobody reads", _e1202ze)
+        except Exception:
+            pass
+
 def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> None:
     """Append one line per delivery-gate evaluation to ``logs/delivery_gate.jsonl``.
 
@@ -6592,6 +6690,7 @@ class Orchestrator:
                 len(_did_not_run), "; ".join(_did_not_run[:6]))
         _persist_gate_948(self.output_dir, _gate793,
                           getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate"))
+        _gate_cleared_while_smoke_failed_1202ze(self, _gate793)
         # #983: stash the blocker prose so remediation can name the instance. The gate
         # classifies each human blocker string into a stable token and the prose — the only
         # part that says WHICH page or flow — used to stop here. 11 of the 16 blockers
