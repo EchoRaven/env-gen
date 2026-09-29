@@ -120,3 +120,41 @@ def test_a_cap_never_raises_on_an_odd_bucket(monkeypatch, tmp_path):
     tools["tool13"] = None
     d = _write(monkeypatch, tmp_path, tool_bytes=tools)
     assert "tool_result_bytes" in d
+
+
+def _clobbers(n):
+    return {"refused": {"app/f%02d.py" % i: 3 for i in range(n)}}
+
+
+def _write_clobbers(monkeypatch, tmp_path, lc):
+    import utils.llm as LL
+    import multi_agent.runtime.path_routed_workspace as PW
+    monkeypatch.setattr(LL, "llm_usage", lambda: {"calls": 0, "usd": 0.0}, raising=False)
+    monkeypatch.setattr(LL, "llm_usage_by_label_1202cr", lambda: {}, raising=False)
+    monkeypatch.setattr(LL, "tool_result_bytes", lambda: {}, raising=False)
+    monkeypatch.setattr(RB, "tool_result_bytes", lambda: {}, raising=False)
+    monkeypatch.setattr(LL, "stage_tools_1202cy", lambda: {}, raising=False)
+    monkeypatch.setattr(PW, "lane_clobbers_1202cw", lambda: lc, raising=False)
+    b = RB.RunBudget(tmp_path, logging.getLogger("t1202z8c"))
+    b.write({"max_wall_sec": 1.0, "max_ticks": 1}, 1.0, 1.0, 1, "running")
+    return json.loads((tmp_path / "run_budget.json").read_text(encoding="utf-8"))
+
+
+def test_a_refused_list_at_the_cap_says_it_is_at_the_cap(monkeypatch, tmp_path):
+    """★ `refused` is what this ledger exists for — "a name appearing there is a projector
+    clobbering lane work without having said why". It reaches the 12-entry cap in the
+    corpus (18 kind-buckets across 51 runs sit exactly on it), so "12 refused" has meant
+    "at least 12" with no way to tell."""
+    d = _write_clobbers(monkeypatch, tmp_path, _clobbers(18))
+    m = d.get("lane_clobbers_1202cw") or {}
+    assert "refused_capped_1202z8" in m, sorted(m)
+    assert m["refused_capped_1202z8"]["dropped_paths"] == 6, m["refused_capped_1202z8"]
+    assert m["refused_capped_1202z8"]["dropped_writes"] == 18, m["refused_capped_1202z8"]
+    assert len(m["refused"]) == 12
+
+
+def test_a_short_refused_list_is_unchanged(monkeypatch, tmp_path):
+    d = _write_clobbers(monkeypatch, tmp_path, _clobbers(5))
+    m = d.get("lane_clobbers_1202cw") or {}
+    assert "refused_capped_1202z8" not in m, sorted(m)
+    assert len(m["refused"]) == 5

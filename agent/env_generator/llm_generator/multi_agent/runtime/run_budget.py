@@ -558,9 +558,27 @@ class RunBudget:
                     from .path_routed_workspace import lane_clobbers_1202cw
                     _lc = lane_clobbers_1202cw()
                     if any(_lc.values()):
-                        payload["lane_clobbers_1202cw"] = {
-                            k: dict(sorted(v.items(), key=lambda kv: -kv[1])[:12])
-                            for k, v in _lc.items() if v}
+                        # #1202z8: ...and how many names the cap hid. `refused` is the one
+                        # this ledger exists for — "a name appearing there is a projector
+                        # clobbering lane work without having said why" — and it reaches the
+                        # 12-entry cap in the corpus, so "12 refused" has meant "at least
+                        # 12" with no way to tell. 18 kind-buckets across 51 runs sit
+                        # exactly on the cap.
+                        _map1202z8c = {}
+                        for _k1202z8c, _v1202z8c in _lc.items():
+                            if not _v1202z8c:
+                                continue
+                            _ord1202z8c = sorted(_v1202z8c.items(), key=lambda kv: -kv[1])
+                            _kept1202z8c, _cut1202z8c = self._cap_1202z8(
+                                _ord1202z8c, 12, ("writes",))
+                            _map1202z8c[_k1202z8c] = _kept1202z8c
+                            if _cut1202z8c:
+                                _map1202z8c["%s_capped_1202z8" % _k1202z8c] = {
+                                    "dropped_paths": _cut1202z8c.get("dropped", 0),
+                                    "dropped_writes": sum(
+                                        int(n or 0) for _, n in _ord1202z8c[12:]),
+                                }
+                        payload["lane_clobbers_1202cw"] = _map1202z8c
                 except Exception:
                     pass
                 # #1202cy: which stage used which tools. Capped at the 16 busiest
