@@ -744,6 +744,53 @@ def _new_content_by_tool_1202pq(messages: Any) -> str:
         return ""
 
 
+def _tool_names_1202y0(tools: Any) -> tuple:
+    """The tool NAMES in a request, sorted — the set, separate from its bytes.
+
+    #1202y0: `_prefix_trace_1202nr` reports that the tool blob changed and nothing more,
+    and a provider cache bills the longest common PREFIX with the tools at its head, so
+    every such change throws away the whole prefix including the system prompt. Measured on
+    r138: 1,118 of 5,200 calls (21%) diverge on `tools`, and they cache at 83.3% against
+    96.3% for the calls that diverge only in their messages — 5.1M tokens, ~$25 of a $280
+    run. 40 of the 48 conversations hold ONE tool hash all run; the churn is entirely in the
+    five long-lived lane conversations, which cycle 6 to 12 tool sets each.
+
+    Whether that is worth changing turns on a distinction the hash cannot make: a DIFFERENT
+    SET (per-phase scoping — a real trade-off against tool isolation) versus the SAME set
+    rendered differently (ordering or schema churn — free to fix). Naming the added and
+    removed tools separates them. Cheap: a sorted tuple of names, no schema text."""
+    out = []
+    for t in (tools or []):
+        n = None
+        if isinstance(t, dict):
+            fn = t.get("function")
+            n = (fn or {}).get("name") if isinstance(fn, dict) else t.get("name")
+        else:
+            fn = getattr(t, "function", None)
+            n = getattr(fn, "name", None) if fn is not None else getattr(t, "name", None)
+        if n:
+            out.append(str(n))
+    return tuple(sorted(out))
+
+
+def _tool_delta_1202y0(prev_names: Any, names: tuple) -> str:
+    """`+added/-removed`, or `same-set` when only the bytes moved."""
+    if prev_names is None:
+        return ""
+    a = sorted(set(names) - set(prev_names))
+    r = sorted(set(prev_names) - set(names))
+    if not a and not r:
+        return " tools_delta=same-set"          # ordering/schema churn — free to fix
+    def _cap(xs):
+        return ",".join(xs[:4]) + ("+%d" % (len(xs) - 4) if len(xs) > 4 else "")
+    parts = []
+    if a:
+        parts.append("+" + _cap(a))
+    if r:
+        parts.append("-" + _cap(r))
+    return " tools_delta=" + "/".join(parts)
+
+
 def _prefix_trace_1202nr(tools: Any, messages: Any) -> str:
     try:
         import hashlib as _h
@@ -768,17 +815,22 @@ def _prefix_trace_1202nr(tools: Any, messages: Any) -> str:
         key = "|".join(fps[:2])
         prev = _PREFIX_LAST_1202NR.get(key)
         diverge = "new"
+        _names_1202y0 = _tool_names_1202y0(tools)
+        _delta_1202y0 = ""
         if prev is not None:
-            p_tools, p_fps = prev
+            p_tools, p_fps = prev[0], prev[1]
+            _p_names = prev[2] if len(prev) > 2 else None
             if p_tools != tools_fp:
                 diverge = "tools"
+                _delta_1202y0 = _tool_delta_1202y0(_p_names, _names_1202y0)
             else:
                 diverge = str(next((i for i, (a, b) in enumerate(zip(p_fps, fps)) if a != b),
                                    min(len(p_fps), len(fps))))
-        _PREFIX_LAST_1202NR[key] = (tools_fp, fps)
+        _PREFIX_LAST_1202NR[key] = (tools_fp, fps, _names_1202y0)
         if len(_PREFIX_LAST_1202NR) > 512:
             _PREFIX_LAST_1202NR.pop(next(iter(_PREFIX_LAST_1202NR)))
-        return f", prefix_fp=tools:{tools_fp} conv:{key[:17]} diverge_at={diverge}/{len(fps)}"
+        return (f", prefix_fp=tools:{tools_fp} conv:{key[:17]} "
+                f"diverge_at={diverge}/{len(fps)}{_delta_1202y0}")
     except Exception:
         return ""
 
