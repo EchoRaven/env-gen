@@ -88,11 +88,30 @@ def test_1202oj_a_clean_lane_file_produces_no_blocker(tmp_path):
 
 
 def test_1202oj_it_is_called_where_its_siblings_are():
+    """#1202oj had NO caller at all; this pins that it has one, beside its sibling.
+
+    #1202y9: asserted over the AST rather than over the literal call text. The first
+    version matched the string `_guard_tampering_blockers_1202oj(app_root)`, so adding the
+    registry argument (which the blocker now needs to explain WHY the route is refused)
+    turned this red without anything it guards having changed. The properties are: the call
+    exists, exactly once, and follows `_auth_override_blockers_1202s` -- none of which is a
+    statement about the argument list.
+    """
+    import ast
     import inspect
-    src = inspect.getsource(DL.compute_deliverability)
-    assert "_guard_tampering_blockers_1202oj(app_root)" in src
-    assert (src.index("_auth_override_blockers_1202s(app_root)")
-            < src.index("_guard_tampering_blockers_1202oj(app_root)"))
+
+    tree = ast.parse(inspect.getsource(DL.compute_deliverability).lstrip())
+    order = [n.func.id for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id.endswith(("_blockers_1202oj", "_blockers_1202s"))]
+    assert order.count("_guard_tampering_blockers_1202oj") == 1, order
+    assert order.index("_auth_override_blockers_1202s") < order.index(
+        "_guard_tampering_blockers_1202oj"), order
+
+    # ...and it is handed the registry, or the reason it now carries cannot be computed.
+    call = next(n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and getattr(n.func, "id", "") == "_guard_tampering_blockers_1202oj")
+    assert len(call.args) >= 2, ast.unparse(call)
 
 
 def test_1202ok_a_working_normalisation_does_not_claim_to_be_off():

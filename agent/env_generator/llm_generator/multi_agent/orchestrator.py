@@ -4324,11 +4324,95 @@ class Orchestrator:
                 self._logger.error(
                     "#1202jx and %d more logged-out screen(s) in the same state.",
                     len(found) - 6)
+            self._file_logged_out_auth_task_1202z0(found)
         except Exception as _e1202lc:
             from .runtime.message_format import warn_once_1201
             warn_once_1201("orchestrator.logged_out_auth_screens_1202lc",
                            "the logged-out-screen contract contradiction is not reported, so a "
                            "screen that can never render reads as a frontend bug", _e1202lc)
+
+
+    def _file_logged_out_auth_task_1202z0(self, found) -> None:
+        """#1202z0 — put #1202jx's finding somewhere the lane can read it.
+
+        #1202lc fixed WHEN this diagnostic speaks. Nobody fixed WHO hears it. Everything
+        above is `self._logger.error`, and a lane reads WorkHub, EventHub and its own
+        files -- not the orchestrator's log.
+
+        r140, measured: the framework diagnosed this contradiction THREE times and delivered
+        it to nobody.
+          * `#1202jx` once at 01:54:34 -- naming the screen, the route and the endpoints
+          * `#1202vt` 39 times from 02:04 -- naming the table, the shape and the way out
+          * the business_chain check at 01:59:54 -- `GET /api/feed -> 200 (expected [401];
+            DENIAL-PROBE got success)`
+        Grep of every file under `shared/hubs/` -- the tasks, messages and documents that are
+        the whole of what a lane can read -- for `1202jx`, `1202vt`, `SHAPE OVERRODE` and
+        `LOGGED-OUT SCREEN NEEDS AUTH`: ZERO hits.
+
+        So the lane saw only the 401. It appended to `_FW_PUBLIC_API_1202KH` from
+        custom_routes.py, `deliverability_guard_tampering` blocked delivery for ~20 minutes
+        across two episodes, the lane then REMOVED the workaround -- and `GET /api/feed` went
+        back to answering 401 to an anonymous caller (verified with curl against the live
+        stack: 401 while `/health` answered 200), so `fyp_feed_logged_out` failed and
+        `deliverability_ui_flow_failed` blocked it instead. The lane cannot win either move.
+        r137 died in this state at 81 minutes and $190. #1202kx wrote the conclusion two
+        tickets ago: "a lane that knew WHY it was being refused had no reason to build that."
+
+        A TASK, not a blocker. The same contradiction shape is present in 54 of the 179
+        corpus runs (30%), many of which delivered, so blocking on it would stop three runs
+        in ten for a condition that is often survivable -- that is why #1202vt is
+        announce-only and this keeps that judgement. It changes the audience, not the verdict.
+
+        Deduped by title prefix like every other filed task (#794), so a second process or a
+        second finding set re-wakes the open one instead of cloning it.
+        """
+        try:
+            wh = getattr(getattr(self, "hubs", None), "workhub", None)
+            if wh is None or not found:
+                return
+            base = "Logged-out screen calls an auth-required endpoint"
+            try:
+                for t in (wh.list_tasks() or []):
+                    if (isinstance(t, dict)
+                            and str(t.get("title") or "").startswith(base)
+                            and str(t.get("status")) in ("pending", "in_progress", "open")):
+                        return
+            except Exception:
+                pass        # best-effort: on any fault, file as before
+            lines = []
+            for f in found[:6]:
+                lines.append("  - screen `%s` (route %s) calls %s" % (
+                    f.get("screen"), f.get("route"),
+                    ", ".join((f.get("auth_endpoints") or [])[:4])))
+            wh.create_task(
+                title="%s (%d screen(s))" % (base, len(found)),
+                description=(
+                    "These screens are declared reachable WITHOUT a token, and the pages "
+                    "behind them call endpoints the contract marks auth_required:\n"
+                    + "\n".join(lines)
+                    + "\n\nThe screenshot capture arrives with no token, so the handler "
+                    "answers 401 and the screen can never render. Nothing is wrong in the "
+                    "frontend; do not go looking there.\n\n"
+                    "EXACTLY ONE OF THE TWO IS WRONG.\n"
+                    "  (a) the rows really are public -> re-register that endpoint's TABLE "
+                    "with `metadata.visibility: 'public'`. Setting the endpoint's "
+                    "`auth_required: false` alone is NOT enough: when the table says nothing "
+                    "about visibility the projector falls back to the table's SHAPE (a users "
+                    "FK beside another entity's FK reads as per-user-private) and builds the "
+                    "handler WITH an actor anyway. The table write is also what clears "
+                    "`owner_scoped_reads`, which is the flag that filters the rows.\n"
+                    "  (b) the rows are per-user -> stop declaring the screen reachable "
+                    "logged out, and leave the endpoint authenticated.\n\n"
+                    "Editing the framework's auth guard from custom_routes.py is not a third "
+                    "way: `deliverability_guard_tampering` blocks delivery on it, and it "
+                    "would serve owner-private rows to anonymous callers."),
+                assignee="backend", agent="orchestrator", priority="P1")
+        except Exception as _e1202z0:
+            from .runtime.message_format import warn_once_1201
+            warn_once_1201(
+                "orchestrator.file_logged_out_auth_task_1202z0",
+                "#1202jx's finding stays in the log only, so the lane sees a bare 401 and "
+                "goes looking at a frontend where nothing is wrong", _e1202z0)
 
     @property
     def _vf_gate(self):

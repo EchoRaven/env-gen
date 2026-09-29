@@ -2746,6 +2746,16 @@ class RemediationDispatcher:
                 "personas, and keep them VARIED -- one domain for every user is its own tell. "
                 "The blocker names the file: if it is under frontend/src, file a bug_create "
                 "for the frontend instead of editing it here."),
+            "deliverability_parked_probe_route": (
+                "backend", "Delete the probe route parked to satisfy a check (blocks delivery)",
+                "the backend SERVES a route whose path begins `__` -- this framework's own "
+                "convention for its machinery, not a path this product designed. It reached "
+                "the app because a check asked whether the endpoints were real and a route "
+                "was the quickest way to answer; it is now part of what ships, visible in "
+                "the OpenAPI, and the observed instance was public, unauthenticated and "
+                "counted rows in four business tables. Delete the handler AND deregister the "
+                "endpoint. If a gate pushed you here, that gate is asking about the BUSINESS "
+                "endpoints: make one of those read its data instead of adding a new one."),
             "deliverability_operator_identity_leak": (
                 "backend", "Remove the builder's identity from the served files (blocks delivery)",
                 "a shipped file carries the identity of the ACCOUNT THAT BUILT this "

@@ -3158,6 +3158,11 @@ def _deliverability_check_token(blocker: str) -> str:
         return "deliverability_reserved_email_domain"
     if "identity of the account that built this env" in low:
         return "deliverability_operator_identity_leak"
+    # #1202y7: a blocker whose prose maps to nothing dispatches NOBODY (#1202tu measured
+    # 67/67 snapshots reading "NO remediation owner" for one such blocker), so the token
+    # goes in with the check, not after it.
+    if "exist only to satisfy a framework check" in low:
+        return "deliverability_parked_probe_route"
     return f"deliverability_other:{str(blocker)[:80]}"
 
 

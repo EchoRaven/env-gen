@@ -603,7 +603,130 @@ def _auth_override_blockers_1202s(app_root) -> List[str]:
         return []
 
 
-def _guard_tampering_blockers_1202oj(app_root) -> List[str]:
+def _shape_demoted_publics_1202y9(app_root, hub_registry) -> str:
+    """One sentence naming the contract-public routes the SHAPE projected private. `""` on
+    anything unreadable.
+
+    This is the answer to the question a tampering lane is asking. r140: the lane registered
+    `GET /api/feed` `auth_required=False` at 03:17:07 because the logged-out landing page
+    reads it; the materials said NOTHING about `feed`; `_structurally_private_resource_633`
+    demoted it on shape alone (`author_id -> users` beside `sound_id -> sounds`, the #598
+    signal); the projected handler took an actor; the anonymous request came back 401; and
+    the lane appended to `_FW_PUBLIC_API_1202KH` from custom_routes.py. The gate then blocked
+    delivery 8 times across 90 minutes.
+
+    The framework KNEW all of that. `announce_shape_override_1202vt` said it 39 times on that
+    run -- into `route_projector`'s logger. Measured on r140: `SHAPE OVERRODE`, `1202vt` and
+    `materials declare NOTHING` appear in ZERO files under `shared/hubs/` -- the tasks,
+    messages and documents that are the whole of what a lane can read. The notice fired and
+    reached nobody. #1202kx's own comment is the test this fails: "a lane that knew WHY it
+    was being refused had no reason to build that."
+
+    And the remediation text is not a substitute, because it gives the RULE and not this
+    failure: "change its CONTRACT (`auth_required: false` on a table the materials call
+    public)". The lane did the first half. The half it could not see -- that the materials
+    say nothing about this table, so the shape decided -- is exactly what this sentence
+    carries, at the moment the lane is stopped.
+
+    Corpus: `deliverability_guard_tampering` blocked 10 of the 86 runs with a gate ledger
+    (12%, 63 occurrences) and is present in every one of the last eight -- r133 (26x), r134,
+    r136, r137, r138, r139 (10x), r140. #1202vt has been live for three of those (firing 109,
+    75 and 39 times) and the tampering happened anyway, which is what "announced to the wrong
+    audience" predicts.
+
+    Recomputed here rather than carried: the announcer has no run directory to write to, and
+    reading the same predicate the projector used keeps the gate and the generator from
+    disagreeing about what is private (#1032).
+    """
+    try:
+        from .backend_audit import _models_919
+        from .route_projector import (_structurally_private_resource_633 as _priv1202y9,
+                                      _resource_model as _res1202y9)
+        models, _ = _models_919(Path(app_root) / "backend")
+        if not models:
+            return ""
+        # #1202rm already paid for this once: "the method is get_endpoints, not
+        # list_endpoints. The first draft guessed." Same accessor, same order.
+        _rh1202y9 = getattr(hub_registry, "registryhub", None) or hub_registry
+        _get1202y9 = (getattr(_rh1202y9, "get_endpoints", None)
+                      or getattr(_rh1202y9, "list_endpoints", None))
+        if not callable(_get1202y9):
+            return ""
+        try:
+            eps = _get1202y9() or {}
+        except Exception:
+            return ""
+        # the table records, for the owner-scope attribution below. Absent is fine --
+        # but #883's rule applies: the empty default is set BEFORE the try, so the
+        # handler carries no silent `= {}`, and a reader that FAILS says so. Losing the
+        # attribution costs the blocker the one fact a lane cannot derive (which chain
+        # owner-scoped the table), so it must not vanish quietly.
+        _tables1202y9 = {}
+        try:
+            _gt1202y9 = (getattr(_rh1202y9, "get_tables", None)
+                         or getattr(_rh1202y9, "list_tables", None))
+            if callable(_gt1202y9):
+                _tables1202y9 = _gt1202y9() or {}
+        except Exception as _et1202y9:
+            _gate_absent_792("_shape_demoted_publics_1202y9/table-attribution",
+                             _et1202y9, "run")
+        hits = []
+        for rec in (eps.values() if isinstance(eps, dict) else (eps or [])):
+            if not isinstance(rec, dict):
+                continue
+            if ((rec.get("schema") or {}).get("auth_required")) is not False:
+                continue
+            _m = str(rec.get("method") or "").upper()
+            _p = str(rec.get("path") or "")
+            # `/api/v1/*` is the framework's own tenancy control plane, never the lane's
+            # question, and `/auth/*` is public by construction.
+            if not _p.startswith("/api/") or _p.startswith("/api/v1/"):
+                continue
+            try:
+                if not _priv1202y9(_m, _p, models):
+                    continue
+            except Exception:
+                continue
+            _r = _res1202y9(_p, models) or ("?", {})
+            _fks = (_r[1] or {}).get("fks") or {}
+            # #1202y9: and WHO owner-scoped the table, when the record says. r140's `feed`
+            # carries `owner_scoped_reads_set_by_chain_1202kv: authored_video_ownership_flow`
+            # -- a verification chain flipped it, which is a cause no amount of reading the
+            # lane's own code would reveal. r118 lost an hour to exactly this, going six
+            # rounds against a flag it never touched.
+            # No try here on purpose (#883): every step is a guarded `.get` on a value
+            # already proven to be a Mapping, so there is nothing to catch -- and an
+            # `except: _by = ""` would be exactly the silent empty default the ratchet
+            # is counting.
+            _by = ""
+            _rec1202y9 = _tables1202y9.get(_r[0]) if isinstance(_tables1202y9, dict) else None
+            _tm = _rec1202y9.get("metadata") if isinstance(_rec1202y9, dict) else None
+            if isinstance(_tm, dict) and _tm.get("owner_scoped_reads") is True:
+                _who = (_tm.get("owner_scoped_reads_set_by_chain_1202kv")
+                        or _tm.get("owner_scoped_reads_cleared_by_1202io"))
+                _by = ", owner-scoped%s" % (" by chain `%s`" % _who if _who else "")
+            hits.append("%s %s (table `%s`: %s%s)" % (
+                _m, _p, _r[0],
+                ", ".join("%s->%s" % kv for kv in sorted(_fks.items())) or "no FKs", _by))
+        if not hits:
+            return ""
+        return (" WHY THE 401 YOU ARE WORKING AROUND HAPPENS: %s — these are declared "
+                "`auth_required: false`, but the table carries no `visibility`, so the SHAPE "
+                "decided (a users FK beside another entity's FK reads as per-user-private, "
+                "#598) and the handler was projected WITH an actor. The contract's half you "
+                "already did; the half you cannot see is the table's. THE WAY OUT, and "
+                "editing the guard is not it: re-register that table with "
+                "`metadata.visibility: 'public'` — the write boundary then also clears "
+                "`owner_scoped_reads` (#1202io), which is the flag actually filtering the "
+                "rows. Use `'owner'` instead if the rows really are per-user, and fix the "
+                "endpoint's `auth_required` to match."
+                % join_capped(hits, total=len(hits), cap=4, sep="; "))
+    except Exception as exc:
+        _gate_absent_792("_shape_demoted_publics_1202y9", exc, "run")
+        return ""
+
+
+def _guard_tampering_blockers_1202oj(app_root, hub_registry=None) -> List[str]:
     """#1202oj — #1202lj's findings, delivered to the gate. It had no caller at all.
 
     `framework_guard_tampering_1202lj` (backend_audit) detects lane code that strips or rebinds
@@ -628,8 +751,18 @@ def _guard_tampering_blockers_1202oj(app_root) -> List[str]:
         _gate_absent_792("_guard_tampering_blockers_1202oj", exc, "import")
         return []
     try:
-        return [f"framework auth guard tampered with: {f}"
-                for f in (framework_guard_tampering_1202lj(Path(app_root) / "backend") or [])]
+        out = [f"framework auth guard tampered with: {f}"
+               for f in (framework_guard_tampering_1202lj(Path(app_root) / "backend") or [])]
+        # #1202y9: ...and why the route the lane was opening is refused. Appended to the
+        # FIRST finding rather than added as its own entry, so every line still maps to
+        # this one check id (#1202tu: a blocker whose prose routes nowhere dispatches
+        # nobody) — and appended, not prepended, so the file:line evidence keeps the head
+        # of the message (#1202vx).
+        if out and hub_registry is not None:
+            _why1202y9 = _shape_demoted_publics_1202y9(app_root, hub_registry)
+            if _why1202y9:
+                out[0] = out[0] + _why1202y9
+        return out
     except Exception as exc:
         _gate_absent_792("_guard_tampering_blockers_1202oj", exc, "run")
         return []
@@ -848,10 +981,36 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
                     continue
                 try:
                     _txt1202vk = cand.read_text(encoding="utf-8", errors="ignore")
-                    # #1202vk: ...or a call to a request-issuing export of the api client,
-                    # which is the shape the framework's OWN projected frontend uses.
-                    if (call.search(_txt1202vk)
-                            or _api_client_calls_1202vk(_txt1202vk, cand)):
+                    # #1202y4: ASK THE RESOLVER EVEN WHEN THIS FILE SHOWS NO CALL.
+                    #
+                    # #1202y1 changed what this compares (the registry against the source,
+                    # not against the empty list) and left the ENTRY condition below as it
+                    # was: the PAGE'S OWN text had to look like a call before the resolver
+                    # was consulted at all. For the empty-declaration case that was fine.
+                    # For understatement it is the wrong question -- what matters is whether
+                    # the component TREE reaches more than the registry lists, which is
+                    # exactly what `page_api_endpoints_1202wd` answers.
+                    #
+                    # Caught on a live run: a 19-line SignupPage that renders four default
+                    # imports and calls nothing itself. The resolver reaches three endpoints
+                    # through it and the registration names a fourth that is not among them,
+                    # and this check returned nothing at all. Corpus: 46 runs hold a page the
+                    # entry condition turns away while the resolver reaches endpoints the
+                    # registry lacks -- one run 10 pages, two others 8 pages each whose
+                    # single worst page is short by 11 and 12 endpoints.
+                    #
+                    # The unresolved-and-empty case still needs the own-call signal: with no
+                    # endpoints resolved and nothing declared, "this page calls something"
+                    # is the only evidence there is.
+                    _eps1202y4 = []
+                    try:
+                        from .frontend_audit import page_api_endpoints_1202wd as _r1202y4
+                        _eps1202y4 = _r1202y4(app_root, comp) or []
+                    except Exception as _exc1202y4:
+                        _gate_absent_792("page_api_endpoints_1202wd", _exc1202y4, "run")
+                    _own1202y4 = bool(call.search(_txt1202vk)
+                                      or _api_client_calls_1202vk(_txt1202vk, cand))
+                    if _eps1202y4 or _own1202y4:
                         # #1202wd: NAME THE ENDPOINTS. This blocker fired 93 times across
                         # r135/r136/r137 saying a page "calls an API" and never which one, so
                         # the remediation asked the lane to work out what the framework had
@@ -863,17 +1022,12 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
                         # written into the registry would silence it while the contradiction
                         # stood. Reporting only, so a page it cannot resolve reads exactly as
                         # it did before.
-                        _eps1202wd = []
-                        try:
-                            from .frontend_audit import page_api_endpoints_1202wd
-                            _eps1202wd = page_api_endpoints_1202wd(app_root, comp) or []
-                        except Exception as _exc1202wd:
-                            # #883: an empty list here is not "this page calls nothing" -- the
-                            # blocker fires either way and only its prose is poorer -- but a
-                            # resolver that crashed must still say so, or the difference
-                            # between "unresolvable" and "broken" disappears.
-                            _gate_absent_792("page_api_endpoints_1202wd", _exc1202wd, "run")
-                            _eps1202wd = []
+                        # #1202y4: one read, taken above -- a second call would walk
+                        # the same tree again for the same answer (#1032). The failure that
+                        # the old try/except here reported is now reported at that one read,
+                        # so an empty list still tells "unresolvable" apart from "broken"
+                        # (#883); leaving a bodiless try/except behind would say nothing.
+                        _eps1202wd = _eps1202y4
                         # #1202y1: what the SOURCE has that the REGISTRY lacks.
                         _miss1202y1 = [e for e in _eps1202wd
                                        if _norm1202y1(e) not in _decl1202y1]
@@ -892,11 +1046,13 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
                                 ", ".join(_shown1202wd), _tail1202wd))
                         elif _eps1202wd:
                             pass        # the registry already lists everything the source calls
-                        elif not _decl1202y1:
+                        elif not _decl1202y1 and _own1202y4:
                             # The reader resolved nothing AND the page declares nothing: the
                             # old unresolved-and-empty case, reported exactly as before. A page
                             # that DECLARES something and that the reader cannot resolve is
                             # left alone -- firing there would be the hook blind spot guessing.
+                            # #1202y4: and it still needs the OWN-call signal, because with no
+                            # endpoints resolved that is the only evidence the page calls at all.
                             drift.append("%s (%s)" % (name, cand.name))
                 except Exception:
                     pass
@@ -1457,6 +1613,74 @@ def _operator_identity_blockers_1202rj(app_root) -> List[str]:
         return []
 
 
+def _parked_probe_routes_1202y7(app_root) -> List[str]:
+    """Routes the app SERVES with a path segment starting `__`. `[]` on failure.
+
+    r140 delivered `GET /__noop_orchestrator_probe__`, and the lane's own docstring says why
+    it exists: "DB-backed readiness probe used by delivery validation ... so code-truth can
+    distinguish it from a static placeholder". Asked to prove its endpoints were not static
+    placeholders, the lane's answer was a PUBLIC, UNAUTHENTICATED route running
+    `SELECT COUNT(*)` over four business tables -- and then shipped it. r80's `/__list__`
+    says the same thing one step more plainly: "re-implemented here so provider flips to
+    'backend' and the business-endpoint audit sees a real handler."
+
+    The framework already knows lanes park these. `seed_audit` carries the note (#1202du,
+    corrected by #1202dw: "an AGENT parks them, the framework does not emit them") and
+    answers it with `if str(name).startswith("__"): continue` -- an EXEMPTION, so its own
+    audit stops tripping over them. Exempting a thing from a check is not the same as
+    keeping it out of the product, and the exemption was written for the smaller surface:
+    7 of 179 runs park a `__` TABLE, 36 park a `__` ROUTE.
+
+    Measured over the 179 generated backends with the same reader this calls
+    (`served_routes`, so the verdict and the evidence cannot disagree -- #1032): 36 runs,
+    20%, 25 distinct paths, and rising with the corpus -- 0 of 83 in July, 10 of 31 in
+    August, 25 of 65 in September, r140 included. EVERY path found begins `/__`, and no
+    `__`-prefixed route in the corpus is one the app needed: the widest name is `/__list__`,
+    which re-implements a framework audit endpoint. So the predicate is the framework's own
+    convention read back, not a new rule invented here.
+
+    Every path found begins `/__`, but the test below is ANY segment: measured, the two
+    rules catch the same 36 runs, so the wider one costs nothing today and does not quietly
+    depend on the parking staying at the root.
+
+    ZERO framework-emitted routes use the prefix, which is what makes this safe to block on:
+    the projector names business paths, and `seed_audit`'s note states the framework does not
+    emit these. `ENVGEN_PARKED_ROUTE_GATE=0` disables.
+    """
+    if str(os.environ.get("ENVGEN_PARKED_ROUTE_GATE", "1")).strip().lower() in (
+            "0", "false", "off", "no"):
+        return []
+    try:
+        from .backend_audit import served_routes
+        backend = Path(app_root) / "backend"
+        if not backend.is_dir():
+            return []
+        hits: List[str] = []
+        for method, path in sorted(served_routes(backend)):
+            # ANY segment, not just the first. Measured, the two rules are the same
+            # today -- 36 runs either way, and no corpus path carries `__` anywhere but
+            # at the front -- so this costs nothing and does not depend on the parking
+            # staying at the root. `/api/__noop__` is the same artefact one prefix in.
+            if any(p.startswith("__") for p in str(path).split("/") if p):
+                hits.append("%s %s" % (method, path))
+        if not hits:
+            return []
+        # #1202vx: the evidence gets the budget, the explanation is appended after it --
+        # prepending the sentence would let the prose eat the cap and leave the lane with
+        # fewer routes named than the count claims.
+        return ["%d served route(s) exist only to satisfy a framework check and would ship "
+                "with the product: %s. A path beginning `__` is this framework's own "
+                "convention for its machinery, so a visitor reading the app's OpenAPI sees "
+                "the builder's scaffolding; the r140 instance was public, unauthenticated "
+                "and counted rows in four business tables. Delete the handler AND its "
+                "registry entry. If a check pushed you to add it, the check is asking about "
+                "the BUSINESS endpoints -- make one of those read its data instead."
+                % (len(hits), join_capped(hits, total=len(hits), cap=5, sep="; "))]
+    except Exception as exc:
+        _gate_absent_792("_parked_probe_routes_1202y7", exc, "run")
+        return []
+
+
 def _placeholder_route_blockers_1202w(app_root) -> List[str]:
     """Routed pages whose NAME says they are placeholders. Static; `[]` on any failure.
 
@@ -1933,7 +2157,7 @@ def compute_deliverability(hub_registry, app_root,
     # generator cannot disagree about what is private.
     blockers.extend(_unscoped_owner_read_blockers(app_root))
     blockers.extend(_auth_override_blockers_1202s(app_root))
-    blockers.extend(_guard_tampering_blockers_1202oj(app_root))   # #1202oj
+    blockers.extend(_guard_tampering_blockers_1202oj(app_root, hub_registry))   # #1202oj/#1202y9
 
     # FABRICATED member-field fallback gate (#175, gmrun9). The frontend renders
     # `place.rating || '4.5'` / `? place.name : 'HI Point Montara Lighthouse'` — invented data
@@ -1942,6 +2166,7 @@ def compute_deliverability(hub_registry, app_root,
     blockers.extend(_invented_field_blockers(app_root))
     blockers.extend(_placeholder_route_blockers_1202w(app_root))
     blockers.extend(_operator_identity_blockers_1202rj(app_root))
+    blockers.extend(_parked_probe_routes_1202y7(app_root))
     blockers.extend(_reserved_email_domain_blockers_1202rs(app_root))
     blockers.extend(_no_page_declares_an_api_1202rm(hub_registry))
     blockers.extend(_unreachable_routes_1202rq(app_root))

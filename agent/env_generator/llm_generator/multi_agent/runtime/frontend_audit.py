@@ -868,8 +868,29 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # that mounts `<X/>` from a .jsx import was falsely inert → ui_page_unwired wedge
         # to the 75-min no-deliver abort (netflix r117/r120: TitleDetailPage mounting a
         # TitleDetailModal.jsx). Extension-agnostic now.
+        # #1202y5: ...and a NAMED import, which the pattern above matches not at all.
+        # r140's lane wrote every delegating page as
+        #     import { ExploreView } from '../components/DiscoveryPages';
+        #     export default function ExploreGridPage() { return <ExploreView />; }
+        # -- five lines, a real child, a real screen -- and this called all seven of them
+        # "a placeholder stub that renders no real UI", 90 seconds AFTER they were written,
+        # holding delivery on pages that were finished. Measured on that run: the blocker
+        # named 7 such pages 21-24 times each over six minutes, and the lane cleared every
+        # one of them the same way -- by adding a feed call to a profile page, a
+        # notifications page and a direct-message page alike, because a delegating page has
+        # no call of its own to offer. So the cost is not only the six minutes: the check
+        # asks a page to prove itself in a currency it does not hold, and gets paid in
+        # calls that do not belong there. The two import forms are the SAME
+        # evidence ("this page imports a component and renders it"), so accepting only one
+        # of them was a gap, not a standard: nothing is loosened here.
+        #
+        # It is also the blind spot #1202y2 just closed one consumer over, in the resolver.
+        # Measured over the corpus, exactly one run carries this page style -- the run that
+        # found it -- so this is a style the lanes can choose at any time rather than a
+        # long-standing defect, and the next lane to choose it would have been blocked the
+        # same way.
         _composes_child = bool(re.search(
-            r"import\s+\w+\s+from\s+['\"][^'\"]*components/\w+(?:\.\w+)?['\"]",
+            r"import\s+(?:\w+|\{[^}]*\})\s+from\s+['\"][^'\"]*components/\w+(?:\.\w+)?['\"]",
             comp_file_text)) and bool(re.search(r"<[A-Z]\w+[\s/>]", comp_file_text))
         _declared_but_inert = (bool(apis) and not _has_call and not _composes_child
                                and not any(tok in comp_file_text for tok in _HANDLER_TOKENS))
@@ -3180,6 +3201,62 @@ def page_api_endpoints_1202wd(app_root, component):
 
         found = set()
         seen_comp = set()
+        # #1202y8: the routes the backend ACTUALLY serves -- read once, and only when a
+        # raw fetch turns up, so a page that imports the client pays nothing.
+        #
+        # A literal path is not evidence on its own. `/api/users` is requested by four
+        # corpus pages and implemented by no backend, and r140 has a page fetching
+        # `/__noop__`; admitting those would INVENT endpoints, which is worse here than
+        # missing them, because `_page_api_declaration_drift_1202rr` reports the registry
+        # against this answer. So a raw call counts only when its METHOD AND PATH are both
+        # a route in the code -- zero invention. Measured with this exact parser over the
+        # 179 corpus apps: 186 of 202 call sites admitted (92%), and every one of the 16
+        # turned away is a path nothing serves, which is the unimplemented-endpoint
+        # check's question and not this one.
+        _served_1202y8 = {}
+
+        def _served_routes_1202y8():
+            if "r" not in _served_1202y8:
+                out = set()
+                try:
+                    from .backend_audit import served_routes as _sr_1202y8
+                    _bd = _P(str(app_root)) / "backend"
+                    if _bd.is_dir():
+                        out = {(str(_m).upper(), (str(_p).rstrip("/") or "/"))
+                               for _m, _p in _sr_1202y8(_bd)}
+                except Exception:
+                    out = set()
+                _served_1202y8["r"] = out
+            return _served_1202y8["r"]
+
+        def _raw_fetch_endpoints_1202y8(text):
+            """`{"POST /auth/login", ...}` the file requests without the api client.
+
+            Reuses the module's own fetch reader -- `_BARE_FETCH_RE` + the quote-aware
+            `_balanced_call_span` + `_leading_string_literal` (#1032: a second parser for
+            the same syntax is the copy that drifts). A template path (`${id}` in the
+            literal) is skipped: its concrete value is not in the source, and a route with
+            a `{param}` placeholder cannot be matched from a fragment without guessing.
+
+            `axios` is deliberately NOT handled: measured at ZERO call sites across all 179
+            corpus frontends, so a branch for it would be a mechanism that never fires.
+            """
+            out = set()
+            try:
+                for _m in _BARE_FETCH_RE.finditer(text):
+                    _oi = text.index("(", _m.start())
+                    _lit, _rest = _leading_string_literal(
+                        _balanced_call_span(text, _oi)[1:-1])
+                    if not _lit or not _lit.startswith("/") or "${" in _lit:
+                        continue
+                    _p = _lit.split("?")[0].split("#")[0].rstrip("/") or "/"
+                    _mm = _re.search(r"""method\s*:\s*['"](\w+)['"]""", _rest or "")
+                    _v = (_mm.group(1).upper() if _mm else "GET")
+                    if (_v, _p) in _served_routes_1202y8():
+                        out.add("%s %s" % (_v, _p))
+            except Exception:
+                return out
+            return out
 
         def _walk(comp, depth):
             if not comp or comp in seen_comp or depth > _MAX_HOPS_1202WD:
@@ -3206,6 +3283,16 @@ def page_api_endpoints_1202wd(app_root, component):
                     rest = text.replace(stmt, "")
                     if _re.search(r"\b%s\b" % _re.escape(ident), rest):
                         own.update(_resolve_function_1202wd(ident, funcs))
+            # #1202y8: ...and the requests this file issues WITHOUT the client.
+            # r140's LoginPage posts to `/auth/login` and `/auth/register` with `fetch`
+            # and imports nothing from services/api, so this resolver answered `[]` for a
+            # page that calls two endpoints -- and the backfill that now fills `apis_used`
+            # from this answer (#1202xv) left it empty while the page plainly called them.
+            #
+            # Folded into `own` BEFORE the descend test below, because a page that fetches
+            # is a page that calls: descending past it would hand it its chrome's
+            # endpoints, which is the r89 dilution the rule underneath exists to prevent.
+            own |= _raw_fetch_endpoints_1202y8(text)
             found.update(own)
             # A FILE THAT CALLS THE API IS THE ANSWER; ITS CHILDREN ARE CHROME.
             # r89's FriendsSuggestedCreatorsPage is 119 lines that call `getForYouFeed` and

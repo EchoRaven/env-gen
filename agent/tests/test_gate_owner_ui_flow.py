@@ -8,6 +8,7 @@ remove one that's actually needed) and needs a bespoke design, not a blind owner
 """
 import ast
 import sys
+import re as _re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,9 +54,16 @@ def test_dead_artifacts_owner_is_non_destructive():
     from multi_agent.runtime import remediation_dispatcher as rd
     assert _gate_owner_map().get("deliverability_dead_artifacts") == "backend"
     src = Path(rd.__file__).read_text(encoding="utf-8")
+    # #1202y9: end the slice at the NEXT entry, whatever it is called. Naming the
+    # follower (`"deliverability_missing_seed"`) assumed the two stay adjacent, and they
+    # did not -- #1202y7 filed `deliverability_parked_probe_route` between them, whose
+    # correct remediation IS "delete the handler" (a parked probe is not a falsely-dead
+    # artifact), and this read it as this entry's guidance. The landmark has to be the
+    # boundary of the thing under test, not the identity of its neighbour.
     i = src.index('"deliverability_dead_artifacts": (')
-    _end = src.find('"deliverability_missing_seed"', i)
-    guidance = src[i:_end if _end != -1 else len(src)]
+    _m = _re.search(r'\n\s+"deliverability_[a-z_]+": \(', src[i + 10:])
+    _end = (i + 10 + _m.start()) if _m else len(src)
+    guidance = src[i:_end]
     assert "deprecate" in guidance.lower()
     assert "rather than deleting" in guidance
     for destructive in ("delete the", "remove the file", "rm "):
