@@ -82,7 +82,14 @@ def test_small_results_are_left_alone():
 def test_the_saving_is_counted():
     L.record_dedup_saved_1191("workhub_list_tasks", 3800)
     L.record_dedup_saved_1191("workhub_list_tasks", 3800)
-    assert L.dedup_saved_1191() == {"calls": 2, "bytes": 7600}
+    got = L.dedup_saved_1191()
+    assert got["calls"] == 2 and got["bytes"] == 7600, got
+    # #1202za added a per-tool split beside the tally, and the exact-equality assertion this
+    # replaces is what CAUGHT that addition -- so the successor keeps the same force rather
+    # than loosening to a subset check: the tally is pinned, the key set is pinned, and the
+    # new split has to AGREE with the tally instead of merely existing.
+    assert set(got) == {"calls", "bytes", "by_tool_1202za"}, sorted(got)
+    assert got["by_tool_1202za"]["workhub_list_tasks"] == {"calls": 2, "bytes": 7600}, got
 
 
 def test_the_pointer_says_what_to_do_next():

@@ -1427,20 +1427,54 @@ _TOOL_RESULT_BYTES: Dict[str, Any] = {}
 
 
 _DEDUP_SAVED_1191 = {"calls": 0, "bytes": 0}
+# #1202za: ...and WHICH tool. The signature has always taken `tool`, and the ledger has
+# always thrown it away, so the one question the number invites — which tool is being polled
+# for a state that is not moving — could not be answered from it. The message this same site
+# hands the agent already says the useful thing ("if you keep seeing this line, the state you
+# are waiting on is not moving and polling it again will not move it"); the run record kept
+# only a total.
+_DEDUP_BY_TOOL_1202ZA: Dict[str, Dict[str, int]] = {}
 
 
 def record_dedup_saved_1191(tool: str, saved: int) -> None:
     """#1191: bytes NOT re-inserted because the result was byte-identical to one already in
-    this conversation. Counted so the next run reports the real size instead of an estimate."""
+    this conversation. Counted so the next run reports the real size instead of an estimate.
+
+    #1202za: kept per tool as well as in total. A repeated result is a poll that told the
+    agent nothing, and which tool it was is the difference between "the context is fine" and
+    "one tool is being asked the same question forty times"."""
     try:
         _DEDUP_SAVED_1191["calls"] += 1
         _DEDUP_SAVED_1191["bytes"] += max(0, int(saved))
+        e = _DEDUP_BY_TOOL_1202ZA.setdefault(str(tool or "?"), {"calls": 0, "bytes": 0})
+        e["calls"] += 1
+        e["bytes"] += max(0, int(saved))
     except Exception:
         pass
 
 
 def dedup_saved_1191() -> dict:
-    return dict(_DEDUP_SAVED_1191)
+    """The total, plus the per-tool split costliest first.
+
+    #1202za: capped at 8 tools with a `_capped_1202za` entry for the rest, because a ledger
+    that keeps a head and does not say so is the defect #1202z7/#1202z8 had to go and fix in
+    four other places on this same file's behalf.
+    """
+    out = dict(_DEDUP_SAVED_1191)
+    try:
+        ordered = sorted(_DEDUP_BY_TOOL_1202ZA.items(),
+                         key=lambda kv: -int(kv[1].get("bytes") or 0))
+        out["by_tool_1202za"] = {k: dict(v) for k, v in ordered[:8]}
+        cut = ordered[8:]
+        if cut:
+            out["by_tool_1202za"]["_capped_1202za"] = {
+                "dropped": len(cut),
+                "calls": sum(int(v.get("calls") or 0) for _, v in cut),
+                "bytes": sum(int(v.get("bytes") or 0) for _, v in cut),
+            }
+    except Exception:
+        pass
+    return out
 
 
 def record_tool_result_bytes_1171(tool: Any, nbytes: Any) -> None:
