@@ -411,6 +411,46 @@ class RunBudget:
         except Exception:
             pass
 
+    @staticmethod
+    def _cap_1202z8(items, keep: int, sum_keys):
+        """#1202z8 — keep the head, and SAY what the head left out.
+
+        Every ledger below caps: #1202cr at 24 labels, #1202cy at 16 stages x 10 tools,
+        #1171 at 12 tools, #1202cw at 12 paths per kind. Each cap is defensible on its own
+        ("the question is answered by the head") and each is SILENT, which is what makes a
+        reader sum the map and believe they have the run.
+
+        Measured on r140, twice over, both times on me:
+          * `llm_by_phase_1202cr` held 5691 of 6807 calls and $366.22 of $402.92 — 9% of
+            the run in no bucket at all (fixed as #1202z7).
+          * `tool_result_bytes` keeps 12 of the 75 tools that returned a result, covering
+            4643 of 7254 invocations. I read "tool results are 19% of uncached" off that
+            head mid-run; the final head alone is 24.73 MB against 24.44M uncached tokens,
+            so the true share is at least 25% and the ledger cannot say how much more.
+          * `stage_tools_1202cy`'s own comment says the cap leaves "enough to see an EMPTY
+            stage, which is the question" — but a stage past the 16th is indistinguishable
+            from a stage that never ran, which is exactly that question unanswered.
+
+        Returns (kept_dict, cut_summary_or_None). The summary carries the dropped count and
+        the sums the caller names, so the arithmetic closes without restoring the detail
+        the cap exists to drop.
+        """
+        try:
+            seq = list(items)
+        except Exception:
+            return {}, None
+        kept, cut = seq[:keep], seq[keep:]
+        if not cut:
+            return dict(kept), None
+        out = {"dropped": len(cut)}
+        for k in sum_keys:
+            try:
+                out[k] = round(sum(float((v or {}).get(k) or 0) for _, v in cut), 4) \
+                    if isinstance(cut[0][1], dict) else sum(int(v or 0) for _, v in cut)
+            except Exception:
+                pass
+        return dict(kept), out
+
     def write(self, caps: Dict[str, Any], started_at: float,
               elapsed: float, ticks: int, status: str, reason: str = "") -> None:
         """Persist caps + usage so the live monitor can show budget progress.
@@ -530,14 +570,25 @@ class RunBudget:
                     from utils.llm import stage_tools_1202cy
                     _st = stage_tools_1202cy()
                     if _st:
-                        payload["stage_tools_1202cy"] = {
-                            k: dict(list(v.items())[:10])
-                            for k, v in list(_st.items())[:16]}
+                        _kept1202z8, _cut1202z8 = self._cap_1202z8(
+                            _st.items(), 16, ("calls",))
+                        _map1202z8 = {k: dict(list(v.items())[:10])
+                                      for k, v in _kept1202z8.items()}
+                        if _cut1202z8:
+                            # #1202z8: a stage past the cap must not read as a stage that
+                            # never ran — which is the one thing this ledger exists to show.
+                            _map1202z8["_capped_1202z8"] = {
+                                "dropped_stages": _cut1202z8.get("dropped", 0)}
+                        payload["stage_tools_1202cy"] = _map1202z8
                 except Exception:
                     pass
                 _tb = tool_result_bytes()
                 if _tb:
-                    payload["tool_result_bytes"] = dict(list(_tb.items())[:12])
+                    _kb1202z8, _cb1202z8 = self._cap_1202z8(
+                        _tb.items(), 12, ("calls", "bytes"))
+                    if _cb1202z8:
+                        _kb1202z8["_capped_1202z8"] = _cb1202z8
+                    payload["tool_result_bytes"] = _kb1202z8
                     # #1191: how much the identical-snapshot dedup kept out of the context. Reported
                     # beside the tool attribution so the saving is a measurement, not an estimate.
                     try:
