@@ -1087,6 +1087,97 @@ def _report_unreachable_twins_1202zb(orch, out_dir, registryhub) -> None:
         except Exception:
             pass
 
+
+def _unstaged_seed_media_task_1202zf(orch, out_dir) -> None:
+    """#1202zf — tell the frontend lane about seeded media that is still missing AT DELIVERY.
+
+    `unstaged_seed_media_1202xn` already finds it and `record_unstaged_seed_media_1202xn`
+    already lands it in `logs/unstaged_seed_media_1202xn.jsonl`. The harm is a card that renders
+    its thumbnail -- which IS an image and therefore IS staged -- and 404s the moment a viewer
+    presses play.
+
+    THE FINDING REACHES NO LANE, and what the corpus shows instead is worse than silence: the
+    ticket token appears in ZERO hub files across every run, and twice an agent PAID TO
+    REDISCOVER IT from a browser 404. r121's debugger wrote the root cause itself -- "synthetic
+    local media paths ... that are not staged frontend assets; feed responses returned them
+    verbatim, causing browser 404s" -- and r62's verifier recorded "file not staged in frontend
+    /assets/real_videos/ or missing from static build" as a test result. The framework knew
+    both answers before either agent started looking. (`real_videos` does appear in hubs 3403
+    times, but as seed paths inside chains and documents, not as this finding.)
+
+    ★ WHY LATE AND NOT WHERE THE DETECTOR ALREADY RUNS. The existing call sits in
+    `stage_missing_frontend_assets`, i.e. at SCAFFOLD time, and most of what it reports there
+    is transient. Measured on r139: 36 ledger lines carrying 35 videos "excluded from the image
+    by .dockerignore", 1260 entries in all -- and the delivered tree is CLEAN, because the
+    framework's own baseline copy rewrote `.dockerignore` ten seconds after the last report
+    (file mtime 00:14:57, last ledger line 00:14:47) and all 35 files are on disk. Reporting a
+    state that the framework itself is about to repair is how a signal teaches its reader to
+    skip it.
+
+    What survives to delivery is real. r140 shipped THREE seeded videos that are still absent
+    from the delivered tree -- `jasonderulo__7658062942529097015.mp4`,
+    `khaby.lame__7655124220186492182.mp4`, `gordonramsayofficial__7659188408110628126.mp4` --
+    while 35 other videos ARE staged. Same shape in r124 (2), r129 (3) and r135 (1).
+
+    A TASK, NOT A BLOCKER, and no placeholder is synthesised: the framework stages REAL media
+    and a grey stand-in is worse than a named gap (#1202xn's own reasoning, kept). The lane can
+    act because staged alternatives exist -- the count is in the task text for exactly that
+    reason.
+    """
+    try:
+        from .frontend_scaffold import unstaged_seed_media_1202xn
+        missing = unstaged_seed_media_1202xn(out_dir) or []
+        if not missing:
+            return
+        wh = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if wh is None:
+            return
+        base = "Seeded media missing at delivery — cards render a thumbnail and 404 on play"
+        try:
+            for t in (wh.list_tasks() or []):
+                if (isinstance(t, dict)
+                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("status")) in ("pending", "in_progress", "open")):
+                    return
+        except Exception:
+            pass          # best-effort dedupe; on any fault, file
+        staged = 0
+        try:
+            from pathlib import Path as _P1202zf
+            _vd = _P1202zf(str(out_dir)) / "app" / "frontend" / "public" / "assets"
+            if _vd.is_dir():
+                staged = sum(1 for _p in _vd.rglob("*")
+                             if _p.is_file() and _p.suffix.lower() in
+                             (".mp4", ".mov", ".webm", ".m4v"))
+        except Exception:
+            staged = 0
+        wh.create_task(
+            title="%s (%d)" % (base, len(missing)),
+            description=(
+                "The seed points at local media that is NOT in the delivered app:\n"
+                + "\n".join("  - %s" % m for m in missing[:12])
+                + ("\n  ... and %d more" % (len(missing) - 12) if len(missing) > 12 else "")
+                + "\n\nThe card still LOOKS right: `thumbnail_url` is an image, images are "
+                "staged, so the failure only appears when a viewer presses play. %d playable "
+                "media file(s) ARE staged under `public/assets`, so repointing is possible."
+                "\n\nFix the SEED ROW, not the page: point it at a file that is staged, or "
+                "drop the row. Do NOT add a placeholder or a grey stand-in — the framework "
+                "stages real media and a fake one hides the gap instead of closing it. An "
+                "entry marked `excluded from the image by .dockerignore` is the other cause: "
+                "the file exists on disk and your `.dockerignore` keeps it out of the image — "
+                "remove that pattern, and if a large file broke the build, replace the FILE."
+                % (staged)),
+            assignee="frontend", agent="orchestrator", priority="P1")
+    except Exception as _e1202zf:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "heal_pipeline.unstaged_seed_media_task_1202zf",
+                "seeded media that is missing at delivery stays in a log the lane that can "
+                "fix it never reads", _e1202zf)
+        except Exception:
+            pass
+
 def _file_shadowed_route_task_1202z4(orch, duplicated) -> None:
     """#1202z4 — tell the lane that a route it wrote twice never runs.
 
@@ -1535,6 +1626,7 @@ class HealPipeline:
                         _ea.get("pending"))
                 _file_shadowed_route_task_1202z4(orch, _ea.get("duplicated") or [])
                 _report_unreachable_twins_1202zb(orch, out_dir, registryhub)
+                _unstaged_seed_media_task_1202zf(orch, out_dir)
             except Exception as exc:
                 # Non-fatal (don't crash the heal run) but LOUD: backend_audit raises
                 # BackendAuditError on a real failure and silently swallowing it
