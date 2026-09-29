@@ -2586,6 +2586,7 @@ def finalize_kickoff(
     # Step 2: register each declared table via schema_hub. Fail-fast.
     # #1202hh: read the materials' verdict once, outside the loop, so every table carries it.
     _vis1202hh = _spec_visibility_1202hh_lazy()(getattr(hubs, "base_dir", ""))
+    _z2_seen: List[str] = []          # #1202z2: tables this loop actually stamped
     for tbl in tables:
         if not isinstance(tbl, Mapping):
             continue
@@ -2627,6 +2628,7 @@ def finalize_kickoff(
         _v1202hh = _vis1202hh.get(name) or _vis1202hh.get(str(name).strip())
         if _v1202hh:
             table_meta["visibility"] = _v1202hh
+            _z2_seen.append(str(name))
             # #1202ij: THE SAME EMITTER PAIR, AT BIRTH.
             #
             # The lines just above lift a declared `owner_scoped_reads` into `table_meta`,
@@ -2727,6 +2729,62 @@ def finalize_kickoff(
             })
             return _emit_partial_failure()
         n_tables += 1
+
+    # #1202z2: SAY WHAT THE MATERIALS' VERDICT DID, because half the runs lose it.
+    #
+    # Measured over the 180 corpus runs: only 8.5% of tables carry `metadata.visibility`,
+    # and 136 runs have none at all. That is not because the materials are silent -- the
+    # spec declares a verdict for 381 of 1740 entities, and only 46% of those declarations
+    # reach the table registry. Restricted to runs dated on/after 2026-09-20 and to entities
+    # whose name IS a registered table, delivery is 28/56 (50%), and it is bimodal per run:
+    # r129 11/11, r131 11/11, r137 12/12, r138 4/4 against r132 0/3, r134 0/8, r139 0/9.
+    #
+    # The loader is not the cause: `_spec_visibility_1202hh` returns a full map for r132,
+    # r134 and r139 (11, 8 and 9 entries) and every one of those runs stamped ZERO tables.
+    # `register_table` merges metadata rather than replacing it, so an ordinary
+    # re-registration by a lane does not drop it either. The link that loses it is between
+    # those two, and nothing on disk records which -- so this does.
+    #
+    # It matters because the verdict is what stops the shape heuristic demoting published
+    # content: a table with no `visibility` and a users FK beside another entity's FK reads
+    # as per-user-private, the endpoint is projected with an actor, and a contract-public
+    # route answers 401. That chain cost r137 the whole run (81 min, $190) and r140 95
+    # minutes of M1.1 (see #1202y9/#1202z0).
+    #
+    # Observation only: appended after the loop, guarded, and it changes no decision.
+    try:
+        import json as _j1202z2
+        import time as _t1202z2
+        from pathlib import Path as _P1202z2
+        _root1202z2 = _P1202z2(str(getattr(hubs, "base_dir", "") or ""))
+        if str(_root1202z2) not in ("", "."):
+            _out1202z2 = _root1202z2 / "logs" / "spec_visibility_1202z2.jsonl"
+            _out1202z2.parent.mkdir(parents=True, exist_ok=True)
+            _names1202z2 = [str(t.get("name")) for t in (tables or [])
+                            if isinstance(t, Mapping) and t.get("name")]
+            with open(_out1202z2, "a", encoding="utf-8") as _fh1202z2:
+                _fh1202z2.write(_j1202z2.dumps({
+                    "at": _t1202z2.time(),
+                    "spec_map": len(_vis1202hh or {}),
+                    "spec_names": sorted(_vis1202hh or {})[:40],
+                    "tables_seen": len(_names1202z2),
+                    "stamped": sorted(_z2_seen),
+                    # the declarations that had a same-named table in THIS batch and still
+                    # did not get stamped -- the gap, named, at the moment it happens
+                    "declared_but_unstamped": sorted(
+                        n for n in (_vis1202hh or {})
+                        if n in set(_names1202z2) and n not in set(_z2_seen)),
+                    "resume": bool(_resume_1202mw),
+                }) + "\n")
+    except Exception as _e1202z2:
+        try:
+            from ..message_format import warn_once_1201
+            warn_once_1201("run_kickoff.spec_visibility_1202z2",
+                           "the materials-verdict ledger is not written, so a run that "
+                           "loses every `visibility` still looks the same on disk as one "
+                           "that kept them", _e1202z2)
+        except Exception:
+            pass
 
     # Step 3: spawn each task in the synthesized task_tree.
     # workhub.create_task returns {"error": ...} on invalid input (it
