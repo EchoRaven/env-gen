@@ -3224,6 +3224,52 @@ def page_api_endpoints_1202wd(app_root, component):
             for m in _re.finditer(
                     r"import\s+([A-Z]\w*)\s+from\s+['\"](\.[^'\"]*?)(?:\.\w+)?['\"]", text):
                 _walk(m.group(2).rsplit("/", 1)[-1], depth + 1)
+            # #1202y2: ...and a NAMED import, which this matched not at all. r139's lane
+            # rewrote its pages down to two lines each --
+            #     import { ExploreScreen } from '../components/SecondaryScreens';
+            #     export default function ExploreGridPage() { return <ExploreScreen />; }
+            # -- and `components/SecondaryScreens.jsx` is what imports the service module.
+            # The walk never proposed the module, so the resolver answered [] for nine of
+            # twelve pages, `page_apis_understated` fired 0 times in 148 gate ticks, and the
+            # gate went green with those pages declaring `apis_used: []`. 14 corpus runs
+            # hold this shape (r139 7 pages, netflix-r2 6, r126 5, r137 3, r136 2); writing
+            # several screens into one module is ordinary React.
+            #
+            # GUARDED, because the naive version is the failure this function already
+            # documents: r89 descended into a shared child and gave three unrelated pages
+            # the same four endpoints, "worse in a blocker than saying nothing". A barrel
+            # holds SEVERAL components, so crediting a page with everything the barrel
+            # calls is exactly that. Descend only when the module's answer CANNOT be
+            # diluted -- it resolves to at most one endpoint, so the union is the precise
+            # answer whichever export the page took. r139's SecondaryScreens exports six
+            # screens and imports one api function, which is why it resolves here; a barrel
+            # that reaches two different endpoints stays unresolved rather than guessed at.
+            for m in _re.finditer(
+                    r"import\s*\{[^}]*\}\s*from\s*['\"](\.[^'\"]*?)(?:\.\w+)?['\"]", text):
+                _mod1202y2 = m.group(1).rsplit("/", 1)[-1]
+                if _mod1202y2 in seen_comp:
+                    continue
+                _p1202y2 = _locate(_mod1202y2)
+                if _p1202y2 is None:
+                    continue
+                try:
+                    _t1202y2 = _p1202y2.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    continue
+                _e1202y2 = set()
+                for _m2 in _re.finditer(
+                        r"import\s*\{([^}]*)\}\s*from\s*['\"][^'\"]*services/api[^'\"]*['\"]",
+                        _t1202y2):
+                    for _raw in _m2.group(1).split(","):
+                        _id = _raw.split(" as ")[-1].strip()
+                        if _id and _id in funcs:
+                            _e1202y2.update(_resolve_function_1202wd(_id, funcs))
+                # ONE HOP. A module that makes no call of its own has an UNDETERMINED set,
+                # and resolving it would mean walking its subtree before deciding -- which
+                # re-opens the dilution above. All 14 corpus runs carrying this shape are one
+                # hop (page -> a module that calls), so a deeper chain stays unresolved.
+                if len(_e1202y2) == 1:
+                    _walk(_mod1202y2, depth + 1)
 
         _walk(str(component or ""), 0)
         return sorted(found)

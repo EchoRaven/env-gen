@@ -3140,6 +3140,12 @@ def _deliverability_check_token(blocker: str) -> str:
     # most-specific-first: both carry "apis_used: []" and only the tail separates them.
     if "apis_used: []` while their own source calls" in low:
         return "deliverability_page_apis_understated"
+    # #1202y1: the same check now also fires on a PARTIAL declaration, whose prose says
+    # "understate `apis_used`" rather than "apis_used: []". The name is derived from the
+    # prose by substring, so a reworded blocker dispatches NOBODY -- #1202tu measured that
+    # on r132 (67/67 snapshots, "NO remediation owner"). Both phrasings map here.
+    if "understate `apis_used` while their own source calls" in low:
+        return "deliverability_page_apis_understated"
     if "apis_used: []` while the contract" in low:
         return "deliverability_all_page_apis_empty"
     if "contains no navigation affordance" in low:

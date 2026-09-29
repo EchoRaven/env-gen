@@ -781,7 +781,16 @@ def _api_client_calls_1202vk(page_text: str, _page_file=None) -> bool:
 
 
 def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
-    """Pages whose source calls an API while their registration declares none. `[]` on failure.
+    """Pages whose source calls an API the registration does not list. `[]` on failure.
+
+    #1202y1: WAS "while their registration declares none". Only an EMPTY `apis_used`
+    triggered, so a page declaring one of its three calls was clean by construction -- and
+    that empty-list trigger is why #1202wd refused to backfill from its own reader ("a
+    half-resolved list written into the registry would silence it while the contradiction
+    stood"). Comparing against the SOURCE removes the coupling: filling can no longer buy
+    silence. 99 corpus runs hold a page whose non-empty `apis_used` understates its source
+    -- the worst holds 14 pages over 53 endpoints, a recent one 5 over 15 -- and none of it
+    was visible here.
 
     The reverse direction (declared but not called) is NOT flagged: a lane may register the
     contract it is about to consume, and Phase A does exactly that. Only code-says-yes /
@@ -806,10 +815,30 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
         call = _re.compile(r"\b(?:await\s+)?(?:api|axios)\s*\.\s*"
                            r"(?:get|post|put|patch|delete)\s*\(|\bfetch\s*\(|"
                            r"\b(?:apiGet|apiPost|apiPut|apiDelete)\s*\(")
+        def _norm1202y1(a: Any) -> str:
+            return _re.sub(r"\{[^}]*\}", "{}", str(a)).rstrip("/")
+
         drift = []
         for name, rec in sorted(pages.items()):
-            if rec.get("apis_used") or []:
-                continue
+            # #1202y1: WAS `if rec.get("apis_used"): continue` -- the check only ever looked
+            # at pages declaring NOTHING, so a page declaring ONE of its three calls was
+            # clean by construction. That is also why #1202wd refused to backfill from its
+            # own reader ("a half-resolved list written into the registry would silence it
+            # while the contradiction stood"): with an empty-list trigger, any fill silences
+            # it. Comparing the registry against the SOURCE removes that coupling -- a
+            # partial list is still reported, so filling can never buy silence.
+            #
+            # Measured over the corpus: 99 runs hold a page whose `apis_used` is non-empty
+            # and whose source calls MORE -- the worst 14 pages over 53 endpoints, two recent
+            # ones 5/15 and 4/10 -- none of it visible to this check before.
+            #
+            # ONE DIRECTION ONLY. `page_api_endpoints_1202wd` does not traverse custom hooks
+            # (one corpus page routes its calls through a `useCatalog` hook, so the reader
+            # sees none of them), so `declared - source` is routinely non-empty and must NEVER
+            # fire. `source - declared` is the safe direction: the reader missing a call makes
+            # this check silent, not wrong.
+            _decl1202y1 = {_norm1202y1(a) for a in (rec.get("apis_used") or [])
+                           if isinstance(a, str)}
             comp = str(rec.get("component") or "")
             if not comp:
                 continue
@@ -845,21 +874,36 @@ def _page_api_declaration_drift_1202rr(hub_registry, app_root) -> List[str]:
                             # between "unresolvable" and "broken" disappears.
                             _gate_absent_792("page_api_endpoints_1202wd", _exc1202wd, "run")
                             _eps1202wd = []
-                        if _eps1202wd:
-                            _shown1202wd = _eps1202wd[:4]
-                            _tail1202wd = ("" if len(_eps1202wd) <= 4
-                                           else " +%d more" % (len(_eps1202wd) - 4))
-                            drift.append("%s (%s) calls %d: %s%s" % (
-                                name, cand.name, len(_eps1202wd),
+                        # #1202y1: what the SOURCE has that the REGISTRY lacks.
+                        _miss1202y1 = [e for e in _eps1202wd
+                                       if _norm1202y1(e) not in _decl1202y1]
+                        if _miss1202y1:
+                            _shown1202wd = _miss1202y1[:4]
+                            _tail1202wd = ("" if len(_miss1202y1) <= 4
+                                           else " +%d more" % (len(_miss1202y1) - 4))
+                            # The entry stays SHORT on purpose: #1202tu's ratchet treats any
+                            # literal over 30 chars in this module as a blocker sentence and
+                            # demands it route to an owner. This is a list ITEM; the routable
+                            # sentence is the one returned below. "unlisted" is also the
+                            # accurate word -- the number is what the registry LACKS, not what
+                            # the page calls.
+                            drift.append("%s (%s) unlisted %d: %s%s" % (
+                                name, cand.name, len(_miss1202y1),
                                 ", ".join(_shown1202wd), _tail1202wd))
-                        else:
+                        elif _eps1202wd:
+                            pass        # the registry already lists everything the source calls
+                        elif not _decl1202y1:
+                            # The reader resolved nothing AND the page declares nothing: the
+                            # old unresolved-and-empty case, reported exactly as before. A page
+                            # that DECLARES something and that the reader cannot resolve is
+                            # left alone -- firing there would be the hook blind spot guessing.
                             drift.append("%s (%s)" % (name, cand.name))
                 except Exception:
                     pass
                 break
         if not drift:
             return []
-        return ["%d registered ui_page(s) declare `apis_used: []` while their own source calls "
+        return ["%d registered ui_page(s) understate `apis_used` while their own source calls "
                 "an API: %s. Everything downstream then reasons from a registry that "
                 "contradicts the code — #151 skips the page for having no `apis`, the "
                 "consumer-wiring audit has nothing to reconcile, and the implemented-flip "
