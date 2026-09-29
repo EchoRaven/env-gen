@@ -815,6 +815,278 @@ def _stack_serving_1202ne(base: str, api_base: "str | None", timeout_s: float = 
 
 
 
+
+# ── #1202zb — two tables with one shape, and the API reads the emptier one ────────
+_TWIN_SKIP_COLS_1202ZB = ("id", "created_at", "updated_at")
+# #1202zb: the floor is where the JOIN-TABLE class ends, measured by grouping every model on
+# its column set (id/created_at/updated_at dropped) across the 159 corpus app trees that have
+# an ORM, out of 182 run directories:
+#   2 cols -> 84 groups in 83 of those 159 runs -- every one a `(user_id, <x>_id)` pair
+#             such as likes/reposts or likes/saves, all legitimate
+#   3 cols ->  9 groups in  9 runs -- the same class, video_likes/video_saves
+#   4 cols ->  7 groups in  6 runs -- the class is gone; these are real twins
+# So 4 is not a taste: at 3 the check reports nine join-table pairs that are correct by
+# construction, and at 2 it fires on half the corpus.
+_TWIN_MIN_COLS_1202ZB = 4
+
+
+def _cols_1202zb(model: Any) -> tuple:
+    """A model's column names minus the three every table carries.
+
+    `_models_919` spells them `cols` (a flat list of names); `columns` is read too because
+    the registry dialect uses that name with dicts inside. The first draft of this read ONLY
+    `columns` and therefore matched NOTHING anywhere in the corpus -- the six pairs measured
+    below appeared only once the key was right, so the reading order here is load-bearing and
+    a "0 hits" from this helper means suspect the locator first.
+    """
+    c = model.get("cols") if isinstance(model, dict) else None
+    if not c and isinstance(model, dict):
+        c = model.get("columns")
+    if isinstance(c, dict):
+        names = list(c)
+    elif isinstance(c, (list, tuple)):
+        names = [(x.get("name") if isinstance(x, dict) else x) for x in c]
+    else:
+        return ()
+    return tuple(sorted(str(n) for n in names
+                        if n and str(n) not in _TWIN_SKIP_COLS_1202ZB))
+
+
+def _name_variants_1202zb(a: Any, b: Any) -> bool:
+    """True when two table names differ ONLY in plural/separator spelling.
+
+    This EXCLUDES a pair rather than flagging it. The finding rests on `_resource_model`
+    saying which of the two tables an endpoint reads, and that resolver matches a path
+    segment against table names plural-OR-singular -- so for `comment` beside `comments` it
+    can only pick one, and WHICH one it picks is not evidence about which one the handler
+    queries. `_match_model` settles this: its loop `return`s the FIRST table whose name
+    matches, and `cand.rstrip("s") == table.rstrip("s")` makes both twins match equally --
+    so the answer is decided by dict insertion order. Measured on r125's real model set:
+    `/api/comments` resolves to `comment`, the 8-row twin, while `comments` holds 295.
+    Both pairs this drops are exactly the two the resolver could not tell apart.
+
+    The rule is per TOKEN: `message_conversations` and `messages_conversations` differ in the
+    FIRST token, and a rule that strips only a trailing `s` calls them unrelated and reports
+    the pair. `_singular_1202ru` rather than a second spelling authority of my own (#1032).
+    """
+    from .material_prep import _singular_1202ru
+    def _key(n):
+        return tuple(_singular_1202ru(t)
+                     for t in str(n).replace("-", "_").lower().split("_") if t)
+    return _key(a) == _key(b)
+
+
+def _unreachable_twin_tables_1202zb(out_dir: Any, registryhub: Any) -> dict:
+    """``{"measured": bool, "why": str, "findings": [...]}``.
+
+    r140 SHIPPED this in a released 1.0.0. `videos` and `feed` carry byte-identical columns;
+    `videos` held 35 rows and `feed` 8, their contents DISJOINT; the app's only collection
+    read is `GET /api/feed` and no GET anywhere resolves to `videos`. So 35 authored videos
+    -- the whole point of the seed -- were unreachable through the delivered app, and nothing
+    said a word. Verified by curl against that run's own stack.
+
+    MEASURED over the 47 corpus runs carrying live row counts: SIX pairs in four runs match
+    the raw shape, and reading every one is what produced the exclusion above:
+
+        r140  videos(35)               no GET | feed(8)                   GET /api/feed
+        r105  live_streams(3)          no GET | live(0)                   GET /api/live
+        r105  creator_profiles(5)      no GET | suggested_creators(0)     GET /api/suggested-creators
+        r99   conversations(7)         no GET | messages(6)               GET /api/messages
+        r125  comments(295)            no GET | comment(8)                EXCLUDED, variant
+        r125  message_conversations(8) no GET | messages_conversations(6) EXCLUDED, variant
+
+    r99 looked like a false positive on its names and is not: both tables carry
+    `peer_id, last_message, unread`, i.e. the lane modelled one conversation list twice.
+
+    ``measured`` is False whenever the answer carries no information -- no ORM on disk, or no
+    row counts from THIS validation cycle. #1202z5 is the same lesson one module over: a
+    `count: 0` from an audit that inspected nothing must not read as clean.
+
+    Endpoints come from the registry rather than `lifecycle.business_endpoints`, which drops
+    the auth and control-plane routes by design (#1202xg). The wider list can only SUPPRESS a
+    finding -- one more GET that resolves to the unread table -- never invent one.
+    """
+    out: dict = {"measured": False, "why": "", "findings": []}
+    try:
+        from pathlib import Path as _P1202zb
+        from .backend_audit import _models_919
+        from .route_projector import _resource_model
+        from .seed_audit import recent_live_counts_1202dj, _project_root_1202dj
+        root = _project_root_1202dj(out_dir)
+        models, _ = _models_919(_P1202zb(root) / "app" / "backend")
+        if not models:
+            out["why"] = "no ORM models on disk"
+            return out
+        counts = recent_live_counts_1202dj(str(root)) or {}
+        if not counts:
+            # Deliberate: `recent_live_counts_1202dj` refuses counts older than its TTL,
+            # because the stack is torn down and rebuilt around each validation and a stale
+            # count would describe a different database.
+            out["why"] = "no live row counts from this validation cycle"
+            return out
+        out["measured"] = True
+        # #1202rm already paid for guessing this accessor once: it is `get_endpoints`.
+        _rh = getattr(registryhub, "registryhub", None) or registryhub
+        _get = (getattr(_rh, "get_endpoints", None)
+                or getattr(_rh, "list_endpoints", None))
+        if not callable(_get):
+            out["measured"] = False
+            out["why"] = "no endpoint accessor on the registry"
+            return out
+        eps = _get() or {}
+        by_shape: dict = {}
+        for name, m in models.items():
+            c = _cols_1202zb(m)
+            if len(c) >= _TWIN_MIN_COLS_1202ZB:
+                by_shape.setdefault(c, []).append(str(name))
+        read_by_get: dict = {}
+        via: dict = {}
+        _unresolved = 0
+        for rec in (eps.values() if isinstance(eps, dict) else (eps or [])):
+            if not isinstance(rec, dict):
+                continue
+            if str(rec.get("status")) != "implemented":
+                continue
+            if str(rec.get("method") or "").upper() != "GET":
+                continue
+            p = str(rec.get("path") or "")
+            if not p:
+                continue
+            try:
+                r = _resource_model(p, models)
+            except Exception:
+                r = None
+                _unresolved += 1
+            if r:
+                read_by_get[r[0]] = read_by_get.get(r[0], 0) + 1
+                via.setdefault(r[0], p)
+        if _unresolved:
+            # #883: an empty default born inside a handler is how a check goes quiet. A route
+            # the resolver threw on might have been the unread table's only GET, so the record
+            # must not imply the resolution was total.
+            out["why"] = ("%d route(s) did not resolve to a table; a read may be missed"
+                          % _unresolved)
+        for names in by_shape.values():
+            known = [n for n in names if n in counts]
+            if len(known) < 2:
+                continue
+            for a in known:
+                if read_by_get.get(a):
+                    continue                      # the API reads it; nothing is hidden
+                _ra = int(counts.get(a) or 0)
+                for b in known:
+                    if b == a or not read_by_get.get(b):
+                        continue
+                    # Strictly fewer rows on the served side. This also settles the empty
+                    # case without a second guard: an unread table with 0 rows hides no
+                    # content, and every row count is >= 0, so `counts[b] >= 0` excludes it
+                    # here. A draft carried `if _ra <= 0: continue` above as well; removing
+                    # the mutation-proof guard is the point -- it could not change an answer.
+                    if int(counts.get(b) or 0) >= _ra:
+                        continue
+                    if _name_variants_1202zb(a, b):
+                        continue
+                    out["findings"].append({
+                        "unread": a, "unread_rows": _ra,
+                        "served": b, "served_rows": int(counts.get(b) or 0),
+                        "via": via.get(b, ""), "columns": len(_cols_1202zb(models[a])),
+                    })
+        return out
+    except Exception as _e1202zb:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "heal_pipeline.unreachable_twin_tables_1202zb",
+                "seeded content sitting in a table no endpoint reads, beside an "
+                "identically-shaped table the API does read, goes unreported", _e1202zb)
+        except Exception:
+            pass
+        return out
+
+
+def _report_unreachable_twins_1202zb(orch, out_dir, registryhub) -> None:
+    """Land #1202zb where a lane can read it, and in an artifact.
+
+    A TASK, not a blocker. #1202w0 struck the same bargain for the same harm class one module
+    over -- "the artifact is the whole of its output; the next runs' files are the evidence
+    for whether it earns a gate check" -- and two things here argue for keeping it: the
+    `no GET resolves to A` leg rests on `_resource_model`, which the variant exclusion shows
+    cannot always tell two tables apart, and a wrong blocker costs what r140's M1.1 cost, 95
+    minutes of a cycling gate. What this adds over #1202w0 is the audience: today's #1202z0
+    and #1202z4 are both the same finding -- computed correctly, delivered to a log nobody
+    reads. Deduped by title prefix (#794).
+
+    The unmeasured case is announced ONCE rather than appended every heal cycle: a run has
+    hundreds of them, and hundreds of "could not measure" lines would bury the findings the
+    artifact exists to hold. Silent it is not -- that is what `warn_once_1201` is for.
+    """
+    try:
+        res = _unreachable_twin_tables_1202zb(out_dir, registryhub)
+        if not res.get("measured"):
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "heal_pipeline.twins_1202zb_unmeasured",
+                "the unreachable-twin-table check could not run (%s), so a run that ships "
+                "content no endpoint reads would look the same as one that does not"
+                % (res.get("why") or "reason not recorded"),
+                None)
+            return
+        findings = res.get("findings") or []
+        if not findings:
+            return
+        try:
+            import json as _j1202zb
+            import time as _t1202zb
+            from pathlib import Path as _P2
+            _art = _P2(str(out_dir)) / "logs" / "unreachable_twin_table_1202zb.jsonl"
+            _art.parent.mkdir(parents=True, exist_ok=True)
+            with open(_art, "a", encoding="utf-8") as fh:
+                fh.write(_j1202zb.dumps({"at": _t1202zb.time(),
+                                         "measured": True,
+                                         "why": str(res.get("why") or ""),
+                                         "count": len(findings),
+                                         "findings": findings[:20]}) + "\n")
+        except Exception:
+            pass          # the task below is the part a lane can act on
+        wh = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if wh is None:
+            return
+        base = "Seeded rows no endpoint reads, beside an identical table the API serves"
+        try:
+            for t in (wh.list_tasks() or []):
+                if (isinstance(t, dict)
+                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("status")) in ("pending", "in_progress", "open")):
+                    return
+        except Exception:
+            pass          # best-effort dedupe: on any fault, file
+        lines = ["  - `%s` holds %d row(s) and NO GET endpoint reads it, while `%s` holds "
+                 "%d and is what `GET %s` returns -- the two have the same %d columns."
+                 % (f["unread"], f["unread_rows"], f["served"], f["served_rows"],
+                    f["via"], f["columns"]) for f in findings[:8]]
+        wh.create_task(
+            title="%s (%d)" % (base, len(findings)),
+            description=(
+                "\n".join(lines)
+                + ("\n  ... and %d more" % (len(findings) - 8) if len(findings) > 8 else "")
+                + "\n\nRow counts are from this validation cycle's live database, not the "
+                "seed file. Two tables with the same columns SPLIT the seed, and the app can "
+                "only show the half its handler reads: r140 shipped a released 1.0.0 whose "
+                "front page served 8 rows from `feed` while 35 authored videos sat in "
+                "`videos` with no route to reach them.\n\nPick one: point the existing "
+                "read at the populated table, or give the populated table its own list "
+                "endpoint, or collapse the two tables into one and reseed. Do NOT copy rows "
+                "between them -- that leaves two sources of truth for the same content."),
+            assignee="backend", agent="orchestrator", priority="P1")
+    except Exception as _e2:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "heal_pipeline.report_unreachable_twins_1202zb",
+                "content seeded into a table the API never reads stays unreported", _e2)
+        except Exception:
+            pass
+
 def _file_shadowed_route_task_1202z4(orch, duplicated) -> None:
     """#1202z4 — tell the lane that a route it wrote twice never runs.
 
@@ -1262,6 +1534,7 @@ class HealPipeline:
                         "pending=%s", _ea.get("implemented"), _ea.get("regressed"),
                         _ea.get("pending"))
                 _file_shadowed_route_task_1202z4(orch, _ea.get("duplicated") or [])
+                _report_unreachable_twins_1202zb(orch, out_dir, registryhub)
             except Exception as exc:
                 # Non-fatal (don't crash the heal run) but LOUD: backend_audit raises
                 # BackendAuditError on a real failure and silently swallowing it
