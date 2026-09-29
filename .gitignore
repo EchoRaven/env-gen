@@ -56,3 +56,10 @@ design_inputs/
 # repo-wide test-suite lock (2026-09-05, cross-session contention)
 .suite.lock
 .suite.lock.info
+
+# Quarantine for run dirs whose data I polluted while probing (2026-09-28, #1202xf).
+# Untracked and NOT ignored, a single `git add -A` would have committed 90 run trees.
+.contaminated_1202xf/
+
+# My own analysis sidecars next to the run logs (*.log is already ignored above).
+*.log.pairs.json
