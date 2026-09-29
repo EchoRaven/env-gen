@@ -459,11 +459,42 @@ class RunBudget:
                 # asked WHERE its budget went — the question r40-vs-r41 turns on. Capped at
                 # 24 labels (costliest first) to keep run_budget.json small; the total in
                 # payload["llm"] stays authoritative and is never derived from this.
+                #
+                # #1202z7: ...and what the cap CUT, as one bucket, because a reader asking
+                # "where did the budget go" gets a wrong answer otherwise.
+                #
+                # The cap keeps the 24 costliest LABELS. Cost is spread very unevenly across
+                # labels: the five lane roles have four stages each, while the test-user
+                # squad is ELEVEN agents with their own stages, so every one of its buckets
+                # is individually small and every one falls off the end. Measured on r140:
+                # the ledger accounted for 5691 of 6807 calls and $366.22 of $402.92 — 1116
+                # calls and $36.70, 9% of the run, present in NO bucket, while
+                # `unattributed` (which means something else: a call with no label at all)
+                # held 97. Attributing the log's requests to the agent that issued them puts
+                # 937 of them on the test users, 13.7% of the run, and the phase map has not
+                # one test-user key.
+                #
+                # The omission was silent, which is what makes it a defect rather than a
+                # cap: the map's own numbers look complete. One `_capped_1202z7` bucket
+                # closes the arithmetic and names how many labels it stands for, so the next
+                # reader can see at a glance whether the head is the story or not.
                 try:
                     from utils.llm import llm_usage_by_label_1202cr
                     _bl = llm_usage_by_label_1202cr()
                     if _bl:
-                        payload["llm_by_phase_1202cr"] = dict(list(_bl.items())[:24])
+                        _items1202z7 = list(_bl.items())
+                        _kept1202z7 = _items1202z7[:24]
+                        _cut1202z7 = _items1202z7[24:]
+                        _map1202z7 = dict(_kept1202z7)
+                        if _cut1202z7:
+                            _agg1202z7 = {"labels": len(_cut1202z7)}
+                            for _k1202z7 in ("calls", "prompt", "cached", "uncached",
+                                             "completion", "usd"):
+                                _agg1202z7[_k1202z7] = round(sum(
+                                    float((_v1202z7 or {}).get(_k1202z7) or 0)
+                                    for _, _v1202z7 in _cut1202z7), 4)
+                            _map1202z7["_capped_1202z7"] = _agg1202z7
+                        payload["llm_by_phase_1202cr"] = _map1202z7
                 except Exception:
                     pass
                 # #1202xa: the same calls bucketed by how long since the SAME label's
