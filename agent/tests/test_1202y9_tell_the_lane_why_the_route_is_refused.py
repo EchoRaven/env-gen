@@ -59,6 +59,28 @@ class Feed(Base):
     caption = Column(String)
 '''
 
+_SEARCH_MODELS = '''from sqlalchemy import Column, Integer, String, ForeignKey
+from database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+
+
+class Title(Base):
+    __tablename__ = "titles"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+
+
+class MyList(Base):
+    __tablename__ = "my_list"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title_id = Column(Integer, ForeignKey("titles.id"))
+'''
+
 _TAMPER = '''from fastapi import APIRouter
 import main as main_mod
 router = APIRouter()
@@ -253,3 +275,37 @@ def test_a_registry_without_tables_still_reports(tmp_path):
         registryhub = _NoTables()
     out = guard(_app(tmp_path), _H())
     assert "WHY THE 401" in " ".join(out), out
+
+
+def test_a_route_whose_table_cannot_be_named_is_skipped(tmp_path):
+    """★ FOUND BY THE CROSS-DOMAIN CHECK, not by the tiktok corpus this was built on.
+
+    `_resource_model` returns None for a feed/search path that names no table, and
+    `_structurally_private_resource_633` resolves it through `_search_target_model` /
+    `_primary_content_model` instead. The first draft fell back to `("?", {})`, so
+    netflix-local-r30 got `GET /api/search (table \\`?\\`: no FKs)` — a line naming the route
+    the decision was made about and telling the lane nothing, while spending one of the four
+    capped evidence slots that a real finding needed.
+
+    Either the projector's own fallback names the table, or the entry is dropped.
+
+    ★ The first version of this test used `/api/nowhere` and PASSED WITH THE DEFECT STILL
+    IN PLACE — `_primary_content_model` always resolves something, so the `?` branch was
+    never reached and the mutation that restored it stayed green. `/api/search` is the real
+    case: the predicate has a search fallback and `_resource_model` does not.
+    """
+    app = _app(tmp_path, models=_SEARCH_MODELS)
+    eps = {"GET /api/search": _public("GET", "/api/search")}
+    out = why(app, _Hubs(eps))
+    assert out, "the predicate must still fire on this route"
+    assert "`?`" not in out, out
+    assert "my_list" in out, "the projector's own fallback must name the table: %r" % out
+
+
+def test_it_reuses_the_projectors_fallbacks():
+    """#1032: the predicate resolves an unnamed path through two named helpers. Restating
+    that rule here would let the message and the decision disagree about which table."""
+    import inspect
+    import multi_agent.runtime.deliverability as D
+    src = inspect.getsource(D._shape_demoted_publics_1202y9)
+    assert "_search_target_model" in src and "_primary_content_model" in src

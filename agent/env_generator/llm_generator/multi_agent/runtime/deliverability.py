@@ -687,7 +687,29 @@ def _shape_demoted_publics_1202y9(app_root, hub_registry) -> str:
                     continue
             except Exception:
                 continue
-            _r = _res1202y9(_p, models) or ("?", {})
+            # #1202y9 (cross-domain check): `_resource_model` returns None for a
+            # feed/search path that names no table, and the predicate above resolves it
+            # through the SAME two fallbacks — so naming the table `?` here describes a
+            # route the decision was made about and tells the lane nothing. Caught on
+            # netflix-local-r30: "GET /api/search (table `?`: no FKs)". Call the projector's
+            # own helpers rather than restating the rule (#1032).
+            _r = _res1202y9(_p, models)
+            if _r is None:
+                # #883: the empty default is the value `_r` already holds, so the handler
+                # carries no silent `= None` — and a fallback that FAILS says so, because
+                # losing it turns a named table back into the `?` this exists to remove.
+                try:
+                    from .route_projector import (_search_target_model as _stm1202y9,
+                                                  _primary_content_model as _pcm1202y9)
+                    _r = (_stm1202y9(models) if "search" in _p.lower() else None) \
+                        or _pcm1202y9(models)
+                except Exception as _ef1202y9:
+                    _gate_absent_792("_shape_demoted_publics_1202y9/table-fallback",
+                                     _ef1202y9, "run")
+            if _r is None:
+                # Nothing nameable: a route with no table is not a story the lane can act
+                # on, and spending a slot of the capped evidence on `?` costs a real one.
+                continue
             _fks = (_r[1] or {}).get("fks") or {}
             # #1202y9: and WHO owner-scoped the table, when the record says. r140's `feed`
             # carries `owner_scoped_reads_set_by_chain_1202kv: authored_video_ownership_flow`
