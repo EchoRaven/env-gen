@@ -1532,6 +1532,67 @@ def stage_tools_1202cy() -> Dict[str, Dict[str, int]]:
                                key=lambda kv: -sum(kv[1].values()))}
 
 
+# ── #1202zc — how often the OFFERED tool set changes, per <agent>:<stage> ─────────
+#
+# The provider's prompt cache is keyed on the tool list FIRST — #1202po measured it on this
+# gateway: same messages + same tools with `tool_choice="none"` cached 5,632 of 6,411 prompt
+# tokens, the same messages with the tools REMOVED cached 0. So a tool blob that differs
+# between two calls throws away the whole shared prefix behind it, system prompt and history
+# included, not just the tools.
+#
+# `stage_tools_1202cy` counts tools INVOKED. Nothing counted tools OFFERED, so "the tool set
+# rotates" has been an inference rather than a number. This is the number: per label, how
+# many calls, how many DISTINCT offered sets, and how large their union grew.
+_STAGE_TOOL_SETS_1202ZC: Dict[str, Dict[str, Any]] = {}
+_STAGE_TOOL_SET_CAP_1202ZC = 256      # distinct fingerprints held per label; see below
+
+
+def record_stage_tool_set_1202zc(label: Any, names: Any) -> None:
+    """Record ONE offered tool set. Never raises.
+
+    Fingerprints rather than sets, so the memory this holds does not grow with the tool
+    surface. The fingerprint store is capped per label — past the cap `distinct` stops
+    rising and `capped` says so, because a count that silently stops counting is the
+    #1202z7/#1202z8 defect one file over.
+    """
+    try:
+        key = str(label or "?")[:120]
+        e = _STAGE_TOOL_SETS_1202ZC.setdefault(
+            key, {"calls": 0, "seen": set(), "union": set(), "capped": False})
+        e["calls"] += 1
+        try:
+            ns = frozenset(str(n) for n in (names or ()))
+        except Exception:
+            return
+        e["union"] |= set(ns)
+        if len(e["seen"]) < _STAGE_TOOL_SET_CAP_1202ZC:
+            e["seen"].add(hash(ns))
+        elif hash(ns) not in e["seen"]:
+            e["capped"] = True
+    except Exception:
+        return
+
+
+def stage_tool_sets_1202zc() -> Dict[str, Dict[str, Any]]:
+    """{"<agent>:<stage>": {calls, distinct_sets, union_size, capped}}, busiest first.
+
+    `distinct_sets == 1` means every call for that label shared one tool blob and the prefix
+    behind it stayed cacheable. A label whose `distinct_sets` approaches `calls` is paying
+    full input price for its whole history on nearly every call.
+    """
+    out = {}
+    try:
+        for k, v in sorted(_STAGE_TOOL_SETS_1202ZC.items(),
+                           key=lambda kv: -int(kv[1].get("calls") or 0)):
+            out[k] = {"calls": int(v.get("calls") or 0),
+                      "distinct_sets": len(v.get("seen") or ()),
+                      "union_size": len(v.get("union") or ()),
+                      "capped": bool(v.get("capped"))}
+    except Exception:
+        return out
+    return out
+
+
 def tool_result_bytes() -> Dict[str, Any]:
     """{tool: {calls, bytes, max}} sorted by bytes, biggest first."""
     try:

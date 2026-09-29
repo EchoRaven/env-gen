@@ -114,6 +114,88 @@ def _identical_tool_msg_1191(messages, body: str):
     return None
 
 
+
+# ── #1202zc — the un-allowlisted tool menu is rebuilt from the prompt on every round ──
+#
+# `rank_tool_names` is handed `query_text=prompt_text`, so WHICH ten of the ~154 candidates
+# an agent is offered changes with what the round happens to be about. The provider's prompt
+# cache is keyed on the tool list FIRST (#1202po measured it on this gateway: same messages
+# and same tools cached 5,632 of 6,411 prompt tokens; the same messages with the tools
+# removed cached 0), so a rotated menu throws away the whole prefix behind it -- system
+# prompt and conversation history included, not just the tools.
+#
+# Every profile in agents_config.yaml carries a `stage_tool_allowlist` EXCEPT the
+# orchestrator: backend, frontend, verifier, debugger, design_analyst and the three test
+# users all have one, and an allowlisted stage takes the FIX #29 path above that offers the
+# whole curated set, i.e. a constant blob. The orchestrator is the one long-running agent
+# left on the query-ranked path, and it is 22% of calls and 46% of uncached tokens.
+#
+# THE FIX ADDS, IT NEVER REMOVES. The union per (phase, stage) only grows, so no call is
+# offered less than today's ranker would have offered it; after a few rounds the menu stops
+# changing and the prefix behind it becomes cacheable. That direction also answers the
+# crowd-out FIX #29 describes: measured over the 50 corpus runs carrying stage-tool counts,
+# the orchestrator actually INVOKES 13 (action), 17 (retrieve_context), 23 (communicate),
+# 25 (run_checks) and 25 (deliver) distinct tools -- while being offered ten at a time.
+_STICKY_STAGE_TOOL_CAP_1202ZC = 32
+# ^ #1202zc: above the largest measured per-stage usage (25, for run_checks and deliver over
+# 50 runs) with headroom, and below the 48 FIX #29 chose for allowlisted stages. A cap under
+# 25 would freeze a stage below what it demonstrably uses; no cap at all would let the menu
+# drift toward the full surface, which costs context for tools nothing ever ranks.
+
+
+def _sticky_stage_tools_1202zc(agent, phase, stage_name, ranked, always_include, permitted):
+    """The union of every menu this (phase, stage) has been offered, capped, INTERSECTED
+    with what this call still permits.
+
+    ★ THE INTERSECTION IS NOT A DETAIL, it is the correction to the first draft. That draft
+    returned the raw union on the reasoning that "capability only grows, so nothing can
+    break", and #1202mx's test failed on it within the hour: some tools are withdrawn ON
+    PURPOSE and on a schedule. While a kickoff meeting is open, #1202mx removes the
+    validation tools from BOTH the force-offer and the candidate pool for every lane --
+    measured, the verifier had called `run_validation` 300 times inside open kickoff windows
+    across 63 runs, each a teardown and rebuild of the one shared stack. A union that
+    remembered `run_validation` from before the meeting opened handed it straight back.
+
+    So the invariant is not "never withdraws" but the weaker, true one: **the union never
+    withdraws a tool THIS CALL still permits**. A gate that takes a tool away wins.
+
+    The union is stored WITHOUT the intersection, so a tool withheld for the duration of a
+    kickoff is offered again the moment the gate lifts, rather than having to be re-ranked.
+
+    Returns ``ranked`` unchanged when the agent cannot hold the state or when
+    ``ENVGEN_STICKY_STAGE_TOOLS=0`` -- the switch exists because this changes what every
+    orchestrator call sees and no live run has exercised it yet.
+
+    At the cap the union FREEZES rather than evicting: evicting would start the rotation
+    again, which is the thing being fixed. `always_include` is re-unioned even when frozen,
+    because withholding a force-offered tool is the documented deadlock (run bsb900gpt:
+    the deliver-gate tools missing from a sub-stage menu -> `get_skill` dispatched 0x, run
+    killed).
+    """
+    import os as _os1202zc
+    if _os1202zc.environ.get(
+            "ENVGEN_STICKY_STAGE_TOOLS", "1").strip().lower() in ("0", "false", "off", "no"):
+        return ranked
+    store = getattr(agent, "_sticky_tools_1202zc", None)
+    if store is None:
+        store = {}
+        try:
+            agent._sticky_tools_1202zc = store
+        except Exception:
+            return ranked          # a stand-in that cannot hold state keeps today's behaviour
+    key = "%s:%s" % (phase or "-", stage_name)
+    prev = store.get(key)
+    if prev is None:
+        store[key] = set(ranked)
+        return set(ranked)
+    merged = prev | set(ranked)
+    if len(merged) > _STICKY_STAGE_TOOL_CAP_1202ZC:
+        merged = prev | (set(always_include or ()) & set(ranked))
+    store[key] = merged
+    # What this call permits: the ranker drew from exactly this surface, so `ranked` is
+    # unaffected and only remembered-but-now-forbidden tools are dropped.
+    return (merged & set(permitted)) | set(ranked)
+
 class AgentStepToolingMixin:
     # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
     # supplied by the class it is mixed into, so a checker reading this file alone reports
@@ -371,7 +453,20 @@ class AgentStepToolingMixin:
             limit=effective_limit,
             always_include=always_include,
         )
-        return set(ranked)
+        selected = set(ranked)
+        if not stage_allow:
+            # #1202zc: an allowlisted stage already offers a CONSTANT set (FIX #29 above
+            # offers the whole allowlist), so only the un-allowlisted path can rotate.
+            selected = _sticky_stage_tools_1202zc(
+                self, phase, stage_name, selected, always_include,
+                set(candidate_names) | set(always_include))
+        try:
+            from utils.llm import record_stage_tool_set_1202zc
+            record_stage_tool_set_1202zc(
+                "%s:%s" % (getattr(self, "agent_id", "?"), stage_name), selected)
+        except Exception:
+            pass
+        return selected
 
     @staticmethod
     def _normalize_tool_call(tool_call: Any, step_idx: int) -> tuple[Optional[str], Dict[str, Any], str]:

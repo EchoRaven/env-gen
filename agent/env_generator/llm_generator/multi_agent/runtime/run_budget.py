@@ -581,6 +581,24 @@ class RunBudget:
                         payload["lane_clobbers_1202cw"] = _map1202z8c
                 except Exception:
                     pass
+                # #1202zc: how often the OFFERED tool set CHANGED, per <agent>:<stage>.
+                # The prompt cache is keyed on the tool list first, so a label whose
+                # `distinct_sets` approaches its `calls` paid full input price for its whole
+                # history on nearly every call. Beside #1202cy rather than folded into it:
+                # that one counts tools USED, this one counts tools OFFERED, and the gap
+                # between the two is the crowd-out FIX #29 describes.
+                #
+                # At THIS indent, not inside the `tool_result_bytes` block below it: the
+                # first draft sat there and wrote nothing whenever no tool had returned a
+                # result, which is a ledger whose presence depends on an unrelated one. The
+                # test that pins the write is what caught it.
+                try:
+                    from utils.llm import stage_tool_sets_1202zc
+                    _ts1202zc = stage_tool_sets_1202zc()
+                    if _ts1202zc:
+                        payload["stage_tool_sets_1202zc"] = _ts1202zc
+                except Exception:
+                    pass
                 # #1202cy: which stage used which tools. Capped at the 16 busiest
                 # stages and 10 tools each — enough to see an EMPTY stage, which is the
                 # question, without turning run_budget.json into a trace.
