@@ -43,6 +43,29 @@ from psycopg.rows import dict_row
 PASSWORD_SALT = "app_sandbox_salt_2024"
 
 
+def _json_safe_row_1202zd(row):
+    """A DB row the register handler can actually render.
+
+    `JSONResponse` is plain `json.dumps` with no encoder, so a `datetime` in the response
+    raises and the request 500s. Before #1202zd the RETURNING list was four text/int columns
+    and this could not arise; now that the row carries whatever the app declared, it can.
+
+    `isoformat` first because that is what every projected CRUD handler in `main.py` uses for
+    the same job; `str()` under it so a `numeric` (Decimal) or `uuid` column degrades to a
+    readable value instead of taking register down. Containers pass through — psycopg3 gives
+    `jsonb` back as a list/dict, which json.dumps handles.
+    """
+    out = {}
+    for k, v in (row or {}).items():
+        if v is None or isinstance(v, (bool, int, float, str, list, dict)):
+            out[k] = v
+        elif hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+        else:
+            out[k] = str(v)
+    return out
+
+
 class DatabaseUnavailable(Exception):
     """Postgres is momentarily unreachable — compose mid-restart/reseed, not a bug.
 
@@ -253,9 +276,38 @@ class OAuthStore:
                 "ON CONFLICT (id) DO NOTHING",
                 (cols["tenant_id"], cols["tenant_id"]),
             )
+            # RETURN the row, not four fixed columns. `RETURNING id, email, name,
+            # tenant_id` meant a username-based app registered a user and handed back a
+            # `user` object with no `username` in it — measured across the corpus's
+            # verification-chain records, `user.username` is the single most-missed save
+            # key, 77 of the `save FAILED` steps (plus 31 `usernameA` and 23 `username`,
+            # the same shape under other variable names). A starved save then feeds #592's
+            # ladder, which fills the variable from an unrelated last-id and the next step
+            # 404s. The column IS there and IS populated — `username` is backfilled from
+            # the email local-part a dozen lines above — it simply was not returned.
+            #
+            # `get_user_by_id` keeps its four columns ON PURPOSE -- fixing one reader of
+            # two is worse than fixing neither (#1202-era rule), but these are not two
+            # readers of one fact: that method feeds `/oauth/token`, where the row is used
+            # to sign a JWT and never reaches the client. The `user` object a caller sees
+            # comes only from here.
+            #
+            # Credentials never come back. Measured over the 159 corpus app trees that
+            # carry a `users` model, its 33 distinct column names hold exactly two secrets,
+            # `password_hash` (159) and `hashed_password` (1) — no token, secret or api_key
+            # among them. The wider substring match is here so that a response widened BY
+            # CONSTRUCTION cannot widen to a credential the day a contract declares one.
+            _secret = ("password", "secret", "token", "api_key")
+            _ret = [c for c in ("id", "email", "name", "tenant_id") if c in existing]
+            _ret += sorted(c for c in existing
+                           if c not in _ret
+                           and not any(_w in str(c).lower() for _w in _secret))
+            if not _ret:
+                _ret = ["id"]
             row = conn.execute(
-                "INSERT INTO users ({}) VALUES ({}) "
-                "RETURNING id, email, name, tenant_id".format(collist, placeholders),
+                "INSERT INTO users ({}) VALUES ({}) RETURNING {}".format(
+                    collist, placeholders,
+                    ", ".join('"{}"'.format(c) for c in _ret)),
                 tuple(cols.values()),
             ).fetchone()
             # FIX #72: a freshly-registered user must get the canonical per-user named
@@ -265,7 +317,7 @@ class OAuthStore:
             # Same transaction as the user insert; idempotent + best-effort.
             if row:
                 self._bootstrap_user_rows(conn, row["id"])
-        return dict(row) if row else None
+        return _json_safe_row_1202zd(dict(row)) if row else None
 
     _USER_BOOTSTRAP_CACHE: Optional[List[Dict[str, Any]]] = None
 

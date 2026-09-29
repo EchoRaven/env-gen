@@ -70,29 +70,41 @@ def test_the_response_carries_no_prose_key():
         assert isinstance(val, str) and val, (key, val)
 
 
-def test_the_summary_says_the_user_is_the_row():
-    """★ The correction. Without it the declaration understates its own implementation."""
+def test_the_summary_says_which_columns_come_back():
+    """★ #1202zd rewrote what this guards. The sentence it used to check -- "the `user`
+    object IS the created row" -- was FALSE: the projected SQL said
+    `RETURNING id, email, name, tenant_id`. The template now derives RETURNING from the live
+    table, so the summary can describe the TABLE, and this test holds it to that."""
     summary = _register_entry()["summary"]
     low = summary.lower()
-    assert "row" in low, summary
-    assert "create_user" in summary, "the summary does not name the code it describes"
-    assert "password_hash" in summary, (
-        "the one column that must NOT come back is unnamed, so 'the whole row' reads as "
-        "including the secret")
+    assert "users" in low and "column" in low, summary
+    assert "every column" in low, "the summary no longer says the response is the row"
+    assert "password" in low, (
+        "the exclusion is unnamed, so 'every column' reads as including the credential")
 
 
-def test_the_implementation_still_returns_the_whole_row():
-    """★ The pairing. The summary is only true while `create_user` returns `dict(row)`.
+def test_the_implementation_returns_what_the_table_has():
+    """★ THIS TEST USED TO ASSERT A FRAGMENT AND READ A SEMANTIC INTO IT. It checked
+    `"dict(row)" in body` and concluded "create_user returns the whole row" -- while the very
+    next line of that body read `RETURNING id, email, name, tenant_id`. The fragment was
+    present and the conclusion was false, in all 40 delivered trees, and the contract summary
+    it was guarding repeated the falsehood to every lane that read it (#1202zd).
 
-    Read off the EMITTED source in oauth_scaffold, which is what ships in the app."""
+    `dict(row)` says nothing about WHICH columns; the RETURNING list does. So that is what
+    this now reads. Behavioural coverage of the derivation lives in
+    test_1202zd_register_returns_what_the_table_has.py, which compiles these very statements
+    and runs them against a chosen column set."""
     src = _read(_OAUTH_STORE_SRC)
     assert "def create_user" in src, "create_user is no longer in the shipped store template"
     tail = src.split("def create_user", 1)[1]
-    # to the next METHOD, not the next `def` -- the body contains nested helpers
     body = tail.split("\n    def ", 1)[0]
-    assert "dict(row)" in body, (
-        "create_user no longer returns the row, so the summary now overstates what comes "
-        "back -- correct one or the other, never leave them disagreeing")
+    assert "dict(row)" in body, "create_user no longer returns the fetched row at all"
+    assert "RETURNING id, email, name, tenant_id" not in body, (
+        "the RETURNING clause is a fixed four-column literal again -- the response then "
+        "drops `username` and every other column the app declared, which is the 77 starved "
+        "`user.username` saves this ticket measured")
+    assert "existing" in body.split("RETURNING", 1)[1][:400] or "_ret" in body, (
+        "the RETURNING list is no longer derived from the live table's columns")
 
 
 def test_the_username_backfill_the_summary_relies_on_is_still_there():

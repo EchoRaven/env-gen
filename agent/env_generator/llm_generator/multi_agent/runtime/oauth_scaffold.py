@@ -95,11 +95,24 @@ AS_CONTRACT_ENDPOINTS = [
         # `schema["response"]` on the registration) and a prose key inside it would land in
         # anything that iterates the shape. Time-sliced: live, every run r124..r137, though
         # down from 81 occurrences in r125 to 1-6 per run now.
+        # #1202zd: the sentence this replaces was FALSE, and I wrote it. It told a lane the
+        # `user` object "IS the created row ... so it carries every column the contract
+        # declares on `users`" -- while the projected SQL said `RETURNING id, email, name,
+        # tenant_id` in all 40 delivered trees that carry the module. `dict(row)` is a dict
+        # of the RETURNING list, not of the table. So the contract was lying about framework
+        # code (the #919 shape), and the verifier's `user.username` -- authored because the
+        # `users` TABLE declares that column -- could never be satisfied: 77 `save FAILED`
+        # steps in the corpus's chain records, the most-missed concrete key there is.
+        #
+        # Reading the DELIVERED artifact rather than the docstring is what settled it. The
+        # template now returns every non-credential column the live table has, so the
+        # sentence below is true by construction instead of by assertion.
         "summary": ("First-party register: create a (email, tenant_id) user + mint an RS256 "
-                    "token. The `user` object IS the created row (`create_user` returns "
-                    "`dict(row)`), so it carries every column the contract declares on "
-                    "`users` -- never `password_hash` -- and not only the four named in "
-                    "`response`, which are the ones always present."),
+                    "token. The `user` object carries EVERY column the live `users` table "
+                    "has except credentials (nothing whose name contains password/secret/"
+                    "token/api_key), so an app that declares `username` gets it back here -- "
+                    "the four named in `response` are the ones always present, not all of "
+                    "them. A column the row has not been given a value for comes back null."),
         "request": {"email": "str", "password": "str", "name": "str?", "tenant_id": "str?"},
         "response": {"user": {"id": "int", "email": "str", "name": "str", "tenant_id": "str"},
                      "access_token": "str", "token_type": "Bearer", "expires_in": "int"},
