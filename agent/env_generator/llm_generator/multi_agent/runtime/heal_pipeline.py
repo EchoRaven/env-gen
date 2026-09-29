@@ -814,6 +814,71 @@ def _stack_serving_1202ne(base: str, api_base: "str | None", timeout_s: float = 
         time.sleep(poll_s)
 
 
+
+def _file_shadowed_route_task_1202z4(orch, duplicated) -> None:
+    """#1202z4 — tell the lane that a route it wrote twice never runs.
+
+    `backend_audit` already computes this and `sync_endpoint_statuses` already returns it in
+    `out["duplicated"]`. Everything that happens to the finding is one `_logger.warning`, and
+    a lane reads WorkHub, not the orchestrator's log. Measured over the 158 run logs: it
+    reports in 4 of them and reaches a hub in NONE — grep of every `shared/hubs/` file in
+    every run for `DUPLICATE/shadowed` returns nothing.
+
+    Rare (3%) and severe when it fires: r136 reported TWENTY-THREE shadowed endpoints, 47
+    times over the run, and nothing was ever dispatched. `duplicated_routes` finds only
+    INTRA-module collisions — the same (method, path) decorated twice in one file — which its
+    own docstring calls "always a lane bug"; a cross-module override (main.py's projected
+    handler plus a custom_routes.py override) is deliberately not flagged. So there is no
+    judgement call to make here: FastAPI mounts the first definition and the second body
+    never executes, however right it is.
+
+    A TASK, not a blocker, on the same reasoning as #1202z0: the framework has never
+    established that the shadowed copy is the one that mattered, and blocking delivery on a
+    duplicate that happens to be identical would stop a run for nothing. It changes the
+    audience, not the verdict.
+
+    Deduped by title prefix (#794) so the 47 reports of one run re-wake one task.
+    """
+    try:
+        if not duplicated:
+            return
+        wh = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if wh is None:
+            return
+        base = "Route defined twice in one file — the second never runs"
+        try:
+            for t in (wh.list_tasks() or []):
+                if (isinstance(t, dict)
+                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("status")) in ("pending", "in_progress", "open")):
+                    return
+        except Exception:
+            pass        # best-effort: on any fault, file as before
+        names = [str(x) for x in duplicated]
+        wh.create_task(
+            title="%s (%d)" % (base, len(names)),
+            description=(
+                "These routes are decorated MORE THAN ONCE inside a single served module:\n"
+                + "\n".join("  - %s" % n for n in names[:20])
+                + ("\n  ... and %d more" % (len(names) - 20) if len(names) > 20 else "")
+                + "\n\nFastAPI mounts the FIRST definition and never reaches the second, so "
+                "whichever body you wrote later is dead code — including when it is the "
+                "correct implementation and the first is an early stub. Nothing in the app's "
+                "behaviour shows this: the route answers, it just answers from the other "
+                "function.\n\nDelete the definition you do not want. This is about DUPLICATES "
+                "WITHIN ONE FILE only; a handler in custom_routes.py that overrides main.py's "
+                "projected one is a different thing and is not reported here."),
+            assignee="backend", agent="orchestrator", priority="P1")
+    except Exception as _e1202z4:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "heal_pipeline.shadowed_route_task_1202z4",
+                "the shadowed-route finding stays in the log only, so a lane keeps editing "
+                "a function that never runs", _e1202z4)
+        except Exception:
+            pass
+
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
     orchestrator (output_dir / hubs / logger / llm) live."""
@@ -1196,6 +1261,7 @@ class HealPipeline:
                         "ENDPOINT LIFECYCLE (code-truth): implemented=%s regressed=%s "
                         "pending=%s", _ea.get("implemented"), _ea.get("regressed"),
                         _ea.get("pending"))
+                _file_shadowed_route_task_1202z4(orch, _ea.get("duplicated") or [])
             except Exception as exc:
                 # Non-fatal (don't crash the heal run) but LOUD: backend_audit raises
                 # BackendAuditError on a real failure and silently swallowing it
