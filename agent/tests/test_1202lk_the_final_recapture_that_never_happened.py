@@ -170,16 +170,36 @@ def test_the_stamp_never_raises_and_never_invents_a_verdict(tmp_path):
 
 # ---------------------------------------------------------------- the release wiring
 
+_DELIVER_CACHE_1202ZG: dict = {}
+
+
 def _deliver_src():
     """The orchestrator method holding the visual release branch, by landmark (#943: no
-    byte windows — locate the enclosing function from the log string itself)."""
+    byte windows — locate the enclosing function from the log string itself).
+
+    #1202zg: cached, and the SEARCH uses a cheap line slice while the RETURNED text still
+    comes from `ast.get_source_segment`, which re-splits the whole file on every call. SIX
+    tests call this helper and each was ~5.8 s — 35 s of a 789 s suite — re-reading,
+    re-parsing and re-slicing orchestrator.py once per function definition.
+
+    ★ The returned value must stay `get_source_segment`'s. A line slice keeps the first
+    line's indentation that it trims, and `_retry_branch` below does `ast.parse(seg)` — an
+    indented first line is an IndentationError. The first draft returned the slice and four
+    tests went red, which is the difference between "equivalent for a substring search" and
+    "equivalent". The slice is used only to FIND the function; the winner is sliced properly,
+    once.
+    """
+    if "seg" in _DELIVER_CACHE_1202ZG:
+        return _DELIVER_CACHE_1202ZG["seg"]
     src = _ORCH_PATH.read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
+    lines = src.splitlines(keepends=True)
+    for node in ast.walk(ast.parse(src)):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        seg = ast.get_source_segment(src, node) or ""
-        if "Visual fidelity deferral RELEASED" in seg:
+        rough = "".join(lines[node.lineno - 1:getattr(node, "end_lineno", node.lineno)])
+        if "Visual fidelity deferral RELEASED" in rough:
+            seg = ast.get_source_segment(src, node) or ""
+            _DELIVER_CACHE_1202ZG["seg"] = seg
             return seg
     raise AssertionError("the visual release branch moved — relocate this test's landmark")
 

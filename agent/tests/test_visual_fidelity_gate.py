@@ -319,8 +319,20 @@ class AuthUnavailableTests(unittest.TestCase):
             def __exit__(self, *a):
                 return False
 
+        # #1202zg: `run_visual_fidelity` also calls validation_runner's OWN
+        # `wait_backend_ready(project_dir, timeout_s=90)`, and mocking `vf._service_host_port`
+        # does not reach it -- that helper resolves the port through
+        # `validation_runner._service_host_port` -> `container_runtime.container_id`, which
+        # SHELLS OUT TO DOCKER every 3 s until the 90 s deadline. A stack dump at 30 s showed
+        # this test sitting in `subprocess._communicate`. It was 90.8 s, the single slowest
+        # test in the suite and 10% of a 915 s run, spent waiting for a backend that this test
+        # never starts. Returning False is exactly what the real call returns after those 90
+        # seconds, and the code's own comment says the capture then "proceeds exactly as it
+        # does today" -- so the branch under test is unchanged.
+        import multi_agent.runtime.validation_runner as _vr
         with mock.patch.object(vf, "_compose_up", return_value=None), \
              mock.patch.object(vf, "_service_host_port", return_value=12345), \
+             mock.patch.object(_vr, "wait_backend_ready", return_value=False), \
              mock.patch.object(urllib.request, "urlopen",
                                return_value=_FakeResp()), \
              mock.patch.object(vf, "_mint_token", return_value=None):

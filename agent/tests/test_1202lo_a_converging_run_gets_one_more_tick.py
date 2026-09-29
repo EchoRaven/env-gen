@@ -115,15 +115,29 @@ def test_the_grace_is_bounded_and_smaller_than_the_cap_it_extends():
 
 # ---------------------------------------------------------------- the wiring
 
+_WALL_CACHE_1202ZG: dict = {}
+
+
 def _wall_check_src():
-    """The orchestrator branch that latches the wall-clock overrun."""
+    """The orchestrator branch that latches the wall-clock overrun.
+
+    #1202zg: cached, and the source span is taken by LINE rather than by
+    `ast.get_source_segment`, which re-splits the whole file on every call. Three tests call
+    this helper and each was ~15 s — 45 s of a 915 s suite — re-reading, re-parsing and
+    re-slicing orchestrator.py once per `If` node. Same landmark, same assertions.
+    """
+    if _WALL_CACHE_1202ZG:
+        return _WALL_CACHE_1202ZG["node"], _WALL_CACHE_1202ZG["src"]
     from pathlib import Path
     src = (Path(__file__).resolve().parent.parent / "env_generator" / "llm_generator"
            / "multi_agent" / "orchestrator.py").read_text(encoding="utf-8")
+    lines = src.splitlines(keepends=True)
     for node in ast.walk(ast.parse(src)):
-        if (isinstance(node, ast.If)
-                and "exceeded cap" in (ast.get_source_segment(src, node) or "")
-                and "max_wall_sec" in (ast.unparse(node.test) or "")):
+        if not isinstance(node, ast.If):
+            continue
+        seg = "".join(lines[node.lineno - 1:getattr(node, "end_lineno", node.lineno)])
+        if "exceeded cap" in seg and "max_wall_sec" in (ast.unparse(node.test) or ""):
+            _WALL_CACHE_1202ZG.update(node=node, src=src)
             return node, src
     raise AssertionError("the wall-clock cap check moved — relocate this landmark")
 
