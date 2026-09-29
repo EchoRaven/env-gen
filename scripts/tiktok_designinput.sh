@@ -37,11 +37,41 @@ PYTHON="${PYTHON:-python}"
 LOG="$ROOT/gm_tiktok_r${RUN}.log"
 DI="${ENVGEN_DESIGN_INPUT:-$ROOT/design_inputs/tiktok}"
 
+# #1202z1: THE CALLER'S BUDGET SURVIVES THE KEY FILE.
+#
+# The key file's job is credentials and prices. It also happens to export
+# ENVGEN_MAX_SPEND_USD, and the `source` below is unconditional — so a launch that set a
+# cap for THIS run got the key file's number instead, silently. Caught live: r141 was
+# launched with ENVGEN_MAX_SPEND_USD=450 against a remaining budget of ~$880 and came up
+# with 900 in /proc/<pid>/environ. Nothing said so; the only reason it was noticed is that
+# the launcher reads the environment back after starting.
+#
+# Same family as #1202wz (three providers reached no spend cap at all): a cap that does not
+# hold is worse than no cap, because it is believed. Every budget knob is captured here and
+# restored after the source, and the override is ANNOUNCED — a silent restore would be the
+# mirror image of the defect.
+_CALLER_BUDGET_1202Z1=""
+for _k1202z1 in ENVGEN_MAX_SPEND_USD ENVGEN_MAX_WALLCLOCK_SEC ENVGEN_MAX_TICKS \
+                ENVGEN_DELIVERY_OVERSHOOT ENVGEN_CONVERGING_OVERSHOOT; do
+  eval "_v1202z1=\${$_k1202z1:-}"
+  [ -n "$_v1202z1" ] && _CALLER_BUDGET_1202Z1="$_CALLER_BUDGET_1202Z1 $_k1202z1=$_v1202z1"
+done
+
 # --- key: 从 ENVGEN_KEY_FILE 加载（可选），或要求环境里已有 GOOGLE_API_KEY（不硬编码任何路径/密钥）---
 if [ -n "${ENVGEN_KEY_FILE:-}" ] && [ -f "${ENVGEN_KEY_FILE}" ]; then
   # shellcheck disable=SC1090
   source "${ENVGEN_KEY_FILE}"
 fi
+
+# #1202z1: ...and now the caller's numbers go back, loudly.
+for _kv1202z1 in $_CALLER_BUDGET_1202Z1; do
+  _k1202z1="${_kv1202z1%%=*}"; _v1202z1="${_kv1202z1#*=}"
+  eval "_now1202z1=\${$_k1202z1:-}"
+  if [ "$_now1202z1" != "$_v1202z1" ]; then
+    echo "[launch] #1202z1: the key file set $_k1202z1=${_now1202z1:-unset}, the caller asked for $_v1202z1 — the caller wins."
+  fi
+  export "$_k1202z1=$_v1202z1"
+done
 # #1202km: provider/model 从 key 文件读，不再硬编码。
 # 这个脚本长期写死 `--provider google --model gemini-3.1-pro-preview-customtools`，
 # 而 key 文件 2026-09-06 起已经是直连 OpenAI(gpt-5.5)。任何照着 usage 跑的人都会被
