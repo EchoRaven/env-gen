@@ -23,6 +23,20 @@ from multi_agent.runtime.chain_executor import (  # noqa: E402
 EXEC_SRC = (THIS_DIR.parent / "env_generator" / "llm_generator" / "multi_agent"
             / "runtime" / "chain_executor.py").read_text(encoding="utf-8")
 
+# #1202zg: `ast.get_source_segment` re-splits the WHOLE file on every call -- measured at 30 ms
+# against chain_executor.py's 4,744 lines. The two searches below walked 24,384 AST nodes and
+# called it on each, which made `test_it_is_recorded_only_on_failing_steps` the slowest test in
+# the suite: 145s of a 1,215s run. Splitting once and slicing by line number yields the same
+# text for a substring search (it keeps the first line's indentation, which nothing here looks
+# at), and the isinstance filters below now come FIRST so only the 673 Assign nodes (2.8%) and
+# the function defs are ever sliced.
+_EXEC_LINES_1202ZG = EXEC_SRC.splitlines(keepends=True)
+
+
+def _seg_1202zg(node) -> str:
+    return "".join(_EXEC_LINES_1202ZG[node.lineno - 1:
+                                      getattr(node, "end_lineno", node.lineno)])
+
 
 class TestSentBodyIsRecorded(unittest.TestCase):
 
@@ -114,8 +128,9 @@ class TestSentBodyIsRecorded(unittest.TestCase):
         tree = ast.parse(EXEC_SRC)
         target = None
         for node in ast.walk(tree):
-            seg = ast.get_source_segment(EXEC_SRC, node) or ""
-            if isinstance(node, ast.Assign) and 'entry["sent_body"]' in seg:
+            if not isinstance(node, ast.Assign):      # #1202zg: filter before slicing
+                continue
+            if 'entry["sent_body"]' in _seg_1202zg(node):
                 target = node
                 break
         self.assertIsNotNone(target, "the sent_body record is gone")
@@ -137,7 +152,7 @@ class TestSentBodyIsRecorded(unittest.TestCase):
         tree = ast.parse(EXEC_SRC)
         fn = next(n for n in ast.walk(tree)
                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-                  and 'entry["sent_body"]' in (ast.get_source_segment(EXEC_SRC, n) or ""))
+                  and 'entry["sent_body"]' in _seg_1202zg(n))
         record_line = next(n.lineno for n in ast.walk(fn)
                            if isinstance(n, ast.Subscript)
                            and isinstance(getattr(n, "slice", None), ast.Constant)

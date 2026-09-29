@@ -64,10 +64,17 @@ def _silently_returns_empty_list():
             tree = ast.parse(src)
         except Exception:
             continue
+        # #1202zg: split the file ONCE and slice by line number. `ast.get_source_segment`
+        # re-splits the whole source on every call (30 ms on a 4,700-line file), and this loop
+        # calls it once per function across the entire tree -- 95s each for the two corpus
+        # scanners, 190s of a 1,215s suite. The slice keeps the first line's indentation, which
+        # `_ANNOUNCES.search` does not look at.
+        _lines_1202zg = src.splitlines(keepends=True)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            seg = ast.get_source_segment(src, node) or ""
+            seg = "".join(_lines_1202zg[node.lineno - 1:
+                                        getattr(node, "end_lineno", node.lineno)])
             if _ANNOUNCES.search(seg):
                 continue
             for handler in [h for h in ast.walk(node) if isinstance(h, ast.ExceptHandler)]:
