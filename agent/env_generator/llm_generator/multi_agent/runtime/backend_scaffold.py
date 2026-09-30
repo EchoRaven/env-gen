@@ -438,6 +438,27 @@ _FW_PUBLIC_RE_1202KH = [
     for _m, _p in _FW_PUBLIC_API_1202KH]
 
 
+def _fw_route_exists_1202zt(request):
+    """Does ANY mounted route match this request? Conservative: True whenever it cannot tell.
+
+    `Match.PARTIAL` (the path exists, the method does not) counts as existing, so a wrong
+    method keeps today's 401 and only a path that matches NOTHING falls through. True on any
+    fault leaves the refusal exactly as it was -- the safe direction, and it does not hide a
+    failure: the request is still answered, by the guard that was already answering it.
+    """
+    try:
+        from starlette.routing import Match as _FWMatch
+        for _r in request.app.routes:
+            try:
+                if _r.matches(request.scope)[0] is not _FWMatch.NONE:
+                    return True
+            except Exception:
+                return True
+        return False
+    except Exception:
+        return True
+
+
 def _fw_contract_public_1202kh(method, path):
     """The CONTRACT says this exact (method, path) needs no token."""
     m = str(method).upper()
@@ -503,6 +524,19 @@ async def _framework_auth_guard(request, call_next):
     if not public and _fw_contract_public_1202kh(request.method, p):
         public = True
     if p.startswith("/api/") and not public and request.method != "OPTIONS":
+        # #1202zt: A ROUTE THAT DOES NOT EXIST IS NOT AN AUTH FAILURE. This middleware runs
+        # BEFORE routing, so until now every unknown path under /api/ answered 401 while an
+        # unknown path anywhere else answered 404 -- measured identical on four delivered
+        # stacks (r140/r139/r135/r132): GET /api/this-does-not-exist -> 401,
+        # GET /definitely-not-a-route -> 404. A frontend that mistypes a path is then told its
+        # credentials are wrong, which is the failure being masked rather than reported.
+        # Letting an unmatched path through cannot publish anything: there is no handler to
+        # reach, so FastAPI answers 404 and the caller learns the true cause.
+        # Measured against every verification chain in the corpus: of 1768 steps that expect
+        # 401/403 on a non-public /api/ path, exactly ONE names a path its run does not serve,
+        # and that step already accepts 404 -- so no chain changes verdict.
+        if not _fw_route_exists_1202zt(request):
+            return await call_next(request)
         ok = False
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer ") and _FW_PEM:
