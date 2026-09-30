@@ -883,6 +883,7 @@ class RegistryHub:
         # metadata key) bypassed the metadata-only rewrite → the gate hard-blocked
         # delivery on it. Set metadata.response_key (read first by the gate) to the
         # canonical envelope the projector actually emits.
+        _coerced_rk_1202zw = None
         _rk = _md.get("response_key") or (endpoint.get("schema") or {}).get("response_key")
         if (isinstance(_rk, str) and _rk and _rk not in ("item", "items")
                 and str(endpoint["path"]).startswith("/api/")
@@ -891,6 +892,15 @@ class RegistryHub:
                 and not (_md.get("custom") or _md.get("custom_route"))):
             _canon = self._canonical_response_key(
                 endpoint["method"], endpoint["path"])
+            # #1202zw: remember what was replaced, and tell the caller on the RETURN below.
+            # Until now this rewrote the lane's declared key in silence, and silence is what
+            # makes the handler and the contract disagree: the registry says `items`, the
+            # handler still returns what the lane declared, and the lane compensates by
+            # emitting BOTH. r139 ships exactly that — `{"items": videos, "videos": videos,
+            # "total": len(videos)}`, the two lists byte-identical, 4435 bytes each in an 8272
+            # byte response. 13 corpus runs carry the shape. The coercion is right; it just
+            # never reached the one party that could align the code with it.
+            _coerced_rk_1202zw = (str(_rk), str(_canon))
             _md["response_key"] = _canon
             # keep schema consistent so no other reader sees the stale non-canonical key
             if isinstance(endpoint.get("schema"), dict) and endpoint["schema"].get("response_key"):
@@ -1098,6 +1108,16 @@ class RegistryHub:
             pass
         if _note_1202qr:
             endpoint = {**endpoint, "_auth_flip_refused": _note_1202qr}
+        # #1202zw: same mechanism #731 states above — a note on the RETURN, inside the one tool
+        # call, so the lane can align its handler while it is still writing it.
+        if _coerced_rk_1202zw:
+            endpoint = {**endpoint, "_response_key_coerced_1202zw": (
+                "declared response_key %r was replaced with %r, the envelope the projector "
+                "emits for this method and path. The registration stands. Your HANDLER must "
+                "return that key too: returning both is not a fix — it doubles the payload "
+                "(a delivered feed carried the same 5 rows twice, 4435 bytes each in an 8272 "
+                "byte response) and leaves two readers disagreeing about which one is real."
+                % (_coerced_rk_1202zw[0], _coerced_rk_1202zw[1]))}
         return endpoint
 
     def update_schema(self, endpoint_id: str, request: Optional[dict] = None, response: Optional[dict] = None, agent: str = "") -> dict:
