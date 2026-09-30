@@ -150,14 +150,23 @@ def test_it_never_raises_on_a_malformed_model_map():
 def test_the_question_is_asked_before_the_auth_decision():
     """The whole defect was ordering: the structural signals were computed after the auth
     decision they should inform."""
+    import ast
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
-    src = inspect.getsource(rp.project_missing_routes)
     # #1202og: read CODE, not prose — a comment that QUOTED the auth line made `src.index`
     # find the quote first and this probe went red on a correctly-ordered file.
-    src = "\n".join(ln for ln in src.splitlines() if not ln.strip().startswith("#"))
-    assert (src.index("_structurally_private_resource_633(method, path, models)")
-            < src.index("auth = resolve_endpoint_auth("))
+    # #1202zn: and pin the RELATION rather than the call's spelling. This asserted the exact
+    # text `(method, path, models)`, so adding the declaration as a fourth argument turned an
+    # ordering probe red on a file whose ordering had not moved. A structural claim needs an
+    # AST (the rule #1202td and #1202w1 both arrived at); a literal argument list makes the
+    # test fail for the one reason it is not about.
+    tree = ast.parse(inspect.getsource(rp.project_missing_routes).lstrip())
+    def _line(name):
+        hits = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and (getattr(n.func, "id", "") or getattr(n.func, "attr", "")) == name]
+        assert len(hits) == 1, "%s called %d times" % (name, len(hits))
+        return hits[0]
+    assert _line("_structurally_private_resource_633") < _line("resolve_endpoint_auth")
 
 
 def test_the_measurement_is_recorded():

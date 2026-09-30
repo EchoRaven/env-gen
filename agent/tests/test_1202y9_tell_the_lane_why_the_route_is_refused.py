@@ -24,6 +24,15 @@ Corpus: guard_tampering blocked 10 of the 86 runs holding a gate ledger (12%, 63
 occurrences), present in every one of the last eight -- r133 (26x), r134, r136, r137, r138,
 r139 (10x), r140 (8x). #1202vt has been live for three of those, firing 109/75/39 times, and
 the tampering happened in all three.
+
+★ #1202zn REPOINTED THIS FIXTURE, for the reason that ticket exists. r140's own
+`GET /api/feed` is no longer demoted at all: the table is named `feed`, the framework's
+`_FEED_SHAPED_TOKENS` already treats that as a feed, and a DELIBERATE `auth_required=False`
+on it is now honoured (#320's stated bargain) instead of reversed. So the gate is
+exercised on `videos` — the table sitting BESIDE it in r140 with the identical FK pair,
+whose materials verdict is simply absent here. The last test pins the other half: a route
+the shape no longer demotes must NOT be named, or the sentence tells a blocked lane to go
+fix a 401 that is not happening.
 """
 import os
 import sys
@@ -51,8 +60,8 @@ class Sound(Base):
     title = Column(String)
 
 
-class Feed(Base):
-    __tablename__ = "feed"
+class Video(Base):
+    __tablename__ = "videos"
     id = Column(Integer, primary_key=True)
     author_id = Column(Integer, ForeignKey("users.id"))
     sound_id = Column(Integer, ForeignKey("sounds.id"))
@@ -86,7 +95,7 @@ import main as main_mod
 router = APIRouter()
 
 existing = list(getattr(main_mod, "_FW_PUBLIC_API_1202KH", []) or [])
-existing.append(("GET", "/api/feed"))
+existing.append(("GET", "/api/videos"))
 setattr(main_mod, "_FW_PUBLIC_API_1202KH", existing)
 '''
 
@@ -94,8 +103,8 @@ _CLEAN = '''from fastapi import APIRouter
 router = APIRouter()
 
 
-@router.get("/api/feed")
-def feed():
+@router.get("/api/videos")
+def videos():
     return {"items": []}
 '''
 
@@ -131,15 +140,15 @@ def _app(tmp_path, custom=_TAMPER, models=_MODELS):
     return str(app)
 
 
-_FEED = {"GET /api/feed": _public("GET", "/api/feed")}
+_VIDEOS = {"GET /api/videos": _public("GET", "/api/videos")}
 
 
 def test_the_reason_is_attached_to_the_finding(tmp_path):
     """The r140 shape, end to end."""
-    out = guard(_app(tmp_path), _Hubs(_FEED))
+    out = guard(_app(tmp_path), _Hubs(_VIDEOS))
     assert out, "the tampering itself must still be reported"
     joined = " ".join(out)
-    assert "GET /api/feed" in joined and "`feed`" in joined, joined
+    assert "GET /api/videos" in joined and "`videos`" in joined, joined
     assert "author_id->users" in joined, "the FK pair that decided it must be named"
     assert "visibility" in joined, "the one way out must be named"
 
@@ -147,13 +156,13 @@ def test_the_reason_is_attached_to_the_finding(tmp_path):
 def test_the_evidence_leads_and_the_explanation_follows(tmp_path):
     """★ #1202vx: prepending the sentence would let the prose take the head of the message
     from the file:line that tells the lane WHERE to look."""
-    out = guard(_app(tmp_path), _Hubs(_FEED))
+    out = guard(_app(tmp_path), _Hubs(_VIDEOS))
     assert out[0].startswith("framework auth guard tampered with:"), out[0]
 
 
 def test_no_tampering_means_no_message_at_all(tmp_path):
     """The reason rides an existing blocker; it never becomes one."""
-    assert guard(_app(tmp_path, custom=_CLEAN), _Hubs(_FEED)) == []
+    assert guard(_app(tmp_path, custom=_CLEAN), _Hubs(_VIDEOS)) == []
 
 
 def test_tampering_without_a_shape_demoted_public_is_unchanged(tmp_path):
@@ -179,16 +188,16 @@ def test_the_control_plane_is_not_the_lanes_question(tmp_path):
 def test_an_endpoint_the_contract_keeps_private_is_not_named(tmp_path):
     """Only a REVERSAL is news: an endpoint that never claimed to be public explains
     nothing about a 401 the lane did not expect."""
-    rec = _public("GET", "/api/feed")
+    rec = _public("GET", "/api/videos")
     rec["schema"]["auth_required"] = True
-    assert why(_app(tmp_path), _Hubs({"GET /api/feed": rec})) == ""
+    assert why(_app(tmp_path), _Hubs({"GET /api/videos": rec})) == ""
 
 
 def test_a_shape_that_is_not_private_is_not_named(tmp_path):
     """A table with no users FK beside another entity's FK was never demoted, so its
     `auth_required: false` stands and there is nothing to explain."""
     models = _MODELS.replace('    author_id = Column(Integer, ForeignKey("users.id"))\n', "")
-    assert why(_app(tmp_path, models=models), _Hubs(_FEED)) == ""
+    assert why(_app(tmp_path, models=models), _Hubs(_VIDEOS)) == ""
 
 
 def test_both_registry_accessors_are_tried():
@@ -232,7 +241,7 @@ def test_the_prose_still_routes_to_the_same_owner(tmp_path):
     """★ #1202tu: the appended sentence must not change which check id the blocker maps to,
     or the finding stops dispatching anyone."""
     from multi_agent.runtime.delivery_gate import _deliverability_check_token as tok
-    out = guard(_app(tmp_path), _Hubs(_FEED))
+    out = guard(_app(tmp_path), _Hubs(_VIDEOS))
     for line in out:
         assert tok(line) == "deliverability_guard_tampering", (line[:90], tok(line))
 
@@ -242,16 +251,16 @@ def test_the_chain_that_owner_scoped_the_table_is_named(tmp_path):
     authored_video_ownership_flow` — a VERIFICATION CHAIN flipped the flag that filters the
     rows. No amount of reading its own code shows a lane that cause, and r118 lost an hour
     going six rounds against a flag it never touched."""
-    tables = {"feed": {"metadata": {
+    tables = {"videos": {"metadata": {
         "owner_scoped_reads": True,
         "owner_scoped_reads_set_by_chain_1202kv": "authored_video_ownership_flow"}}}
-    out = guard(_app(tmp_path), _Hubs(_FEED, tables))
+    out = guard(_app(tmp_path), _Hubs(_VIDEOS, tables))
     assert "authored_video_ownership_flow" in " ".join(out), out
 
 
 def test_a_table_that_is_not_owner_scoped_gets_no_attribution(tmp_path):
-    tables = {"feed": {"metadata": {"owner_scoped_reads": False}}}
-    out = guard(_app(tmp_path), _Hubs(_FEED, tables))
+    tables = {"videos": {"metadata": {"owner_scoped_reads": False}}}
+    out = guard(_app(tmp_path), _Hubs(_VIDEOS, tables))
     assert "owner-scoped" not in " ".join(out), out
 
 
@@ -260,7 +269,7 @@ def test_the_way_out_names_the_write_that_actually_clears_the_flag(tmp_path):
     `register_table`'s write boundary (#1202io) and only when `metadata.visibility` is
     exactly `public`; r140's `feed` has no `visibility` key at all, which is why nothing
     cleared it."""
-    out = " ".join(guard(_app(tmp_path), _Hubs(_FEED)))
+    out = " ".join(guard(_app(tmp_path), _Hubs(_VIDEOS)))
     assert "metadata.visibility" in out and "re-register" in out, out
     assert "owner_scoped_reads" in out, "the flag that actually filters must be named"
 
@@ -269,7 +278,7 @@ def test_a_registry_without_tables_still_reports(tmp_path):
     """Attribution is enrichment: its absence must not cost the diagnosis."""
     class _NoTables:
         def get_endpoints(self):
-            return _FEED
+            return _VIDEOS
 
     class _H:
         registryhub = _NoTables()
@@ -309,3 +318,12 @@ def test_it_reuses_the_projectors_fallbacks():
     import multi_agent.runtime.deliverability as D
     src = inspect.getsource(D._shape_demoted_publics_1202y9)
     assert "_search_target_model" in src and "_primary_content_model" in src
+
+
+def test_a_released_feed_route_is_not_named(tmp_path):
+    """★ #1202zn's dual. The sentence's whole value is that it answers the question a
+    tampering lane is asking; naming a route that was never demoted answers a different one."""
+    models = _MODELS.replace('__tablename__ = "videos"', '__tablename__ = "feed"') \
+                    .replace("class Video(Base):", "class Feed(Base):")
+    eps = {"GET /api/feed": _public("GET", "/api/feed")}
+    assert why(_app(tmp_path, models=models), _Hubs(eps)) == ""

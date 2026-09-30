@@ -19,6 +19,15 @@ build that."
 
 The message's way out differs from #1202kx's on purpose: there is no materials verdict to
 correct here, there is one to ADD.
+
+★ #1202zn CHANGED THIS FIXTURE'S TABLE, and the reason is the point of that ticket.
+The fixture was `feed_items`, and #1202zn stops the shape from reversing a DELIBERATE
+`auth_required=False` on a table the framework's own `_FEED_SHAPED_TOKENS` calls a feed —
+r140's `/api/feed` is exactly that case, and it is now released rather than announced.
+So the announcer is exercised here on `saved_items`, which is #1202gd's named private
+counterpart ("`videos(author_id, sound_id, ...)` and `saved_items(user_id, item_id)` are
+the same shape") and still demotes. The last test below pins the other half: where the
+reversal no longer happens, there must be NOTHING to announce.
 """
 import ast
 import inspect
@@ -50,7 +59,7 @@ def _tables(visibility=None):
     if visibility:
         md["visibility"] = visibility
     return {
-        "feed_items": {"name": "feed_items", "schema": {"columns": _COLS}, "metadata": md},
+        "saved_items": {"name": "saved_items", "schema": {"columns": _COLS}, "metadata": md},
         "users": {"name": "users", "schema": {"columns": [
             {"name": "id", "type": "integer primary_key"}]}, "metadata": {}},
         "topics": {"name": "topics", "schema": {"columns": [
@@ -58,7 +67,7 @@ def _tables(visibility=None):
     }
 
 
-_ENDPOINT = [{"method": "GET", "path": "/api/feed_items", "auth_required": False,
+_ENDPOINT = [{"method": "GET", "path": "/api/saved_items", "auth_required": False,
               "metadata": {"auth_required": False}}]
 
 
@@ -68,8 +77,8 @@ def test_the_demotion_is_announced_when_the_materials_are_silent(caplog):
     msgs = [r.getMessage() for r in caplog.records if "#1202vt" in r.getMessage()]
     assert msgs, "the shape reversed an explicit public contract and said nothing"
     m = msgs[0]
-    assert "GET /api/feed_items" in m, "the endpoint must be named"
-    assert "feed_items" in m, "the table whose shape decided must be named"
+    assert "GET /api/saved_items" in m, "the endpoint must be named"
+    assert "saved_items" in m, "the table whose shape decided must be named"
     assert "user_id->users" in m and "topic_id->topics" in m, (
         "the two FKs that triggered #598 must be named, or the lane cannot check the reasoning")
     assert "visibility" in m, "the one way out must be named"
@@ -79,7 +88,7 @@ def test_the_demotion_is_announced_when_the_materials_are_silent(caplog):
 def test_nothing_is_said_when_the_contract_did_not_claim_public(caplog):
     """Only a REVERSAL is news. An endpoint that never claimed public is projected with an
     actor as a matter of course, and announcing that would bury the case that matters."""
-    ep = [{"method": "GET", "path": "/api/feed_items", "metadata": {"auth_required": True}}]
+    ep = [{"method": "GET", "path": "/api/saved_items", "metadata": {"auth_required": True}}]
     with caplog.at_level(logging.WARNING, logger=BS.__name__):
         BS.render_skeleton_main(ep, _tables())
     assert not [r for r in caplog.records if "#1202vt" in r.getMessage()]
@@ -107,7 +116,7 @@ def test_the_demotion_itself_is_unchanged():
     """Announce only. The handler for the silent case must still take an actor — this fix
     must not become a release (#1202hh: releasing needs the materials AND the contract)."""
     src = BS.render_skeleton_main(_ENDPOINT, _tables())
-    i = src.index('@app.get("/api/feed_items")')
+    i = src.index('@app.get("/api/saved_items")')
     j = src.index("):", i)
     assert "get_current_user" in src[i:j], (
         "the by-construction privacy must still force an actor (#271/#1098)")
@@ -130,8 +139,8 @@ _MODELS_PY = (
     "from sqlalchemy import Column, Integer, String, ForeignKey\n"
     "from sqlalchemy.orm import declarative_base\n"
     "Base = declarative_base()\n"
-    "class Feeditem(Base):\n"
-    "    __tablename__ = 'feed_items'\n"
+    "class Saveditem(Base):\n"
+    "    __tablename__ = 'saved_items'\n"
     "    id = Column(Integer, primary_key=True)\n"
     "    user_id = Column(Integer, ForeignKey('users.id'))\n"
     "    topic_id = Column(Integer, ForeignKey('topics.id'))\n"
@@ -165,7 +174,7 @@ def test_the_delivery_time_projector_announces_too(tmp_path, caplog):
     be = _backend(tmp_path)
     with caplog.at_level(logging.WARNING, logger=RP.__name__):
         RP.project_missing_routes(
-            be, [{"method": "GET", "path": "/api/feed_items", "auth_required": False,
+            be, [{"method": "GET", "path": "/api/saved_items", "auth_required": False,
                   "metadata": {"auth_required": False}}])
     assert [r for r in caplog.records if "#1202vt" in r.getMessage()], (
         "the delivery-time projector demoted an explicit public read and said nothing")
@@ -206,10 +215,26 @@ def test_the_notice_holds_its_tongue_when_nothing_was_reversed(tmp_path, caplog)
     be = _backend(tmp_path)
     models = RP._orm_models(be)
     with caplog.at_level(logging.WARNING, logger=RP.__name__):
-        spoke = RP.announce_shape_override_1202vt("GET", "/api/feed_items", models, False)
+        spoke = RP.announce_shape_override_1202vt("GET", "/api/saved_items", models, False)
     assert spoke is False
     assert not [r for r in caplog.records if "#1202vt" in r.getMessage()]
 
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_a_released_feed_table_has_nothing_to_announce():
+    """★ #1202zn's other half. The notice exists because a reversal happened silently; once
+    the reversal does not happen, a notice would be describing a decision nobody made — which
+    is how a log comes to disagree with the code that wrote it."""
+    import multi_agent.runtime.route_projector as RP
+    models = {
+        "feed": {"cls": "Feed", "cols": ["id", "user_id", "topic_id", "body"],
+                 "fks": {"user_id": "users", "topic_id": "topics"},
+                 "types": {}, "required": []},
+        "users": {"cls": "User", "cols": ["id"], "fks": {}, "types": {}, "required": []},
+        "topics": {"cls": "Topic", "cols": ["id"], "fks": {}, "types": {}, "required": []},
+    }
+    assert RP._structurally_private_resource_633("GET", "/api/feed", models, True) is False
+    assert RP._structurally_private_resource_633("GET", "/api/feed", models, False) is True

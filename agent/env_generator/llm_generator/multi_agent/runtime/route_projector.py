@@ -427,6 +427,47 @@ def _match_model(seg: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[
 # Instagram surface.
 _FEED_SHAPED_TOKENS = ("feed", "explore", "timeline", "reels", "discover", "stream")
 
+
+def _feed_named_table_1202zn(table: Any) -> bool:
+    """#1202zn — is this TABLE itself one of the framework's feed-shaped names?
+
+    `_FEED_SHAPED_TOKENS` has always been read against PATH segments (line 683, mapping
+    `/api/feed` to the primary content model when no table matches). This asks the same
+    question of the table a path DID resolve to, which is the case that has no verdict to
+    read: a `feed` table is one the lane invents, so the materials — compiled from the
+    product's entities before any lane runs — have no entity of that name and
+    `_declared_public_content_1202hh` can never release it.
+
+    r140 traced end to end: the spec says `videos: public` correctly, the ORM carries BOTH
+    `videos` and a `feed` table with the identical FK shape (`author_id -> users` beside
+    `sound_id -> sounds`), `GET /api/feed` resolves by segment to the table literally named
+    `feed`, its `visibility` is None, and #598 demotes it. The logged-out landing page got
+    401, the lane appended to `_FW_PUBLIC_API_1202KH` from custom_routes.py, and
+    `deliverability_guard_tampering` blocked the run 8 times across 90 minutes.
+
+    Measured over the corpus: 43 runs are in the era where the spec carries visibility at
+    all, and in 8 endpoints across them a DELIBERATE `auth_required=False` is overridden
+    because the resolved table has no materials entity — 6 of the 8 on a table named `feed`,
+    in 6 of the 43 runs. Over all 182 run directories the release below is 6 endpoints in 5
+    runs, every one of them the table `feed`; the 104 other demotions are untouched,
+    including every genuinely-private one (`my_list`, `continue_watching`, `notifications`,
+    `messages`, `video_likes`).
+
+    Matched per `_`-segment so `videos_feed` counts and `feedback` does not, with the same
+    plural tolerance the resolver uses.
+    """
+    try:
+        _n = str(table or "").strip().lower()
+        if not _n:
+            return False
+        for _p in [_n] + _n.split("_"):
+            for _tok in _FEED_SHAPED_TOKENS:
+                if _p.rstrip("s") == _tok.rstrip("s"):
+                    return True
+        return False
+    except Exception:
+        return False
+
 # Identity / auth / tenant control-plane tables a content feed never lists.
 _SPINE_TABLE_STEMS = ("user", "tenant", "role", "permission", "session", "migration", "setting")
 # Columns that make a row time-ordered (a feed is chronological).
@@ -1196,11 +1237,30 @@ def _is_user_content_relation(meta: Dict[str, Any], owner_fk: str) -> bool:
               `GET /api/my-list` served EVERY user's rows to any authenticated caller.
               `GET /api/continue-watching` in the same tree, same shape, same leak.
 
-    Measured over the arc's 144 delivered backends: 196 tables carry a users FK; the 63
-    instances that ALSO carry a content FK are exactly ``MyList`` / ``Rating`` /
-    ``ContinueWatching`` — every one a per-user private record — while the 133 with a
-    user FK alone are ``Profile``, correctly untouched. A `posts`-shaped public feed is
-    untouched by construction.
+    ★ #1202zn — THAT MEASUREMENT HAS EXPIRED, and it was the whole claim to safety here.
+    When #598 landed, over the arc's 144 delivered backends: 196 tables carried a users FK and
+    "the 63 instances that ALSO carry a content FK are exactly ``MyList`` / ``Rating`` /
+    ``ContinueWatching`` — every one a per-user private record".
+
+    Re-measured over the 159 delivered trees that have an ORM, out of 182 run directories:
+    this fires on 518 table instances against 344 with a user FK alone, and the three tables
+    named above are 9 of the 518. The head of the list is public content —
+
+        comments 88   videos 64   likes 60   notifications 56   saves 54   video_likes 42
+
+    — because a content table carries a taxonomy FK of its own (``videos.sound_id``,
+    ``comments.video_id``) and that is indistinguishable, BY SHAPE, from a join row pointing at
+    someone else's content. #1202gd measured the same fact from the other side and
+    `_declared_public_content_1202hh` states the conclusion this docstring had not caught up
+    with: across 116 delivered backends the signal fires on 267 tables and "NO structural rule
+    separates the public ones — ``videos(author_id, sound_id, ...)`` and
+    ``saved_items(user_id, item_id)`` are the same shape".
+
+    So this is a SUSPICION, not a verdict, and the materials are what settle it. It still earns
+    its place: it decides the default for a read whose contract says NOTHING, where defaulting
+    open is the r141 leak and defaulting closed is a 401 a lane can see and report. What it must
+    not do is silently reverse a DELIBERATE declaration on a table the materials never described
+    — see #1202zn at the end of `_structurally_private_resource_633`.
 
     THE DECIDING EVIDENCE is not a judgement about privacy — it is the framework already
     contradicting itself. On this exact shape the projected WRITE is guarded in **25 of 25**
@@ -2691,7 +2751,8 @@ def _truthy(v: Any) -> bool:
 
 
 def _structurally_private_resource_633(method: str, path: str,
-                                       models: Dict[str, Dict[str, Any]]) -> bool:
+                                       models: Dict[str, Dict[str, Any]],
+                                       explicit_public: bool = False) -> bool:
     """#633 — is the resource this endpoint reads per-user-private BY CONSTRUCTION?
 
     #566y and #598 established that a table's SHAPE can settle privacy without the contract
@@ -2744,8 +2805,29 @@ def _structurally_private_resource_633(method: str, path: str,
         fk = _owner_fk(meta)
         if not fk:
             return False
-        return bool(_is_per_user_sub_entity_fk(meta, fk, models)
-                    or _is_user_content_relation(meta, fk))
+        if _is_per_user_sub_entity_fk(meta, fk, models):
+            return True                      # #566y, untouched by #1202zn
+        if not _is_user_content_relation(meta, fk):
+            return False
+        # #1202zn — #320 states the policy this branch was reversing: "a table can hold
+        # OWNED-but-PUBLIC content (TikTok videos, IG posts, YT videos) — rows have a creator
+        # yet the feed is public ... An EXPLICIT auth_required=False is the lane's DELIBERATE
+        # 'this read is public' declaration — honor it." #1202hh is how that is meant to be
+        # honoured, and it is keyed on a MATERIALS entity name. A table the lane invents for
+        # the feed has no such entity, so the escape hatch is unreachable for it and the
+        # shape decides alone — on a signal #1202gd's own note calls insufficient: "`videos
+        # (author_id, sound_id, ...)` and `saved_items(user_id, item_id)` are the same shape".
+        #
+        # Release needs THREE things to agree and each removes a different way to be wrong:
+        # the contract said public DELIBERATELY, the materials do not say `owner` (so a lane
+        # that mislabels a private list keeps the r141 protection), and the table's own name
+        # is one the framework already treats as a feed. Measured: 6 endpoints in 5 runs, all
+        # on the table `feed`; 104 demotions stand, including every private one.
+        if (explicit_public
+                and not _declared_owner_private_1202ht(meta)
+                and _feed_named_table_1202zn(_table)):
+            return False
+        return True
     except Exception:
         return False
 
@@ -3198,7 +3280,7 @@ def project_missing_routes(
         # unreachable on an unauthenticated endpoint, because they are computed after the auth
         # decision that they should be informing. 4 of 45 delivered backends ship an
         # UNAUTHENTICATED `GET /api/search` over `continue_watching` for exactly this reason.
-        if _structurally_private_resource_633(method, path, models):
+        if _structurally_private_resource_633(method, path, models, _explicit_public):
             # #1202vu: the second emitter, which was silent. See the helper's docstring.
             announce_shape_override_1202vt(method, path, models, _explicit_public)
             _owner_scoped = True

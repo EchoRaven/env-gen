@@ -2706,7 +2706,10 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
             _owner_scoped = False
         try:
             from .route_projector import _structurally_private_resource_633 as _priv633
-            if _priv633(method, path, meta):
+            # #1202zn: the DELIBERATE public declaration travels with the question, so this
+            # emitter and `project_missing_routes` cannot disagree about what is private
+            # (#1032 — #1202my already had to repair a drift across these same two sites).
+            if _priv633(method, path, meta, _explicit_public_1097):
                 # #1202vt: #1202kx's sibling door, and it was silent.
                 #
                 # #1202kx announces the demotion when the MATERIALS contradict an explicit

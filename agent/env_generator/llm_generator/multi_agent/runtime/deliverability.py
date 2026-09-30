@@ -683,7 +683,13 @@ def _shape_demoted_publics_1202y9(app_root, hub_registry) -> str:
             if not _p.startswith("/api/") or _p.startswith("/api/v1/"):
                 continue
             try:
-                if not _priv1202y9(_m, _p, models):
+                # #1202zn: `explicit_public=True` — every record reaching here was filtered
+                # on `auth_required is False` twelve lines up, which IS the deliberate
+                # declaration the predicate now takes. The gate must ask the projector's
+                # question with the projector's arguments or it names routes that were never
+                # demoted (#1032, and this function's own note about recomputing rather than
+                # carrying).
+                if not _priv1202y9(_m, _p, models, True):
                     continue
             except Exception:
                 continue
