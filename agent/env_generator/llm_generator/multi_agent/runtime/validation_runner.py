@@ -1031,6 +1031,28 @@ def _list_total_unreachable_1202w0(base: str, path: str, token, body_text) -> st
     if not isinstance(items, list) or isinstance(total, bool) or not isinstance(total, int):
         return ""
     if total <= len(items):
+        # #1202zp -- THE OTHER DIRECTION, which the early return above could not see: a
+        # `total` that UNDER-reports. The walk below only ever fires when `total` exceeds a
+        # page, so an endpoint whose `total` is really its PAGE SIZE passed here as clean.
+        #
+        # Probed live against the delivered stacks still up (2026-09-29):
+        #   r139 GET /api/videos/feed  total=5  items=5  next_cursor=5   -- the walk reaches
+        #        35 distinct ids, and `videos` holds 35. A UI trusting `total` says "5".
+        #   r132 GET /api/videos/feed  total=5  items=5  next_cursor=<ts> -- and page 2 comes
+        #        back EMPTY while `videos` holds 78. Both numbers wrong, so the old
+        #        `total` vs reachable comparison agreed with itself and said nothing.
+        #
+        # No extra request and no database: offering a NEXT PAGE while claiming the caller has
+        # already seen the total is incoherent on its face. That holds however the collection
+        # filters -- which is what keeps this out of the false-positive class the `total`-vs-
+        # row-count comparison would land in (a per-user or published-only list legitimately
+        # counts fewer rows than its table). The framework's own projected reads settle the
+        # meaning of the word: `"total": query.count()` (#1202os), the size of the collection.
+        _nxt1202zp = first.get("next_cursor")
+        if _nxt1202zp not in (None, "", 0, False) and not isinstance(_nxt1202zp, bool):
+            return ("%s total=%d is not the collection size: the same response offers "
+                    "next_cursor=%s, so more rows exist than `total` admits"
+                    % (path, total, str(_nxt1202zp)[:40]))
         return ""
     seen = len(items)
     cursor = first.get("next_cursor")

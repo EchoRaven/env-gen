@@ -170,3 +170,86 @@ def test_it_reports_and_does_not_block():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ── #1202zp: the other direction — a `total` that UNDER-reports ───────────────────
+#
+# The early return `if total <= len(items)` could not see it, so an endpoint whose `total` is
+# really its PAGE SIZE passed as clean. Probed live against the delivered stacks still up
+# (2026-09-29), both of which shipped:
+#
+#   r139 GET /api/videos/feed  total=5 items=5 next_cursor=5      -> the walk reaches 35
+#        distinct ids and `videos` holds 35. A UI trusting `total` renders "5".
+#   r132 GET /api/videos/feed  total=5 items=5 next_cursor=<ts>   -> page 2 comes back EMPTY
+#        while `videos` holds 78. BOTH numbers are wrong, so the old total-vs-reachable
+#        comparison agreed with itself and said nothing.
+#
+# ★ WHY NOT COMPARE `total` TO THE TABLE'S ROW COUNT, which is where I started: a per-user or
+# published-only collection legitimately counts fewer rows than its table, so that predicate
+# lands squarely in the false-positive class. "You have seen the total" beside "here is the
+# next page" is incoherent whatever the collection filters, and costs no request.
+
+
+def _no_http(monkeypatch):
+    """The new direction must decide from the response already in hand."""
+    calls = []
+
+    def fake(method, url, **kw):
+        calls.append(url)
+        return {"status": 200, "error": None, "body_text": '{"items": []}', "headers": {}}
+
+    monkeypatch.setattr(VR, "_http", fake)
+    return calls
+
+
+def test_r139_s_shape_total_equals_the_page_while_a_next_page_is_offered(monkeypatch):
+    calls = _no_http(monkeypatch)
+    got = _F("http://x", "/api/videos/feed", None,
+             json.dumps({"items": list(range(5)), "total": 5, "next_cursor": 5}))
+    assert "total=5 is not the collection size" in got, got
+    assert "next_cursor=5" in got, got
+    assert calls == [], "the check must cost no request: %r" % calls
+
+
+def test_r132_s_shape_a_timestamp_cursor_counts_too(monkeypatch):
+    _no_http(monkeypatch)
+    got = _F("http://x", "/api/videos/feed", None,
+             json.dumps({"items": list(range(5)), "total": 5,
+                         "next_cursor": "2026-02-26T22:16:19+00:00|31"}))
+    assert "is not the collection size" in got, got
+    assert "2026-02-26T22:16:19" in got, got
+
+
+def test_a_total_below_the_page_is_caught_too(monkeypatch):
+    """Stronger than equal: `total` smaller than what this very page carries."""
+    _no_http(monkeypatch)
+    got = _F("http://x", "/api/list", None,
+             json.dumps({"items": list(range(9)), "total": 2, "next_cursor": "9"}))
+    assert "total=2 is not the collection size" in got, got
+
+
+def test_a_full_page_with_no_next_page_stays_silent(monkeypatch):
+    """★ The legitimate reading of the same numbers, and the reason the cursor is the whole
+    signal: total == items and nothing on offer means the caller really has seen everything."""
+    _no_http(monkeypatch)
+    for cur in (None, "", 0, False):
+        body = {"items": [1, 2], "total": 2}
+        if cur is not None:
+            body["next_cursor"] = cur
+        assert _F("http://x", "/api/list", None, json.dumps(body)) == "", repr(cur)
+
+
+def test_a_boolean_cursor_is_not_a_next_page(monkeypatch):
+    """`True` is not a cursor anyone can follow; treating it as one would report an endpoint
+    that only carries a has_more flag it spelled oddly."""
+    _no_http(monkeypatch)
+    assert _F("http://x", "/api/list", None,
+              json.dumps({"items": [1, 2], "total": 2, "next_cursor": True})) == ""
+
+
+def test_the_over_reporting_direction_is_untouched(monkeypatch):
+    """★ Regression guard: r135's shape must still take the walk, not the new branch."""
+    _pages(monkeypatch, [{"items": list(range(3)), "total": 39, "next_cursor": None}])
+    got = _F("http://x", "/api/feed/foryou", None,
+             json.dumps({"items": list(range(5)), "total": 39, "next_cursor": "5"}))
+    assert got == "/api/feed/foryou total=39 reachable=8", got
