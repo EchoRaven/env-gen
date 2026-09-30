@@ -2568,8 +2568,15 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                         "            and not (isinstance(_v, str) and _v.startswith('${'))",
                         "            for _k, _v in payload.items() if hasattr(%s, _k)):" % (cls,),
                         "        raise HTTPException(status_code=400, detail=%r)" % (
+                            # #1203a1: no ticket in a SERVED string. This detail is an HTTP 400
+                            # body — the app's user reads it, and "(#1202my)" named our internal
+                            # history to them. #1202tf removed the tags from the skeleton's log
+                            # messages and rendered THOSE two files to prove it; this guard is
+                            # written by the PROJECTOR, a second writer that ratchet never
+                            # rendered, so it kept shipping: 10 of 180 delivered main.py files
+                            # carry a ticket inside a user-facing response, r140 included.
                             "a create must name %s or at least one other field of its own - an "
-                            "empty create is nothing but its own id and owner (#1202my)"
+                            "empty create is nothing but its own id and owner"
                             % " or ".join(_subj_1202bl),),
                     ]
                 if _optional_only_1202my:

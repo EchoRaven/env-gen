@@ -100,6 +100,59 @@ def test_no_ticket_reaches_the_delivered_file(name):
         f"template and keep its sentence: {offenders}")
 
 
+def _projected_main(tmp_path):
+    """The OTHER writer of main.py.
+
+    #1203a1: this file rendered `render_skeleton_main` and `render_seed_data` and called that
+    the delivered artifact. `route_projector.project_missing_routes` writes into the same
+    main.py afterwards, and it was never rendered here — so its own tickets kept shipping.
+    MEASURED on the corpus: 10 of 180 delivered main.py files carry a framework ticket inside
+    a string a USER reads (an HTTPException detail), `#1202my` in r129/r132/r134/r137/r140 and
+    `#1202bl` in four older runs before `#1202md` reworded that one.
+    """
+    from multi_agent.runtime.route_projector import project_missing_routes
+    (tmp_path / "models.py").write_text(
+        "from sqlalchemy import Column, Integer, String, ForeignKey\n"
+        "from database import Base\n\n\n"
+        "class User(Base):\n    __tablename__ = \"users\"\n"
+        "    id = Column(Integer, primary_key=True)\n\n\n"
+        "class Sound(Base):\n    __tablename__ = \"sounds\"\n"
+        "    id = Column(Integer, primary_key=True)\n\n\n"
+        "class Video(Base):\n    __tablename__ = \"videos\"\n"
+        "    id = Column(Integer, primary_key=True)\n"
+        "    user_id = Column(Integer, ForeignKey(\"users.id\"))\n"
+        "    sound_id = Column(Integer, ForeignKey(\"sounds.id\"))\n"
+        "    caption = Column(String)\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text(
+        "from fastapi import FastAPI, Depends, HTTPException\n"
+        "from database import get_db\n"
+        "from models import User, Sound, Video\n\n"
+        "app = FastAPI()\n", encoding="utf-8")
+    project_missing_routes(tmp_path, [{
+        "method": "POST", "path": "/api/videos",
+        "schema": {"request": {"caption": "text",
+                               "sound_id": "string nullable references sounds.id"}}}])
+    return (tmp_path / "main.py").read_text(encoding="utf-8")
+
+
+def test_no_ticket_reaches_a_string_the_projector_emits(tmp_path):
+    """★ The second writer. Same census, applied to what the projector appends."""
+    src = _projected_main(tmp_path)
+    ast.parse(src)
+    offenders = [(i, l.strip()[:110]) for i, l in enumerate(src.split("\n"), 1)
+                 if _TICKET.search(l)]
+    assert offenders == [], (
+        "the projector ships framework tickets into the delivered main.py. A ticket inside an "
+        "HTTPException detail is read by the APP'S USER, not by us: %s" % (offenders,))
+
+
+def test_the_projected_guard_kept_its_sentence(tmp_path):
+    """Non-vacuity, stated the way #1202tf states it for the skeleton: the message survived
+    losing the tag, so the removal did not simply delete the explanation."""
+    src = _projected_main(tmp_path)
+    assert "an empty create is nothing but its own id and owner" in src, src[-600:]
+
+
 def test_the_messages_themselves_survived():
     """Non-vacuity, and the property the tickets were standing in for: each repair still
     announces what it did."""

@@ -91,11 +91,19 @@ def _handler(src):
     return "\n".join(out)
 
 
+# #1203a1: the anchor used to be the string "1202my" — which was the ticket number the
+# emitted HTTPException detail SHIPPED to the app's user. The locator and the product's copy
+# were the same string, so the test held the leak in place. Anchored on the guard's own
+# sentence instead: `#1202md`'s neighbouring branch says "a create naming none of them", so
+# "an empty create" identifies this guard and only this guard.
+_MARK = "an empty create is nothing but its own id and owner"
+
+
 def _guard_fires(handler_src, payload, valid):
     """Execute the emitted `if ...:` condition of the #1202my guard against a request."""
     tree = ast.parse(handler_src)
     for node in ast.walk(tree):
-        if isinstance(node, ast.If) and "1202my" in ast.unparse(node.body[0]):
+        if isinstance(node, ast.If) and _MARK in ast.unparse(node.body[0]):
             # one namespace: the emitted generator expressions read `valid`/`payload` as
             # free names, which a separate locals dict would hide from them
             ns = {"Video": type("Video", (), {k: 1 for k in (
@@ -108,7 +116,7 @@ def _guard_fires(handler_src, payload, valid):
 def test_r125s_videos_contract_no_longer_demands_a_sound(tmp_path):
     h = _handler(_project(tmp_path, R125_REQUEST))
     assert "one of sound_id is required" not in h, h
-    assert "1202my" in h
+    assert _MARK in h
 
 
 def test_a_video_with_content_and_no_sound_is_accepted(tmp_path):
@@ -133,7 +141,7 @@ def test_naming_the_subject_still_passes(tmp_path):
 def test_a_required_subject_keeps_the_full_guard(tmp_path):
     h = _handler(_project(tmp_path, dict(R125_REQUEST, sound_id="int")))
     assert "one of sound_id is required" in h
-    assert "1202my" not in h
+    assert _MARK not in h
 
 
 def test_no_request_schema_keeps_the_full_guard(tmp_path):
