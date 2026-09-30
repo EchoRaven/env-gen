@@ -109,3 +109,137 @@ def test_registry_hiccup_degrades_to_empty_not_to_a_raise():
     hubs = _Hubs()
     hubs.registryhub = _Bad()
     assert _auth_wedge_note_1202fr(hubs, ["fyp_feed_logged_out"]) == ""
+
+
+# ── #1202zr: a WRITE is not "a read that is meant to be public" ───────────────────
+#
+# #1202qk already carved one hole in this advice for the same reason -- "tiktok-r127's note told
+# the lanes to declare `/auth/me` auth_required=false: advice that would publish a 'who am I'
+# endpoint". The METHOD is the other hole. r136 and r138 were told, verbatim, that
+# `fyp_feed_logged_out -> POST /api/videos/{video_id}/like` is fixed by declaring
+# `auth_required=false` "for a read that is meant to be public" -- and a lane that does that lets
+# any anonymous visitor like and comment.
+#
+# MEASURED over every Contract note in the corpus: 390 named endpoints, 86 of them writes (78
+# POST, 8 DELETE) across 6 runs including r136 and r138. By distinct note, 35 of 45 are read-only
+# and keep their sentence byte for byte, 9 are write-only and 1 is mixed.
+
+from multi_agent.runtime.deliverability import _hit_is_write_1202zr as _isw  # noqa: E402
+
+_WRITE_PAGES = {
+    "feed": {"name": "fyp_feed_logged_out", "route": "/",
+             # the write FIRST, because the note reports `bad[0]` per page
+             "apis_used": ["POST /api/videos/{id}/like", "GET /api/videos"]},
+}
+_READ_PAGES = {
+    "feed": {"name": "fyp_feed_logged_out", "route": "/",
+             "apis_used": ["GET /api/videos"]},
+}
+
+
+def _note(pages, failed=("fyp_feed_logged_out",)):
+    return _auth_wedge_note_1202fr(_Hubs(pages=pages), list(failed))
+
+
+def test_a_write_is_not_offered_as_a_public_read():
+    """★ The whole point: the sentence that would open an anonymous write must not appear."""
+    n = _note(_WRITE_PAGES)
+    assert "POST /api/videos/{id}/like" in n, n
+    assert "declare auth_required=false" not in n, n
+
+
+def test_a_write_says_where_the_fix_actually_is():
+    n = _note(_WRITE_PAGES)
+    assert "name a WRITE" in n, n
+    assert "sign in before" in n or "should not declare" in n, n
+    assert "any anonymous visitor perform the action" in n, n
+
+
+def _hubs_with_public_spec(tmp_path, pages):
+    """★ The first version of the test below asserted `"PUBLIC content" not in note` against a
+    registry with no `base_dir`, so `_root_spec_entities_1202gl` returned [] and the sentence
+    could never have appeared for ANY input -- appending it unconditionally left the test green.
+    #1202gl reads `<project>/design/reference_spec.json` through `base_dir`, which points at
+    `<project>/shared`, so the fixture has to lay that out on disk."""
+    import json as _json
+    proj = tmp_path / "proj"
+    (proj / "design").mkdir(parents=True)
+    (proj / "shared").mkdir()
+    (proj / "design" / "reference_spec.json").write_text(_json.dumps(
+        {"entities": [{"name": "videos", "visibility": "public"},
+                      {"name": "comments", "visibility": "public"}]}), encoding="utf-8")
+    h = _Hubs(pages=pages)
+    # `_root_spec_entities_1202gl(hub_registry)` reads `base_dir` off the OUTER object, not off
+    # `.registryhub` -- the first draft set it on the inner one and the sentence stayed absent.
+    h.base_dir = str(proj / "shared")
+    return h
+
+
+def test_the_materials_sentence_reaches_a_read(tmp_path):
+    """Pins the fixture's own premise: with the spec on disk the sentence DOES appear, so its
+    absence on a write below is a choice and not a missing file."""
+    h = _hubs_with_public_spec(tmp_path, _READ_PAGES)
+    n = _auth_wedge_note_1202fr(h, ["fyp_feed_logged_out"])
+    assert "PUBLIC content" in n, n
+    assert "videos" in n, n
+
+
+def test_the_materials_sentence_is_withheld_from_a_write(tmp_path):
+    """"the materials declare videos as PUBLIC content" is about who may READ those rows;
+    appended to a write it argues for the change that must not be made."""
+    h = _hubs_with_public_spec(tmp_path, _WRITE_PAGES)
+    n = _auth_wedge_note_1202fr(h, ["fyp_feed_logged_out"])
+    assert "name a WRITE" in n, n
+    assert "PUBLIC content" not in n, n
+
+
+def test_a_read_only_note_is_unchanged():
+    """★ Regression guard for the 78% of notes this must not touch."""
+    n = _note(_READ_PAGES)
+    assert "declare auth_required=false for a read that is meant to be public (#320)" in n, n
+    assert "name a WRITE" not in n, n
+
+
+def test_a_mixed_set_carries_both_sentences():
+    """Two flows, one bad read and one bad write: the reader needs both instructions, and
+    neither may be dropped because the other applies."""
+    pages = {
+        "feed": {"name": "fyp_feed_logged_out", "route": "/",
+                 "apis_used": ["POST /api/videos/{id}/like"]},
+        "explore": {"name": "explore_grid", "route": "/explore",
+                    "apis_used": ["GET /api/videos"]},
+    }
+    n = _auth_wedge_note_1202fr(_Hubs(pages=pages),
+                                ["fyp_feed_logged_out", "explore_grid"])
+    assert "declare auth_required=false" in n, n
+    assert "name a WRITE" in n, n
+
+
+def test_the_condition_still_lists_every_hit():
+    """#1114/#1023: the note reports the CONDITION. Both halves are still named up front,
+    whatever advice follows."""
+    n = _note(_WRITE_PAGES)
+    head = n.split("declare auth_required")[0].split("name a WRITE")[0]
+    assert "returns 401 to an anonymous visitor" in head, head
+    assert "POST /api/videos/{id}/like" in head, head
+
+
+# ── the method parser ─────────────────────────────────────────────────────────────
+
+def test_every_write_method_counts():
+    for m in ("POST", "PUT", "PATCH", "DELETE", "post", "Delete"):
+        assert _isw("flow -> %s /api/x" % m), m
+
+
+def test_a_get_is_not_a_write():
+    assert not _isw("flow -> GET /api/x")
+
+
+def test_a_bare_path_keeps_todays_advice():
+    """`apis_used` carries both `"POST /api/x"` and a bare `"/api/x"` in the corpus. With no
+    method the note has always assumed a read; guessing otherwise would put the new sentence on
+    an entry nobody can classify."""
+    assert not _isw("flow -> /api/x")
+    assert not _isw("flow -> ")
+    assert not _isw("")
+    assert not _isw(None)

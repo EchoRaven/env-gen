@@ -1953,14 +1953,62 @@ def _auth_wedge_note_1202fr(hub_registry, failed_flows) -> str:
               "materials and the contract agree on (#1202gd), PROVIDED the table is not "
               "marked `owner_scoped_reads` (#1202hm moved the corroborating signal there "
               "from `auth_required`, so setting that flag is what would re-block it).")
-    return (" Contract note — these failing flows declare an endpoint the contract marks "
-            "auth_required, which returns 401 to an anonymous visitor: "
-            + join_capped(hits, len(hits), cap=4, sep="; ")
-            + ". If the flow is meant to run logged out, the route is framework-projected "
-              "so it is fixed in the CONTRACT rather than the page: declare "
-              "auth_required=false for a read that is meant to be public (#320)."
-            + _pub1202gl)
+    # #1202zr: A WRITE IS NOT A READ THAT IS MEANT TO BE PUBLIC.
+    #
+    # #1202qk already carved one hole in this advice for the same reason -- "tiktok-r127's note
+    # told the lanes to declare `/auth/me` auth_required=false: advice that would publish a
+    # 'who am I' endpoint". The method is the other hole. r136 and r138 were told, verbatim,
+    # that `fyp_feed_logged_out -> POST /api/videos/{video_id}/like` should be fixed by
+    # declaring `auth_required=false` "for a read that is meant to be public", and a lane that
+    # does that lets any anonymous visitor like and comment.
+    #
+    # MEASURED over every Contract note in the corpus: 390 named endpoints, 86 of them writes
+    # (78 POST, 8 DELETE) across 6 runs including r136 and r138. By distinct note: 35 of 45 are
+    # read-only and keep their sentence byte for byte, 9 are write-only, 1 is mixed.
+    #
+    # The materials sentence is withheld from a write too -- "the materials declare videos as
+    # PUBLIC content" is about who may READ those rows, and appending it to a write would
+    # argue for exactly the change that must not be made.
+    _writes1202zr = [h for h in hits if _hit_is_write_1202zr(h)]
+    _reads1202zr = [h for h in hits if not _hit_is_write_1202zr(h)]
+    _out1202zr = (" Contract note — these failing flows declare an endpoint the contract marks "
+                  "auth_required, which returns 401 to an anonymous visitor: "
+                  + join_capped(hits, len(hits), cap=4, sep="; ") + ".")
+    if _reads1202zr:
+        _out1202zr += (" If the flow is meant to run logged out, the route is "
+                       "framework-projected so it is fixed in the CONTRACT rather than the "
+                       "page: declare auth_required=false for a read that is meant to be "
+                       "public (#320)." + _pub1202gl)
+    if _writes1202zr:
+        _out1202zr += (" But "
+                       + join_capped(_writes1202zr, len(_writes1202zr), cap=4, sep="; ")
+                       + " name a WRITE, and a write is not a read that is meant to be "
+                         "public: publishing it would let any anonymous visitor perform the "
+                         "action. Nothing in the CONTRACT fixes this one — either the flow "
+                         "must sign in before it reaches that step, or it should not declare "
+                         "that endpoint at all if it is meant to run logged out.")
+    return _out1202zr
 
+
+
+_WRITE_METHODS_1202ZR = ("POST", "PUT", "PATCH", "DELETE")
+
+
+def _hit_is_write_1202zr(hit: str) -> bool:
+    """Does this `"<flow> -> <api>"` hit name a write?
+
+    `apis_used` entries are written by the lane and the corpus shows both `"POST /api/x"` and a
+    bare `"/api/x"`. A hit with no method reads as a READ, which is what the note has always
+    assumed -- so an unparseable entry keeps today's advice rather than getting the new sentence
+    on a guess.
+    """
+    # No try/except: #1202ah's ratchet caught the first draft's `except Exception: return False`
+    # and it was right twice over -- a silent swallow makes a crash read as "not a write", and
+    # nothing here can raise. `str(hit or "")` is total, `split("->", 1)` always yields at least
+    # one element, and `split(None, 1)[0]` is only reached when the remainder is non-empty.
+    _tail = str(hit or "").split("->", 1)[-1].strip()
+    _first = _tail.split(None, 1)[0].upper() if _tail else ""
+    return _first in _WRITE_METHODS_1202ZR
 
 _IDENTITY_PROBE_1202QK = re.compile(
     r"^(?:GET\s+)?/(?:api/)?(?:v\d+/)?(?:auth/|users/|user/|account/)?(?:me|whoami|session)/?$",
