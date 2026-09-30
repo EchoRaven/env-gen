@@ -142,3 +142,70 @@ class ItStaysQuietOnCleanLanes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheShapesThePatternsMissed(unittest.TestCase):
+    """#1202zv: the docstring beside these patterns was wider than the patterns.
+
+    It cites "`routes.insert(0,` in 9" runs as a measured tampering shape and NO pattern matched
+    it; r120's own worked example is `app.router.routes.insert(0, APIRoute(...))`, caught only
+    because that same function reassigns the list a line above. And "reassigns
+    app.router.routes" required the SLICE form, so r136's plain attribute assignment walked
+    through:
+
+        app.router.routes = [r for r in app.router.routes if id(r) not in force_ids]
+        for route in reversed(force_routes):
+            app.router.routes.insert(0, route)
+
+    for a target list holding `/api/users/{username}`, `/api/videos/{id}/likes`,
+    `/api/videos/{id}/saves` and `/auth/logout`.
+
+    Re-measured after widening both: 22 runs were already caught, 33 are now — the 11 added are
+    r136 (both shapes, 4 inserts), r119, r109, r107, r97, r94, r91, r76, r32, r30, r26. Every new
+    match was read by hand: `= kept` after a filter, `= [route for route in app.router.routes
+    ...]`, `insert(0, route)`. No false positive in the set.
+    """
+
+    def test_a_plain_attribute_assignment_is_caught(self):
+        with _Backend("app.router.routes = [r for r in app.router.routes if ok(r)]\n") as d:
+            out = tamper(d)
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("reassigns", out[0])
+
+    def test_the_slice_form_is_still_caught(self):
+        """Regression: the narrower shape must keep working."""
+        with _Backend("app.router.routes[:] = kept\n") as d:
+            self.assertEqual(len(tamper(d)), 1)
+
+    def test_inserting_at_index_zero_is_caught(self):
+        with _Backend("app.router.routes.insert(0, route)\n") as d:
+            out = tamper(d)
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("index 0", out[0])
+        self.assertIn("shadows", out[0])
+
+    def test_appending_is_deliberately_not_caught(self):
+        """★ `append` puts the lane route BEHIND the projected one, where it can never match —
+        a lane bug, not a guard bypass. Measured: 3 corpus runs do only that."""
+        with _Backend("app.router.routes.append(route)\n") as d:
+            self.assertEqual(tamper(d), [])
+
+    def test_inserting_elsewhere_is_not_caught(self):
+        """Index 0 is the shadowing position; anything else lands behind a projected route."""
+        with _Backend("app.router.routes.insert(3, route)\n") as d:
+            self.assertEqual(tamper(d), [])
+
+    def test_a_comparison_is_not_an_assignment(self):
+        """`(?!=)`: reading the table is not rewriting it."""
+        with _Backend("if app.router.routes == expected:\n    pass\n") as d:
+            self.assertEqual(tamper(d), [])
+
+    def test_both_shapes_in_one_file_are_reported_separately(self):
+        """r136's actual shape. A lane that does both must see both lines, or fixing one reads
+        as fixing all of it."""
+        with _Backend("app.router.routes = kept\n"
+                      "app.router.routes.insert(0, route)\n") as d:
+            out = tamper(d)
+        self.assertEqual(len(out), 2, out)
+        self.assertTrue(any("reassigns" in o for o in out), out)
+        self.assertTrue(any("index 0" in o for o in out), out)

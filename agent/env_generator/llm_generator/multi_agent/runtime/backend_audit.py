@@ -1034,12 +1034,29 @@ def _is_empty_body_1100(fn: Any) -> bool:
 
 _FW_TAMPER_1202LJ = (
     # (regex, what the lane did, why it cannot stand)
-    (r"app\.router\.routes\s*\[\s*:\s*\]\s*=",
+    # #1202zv: THE PATTERN WAS NARROWER THAN THE SENTENCE BESIDE IT. "reassigns
+    # app.router.routes" required the SLICE form `[:] =`, and r136 writes the plain attribute
+    # assignment -- `app.router.routes = [r for r in app.router.routes if id(r) not in force_ids]`
+    # -- then puts its own routes at index 0, for a target list holding
+    # `/api/users/{username}`, `/api/videos/{id}/likes`, `/api/videos/{id}/saves` and
+    # `/auth/logout`. `(?!=)` keeps a comparison out.
+    (r"app\.router\.routes\s*(?:\[\s*:\s*\])?\s*=(?!=)",
      "reassigns app.router.routes",
      "deletes routes the framework projected, including guarded ones"),
     (r"app\.router\.routes\s*\.\s*remove\s*\(",
      "removes entries from app.router.routes",
      "deletes routes the framework projected, including guarded ones"),
+    # #1202zv: and the docstring above already cites this shape -- "`routes.insert(0,` in 9" --
+    # while no pattern matched it. r120's own worked example is
+    # `app.router.routes.insert(0, APIRoute(path="/api/video_likes", ...))`; it was caught only
+    # because the same function also reassigns the list one line up. A lane that ONLY inserts
+    # shadows the guarded projected handler and was invisible here.
+    # Index 0 specifically: `append` puts the lane route BEHIND the projected one, where it can
+    # never match, so it is a lane bug and not a guard bypass -- measured, 3 runs do that and
+    # they are deliberately not reported.
+    (r"app\.router\.routes\s*\.\s*insert\s*\(\s*0\s*,",
+     "inserts a route ahead of the framework's at index 0",
+     "shadows the guarded handler the projector built for that path"),
     # Bare NAME, not name-adjacent-to-write: tiktok-r117 reached the same list through an
     # alias -- `public_api = getattr(main_mod, "_FW_PUBLIC_API_1202KH", None)` and then
     # `public_api.append(...)` -- so a pattern requiring `.append` right after the name missed
@@ -1097,6 +1114,14 @@ def framework_guard_tampering_1202lj(backend_dir: Any) -> List[str]:
 
     Corpus: `app.router.routes[:] =` in 11 of 132 runs, `routes.insert(0,` in 9, the public
     lists in 2 and 1. Returns one line per site; empty when the lane keeps its hands off.
+
+    ★ #1202zv: THAT SENTENCE WAS TRUE AND THE PATTERNS DID NOT IMPLEMENT IT. `routes.insert(0,`
+    is cited right there and matched nothing, and "reassigns" required the slice form so a plain
+    `app.router.routes = [...]` walked through. Re-measured over the corpus after widening both:
+    22 runs were already caught, 11 more are now -- r136 (both shapes, 4 inserts), r119, r109,
+    r107, r97, r94, r91, r76, r32, r30, r26. Every new match was read: `= kept` after a filter,
+    `= [route for route in app.router.routes ...]`, `insert(0, route)`. No false positive in the
+    set. r136 is the only recent one; the rest are r119 and older.
     """
     out: List[str] = []
     try:
