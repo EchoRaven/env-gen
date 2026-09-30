@@ -29,6 +29,14 @@ from workspace import Workspace
 # SSRF guard — kept in sync with tools/web_tools.py::_ssrf_check via grep.
 # Duplicated rather than imported to avoid cross-module coupling for a
 # small, security-critical helper.
+#
+# The "via grep" above is load-bearing history, not the mechanism: #772 turned it
+# into a test (tests/test_mirrored_logic_cannot_drift_772.py) that compares both
+# bodies and both verdicts, and pins this very sentence so the claim and the test
+# live or die together. #1203a0 added the scheme set to what that file compares.
+# ★ An identical guard is worth nothing if only one caller re-checks redirects:
+# both copies are now followed by a hop-checking fetch, because the guard used to
+# validate the URL the caller ASKED for and not the one actually fetched.
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
@@ -93,6 +101,43 @@ def _redirect_readonly_capture_path(path: str) -> str:
         from pathlib import Path as _P
         return f"{_CAPTURE_DIR}/{_P(raw).name}"
     return path
+
+
+
+async def _ssrf_checked_get_1203a0(session, url, *, max_hops=5):
+    """GET `url`, re-running `_ssrf_check` on every redirect hop.
+
+    The guard above validates the URL the caller ASKED for. This tool then passed
+    `allow_redirects=True`, so a host whose DNS is public answering
+    `302 Location: http://127.0.0.1:8017/` was fetched anyway — the guard saw the
+    entry URL and never the hop. PROVEN against the sibling in web_tools.py: the
+    guard returned None, the final URL was the loopback address, and the body came
+    back to the agent.
+
+    Legitimate hops (http->https, a CDN redirect) are still followed. A hop into a
+    restricted range raises BY NAME — the caller reports the reason rather than
+    returning a partial success, and no alternate URL is tried.
+    """
+    current = url
+    hops = 0
+    while True:
+        resp = await session.get(current, timeout=30, allow_redirects=False)
+        if resp.status not in (301, 302, 303, 307, 308):
+            return resp
+        location = resp.headers.get("Location", "")
+        status = resp.status
+        resp.release()
+        if not location:
+            raise RuntimeError("refused for safety: HTTP %d carried no Location" % status)
+        nxt = urllib.parse.urljoin(current, location)
+        reason = _ssrf_check(nxt)
+        if reason is not None:
+            raise RuntimeError("refused for safety: redirect to %s" % reason)
+        hops += 1
+        if hops > max_hops:
+            raise RuntimeError(
+                "refused for safety: more than %d redirects starting at %s" % (max_hops, url))
+        current = nxt
 
 
 class IconSearchTool(BaseTool):
@@ -653,7 +698,7 @@ Tip: Use picsum.photos for placeholder images:
             connector = aiohttp.TCPConnector(ssl=ssl_context)
             
             async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.get(url, timeout=30, allow_redirects=True) as resp:
+                async with await _ssrf_checked_get_1203a0(session, url) as resp:
                     if resp.status != 200:
                         return ToolResult(success=False, error_message=f"Download failed: HTTP {resp.status}")
                     

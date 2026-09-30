@@ -111,5 +111,39 @@ def test_both_give_the_SAME_answer_on_a_normal_url():
         assert wt._ssrf_check(url) == it._ssrf_check(url), url
 
 
+def test_the_allowed_scheme_sets_have_not_drifted():
+    """#1203a0: the AST comparison above strips to the function BODY, and the guard reads a
+    module-level `_ALLOWED_SCHEMES`. Found by mutation — widening ONE module's set to
+    {"http","https","file"} left every test in this file green, because `file:///etc/passwd`
+    then fell through to the "URL has no hostname" branch and was still refused, for the
+    wrong reason. The control is the body PLUS the constants it reads."""
+    import importlib
+    import sys
+    sys.path.insert(0, str(ROOT))
+    try:
+        wt = importlib.import_module("tools.web_tools")
+        it = importlib.import_module("tools.image_search_tools")
+    finally:
+        sys.path.pop(0)
+    assert wt._ALLOWED_SCHEMES == it._ALLOWED_SCHEMES == {"http", "https"}, (
+        "%r vs %r" % (wt._ALLOWED_SCHEMES, it._ALLOWED_SCHEMES))
+
+
+@pytest.mark.parametrize("url", ["ftp://example.com/x", "gopher://example.com/x"])
+def test_a_widened_scheme_would_be_visible(url):
+    """Stated as behaviour where a reader will see it: a scheme that CARRIES A HOST is what a
+    widened set actually lets through, and the hostname branch cannot mask it."""
+    import importlib
+    import sys
+    sys.path.insert(0, str(ROOT))
+    try:
+        wt = importlib.import_module("tools.web_tools")
+        it = importlib.import_module("tools.image_search_tools")
+    finally:
+        sys.path.pop(0)
+    assert wt._ssrf_check(url) is not None, url
+    assert it._ssrf_check(url) is not None, url
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

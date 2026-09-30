@@ -8,6 +8,7 @@ import ipaddress
 import json
 import re
 import socket
+import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
@@ -159,6 +160,37 @@ def _decode_ddg_href(href: str) -> str:
     return decoded
 
 
+class _SSRFCheckedRedirects1203a0(urllib.request.HTTPRedirectHandler):
+    """Re-run `_ssrf_check` on every redirect hop.
+
+    `_ssrf_check` validates the URL the caller ASKED for. `urlopen` then follows
+    redirects by itself, so a host whose DNS is public answering
+    `302 Location: http://127.0.0.1:8017/` reached the loopback backend anyway.
+
+    MEASURED: with a public-resolving entry host, `_ssrf_check` returned None,
+    `response.geturl()` came back as the loopback address, and the body was
+    returned to the agent. The tool even put that final URL in its payload — the
+    fact reached the response without ever reaching the decision.
+
+    Legitimate hops (http->https, a CDN redirect) are still followed; only a hop
+    INTO a restricted range is refused, and it is refused by name rather than
+    dropped, so the caller learns which hop was rejected and why.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        reason = _ssrf_check(newurl)
+        if reason is not None:
+            raise urllib.error.HTTPError(
+                newurl, code,
+                "refused for safety: redirect to %s" % reason, headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# One opener, built once: `build_opener` puts our handler in place of the default
+# HTTPRedirectHandler, so every hop of every chain is checked.
+_SSRF_OPENER_1203A0 = urllib.request.build_opener(_SSRFCheckedRedirects1203a0)
+
+
 def _read_url(url: str, *, timeout: float, max_bytes: int = MAX_FETCH_BYTES) -> tuple[str, str, str]:
     request = urllib.request.Request(
         url,
@@ -167,7 +199,7 @@ def _read_url(url: str, *, timeout: float, max_bytes: int = MAX_FETCH_BYTES) -> 
             "Accept": "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.1",
         },
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _SSRF_OPENER_1203A0.open(request, timeout=timeout) as response:
         content_type = response.headers.get("content-type", "")
         charset = response.headers.get_content_charset() or "utf-8"
         raw = response.read(max_bytes + 1)
