@@ -51,31 +51,40 @@ from typing import Any, Dict, List
 # copies: a `control` endpoint would be projected as an MCP TOOL, handing an agent `reset` or
 # `init-tenant`. Zero live exposure (the 864 real control-surface records all carry `infra`),
 # but "excluded from the tool projection" has to mean the whole surface it names.
-from .kickoff.contract import FIXED_ENDPOINT_KINDS as _NON_BUSINESS_KINDS
-
-
-def _endpoint_kind(ep: Dict[str, Any]) -> str:
-    """Read the ``kind`` tag wherever it landed (top-level or under metadata)."""
-    if ep.get("kind"):
-        return str(ep["kind"]).lower()
-    md = ep.get("metadata")
-    if isinstance(md, dict) and md.get("kind"):
-        return str(md["kind"]).lower()
-    return ""
+# #1203a3: the SAME classifier every other check uses. `backend_audit` states the rule --
+# "/auth/* ... which `lifecycle.is_business` removes from every other check" -- and this module
+# was the one exception. lifecycle's only relative import is `.kickoff.contract`, so no cycle.
+from .lifecycle import is_business as _is_business_1203a3
 
 
 def business_endpoints(endpoints: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return the BUSINESS endpoint records (kind unset), sorted deterministically.
+    """Return the BUSINESS endpoint records, sorted deterministically.
 
     ``endpoints`` is RegistryHub's ``get_endpoints()`` map (id → record). Deprecated
-    endpoints and the fixed auth/oauth/infra/spine surface are excluded."""
+    endpoints and the fixed auth/oauth/infra/spine surface are excluded.
+
+    #1203a3: THAT SECOND SENTENCE WAS FALSE, and #853 predicted this exact consequence
+    ("a `control` endpoint would be projected as an MCP tool, handing an agent `reset` or
+    `init-tenant`"). #853 unified the KINDS CONSTANT, which closes the case where the record
+    carries a `kind`. It left the other half: a lane routinely declares an auth or control
+    path with NO kind at all, and a kind-only test cannot see it. MEASURED over 180 runs --
+    this function and `lifecycle.business_endpoints` disagreed on 49 of them, 138 endpoints,
+    ALL ONE-DIRECTIONAL (this one said business, lifecycle did not; never the reverse), and
+    every sample was auth: /auth/signup, /auth/logout, /auth/login, /auth/me. r140's shipped
+    tool list still carried `post_auth_signup` and `post_auth_logout`.
+
+    Using `lifecycle.is_business` -- which checks the PATH as well as the kind -- removes
+    exactly those and nothing else, because lifecycle's verdict is a strict subset of what
+    this returned. The `method` requirement and the sort are this function's own and stay."""
     out: List[Dict[str, Any]] = []
     for ep in (endpoints or {}).values():
         if not isinstance(ep, dict):
             continue
-        if ep.get("status") == "deprecated":
+        # #1203a3: lowercased, because `_status` in lifecycle lowercases and this did not --
+        # a record stored as "Deprecated" was excluded there and kept here.
+        if str(ep.get("status") or "").strip().lower() == "deprecated":
             continue
-        if _endpoint_kind(ep) in _NON_BUSINESS_KINDS:
+        if not _is_business_1203a3(ep):
             continue
         if not ep.get("method") or not ep.get("path"):
             continue
