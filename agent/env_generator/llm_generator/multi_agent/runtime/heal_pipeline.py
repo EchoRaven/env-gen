@@ -1088,6 +1088,101 @@ def _report_unreachable_twins_1202zb(orch, out_dir, registryhub) -> None:
             pass
 
 
+def _lane_middleware_task_1202zu(orch, out_dir) -> None:
+    """#1202zu — tell the lane that its own middleware answers before the framework's guard.
+
+    `framework_guard_tampering_1202lj` blocks a lane that edits the route table or the auth
+    allow-list. A lane-installed `@app.middleware("http")` does neither and still runs OUTER of
+    `_framework_auth_guard` (Starlette builds the stack in reverse), so one that returns a
+    Response without awaiting `call_next` answers with the guard never consulted. r139's own
+    docstring says it knew: "It does not mutate framework route tables or guard allow-lists."
+
+    REPORTED, NOT BLOCKED. Measured: 22 short-circuiting lane middlewares across 17 runs, 6 of
+    them intercepting an auth path — but on the still-running r139 stack the intercepted
+    `POST /auth/login` REFUSES a wrong password (401 `invalid credentials`, identical to the
+    un-intercepted r135) because the lane's handler delegates to the framework's own `login()`.
+    So the mechanism is invisible rather than harmful today, and blocking it would stop the shape
+    in 17 runs while the pressure that produces it — a contract-public feed answering 401 — is
+    what #1202zn and #1202zr just removed. Blocking a lane for the only move that works is
+    r140's M1.1 over again (#1202z0's reasoning).
+
+    Deduped by title prefix (#794), and the artifact carries every site so the count in the
+    title can be checked against something.
+    """
+    try:
+        from pathlib import Path as _P1202zu
+        from .backend_audit import lane_installed_middleware_1202zu
+        hits = lane_installed_middleware_1202zu(
+            _P1202zu(str(out_dir)) / "app" / "backend") or []
+        if not hits:
+            return
+        try:
+            import json as _j1202zu
+            _p = _P1202zu(str(out_dir)) / "logs" / "lane_middleware_1202zu.jsonl"
+            _p.parent.mkdir(parents=True, exist_ok=True)
+            with open(_p, "a", encoding="utf-8") as _fh:
+                _fh.write(_j1202zu.dumps({"at": time.time(), "sites": hits}) + "\n")
+        except Exception:
+            pass          # the artifact is evidence, not the finding
+        wh = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if wh is None:
+            return
+        base = "Lane middleware answers before the framework's auth guard"
+        try:
+            for t in (wh.list_tasks() or []):
+                if (isinstance(t, dict)
+                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("status")) in ("pending", "in_progress", "open")):
+                    return
+        except Exception:
+            pass          # best-effort dedupe; on any fault, file
+        _auth = [h for h in hits if h.get("auth_paths")]
+        lines = []
+        for h in hits[:8]:
+            # #1034: the per-site path list is capped too, and a cap beside a count has to
+            # declare itself — a site that intercepts nine paths must not show four in silence.
+            _ip1202zu = list(h.get("intercepts") or [])
+            _shown1202zu = ", ".join(_ip1202zu[:4]) or "(no literal path)"
+            if len(_ip1202zu) > 4:
+                _shown1202zu += " +%d more" % (len(_ip1202zu) - 4)
+            lines.append("  - %s:%s `%s` intercepts %s%s" % (
+                h.get("file"), h.get("line"), h.get("func"), _shown1202zu,
+                "   ← AUTH PATH" if h.get("auth_paths") else ""))
+        wh.create_task(
+            title="%s (%d)" % (base, len(hits)),
+            description=(
+                "These functions are decorated `@app.middleware(\"http\")` in lane code and "
+                "return a Response WITHOUT awaiting `call_next`:\n"
+                + "\n".join(lines)
+                + ("\n  ... and %d more" % (len(hits) - 8) if len(hits) > 8 else "")
+                + "\n\nStarlette builds the middleware stack in reverse, so middleware added "
+                "later runs OUTSIDE the framework's `_framework_auth_guard`. A short-circuit "
+                "there answers the request with the guard never consulted — the route is public "
+                "in effect, and nothing in the contract, the materials or the guard's public "
+                "list records that. It is not caught by the guard-tampering blocker, which "
+                "looks at route tables and allow-list names.\n\n"
+                "This is a REPORT, not a refusal: your handler may well be correct (r139's "
+                "delegates to the framework's own `login()` and still refuses a wrong "
+                "password). What is wrong is that the decision is invisible. If the read is "
+                "meant to be public, say so in the CONTRACT (`auth_required: false` on a READ) "
+                "and let the framework project and list it; then delete the middleware. If it "
+                "is not meant to be public, delete the middleware and let the guard answer."
+                + ("\n\n%d of these intercept an AUTH path. Re-implementing login or signup "
+                   "in middleware means the framework's own AS no longer decides who is signed "
+                   "in — if you keep it, it must call the AS, never compare a password itself."
+                   % len(_auth) if _auth else "")),
+            assignee="backend", agent="orchestrator", priority="P1")
+    except Exception as _e1202zu:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "heal_pipeline.lane_middleware_task_1202zu",
+                "lane middleware that answers before the auth guard stays unreported, so a "
+                "short-circuited route reads as a framework decision", _e1202zu)
+        except Exception:
+            pass
+
+
 def _unstaged_seed_media_task_1202zf(orch, out_dir) -> None:
     """#1202zf — tell the frontend lane about seeded media that is still missing AT DELIVERY.
 
@@ -1627,6 +1722,7 @@ class HealPipeline:
                 _file_shadowed_route_task_1202z4(orch, _ea.get("duplicated") or [])
                 _report_unreachable_twins_1202zb(orch, out_dir, registryhub)
                 _unstaged_seed_media_task_1202zf(orch, out_dir)
+                _lane_middleware_task_1202zu(orch, out_dir)
             except Exception as exc:
                 # Non-fatal (don't crash the heal run) but LOUD: backend_audit raises
                 # BackendAuditError on a real failure and silently swallowing it

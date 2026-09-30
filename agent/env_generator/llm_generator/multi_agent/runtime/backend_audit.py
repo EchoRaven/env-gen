@@ -1122,6 +1122,102 @@ def framework_guard_tampering_1202lj(backend_dir: Any) -> List[str]:
     return out
 
 
+def lane_installed_middleware_1202zu(backend_dir: Any) -> List[dict]:
+    """#1202zu: lane code that installs its own HTTP middleware and answers BEFORE the guard.
+
+    `framework_guard_tampering_1202lj` catches a lane that edits the route table or the auth
+    allow-list. A lane-installed `@app.middleware("http")` does neither and still gets in front
+    of the framework's `_framework_auth_guard`: Starlette builds the stack in reverse, so
+    middleware added later runs OUTER, and one that returns a Response without awaiting
+    `call_next` answers the request with the guard never consulted.
+
+    r139 is the worked example, and its own docstring says it knew:
+
+        @app.middleware("http")
+        async def _public_feed_edge_handler(request, call_next):
+            '''... install a lane-owned middleware that answers only anonymous/public GET
+            requests for this exact path. It does not mutate framework route tables or guard
+            allow-lists ...'''
+
+    It short-circuits `GET /api/videos/feed` and also `POST /auth/login`, `/api/auth/login`,
+    `/auth/signup`, `/api/auth/signup` -- authentication itself, at the middleware layer. On the
+    still-running r139 stack that path answers 200 with real rows while `/api/me` answers 401,
+    and the guard's public list holds only `('GET', '/api/search')`.
+
+    MEASURED over the corpus, AST not regex, because "returns a Response without call_next" is
+    the whole distinction: 43 lane-installed middlewares in 26 runs, of which **22 short-circuit,
+    across 17 runs** -- r140 `_creator_feed_public_http_interceptor`, r139
+    `_public_feed_edge_handler`, r136 `_init_tenant_control_plane_middleware`, r124
+    `_auth_resilience_guard`, r108 `_tiktok_public_read_short_circuit`. Six of the 22 intercept
+    an auth path, in 4 runs. The other 21 always await `call_next` and are not reported.
+
+    ★ REPORTED, NOT BLOCKED, and the harm test is why. On r139 the intercepted
+    `POST /auth/login` and `/api/auth/login` REFUSE a wrong password -- 401 `invalid
+    credentials`, identical to the un-intercepted r135 -- because the lane's handler delegates to
+    the framework's own `login()`. So the mechanism is invisible, not yet harmful, and adding it
+    to `deliverability_guard_tampering` would block the shape in 17 runs while the pressure that
+    produces it (a contract-public feed answering 401) is exactly what #1202zn and #1202zr just
+    removed. Blocking a lane for the only move that works is r140's M1.1 again.
+
+    Returns one dict per short-circuiting middleware: file, line, func, and the literal paths it
+    names, auth paths first. Empty when every lane middleware passes the request on.
+    """
+    out: List[dict] = []
+    try:
+        import ast as _ast1202zu
+        import re as _re1202zu
+        from pathlib import Path as _P1202zu
+        _AUTHP = _re1202zu.compile(r"/(api/)?(auth|oauth)/|/login|/signup|/register|/token")
+        d = _P1202zu(str(backend_dir))
+        for f in sorted(d.glob("*.py")):
+            if f.name == "main.py":          # framework-rendered; its guard IS the baseline
+                continue
+            try:
+                src = f.read_text(encoding="utf-8", errors="ignore")
+                tree = _ast1202zu.parse(src)
+            except Exception:
+                continue
+            for node in _ast1202zu.walk(tree):
+                if not isinstance(node, (_ast1202zu.FunctionDef, _ast1202zu.AsyncFunctionDef)):
+                    continue
+                decs = " ".join(_ast1202zu.dump(x) for x in node.decorator_list)
+                if "middleware" not in decs:
+                    continue
+                early = False
+                for n2 in _ast1202zu.walk(node):
+                    if not isinstance(n2, _ast1202zu.Return) or n2.value is None:
+                        continue
+                    blob = _ast1202zu.dump(n2.value)
+                    # No `call_next` exemption. The first draft skipped a return whose value
+                    # mentioned `call_next`, and no mutation could make that clause matter:
+                    # `return await call_next(request)` names no Response, so it is already
+                    # excluded by the test below, and removing the clause leaves the corpus
+                    # answer identical (22 sites in 17 runs either way). It was also the wrong
+                    # direction — `return resp if ok else JSONResponse(...)` mentions BOTH, and
+                    # the exemption would have dropped a genuine conditional short-circuit.
+                    if any(w in blob for w in ("Response", "JSONResponse",
+                                               "RedirectResponse", "PlainText")):
+                        early = True
+                        break
+                if not early:
+                    continue
+                seg = _ast1202zu.get_source_segment(src, node) or ""
+                paths = sorted(set(_re1202zu.findall(
+                    r"[\"']((?:/[A-Za-z0-9_\-{}\.]+)+)[\"']", seg)))
+                auth = [p for p in paths if _AUTHP.search(p)]
+                out.append({"file": f.name, "line": getattr(node, "lineno", 0),
+                            "func": node.name,
+                            "intercepts": auth + [p for p in paths if p not in auth],
+                            "auth_paths": auth})
+    except Exception as _e1202zu:
+        from .message_format import warn_once_1201
+        warn_once_1201("backend_audit.lane_installed_middleware_1202zu",
+                       "lane middleware that answers before the framework's auth guard is not "
+                       "detected, so a short-circuited route reads as a framework decision",
+                       _e1202zu)
+    return out
+
+
 def stub_handler_blockers(backend_dir: Any) -> List[str]:
     """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route whose SERVED
     handler does NO DB read and returns only a hardcoded EMPTY-or-MOCK collection.
