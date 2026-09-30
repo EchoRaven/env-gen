@@ -299,6 +299,83 @@ def _gate_cleared_while_smoke_failed_1202ze(orch, gate) -> None:
         except Exception:
             pass
 
+
+# 12 names is the widest real payload plus room: the gate's `deliverability` has 10 members and
+# `business_chain` the most of any field. Beyond that the list is describing a shape nobody reads
+# member-by-member, and the count carries it.
+_DROPPED_NAME_CAP_1202ZQ = 12
+
+
+def _capped_value_1202zq(key, value, encoded, cap, _json):
+    """Cap an oversized gate field by KEEPING ITS NAMED FIELDS, not its first `cap` bytes.
+
+    #948 caps each field because "an artifact nobody can open is the same as no artifact". The
+    cap was a byte prefix, and a byte prefix keeps whatever the serializer happened to write
+    first -- which for `deliverability` is `last_successful_run`, the largest and least
+    actionable member.
+
+    MEASURED over the 1371 gate records of r130+: 721 (53%) are truncated, cutting 4007-6854
+    bytes, and a depth-aware scan of what survived says
+
+        last_successful_run 100%   coverage 61%   flow_coverage 50%   blockers 29%   verdict 4%
+
+    -- 282 of the 721 keep NOTHING but `last_successful_run`. The gate's own reasoning about
+    whether the app can ship is recorded as the probe dump, with the answer thrown away. That is
+    #1202z7's finding one artifact over ("the cap is not the defect; the silence is") and
+    #1202vx's ("the explanation must not spend the evidence budget") one level up.
+
+    Cheapest-first is what fixes it, and nothing about the payload has to be named to get it:
+    `verdict` is ~20 bytes, `blockers` a few hundred, `last_successful_run` thousands, so a
+    budget filled from the small end keeps the verdicts and spends what is left on the dumps.
+    Replayed against the 650 UNTRUNCATED deliverability dicts on disk, at a cap small enough to
+    force the choice:
+
+        cap=800    verdict 0% -> 100%   blockers 0% -> 74%   flow_coverage 8% -> 48%
+        cap=1500   verdict 1% -> 100%   blockers 9% -> 88%   flow_coverage 13% -> 86%
+
+    Same budget, and the reader gets the answer instead of the evidence for an answer it cannot
+    see. `_dropped_1202zq` names each omitted member and its size, because a ledger that says
+    only how many bytes it cut cannot be audited (#1202z7 again).
+
+    `_truncated_948` is still written with the same meaning, so a reader that only tests for it
+    is unaffected. A non-dict value has no members to choose between and keeps the old `head`.
+    """
+    out = {"_truncated_948": len(encoded)}
+    if not isinstance(value, dict):
+        out["head"] = encoded[:cap]
+        return out
+    sized = []
+    for _k2, _v2 in value.items():
+        try:
+            _e2 = _json.dumps(_v2, default=str)
+        except Exception:
+            _e2 = _json.dumps(str(_v2))
+        sized.append((len(_e2), str(_k2), _v2))
+    sized.sort(key=lambda t: t[0])
+    kept = {}
+    dropped = []
+    used = 0
+    for _n2, _k2, _v2 in sized:
+        if used + _n2 <= cap:
+            kept[_k2] = _v2
+            used += _n2
+        else:
+            dropped.append("%s(%d)" % (_k2, _n2))
+    if not kept:
+        # every member on its own exceeds the budget: keep the prefix rather than nothing.
+        out["head"] = encoded[:cap]
+        out["_dropped_1202zq"] = dropped
+        return out
+    out["_kept_1202zq"] = kept
+    if dropped:
+        # The dropped LIST is bounded too, and says so when it bounds itself -- a cap that
+        # silently caps its own explanation is the defect one turn deeper (#1202z7).
+        if len(dropped) > _DROPPED_NAME_CAP_1202ZQ:
+            _rest = len(dropped) - _DROPPED_NAME_CAP_1202ZQ
+            dropped = dropped[:_DROPPED_NAME_CAP_1202ZQ] + ["... and %d more" % _rest]
+        out["_dropped_1202zq"] = dropped
+    return out
+
 def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> None:
     """Append one line per delivery-gate evaluation to ``logs/delivery_gate.jsonl``.
 
@@ -325,8 +402,10 @@ def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> Non
                 _enc = _j948.dumps(v, default=str)
             except Exception:
                 _enc = _j948.dumps(str(v))
-            row[k] = v if len(_enc) <= _CAP else {
-                "_truncated_948": len(_enc), "head": _enc[:_CAP]}
+            if len(_enc) <= _CAP:
+                row[k] = v
+            else:
+                row[k] = _capped_value_1202zq(k, v, _enc, _CAP, _j948)
         row["at"] = time.time()
         f = Path(output_dir) / "logs" / "delivery_gate.jsonl"
         f.parent.mkdir(parents=True, exist_ok=True)
