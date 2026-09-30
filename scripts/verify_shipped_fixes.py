@@ -475,9 +475,135 @@ def live_1202zb(run):
                             % (f.get("unread"), f.get("unread_rows"), f.get("served"),
                                f.get("served_rows"), f.get("via")) for f in fs[:3]))
 
+# ── the 2026-09-30 batch ─────────────────────────────────────────────────────────
+
+def check_1202zt(run):
+    """Does the DELIVERED middleware refuse to call a missing route an auth failure?"""
+    p = run / "app" / "backend" / "main.py"
+    try:
+        src = p.read_text(encoding="utf-8")
+    except Exception:
+        return _say("#1202zt", UNMEASURED, "no app/backend/main.py in this run")
+    if "_fw_route_exists_1202zt" not in src:
+        return _say("#1202zt", FALSIFIED,
+                    "the projected guard has no route-existence check",
+                    "An unknown /api/ path still answers 401. The run predates #1202zt or the "
+                    "skeleton did not render this main.py.")
+    if "return await call_next(request)" not in src:
+        return _say("#1202zt", FALSIFIED,
+                    "the check is present but nothing falls through to FastAPI's 404")
+    return _say("#1202zt", CONFIRMED,
+                "the guard checks for a matching route before refusing",
+                "Next: curl an invented /api/ path on the running stack — expect 404, and 401 "
+                "on a real protected one.")
+
+
+def check_1202zn(run):
+    """Is a contract-public feed read projected WITHOUT an actor?
+
+    #1202zn releases the shape demotion for a feed-named table the materials never described.
+    The observable is the delivered handler: a released read takes no `get_current_user`, and the
+    path reaches `_FW_PUBLIC_API_1202KH` because the skeleton emits that list from the same auth
+    decision. r140 shows the pre-fix state — the list is EMPTY while `GET /api/feed` is declared
+    `auth_required=false`.
+    """
+    import json as _json
+    import re as _re
+    p = run / "app" / "backend" / "main.py"
+    eps = run / "shared" / "hubs" / "registryhub_endpoints.json"
+    try:
+        src = p.read_text(encoding="utf-8")
+        recs = _json.loads(eps.read_text(encoding="utf-8"))
+    except Exception:
+        return _say("#1202zn", UNMEASURED, "no main.py or endpoint registry in this run")
+    feeds = []
+    for k, v in recs.items():
+        if str(k).startswith("_") or not isinstance(v, dict):
+            continue
+        path = str(v.get("path") or "")
+        md, sch = v.get("metadata") or {}, v.get("schema") or {}
+        if md.get("auth_required", sch.get("auth_required")) is not False:
+            continue
+        if str(v.get("method") or "").upper() != "GET":
+            continue
+        if "feed" in path or "explore" in path or "timeline" in path:
+            feeds.append(path)
+    if not feeds:
+        return _say("#1202zn", UNMEASURED,
+                    "this run declares no public GET on a feed-shaped path — nothing to release")
+    m = _re.search(r"_FW_PUBLIC_API_1202KH = \[(.*?)\]", src, _re.S)
+    listed = m.group(1) if m else ""
+    missing = [f for f in feeds if f not in listed]
+    if missing:
+        return _say("#1202zn", FALSIFIED,
+                    "%d contract-public feed read(s) are absent from the guard's public list: %s"
+                    % (len(missing), ", ".join(missing[:4])),
+                    "That is r140's exact pre-fix state — the shape demoted it at skeleton time, "
+                    "so the path was never public to the middleware.")
+    return _say("#1202zn", CONFIRMED,
+                "every contract-public feed read is in the guard's public list (%d)" % len(feeds),
+                "Next: curl it tokenless on the running stack — expect 200, not 401.")
+
+
+def check_1202zq(run):
+    """When a gate field was capped, did the ledger keep the VERDICT rather than the dump?"""
+    rows = _jsonl(run, "delivery_gate.jsonl")
+    if not rows:
+        return _say("#1202zq", UNMEASURED, "no logs/delivery_gate.jsonl")
+    capped = [r.get("deliverability") for r in rows
+              if isinstance(r.get("deliverability"), dict)
+              and "_truncated_948" in r["deliverability"]]
+    if not capped:
+        return _say("#1202zq", UNMEASURED,
+                    "%d gate records and none of them capped `deliverability` — the cap never "
+                    "bound, so this run says nothing either way" % len(rows))
+    kept = [c for c in capped if isinstance(c.get("_kept_1202zq"), dict)]
+    if not kept:
+        return _say("#1202zq", FALSIFIED,
+                    "%d capped record(s) still carry a byte `head` and no `_kept_1202zq`"
+                    % len(capped),
+                    "The run predates #1202zq: the verdict is in the part that was cut.")
+    with_verdict = [k for k in kept if "verdict" in (k.get("_kept_1202zq") or {})]
+    return _say("#1202zq",
+                CONFIRMED if with_verdict else FALSIFIED,
+                "%d of %d capped record(s) kept the deliverability verdict"
+                % (len(with_verdict), len(capped)),
+                "`_dropped_1202zq` names what went, so the cap can be audited.")
+
+
+def check_1202zr(run):
+    """If a Contract note named a WRITE, did it refuse to call it a public read?"""
+    rows = _jsonl(run, "delivery_gate.jsonl")
+    if not rows:
+        return _say("#1202zr", UNMEASURED, "no logs/delivery_gate.jsonl")
+    notes = []
+    for r in rows:
+        bp = r.get("blocker_prose")
+        if not isinstance(bp, dict):
+            continue
+        for v in (bp.get("deliverability_ui_flow_failed") or []):
+            if "Contract note" in str(v):
+                notes.append(str(v))
+    if not notes:
+        return _say("#1202zr", UNMEASURED,
+                    "no Contract note in this run's gate ledger — the branch never ran")
+    writes = [n for n in notes
+              if any(("-> %s " % m) in n for m in ("POST", "PUT", "PATCH", "DELETE"))]
+    if not writes:
+        return _say("#1202zr", UNMEASURED,
+                    "%d Contract note(s), none naming a write — nothing to qualify" % len(notes))
+    good = [n for n in writes if "name a WRITE" in n]
+    return _say("#1202zr",
+                CONFIRMED if len(good) == len(writes) else FALSIFIED,
+                "%d of %d note(s) naming a write carry the write caveat"
+                % (len(good), len(writes)),
+                "A note that tells a lane to publish a POST is the defect #1202zr removed.")
+
+
 LIVE_CHECKS = [live_1202zd, live_1202ze, live_1202zb]
 
-CHECKS = [check_1202zc, check_1202za, check_1202zb, check_1202ze, check_1202zf,
+CHECKS = [check_1202zt, check_1202zn, check_1202zq, check_1202zr,
+          check_1202zc, check_1202za, check_1202zb, check_1202ze, check_1202zf,
           check_1202zd, check_cost]
 
 
