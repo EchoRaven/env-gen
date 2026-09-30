@@ -36,6 +36,7 @@ def _say(ticket, verdict, headline, detail=""):
     print("%s%-12s %-13s\033[0m %s" % (c, ticket, verdict, headline))
     for line in (detail.splitlines() if detail else []):
         print("                            %s" % line)
+    return verdict            # so `--self-test` can ENFORCE what its banner claims
 
 
 def _budget(run: Path) -> dict:
@@ -395,7 +396,86 @@ def live_1202ze(_run):
                 "holding on inputs I did not construct" % (tasks, runs))
 
 
-LIVE_CHECKS = [live_1202zd, live_1202ze]
+
+def live_1202zb(run):
+    """Run the twin detector against the DELIVERED stack's own row counts.
+
+    #1202zb abstains without live counts, on purpose: `recent_live_counts_1202dj` refuses
+    anything past its TTL because the stack is torn down and rebuilt around each validation,
+    and a stale count would describe a different database. That honesty means a finished run
+    directory can never confirm it -- the counts have expired by the time anyone asks. So this
+    check goes to the source the detector would have used: the container that is still up.
+
+    On tiktok-web-r140 this reports `videos` (35 rows, unread) against `feed` (8 rows, served
+    via `/api/feed`) -- the exact pair the ticket was written for, and the reason 35 of the
+    delivered app's rows have no interface that reaches them.
+    """
+    import json as _json
+    import subprocess as _sp
+    _agent = Path(__file__).resolve().parent.parent / "agent"
+    for _p in (str(_agent / "env_generator" / "llm_generator"), str(_agent)):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+    try:
+        import multi_agent.runtime.heal_pipeline as HP
+        # The detector re-imports the counts reader from `seed_audit` INSIDE its body, so the
+        # name it resolves is that module's, not `heal_pipeline`'s. Patching only the latter
+        # left it abstaining, and the check said so instead of passing -- which is the whole
+        # reason it reports NOT MEASURED as a third outcome.
+        import multi_agent.runtime.seed_audit as SA
+    except Exception as exc:
+        return _say("#1202zb live", UNMEASURED, "cannot import the detector: %s" % exc)
+    eps_p = Path(run) / "shared" / "hubs" / "registryhub_endpoints.json"
+    if not eps_p.is_file():
+        return _say("#1202zb live", UNMEASURED, "no endpoint registry in %s" % run)
+    name = Path(run).name + "-database-1"
+    try:
+        # read-only: one SELECT against pg's own statistics view, no schema touched
+        raw = _sp.check_output(
+            ["docker", "exec", name, "sh", "-c",
+             'psql -U sandbox -d app -tAc '
+             '"select relname||chr(61)||n_live_tup from pg_stat_user_tables"'],
+            stderr=_sp.DEVNULL, timeout=60).decode("utf-8", "replace")
+    except Exception as exc:
+        return _say("#1202zb live", UNMEASURED,
+                    "the delivered stack is not reachable (%s): %s"
+                    % (name, type(exc).__name__))
+    counts = {}
+    for ln in raw.splitlines():
+        if "=" in ln:
+            k, v = ln.split("=", 1)
+            try:
+                counts[k.strip()] = int(v)
+            except ValueError:
+                pass
+    if not counts:
+        return _say("#1202zb live", UNMEASURED, "the database returned no row counts")
+    SA.recent_live_counts_1202dj = lambda _r: counts
+    HP.recent_live_counts_1202dj = lambda _r: counts
+
+    class _RH:
+        def get_endpoints(self):
+            return _json.loads(eps_p.read_text(encoding="utf-8"))
+
+        def get_tables(self):
+            return {}
+
+    out = HP._unreachable_twin_tables_1202zb(str(run), _RH())
+    if not out.get("measured"):
+        return _say("#1202zb live", UNMEASURED,
+                    "the detector abstained: %s" % out.get("why"))
+    fs = out.get("findings") or []
+    if not fs:
+        return _say("#1202zb live", UNMEASURED,
+                    "measured against %d live tables and found no unreachable twin -- "
+                    "that is a fact about THIS stack, not about the detector" % len(counts))
+    return _say("#1202zb live", CONFIRMED,
+                "on real row counts from the running stack: "
+                + "; ".join("%s(%s rows, unread) vs %s(%s rows, served via %s)"
+                            % (f.get("unread"), f.get("unread_rows"), f.get("served"),
+                               f.get("served_rows"), f.get("via")) for f in fs[:3]))
+
+LIVE_CHECKS = [live_1202zd, live_1202ze, live_1202zb]
 
 CHECKS = [check_1202zc, check_1202za, check_1202zb, check_1202ze, check_1202zf,
           check_1202zd, check_cost]
@@ -409,8 +489,26 @@ def main(argv):
         print("SELF-TEST against %s, which PREDATES every fix here.\n"
               "The instrument checks must come back NOT MEASURED; a CONFIRMED would mean the\n"
               "verifier is reading a field that a pre-fix run also has.\n" % run.name)
+        # That sentence was printed and nothing enforced it, which is the shape this whole
+        # script exists to catch one level down. `check_cost` is exempt BY NAME and for a
+        # stated reason: it measures what the run spent, not whether a fix reached it, so it
+        # confirms on any run with a budget file. Every other check here answers "did this
+        # delivered tree get the change?", and r140 is from before all of them -- so a
+        # CONFIRMED means the check is reading something a pre-fix run also has, and the fix
+        # it claims to verify is unverified.
+        _exempt = {"check_cost"}
+        _wrong = []
         for c in CHECKS:
-            c(run)
+            v = c(run)
+            if v == CONFIRMED and getattr(c, "__name__", "") not in _exempt:
+                _wrong.append(getattr(c, "__name__", str(c)))
+        if _wrong:
+            print("\n\033[31mSELF-TEST FAILED\033[0m: %s CONFIRMED on a run that predates "
+                  "the fix, so the check does not discriminate: %s"
+                  % (len(_wrong), ", ".join(_wrong)))
+            return 1
+        print("\nself-test ok: no fix check confirms on a pre-fix run "
+              "(%d checks, %d exempt)." % (len(CHECKS), len(_exempt)))
         return 0
     live = "--live" in argv
     argv = [a for a in argv if a != "--live"]
