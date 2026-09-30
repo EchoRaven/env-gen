@@ -243,3 +243,57 @@ def test_a_bare_path_keeps_todays_advice():
     assert not _isw("flow -> ")
     assert not _isw("")
     assert not _isw(None)
+
+
+# ── #1202zr: the OTHER channel that gives a lane this advice ──────────────────────
+#
+# A lane reads two things about a 401 it cannot clear: the blocker prose above, and the
+# remediation task body `remediation_dispatcher` files for it. Only ONE of them was fixed first,
+# and #1202zr's whole point is that the advice was wrong -- so leaving the second reader saying
+# "to make an endpoint public, change its CONTRACT" unqualified is worse than fixing neither:
+# the two channels would disagree about what is safe, and the lane would have a citation for the
+# change that must not be made. Of the 38 `_GATE_OWNER` bodies, exactly one carries this advice.
+
+
+def _guard_tampering_body():
+    import ast
+    import pathlib
+    p = (pathlib.Path(__file__).resolve().parents[1] / "env_generator" / "llm_generator"
+         / "multi_agent" / "runtime" / "remediation_dispatcher.py")
+    src = p.read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Assign):
+            continue
+        for t in node.targets:
+            if getattr(t, "id", None) != "_GATE_OWNER":
+                continue
+            if not isinstance(node.value, ast.Dict):
+                continue
+            for k, v in zip(node.value.keys, node.value.values):
+                if getattr(k, "value", None) == "deliverability_guard_tampering":
+                    return " ".join(str(x) for x in ast.literal_eval(v))
+    raise AssertionError("the guard_tampering owner row is gone")
+
+
+def test_the_task_body_still_says_to_fix_the_contract():
+    """Pins the premise: the advice IS there, so the caveat below is guarding something."""
+    b = _guard_tampering_body()
+    assert "change its CONTRACT" in b, b[-300:]
+    assert "never edit the guard" in b, b[-300:]
+
+
+def test_the_task_body_carries_the_write_caveat():
+    b = _guard_tampering_body()
+    assert "POST/PUT/PATCH/DELETE" in b, b[-300:]
+    assert "anonymous visitor perform the action" in b, b[-300:]
+
+
+def test_both_channels_say_the_same_thing():
+    """★ #1032: one evidence store read by two consumers that each implemented half the rules is
+    the shape this codebase keeps finding. The shared phrase is asserted in BOTH so a future edit
+    to either cannot quietly drop it from one."""
+    note = _note(_WRITE_PAGES)
+    body = _guard_tampering_body()
+    phrase = "anonymous visitor perform the action"
+    assert phrase in note, note
+    assert phrase in body, body[-300:]

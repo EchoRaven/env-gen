@@ -2381,7 +2381,17 @@ class RemediationDispatcher:
                 "paths. Delete every such line (grep the file for those names). To make an "
                 "endpoint public, change its CONTRACT (`auth_required: false` on a table the "
                 "materials call public) and let the framework project it — never edit the "
-                "guard."),
+                "guard."
+                # #1202zr (SECOND READER): the blocker prose grew the read/write split and this
+                # task body is the OTHER channel a lane reads. Fixing one of two readers is worse
+                # than fixing neither, because the two then disagree about what is safe.
+                # Measured with the note: contracts on disk already declare `auth_required=false`
+                # on 19 business WRITE endpoints across 18 runs, among them anonymous
+                # `POST /api/videos` (r109) and `POST`/`DELETE` `/api/videos/{id}/like` (r134).
+                " That applies to a READ. A write — POST/PUT/PATCH/DELETE — is never made "
+                "public this way: publishing it lets any anonymous visitor perform the action. "
+                "If a logged-out flow needs one, the flow must sign in first, or it should not "
+                "call that endpoint while logged out."),
             "deliverability_auth_override": (
                 "backend", "Stop reassigning a framework auth primitive (blocks delivery)",
                 "app/backend/custom_routes.py reassigns an authentication primitive the "
