@@ -2031,6 +2031,7 @@ class RegistryHub:
         # Dropped rather than rejected, following this function's own #590 precedent: the
         # registration still lands, the spec backfill can now supply the real verdict, and
         # the value that was thrown away stays on the record so it is diagnosable offline.
+        _dropped_vis_1202zx = None
         try:
             _md1202vr = table.get("metadata") or {}
             _vis1202vr = str(_md1202vr.get("visibility") or "").strip()
@@ -2039,6 +2040,16 @@ class RegistryHub:
                 _md1202vr.pop("visibility", None)
                 _md1202vr["visibility_unreadable_1202vr"] = _vis1202vr
                 table["metadata"] = _md1202vr
+                # #1202zx: and SAY SO ON THE RETURN. Until now this told a logger and left a
+                # marker in the stored record -- neither of which the lane reads in the turn it
+                # registered. The comment above traces what that silence cost: with the verdict
+                # dropped, `_declared_public_content_1202hh` is False, the shape decides alone,
+                # the front page 401s a logged-out visitor, and r137's lane -- having no path it
+                # could see -- reached into `_FW_PUBLIC_API_1202KH` and lost the run at 81
+                # minutes and $190. #731's mechanism in `register_endpoint` is the one that
+                # reaches a lane while it can still act; this is the same note, one hub method
+                # over.
+                _dropped_vis_1202zx = _vis1202vr
                 import logging as _lg1202vr
                 _lg1202vr.getLogger(__name__).warning(
                     "#1202vr `%s`: %s declared visibility=%r, which is not one of %s. No "
@@ -2120,6 +2131,20 @@ class RegistryHub:
                     self._workhub.sync_impl_table_completed(name, agent=actor)
                 except Exception:
                     pass
+        # #1202zx: a note on the RETURN, on a COPY, so the stored record is unchanged and every
+        # other reader sees exactly what it saw before.
+        if _dropped_vis_1202zx:
+            table = {**table, "_visibility_dropped_1202zx": (
+                "metadata.visibility %r is not a verdict this framework reads and was DROPPED "
+                "(kept on the record as `visibility_unreadable_1202vr`). The registration "
+                "stands. Only %s are read. Re-register this table with `public` if its rows are "
+                "meant to be read by people who did not write them, or `owner` if they are not. "
+                "With no verdict the table's SHAPE decides alone, and for a feed-shaped table "
+                "that means the projected read takes an actor and your logged-out landing page "
+                "answers 401 -- the chain that cost one run 81 minutes. Editing the guard's "
+                "public list from custom_routes.py is not the way out; it is a delivery blocker."
+                % (_dropped_vis_1202zx,
+                   " / ".join(sorted(VISIBILITY_VERDICTS_1202vr))))}
         return table
 
     def list_tables(self, provider: Optional[str] = None) -> Dict[str, dict]:
