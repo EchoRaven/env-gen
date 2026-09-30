@@ -13,6 +13,26 @@ two readings call for opposite responses.
 ★ The split is capped at 8 tools WITH a `_capped_1202za` entry, because a ledger that keeps
 a head and does not say so is exactly the defect #1202z7 and #1202z8 had to go and fix in
 four other places today. A new one shipping with the same hole would be absurd.
+
+★ WHAT THIS IS WORTH, measured before waiting on a run to "verify" it. Over the 68 runs
+whose `run_budget.json` carries both halves, `dedup_saved_1191` saves 11,651,795 bytes against
+a tool-result total of 1.06 GB — 1.10% of the bytes it could possibly save, which at 4 bytes
+per token is 0.2646% of those runs' UNCACHED tokens. Those runs cost $16,433, so the whole of
+dedup has a ceiling near $43, about $0.64 on a $240 run. #1202za splits that figure by tool; it
+does not enlarge it. For scale, the orchestrator's rotating tool menu (#1202zc) was measured at
+25.5% of uncached — roughly a hundred times this. Recorded so that nobody, me included, treats
+this ledger as a lever or blocks on a live run to confirm a rounding error.
+
+★ AND ITS ANSWER IS PREDICTABLE FROM DISK, which is the part I had written off as needing a
+run. `tool_result_bytes` is ALREADY per-tool, and over 74 corpus runs it ranks:
+
+    check_inbox 33.5% (24,445 calls, 15.8 KB each)   read 23.1%   workhub_list_tasks 19.4%
+
+— 76% of every tool-result byte in three tools, each of them "same question, same answer".
+PREDICTION: `by_tool_1202za`'s top three on the next run come from that set.
+WHAT REFUTES IT: a tool whose answer is SUPPOSED to change every call — `deliverability_check`,
+`run_validation` — appearing in the top three, which would mean the dedup key is calling two
+different states identical. That is the failure this ledger is actually worth having for.
 """
 import os
 import sys

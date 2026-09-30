@@ -184,9 +184,24 @@ def test_a_force_offered_tool_is_remembered_even_past_the_cap():
 
 
 def test_the_cap_sits_above_measured_usage():
-    """The orchestrator's busiest stages invoke 25 distinct tools over 50 runs; a cap at or
-    below that would freeze a stage below what it demonstrably uses."""
-    assert T._STICKY_STAGE_TOOL_CAP_1202ZC > 25
+    """★ The bound was derived from ONE agent and governs them all, which is how it came to
+    be too weak. The first version asserted `> 25` on "the orchestrator's busiest stages" —
+    but this constant is read for every agent, and re-measured across all 59 (agent:stage)
+    combinations in the 50 runs carrying `stage_tools_1202cy` the busiest are
+
+        verifier:run_checks 29    frontend:communicate 29    frontend:deliver 26
+        backend:deliver 26        verifier:deliver 25        orchestrator:deliver 25
+
+    so a cap of 26 would have passed the old assertion while freezing `verifier:run_checks`
+    below the 29 tools it demonstrably invokes. None of the 59 exceeds 32.
+
+    ★ AND THAT IS STILL A LOWER BOUND, so the margin is smaller than it looks. The cap
+    bounds the union of OFFERED menus; `stage_tools_1202cy` records what was INVOKED, and
+    offered ⊇ invoked. A long stage's union can pass 32 without any single tool being called,
+    which is exactly why the fallback below the cap exists and why no offline artifact can
+    retire it — see `test_a_force_offered_tool_is_remembered_even_past_the_cap`."""
+    assert T._STICKY_STAGE_TOOL_CAP_1202ZC > 29, (
+        "verifier:run_checks and frontend:communicate each invoke 29 distinct tools")
     assert T._STICKY_STAGE_TOOL_CAP_1202ZC <= 48, "FIX #29's bound for a curated set"
 
 

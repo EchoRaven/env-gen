@@ -136,6 +136,18 @@ def _identical_tool_msg_1191(messages, body: str):
 # crowd-out FIX #29 describes: measured over the 50 corpus runs carrying stage-tool counts,
 # the orchestrator actually INVOKES 13 (action), 17 (retrieve_context), 23 (communicate),
 # 25 (run_checks) and 25 (deliver) distinct tools -- while being offered ten at a time.
+#
+# Re-measured across ALL 59 (agent:stage) combinations in those runs, because this constant is
+# read for every agent and the numbers above are one agent's: the busiest are
+# `verifier:run_checks` 29 and `frontend:communicate` 29, then `frontend:deliver` /
+# `backend:deliver` 26. NONE of the 59 exceeds 32. The first version of the test beside this
+# asserted only `> 25`, so a cap of 26 would have passed while freezing a stage below what it
+# demonstrably uses.
+#
+# That is a LOWER bound and the margin is smaller than it looks: the cap bounds the union of
+# OFFERED menus, while `stage_tools_1202cy` records what was INVOKED, and offered is a superset
+# of invoked. A long stage's union can pass 32 with no single tool ever called, which is why the
+# branch below it is not dead code and why no artifact on disk can retire it.
 _STICKY_STAGE_TOOL_CAP_1202ZC = 32
 # ^ #1202zc: above the largest measured per-stage usage (25, for run_checks and deliver over
 # 50 runs) with headroom, and below the 48 FIX #29 chose for allowlisted stages. A cap under
