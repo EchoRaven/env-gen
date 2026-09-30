@@ -123,3 +123,28 @@ python scripts/verify_shipped_fixes.py --self-test     # 对着 r140（早于所
 不再每轮重排、32 的上限有没有被顶到）、#1202zd（register 是否返回本 app 的列 + 行是否做了
 JSON 安全转换）、#1202ze（门禁判过而 smoke 为假）、#1202zf（交付树里是否还缺媒体）、
 以及 uncached/cached 的**比例**（不是美元总额——run 越长越贵，效率不变）。
+
+## `preflight_credential.py` — 起 run 之前，先问凭据答不答
+
+启动脚本长期有六道预检（provider/model、key 存在、不并发、素材、磁盘 60G、playwright），
+但它只检查 key **存在**，从不检查它**答不答**。r141 六道全过，然后 82.7 秒后死在
+`429 insufficient_quota`——**进程墙钟 612 秒**，而一次 HTTP 调用两秒就能知道。
+现在它是启动脚本的第七道预检（`ENVGEN_PREFLIGHT=0` 可跳过），也能单独跑：
+
+```bash
+source /path/to/key.sh && python scripts/preflight_credential.py; echo $?
+```
+
+分类是这道检查的全部设计，两个方向错了都比不做更贵：
+
+| 退出码 | 含义 | 触发 |
+|---|---|---|
+| `0` | 可以起 run | 200，或 provider 不在可探测之列（google/metagen/local） |
+| `1` | **明确拒绝** | 401/403、body 里点名额度/账单的 429、模型 404 |
+| `2` | 不确定，**不拒绝** | 超时/DNS/连接重置/5xx/无法解析的 body，以及**裸 429** |
+
+裸 429 是普通限流、会自己好。#1159 和 #1174 为这个区分付过两次代价：r15 对着一个死账户
+重试了 2 小时 50 分，而 r16——已花 $262、只剩一道门禁——被一次 **57 秒**的额度抖动杀掉。
+在网络抖动上拒绝，是把「白烧一轮」换成「本可以跑却没跑」，那更糟。
+
+密钥永不出现在输出里：provider 若把 key 回显在错误体里，会被洗成 `sk-***`。

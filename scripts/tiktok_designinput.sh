@@ -91,6 +91,25 @@ case "$PROVIDER" in
   *) echo "REFUSED: 未知 ENVGEN_PROVIDER=$PROVIDER" >&2; exit 1 ;;
 esac
 
+# --- PYTHON 可用性（#1202zj）---
+# 这个脚本长期把 $PYTHON 的第一次使用放在 playwright 预检（曾在 line 112），所以一个没设
+# PYTHON 的调用者拿到的是一句裸的 `python: command not found`，而不是它该听到的话。
+# 凭据预检现在是第一次使用，所以检查搬到这里。
+command -v "$PYTHON" >/dev/null 2>&1 || {
+  echo "REFUSED: PYTHON=$PYTHON 不可执行。export PYTHON=/path/to/venv/bin/python（要装了本仓库依赖 + playwright 的那个）" >&2
+  exit 1; }
+
+# --- 凭据预检（#1202zj）---
+# 上面的 case 只检查 key 是否 EXISTS，从不检查它答不答。r141 六道预检全过，然后 82.7 秒后
+# 死在 429 insufficient_quota —— 进程墙钟 612 秒，换一次 HTTP 调用两秒就能知道。
+# 只在明确的认证/额度答复上拒绝；超时/DNS/5xx/裸 429 只警告不拦（瞬时故障不该变成假拒绝，
+# #1174 为这个区分付过两次代价）。ENVGEN_PREFLIGHT=0 可整体跳过。
+"$PYTHON" "$ROOT/scripts/preflight_credential.py"; PF_RC=$?
+if [ "$PF_RC" = "1" ]; then
+  echo "REFUSED: 凭据预检失败（见上）。先解决它，别烧一轮墙钟去重新发现。" >&2
+  exit 1
+fi
+
 # --- 两 run 不并发 ---
 # #1202km: `[e]` 防止 pgrep 匹配到调用者自己的命令行（同一天在别处踩过：pkill -f 杀掉了自己）。
 if pgrep -f "[e]nv_generator.llm_generator.main" >/dev/null; then
