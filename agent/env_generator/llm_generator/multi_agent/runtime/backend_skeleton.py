@@ -2566,6 +2566,14 @@ def _declared_owner_private_1202ht(tables: Dict[str, Any], meta: Any, path: Any)
     case is a table that carries it for write ownership while its FEED is public, so with the
     materials silent the two are indistinguishable and refusing would re-open r88/r89's wedge
     for every spec written before `visibility` existed.
+    
+    ★ #1202zz — SEE THE TWIN IN `route_projector`, which takes `(meta)` alone and reads the ORM
+    model's `visibility` (stamped from `design/reference_spec.json` by
+    `_stamp_spec_visibility_1202og`). This one reads the REGISTRY record. Same ticket, same name,
+    two stores: measured over the corpus, 174 tables agree and one disagrees (r137's `videos`,
+    registry `text` vs spec `public` — a value #1202vr now refuses at write time). Do not assume
+    the two return the same answer, and do not collapse them here: which store wins is #1202hh's
+    and #1202gd's decision, not this function's.
     """
     try:
         from .route_projector import _resource_model

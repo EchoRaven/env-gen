@@ -1200,6 +1200,20 @@ def _declared_owner_private_1202ht(meta: Dict[str, Any]) -> bool:
 
     Only ever TIGHTENS, so it needs no second signal: releasing a read requires agreement,
     refusing one does not.
+    
+    ★ #1202zz — THERE ARE TWO OF THESE, AND THEY READ DIFFERENT STORES. `backend_skeleton` has a
+    function of the same name and ticket taking `(tables, meta, path)`: it resolves the table from
+    the path and reads the REGISTRY record's `metadata.visibility`. This one reads the ORM model
+    meta, which `_stamp_spec_visibility_1202og` fills from `design/reference_spec.json`. Same
+    question, two sources, so they can answer differently — and a reader who assumes one
+    implementation will project a private read as public at one emitter and not the other.
+
+    Measured over every corpus run carrying both: 174 tables agree and ONE disagrees — r137's
+    `videos`, registry `text` against spec `public`, which is the value #1202vr now refuses at
+    write time, so that particular disagreement can no longer be stored. What remains reachable
+    is a lane declaring `owner` on a table the materials call `public`; no corpus run does it.
+    Left as two on purpose: the spec/contract precedence is #1202hh's and #1202gd's, and
+    collapsing them here would decide it by accident.
     """
     try:
         return str((meta or {}).get("visibility") or "").strip().lower() == "owner"
