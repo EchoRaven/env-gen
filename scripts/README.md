@@ -119,6 +119,27 @@ python scripts/verify_shipped_fixes.py --self-test     # 对着 r140（早于所
 仪器类检查必须全部答 `NOT MEASURED`。若它对一个不可能带有修复的 run 报 `CONFIRMED`，
 说明检查器读错了字段。
 
+### `--live`：不花 credits 就能验的那一半
+
+余额归零时,我把六个修复整体归为「需要活 run」——**错了,其中四个只需要产物**。
+判据是:对每一个问「哪部分需要模型,哪部分只需要已经在磁盘上或已经跑着的东西」。
+
+```bash
+python scripts/verify_shipped_fixes.py --live generated/tiktok-web-r140
+```
+
+- **#1202zd** —— 连到该 run **活着的 Postgres**(端口从 `docker-compose.yml` 读,**不从 `docker ps` 猜**),
+  用 `ast` 从模板里抽出出厂的行转换函数(不是抄一份),执行真的 `INSERT..RETURNING`,
+  确认 `username` 回来了、裸 `json.dumps` **抛错**(那正是它防的 500)、转换后可序列化,
+  然后**回滚** —— 活着的 app 不被碰。`finally` 里的 rollback 有结构断言钉着,因为它是往交付库里
+  插数据的**唯一许可**。
+- **#1202ze** —— 回放磁盘上**全部真实门禁记录**。那个报告器是门禁 dict 的纯函数,
+  所以它从不需要门禁「运行」(那要替换注入的回调,还会让 `scaffold_design_readme` 往交付树写文件),
+  它需要门禁的**输出**,而那早就在 `logs/delivery_gate.jsonl` 里。
+
+栈没起来 → `NOT MEASURED`,不是 `FALSIFIED`:**栈的状态不构成关于修复的证据**,
+报成失败会把下一个读它的人送去调一个没坏的东西。
+
 覆盖：#1202za（哪个工具在重复轮询）、#1202zb（没有端点读的表）、#1202zc（工具菜单是否
 不再每轮重排、32 的上限有没有被顶到）、#1202zd（register 是否返回本 app 的列 + 行是否做了
 JSON 安全转换）、#1202ze（门禁判过而 smoke 为假）、#1202zf（交付树里是否还缺媒体）、

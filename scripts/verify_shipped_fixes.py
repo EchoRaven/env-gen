@@ -216,6 +216,187 @@ def check_cost(run):
                 "a longer run costs more at the same efficiency.")
 
 
+# ── --live: what a RUNNING stack and the gate ledgers can verify with no credits ──
+#
+# Four of the six fixes shipped 2026-09-29 never needed the model, only artifacts. Written as a
+# mode because the technique is worth more than the one-off: ask of each fix which part needs
+# the MODEL and which part only needs what is already on disk or already up.
+def live_1202zd(run):
+    """Execute the SHIPPED RETURNING + coercion against the run's live database, then roll back.
+
+    The coercion is compiled out of the template with `ast` rather than retyped — testing a copy
+    proves nothing about what ships.
+    """
+    import ast as _ast
+    import json as _json
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except Exception as exc:
+        return _say("#1202zd live", UNMEASURED, "psycopg unavailable: %s" % exc)
+    port = _compose_db_port(run)
+    if not port:
+        return _say("#1202zd live", UNMEASURED,
+                    "no database port in docker/docker-compose.yml — read the port from"
+                    " compose, never from `docker ps`")
+    tmpl = (Path(__file__).resolve().parent.parent / "agent" / "env_generator" /
+            "llm_generator" / "multi_agent" / "runtime" / "oauth_as_templates" /
+            "oauth_store.py.tmpl")
+    try:
+        src = tmpl.read_text(encoding="utf-8")
+        fn = [n for n in _ast.walk(_ast.parse(src))
+              if isinstance(n, _ast.FunctionDef) and n.name == "_json_safe_row_1202zd"]
+        if not fn:
+            return _say("#1202zd live", FALSIFIED,
+                        "the row coercion is gone from the shipped template")
+        mod = _ast.Module(body=[fn[0]], type_ignores=[]); _ast.fix_missing_locations(mod)
+        ns = {}
+        exec(compile(mod, "<tmpl>", "exec"), ns)          # noqa: S102
+        coerce = ns["_json_safe_row_1202zd"]
+    except Exception as exc:
+        return _say("#1202zd live", UNMEASURED, "could not compile the coercion: %s" % exc)
+    dsn = ("host=127.0.0.1 port=%s user=sandbox password=sandbox dbname=app "
+           "connect_timeout=8" % port)
+    try:
+        conn = psycopg.connect(dsn, row_factory=dict_row)
+    except Exception as exc:
+        return _say("#1202zd live", UNMEASURED,
+                    "the stack is not up on :%s (%s)" % (port, type(exc).__name__))
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name='users'")
+        existing = {r["column_name"] for r in cur.fetchall()}
+        if not existing:
+            return _say("#1202zd live", UNMEASURED, "no users table in the live database")
+        secret = ("password", "secret", "token", "api_key")
+        ret = [c for c in ("id", "email", "name", "tenant_id") if c in existing]
+        ret += sorted(c for c in existing if c not in ret
+                      and not any(w in str(c).lower() for w in secret))
+        cols = {"email": "probe_1202zd@localhost.invalid", "name": "probe",
+                "password_hash": "x", "tenant_id": "default"}
+        if "username" in existing:
+            cols["username"] = "probe_1202zd"
+        cols = {k: v for k, v in cols.items() if k in existing}
+        sql = 'INSERT INTO users ({}) VALUES ({}) RETURNING {}'.format(
+            ", ".join('"%s"' % c for c in cols), ", ".join(["%s"] * len(cols)),
+            ", ".join('"%s"' % c for c in ret))
+        cur.execute(sql, tuple(cols.values()))
+        row = cur.fetchone()
+        raw_fails = False
+        try:
+            _json.dumps(row)
+        except TypeError:
+            raw_fails = True
+        _json.dumps(coerce(row))                          # must not raise
+        detail = ("RETURNING %d columns; username=%r; raw json.dumps %s; after the shipped "
+                  "coercion it serialises"
+                  % (len(ret), row.get("username"),
+                     "RAISES (the 500 this prevents)" if raw_fails else "happens to work"))
+        if "username" in existing and not row.get("username"):
+            return _say("#1202zd live", FALSIFIED,
+                        "the table has `username` and the insert did not return it", detail)
+        return _say("#1202zd live", CONFIRMED,
+                    "the shipped path runs against the real schema", detail)
+    except Exception as exc:
+        return _say("#1202zd live", FALSIFIED,
+                    "the shipped path FAILED against the real schema: %s: %s"
+                    % (type(exc).__name__, exc))
+    finally:
+        try:
+            conn.rollback(); conn.close()                 # the live app stays untouched
+        except Exception:
+            pass
+
+
+def _compose_db_port(run):
+    """The db host port, from compose. #feedback: never `docker ps | grep`."""
+    import re as _re
+    p = Path(run) / "docker" / "docker-compose.yml"
+    try:
+        text = p.read_text(encoding="utf-8")
+    except Exception:
+        return None
+    best = None
+    for m in _re.finditer(r'"?(\d{4,5}):(\d{4,5})"?', text):
+        host, cont = m.group(1), m.group(2)
+        if cont == "5432" or host == cont:
+            best = best or host
+    return best
+
+
+def live_1202ze(_run):
+    """Replay every REAL gate record on disk through the shipped reporter.
+
+    The reporter is a pure function of the gate dict, so it never needed the gate to RUN — it
+    needed gate OUTPUT, and thousands of those are already in `logs/delivery_gate.jsonl`.
+    """
+    import json as _json
+    import tempfile as _tf
+    # BOTH levels: the orchestrator imports `multi_agent.*` (from llm_generator/) and
+    # `utils.*` (from agent/). Missing the second is an ImportError, which this check
+    # correctly reported as NOT MEASURED rather than as a pass.
+    _agent = Path(__file__).resolve().parent.parent / "agent"
+    for _p in (str(_agent / "env_generator" / "llm_generator"), str(_agent)):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+    try:
+        import multi_agent.orchestrator as O
+    except Exception as exc:
+        return _say("#1202ze live", UNMEASURED, "cannot import the reporter: %s" % exc)
+
+    class _WH:
+        def __init__(self):
+            self.tasks, self.created = [], []
+        def list_tasks(self):
+            return self.tasks
+        def create_task(self, **kw):
+            self.created.append(kw)
+            rec = {"id": "t%d" % len(self.created), "status": "pending", **kw}
+            self.tasks.append(rec)
+            return rec
+
+    class _Orch:
+        def __init__(self, wh, out):
+            class _H:
+                workhub = wh
+            self.hubs, self.output_dir = _H(), str(out)
+
+    gen = Path(__file__).resolve().parent.parent / "generated"
+    total = ok = fired = tasks = runs = 0
+    with _tf.TemporaryDirectory() as td:
+        for ledger in sorted(gen.glob("*/logs/delivery_gate.jsonl")):
+            wh = _WH(); out = Path(td) / ledger.parts[-3]
+            orch = _Orch(wh, out)
+            for line in ledger.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    gate = _json.loads(line)
+                except Exception:
+                    continue
+                total += 1
+                if gate.get("ok"):
+                    ok += 1
+                O._gate_cleared_while_smoke_failed_1202ze(orch, gate)
+            art = out / "logs" / "gate_passed_while_smoke_failed_1202ze.jsonl"
+            if art.exists():
+                fired += len([l for l in art.read_text(encoding="utf-8").splitlines()
+                              if l.strip()])
+                runs += 1
+            tasks += len(wh.created)
+    if not total:
+        return _say("#1202ze live", UNMEASURED, "no gate ledgers under generated/")
+    return _say("#1202ze live", CONFIRMED,
+                "%d real gate records replayed; %d with ok=true; the reporter fired on %d"
+                % (total, ok, fired),
+                "tasks filed: %d across %d run(s) — one per run is the storm control (#794) "
+                "holding on inputs I did not construct" % (tasks, runs))
+
+
+LIVE_CHECKS = [live_1202zd, live_1202ze]
+
 CHECKS = [check_1202zc, check_1202za, check_1202zb, check_1202ze, check_1202zf,
           check_1202zd, check_cost]
 
@@ -231,13 +412,15 @@ def main(argv):
         for c in CHECKS:
             c(run)
         return 0
+    live = "--live" in argv
+    argv = [a for a in argv if a != "--live"]
     if len(argv) < 2:
         print(__doc__); return 2
     run = Path(argv[1])
     if not run.is_dir():
         print("no such run directory: %s" % run); return 2
     print("run: %s\n" % run)
-    for c in CHECKS:
+    for c in (CHECKS + LIVE_CHECKS if live else CHECKS):
         try:
             c(run)
         except Exception as exc:                       # a broken check must not hide the rest

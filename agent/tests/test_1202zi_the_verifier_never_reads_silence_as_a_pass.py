@@ -193,3 +193,84 @@ def test_every_check_answers_not_measured_on_an_empty_run(tmp_path, capsys):
         got = _verdicts(capsys)
         assert got and got[0] == m.UNMEASURED, \
             "%s answered %r on an empty run" % (c.__name__, got)
+
+
+# ── --live: verification that needs no credits, only a running stack ───────────────
+
+def test_the_live_checks_are_opt_in(tmp_path, capsys):
+    """★ A plain run must never touch a database or write into a delivered tree. The live
+    checks live in their OWN list and the default path cannot reach them."""
+    m = _mod()
+    assert m.LIVE_CHECKS, "the live checks are gone"
+    for c in m.LIVE_CHECKS:
+        assert c not in m.CHECKS, "%s runs without --live" % c.__name__
+    (tmp_path / "logs").mkdir()
+    rc = m.main(["verify", str(tmp_path)])            # no --live
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "live" not in out.lower() or "#1202zd live" not in out
+
+
+def test_live_is_reached_only_with_the_flag(tmp_path, capsys):
+    m = _mod()
+    called = []
+    m.LIVE_CHECKS = [lambda run: called.append("yes")]
+    (tmp_path / "logs").mkdir()
+    m.main(["verify", str(tmp_path)])
+    assert called == [], "a live check ran without --live"
+    m.main(["verify", "--live", str(tmp_path)])
+    assert called == ["yes"], "the flag did not reach the live checks"
+
+
+def test_the_db_port_comes_from_compose_not_docker_ps(tmp_path):
+    """A standing rule in this project: read the port from
+    `generated/<run>/docker/docker-compose.yml`, because every run's ports are random."""
+    m = _mod()
+    d = tmp_path / "docker"; d.mkdir()
+    (d / "docker-compose.yml").write_text(
+        'services:\n  database:\n    ports:\n      - "8019:5432"\n'
+        '  backend:\n    ports:\n      - "8017:8082"\n', encoding="utf-8")
+    assert m._compose_db_port(tmp_path) == "8019"
+
+
+def test_a_missing_compose_is_not_measured(tmp_path, capsys):
+    m = _mod()
+    m.live_1202zd(tmp_path)
+    assert m.UNMEASURED in _verdicts(capsys)[0]
+
+
+def test_a_stack_that_is_not_up_is_not_measured(tmp_path, capsys):
+    """★ The stack being down is not evidence about the fix. It must not read as a failure
+    either — FALSIFIED would send the next reader to debug a fix that is fine."""
+    m = _mod()
+    d = tmp_path / "docker"; d.mkdir()
+    (d / "docker-compose.yml").write_text(
+        'services:\n  database:\n    ports:\n      - "59999:5432"\n', encoding="utf-8")
+    m.live_1202zd(tmp_path)
+    got = _verdicts(capsys)[0]
+    assert got == m.UNMEASURED, got
+
+
+def test_the_live_db_check_rolls_back():
+    """★ It INSERTs into a delivered run's live database. The rollback is the whole licence to
+    do that, so it is asserted structurally rather than trusted."""
+    import ast
+    import inspect
+    m = _mod()
+    tree = ast.parse(inspect.getsource(m.live_1202zd).lstrip())
+    finallys = [n for n in ast.walk(tree) if isinstance(n, ast.Try) and n.finalbody]
+    assert finallys, "no finally block — a failure would leave the transaction open"
+    dump = " ".join(ast.dump(n) for f in finallys for n in f.finalbody)
+    assert "rollback" in dump, "the finally block does not roll back"
+    assert "commit" not in ast.dump(tree), "the live check commits"
+
+
+def test_the_live_gate_replay_reads_output_not_the_gate():
+    """★ The reporter is a pure function of the gate dict, so it never needed
+    `validate_delivery_gate` to RUN — which would have meant stubbing injected callables and
+    letting `scaffold_design_readme` write into a delivered tree."""
+    import inspect
+    m = _mod()
+    src = inspect.getsource(m.live_1202ze)
+    assert "delivery_gate.jsonl" in src
+    assert "validate_delivery_gate" not in src, "the replay invokes the gate itself"
