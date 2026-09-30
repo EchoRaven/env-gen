@@ -199,3 +199,14 @@ def test_the_gate_asks_the_same_question():
     assert len(calls) == 1, "called %d times" % len(calls)
     assert len(calls[0].args) == 4, "the gate still asks the old question"
     assert getattr(calls[0].args[3], "value", None) is True, ast.dump(calls[0].args[3])
+
+
+def test_the_boundary_of_this_fix_is_recorded():
+    """★ Releasing the 401 is not the same as making the content reachable, and the two are easy
+    to conflate: r140's released `/api/feed` still serves the `feed` table's 8 rows while
+    `videos` holds 35. That is #1202zb's finding, not this one. The cross-reference is asserted
+    so a future edit cannot drop it and leave a reader believing the feed was made whole."""
+    import inspect
+    doc = inspect.getdoc(RP._feed_named_table_1202zn) or ""
+    assert "1202zb" in doc, doc[-400:]
+    assert "does not make the content reachable" in doc.lower(), doc[-400:]

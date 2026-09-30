@@ -455,6 +455,14 @@ def _feed_named_table_1202zn(table: Any) -> bool:
 
     Matched per `_`-segment so `videos_feed` counts and `feedback` does not, with the same
     plural tolerance the resolver uses.
+
+    ★ THIS RELEASES THE 401, IT DOES NOT MAKE THE CONTENT REACHABLE. r140's `/api/feed` now
+    answers a logged-out visitor, and what it answers with is still the `feed` table's 8 rows
+    while `videos` holds 35 — the two carry identical columns and disjoint content, which is
+    `heal_pipeline._unreachable_twin_tables_1202zb`'s finding and is reported there with the
+    live row counts. Eight rows beats the nothing a 401 served, and a reader must not take this
+    for the feed being whole; the two are separate causes of one symptom, as is
+    `_declared_public_content_1202hh`'s FK-resolution case (#1202vz).
     """
     try:
         _n = str(table or "").strip().lower()
