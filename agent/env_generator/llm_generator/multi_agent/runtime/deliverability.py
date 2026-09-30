@@ -1215,8 +1215,14 @@ def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
                 "#1202vf %d of %d registered ui_page(s) declare `apis_used: []` but DO "
                 "consume endpoints through the ui_components they declare (%s) -- the "
                 "frontend prompt requires exactly that, so this is not a lane defect and "
-                "delivery is not blocked on it. The page-level readers still look only at "
-                "`page['apis_used']`, so their API criterion is vacuous for these pages.",
+                "delivery is not blocked on it. #1202zy: the follow-up this used to name is "
+                "DONE -- #1202vg folded the effective set into `audit_ui_page`'s reachability "
+                "probe (measured over 155 runs: 605 pages gained a criterion that was vacuous "
+                "and exactly 2 flipped, against 20 wrong flips if it were fed in wholesale). "
+                "The two readers that still take `page['apis_used']` raw are raw ON PURPOSE: "
+                "#918's closure probe is report-only and out of `ok`, and #728 asks whether "
+                "the page's OWN declaration crosses another route, which a shared component's "
+                "endpoints would make true of every page.",
                 len(_via_components), len(pages),
                 join_capped(_via_components, total=len(_via_components), cap=6))
             return []

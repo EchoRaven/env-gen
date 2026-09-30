@@ -187,3 +187,34 @@ def test_a_component_walk_that_could_not_run_is_announced_not_silent():
         dl._gate_absent_792 = orig
     assert out and "apis_used: []" in out[0]        # fail-closed: it still blocks
     assert seen and "list_ui_components" in seen[0][0]
+
+
+def test_the_follow_up_it_names_is_recorded_as_done():
+    """#1202zy: this message used to end "the page-level readers still look only at
+    `page['apis_used']`, so their API criterion is vacuous for these pages" — a standing
+    follow-up that was already DONE.
+
+    #1202vg folded the effective set into `audit_ui_page`'s reachability probe, and measured the
+    scope deliberately: over 155 runs, 605 pages gained a criterion that was vacuous and exactly 2
+    flipped, against 20 wrong flips if the effective set were fed into `apis` wholesale (18 of
+    those had no unreferenced API at all — they tripped `_declared_but_inert` and #1077's branch,
+    which read `bool(apis)` as "this page claims to fetch something itself").
+
+    The two readers that still take the field raw are raw on purpose: #918's closure probe is
+    report-only and out of `ok` ("folding this into `ok` would flip half the pages to `defined`
+    every tick"), and #728 asks whether the page's OWN declaration crosses another route, which a
+    shared component's endpoints would make true of every page.
+
+    Pinned because the stale sentence cost a reader the walk through all four call sites to find
+    out it was no longer true — the same shape as #598's expired measurement.
+    """
+    import inspect
+
+    from multi_agent.runtime import deliverability as D
+
+    src = inspect.getsource(D._no_page_declares_an_api_1202rm)
+    flat = " ".join(src.split())
+    assert "their API criterion is vacuous for these pages" not in flat, \
+        "the stale follow-up sentence is back"
+    assert "#1202zy" in flat and "DONE" in flat, flat[-600:]
+    assert "raw ON PURPOSE" in flat, "the two deliberate raw readers are no longer explained"
