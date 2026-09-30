@@ -63,15 +63,32 @@ class _FakeClient:
 
 
 def _params(**kw) -> dict:
+    """#1202zm: the capture sentinel is an EXCEPTION, so `chat`'s retry path treats it as a
+    failure and backs off — measured in-process, this file asked `asyncio.sleep` for **30.0
+    seconds across 20 calls**, and the whole file took 30.3 s of a 720 s suite. Neutering the
+    backoff takes it to 0.71 s.
+
+    This test is about PARAMETER TRANSLATION, not about retry timing, so it says so by making
+    the wait a no-op for the duration of the capture. `time.sleep` is not touched because it
+    was measured at 0 calls here; patching what is not used would be cargo cult.
+    """
     cfg = LLMConfig(provider=LLMProvider.OPENAI, model_name="m", api_key="k")
     c = OpenAIClient(cfg)
     c._client = _FakeClient()
+    _real_sleep = asyncio.sleep
+
+    async def _no_wait(_delay, *a, **k):
+        return await _real_sleep(0)
+
+    asyncio.sleep = _no_wait
     try:
         asyncio.run(c.chat([Message.user("hi")], **kw))
     except _Captured as e:
         return e.params
     except Exception as e:                      # any other error means it never reached create()
         raise AssertionError(f"did not reach the SDK: {type(e).__name__}: {e}")
+    finally:
+        asyncio.sleep = _real_sleep             # never leave the module patched
     raise AssertionError("create() did not raise the capture sentinel")
 
 
@@ -126,3 +143,48 @@ class OrdinaryCallsAreUnchanged(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheCaptureHelperLeavesTheEventLoopAlone(unittest.TestCase):
+    """#1202zm: `_params` neuters `asyncio.sleep` so the retry backoff does not cost 30 s.
+
+    A patch that LEAKED would be far worse than the 30 s it saves: every other test in the
+    suite would silently stop waiting, and a real backoff regression would pass unnoticed.
+    """
+
+    def test_the_sleep_is_restored(self):
+        before = asyncio.sleep
+        _params(tool_choice="auto")
+        self.assertIs(asyncio.sleep, before, "asyncio.sleep is still patched")
+
+    def test_it_is_restored_even_when_the_capture_fails(self):
+        before = asyncio.sleep
+        cfg = LLMConfig(provider=LLMProvider.OPENAI, model_name="m", api_key="k")
+        c = OpenAIClient(cfg)
+
+        class _Boom:
+            def __init__(self):
+                self.chat = types.SimpleNamespace(
+                    completions=types.SimpleNamespace(create=self._raise))
+            async def _raise(self, **params):
+                raise RuntimeError("not the sentinel")
+        c._client = _Boom()
+        _real = asyncio.sleep
+
+        async def _no_wait(_d, *a, **k):
+            return await _real(0)
+        asyncio.sleep = _no_wait
+        try:
+            with self.assertRaises(Exception):
+                asyncio.run(c.chat([Message.user("hi")]))
+        finally:
+            asyncio.sleep = _real
+        self.assertIs(asyncio.sleep, before)
+
+    def test_the_helper_declares_why_it_patches(self):
+        """A bare `asyncio.sleep = ...` in a test reads as a mistake; the measurement is what
+        makes it a decision."""
+        import inspect
+        src = inspect.getsource(_params)
+        self.assertIn("30.0", src, "the measured cost is not recorded next to the patch")
+        self.assertIn("finally", src, "nothing restores the real sleep")
