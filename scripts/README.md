@@ -148,3 +148,30 @@ source /path/to/key.sh && python scripts/preflight_credential.py; echo $?
 在网络抖动上拒绝，是把「白烧一轮」换成「本可以跑却没跑」，那更糟。
 
 密钥永不出现在输出里：provider 若把 key 回显在错误体里，会被洗成 `sk-***`。
+
+## `disk_headroom.py` — 有没有地方跑 run，以及空间**实际**在哪能回收
+
+启动脚本的磁盘预检长期是这三行：
+
+```sh
+AVAIL_G=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+[ "${AVAIL_G:-0}" -ge 60 ] || { echo "REFUSED: ... 先 docker builder prune -af"; exit 1; }
+```
+
+**两个缺陷。** 其一：`df -BG` **向上取整** —— 2026-09-29 实测 root 可用 **59.625 GiB**
+（64,022,118,400 字节），`df -BG` 打印 **60G**，检查**放行**。地板实际是 59.001 GiB，
+而且是朝「放行」的方向取整，正好放进那个第 40 分钟写满磁盘而死的 run。
+
+其二：那句 `先 docker builder prune -af` 指向一个空抽屉 —— 同一天 build cache **0B**，
+而镜像 **39.06GB**、卷 **20.82GB**。一条曾经为真的提示，会把读它的人送去唯一什么都没有的地方。
+
+```bash
+python scripts/disk_headroom.py [floor_gb]    # 默认 60；低于地板 exit 1
+```
+
+它按精确字节判断，并把回收建议改成**当场测量**，且区分两种回收的安全性：
+
+| 回收项 | 安全性 |
+|---|---|
+| 悬空**镜像** | **安全** —— 无 tag、无容器引用、可重建 |
+| 悬空**卷** | **不安全** —— `dangling=true` 的含义是「没有容器引用」，**包含「当前停着但数据要留」的环境**。这台机器上那批覆盖了其他工作线（windows_web / macos_web / 通讯类 app）的环境，共 432 个卷 / 20.8G。**不能整体 prune，要逐个决定。** |

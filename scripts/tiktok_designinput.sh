@@ -122,9 +122,14 @@ fi
 [ -d "$DI/references" ] && [ -n "$(ls "$DI/references" 2>/dev/null)" ] \
   || { echo "REFUSED: $DI/references 不存在或为空（design 素材未就位；rsync 过来或设 ENVGEN_DESIGN_INPUT）" >&2; exit 1; }
 
-# --- 磁盘预检（docker build cache 每天涨 30-60G；满了先 docker builder prune -af）---
-AVAIL_G=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
-[ "${AVAIL_G:-0}" -ge 60 ] || { echo "REFUSED: root 剩 ${AVAIL_G}G < 60G，先 docker builder prune -af" >&2; exit 1; }
+# --- 磁盘预检（#1202zk）---
+# 这里长期是 `df --output=avail -BG` >= 60，而 df -BG 向上取整：59.625 GiB 可用时它打印 60G，
+# 检查放行——地板实际是 59.001 GiB，而且是朝「放行」的方向取整，正好放进那个第 40 分钟
+# 写满磁盘而死的 run。改用精确字节，并把回收建议从写死的一句话改成当场测量：
+# 那句 `先 docker builder prune -af` 在 2026-09-29 回收 0B（cache 是空的），
+# 而 39G 在镜像里、20.8G 在卷里——后者是数据，不是垃圾。
+"$PYTHON" "$ROOT/scripts/disk_headroom.py" 60 || {
+  echo "REFUSED: 磁盘不足（见上面按类别的实测可回收量）" >&2; exit 1; }
 
 # --- 浏览器预检（幂等；缺 headless-shell 会让 runtime 门禁全盲）---
 "$PYTHON" -m playwright install chromium chromium-headless-shell \
