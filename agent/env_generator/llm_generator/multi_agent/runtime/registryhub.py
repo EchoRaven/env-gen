@@ -176,9 +176,17 @@ def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: A
     """Say when a schema carries sub-keys nothing reads. Best-effort; never raises.
 
     #1202w5: this could never fire. Its only call site passes `getattr(self, "_logger", None)`
-    and `RegistryHub` has no `_logger` -- the name appears exactly once in this module, in that
-    `getattr` -- so `logger` was always None and the guard below returned immediately. It fired
-    0 times across every run log in the corpus.
+    and `RegistryHub` has no `_logger` -- the name appears exactly once in this module's CODE,
+    in that `getattr` (`grep -c` now counts three, two of them this sentence) -- so `logger` was
+    always None and the guard below returned immediately. It fired 0 times across every run log
+    in the corpus.
+
+    ★ THAT LAST MEASUREMENT NEEDS A REAL GREP. This shell's `grep` is a function wrapping
+    `ugrep --ignore-files`, which respects .gitignore, and `generated/` IS gitignored -- so a
+    recursive grep rooted there returns 0 for EVERY pattern, silently. Re-measured with
+    `command grep`: `#1202ri` is in 28 files of three runs while the wrapped grep reports 0.
+    The conclusion above stands because it rests on the source side (this module never sets
+    the attribute), not on that log count.
 
     What it would have said, measured over 4940 stored endpoint schemas: 189 unknown keys
     across 23 runs. Most are harmless prose (`description` 45, `summary` 24, `notes` 18), but
@@ -188,9 +196,17 @@ def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: A
     ignored by the probe body, the chain synth and the frontend, which is #730's defect under
     a different spelling.
 
-    Falls back to this module's logger rather than staying mute, and lands the finding in an
-    artifact (#947) so which aliases deserve a fold in `_merge_query_alias_730` is a question
-    the run's files can answer.
+    Falls back to this module's logger, and lands the finding in an artifact (#947) so which
+    aliases deserve a fold in `_merge_query_alias_730` is a question the run's files can answer.
+
+    ★ MEASURED 2026-09-30, and the first half of that sentence used to claim the fallback ended
+    the muteness -- it does not. r140 wrote `logs/unknown_schema_keys_1202w5.jsonl` with one
+    entry (`GET /api/feed: metadata`), so the fix fires; but `#731` appears in NO file of that
+    run, because nothing in this package installs a handler (no basicConfig/addHandler/
+    FileHandler anywhere in runtime/), so a module-level `getLogger(__name__)` reaches
+    logging's lastResort on stderr and no run log. ★ THE ARTIFACT IS THE ONLY CHANNEL THAT
+    REACHES A READER -- which is why #947 asked for it. Do not "fix" the logger line expecting
+    it to show up in the run log; wire a handler, or read the artifact.
 
     TIME-SLICED, because the 189 are not a backlog to clear. Every alias occurrence
     (`query_params`, `params`, `body`, `request_body`, `response_shape`) is from r57/r71/r90/r94
