@@ -47,13 +47,41 @@ def _read(path):
         return fh.read()
 
 
+class _AnyImportPattern:
+    """Adapter: `.search(text)` is true if ANY of the predicate's import-half patterns match."""
+
+    def __init__(self, patterns):
+        self._patterns = patterns
+
+    def search(self, text):
+        for p in self._patterns:
+            m = p.search(text)
+            if m:
+                return m
+        return None
+
+
 def _composes_child_pattern():
-    """The live pattern, read from the module rather than restated here (#1032)."""
+    """The live import-half patterns, read from the module rather than restated here (#1032).
+
+    #1203a5: located by AST instead of by `src.index("_composes_child = bool(re.search(")`.
+    That literal prefix broke the moment the predicate grew a third import syntax and became
+    `_composes_child = ( A or B ) and C` — six tests in this file failed on the SHAPE of the
+    expression while the behaviour they assert was unchanged. Collecting every regex literal in
+    the assignment that mentions `components/` keeps this file working when a fourth import
+    form is added, which on the record (#126 -> #566j -> #1202y5 -> #1203a5) will happen.
+    """
+    import ast
     src = _read(os.path.join(_RUNTIME, "frontend_audit.py"))
-    i = src.index("_composes_child = bool(re.search(")
-    j = src.index("comp_file_text)) and bool", i)
-    raw = src[src.index("r\"", i):j]
-    return re.compile(eval(raw.strip().rstrip(",").strip()))
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", "") == "_composes_child" for t in node.targets):
+            pats = [re.compile(n.value) for n in ast.walk(node.value)
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                    and "components/" in n.value]
+            assert pats, "no components/ pattern in _composes_child"
+            return _AnyImportPattern(pats)
+    raise AssertionError("_composes_child is gone from frontend_audit")
 
 
 _NAMED = "import { ExploreView } from '../components/DiscoveryPages';"

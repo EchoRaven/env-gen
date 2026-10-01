@@ -889,9 +889,39 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # found it -- so this is a style the lanes can choose at any time rather than a
         # long-standing defect, and the next lane to choose it would have been blocked the
         # same way.
-        _composes_child = bool(re.search(
-            r"import\s+(?:\w+|\{[^}]*\})\s+from\s+['\"][^'\"]*components/\w+(?:\.\w+)?['\"]",
-            comp_file_text)) and bool(re.search(r"<[A-Z]\w+[\s/>]", comp_file_text))
+        # #1203a5: ...and the DYNAMIC import form, which `React.lazy` requires and which the
+        # two patterns above match not at all — a `lazy(() => import('../components/X'))` has
+        # no `from` clause to find.
+        #
+        # THIS COST A WHOLE RUN. r142's lane wrote both core pages that way:
+        #     const VideoFeedComponent = lazy(() => import('../components/VideoFeedComponent'));
+        #     ... <Suspense><TiktokShell><VideoFeedComponent .../></TiktokShell></Suspense>
+        # ForYouFeedPage (33 lines, real state, requireAuth/selectVideo handlers, apis_used
+        # declared) and VideoDetailPage delegate to children that are real — VideoFeed is 36
+        # lines with `useEffect` + `getFeed()` from services/api, rendering VideoCard; Shell is
+        # 51 lines, CommentsDrawer 70, AuthModal 71. The feed WORKED. This check called both
+        # pages "a placeholder stub — it renders no real UI/behavior" from the FIRST gate
+        # evaluation to the 149th, `ok=True` never once, and the run aborted at 41 ticks with
+        # $153 spent and nothing delivered. The lane kept marking the repair tasks complete
+        # because there was nothing to repair.
+        #
+        # MEASURED over the 2625 page files in the corpus: exactly 2 flip from flagged to
+        # exempt — the two above. Nothing else in any run is loosened, which is the same
+        # standard #1202y5 recorded for the named-import form: the import shapes are the SAME
+        # evidence ("this page imports a component and renders it"), so accepting only some of
+        # them is a gap, not a standard.
+        #
+        # Deliberately NOT stricter than its siblings: the static forms do not verify that the
+        # imported file exists either, so this one does not either. Holding the new shape to a
+        # standard the old ones are exempt from is how a "widening" smuggles in a new check.
+        _composes_child = (
+            bool(re.search(
+                r"import\s+(?:\w+|\{[^}]*\})\s+from\s+['\"][^'\"]*components/\w+(?:\.\w+)?['\"]",
+                comp_file_text))
+            or bool(re.search(
+                r"import\s*\(\s*['\"][^'\"]*components/\w+(?:\.\w+)?['\"]\s*\)",
+                comp_file_text))
+        ) and bool(re.search(r"<[A-Z]\w+[\s/>]", comp_file_text))
         _declared_but_inert = (bool(apis) and not _has_call and not _composes_child
                                and not any(tok in comp_file_text for tok in _HANDLER_TOKENS))
         if _placeholder or _declared_but_inert:
