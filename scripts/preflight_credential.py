@@ -60,17 +60,54 @@ def probe(timeout: float = 40.0):
     else:
         url, headers = base + "/chat/completions", {
             "Authorization": "Bearer " + key, "Content-Type": "application/json"}
-    body = {"model": model, "max_tokens": 1,
-            "messages": [{"role": "user", "content": "ok"}]}
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    # #1203a4: the cap's PARAMETER NAME is this probe's problem, not a verdict about the
+    # credential. The configured model (gpt-5.x) rejects `max_tokens` with
+    # "Unsupported parameter: ... Use 'max_completion_tokens' instead", a 400 that fell through
+    # to "inconclusive" (rc=2) — so this gate could not answer for the model it guards.
+    # MEASURED: it only ever produced definitive verdicts because 401/429 are decided BEFORE
+    # parameter validation, which is why every earlier refusal looked fine. Anthropic's API
+    # takes `max_tokens`, so only the OpenAI-shaped branch retries.
+    _caps = ["max_tokens"] if provider == "anthropic" else ["max_tokens",
+                                                            "max_completion_tokens"]
+
+    # #1203a4: 1 was too small. A reasoning model spends tokens BEFORE it emits any, so
+    # `max_completion_tokens: 1` came back 400 "Could not finish the message because
+    # max_tokens or model output limit was reached" — the model RAN, and the probe still
+    # reported inconclusive. 16 is enough to finish "ok" and costs a fraction of a cent.
+    def _ask(cap):
+        body = {"model": model, cap: 16,
+                "messages": [{"role": "user", "content": "ok"}]}
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+        return urllib.request.urlopen(req, timeout=timeout)
+
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return 0, "the credential answers (HTTP %s, model %s)" % (resp.status, model)
+        _last = None
+        for _i, _cap in enumerate(_caps):
+            try:
+                with _ask(_cap) as resp:
+                    return 0, ("the credential answers (HTTP %s, model %s)"
+                               % (resp.status, model))
+            except urllib.error.HTTPError as _exc:
+                _last = _exc
+                try:
+                    _t = _exc.read().decode("utf-8", "replace")
+                except Exception:
+                    _t = ""
+                _exc._preflight_text = _t          # read once; .read() does not rewind
+                # Retry ONLY on this exact shape, and only if another spelling is left.
+                if (_exc.code == 400 and _i + 1 < len(_caps)
+                        and "unsupported_parameter" in _t
+                        and _caps[_i + 1] in _t):
+                    continue
+                raise
+        raise _last                                 # pragma: no cover - loop always returns/raises
     except urllib.error.HTTPError as exc:
-        try:
-            text = exc.read().decode("utf-8", "replace")
-        except Exception:
-            text = ""
+        text = getattr(exc, "_preflight_text", None)
+        if text is None:
+            try:
+                text = exc.read().decode("utf-8", "replace")
+            except Exception:
+                text = ""
         low = text.lower()
         if exc.code in (401, 403):
             return 1, "HTTP %s — the credential is rejected: %s" % (exc.code, _scrub(text))
