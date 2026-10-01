@@ -568,6 +568,20 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                     # wired form → agents chase a non-bug. Record /auth/* responses to tell the modes
                     # apart: no request = dead form; non-2xx = creds/backend; 2xx+no token = shape.
                     _auth_resps: list = []
+                    # #1203a6: RECORD THE REQUESTS TOO, not only the responses.
+                    #
+                    # `_auth_resps` is empty in two situations that mean opposite things: the
+                    # submit never fired a request, and the submit fired one that never got a
+                    # response (connection refused while the stack was restarting, DNS, CORS
+                    # preflight refused). Both landed in the "no request = dead form" branch
+                    # below, so the note accused the form of being unwired either way.
+                    # MEASURED over the 656 test_user_reports in the corpus: that note is by
+                    # far the dominant verdict — 378 occurrences, against 13 for "wired but
+                    # 4xx" and 37 for "no token" — and NONE of the 378 can be audited, because
+                    # the record kept neither the URL nor whether a request was even attempted.
+                    # Playwright hands both facts over; nothing was asking for them.
+                    _auth_reqs: list = []
+                    _auth_failed: list = []
 
                     def _on_resp(_r):
                         try:
@@ -575,8 +589,27 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                                 _auth_resps.append(int(_r.status))
                         except Exception:
                             pass
+
+                    def _on_req_1203a6(_q):
+                        try:
+                            if "/auth/" in _q.url:
+                                _auth_reqs.append(str(_q.url))
+                        except Exception:
+                            pass
+
+                    def _on_reqfail_1203a6(_q):
+                        try:
+                            if "/auth/" in _q.url:
+                                _f = getattr(_q, "failure", None)
+                                _auth_failed.append("%s (%s)" % (
+                                    _q.url, (_f if isinstance(_f, str) else
+                                             getattr(_f, "error_text", None)) or "no error text"))
+                        except Exception:
+                            pass
                     try:
                         page.on("response", _on_resp)
+                        page.on("request", _on_req_1203a6)
+                        page.on("requestfailed", _on_reqfail_1203a6)
                     except Exception:
                         pass
                     for _round in range(3):
@@ -643,6 +676,18 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                             pass  # best-effort: a probe that throws must not fail a good login
                     if ok:
                         _note = ""
+                    elif not _auth_resps and (_auth_reqs or _auth_failed):
+                        # #1203a6: the form IS wired — it sent the request and got nothing back.
+                        # Blaming the wiring here sends a lane to add a call that already
+                        # exists; r142's signup page has a real <form onSubmit> doing
+                        # `fetch('/auth/register')` and was told its submit "does nothing".
+                        _why = (_auth_failed[0] if _auth_failed
+                                else "the request was issued but no response arrived")
+                        _note = ("the form IS wired — it sent %d /auth request(s) and NO response "
+                                 "came back: %s. The app/backend was unreachable at this moment, "
+                                 "which says nothing about the form. Check the stack is up before "
+                                 "re-probing; do not add an api call to this page."
+                                 % (len(_auth_reqs) or len(_auth_failed), _why))
                     elif not _auth_resps:
                         _note = ("submit sent NO /auth request — the form is not wired to the API "
                                  "(button has no handler / submit does nothing)")
@@ -653,10 +698,18 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                     else:
                         _note = (f"/auth returned {sorted(set(_auth_resps))} but no token was stored "
                                  f"and no navigation — response shape or post-login handling issue")
+                    # #1203a6: the verdict's OWN EVIDENCE, so a reader can check it later.
+                    # Without `url`/`auth_requests` the 378 "not wired" verdicts in the corpus
+                    # are unfalsifiable after the fact — the same shape this project keeps
+                    # finding: the decision is persisted and the grounds are not.
                     out["flows"].append({
                         "flow": label, "ok": ok,
                         "token_stored": bool(token), "navigated": moved,
-                        "auth_status": sorted(set(_auth_resps)), "note": _note})
+                        "auth_status": sorted(set(_auth_resps)),
+                        "url": str(getattr(page, "url", "") or (frontend_base + route)),
+                        "auth_requests": len(_auth_reqs),
+                        "auth_failed": _auth_failed[:3],
+                        "note": _note})
                 except Exception as exc:
                     out["flows"].append({"flow": label, "ok": False,
                                          "note": f"{type(exc).__name__}: {exc}"[:160]})
