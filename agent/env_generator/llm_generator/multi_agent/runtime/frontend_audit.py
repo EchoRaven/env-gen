@@ -924,10 +924,50 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         ) and bool(re.search(r"<[A-Z]\w+[\s/>]", comp_file_text))
         _declared_but_inert = (bool(apis) and not _has_call and not _composes_child
                                and not any(tok in comp_file_text for tok in _HANDLER_TOKENS))
+        # #1203a7: SAY WHICH OF THE THREE THINGS IS ACTUALLY TRUE.
+        #
+        # One sentence covered every way `_declared_but_inert` can hold, and for most of them
+        # it was false. MEASURED over the corpus's flagged pages (22 after #1203a5):
+        #    17  render real UI -- 6+ JSX elements, up to 51 lines -- and simply never call
+        #        the api they declared. "it renders no real UI/behavior" is factually wrong,
+        #        and this file's own #1202y5 note records what that costs: "the check asks a
+        #        page to prove itself in a currency it does not hold, and gets paid in calls
+        #        that do not belong there" -- r140's lane added a feed call to a profile page,
+        #        a notifications page and a DM page alike.
+        #     3  have NO JSX at all -- genuine stubs, where the old sentence is right.
+        #     1  is a pure `<Navigate to=...>` redirect (r139's RootRedirectPage, 6 lines)
+        #        that declared `GET /api/search` + `GET /api/videos/feed`. A redirect CANNOT
+        #        call an api; telling it to "build the page's declared content" asks for a
+        #        page that should not exist. The actionable repair is the registration.
+        #     1  renders a token amount of JSX -- left with the stub wording.
+        #
+        # The VERDICT is unchanged: every one of these still fails and still blocks. Only the
+        # named cause changes, and each branch names a repair the lane can actually perform.
         if _placeholder or _declared_but_inert:
-            missing.append(
-                f"component `{component}` is a placeholder stub — it renders no real "
-                "UI/behavior; build the page's declared content and wire its apis_used")
+            _jsx_n_1203a7 = len(re.findall(r"<[A-Za-z][\w.]*[\s/>]", comp_file_text))
+            _redirect_1203a7 = bool(re.search(r"<Navigate\b", comp_file_text))
+            # #1034: a truncation must say what it cut, or the lane reads a short list as
+            # the whole registration and "drop the ones this page does not own" is wrong.
+            _all_1203a7 = [str(a) for a in (apis or [])]
+            _apis_1203a7 = ", ".join(_all_1203a7[:6])
+            if len(_all_1203a7) > 6:
+                _apis_1203a7 += " (+%d more)" % (len(_all_1203a7) - 6)
+            if _placeholder or _jsx_n_1203a7 == 0:
+                missing.append(
+                    f"component `{component}` is a placeholder stub — it renders no real "
+                    "UI/behavior; build the page's declared content and wire its apis_used")
+            elif _redirect_1203a7:
+                missing.append(
+                    f"component `{component}` is a REDIRECT (it only renders <Navigate>), yet "
+                    f"its ui_page registration declares apis_used [{_apis_1203a7}]. A redirect "
+                    "cannot call an api — remove apis_used from the registration, or register "
+                    "the destination page as the owner of those endpoints. Do NOT build UI here")
+            else:
+                missing.append(
+                    f"component `{component}` RENDERS UI but never calls the apis_used it "
+                    f"declares [{_apis_1203a7}] — and it delegates to no child component that "
+                    "could. Either call them here, or drop the ones this page does not own "
+                    "from its registration. Do NOT add an unrelated api call to satisfy this")
         # #222: the GENERIC framework fallback is never 'implemented' — detected
         # by CONTENT (helper constellation + list shell), so stripping the
         # marker/attr or reformatting API calls (the r18 gaming moves) cannot

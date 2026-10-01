@@ -113,4 +113,13 @@ def test_declared_apis_no_children_no_calls_still_flagged(tmp_path):
     ok, missing = audit_ui_page(
         src, {"component": "ProfilePage", "route": "/profile",
               "apis_used": ["GET /api/users/me"]})
-    assert not ok and any("placeholder stub" in m for m in missing)
+    # #1203a7 split the one sentence into three by what is actually true, and this fixture
+    # RENDERS JSX, so the accurate finding for it is now "RENDERS UI but never calls the
+    # apis_used it declares". The property this test exists for is unchanged and is asserted
+    # first: the delegation escape did not become a blanket bypass. The wording check is
+    # intent-based now so a further split does not break it again.
+    assert not ok, missing
+    assert missing, "flagged but said nothing"
+    _joined = " ".join(missing)
+    assert ("placeholder stub" in _joined
+            or "never calls the apis_used" in _joined), _joined
