@@ -3381,6 +3381,34 @@ def page_api_endpoints_1202wd(app_root, component):
             for m in _re.finditer(
                     r"import\s+([A-Z]\w*)\s+from\s+['\"](\.[^'\"]*?)(?:\.\w+)?['\"]", text):
                 _walk(m.group(2).rsplit("/", 1)[-1], depth + 1)
+            # #1203a8: ...and `React.lazy`, whose import has no `from` clause at all, so
+            # neither pattern here matches it.
+            #
+            # THIS IS THE OTHER HALF OF #1203a5, with the OPPOSITE harm. r142's lane wrote
+            #     const VideoFeedComponent = lazy(() => import('../components/VideoFeedComponent'));
+            # on both of its core pages. `_composes_child` went blind and called them
+            # placeholder stubs -- a FALSE BLOCK, which aborted the run (#1203a5). This
+            # resolver went blind at the same instant and answered [], which is a FALSE
+            # GREEN: `page_apis_understated` stops seeing what the children call, so a page
+            # declaring one endpoint passes while its subtree calls six. The gate log shows
+            # the handover exactly -- that check failed for records 4..125 with an unchanged
+            # sentence, vanished at 126, and `ui_page_unwired` held 126..149 alone; across
+            # all 149 the two NEVER co-occur, and corpus-wide they co-occur in 6 of 1034.
+            # One root cause, two regex resolvers, two opposite verdicts.
+            #
+            # This is the same widening #1202y2 records for the named-import form, whose own
+            # note says that style appeared in exactly one run -- the one that found it.
+            # MEASURED here: 3 pages across 1 run use `lazy(() => import(...))`, and 2 of
+            # them carry NO static or named relative import at all, so the resolver sees
+            # nothing. Both are r142's.
+            #
+            # UNGUARDED, like the default-import branch above and unlike the named-import
+            # branch below: `lazy(() => import('X'))` names ONE module and binds ONE
+            # component, so the barrel-dilution failure that branch guards against (r89:
+            # three unrelated pages given the same four endpoints) cannot arise here.
+            for m in _re.finditer(
+                    r"import\s*\(\s*['\"](\.[^'\"]*?)(?:\.\w+)?['\"]\s*\)", text):
+                _walk(m.group(1).rsplit("/", 1)[-1], depth + 1)
             # #1202y2: ...and a NAMED import, which this matched not at all. r139's lane
             # rewrote its pages down to two lines each --
             #     import { ExploreScreen } from '../components/SecondaryScreens';
