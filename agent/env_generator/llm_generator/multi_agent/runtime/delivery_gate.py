@@ -3602,7 +3602,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "validation_ui_evidence_failed on any failing record, unconditionally and without "
             "#671's matrix, so this release is already held. What stays unenforced is the "
             "MISSING case (no UI evidence at all), which #671 left behind tasks/tasks.yaml "
-            "because blocking 45% of runs for absent evidence is a stop, not a quality bar.",
+            # #1203b1: `45%` was a FORMAT SPECIFIER to logging, not text. `% o` (space-flag + octal)
+            # became a 5th placeholder against 4 arguments, so every time this warning fired
+            # logging raised `TypeError: not enough arguments for format string`, printed a
+            # traceback to stderr and DROPPED the message. Caught live in r143 at 03:0x.
+            # Escaped, so the sentence survives; a swept scan of all 279 runtime modules
+            # found this to be the only real instance (the other two candidates were
+            # mapping-style formatting and a format string built by concatenation).
+            "because blocking 45%% of runs for absent evidence is a stop, not a quality bar.",
             _breadth739["passed_records"], _breadth739["failed_records"],
             ", ".join(_breadth739["pages_passed"][:6]) or "-",
             ", ".join(_breadth739["pages_failed"][:6]) or "-")

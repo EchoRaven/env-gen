@@ -781,11 +781,37 @@ class WorkHubUpdatePageTool(HubTool):
         "the status itself; agent-supplied 'implemented' is downgraded to "
         "'defined'. Check your lifecycle status via registryhub_list_ui_pages."
     )
+    # #1203b0: `apis_used`, `route` and `component` are the three fields the DELIVERY GATE
+    # judges a ui_page on, and until now this tool could express NONE of them. The plumbing was
+    # already complete — `WorkHub.update_ui_page` forwards all three to
+    # `RegistryHub.register_ui_page` — so the only thing missing was this schema.
+    #
+    # WHAT THAT COST, measured on two consecutive runs:
+    #   r143 aborted with NOTHING DELIVERED at $170.89. `deliverability_page_apis_understated`
+    #   failed in 131 of its 140 gate records and the frontend called this tool 19 times with
+    #   only `name=` and `path=`. `register_ui_page` keeps the existing list when `apis_used`
+    #   is None, so every call was a silent no-op for the field the gate was blocking on; the
+    #   lane got a success back, marked the remediation task complete, and the gate re-failed.
+    #   Records 52..140 are byte-identical. r142 is the same cause one step earlier: 32 tasks
+    #   for that one blocker, and its lane filed "P0 platform/registry blocker: EXPOSE MUTATION
+    #   OR PROJECTION PATH FOR ui_page apis_used" — it was right, and I wrongly dismissed it by
+    #   testing `RegistryHub.register_ui_page` (the Python method, which does take the kwarg)
+    #   instead of the tool the lane actually holds.
+    #
+    #   `route`/`component` are the same gap with a larger footprint: 979 of 2798 corpus
+    #   ui_page records (35%, 138 runs) carry an empty route and 1038 an empty component, and
+    #   `#905`'s note already measured 644 of those as REAL pages under src/pages/. The only
+    #   tool that can set them is `kickoff_declare_ui_page`, which needs a `meeting_id` and is
+    #   absent from every implementation-phase tool set (verified on r143: frontend's
+    #   communicate/edit_code/run_checks/deliver/delegate_team sets all exclude it).
     PARAMETERS = {
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Logical page name (e.g. 'Login', 'HomeFeed')"},
             "path": {"type": "string", "description": "Relative source path (e.g. 'frontend/src/pages/Login.jsx')"},
+            "route": {"type": "string", "description": "Router path this page is reachable at (e.g. '/feed'). The delivery gate skips a page with no '/'-rooted route, so set it."},
+            "component": {"type": "string", "description": "React component name this page renders (e.g. 'HomeFeedPage')"},
+            "apis_used": {"type": "array", "items": {"type": "string"}, "description": "EVERY endpoint this page's component tree calls, as 'METHOD /path' (e.g. 'GET /api/videos/feed'). The delivery gate compares this against the source and blocks when it understates. OMITTING it KEEPS the existing list unchanged — pass the full list to change it, and drop entries no endpoint actually serves."},
             "status": {"type": "string", "enum": ["defined", "deprecated"], "default": "defined"},
             "components": {"type": "array", "items": {"type": "string"}, "description": "Optional component names this page renders"},
             "reference_image": {"type": "string", "description": "Optional screenshot filename from list_reference_images()"},
@@ -798,6 +824,9 @@ class WorkHubUpdatePageTool(HubTool):
         self,
         name: str,
         path: str = "",
+        route: str = "",
+        component: str = "",
+        apis_used: Optional[list] = None,
         status: str = "defined",
         components: Optional[list] = None,
         reference_image: str = "",
@@ -806,15 +835,37 @@ class WorkHubUpdatePageTool(HubTool):
         data = {"status": status}
         if path:
             data["path"] = path
+        if route:
+            data["route"] = route
+        if component:
+            data["component"] = component
+        if apis_used is not None:
+            data["apis_used"] = list(apis_used)
         if components:
             data["components"] = list(components)
         if reference_image:
             data["reference_image"] = reference_image
         if notes:
             data["notes"] = notes
-        return ToolResult(data=self._hubs.workhub.update_ui_page(
+        _rec1203b0 = self._hubs.workhub.update_ui_page(
             name=name, data=data, agent=self._agent_id,
-        ))
+        )
+        # #1203b0: SAY WHEN THE CALL DID NOT TOUCH THE FIELD THE GATE JUDGES. A re-registration
+        # that omits `apis_used` preserves the old list and returns success, which is exactly
+        # how r143's lane concluded it had fixed the blocker 19 times over.
+        if apis_used is None and isinstance(_rec1203b0, dict):
+            _kept = list((_rec1203b0.get("apis_used")
+                          or (_rec1203b0.get("metadata") or {}).get("apis_used") or []))
+            if _kept:
+                _rec1203b0 = {
+                    **_rec1203b0,
+                    "_apis_used_unchanged_1203b0": (
+                        "you did not pass `apis_used`, so the existing %d entry(ies) were KEPT: "
+                        "%s. If you are here to fix a `page_apis_understated` blocker, this call "
+                        "changed nothing — pass the full list."
+                        % (len(_kept), ", ".join(str(a) for a in _kept[:8]))),
+                }
+        return ToolResult(data=_rec1203b0)
 
 
 class WorkHubTaskTool(HubTool):

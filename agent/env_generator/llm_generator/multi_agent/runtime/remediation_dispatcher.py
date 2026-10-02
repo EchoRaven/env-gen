@@ -2704,13 +2704,32 @@ class RemediationDispatcher:
             # #1202tu: the other five the ratchet found unroutable. #1202rm/rq/rr came from
             # the same 09-23 sweep as the two below; the private-column and route-param ones
             # are older. All seven could decline delivery with nobody dispatched.
+            # #1203b2: this used to open with "declares `apis_used: []`" -- which is the
+            # SIBLING check's condition (`deliverability_all_page_apis_empty`, eleven lines
+            # below). The pages this one names have a NON-EMPTY list that is merely short, so a
+            # lane read the premise, looked at the page, saw entries, and concluded the report
+            # did not apply. r143: it marked the remediation complete and re-registered the page
+            # 19 times without the field; gate records 52..140 are byte-identical and the run
+            # aborted at $170.89 with nothing delivered.
+            #
+            # Two things the lane needs that the old text did not give it: the premise that
+            # matches what fired, and the fact that a DECLARED endpoint can be the problem --
+            # r143's `signup` declared `POST /auth/signup`, which no endpoint in its own
+            # contract serves, while its source calls `POST /auth/register`. 26 of 2274 corpus
+            # apis_used entries (1.1%, 19 runs) name an endpoint the contract does not have, all
+            # of them in the auth family.
             "deliverability_page_apis_understated": (
                 "frontend", "Register the APIs the page actually calls (blocks delivery)",
-                "a registered ui_page declares `apis_used: []` while its OWN source calls an "
-                "API. The registry is the contract every gate reads, so an understated page "
-                "is invisible to coverage and its endpoints look unused. Update the ui_page "
-                "registration to list the endpoints the component really calls -- do not "
-                "remove the calls to match the registration."),
+                "a registered ui_page lists FEWER endpoints in `apis_used` than its own source "
+                "calls. The list is usually NOT empty -- it is short, or it names an endpoint "
+                "nothing serves. (The all-empty case is a different check.) The registry is the "
+                "contract every gate reads, so an understated page is invisible to coverage and "
+                "its endpoints look unused. Pass the FULL list to "
+                "`registryhub_register_ui_page(name=..., apis_used=[...])` -- omitting "
+                "`apis_used` keeps the old list and changes nothing. Add every endpoint the "
+                "component tree really calls, and DROP any you declare that no endpoint in the "
+                "contract serves (check `registryhub_list_endpoints`). Do not remove the calls "
+                "to match the registration."),
             "deliverability_all_page_apis_empty": (
                 "frontend", "Register each page's APIs — all are empty (blocks delivery)",
                 "EVERY registered ui_page declares `apis_used: []` while the contract carries "
