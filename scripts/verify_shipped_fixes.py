@@ -24,6 +24,7 @@ the change must come back NOT MEASURED on the instrument checks. A verifier that
 CONFIRMED for a run that could not possibly carry the fix is reading the wrong field.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -602,7 +603,250 @@ def check_1202zr(run):
 
 LIVE_CHECKS = [live_1202zd, live_1202ze, live_1202zb]
 
-CHECKS = [check_1202zt, check_1202zn, check_1202zq, check_1202zr,
+# ── 2026-10-01 session: #1203a3 .. #1203a9 ──────────────────────────────────────
+#
+# Each of these reads the DELIVERED artifacts, so the next run answers them in one command
+# instead of the investigation they each took. UNMEASURED is the honest verdict when the
+# precondition is absent, and every headline says which it was.
+
+def _hub(run: Path, name: str) -> dict:
+    try:
+        return json.loads((run / "shared" / "hubs" / name).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _pages_src(run: Path) -> dict:
+    """`{component: source}` for the delivered page files."""
+    out = {}
+    base = run / "app" / "frontend" / "src"
+    for sub in ("pages", "components"):
+        d = base / sub
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.jsx")) + sorted(d.glob("*.tsx")):
+            try:
+                out[f.stem] = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+    return out
+
+
+def check_1203a3(run):
+    """Does the MCP surface still advertise the fixed auth endpoints as business tools?"""
+    reg = _hub(run, "registryhub_mcp_registry.json")
+    tools = [k.split(":")[-1] for k in reg if str(k).startswith("mcp:tool:")]
+    if not tools:
+        return _say("#1203a3", UNMEASURED, "no MCP tools in registryhub_mcp_registry.json")
+    bad = [t for t in tools
+           if re.search(r"(^|_)(auth|oauth)(_|$)|_(signup|signin|logout|login|register)$", t)]
+    return _say("#1203a3", FALSIFIED if bad else CONFIRMED,
+                "%d MCP tool(s) on the fixed auth surface, of %d" % (len(bad), len(tools)),
+                ("Still advertised: %s" % ", ".join(sorted(bad)[:6])) if bad else
+                "The agent-facing surface is business endpoints only.")
+
+
+def check_1203a5(run):
+    """Was a page that delegates through `React.lazy` called a placeholder stub?"""
+    rows = _jsonl(run, "delivery_gate.jsonl")
+    if not rows:
+        return _say("#1203a5", UNMEASURED, "no logs/delivery_gate.jsonl")
+    src = _pages_src(run)
+    lazy = {c for c, t in src.items()
+            if re.search(r"lazy\s*\(\s*\(\s*\)\s*=>\s*import\s*\(", t)}
+    if not lazy:
+        return _say("#1203a5", UNMEASURED,
+                    "no delivered page uses `lazy(() => import(...))` — the shape this fix is "
+                    "about never occurred")
+    flagged = set()
+    for r in rows:
+        for pr in (r.get("blocker_prose") or {}).get("deliverability_ui_page_unwired") or []:
+            for c in lazy:
+                if c in str(pr) and "placeholder stub" in str(pr):
+                    flagged.add(c)
+    return _say("#1203a5", FALSIFIED if flagged else CONFIRMED,
+                "%d lazy-delegating page(s); %d called a placeholder stub"
+                % (len(lazy), len(flagged)),
+                ("Flagged: %s. EITHER this run predates #1203a5 (r142 itself does — it is the "
+                 "run the fix was derived from, and its 149 gate records are what proved it) OR "
+                 "the override regressed. Tell them apart by the run's date against the "
+                 "#1203a5 commit, the way #1202zq's check does."
+                 % ", ".join(sorted(flagged))) if flagged else
+                "Composition through a dynamic import is credited.")
+
+
+def check_1203a6(run):
+    """Does an auth-flow verdict carry its own grounds, and name a dead backend separately?"""
+    reports = sorted((run / "test_user_reports").glob("*.json")) \
+        if (run / "test_user_reports").is_dir() else []
+    flows = []
+    for f in reports:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        uf = d.get("ui_flows") or {}
+        flows.extend(uf.get("flows") or [] if isinstance(uf, dict) else [])
+    if not flows:
+        return _say("#1203a6", UNMEASURED, "no ui_flows in test_user_reports/")
+    grounded = [f for f in flows if "url" in f and "auth_requests" in f]
+    wired_but_down = [f for f in flows if "the form IS wired" in str(f.get("note") or "")]
+    if not grounded:
+        return _say("#1203a6", FALSIFIED,
+                    "%d flow record(s) and none carries `url`/`auth_requests`" % len(flows),
+                    "The run predates #1203a6: its 'not wired' verdicts cannot be audited.")
+    return _say("#1203a6", CONFIRMED,
+                "%d of %d flow record(s) carry their grounds; %d named an unreachable backend "
+                "instead of a dead form" % (len(grounded), len(flows), len(wired_but_down)))
+
+
+def check_1203a7(run):
+    """When an inert page was flagged, did the note say WHICH of the three things was true?"""
+    rows = _jsonl(run, "delivery_gate.jsonl")
+    # DEDUPED BY SENTENCE. The gate re-evaluates every tick, so a run that flags two pages
+    # 24 times each yields 48 prose entries; reporting that as "48 flagged pages" is the
+    # category-for-instance confusion this project has a ticket about (#1202sr).
+    proses = set()
+    for r in rows:
+        for pr in (r.get("blocker_prose") or {}).get("deliverability_ui_page_unwired") or []:
+            proses.add(str(pr))
+    if not proses:
+        return _say("#1203a7", UNMEASURED, "no ui_page_unwired prose in this run")
+    split = {p for p in proses
+             if "RENDERS UI but never calls" in p or "is a REDIRECT" in p}
+    stub = {p for p in proses if "placeholder stub" in p}
+    if not split and stub:
+        return _say("#1203a7", UNMEASURED,
+                    "%d distinct flagged page(s), all carrying the blanket stub sentence — "
+                    "either they are genuinely JSX-less (then it is correct) or this run "
+                    "predates #1203a7" % len(stub))
+    return _say("#1203a7", CONFIRMED if split else UNMEASURED,
+                "%d of %d distinct flagged page(s) got a cause-specific note"
+                % (len(split), len(proses)))
+
+
+def check_1203a8(run):
+    """Could the gate SEE a lazy-delegating page's endpoints, or did it go silent on them?
+
+    ★ Like #1203a9's first version, an earlier draft re-ran today's resolver and so could only
+    confirm. The artifact signal is the gate's own prose: before the fix, a page that delegates
+    only through `lazy(() => import(...))` resolved to [] and `page_apis_understated` could not
+    name it; after, it either names it or the page declares everything its subtree calls.
+    """
+    src = _pages_src(run)
+    lazy = {c for c, t in src.items()
+            if re.search(r"lazy\s*\(\s*\(\s*\)\s*=>\s*import\s*\(", t)
+            and not re.search(r"import\s+[A-Z]\w*\s+from\s+['\"]\.", t)}
+    if not lazy:
+        return _say("#1203a8", UNMEASURED,
+                    "no delivered page delegates ONLY through a dynamic import")
+    rows = _jsonl(run, "delivery_gate.jsonl")
+    if not rows:
+        return _say("#1203a8", UNMEASURED, "no logs/delivery_gate.jsonl")
+    named = set()
+    for r in rows:
+        for pr in (r.get("blocker_prose") or {}).get(
+                "deliverability_page_apis_understated") or []:
+            for c in lazy:
+                if c in str(pr):
+                    named.add(c)
+    pages = _hub(run, "registryhub_ui_pages.json")
+    declared = {}
+    for k, v in pages.items():
+        if k == "_meta" or not isinstance(v, dict):
+            continue
+        comp = str(v.get("component") or "")
+        if comp in lazy:
+            declared[comp] = list(v.get("apis_used")
+                                  or (v.get("metadata") or {}).get("apis_used") or [])
+    silent = sorted(c for c in lazy if c not in named)
+    if not silent:
+        return _say("#1203a8", CONFIRMED,
+                    "%d lazy-only page(s), every one of them named by "
+                    "`page_apis_understated`" % len(lazy))
+    return _say("#1203a8", UNMEASURED,
+                "%d lazy-only page(s); the gate never named %d of them"
+                % (len(lazy), len(silent)),
+                "Silent on: %s (declared: %s). That is EITHER the resolver blind (pre-#1203a8) "
+                "OR those pages already declare everything their subtree calls — this artifact "
+                "cannot separate the two, so it is not a verdict."
+                % (", ".join(silent[:5]),
+                   "; ".join("%s=%d" % (c, len(declared.get(c, []))) for c in silent[:5])))
+
+
+def check_1203a9(run):
+    """Does the DELIVERED feed handler query the data table rather than a column-identical copy?
+
+    ★ The first version of this check re-ran today's `_resource_model` against the run's models,
+    so it answered "is the current code right?" and CONFIRMED on r140 — a run that predates the
+    fix. `--self-test` caught it. A verification of a DELIVERED artifact has to read the
+    artifact: the projected handler names the model class it queries.
+    """
+    be = run / "app" / "backend"
+    try:
+        main = (be / "main.py").read_text(encoding="utf-8", errors="replace")
+        models_src = (be / "models.py").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return _say("#1203a9", UNMEASURED, "no delivered app/backend/main.py")
+    # table -> ORM class, from the delivered models module
+    cls_of = {}
+    for m in re.finditer(r"class\s+(\w+)\s*\([^)]*\)\s*:\s*(?:#[^\n]*)?\n(?:\s+[^\n]*\n)*?"
+                         r"\s+__tablename__\s*=\s*['\"](\w+)['\"]", models_src):
+        cls_of[m.group(2)] = m.group(1)
+    feeds = [t for t in cls_of if re.search(r"(^|_)(feed|feeds|explore|timeline|reels|discover"
+                                            r"|stream|streams)(_|$)", t.lower())]
+    if not feeds:
+        return _say("#1203a9", UNMEASURED, "the delivered schema has no feed-shaped table")
+    hits = []
+    for t in feeds:
+        k = main.find('"/api/%s"' % t)
+        if k < 0:
+            k = main.find("'/api/%s'" % t)
+        if k < 0:
+            continue
+        seg = main[k:k + 1600]
+        queried = set(re.findall(r"\bdb\.query\(\s*(\w+)", seg))
+        if cls_of[t] in queried:
+            hits.append("%s -> db.query(%s)" % (t, cls_of[t]))
+    if not hits:
+        return _say("#1203a9", UNMEASURED,
+                    "no projected GET on a feed-shaped path in the delivered main.py "
+                    "(%d feed-shaped table(s) exist)" % len(feeds))
+    # Is that table a column-identical copy of another one in the SAME delivered schema?
+    def _cols_of(cls):
+        m = re.search(r"class\s+%s\s*\([^)]*\)\s*:(.*?)(?=\nclass\s|\Z)" % re.escape(cls),
+                      models_src, re.S)
+        if not m:
+            return ()
+        return tuple(sorted(set(re.findall(r"^\s+(\w+)\s*=\s*Column\(", m.group(1), re.M))))
+    bad = []
+    for h in hits:
+        t = h.split(" -> ")[0]
+        own = _cols_of(cls_of[t])
+        if len(own) < 6:
+            continue
+        for other, ocls in cls_of.items():
+            if other == t:
+                continue
+            if re.search(r"(^|_)(feed|feeds|explore|timeline|reels|discover|stream|streams)(_|$)",
+                         other.lower()):
+                continue
+            if _cols_of(ocls) == own:
+                bad.append("%s (column-identical to %s)" % (h, other))
+                break
+    if not bad:
+        return _say("#1203a9", CONFIRMED,
+                    "%d feed-shaped route(s) projected, none of them onto a column-identical "
+                    "copy of a data table" % len(hits))
+    return _say("#1203a9", FALSIFIED,
+                "%d delivered feed route(s) query a column-identical copy" % len(bad),
+                "\n".join("  - %s" % b for b in bad)
+                + "\nThe run predates #1203a9, or the override regressed.")
+
+
+CHECKS = [check_1203a3, check_1203a5, check_1203a6, check_1203a7,
+          check_1203a8, check_1203a9,
+          check_1202zt, check_1202zn, check_1202zq, check_1202zr,
           check_1202zc, check_1202za, check_1202zb, check_1202ze, check_1202zf,
           check_1202zd, check_cost]
 
