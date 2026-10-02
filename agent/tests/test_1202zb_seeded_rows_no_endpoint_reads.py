@@ -78,10 +78,36 @@ def _ep(method, path, status="implemented"):
 
 
 _R140_MODELS = {"videos": _m(_VID), "feed": _m(_VID), "users": _m(["id", "email", "name"])}
-_R140_COUNTS = {"videos": 35, "feed": 8, "users": 9}
-_R140_EPS = [_ep("GET", "/api/feed"), _ep("GET", "/api/feed/{video_id}"),
-             _ep("POST", "/api/videos/{video_id}/like"),
-             _ep("DELETE", "/api/videos/{video_id}/like")]
+_R140_COUNTS_ORIG = {"videos": 35, "feed": 8, "users": 9}
+_R140_EPS_ORIG = [_ep("GET", "/api/feed"), _ep("GET", "/api/feed/{video_id}"),
+                  _ep("POST", "/api/videos/{video_id}/like"),
+                  _ep("DELETE", "/api/videos/{video_id}/like")]
+
+
+# #1203a9 moved the FEED-SHAPED half of this defect to the source: a feed-shaped route whose
+# table is a column-identical copy of a data table now resolves to the data table, so the r140
+# shape below can no longer arise and this detector correctly reports nothing for it.
+#
+# The detector keeps its purpose for the OTHER half, which #1203a9 deliberately does not touch:
+# a column-identical pair whose route segment is NOT a feed word. r35 carries three of them —
+# message/messages, notification/notifications, live_stream/live_streams. The behavioural tests
+# below use that shape so they exercise the detector rather than the projector.
+#
+# The dict ORDER is load-bearing: `_match_model` returns the first match, so putting the lean
+# singular first is what makes `/api/message` resolve to it deterministically.
+# TWO exemptions had to be respected to build this, and each one cost a run of the suite:
+#   * `_name_variants_1202zb` excludes singular/plural pairs (message/messages) BY DESIGN —
+#     "the same concept spelled twice" is not hidden content. My first attempt used exactly
+#     that pair and the detector correctly reported nothing.
+#   * #1203a9 now redirects a FEED-SHAPED route away from a column-identical copy, so the
+#     original `feed`/`videos` fixture no longer reproduces either.
+# What remains, and what this fixture is: column-identical, NOT name variants, and reached by a
+# route whose segment is not a feed word — so the projector stays out of it.
+_TWIN_MODELS = {"archive": _m(_VID), "videos": _m(_VID),
+                "users": _m(["id", "email", "name"])}
+_TWIN_COUNTS = {"archive": 8, "videos": 35, "users": 9}
+_TWIN_EPS = [_ep("GET", "/api/archive"), _ep("GET", "/api/archive/{video_id}"),
+             _ep("POST", "/api/videos/{video_id}/like")]
 
 
 def _run(monkeypatch, tmp_path, models, counts, eps):
@@ -91,31 +117,39 @@ def _run(monkeypatch, tmp_path, models, counts, eps):
     return HP._unreachable_twin_tables_1202zb(tmp_path, _Reg(eps))
 
 
-def test_the_r140_shape_is_reported(monkeypatch, tmp_path):
-    """★ The released 1.0.0. Every number in this fixture is that run's."""
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS, _R140_EPS)
+def test_the_r140_feed_shape_is_now_rescued_at_the_source(monkeypatch, tmp_path):
+    """★ WAS `test_the_r140_shape_is_reported`. Every number in `_R140_*` is that run's, and the
+    detector used to report it. #1203a9 fixed it where it happens: `/api/feed` resolving to a
+    column-identical copy of the content table now resolves to the content table, so `videos` IS
+    read and there is nothing left to find. Reporting nothing here is the fix working — pinned so
+    a regression in the projector shows up as this test going RED with a finding."""
+    r = _run(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS_ORIG, _R140_EPS_ORIG)
+    assert r["measured"] is True, r
+    assert r["findings"] == [], (
+        "the feed-shaped twin reappeared — #1203a9's override stopped working: %r" % r["findings"])
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS, _TWIN_EPS)
     assert r["measured"] is True, r
     assert len(r["findings"]) == 1, r["findings"]
     f = r["findings"][0]
     assert f["unread"] == "videos" and f["unread_rows"] == 35, f
-    assert f["served"] == "feed" and f["served_rows"] == 8, f
-    assert f["via"] == "/api/feed", f
+    assert f["served"] == "archive" and f["served_rows"] == 8, f
+    assert f["via"] == "/api/archive", f
 
 
 def test_a_twin_the_api_also_reads_is_not_reported(monkeypatch, tmp_path):
     """★ THE PRECISION TEST. r121 has the same two tables with the same lopsided split AND a
     `GET /api/videos`. Nothing is hidden there, so a check that reported it would be a false
     positive on the run immediately before the true one."""
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS,
-             _R140_EPS + [_ep("GET", "/api/videos")])
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS,
+             _TWIN_EPS + [_ep("GET", "/api/videos")])
     assert r["measured"] is True
     assert r["findings"] == [], r["findings"]
 
 
 def test_a_route_that_is_not_implemented_does_not_count_as_a_read(monkeypatch, tmp_path):
     """A `defined` route serves nothing, so it cannot be the read that rescues the table."""
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS,
-             _R140_EPS + [_ep("GET", "/api/videos", status="defined")])
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS,
+             _TWIN_EPS + [_ep("GET", "/api/videos", status="defined")])
     assert len(r["findings"]) == 1, r["findings"]
 
 
@@ -164,14 +198,14 @@ def test_an_empty_unread_table_is_not_reported(monkeypatch, tmp_path):
     """A table with no rows hides no content -- the harm is unreachable CONTENT. Carried by
     the row-count comparison rather than a guard of its own: `counts[served] >= 0` is always
     true, so an explicit `rows <= 0` guard could never change an answer and was removed."""
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, {"videos": 0, "feed": 8}, _R140_EPS)
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, {"archive": 8, "videos": 0}, _TWIN_EPS)
     assert r["findings"] == [], r["findings"]
 
 
 def test_the_unread_table_must_be_the_richer_one(monkeypatch, tmp_path):
     """Served-with-more is the ordinary case: the finding is about content the API cannot
     reach, not about duplication."""
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, {"videos": 3, "feed": 30}, _R140_EPS)
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, {"archive": 30, "videos": 3}, _TWIN_EPS)
     assert r["findings"] == [], r["findings"]
 
 
@@ -187,7 +221,7 @@ def test_narrow_shapes_do_not_collide(monkeypatch, tmp_path):
 def test_an_audit_that_could_not_measure_says_so(monkeypatch, tmp_path):
     """★ #1202z5, the same lesson one module over: `count: 0` from an audit that inspected
     nothing must not read as clean."""
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, {}, _R140_EPS)
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, {}, _TWIN_EPS)
     assert r["measured"] is False
     assert "live row counts" in r["why"], r
     assert r["findings"] == []
@@ -201,7 +235,7 @@ def test_a_route_the_resolver_throws_on_is_announced(monkeypatch, tmp_path):
     def _boom(path, models):
         raise RuntimeError("unreadable path")
     monkeypatch.setattr(RP, "_resource_model", _boom)
-    r = _run(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS, _R140_EPS)
+    r = _run(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS, _TWIN_EPS)
     assert "did not resolve" in r["why"], r
     assert r["measured"] is True
 
@@ -211,7 +245,7 @@ def test_a_broken_model_reader_does_not_crash_the_heal_cycle(monkeypatch, tmp_pa
         raise RuntimeError("no orm")
     monkeypatch.setattr(BA, "_models_919", _boom)
     monkeypatch.setattr(SA, "_project_root_1202dj", lambda p: tmp_path)
-    r = HP._unreachable_twin_tables_1202zb(tmp_path, _Reg(_R140_EPS))
+    r = HP._unreachable_twin_tables_1202zb(tmp_path, _Reg(_TWIN_EPS))
     assert r["measured"] is False and r["findings"] == []
 
 
@@ -227,7 +261,7 @@ def _report(monkeypatch, tmp_path, models, counts, eps, wh=None):
 
 
 def test_a_task_is_filed_for_the_backend(monkeypatch, tmp_path):
-    wh = _report(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS, _R140_EPS)
+    wh = _report(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS, _TWIN_EPS)
     assert len(wh.created) == 1, wh.created
     assert wh.created[0]["assignee"] == "backend"
     assert wh.created[0]["priority"] == "P1", "a task, not a blocker"
@@ -235,9 +269,9 @@ def test_a_task_is_filed_for_the_backend(monkeypatch, tmp_path):
 
 def test_the_task_names_the_instance(monkeypatch, tmp_path):
     """#983: a finding that reports only a count cannot be acted on."""
-    d = _report(monkeypatch, tmp_path, _R140_MODELS,
-                _R140_COUNTS, _R140_EPS).created[0]["description"]
-    for piece in ("`videos`", "35", "`feed`", "8", "/api/feed"):
+    d = _report(monkeypatch, tmp_path, _TWIN_MODELS,
+                _TWIN_COUNTS, _TWIN_EPS).created[0]["description"]
+    for piece in ("`videos`", "35", "`archive`", "8", "/api/archive"):
         assert piece in d, (piece, d)
 
 
@@ -245,14 +279,14 @@ def test_the_task_says_not_to_copy_rows(monkeypatch, tmp_path):
     """The obvious fix a lane reaches for is the wrong one -- #1202uu's demo top-up copied
     one creator's videos under another's name, and two sources of truth for the same content
     is how that happened."""
-    d = _report(monkeypatch, tmp_path, _R140_MODELS,
-                _R140_COUNTS, _R140_EPS).created[0]["description"]
+    d = _report(monkeypatch, tmp_path, _TWIN_MODELS,
+                _TWIN_COUNTS, _TWIN_EPS).created[0]["description"]
     assert "Do NOT copy rows" in d, d
 
 
 def test_the_artifact_carries_the_finding(monkeypatch, tmp_path):
     """#947: a measurement that exists only in a log line is not a measurement."""
-    _report(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS, _R140_EPS)
+    _report(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS, _TWIN_EPS)
     p = tmp_path / "logs" / "unreachable_twin_table_1202zb.jsonl"
     rec = json.loads(p.read_text(encoding="utf-8").strip())
     assert rec["measured"] is True and rec["count"] == 1
@@ -260,7 +294,7 @@ def test_the_artifact_carries_the_finding(monkeypatch, tmp_path):
 
 
 def test_nothing_is_filed_when_nothing_is_found(monkeypatch, tmp_path):
-    wh = _report(monkeypatch, tmp_path, _R140_MODELS, {"videos": 3, "feed": 30}, _R140_EPS)
+    wh = _report(monkeypatch, tmp_path, _TWIN_MODELS, {"videos": 3, "feed": 30}, _TWIN_EPS)
     assert wh.created == []
     assert not (tmp_path / "logs" / "unreachable_twin_table_1202zb.jsonl").exists()
 
@@ -269,25 +303,25 @@ def test_an_open_task_is_not_cloned(monkeypatch, tmp_path):
     """#794: a run has hundreds of heal cycles."""
     wh = _WH([{"title": "Seeded rows no endpoint reads, beside an identical table the API "
                         "serves (1)", "status": "in_progress"}])
-    _report(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS, _R140_EPS, wh=wh)
+    _report(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS, _TWIN_EPS, wh=wh)
     assert wh.created == [], wh.created
 
 
 def test_a_completed_task_does_not_suppress_a_new_one(monkeypatch, tmp_path):
     wh = _WH([{"title": "Seeded rows no endpoint reads, beside an identical table the API "
                         "serves (1)", "status": "completed"}])
-    _report(monkeypatch, tmp_path, _R140_MODELS, _R140_COUNTS, _R140_EPS, wh=wh)
+    _report(monkeypatch, tmp_path, _TWIN_MODELS, _TWIN_COUNTS, _TWIN_EPS, wh=wh)
     assert len(wh.created) == 1
 
 
 def test_a_missing_workhub_is_not_a_crash(monkeypatch, tmp_path):
-    monkeypatch.setattr(BA, "_models_919", lambda *a, **k: (_R140_MODELS, {}))
-    monkeypatch.setattr(SA, "recent_live_counts_1202dj", lambda *a, **k: dict(_R140_COUNTS))
+    monkeypatch.setattr(BA, "_models_919", lambda *a, **k: (_TWIN_MODELS, {}))
+    monkeypatch.setattr(SA, "recent_live_counts_1202dj", lambda *a, **k: dict(_TWIN_COUNTS))
     monkeypatch.setattr(SA, "_project_root_1202dj", lambda p: tmp_path)
 
     class _NoHub:
         hubs = None
-    HP._report_unreachable_twins_1202zb(_NoHub(), tmp_path, _Reg(_R140_EPS))   # must not raise
+    HP._report_unreachable_twins_1202zb(_NoHub(), tmp_path, _Reg(_TWIN_EPS))   # must not raise
     assert (tmp_path / "logs" / "unreachable_twin_table_1202zb.jsonl").exists(), \
         "the artifact must land even when no hub can take the task"
 
@@ -299,7 +333,7 @@ def test_the_unmeasured_case_is_announced_not_silent(monkeypatch, tmp_path):
     import multi_agent.runtime.message_format as MF
     monkeypatch.setattr(MF, "warn_once_1201",
                         lambda key, msg, exc=None: seen.append((key, msg)))
-    wh = _report(monkeypatch, tmp_path, _R140_MODELS, {}, _R140_EPS)
+    wh = _report(monkeypatch, tmp_path, _TWIN_MODELS, {}, _TWIN_EPS)
     assert wh.created == []
     assert not (tmp_path / "logs" / "unreachable_twin_table_1202zb.jsonl").exists()
     assert any("1202zb" in k for k, _ in seen), seen

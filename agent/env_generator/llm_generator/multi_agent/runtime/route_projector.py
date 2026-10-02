@@ -733,6 +733,74 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
             # No hardcoded "posts" preference — derive the primary content model
             # from shape so a feed-shaped path in a non-social app maps correctly.
             chosen = _primary_content_model(models)
+    else:
+        # #1203a9: a feed-shaped table that is a COLUMN-IDENTICAL COPY of the primary
+        # content model is a duplicate of it, not a concept of its own — serve the content.
+        #
+        # The fallback above exists because `/api/feed` usually names no table. When a lane
+        # ALSO creates a `feed` table, the literal match wins, the fallback never runs, and
+        # the two diverge: the content pipeline fills the content table while the route reads
+        # the copy. r140, verified against its still-running database: `videos` 35 rows,
+        # `feed` 8 — and the 8 are a STALE prefix (the seed had feed as videos' first rows;
+        # the pipeline then grew videos to 35 real rows and left feed where it was). The
+        # delivered 1.0.0 therefore served 8 of 35, and `#1202zb` could only REPORT it,
+        # because its predicate needs live row counts that do not exist at projection time.
+        #
+        # Decidable here with no counts at all: identical column sets. MEASURED over 181 runs
+        # (160 with a parseable backend): this fires on exactly 2 — r121 and r140 — which are
+        # precisely the two the corpus sweep identified as真 positives, and on nothing else.
+        #
+        # SCOPE: this only moves a PROJECTED handler. A lane that genuinely curates `/api/feed`
+        # writes its own route and the projector yields to it, so a real curated feed is
+        # untouched. The override announces itself so the choice is auditable rather than
+        # silent — the failure mode this whole area keeps producing.
+        _n1203a9 = str(chosen[0])
+        _seg1203a9 = {seg for seg, is_p in _segments(path) if not is_p}
+        # Reuse #1202zn's helper rather than re-deriving the test: my own version did
+        # `name.rstrip("s")` and `"reels" in "reel"` is False, so `/api/reels` silently
+        # escaped. One fact, one reader (#1032).
+        if _feed_named_table_1202zn(_n1203a9) and _seg1203a9 & set(_FEED_SHAPED_TOKENS):
+            # ★ NOT `_primary_content_model` here, and that is the whole correctness of this
+            # branch. Between two COLUMN-IDENTICAL tables its shape heuristic has nothing to
+            # separate them, so its answer is an arbitrary tie-break: on r140 it happens to say
+            # `videos`, and on a fixture with the same two tables it says `feed`. Relying on it
+            # would have made this fire by luck. The tie-break that actually carries meaning is
+            # the NAME: the route segment is the feed-shaped word, so the twin worth serving is
+            # the one named after the DATA.
+            def _cols1203a9(meta):
+                # The ORM meta this function is given uses `cols` (a list of NAMES); registry
+                # records use `columns` (a list of dicts). Read both — a first draft read only
+                # `columns` and the branch was silently dead on the very run it was measured on.
+                _raw = ((meta or {}).get("cols") or (meta or {}).get("columns") or [])
+                return tuple(sorted(
+                    (c.get("name") if isinstance(c, dict) else str(c)) for c in _raw
+                    if (c.get("name") if isinstance(c, dict) else str(c))))
+
+            _own1203a9 = _cols1203a9(chosen[1])
+            _twin1203a9 = None
+            if len(_own1203a9) >= 6:
+                for _t1203a9, _meta1203a9 in models.items():
+                    if _t1203a9 == _n1203a9:
+                        continue
+                    if _feed_named_table_1202zn(_t1203a9):
+                        continue                  # another feed-shaped name separates nothing
+                    if _cols1203a9(_meta1203a9) == _own1203a9:
+                        _twin1203a9 = (_t1203a9, _meta1203a9)
+                        break
+            _pcm1203a9 = _twin1203a9
+            if _pcm1203a9 and str(_pcm1203a9[0]) != _n1203a9:
+                if True:
+                    try:
+                        import logging as _lg1203a9
+                        _lg1203a9.getLogger(__name__).warning(
+                            "#1203a9 %s resolves to table %r, which is column-identical to "
+                            "%r — serving %r instead, so the route reads the data table the "
+                            "content pipeline fills rather than a copy named after the screen. "
+                            "If %r is a curated subset, write a custom route for it.",
+                            path, _n1203a9, _pcm1203a9[0], _pcm1203a9[0], _n1203a9)
+                    except Exception:
+                        pass
+                    chosen = _pcm1203a9
     return chosen
 
 
