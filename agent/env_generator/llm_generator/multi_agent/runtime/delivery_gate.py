@@ -2605,6 +2605,43 @@ def extract_spec_tables(spec: Dict[str, Any]) -> Dict[str, set]:
 # now STACK-PLUGGABLE (FastAPI + Express auto-detected) — see that module.
 
 
+def _declared_probe_1203d1(entry: Any) -> bool:
+    """Is this declared endpoint the framework's OWN probe rather than product surface? #1203d1
+
+    `entry` is a registry endpoint string, `"GET /__noop_orchestrator_probe__"`; the test runs
+    on the PATH half. Delegates to `#1203b5`'s predicate so the `__`-prefix convention has one
+    implementation: that docstring records why the `kind in (infra, control)` half of a first
+    draft was dropped (it would have skipped 1085 of 5119 endpoints, including the control
+    plane the lane must build), and the `__` test alone selects ~110, every one a probe.
+
+    Never raises: an unparseable entry is not a probe, and the caller only drops what is.
+    """
+    try:
+        from .kickoff.schema_tolerance import _is_framework_probe_1203b5
+    except Exception as _e1203d1:
+        # #1202ah: a swallowed fault must not be invisible. Returning False keeps the
+        # endpoint IN the missing list — the pre-#1203d1 behaviour, the conservative
+        # direction — but a reader has to be able to see that the exemption never ran.
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.declared_probe_1203d1.import",
+                       "the framework-probe exemption (#1203d1) could not be imported, so "
+                       "`__`-prefixed probes are reported as missing backend routes again "
+                       "and the lane may be asked to build one",
+                       _e1203d1)
+        return False
+    text = str(entry or "")
+    path = text.split(" ", 1)[1] if " " in text else text
+    try:
+        return bool(_is_framework_probe_1203b5(path))
+    except Exception as _e1203d1b:
+        from .message_format import warn_once_1201
+        warn_once_1201("delivery_gate.declared_probe_1203d1.predicate",
+                       "the framework-probe predicate (#1203d1) raised on an endpoint entry, "
+                       "so that entry is reported as a missing backend route",
+                       _e1203d1b)
+        return False
+
+
 def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     """Run lightweight static checks for design/DB/backend/API drift."""
     errors: List[str] = []
@@ -2661,7 +2698,15 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     declared_keys = {_contract.param_agnostic(e): e for e in declared_endpoints}
     impl_keys = {_contract.param_agnostic(r) for r in implemented_endpoints}
     if declared_endpoints and implemented_endpoints:
-        missing_endpoints = sorted(e for k, e in declared_keys.items() if k not in impl_keys)
+        # #1203d1: the framework's OWN `__` probes are not the lane's to build. The
+        # orchestrator registers them (r148: `GET /__noop_monitoring_read_not_write__`,
+        # `_updated_by: orchestrator`, `status: defined`), and this warning reaches the lane
+        # through `format_delivery_gate_report`'s resident tick — which is how a lane comes to
+        # ship a `__noop_*` route, a defect measured in 35 of 179 runs (38% of September's).
+        # The other two paths a probe reaches from here — a probe CALLED BY THE FRONTEND and a
+        # probe REGISTERED AS A TABLE — are real defects and still fire.
+        missing_endpoints = sorted(e for k, e in declared_keys.items()
+                                   if k not in impl_keys and not _declared_probe_1203d1(e))
         if missing_endpoints:
             warnings.append(
                 "Backend route coverage missing declared endpoints: "

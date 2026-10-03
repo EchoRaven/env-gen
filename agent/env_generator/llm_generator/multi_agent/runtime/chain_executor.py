@@ -2260,6 +2260,24 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
         return ""
 
 
+def _is_own_identity_path_1203d2(path: str) -> bool:
+    """Does this path return the CALLER'S OWN identity? #1203d2
+
+    Matched the way `#1202vc` matches the AS namespace — `/api/` prefix stripped, case-folded,
+    a SEGMENT test rather than a substring — so `/api/theme` and `/api/members` are untouched.
+
+    The signal is the measured one and nothing more: a final segment of exactly `me`. Over every
+    registry, 58 endpoints match it and 49 already resolve to auth-required; the 6 that resolve
+    public are the ones this exists for. `current_user` and `whoami` do not appear anywhere in
+    the corpus, so they are not invented into the predicate (a predicate I invent overmatches).
+    """
+    q = str(path or "").split("?", 1)[0].strip().rstrip("/").lower()
+    if q.startswith("/api/"):
+        q = q[4:]
+    segs = [x for x in q.lstrip("/").split("/") if x]
+    return bool(segs) and segs[-1] == "me"
+
+
 def _contract_public_note_1202ib(method: str, path: str, endpoints) -> str:
     """#1202ib: resolve the denial-probe ambiguity for READS, using the contract.
 
@@ -2314,6 +2332,20 @@ def _contract_public_note_1202ib(method: str, path: str, endpoints) -> str:
     try:
         ep = _match_endpoint_template_1202id(method, path, endpoints)
         if ep is not None:
+            if _stated_auth_1202hi(ep) is False and _is_own_identity_path_1203d2(path):
+                # #1203d2: an endpoint returning the CALLER'S OWN identity is auth-required by
+                # definition, so here the CONTRACT is the defect and the probe is right. Same
+                # reasoning as #1202vc's authorization-server carve-out ten lines up, and the
+                # same rule its comment states: a true finding arriving with a framework-authored
+                # dismissal attached is worse than no note. 6 of the corpus's 58 `/me` endpoints
+                # resolve public (r58/r121/r123/r135/r144/r148); the other 52 never reach here.
+                who = str(ep.get("_updated_by") or "a lane")
+                return ("OWN-IDENTITY ENDPOINT: this path ends in `/me`, so it returns the "
+                        "CALLER'S OWN record and cannot be public — a request with no token has "
+                        "no 'me' to answer with. The contract says auth_required=False (last "
+                        f"written by {who}), and THAT is the defect: the probe is right. Set "
+                        "auth_required=True on this endpoint and let the projected handler get "
+                        "its guard. Do NOT weaken the probe. ")
             if _stated_auth_1202hi(ep) is False:
                 who = str(ep.get("_updated_by") or "a lane")
                 return ("CONTRACT SAYS PUBLIC: this endpoint states auth_required=False "

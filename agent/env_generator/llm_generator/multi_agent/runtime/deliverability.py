@@ -1868,14 +1868,20 @@ def _seed_summary(hub_registry, project_dir=None) -> Dict[str, Any]:
     try:
         from .seed_audit import audit_seed_data
     except Exception:
-        return {"tables": 0, "registered": 0, "missing": 0, "flagged": 0}
+        # #1203d3: the audit could not run at all — the loudest unmeasured state there is.
+        return {"tables": 0, "registered": 0, "missing": 0, "flagged": 0,
+                "examined": 0, "candidates": 0, "measured": False,
+                "registered_source_1203d3": "the seed audit did not run"}
     try:
         # #956: hand the audit a path so it can count ROWS in the running database instead of
         # reading `list_seed_registrations()`, which holds 0 records corpus-wide. Passing None
         # (or an unreachable DB) leaves the old behaviour byte-for-byte.
         report = audit_seed_data(hub_registry, project_dir)
     except Exception:
-        return {"tables": 0, "registered": 0, "missing": 0, "flagged": 0}
+        # #1203d3: the audit could not run at all — the loudest unmeasured state there is.
+        return {"tables": 0, "registered": 0, "missing": 0, "flagged": 0,
+                "examined": 0, "candidates": 0, "measured": False,
+                "registered_source_1203d3": "the seed audit did not run"}
     schema_hub = getattr(hub_registry, "schema_hub", None)
     total_tables = len((schema_hub.list_tables() if schema_hub else {}) or {})
     registered = len((schema_hub.list_seed_registrations() if schema_hub else {}) or {})
@@ -1888,6 +1894,23 @@ def _seed_summary(hub_registry, project_dir=None) -> Dict[str, Any]:
     _orph = getattr(report, "orphan_fk_rows", None) or {}
     out = {"tables": total_tables, "registered": registered,
            "missing": missing, "flagged": flagged,
+           # #1203d3: SAY WHETHER ANYTHING WAS LOOKED AT. `flagged`/`missing` are counts over
+           # `report.flagged_tables`, and an audit that inspected nothing produces an empty one
+           # — identical on the wire to an audit that inspected everything and found nothing.
+           # #1023d put `measured`/`examined`/`candidates` on the report for this, #1203c1
+           # carried them into `list_seed_issues`, and this — the dict the GATE REPORT prints —
+           # was the third reader still dropping them (#1202lf).
+           #
+           # `registered` is left alone on purpose: it reads `list_seed_registrations()`, which
+           # #956 calls "0 records corpus-wide" (measured: 0 in 2312 of 2312 gate records across
+           # 52 runs), and #1023d states the real repair counts rows at gate time and stays
+           # open. Naming the source is honest; swapping in `examined` (0 in 145 of 147 runs)
+           # would just move the zero.
+           "examined": getattr(report, "examined", 0),
+           "candidates": getattr(report, "candidates", 0),
+           "measured": bool(getattr(report, "measured", False)),
+           "registered_source_1203d3": "list_seed_registrations() — this project never writes "
+                                       "it (#956); a 0 here says nothing about the database",
            # #1202ow: which tables, and why — the task body could only say "N table(s)".
            "flagged_tables": [{"table": f.get("table"), "reason": f.get("reason")}
                               for f in (report.flagged_tables or [])][:20]}
