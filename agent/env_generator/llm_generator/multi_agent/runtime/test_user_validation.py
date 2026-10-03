@@ -441,6 +441,42 @@ def _api_test_user(base: str, api_paths: set,
     return {"steps": steps, "actor": "alpha"}
 
 
+def _count_mcp_tools_1203c7(src: str):
+    """``(count, how)`` for ``@<obj>.tool`` decorators in a generated MCP server. #1203c7
+
+    The regex this replaces (`@\\w+\\.tool\\b` over the raw source) matched the module
+    DOCSTRING that `mcp_scaffold._SKELETON_HEADER` writes into every server -- "One @mcp.tool
+    per backend endpoint" -- so every one of the 119 delivered servers counted exactly one
+    phantom tool. `complete` is `tools >= expected`, so the phantom flipped the verdict for a
+    server with `expected - 1` real tools: 38 reports sit on that boundary and ten of them read
+    PASS with nothing else outstanding.
+
+    A decorator is structure, so it is read as structure (#1202td: a regex ratchet has a blind
+    spot by construction). Same scope as before -- an attribute named `tool` on any object,
+    with or without a call -- so no server starts or stops counting for any other reason.
+
+    `how` is returned for the note: a count whose method is invisible is the thing #1034 is
+    about.
+    """
+    import ast as _ast1203c7
+    try:
+        tree = _ast1203c7.parse(src)
+    except SyntaxError as _e1203c7:
+        return 0, "main.py does NOT parse (%s line %s) — the server cannot be imported, so it " \
+                  "exposes no tools; this is a generation defect, not a counting one" % (
+                      type(_e1203c7).__name__, getattr(_e1203c7, "lineno", "?"))
+    n = 0
+    for _node in _ast1203c7.walk(tree):
+        if not isinstance(_node, (_ast1203c7.FunctionDef, _ast1203c7.AsyncFunctionDef)):
+            continue
+        for _dec in _node.decorator_list:
+            _f = _dec.func if isinstance(_dec, _ast1203c7.Call) else _dec
+            if isinstance(_f, _ast1203c7.Attribute) and _f.attr == "tool":
+                n += 1
+                break
+    return n, "counted %d @<obj>.tool decorator(s) by AST" % n
+
+
 def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> Dict[str, Any]:
     """Verify the env's MCP server is complete (a tool per endpoint) + importable."""
     out: Dict[str, Any] = {"server_found": False, "tools_expected": len(business_eps),
@@ -472,9 +508,13 @@ def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> 
             return out
         out["server_found"] = True
         src = mains[0].read_text(encoding="utf-8")
-        # Count registered tools (FastMCP @mcp.tool / @app.tool / def tool_*).
-        tools = len(re.findall(r"@\w+\.tool\b", src)) or len(re.findall(r"\basync def tool_\w+", src))
+        # #1203c7: count DECORATORS, not occurrences of the word. The old regex also matched
+        # the scaffolder's own docstring ("One @mcp.tool per backend endpoint"), +1 on 119 of
+        # 119 delivered servers, which flipped `complete` for every server holding exactly
+        # `expected - 1` real tools.
+        tools, _how1203c7 = _count_mcp_tools_1203c7(src)
         out["tools_found"] = tools
+        out["counted_by_1203c7"] = _how1203c7
         out["complete"] = tools >= len(business_eps) and tools > 0
         out["note"] = (f"{tools} MCP tool(s) for {len(business_eps)} endpoint(s)"
                        if out["complete"] else
@@ -904,6 +944,14 @@ def run_test_user_validation(
         _uifl = report.get("ui_flows") or {}
         _ui_broken = [f"UI {f['flow']}: {f.get('note')}"
                       for f in _uifl.get("flows", []) if not f.get("ok")]
+        # #1203c6: KEEP THE API-ONLY COUNT BEFORE THE REBINDING. `broken` becomes
+        # API + UI on the next line, and `api_failed` below used to read it -- so a run
+        # whose API was entirely green reported one or two API failures (118 of 198
+        # persisted reports, 96 runs; r146 M1.1 says api_steps=2, api_passed=2,
+        # api_failed=2 with both steps ok). The combined list is still what the verdict
+        # ladder and `describe_non_pass_1038` consume; only the COUNT was wrong.
+        _api_broken_1203c6 = len(broken)
+        _ui_broken_1203c6 = len(_ui_broken)
         broken = broken + _ui_broken
         if broken:
             verdict = "ISSUES"
@@ -914,7 +962,8 @@ def run_test_user_validation(
         report["summary"] = {  # NOTE (#1038): `describe_non_pass_1038` below formats this
             "api_steps": len(steps),
             "api_passed": len(passed),
-            "api_failed": len(broken),
+            "api_failed": _api_broken_1203c6,          # #1203c6: API only
+            "ui_flows_failed_1203c6": _ui_broken_1203c6,
             "api_missing": len(missing),
             "mcp_complete": report["mcp"].get("complete", False),
             "broken": broken,

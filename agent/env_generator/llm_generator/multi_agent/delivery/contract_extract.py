@@ -262,6 +262,53 @@ def _path_before_computed_1202ge(raw: str) -> str:
     return raw
 
 
+_UNKNOWN_METHOD_1203C3 = "?"
+"""#1203c3 — no options object could be read, so the method is unknown.
+
+NOT "GET". The alignment check matches on PATH and ignores the method, so an unknown one costs
+that check nothing; what it buys is an error message that stops telling a lane to register a
+method the source contradicts. A call written `request('/x')` with no options at all is a GET by the wrapper's own
+default and still reads as one -- this sentinel is ONLY for an options object that starts and
+never closes inside the scan window.
+"""
+
+
+def _options_object_1203c3(tail: str, max_len: int = 400):
+    """The options literal that follows a call's path, read with BRACE-DEPTH tracking. #1203c3
+
+    The old reading was `re.match(r"[`\'\"]\\s*,\\s*\\{([^{}]*)\\}", tail)`, and `[^{}]*` cannot
+    cross a nested brace: `{method:'POST',body:{}}` and
+    `{method:'POST',headers:{'Content-Type':'application/json'}}` both failed to match, so the
+    method fell back to GET. 791 of the corpus's 1543 extracted calls (51%, 153 runs) carry a
+    nested brace, and the invented GET reached lane-facing text 320 times in 17 runs -- five
+    endpoints were then registered with it.
+
+    THREE outcomes, and conflating the first two is a defect I wrote and caught by diffing the
+    extracted set: `""` when the call has NO options object at all (`request('/x')` -- a GET by
+    the wrapper's own default), the object's INNER TEXT when it reads cleanly, and None when an
+    options object STARTS but does not terminate inside the window (genuinely unknown). My first
+    draft returned None for the first case too, which turned four of r146's plain GET calls into
+    `? /api/search`, `? /api/videos/feed` ... -- the opposite of the point.
+
+    Depth tracking mirrors `#1202ge`'s reading of the path literal a few lines above, so this
+    function has one style of scanner, not two.
+    """
+    import re as _re1203c3
+    m = _re1203c3.match(r"[`'\"]\s*,\s*\{", tail)
+    if not m:
+        return ""          # no options object -> the wrapper's default method applies
+    depth = 0
+    for i in range(m.end() - 1, min(len(tail), max_len)):
+        ch = tail[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return tail[m.end():i]
+    return None        # started and never closed in the window -> unknown, not GET
+
+
 def extract_frontend_calls(frontend_dir: Path) -> Set[str]:
     """METHOD+path API calls extracted from generated frontend source.
 
@@ -290,9 +337,18 @@ def extract_frontend_calls(frontend_dir: Path) -> Set[str]:
                 if not raw_path.startswith("/"):
                     continue
                 tail = text[hm.end(1) + len(raw_path):hm.end(1) + len(raw_path) + 200]
-                om = re.match(r"[`'\"]\s*,\s*\{([^{}]*)\}", tail)
-                m = method_re.search(om.group(1) if om else "")
-                method = (m.group(1) if m else "GET").upper()
+                # #1203c3: depth-tracked, so `body:{...}` / `headers:{...}` no longer hide
+                # the method -- and when there is no readable options object the method is
+                # UNKNOWN, not GET. The alignment check is method-tolerant by design (its own
+                # comment: a static scan cannot tell a fetch's method from a route path), but
+                # its error TEXT prints what it is given, and five endpoints across r133/r135/
+                # r138/r146 were registered with the GET this used to invent.
+                _opts1203c3 = _options_object_1203c3(tail)
+                if _opts1203c3 is None:
+                    method = _UNKNOWN_METHOD_1203C3   # an options object we could not close
+                else:
+                    _m1203c3 = method_re.search(_opts1203c3)
+                    method = _m1203c3.group(1).upper() if _m1203c3 else "GET"
                 raw_path = _path_before_computed_1202ge(raw_path)
                 p = re.sub(r"\$\{([^}]+)\}", r":\1", raw_path)   # ${id} -> :id (param_agnostic normalizes at match)
                 calls.add(f"{method} {normalize_api_path(p)}")

@@ -2340,8 +2340,21 @@ def compute_deliverability(hub_registry, app_root,
     # when the app is NOT functionally validated.
     seed = _seed_summary(hub_registry, app_root)
     if seed.get("missing", 0) > 0 and not functionally_validated:
+        # #1203c5: NAME THEM. `_seed_summary` already carries `flagged_tables` -- #1202ow put
+        # it there because "the task body could only say 'N table(s)'" -- and this sentence,
+        # which is what the gate ledger records and the lane reads, stayed on the count. Over
+        # every gate ledger it fires 191 times in 22 runs and names a table ZERO times, while
+        # in the SAME record `dead_artifacts` lists its files and `business_chain_failing`
+        # gives the step and the 400 body. One reader fixed is worse than none (#1202lf): the
+        # count made the gap look like a design choice.
+        _seednames_1203c5 = [
+            "%s (%s)" % (t.get("table"), t.get("reason"))
+            for t in (seed.get("flagged_tables") or [])
+            if isinstance(t, dict) and t.get("reason") == "missing_seed" and t.get("table")]
         blockers.append(
-            f"{seed['missing']} table(s) missing seed registration (Cutover 21 gate)")
+            f"{seed['missing']} table(s) missing seed registration (Cutover 21 gate)"
+            + (": " + join_capped(_seednames_1203c5, len(_seednames_1203c5), cap=8)
+               if _seednames_1203c5 else ""))
     if seed.get("flagged", 0) > seed.get("missing", 0) and not functionally_validated:
         # additional flagged are placeholder_content or low_row_count
         extra = seed["flagged"] - seed.get("missing", 0)

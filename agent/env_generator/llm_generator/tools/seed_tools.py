@@ -155,7 +155,13 @@ class SeedAuditCheckTool(_SeedToolBase):
                 "has none. Do NOT cancel or close seed remediation on this verdict, and do not "
                 "report the seed as verified: count rows in the live database instead."
                 % (report.examined, report.candidates))
-        _lost1203c2 = _unmapped_dataset_text_1203c2(_project_dir_1202q(self))
+        # #1203c4: `self.hub_registry`, not `self`. The resolver reads `base_dir` off the
+        # HUB (its two older call sites in this file both pass `self.hub_registry`); a tool
+        # has no `base_dir`, so #1203c2 resolved None, read nothing and never fired once --
+        # confirmed on r146, where 19 recorded `seed_audit_check` results carry no such key
+        # while the helper called with that run's directory returns {'comments': ['text']}.
+        _lost1203c2 = _unmapped_dataset_text_1203c2(
+            _project_dir_1202q(self.hub_registry))
         if _lost1203c2:
             # #1203c2: said where the agent reads it. The framework's own seed audit states
             # that "Extra live columns are not reported", so without this the dataset's text

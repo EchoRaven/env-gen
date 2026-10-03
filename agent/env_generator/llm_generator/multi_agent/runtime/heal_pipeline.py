@@ -1273,6 +1273,99 @@ def _unstaged_seed_media_task_1202zf(orch, out_dir) -> None:
         except Exception:
             pass
 
+def _ui_friction_lines_1203c8(ui):
+    """``(lines, screens, dropped)`` from an LLM test-user `ui` section. #1203c8
+
+    Pure, so the formatting is testable without a hub. `lines` are rendered per screen plus the
+    overall `top_issues`; `screens` names the screens that carried a problem (for the title);
+    `dropped` is how many problem entries the cap left out, which the body must state (#1034).
+    """
+    if not isinstance(ui, dict):
+        return [], [], 0
+    CAP_PER_SCREEN = 5
+    lines = []
+    screens = []
+    dropped = 0
+    for sc in (ui.get("screens") or []):
+        if not isinstance(sc, dict):
+            continue
+        probs = [str(p).strip() for p in (sc.get("problems") or []) if str(p).strip()]
+        if not probs:
+            continue
+        name = str(sc.get("name") or "?").strip() or "?"
+        screens.append(name)
+        lines.append("  %s:" % name)
+        for p in probs[:CAP_PER_SCREEN]:
+            lines.append("    - %s" % p)
+        dropped += max(0, len(probs) - CAP_PER_SCREEN)
+    tops = [str(t).strip() for t in (ui.get("top_issues") or []) if str(t).strip()]
+    if tops:
+        lines.append("  the test-user's own ranking of what to fix FIRST:")
+        for t in tops[:8]:
+            lines.append("    %d. %s" % (tops.index(t) + 1, t))
+        dropped += max(0, len(tops) - 8)
+    return lines, screens, dropped
+
+
+def _file_ui_friction_task_1203c8(orch, ui, version: str = "") -> None:
+    """#1203c8 — route the LLM test-user's screen findings to the frontend lane.
+
+    `top_issues` and the per-screen `problems` had ZERO readers: two occurrences each in the
+    whole tree, the prompt that asks and the line that stores. 969 screen records with
+    `problems` and 690 ranked frictions across 107 runs went only to a JSON file.
+
+    P1 and never a blocker: delivery must not hinge on an LLM's aesthetic judgement, and
+    #1202z4 established that when the framework cannot show the finding is objectively wrong,
+    what changes is the audience. The browser walk's objective P0 path is untouched.
+    """
+    try:
+        lines, screens, dropped = _ui_friction_lines_1203c8(ui)
+        if not lines:
+            return
+        wh = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if wh is None:
+            return
+        base = "Test-user named user-visible UI frictions (screen walkthrough) — fix"
+        try:
+            for t in (wh.list_tasks() or []):
+                if (isinstance(t, dict)
+                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("status")) in ("pending", "in_progress", "open")):
+                    return
+        except Exception:
+            pass        # best-effort: on any fault, file rather than stay silent
+        try:
+            from .remediation_dispatcher import _instanced_gate_title_1202ss
+            title = _instanced_gate_title_1202ss(base, screens)
+        except Exception:
+            title = "%s (%d screens)" % (base, len(screens))
+        wh.create_task(
+            title=title,
+            description=(
+                "An LLM test-user walked the RUNNING app%s with screenshots and reported what "
+                "a first-time user hits. These are its own words, per screen:\n\n"
+                % ((" at v%s" % version) if version else "")
+                + "\n".join(lines)
+                + ("\n\n  (%d further problem entries not shown)" % dropped if dropped else "")
+                + "\n\nThis is NOT a delivery blocker — it is the most user-proximate feedback "
+                "the pipeline produces, and until now it reached a JSON file and nothing else. "
+                "Fix what is objectively wrong (clipped/overflowing layout, content hidden "
+                "behind another element, a control that looks usable but cannot work, missing "
+                "empty states). Where you judge an item to be a matter of taste or already "
+                "intended, say so in the task and move on — do not silence it by deleting the "
+                "affordance it describes."),
+            assignee="frontend", agent="orchestrator", priority="P1")
+        orch._logger.warning(
+            "TEST-USER UI frictions dispatched to frontend (#1203c8): %d screen(s), "
+            "%d line(s)%s", len(screens), len(lines),
+            (", %d entries capped" % dropped) if dropped else "")
+    except Exception as _exc1203c8:
+        try:
+            orch._logger.error("ui friction dispatch failed (#1203c8): %s", _exc1203c8)
+        except Exception:
+            pass
+
+
 def _file_shadowed_route_task_1202z4(orch, duplicated) -> None:
     """#1202z4 — tell the lane that a route it wrote twice never runs.
 
@@ -1875,6 +1968,9 @@ class HealPipeline:
                         summ.get("api_steps"),
                         describe_non_pass_1038(
                             summ, (report.get("mcp") or {}) if isinstance(report, dict) else {}))
+                # #1203c8: the LLM walk's own findings go to the lane, not just
+                # to the report file. P1, never a blocker — see the helper.
+                _file_ui_friction_task_1203c8(orch, report.get("ui"), version)
                 # BROWSER test-user (2026-06-22): drive a real browser through the frontend
                 # — the auth FLOW (catches a dead login form) + every declared page route
                 # (screenshot + blank/console-error checks). The structured feedback is
