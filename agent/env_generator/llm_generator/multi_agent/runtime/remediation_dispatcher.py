@@ -2775,6 +2775,22 @@ class RemediationDispatcher:
                 "personas, and keep them VARIED -- one domain for every user is its own tell. "
                 "The blocker names the file: if it is under frontend/src, file a bug_create "
                 "for the frontend instead of editing it here."),
+            # #1203b8: the token exists now (delivery_gate), so it needs the owner that
+            # makes it dispatch. FRONTEND: the page itself renders from a local module.
+            "deliverability_static_data_twin": (
+                "frontend",
+                "Make the page read the API instead of a hardcoded module (blocks delivery)",
+                "one or more pages render from a LOCAL data module and never call the server "
+                "at all -- the observed instance was four pages importing "
+                "`../lib/fallbackData`. This is not a masked failure: no request is made, so "
+                "nothing errors and nothing is logged, and the screen shows numbers that "
+                "contradict the database (r131's module held 156,000,000 followers for a "
+                "creator the API reports with 0). Replace the module's data with a real call "
+                "to the endpoint the page declares in `apis_used`, register any endpoint it "
+                "needs that the contract lacks, and DELETE the module rather than leaving it "
+                "as a fallback -- a fallback that hides the absence of a request is the "
+                "shape this blocker exists to stop. A loading and an empty state are the "
+                "correct answers while the data is absent."),
             "deliverability_parked_probe_route": (
                 "backend", "Delete the probe route parked to satisfy a check (blocks delivery)",
                 "the backend SERVES a route whose path begins `__` -- this framework's own "

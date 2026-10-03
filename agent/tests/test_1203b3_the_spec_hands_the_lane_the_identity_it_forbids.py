@@ -300,14 +300,22 @@ def test_the_analyst_join_is_fed_the_component_being_merged():
 
     src = inspect.getsource(DP)
     tree = ast.parse(src)
-    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+    # ★ Scoped to the MERGE, not the module. #1203b7 added a second, correct call site in
+    # `adopt_design_prep_1202hj` (an inherited design system carries the DONOR's design-prep),
+    # and a module-wide `== 1` turned that addition into a failure here. The property this test
+    # owns is "the JOIN scrubs the component it just merged", so it must select the join.
+    merge = next((n for n in ast.walk(tree)
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and n.name == "_merge_enrichment"), None)
+    assert merge is not None, "_merge_enrichment is gone"
+    calls = [n for n in ast.walk(merge) if isinstance(n, ast.Call)
              and getattr(n.func, "id", "") == "_scrub_operator_identity_1203b3"]
-    assert len(calls) == 1, "called %d time(s) in design_prep" % len(calls)
+    assert len(calls) == 1, "called %d time(s) in _merge_enrichment" % len(calls)
     arg = calls[0].args[0]
     assert isinstance(arg, ast.List) and len(arg.elts) == 1, ast.dump(arg)[:140]
     assert getattr(arg.elts[0], "id", "") == "c", ast.dump(arg)[:140]
     # and it is inside the per-component loop, after the field copy
-    loops = [n for n in ast.walk(tree) if isinstance(n, ast.For)
+    loops = [n for n in ast.walk(merge) if isinstance(n, ast.For)
              and any(x is calls[0] for x in ast.walk(n))]
     assert loops, "the scrub is outside every loop — it would run once per screen"
 

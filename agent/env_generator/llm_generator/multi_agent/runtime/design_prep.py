@@ -1563,6 +1563,57 @@ def design_prep_donor_1202hj(output_dir, design_input, resolved):
         return None
 
 
+def _scrub_adopted_design_system_1203b7(path, donor) -> int:
+    """#1203b7 — take the BUILD ACCOUNT's identity out of a doc inherited from another run.
+
+    `#1202hj` adopts a donor's `design_system.json` wholesale, so the adopting run inherits the
+    donor's design-prep as it was THEN. #1203b3 stops the identity being written, and r145
+    confirms it works — that run's own `component_specs` are clean. It cannot reach a document
+    copied from r144, which was measured before it: r145 adopted r144's doc and its gate
+    reported `deliverability_operator_identity_leak` minutes later, over
+    `.screens[9].components[1].state` = "default avatar, haibotong7, 0 Following/...".
+
+    34 corpus runs adopt a donor, so every design-prep fix has this hole until it is closed
+    HERE — at the copy, which is the one place an inherited doc enters a run.
+
+    Reuses #1203b3's scrub (same tokens, same named slot, same reported substitutions) rather
+    than a second rule. `route` is left alone on purpose: a screen routed at `/@haibotong7` is
+    a different defect, and a slot inside a path string is not a repair. Returns the number of
+    substitutions; never raises — a doc that cannot be re-read is left exactly as copied, and
+    says so.
+    """
+    try:
+        import json as _j1203b7
+        from .material_prep import _scrub_operator_identity_1203b3
+        _p = Path(path)
+        ds = _j1203b7.loads(_p.read_text(encoding="utf-8"))
+        comps = [c for sc in (ds.get("screens") or []) if isinstance(sc, dict)
+                 for c in (sc.get("components") or []) if isinstance(c, dict)]
+        if not comps:
+            return 0
+        hits = _scrub_operator_identity_1203b3(
+            comps, extra=("copy", "build_notes", "data_slots"))
+        if not hits:
+            return 0
+        _p.write_text(_j1203b7.dumps(ds, indent=2) + "\n", encoding="utf-8")
+        _LOG_813.warning(
+            "#1203b7 design-prep: the design system adopted from %s named the BUILD ACCOUNT's "
+            "identity in %d field(s); each was replaced with a named slot so the lane is not "
+            "handed it (%s). The donor ran before #1203b3 — this is not a defect of %s.",
+            getattr(donor, "name", donor), len(hits), "; ".join(hits[:6])
+            + (" (+%d more)" % (len(hits) - 6) if len(hits) > 6 else ""),
+            getattr(donor, "name", donor))
+        return len(hits)
+    except Exception as _e1203b7:
+        from .message_format import warn_once_1201
+        warn_once_1201("design_prep.scrub_adopted_1203b7",
+                       "scrubbing the build account's identity out of an ADOPTED design system "
+                       "(#1203b7) -- the doc is kept exactly as copied, so a donor measured "
+                       "before #1203b3 can still hand the lane that identity",
+                       _e1203b7)
+        return 0
+
+
 def adopt_design_prep_1202hj(donor, output_dir, design_input, resolved) -> bool:
     """#1202hj -- take the donor's measured doc and record the fingerprint as our own.
 
@@ -1579,6 +1630,7 @@ def adopt_design_prep_1202hj(donor, output_dir, design_input, resolved) -> bool:
         dst = Path(output_dir) / "design" / "design_system.json"
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+        _scrub_adopted_design_system_1203b7(dst, donor)
         record_design_prep_input_1202bv(output_dir, design_input, resolved)
         return True
     except Exception as _e1202hj2:

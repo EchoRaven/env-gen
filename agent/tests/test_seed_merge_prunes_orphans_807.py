@@ -88,14 +88,37 @@ def _runs_with_both_seeds():
 _RUNS = _runs_with_both_seeds()
 
 
+def _netflix_shaped_r145():
+    """The run these two cases were MEASURED on: a netflix-shaped app (a `titles` table with
+    episodes/my_list/ratings) whose name ends `r145`.
+
+    ★ The selector used to be `name.endswith("r145")` alone. `netflix-local-r145` is no longer in
+    the corpus, so both cases had been skipping invisibly -- and the moment a same-suffixed run of
+    a DIFFERENT domain appeared (`tiktok-web-r145`), `next(...)` picked it and asserted netflix
+    expectations against a TikTok app: `KeyError: 'titles'` / "the swap must be refused" over an
+    app that has no titles at all. A suffix is not an identity; the shape the test asserts is part
+    of what it must select on.
+    """
+    for p_ in _RUNS:
+        if not p_.parent.parent.name.endswith("r145"):
+            continue
+        try:
+            if "titles" in (p_ / "models.py").read_text(encoding="utf-8", errors="replace"):
+                return p_
+        except Exception:
+            continue
+    return None
+
+
+
 @pytest.mark.skipif(not _RUNS, reason="no generated corpus available")
 def test_the_corpus_is_actually_being_exercised():
     """Non-vacuity: without this, a moved corpus turns every test below into a silent skip."""
     assert len(_RUNS) >= 5, len(_RUNS)
 
 
-@pytest.mark.skipif(not any(p.parent.parent.name.endswith("r145") for p in _RUNS),
-                    reason="r145 not present")
+@pytest.mark.skipif(_netflix_shaped_r145() is None,
+                    reason="the netflix-shaped r145 these cases were measured on is no longer in the corpus (a same-suffixed run of another domain does not substitute)")
 def test_r145_keeps_its_coherent_app():
     """The measured case, and the answer that pruning got WRONG.
 
@@ -104,7 +127,7 @@ def test_r145_keeps_its_coherent_app():
     my-list, ratings and continue-watching. Refusing the swap keeps the lane's 20 titles WITH all
     93 dependent rows — a smaller app that actually works. **Realism is worth less than
     coherence.**"""
-    backend = next(p for p in _RUNS if p.parent.parent.name.endswith("r145"))
+    backend = _netflix_shaped_r145()
     base, out = _run_merge(backend)
     assert len(out.get("titles") or []) == 20, "the swap must be refused, not applied"
     for table in ("title_genres", "episodes", "my_list", "ratings", "continue_watching"):
@@ -137,15 +160,15 @@ def test_it_prunes_rather_than_remaps():
     assert "_kept" in blk
 
 
-@pytest.mark.skipif(not any(p.parent.parent.name.endswith("r145") for p in _RUNS),
-                    reason="r145 not present")
+@pytest.mark.skipif(_netflix_shaped_r145() is None,
+                    reason="the netflix-shaped r145 these cases were measured on is no longer in the corpus (a same-suffixed run of another domain does not substitute)")
 def test_the_prune_announces_itself(capsys):
     """Silent pruning would replace one invisible emptiness with another (#769/#770).
 
     Asserted on the RUNTIME message, not the emitted source: the sentence is assembled from two
     adjacent string literals, so `"no longer resolves" in src` fails against working code. Same
     lesson as #782 — check the behaviour, not the text that produces it."""
-    backend = next(p for p in _RUNS if p.parent.parent.name.endswith("r145"))
+    backend = _netflix_shaped_r145()
     _run_merge(backend)
     out = capsys.readouterr().out
     assert "#807b REFUSED the dataset swap for titles" in out

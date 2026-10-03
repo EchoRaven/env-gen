@@ -407,6 +407,26 @@ def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> Non
             else:
                 row[k] = _capped_value_1202zq(k, v, _enc, _CAP, _j948)
         row["at"] = time.time()
+        # #1203b9: WHO ASKED. `_validate_delivery_gate` is called from eight places -- two in
+        # `_maybe_framework_deliver` and five in `run` -- so a green line here does NOT mean a
+        # delivery was attempted, and nothing on disk said which it was. #1202tk's docstring
+        # reads "41 runs reach a fully-green gate and never deliver" off these ledgers, and I
+        # repeated it about r144 ("12 green windows, 0 releases") before r145 produced a green
+        # tick that added no line to `delivery_hold.jsonl` at all -- because nothing tried to
+        # ship on it. Resolved from the stack so none of the eight call sites changes, and
+        # ALWAYS present: a key that quietly vanishes reads as "nobody evaluated the gate".
+        row["evaluated_by_1203b9"] = "?"
+        try:
+            import sys as _sys1203b9
+            _skip1203b9 = ("_persist_gate_948", "_validate_delivery_gate")
+            for _d1203b9 in range(1, 8):
+                _fr1203b9 = _sys1203b9._getframe(_d1203b9)
+                _nm1203b9 = _fr1203b9.f_code.co_name
+                if _nm1203b9 not in _skip1203b9:
+                    row["evaluated_by_1203b9"] = str(_nm1203b9)
+                    break
+        except Exception:
+            pass        # the "?" above is the answer, and it is already written
         f = Path(output_dir) / "logs" / "delivery_gate.jsonl"
         f.parent.mkdir(parents=True, exist_ok=True)
         with open(f, "a", encoding="utf-8") as fh:

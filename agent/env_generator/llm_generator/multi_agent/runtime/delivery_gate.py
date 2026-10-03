@@ -3163,6 +3163,14 @@ def _deliverability_check_token(blocker: str) -> str:
     # goes in with the check, not after it.
     if "exist only to satisfy a framework check" in low:
         return "deliverability_parked_probe_route"
+    # #1203b8: #1202rl's static-twin check is the LAST one that minted no token. Measured
+    # over every record that reached the catch-all in production: 825 are mapped today and
+    # 12 are not, and all 12 are this check -- under THREE keys that differ only by the
+    # count ("3 page/component(s)…", "1 page/component(s)…", "4 page/component(s)…"), which
+    # is the drifting name this function's own comment says defeats the dispatcher's re-fire
+    # guard and storm control. r145 hit it on four pages, all reading `../lib/fallbackData`.
+    if "render a hardcoded data module without asking" in low:
+        return "deliverability_static_data_twin"
     return f"deliverability_other:{str(blocker)[:80]}"
 
 

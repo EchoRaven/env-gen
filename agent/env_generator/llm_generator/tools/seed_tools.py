@@ -75,6 +75,57 @@ class RegisterSeedDataTool(_SeedToolBase):
         return ToolResult.ok(data={"record": record})
 
 
+def _unmapped_dataset_text_1203c2(project_dir) -> dict:
+    """Content fields the staged dataset carries that NO model column can hold. #1203c2
+
+    The framework stages `seed_dataset.json` from its real-content corpus; the lane declares the
+    columns. When the dataset's text field has no column of that name the text is silently
+    dropped — r145's 35 video `caption`s never reached `videos.title/description`, every video
+    shipped wordless, and `primary_dataless` (HARD, never escapes) held the run.
+
+    Returns `{entity: [field, ...]}` for TEXT-BEARING fields only, so a dataset's `likes` or
+    `author_id` is not reported as lost: those are either counts the projector derives or
+    relations the loader resolves, and naming them would bury the one field that matters
+    (#1202vx). Compares against the DELIVERED `models.py`, which is what actually holds rows.
+    Never raises — an unreadable tree reports nothing, which is the pre-#1203c2 behaviour.
+    """
+    _TEXT = ("caption", "text", "body", "bio", "summary", "excerpt", "headline",
+             "overview", "blurb", "quote", "message", "content")
+    try:
+        import ast as _a1203c2
+        import json as _j1203c2
+        from pathlib import Path as _P1203c2
+        be = _P1203c2(str(project_dir)) / "app" / "backend"
+        ds = _j1203c2.loads((be / "seed_dataset.json").read_text(encoding="utf-8"))
+        if not isinstance(ds, dict):
+            return {}
+        cols = set()
+        tree = _a1203c2.parse((be / "models.py").read_text(encoding="utf-8", errors="replace"))
+        for node in _a1203c2.walk(tree):
+            if not isinstance(node, _a1203c2.ClassDef):
+                continue
+            for st in node.body:
+                if isinstance(st, _a1203c2.Assign) and isinstance(st.value, _a1203c2.Call):
+                    fn = getattr(st.value.func, "id", "") or getattr(st.value.func, "attr", "")
+                    if fn == "Column":
+                        cols.add(getattr(st.targets[0], "id", ""))
+        if not cols:
+            return {}        # no models parsed -> no claim
+        out = {}
+        for entity, rows in ds.items():
+            if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+                continue
+            lost = sorted(k for k in rows[0]
+                          if k in _TEXT and k not in cols
+                          and any(str(r.get(k) or "").strip() for r in rows[:20]
+                                  if isinstance(r, dict)))
+            if lost:
+                out[str(entity)] = lost
+        return out
+    except Exception:
+        return {}
+
+
 class SeedAuditCheckTool(_SeedToolBase):
     NAME = "seed_audit_check"
     DESCRIPTION = ("Audit seed data coverage across all registered tables. "
@@ -89,7 +140,39 @@ class SeedAuditCheckTool(_SeedToolBase):
 
     async def execute(self, **_kw) -> ToolResult:
         report = audit_seed_data(self.hub_registry, _project_dir_1202q(self.hub_registry))
-        return ToolResult.ok(data=report.to_dict())
+        _data1203c1 = report.to_dict()
+        if not report.measured:
+            # #1203c1: SAY IT WHERE THE AGENT READS. `is_clean: true` sits first in this
+            # payload and `measured: false` after it; r145's orchestrator agent read the
+            # affirmative one and cancelled the seed-remediation task that would have put the
+            # dataset's 35 real captions into `videos.title/description`. The run then held to
+            # the end on `primary_dataless`, which never escape-releases. The framework already
+            # logs this in words -- the log is the orchestrator's, and the agent reads results.
+            _data1203c1["not_checked_1203c1"] = (
+                "NOT CHECKED: this audit inspected %d of %d table(s), so `is_clean` carries NO "
+                "information here -- it means nothing was looked at, not that nothing is wrong. "
+                "This audit only inspects tables still marked `defined`, and almost every run "
+                "has none. Do NOT cancel or close seed remediation on this verdict, and do not "
+                "report the seed as verified: count rows in the live database instead."
+                % (report.examined, report.candidates))
+        _lost1203c2 = _unmapped_dataset_text_1203c2(_project_dir_1202q(self))
+        if _lost1203c2:
+            # #1203c2: said where the agent reads it. The framework's own seed audit states
+            # that "Extra live columns are not reported", so without this the dataset's text
+            # is dropped in silence -- 7 of 140 runs, always `caption`, and in r145 it cost the
+            # run: wordless videos -> no seed text on `/` -> `primary_dataless`, which never
+            # escape-releases. Not repaired here: which column the product means is the lane's
+            # to decide, and mapping `caption` onto `description` would be a guess.
+            _data1203c1["dataset_text_without_column_1203c2"] = {
+                "unmapped": _lost1203c2,
+                "note": ("the staged `seed_dataset.json` carries TEXT in field(s) that no "
+                         "model Column can hold, so that text is dropped on load and the rows "
+                         "arrive with empty columns. Add a column of that name, or rename the "
+                         "loader's target to a column you already declare -- do not leave the "
+                         "rows wordless: a page rendering content with no text reads as an "
+                         "empty shell to the browser walk and holds delivery."),
+            }
+        return ToolResult.ok(data=_data1203c1)
 
 
 class ListSeedIssuesTool(_SeedToolBase):

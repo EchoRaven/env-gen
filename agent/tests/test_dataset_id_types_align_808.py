@@ -99,14 +99,30 @@ def test_malformed_input_never_raises_and_never_drops_rows(dataset, schema):
 
 # --- against the real corpus --------------------------------------------------------------------
 
-def _backend(suffix):
+def _backend(suffix, needs_table="titles"):
+    """The backend of the run this case was measured on.
+
+    ★ `needs_table` is not decoration. The selector was `name.endswith(suffix)` alone, both
+    measured runs (`...r145`, `...r151`) are netflix-shaped and neither is in the corpus any
+    more, so both cases had been skipping invisibly -- until a same-suffixed run of ANOTHER
+    domain appeared (`tiktok-web-r145`) and this returned it, asserting `schema["titles"]`
+    against an app with no titles table (`KeyError: 'titles'`). A suffix is not an identity.
+    """
     if not _GENERATED.is_dir():
         return None
     for p in sorted(_GENERATED.iterdir()):
         be = p / "app" / "backend"
-        if p.name.endswith(suffix) and (be / "models.py").is_file() \
-                and (be / "seed_dataset.json").is_file():
-            return be
+        if not (p.name.endswith(suffix) and (be / "models.py").is_file()
+                and (be / "seed_dataset.json").is_file()):
+            continue
+        if needs_table:
+            try:
+                if needs_table not in (be / "models.py").read_text(
+                        encoding="utf-8", errors="replace"):
+                    continue
+            except Exception:
+                continue
+        return be
     return None
 
 
