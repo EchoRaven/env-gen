@@ -781,8 +781,16 @@ async def _ui_test_user(project_dir: Path, llm: Any) -> Dict[str, Any]:
     """First-time-user feedback over the latest visual-gate screenshots. One
     multimodal call; images ride the #41 compression cache. Best-effort."""
     shots = sorted((project_dir / "design" / "visual_gate").glob("*.png"))
-    if not shots or llm is None:
-        return {"ran": False, "reason": "no screenshots or no llm"}
+    # #1203c9: NAME WHICH ONE. "no screenshots or no llm" is 23 of the 199 reports, and the two
+    # causes have nothing in common: no screenshots means the visual gate has not produced any
+    # yet (a timing fact, like #616's), no llm means the caller passed none (a wiring fact).
+    if llm is None:
+        return {"ran": False, "reason": "no llm was passed to the ui test-user (wiring, not "
+                                        "timing — the screenshots are irrelevant here)"}
+    if not shots:
+        return {"ran": False, "reason": "no screenshots under design/visual_gate AT THIS MOMENT "
+                                       "— the visual gate writes them; this probe may simply "
+                                       "have run first"}
     try:
         from utils.llm import Message
         from .visual_fidelity import _b64
@@ -803,13 +811,39 @@ async def _ui_test_user(project_dir: Path, llm: Any) -> Dict[str, Any]:
         resp = await client.chat([Message.user_multimodal(parts)],
                                  temperature=0.0, max_tokens=3000)
         text = getattr(resp, "content", "") or ""
+        _raw1203c9 = text
         m = re.search(r"\{.*\}", text, re.DOTALL)
         data = json.loads(m.group(0)) if m else {}
         return {"ran": True,
                 "screens": data.get("screens") or [],
                 "top_issues": [str(x)[:300] for x in (data.get("top_issues") or [])][:8]}
     except Exception as exc:
-        return {"ran": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        # #1203c9: KEEP WHAT THE RUN PAID FOR. This is the most expensive single call in the
+        # run (8 high-detail screenshots in one multimodal request) and the model's answer was
+        # discarded whole whenever `json.loads` raised — 21 of 199 reports, every one of them
+        # `Expecting ',' delimiter`, which is an unescaped quote or a missing comma in the
+        # model's own JSON. No repair is attempted: guessing where a quote belonged would
+        # invent findings. The failure stays a failure, with the same exception text; the
+        # difference is that the words are on disk and the reason says so.
+        _reason1203c9 = f"{type(exc).__name__}: {exc}"[:200]
+        _raw1203c9 = locals().get("_raw1203c9") or ""
+        _out1203c9 = {"ran": False, "reason": _reason1203c9}
+        if _raw1203c9:
+            try:
+                _p1203c9 = Path(project_dir) / "logs" / "ui_test_user_raw_1203c9.txt"
+                _p1203c9.parent.mkdir(parents=True, exist_ok=True)
+                _p1203c9.write_text(_raw1203c9, encoding="utf-8")
+                _out1203c9["raw_saved_to_1203c9"] = str(_p1203c9)
+                _out1203c9["reason"] = (
+                    _reason1203c9 + " — the model DID answer (%d chars); its words are kept at "
+                    "logs/ui_test_user_raw_1203c9.txt and excerpted below, so the walk is not "
+                    "lost" % len(_raw1203c9))[:400]
+            except Exception:
+                pass        # a failed save must not also lose the excerpt below
+            _out1203c9["raw_excerpt_1203c9"] = _raw1203c9[:2000] + (
+                "\n… (%d of %d chars not shown; full text in logs/)"
+                % (len(_raw1203c9) - 2000, len(_raw1203c9)) if len(_raw1203c9) > 2000 else "")
+        return _out1203c9
 
 
 def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
