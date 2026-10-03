@@ -276,6 +276,31 @@ def _declared_extras_1202vh(page: Mapping[str, Any]) -> dict:
     return out
 
 
+def _is_framework_probe_1203b5(path) -> bool:
+    """Is this path the framework's own machinery rather than product surface? #1203b5
+
+    ONE signal, and it is the framework's own: a LEADING `__` path segment. `registryhub`'s
+    tagger uses exactly this test and states the convention -- "`/api/__x` is app surface and
+    is left alone".
+
+    ★ A FIRST DRAFT ALSO SKIPPED `kind in (infra, control)`, REASONING THAT EVERY GATE ALREADY
+    EXEMPTS `FIXED_ENDPOINT_KINDS`. Measured before applying it: that would have skipped 1085
+    of the corpus's 5119 registered endpoints (21%), and the five largest are
+    `/api/v1/tenants` (328), `/api/v1/admin/init-tenant` (165), `/health` (164),
+    `/api/v1/reset` (164) and `/api/v1/tenants/{tenant_id}` (164) -- the CONTROL PLANE, which
+    lanes must implement. r144's own ledger has `POST /api/v1/admin/init-tenant returns 404`
+    blocking validation. Those gates exempt a kind from "is this business surface?", never
+    from "should this be built?". The `__` test alone selects ~110 endpoints and every one of
+    them is a probe.
+
+    Never raises -- a malformed path is not a probe, and the caller validates it anyway.
+    """
+    try:
+        return str(path or "").lstrip("/").split("/", 1)[0].startswith("__")
+    except Exception:
+        return False
+
+
 def synthesize_task_tree(contract: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Build a minimum-viable task_tree from the contract.
 
@@ -336,6 +361,27 @@ def synthesize_task_tree(contract: Mapping[str, Any]) -> List[Dict[str, Any]]:
         method = str(ep.get("method") or "").upper().strip()
         path = str(ep.get("path") or "").strip()
         if not method or not path:
+            continue
+        # #1203b5: NEVER ASK A LANE TO IMPLEMENT THE FRAMEWORK'S OWN PROBE.
+        #
+        # `registryhub._infra_kind_for_probe` tags a `__`-prefixed registration `kind="infra"`
+        # precisely so "the exemption they already implement start[s] working, and any gate
+        # added later inherits it". This generator is a later consumer and did not inherit it,
+        # so it emitted `impl.endpoint.get.__noop_orchestrator_probe` and the matching
+        # `validate.api_smoke` task -- and the lane did as it was told.
+        #
+        # r144's own task ledger is the loop: those two tasks completed, the probe shipped,
+        # `deliverability_parked_probe_route` blocked delivery, and the orchestrator then filed
+        # EIGHT more P0s to have it deleted, one still in_progress at 80 minutes. The blocker's
+        # prose guesses "if a CHECK pushed you to add it"; it was a task with the framework's
+        # own name on it. Measured: 11 of 183 runs, 39 such tasks (r144, r122, r123, r125,
+        # r126, googlemaps-r16).
+        #
+        # The test is the framework's OWN convention, quoted from that tagger: a LEADING `__`
+        # segment is machinery, while `/api/__x` is app surface and is left alone. It is ONLY
+        # that -- `kind` deliberately does NOT widen it, because the control plane carries
+        # `kind="control"` and lanes must implement it (see the predicate's own note).
+        if _is_framework_probe_1203b5(path):
             continue
         key = (method, path)
         response = ep.get("response") or {}

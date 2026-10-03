@@ -881,6 +881,16 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
                       "assets", "crop"):
                 if ec.get(k) is not None:
                     c[k] = ec[k]
+            # #1203b3: `copy`, `build_notes` and `data_slots` are the ANALYST's, written one
+            # stage after the vision call, so `decompose_reference`'s scrub never sees them.
+            # #1202ri governs `copy` explicitly and the corpus has the build account's
+            # identity in it in 26 runs -- the prompt rule failing exactly as #1202rj said a
+            # prompt rule does. Scrubbed HERE, at the join, because this is the one place
+            # every enriched field passes through on its way to design_system.json. Imported
+            # function-locally like every other material_prep use in this module.
+            from .material_prep import _scrub_operator_identity_1203b3
+            _scrub_operator_identity_1203b3(
+                [c], extra=("copy", "build_notes", "data_slots"))
             # measured colors are immutable — c["colors"] is never replaced
         # An EMPTY enrichment is #813's event (the call produced nothing), not a join mismatch.
         # Reporting it here too would present one failure as two causes and send the next reader

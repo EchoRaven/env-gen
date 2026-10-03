@@ -635,6 +635,11 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         if token or moved:
                             break
                     ok = bool(token) or moved
+                    # #1203b6: per FLOW, not per walk. The note chain below is about to gain a
+                    # "keep what a check above already said" guard, and without this the guard
+                    # would read the PREVIOUS flow's note and attach `login`'s explanation to
+                    # `signup`. Initialised here, beside the verdict it explains.
+                    _note = ""
                     # #1126b: THE SECOND COPY of the post-login check. #1126 taught
                     # `test_user_runner` to ask where the login LANDED, not just that it left
                     # the auth route — and this copy never got it. It is weaker still: `or`,
@@ -676,6 +681,18 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                             pass  # best-effort: a probe that throws must not fail a good login
                     if ok:
                         _note = ""
+                    elif _note:
+                        # #1203b6: A CHECK ABOVE ALREADY EXPLAINED THIS ONE. #1126b sets
+                        # `ok = False` and writes the note that names the repair; this chain
+                        # then ran because `ok` was False and replaced it with its own final
+                        # `else`, which says "no token was stored and no navigation" about a
+                        # record whose `token_stored` and `navigated` are both true. r144's
+                        # signup flow is exactly that, and `browser_ui_unusable` held its last
+                        # four green gate windows on it.
+                        #
+                        # The chain keeps its job -- explaining a failure that arrived with no
+                        # explanation -- and stops outranking one that did.
+                        pass
                     elif not _auth_resps and (_auth_reqs or _auth_failed):
                         # #1203a6: the form IS wired — it sent the request and got nothing back.
                         # Blaming the wiring here sends a lane to add a call that already

@@ -694,9 +694,23 @@ async def precompute_component_specs(
         rel = Path("design") / "component_specs" / f"{stem}.json"
         try:
             specs_dir.mkdir(parents=True, exist_ok=True)
+            # #1203b3: `payload` is rebuilt by hand, so a key added to what
+            # `decompose_reference` RETURNS is dropped right here unless it is carried --
+            # #1202vp, one module over. The scrub record has to survive to the artifact,
+            # or a run can never be asked whether the vision model named the operator.
             payload = {"reference": Path(img).name,
                        "count": res.get("count"),
                        "components": res.get("components")}
+            _scr1203b3 = res.get("identity_scrubbed_1203b3")
+            if _scr1203b3:
+                payload["identity_scrubbed_1203b3"] = _scr1203b3
+                logger.warning(
+                    "MATERIAL-PREP #1203b3: the vision reply for %s named the BUILD "
+                    "ACCOUNT's identity in %d spec field(s); each was replaced with a "
+                    "named slot so the lane is not handed it (%s). The reference was "
+                    "captured from that account -- this is not a defect of the app.",
+                    Path(img).name, len(_scr1203b3), "; ".join(_scr1203b3[:6])
+                    + (" (+%d more)" % (len(_scr1203b3) - 6) if len(_scr1203b3) > 6 else ""))
             (Path(output_dir) / rel).write_text(
                 json.dumps(payload, indent=2) + "\n", encoding="utf-8")
             written.append(str(rel))

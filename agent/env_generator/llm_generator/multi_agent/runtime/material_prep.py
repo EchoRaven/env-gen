@@ -152,11 +152,148 @@ _DECOMPOSE_PROMPT = (
     "FRACTIONS of width/height (a loose bounding box — include a little margin), \"role\": one short "
     "line of what it is + its layout, \"state\": notable state the data shows (e.g. 'mostly UNREAD "
     "→ blue-dominant', 'one row selected/highlighted', 'empty reading pane with wallpaper')}.\n"
+    # #1203b3: this field asks for "the state the DATA shows", and the data in a reference
+    # screenshot is whatever account it was captured from -- the operator's own. #1202ri
+    # states this rule to the ANALYST, one stage later, and #1202rj backstops the served
+    # files; neither governs the stage that WRITES the sentence. Measured: 86 runs carry the
+    # build account's handle in a `state` string, 14 in `role`, and one holds a whole email
+    # address. r144 shows the cost -- the handle reached the rendered page, delivery was
+    # declined, and the lane cleaned the page while the spec that re-injects it was never
+    # named. The scrub below is the enforcement; this sentence is where it stops being made.
+    "   THE SHAPE, NEVER THE VALUES. This screenshot was captured from ONE signed-in "
+    "account, so every value it shows is an accident of capture, not a fact about the "
+    "design. Describe what state the data is IN -- 'own profile, no bio, zero counts', "
+    "'list mostly unread', 'one row selected' -- and NEVER write a value that belongs to "
+    "whoever was signed in: a username or handle, a display name, an email address, a "
+    "follower/like/view count, a timestamp, a post caption. Name the slot, never what you "
+    "can read in it.\n"
     "Do NOT report colors — the framework MEASURES those from your regions (your color guesses are "
     "unreliable). Cover the WHOLE screen; 6-24 components — use MORE for dense screens (a browse "
     "page with many rails, each rail a distinct component; individual hero/nav/card regions). "
     "Output ONLY a JSON array, nothing else."
 )
+
+
+_IDENTITY_SLOT_1203B3 = "<the signed-in user's own handle>"
+
+
+_OPERATOR_TOKENS_1203B3: Optional[List[str]] = None
+
+
+def _operator_tokens_1203b3() -> List[str]:
+    """The build account's identity tokens, resolved ONCE per process.
+
+    `_operator_identity_1202rj` shells out to `git config` twice on every call, and the analyst
+    join below runs PER COMPONENT -- a few hundred times per run. The identity of the account
+    running the build cannot change inside one process, so resolving it repeatedly buys nothing
+    and costs a subprocess pair each time. Cached as the list (possibly empty), never as a
+    falsy sentinel, so an environment that legitimately resolves to [] is not re-probed either.
+    """
+    global _OPERATOR_TOKENS_1203B3
+    if _OPERATOR_TOKENS_1203B3 is None:
+        try:
+            from .deliverability import _operator_identity_1202rj
+            _OPERATOR_TOKENS_1203B3 = [
+                str(t) for t in (_operator_identity_1202rj() or []) if t and len(str(t)) >= 4]
+        except Exception:
+            _OPERATOR_TOKENS_1203B3 = []
+    return _OPERATOR_TOKENS_1203B3
+
+
+def _scrub_operator_identity_1203b3(comps, extra=()):
+    """#1203b3 — take the BUILD ACCOUNT's identity out of the design spec's FREE TEXT.
+
+    #1202ri told the design ANALYST that a value belonging to whoever was signed in when the
+    reference screenshot was taken is DATA, not chrome, and must go in `data_slots` rather than
+    `copy`. #1202rj then added the served-file backstop, whose own comment says why: "a prompt
+    rule is not enforcement".
+
+    NEITHER reaches the stage that produces this text. `_DECOMPOSE_PROMPT` -- one vision call
+    per reference screen, run BEFORE any lane and before the analyst -- asks for "notable state
+    the data shows", and the data in the screenshot is the operator's own account. That `state`
+    string is then interpolated VERBATIM into two prompts: the analyst's compact skeleton
+    (`_skeleton_for_prompt_816`) and the lane's "MEASURED SPEC" block (visual_fidelity). So the
+    framework hands the lane the very value its own rule says must never be rendered.
+
+    MEASURED over the corpus (183 runs with a design/ tree, 100 affected):
+      component_specs/*.json   state 126x / 86 runs,  role 16x / 14 runs,  name 0x
+      design_system.json       state 123x / 94 runs,  copy 26x / 26 runs,  route 11x / 6 runs
+    `copy` is the field #1202ri governs explicitly, and it carries the handle in 26 runs -- the
+    prompt rule failing exactly as #1202rj predicted. One spec holds a full address,
+    `haibot2@illinois.edu`. r144 shows the whole chain fire end to end: spec `state` said
+    "Own profile view for user haibotong7", the lane rendered it, #1202rj blocked delivery, and
+    the frontend carried THREE in_progress tasks about a page whose source it had already
+    cleaned -- while the spec that re-injects it was never named by anything.
+
+    ★ NOT A SILENT STRIP. The replacement is a NAMED SLOT in #1202ri's own vocabulary, so the
+    shape the field exists to describe survives ("Own profile view for <the signed-in user's own
+    handle>, no bio, zero counts" is still the state the screen is in), and every substitution
+    is RETURNED so the caller records it. A scrub that merely deleted the token would hide that
+    the vision model had named a value it was asked not to.
+
+    ★ NARROW BY CONSTRUCTION, like #1202rj: the tokens come from the build environment
+    (`_operator_identity_1202rj` -- OS user, git identity, email local-part), never from "names
+    that look personal". A SEEDED persona is supposed to have a name and must survive untouched.
+
+    `name` is excluded deliberately: it is the component ID this spec is joined on by BOTH the
+    analyst merge (#815) and the lane, and the corpus shows it never carries the identity, so
+    rewriting it could only break the join. Returns the list of what it replaced ([] when
+    nothing matched or the identity could not be resolved).
+    """
+    tokens = _operator_tokens_1203b3()
+    if not tokens:
+        return []
+    keys = ("role", "state") + tuple(extra)
+    hits = []
+    for c in (comps or []):
+        if not isinstance(c, dict):
+            continue
+        for key in keys:
+            val = c.get(key)
+            if isinstance(val, list):                 # data_slots
+                new_list, changed = [], False
+                for item in val:
+                    if isinstance(item, str):
+                        s, h = _sub_identity_1203b3(item, tokens)
+                        if h:
+                            changed = True
+                            hits.extend("%s.%s: %s" % (c.get("name") or c.get("id") or "?", key, x)
+                                        for x in h)
+                        new_list.append(s)
+                    else:
+                        new_list.append(item)
+                if changed:
+                    c[key] = new_list
+                continue
+            if not isinstance(val, str) or not val:
+                continue
+            new, h = _sub_identity_1203b3(val, tokens)
+            if h:
+                hits.extend("%s.%s: %s" % (c.get("name") or c.get("id") or "?", key, x) for x in h)
+                c[key] = new
+    return hits
+
+
+def _sub_identity_1203b3(text, tokens):
+    """Replace each identity token -- plus any handle characters it runs into -- with the slot.
+
+    r127's leak was `haibotong7`: the OS user `haibotong` with a digit on the end, which is why
+    the match extends through trailing word characters rather than stopping at the token. The
+    same extension turns `haibot2@illinois.edu` into the slot instead of leaving `@illinois.edu`
+    dangling. Returns `(new_text, [what was replaced])`.
+    """
+    out, hits = str(text), []
+    for tok in tokens:                                # resolver yields longest-first
+        low = tok.lower()
+        i = out.lower().find(low)
+        while i >= 0:
+            j = i + len(tok)
+            while j < len(out) and (out[j].isalnum() or out[j] in "._-@+"):
+                j += 1
+            hits.append(out[i:j])
+            out = out[:i] + _IDENTITY_SLOT_1203B3 + out[j:]
+            i = out.lower().find(low, i + len(_IDENTITY_SLOT_1203B3))
+    return out, hits
 
 
 async def decompose_reference(image_path, llm, *, max_components: int = 24):
@@ -225,7 +362,13 @@ async def decompose_reference(image_path, llm, *, max_components: int = 24):
         out.append({"name": c.get("name"), "region": list(rt) if rt else None,
                     "role": c.get("role"), "state": c.get("state"),
                     "background": bg, "accents": accents})
-    return {"components": out, "count": len(out)}
+    # #1203b3 ENFORCEMENT, not advice -- #1202rj's own comment says a prompt rule is not
+    # enforcement, and `copy` carries the handle in 26 runs despite #1202ri governing it.
+    # Unconditional: a screen whose vision reply happens to be clean costs one pass over
+    # its own components, and a screen that is not must never depend on a branch.
+    _scrubbed1203b3 = _scrub_operator_identity_1203b3(out)
+    return {"components": out, "count": len(out),
+            **({"identity_scrubbed_1203b3": _scrubbed1203b3} if _scrubbed1203b3 else {})}
 
 
 def _rgb_of_hex(h: str) -> Optional[Tuple[int, int, int]]:

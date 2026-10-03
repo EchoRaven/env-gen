@@ -603,6 +603,31 @@ def _auth_override_blockers_1202s(app_root) -> List[str]:
         return []
 
 
+def _declared_in_1203b4(hit: str, spec) -> bool:
+    """Did the materials declare a verdict for the table this hit names? #1203b4
+
+    Each hit is built two lines above as ``"%s %s (table `%s`: ...)"``, so the table name is
+    read back from the one place it is written rather than re-resolved -- re-running
+    `_resource_model` here could disagree with the string the lane is about to read.
+    """
+    try:
+        import re as _re1203b4
+        m = _re1203b4.search(r"\(table `([^`]+)`", str(hit))
+        if not m:
+            # Not a fault: the hit carries no table name, so the materials cannot have a
+            # verdict for it and the silent half is the right one.
+            return False
+        from .backend_skeleton import _spec_verdict_for_table_1202oh
+        return bool(_spec_verdict_for_table_1202oh(m.group(1), spec or {}))
+    except Exception as exc:
+        # #1202ah: a swallowed fault here would route the hit into the materials-SILENT half
+        # and the lane would be told to re-register a table the materials may well have
+        # settled -- a crashed check reading as a decided one, which is what that ratchet
+        # exists to stop. Announced the way every sibling in this module announces.
+        _gate_absent_792("_declared_in_1203b4", exc, "run")
+        return False
+
+
 def _shape_demoted_publics_1202y9(app_root, hub_registry) -> str:
     """One sentence naming the contract-public routes the SHAPE projected private. `""` on
     anything unreadable.
@@ -645,6 +670,37 @@ def _shape_demoted_publics_1202y9(app_root, hub_registry) -> str:
         models, _ = _models_919(Path(app_root) / "backend")
         if not models:
             return ""
+        # #1203b4: SEE WHAT THE PROJECTOR SAW. `_priv1202y9` reads `meta["visibility"]`, and
+        # the projector stamps the materials' verdict onto its models BEFORE asking
+        # (route_projector.py's `_stamp_spec_visibility_1202og` call). This function did not,
+        # so the same predicate on the same app answered the opposite way: measured on r144,
+        # it emitted 1008 characters saying `GET /api/feed` "was projected WITH an actor"
+        # while the delivered handler `_projected_get_api_feed_1` takes (limit, offset, db)
+        # and no actor, because `videos` had already been stamped `public`. The lane was
+        # handed an explanation it could not reconcile with its own code, and went for the
+        # guard this very blocker calls forbidden.
+        #
+        # Corpus, 71 runs where this fires: 42 unchanged (the materials are silent -- r140's
+        # `feed`, the case it was built for) and 29 change.
+        _spec1203b4 = {}
+        try:
+            from .backend_skeleton import _spec_visibility_1202hh as _sv1203b4
+            from .route_projector import _stamp_spec_visibility_1202og as _stamp1203b4
+            # `app_root` is `<run>/app`; the spec lives at `<run>/design/reference_spec.json`.
+            # `Path(app_root).parent` is this module's own convention for the run root (seven
+            # other call sites, incl. `Path(app_root).parent / "design" / ...`). Passing
+            # `app_root` reads `<run>/app/design/`, which does not exist: the loader returns {},
+            # nothing is stamped, and the fix silently does nothing. My first draft did exactly
+            # that -- the monkeypatched experiment that proved the fix used the run root, the
+            # patch used `app_root`, and only running the real code showed 1016 chars instead
+            # of 0 on r144.
+            _root1203b4 = Path(app_root).parent
+            _spec1203b4 = _sv1203b4(_root1203b4) or {}
+            _stamp1203b4(models, _root1203b4)
+        except Exception as _e1203b4:
+            # Not swallowed: without the stamp this says what it said before #1203b4, which
+            # is the wrong half of a disagreement -- so the reader has to know it happened.
+            _gate_absent_792("_shape_demoted_publics_1202y9/stamp_1203b4", _e1203b4, "run")
         # #1202rm already paid for this once: "the method is get_endpoints, not
         # list_endpoints. The first draft guessed." Same accessor, same order.
         _rh1202y9 = getattr(hub_registry, "registryhub", None) or hub_registry
@@ -738,17 +794,37 @@ def _shape_demoted_publics_1202y9(app_root, hub_registry) -> str:
                 ", ".join("%s->%s" % kv for kv in sorted(_fks.items())) or "no FKs", _by))
         if not hits:
             return ""
-        return (" WHY THE 401 YOU ARE WORKING AROUND HAPPENS: %s — these are declared "
-                "`auth_required: false`, but the table carries no `visibility`, so the SHAPE "
-                "decided (a users FK beside another entity's FK reads as per-user-private, "
-                "#598) and the handler was projected WITH an actor. The contract's half you "
-                "already did; the half you cannot see is the table's. THE WAY OUT, and "
-                "editing the guard is not it: re-register that table with "
-                "`metadata.visibility: 'public'` — the write boundary then also clears "
-                "`owner_scoped_reads` (#1202io), which is the flag actually filtering the "
-                "rows. Use `'owner'` instead if the rows really are per-user, and fix the "
-                "endpoint's `auth_required` to match."
-                % join_capped(hits, total=len(hits), cap=4, sep="; "))
+        # #1203b4: the sentence used to say "the table carries no `visibility`" of every
+        # hit. After the stamp above that is only true of the SILENT ones -- a table the
+        # materials call `owner` now reaches here BECAUSE of the verdict, not despite it, and
+        # telling that lane to "re-register with visibility: 'public'" would have it overwrite
+        # a deliberate verdict. #1202me made exactly this split, one module over: settled
+        # where the materials speak, unresolved where they do not.
+        _silent1203b4 = [h for h in hits if not _declared_in_1203b4(h, _spec1203b4)]
+        _owned1203b4 = [h for h in hits if _declared_in_1203b4(h, _spec1203b4)]
+        _out1203b4 = " WHY THE 401 YOU ARE WORKING AROUND HAPPENS:"
+        if _silent1203b4:
+            _out1203b4 += (
+                " %s — these are declared `auth_required: false`, but the materials say "
+                "NOTHING about the table, so the SHAPE decided (a users FK beside another "
+                "entity's FK reads as per-user-private, #598) and the handler was projected "
+                "WITH an actor. The contract's half you already did; the half you cannot see "
+                "is the table's. THE WAY OUT, and editing the guard is not it: re-register "
+                "that table with `metadata.visibility: 'public'` — the write boundary then "
+                "also clears `owner_scoped_reads` (#1202io), which is the flag actually "
+                "filtering the rows. Use `'owner'` instead if the rows really are per-user, "
+                "and fix the endpoint's `auth_required` to match."
+                % join_capped(_silent1203b4, total=len(_silent1203b4), cap=4, sep="; "))
+        if _owned1203b4:
+            _out1203b4 += (
+                " %s — here the materials DO speak and they say `owner`, so the table is not "
+                "missing a verdict and re-registering it `public` would overwrite one. The "
+                "endpoint declaring `auth_required: false` is the half that disagrees: either "
+                "the read really is per-user and the CONTRACT is wrong, or the materials are "
+                "and the dataset entity has to be corrected. Editing the framework guard "
+                "changes neither."
+                % join_capped(_owned1203b4, total=len(_owned1203b4), cap=4, sep="; "))
+        return _out1203b4
     except Exception as exc:
         _gate_absent_792("_shape_demoted_publics_1202y9", exc, "run")
         return ""
