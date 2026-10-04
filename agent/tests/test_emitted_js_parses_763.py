@@ -13,6 +13,23 @@ stronger check is affordable and was simply never made.
 Both passes emit valid ESM today; this is the regression guard, not a bug report. It is written
 as ESM (`.mjs`) deliberately: my first attempt checked a `.js` file and node rejected `export`
 outright, which is a property of the harness and not of the emitted code.
+
+#1203fb -- WHY "among others" IS STILL OPEN, AND WHAT BLOCKS IT. Counted over runtime/: 70
+framework write sites into the generated app, 41 distinct functions in frontend_scaffold alone.
+This file covers TWO, and the reason is not that the rest were judged safe -- it is that the two
+covered passes emit PLAIN JS (export stubs), and almost every other emitter writes JSX.
+
+`node --check` cannot read JSX, and this environment has no JSX parser to borrow: no esbuild,
+babel or tsc on PATH or in any node_modules (generated apps build theirs inside docker, so their
+node_modules are empty on disk), and no esprima / pyjsparser / tree_sitter in the test
+interpreter. So the strongest available check for a JSX emitter would be a hand-rolled brace and
+tag balancer, which is the class of predicate this repo keeps retracting for over-matching, and
+a weak check that passes on broken code is worse than a stated gap.
+
+What the gap costs is unchanged and real -- #1203f5 is an instance found by reading rather than
+by a parser: #576's shell vote would have emitted `import icons from '../components/icons.jsx'`
+for a module with no default export, which is a HARD Rollup failure. Closing this properly needs
+a JSX parser in the test environment, which is a dependency decision, not a patch.
 """
 import pathlib
 import shutil
