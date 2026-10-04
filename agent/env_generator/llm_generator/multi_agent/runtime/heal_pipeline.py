@@ -2531,6 +2531,15 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend missing local exports stubbed (lane import/export drift): %s",
                     _me.get("repaired"))
+            # #1203f2: a stub that did NOT land leaves the Rollup break in place, and this
+            # line used to say "stubbed" either way -- 31 claims across 8 runs, 2 landings,
+            # the same name re-announced every tick (r154 said it 4x for one name) because
+            # nothing was ever written. Announce it the way #1202cb announces the case with
+            # no repair at all, which is what an unlanded repair amounts to.
+            for _uw in (_me.get("unwritten") or [])[:4]:
+                orch._logger.warning(
+                    "#1203f2 frontend build-breaker STANDS: %s still does not export %s - "
+                    "the repair's write did not land", _uw[0], _uw[1])
             # Build-integrity: a page doing `import { X } from './Comp'` against a
             # default-only Comp HARD-fails the Rollup build (live: NotesListPage
             # imported { NavBar } from a default-export NavBar.jsx → docker_up FAIL).

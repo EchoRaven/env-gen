@@ -798,7 +798,13 @@ class PathRoutedWorkspace:
 #
 # As narrow as #1011 in what it blocks: lane-owned AND already holding content. First-run
 # scaffolding is untouched, and a file the lane emptied stays repairable.
-_LANE_CLOBBERS_1202CW: Dict[str, Dict[str, int]] = {"refused": {}, "declared": {}}
+# #1203f4: ..._by_1203f4 keys the refusals by the CALL SITE. #1202fc put the actor in the
+# WARNING, which fires once per path and lives only in that run's stderr; the ledger is what
+# survives into run_budget.json, and it carried paths only. Tracing 1172 undeclared clobbers
+# across 30 runs back to 8 functions therefore meant grepping run logs, which is exactly the
+# work #1202fc set out to remove -- from one step further out.
+_LANE_CLOBBERS_1202CW: Dict[str, Dict[str, int]] = {
+    "refused": {}, "declared": {}, "refused_by_1203f4": {}}
 
 
 def _app_relative_1202cw(path: Any) -> Optional[str]:
@@ -916,12 +922,17 @@ def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
         bucket = "declared" if clobber_ok else "refused"
         _LANE_CLOBBERS_1202CW[bucket][key] = _LANE_CLOBBERS_1202CW[bucket].get(key, 0) + 1
         if not clobber_ok:
+            # One lookup serves both the census and the warning. The warning still fires only
+            # on the first refusal per path -- the census is what counts the other 24.
+            _site1203f4 = _calling_site_1202fc()
+            _by1203f4 = _LANE_CLOBBERS_1202CW["refused_by_1203f4"]
+            _by1203f4[_site1203f4] = _by1203f4.get(_site1203f4, 0) + 1
             if _LANE_CLOBBERS_1202CW["refused"][key] == 1:
                 try:
                     _logging.getLogger(__name__).warning(
                         "#1202cw refused a framework write to lane-owned %s from %s — the "
                         "lane's version stands. A site that must overwrite declares why via "
-                        "clobber_ok=.", key, _calling_site_1202fc())
+                        "clobber_ok=.", key, _site1203f4)
                 except Exception:
                     pass
             return False
@@ -933,11 +944,73 @@ def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
         return False
 
 
+def framework_append_1203f2(path: Any, text: str, *, ticket: str,
+                            encoding: str = "utf-8") -> bool:
+    """Write ``text`` only when it APPENDS to what is already on disk.
+
+    #1202cw refuses a framework write onto a lane file unless the site says why, and that
+    is right for a REWRITE -- the ~22,000 overwrites #1011 measured destroyed lane work.
+    It is wrong for the build-integrity repairs, which append a stub to the END of the
+    lane's module and keep every byte the lane wrote. Those sites never declared
+    ``clobber_ok=``, so they were refused, and the corpus says what that cost: 31
+    "missing local exports stubbed" claims across 8 runs, of which 2 landed.
+
+    The refusal there is PERMANENT, not the transient one #1202cw's "let the next tick
+    try" assumes: the target is lane-owned by definition -- that is the defect being
+    repaired -- so the next tick meets the same condition. r154 refused one file 25 times
+    and said so once (the warning is per-key-first-hit).
+
+    The declaration is EARNED here, not asserted by the caller: the current contents are
+    read from DISK and ``text`` must start with them. Trusting an ``old`` the caller hands
+    over would make this a predicate about the caller's claim instead of about the file,
+    and a stale read would then argue its way into a clobber.
+
+    A non-additive ``text`` is REFUSED and said out loud. It does NOT fall back to a raw
+    write: a check that can be talked past is not a check.
+    """
+    p = Path(str(path))
+    try:
+        cur = p.read_text(encoding=encoding, errors="ignore")
+    except FileNotFoundError:
+        cur = ""                      # first write: there is nothing to preserve
+    except OSError:
+        # Present but unreadable, so "appends to it" cannot be CHECKED. #1202bd's
+        # asymmetry decides it: refusing costs one tick, writing costs the lane's work
+        # permanently.
+        try:
+            _logging.getLogger(__name__).warning(
+                "#1203f2 cannot verify an append to %s (present but unreadable) from %s "
+                "- refusing, so the lane's version stands.",
+                _app_relative_1202cw(p) or str(p), _calling_site_1202fc())
+        except Exception:
+            pass
+        return False
+    if cur.strip() and not text.startswith(cur.rstrip()):
+        try:
+            _logging.getLogger(__name__).warning(
+                "#1203f2 refusing to call this an append to %s: the new text does not start "
+                "with what is on disk (%d chars there, %d offered) from %s",
+                _app_relative_1202cw(p) or str(p), len(cur), len(text),
+                _calling_site_1202fc())
+        except Exception:
+            pass
+        return False
+    return framework_write_1202cw(
+        path, text, encoding=encoding,
+        clobber_ok=("%s -- append-only: every byte the lane wrote is still there, verified "
+                    "against the file on disk rather than against the caller" % ticket))
+
+
 def lane_clobbers_1202cw() -> Dict[str, Dict[str, int]]:
     """{"refused": {path: n}, "declared": {path: n}}.
 
     ``declared`` is not a healthy/unhealthy signal — it is the census of overwrites the
     framework performs on purpose, which is the number #1011 measured at ~22,000 and
     which nothing has been able to see since.
+
+    ``refused_by_1203f4`` is the same refusals keyed by CALL SITE rather than by path
+    (#1203f4). The line numbers in it belong to the build that produced them, so a reading
+    taken against a later checkout must be grouped by function name; the function name is
+    what identifies the actor.
     """
     return {k: dict(v) for k, v in _LANE_CLOBBERS_1202CW.items()}

@@ -31,10 +31,22 @@ from .flow_coverage import _is_navigable_page
 from .message_format import join_capped  # #1034
 try:  # #1202cw
     from .path_routed_workspace import framework_write_1202cw as _fw_write_1202cw
+    from .path_routed_workspace import framework_append_1203f2 as _fw_append_1203f2  # #1203f2
 except ImportError:  # pragma: no cover - only when this file is loaded BY PATH (two tests)
     def _fw_write_1202cw(_p, _text, **_kw):
         from pathlib import Path as _P
         _P(str(_p)).write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
+        return True
+
+    def _fw_append_1203f2(_p, _text, **_kw):
+        # Shim keeps the APPEND CHECK even without the guard: the two by-path tests must
+        # not be the one configuration where a non-additive write slips through.
+        from pathlib import Path as _P
+        _f = _P(str(_p))
+        _cur = _f.read_text(encoding="utf-8", errors="ignore") if _f.is_file() else ""
+        if _cur.strip() and not _text.startswith(_cur.rstrip()):
+            return False
+        _f.write_text(_text, encoding=_kw.get("encoding", "utf-8"))  # raw: shim
         return True
 
 _EXPORT_RE = re.compile(
@@ -281,8 +293,20 @@ def repair_frontend_duplicate_imports(frontend_dir) -> Dict[str, object]:
                 all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
             if changed:
                 try:
-                    _fw_write_1202cw(f, new, encoding="utf-8")
-                    repaired.append(str(f.relative_to(src_dir)))
+                    # #1203f3: same shape as the duplicate-declaration site below
+                    # (r126: App.jsx). `dedupe_import_bindings` leaves anything it cannot
+                    # prove redundant in `conflicts`.
+                    if _fw_write_1202cw(
+                            f, new, encoding="utf-8",
+                            clobber_ok=("#1203f3: collapsing duplicate import BINDINGS that "
+                                        "dedupe_import_bindings proved redundant; a binding "
+                                        "it cannot prove redundant is reported as a conflict "
+                                        "and left alone")):
+                        repaired.append(str(f.relative_to(src_dir)))
+                    else:
+                        all_conflicts.append(
+                            "%s: duplicate import bindings STAND - #1202cw refused the write"
+                            % f.name)
                 except Exception:
                     continue
         return {"repaired": repaired, "conflicts": all_conflicts}
@@ -474,8 +498,24 @@ def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
                 all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
             if removed:
                 try:
-                    _fw_write_1202cw(f, new, encoding="utf-8")
-                    repaired[str(f.relative_to(src_dir))] = removed
+                    # #1203f3: `repaired[...] = removed` ran whatever came back (r133: api.js,
+                    # r144: App.jsx). `dedupe_identical_toplevel_blocks` removes only blocks
+                    # that are byte-identical and routes anything else to `conflicts`, so no
+                    # lane intent is lost -- and a duplicate top-level declaration is a hard
+                    # build break, which is what #1202cw's "let the next tick try" cannot wait
+                    # out when the tick cannot ever succeed.
+                    if _fw_write_1202cw(
+                            f, new, encoding="utf-8",
+                            clobber_ok=("#1203f3: removing a BYTE-IDENTICAL duplicate "
+                                        "top-level block; a non-identical one is reported as "
+                                        "a conflict and left alone, so the lane's text is "
+                                        "preserved up to the repetition that breaks the "
+                                        "build")):
+                        repaired[str(f.relative_to(src_dir))] = removed
+                    else:
+                        all_conflicts.append(
+                            "%s: duplicate declarations %s STAND - #1202cw refused the write"
+                            % (f.name, removed))
                 except Exception:
                     continue
         return {"repaired": repaired or False, "conflicts": all_conflicts}
@@ -2234,8 +2274,18 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
                     return m.group(0)
                 new = _API_CALL_PATH_RE.sub(_sub, text)
                 if local:
-                    _fw_write_1202cw(fpath, new, encoding="utf-8")
-                    rewrites.extend(local)
+                    # #1203f3: `rewrites.extend` ran whatever came back (r136: api.js). The
+                    # rewrite only fires where exactly ONE contract route can match, which is
+                    # the same unambiguity #1202sd's declaration rests on.
+                    if _fw_write_1202cw(
+                            fpath, new, encoding="utf-8",
+                            clobber_ok=("#1203f3: the lane calls a path no contract route "
+                                        "matches, and exactly ONE route differs from it only "
+                                        "by the version segment -- the rewrite is forced, not "
+                                        "chosen (len(vcands) == 1 above)")):
+                        rewrites.extend(local)
+                    else:
+                        result.setdefault("unwritten", []).extend(local)
         result["rewritten"] = rewrites
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -2352,8 +2402,21 @@ def repair_token_key_mismatch_1108(frontend_dir) -> Dict[str, object]:
                 out_lines.append(_indent + add + _eol)
                 changed = True
             if changed:
-                _fw_write_1202cw(p, "".join(out_lines), encoding="utf-8")
-                result["added"].append({"file": p.name, "keys": missing})
+                # #1203f3: `added` was appended whatever came back. #317's site in this same
+                # file already declares an overwrite for THIS EXACT subject ("the auth-token
+                # localStorage key is stated fixed by the framework prompt"); this one never
+                # did, so it was refused on lane files and reported the keys as added anyway
+                # (r130, r150: api.js, LoginPage.jsx, SignupPage.jsx).
+                if _fw_write_1202cw(
+                        p, "".join(out_lines), encoding="utf-8",
+                        clobber_ok=("#1108/#1203f3 (same subject #317 declares): the token is "
+                                    "written under every key the app READS; the added write is "
+                                    "additive -- no existing key stops being written and a "
+                                    "localStorage entry nothing reads is inert")):
+                    result["added"].append({"file": p.name, "keys": missing})
+                else:
+                    result.setdefault("unwritten", []).append(
+                        {"file": p.name, "keys": missing})
     except Exception:
         return result
     return result
@@ -2605,8 +2668,19 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                         f"console.error('[auto-stub] {n} is imported but its module does not "
                         f"export it - MISSING IMPLEMENTATION, not an empty result. Returning "
                         f"{_empty761} so the page still renders.'); return {_empty761}; }};")
-            _fw_write_1202cw(target, tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
-            result["repaired"].append((target.name, add))
+            # #1203f2: the write result decides what this reports. `repaired.append` ran
+            # unconditionally -- the same defect #317's site fixed four lines of history ago
+            # ("it said `normalized: [12 files]` while writing none of them") -- and the
+            # corpus measured the consequence: 31 "stubbed" claims, 2 landings. The append
+            # is declared because it keeps every byte the lane wrote; see #1203f2.
+            if _fw_append_1203f2(
+                    target, tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n",
+                    encoding="utf-8",
+                    ticket="#1203f2: the missing-export stub that keeps Rollup from "
+                           "hard-failing the frontend build"):
+                result["repaired"].append((target.name, add))
+            else:
+                result.setdefault("unwritten", []).append((target.name, add))
         # Re-export existing-but-unexported local bindings (e.g. a Context the lane
         # declared with `const X = createContext()` and imported { X } elsewhere).
         for target, names in to_reexport.items():
@@ -2623,8 +2697,14 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                 continue
             lines = ["", "// auto-reconciled missing exports (re-export existing local bindings)."]
             lines += [f"export {{ {n} }};" for n in reexp]
-            _fw_write_1202cw(target, tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
-            result.setdefault("reexported", []).append((target.name, reexp))
+            if _fw_append_1203f2(
+                    target, tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n",
+                    encoding="utf-8",
+                    ticket="#1203f2: re-exporting a binding the lane already declared, so "
+                           "the named import it is paired with stops breaking the build"):
+                result.setdefault("reexported", []).append((target.name, reexp))
+            else:
+                result.setdefault("unwritten", []).append((target.name, reexp))
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
     return result
@@ -2767,8 +2847,19 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
 
             new_text = _LOCAL_DEFAULT_IMPORT.sub(_repl_default, new_text)
             if state["changed"] and new_text != text:
-                _fw_write_1202cw(f, new_text, encoding="utf-8")
-                fixed.append(str(f.relative_to(frontend_dir)))
+                # #1203f2: this site REWRITES the import statements, so it is not an append
+                # and cannot earn a declaration the way the stub sites do. What it can do is
+                # stop claiming a fix it did not make -- r154 refused ExploreGridPage.jsx
+                # four times here while `fixed` grew anyway. A refusal joins `unrepairable`,
+                # which #1202cb already announces as a build-breaker to the same reader.
+                if _fw_write_1202cw(f, new_text, encoding="utf-8"):
+                    fixed.append(str(f.relative_to(frontend_dir)))
+                else:
+                    unrepairable.append(
+                        f"{f.relative_to(frontend_dir)} needs its named imports of "
+                        f"default-only local modules rewritten, but #1202cw refused the "
+                        f"write (lane-owned file, and a rewrite cannot declare clobber_ok "
+                        f"the way an append can) - the Rollup break STANDS")
         return {"repaired": bool(fixed), "fixed": fixed,
                 "unrepairable": unrepairable}
     except Exception as exc:
@@ -6504,6 +6595,32 @@ _PROJECTED_ROOT_RE = re.compile(
 
 _REL_IMPORT_RE = re.compile(r"""^\s*import\s[^'"]*from\s+['"](\.[^'"]+)['"]""", re.M)
 
+# #1203f5: a DEFAULT import of a components module -- the usage #576 says it replicates
+# ("Mounted bare (`<Nav />`) -- the usage 3 of the lane's own pages already use"). The count
+# it actually ran matched ANY `from '../components/X.jsx'`, named imports included, so a
+# module nobody default-imports could win. r130: five pages do
+# `import { Icon } from '../components/icons.jsx'` and icons.jsx has no default export, yet
+# it ranked first at 5 against a runner-up of 2. Emitting `import icons from ...` there is
+# "default is not exported by src/components/icons.jsx" -- a HARD Rollup failure, the exact
+# class #578 and the stub repairs exist to prevent. It was harmless only because #1202cw
+# refused the write; #1203f3 lets that write land, so the loose count had to be fixed in the
+# same breath.
+_DEFAULT_COMP_IMPORT_1203F5 = re.compile(
+    r"^\s*import\s+[A-Za-z_$][\w$]*(?:\s*,\s*\{[^}]*\})?\s+"
+    r"from\s+'\.\./components/([A-Za-z0-9_]+)\.jsx'", re.M)
+
+
+def _has_default_export_1203f5(comp_path: Path) -> bool:
+    """Does this module export a default? Unreadable → False (do not emit an import of
+    something that cannot be checked). Covers `export { X as default }` as well as
+    `export default`."""
+    try:
+        src = comp_path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    return bool(re.search(r"^\s*export\s+default\b", src, re.M)
+                or re.search(r"^\s*export\s*\{[^}]*\bdefault\b", src, re.M))
+
 
 def _component_resolves(comp_path: Path) -> bool:
     """#578 — does this component's own relative-import graph exist on disk?
@@ -6588,7 +6705,7 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
         # the most-imported shared component across the app's own pages
         counts: Dict[str, int] = {}
         for txt in texts.values():
-            for name in set(re.findall(r"from '\.\./components/([A-Za-z0-9_]+)\.jsx'", txt)):
+            for name in set(_DEFAULT_COMP_IMPORT_1203F5.findall(txt)):
                 counts[name] = counts.get(name, 0) + 1
         if not counts:
             return {"mounted": [], "nav": None}
@@ -6604,11 +6721,23 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
             return {"mounted": [], "nav": None}
         if not (comp_dir / f"{comp}.jsx").is_file():
             return {"mounted": [], "nav": None}
+        # #1203f5: this pass writes `<comp />`, and JSX reads a lower-case tag as an HTML
+        # element, so a module whose basename is not capitalised cannot be mounted at all.
+        if not comp[0].isupper():
+            return {"mounted": [], "nav": None,
+                    "skipped": f"{comp}: not a component name (JSX would read <{comp}/> as "
+                               f"an HTML tag)"}
+        # ...and it writes a DEFAULT import, which Rollup fails outright if the module has
+        # none. The import count above already requires default importers, so this is the
+        # second reading: it asks the component, not its callers.
+        if not _has_default_export_1203f5(comp_dir / f"{comp}.jsx"):
+            return {"mounted": [], "nav": None, "skipped": f"{comp}: no default export"}
         # #578: never spread a component that cannot build — doing so takes every page that
         # receives it down with it (r142: six screens to 0.0).
         if not _component_resolves(comp_dir / f"{comp}.jsx"):
             return {"mounted": [], "nav": None, "skipped": f"{comp}: unresolved imports"}
         mounted = []
+        unmounted = []                       # #1203f3: a refused mount is not a mount
         for p, txt in texts.items():
             if 'data-projected="' not in txt or f"components/{comp}.jsx" in txt:
                 continue
@@ -6636,11 +6765,31 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
             at = _first.start()
             body = body[:at] + f"import {comp} from '../components/{comp}.jsx';\n" + body[at:]
             try:
-                _fw_write_1202cw(p, body, encoding="utf-8")
-                mounted.append(p.stem)
+                # #1203f3: `mounted.append` ran whatever came back, and #1202cw refuses a
+                # write into src/pages/ because OWNERSHIP IS BY DIRECTORY -- while the page
+                # this touches carries the framework's own `data-projected=` marker, tested
+                # at the top of this loop. So the framework was refused permission to revise
+                # a page it projected itself, and said it had mounted the nav anyway: 32
+                # refusals over 8 runs, and 10 pages shipped without the app's chrome
+                # (r138: live_discover, messages_dm_empty, notifications_activity and
+                # fyp_feed_logged_out, all four in that run's visual_screens_below).
+                if _fw_write_1202cw(
+                        p, body, encoding="utf-8",
+                        clobber_ok=("#576/#1203f3: the page carries the framework's own "
+                                    "`data-projected=` marker, so this is the projector "
+                                    "revising its own output -- #1202cw classifies it as the "
+                                    "lane's only because ownership is by DIRECTORY and "
+                                    "projected pages live in src/pages/. And `body` above is "
+                                    "insertions into the text just read from disk, so "
+                                    "anything the lane added outside the projected root tag "
+                                    "survives verbatim")):
+                    mounted.append(p.stem)
+                else:
+                    unmounted.append(p.stem)
             except Exception:
                 continue
-        return {"mounted": mounted, "nav": comp if mounted else None}
+        return {"mounted": mounted, "nav": comp if mounted else None,
+                "unmounted": unmounted}
     except Exception as exc:  # never break delivery
         return {"mounted": [], "nav": None, "error": f"{type(exc).__name__}: {exc}"}
 
