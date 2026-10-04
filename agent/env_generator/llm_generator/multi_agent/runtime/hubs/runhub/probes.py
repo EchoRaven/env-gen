@@ -161,6 +161,14 @@ def plan_probe(
     if _PATH_PARAM_1203D9.search(path):
         return ProbeSkip(reason="path_params")
 
+    # MEASURED AND DELIBERATELY NOT SKIPPED: a framework probe route (`/__noop__`,
+    # `/__noop_monitoring_read_not_write__`). 101 such endpoints are registered across 68 runs
+    # and #1203d1 established that the framework must not ASK A LANE to implement its own
+    # probe -- so skipping them here looks like the matching move. The probe records say
+    # otherwise: 178 of them PASS and only 4 fail, across 3 runs, every failure a 404. A
+    # declared route that is not wired is exactly what this probe exists to report, and it
+    # reports it correctly; there is nothing to exempt. Revisit only if that 4 grows.
+
     url = base_url.rstrip("/") + (path if path.startswith("/") else "/" + path)
     # #1203e0: an honest record of whether the question is well formed. Note this is a set
     # DIFFERENCE, not a flag: the day a caller starts passing `example_body`, the endpoints it
@@ -227,6 +235,18 @@ def classify_probe_result(
                  "contract declares required field(s) it cannot invent, so the rejection is "
                  "the correct answer to a malformed question, not a verdict on the handler "
                  "(a 404 or 5xx here would have been)" % status_code)
+    # #1203e0, MEASURED AND DELIBERATELY NOT EXTENDED TO 401. 401 is the largest failure
+    # bucket on disk (159 of 369) and 71 of those sit on endpoints that DO declare required
+    # fields -- `POST /auth/login` 31, `POST /api/auth/signup` 16 -- so the same clause would
+    # silence them. It is not applied, because 400/422 and 401 do not mean the same kind of
+    # thing. A 400/422 is unambiguously about request SHAPE, which is the one thing this probe
+    # knowingly got wrong. A 401 is about CREDENTIALS: correct from a login endpoint handed
+    # none, and a real defect from `POST /api/my-list` whose contract says `auth_required`
+    # false. Separating those needs a guess about whether an endpoint's required fields ARE
+    # credentials, and a predicate I invent overmatches -- while the thing it would hide is a
+    # class the framework fixed three separate causes of on 09-30. The remaining 88 401s have
+    # no required fields and were never candidates. Time-sliced, 157 of the 159 predate that
+    # fix and only 2 come after it, so there is no live problem here to trade for the risk.
     # #1001: a 405 on a registered, implemented endpoint is a CONTRACT violation, not an
     # oddity. It fell through to the P2 catch-all below as "unexpected status 405", which is
     # what r162's backend lane was working from while nine open tasks piled up behind it.

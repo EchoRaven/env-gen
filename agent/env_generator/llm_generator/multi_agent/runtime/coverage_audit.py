@@ -154,6 +154,28 @@ def scan_dead_endpoints(hub_registry) -> List[dict]:
     fixed_1202kf = _framework_fixed_1202kf()
     out = []
     for ep_id, ep in eps.items():
+        # #1203e2: MEASURED, AND DELIBERATELY NOT WIDENED to `{defined, implemented}` the way
+        # #1203d6 widened the same predicate in `plan_probe`. The comment below records the real
+        # intent -- exclude deprecated/draft -- and `implemented` is swept in by the same
+        # `!= "defined"` formulation, so 94% of endpoints never reach this scan. Direction of
+        # harm here is a FALSE GREEN, which is the dangerous one, so it was measured properly:
+        #
+        #   2305 of 4990 `implemented` endpoints have no registered consumer. After #1202kf's
+        #   framework-surface exemption, 489 remain -- median 1 per run, max 31, and 81 of 191
+        #   runs would gain none. Spot-checking the 27 candidates in the four newest runs
+        #   against the frontend source: 20 really are unreferenced, but 7 ARE called,
+        #   including `GET /api/videos` and `POST /api/videos`.
+        #
+        # 26% false positives on a HARD blocker is not shippable (#1203a5: one false block cost
+        # an entire run), and the two things that would justify it are both missing. The
+        # consumers registry is known to be under-populated -- that is what #1203b0 was, the
+        # lane's own tool could not express `apis_used` -- so "no consumer" does not mean
+        # "unused". And the instrument that would settle it is not good enough either: a prefix
+        # grep for `/api/comments/` also matches a file calling `/api/comments/${id}/like`, a
+        # DIFFERENT endpoint, so both the 20 and the 7 are soft numbers.
+        #
+        # Revisit when consumption can be read from source per-endpoint rather than per-prefix.
+        # The gain is a median of one entry per run; the cost of being wrong is a blocked run.
         if (ep.get("status") or "defined") != "defined":
             continue  # deprecated/draft don't count as dead
         # #1202kf: the framework's own endpoints are not the lane's dead code.
@@ -602,6 +624,14 @@ def scan_dead_mcp_tools(hub_registry) -> List[dict]:
     tools = mcp_registry.get_mcp_tools() or {}
     out = []
     for key, tool in tools.items():
+        # #1203e2: same predicate, same decision, and here the case against widening is
+        # stronger still. 2379 corpus MCP tools are `implemented` against 9 `defined`, so this
+        # scan sees almost nothing -- but the MCP surface is never exercised by anything
+        # (#1203e1: the server is started by the DOWNSTREAM consumer, per
+        # `mcp_server/app/start.sh` line 1), which means NO tool can have a recorded consumer
+        # and widening this would report every generated tool as dead code. The real defect is
+        # #1202xr (26% of those tools cannot pass a query parameter); it needs the surface
+        # exercised, not this scan loosened.
         if (tool.get("status") or "defined") != "defined":
             continue
         server = tool.get("server_name")

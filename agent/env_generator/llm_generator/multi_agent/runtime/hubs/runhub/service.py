@@ -609,6 +609,37 @@ class RunHub:
     # ------------------------------------------------------------------ #
 
     def _list_registryhub_mcp_servers(self) -> list:
+        """#1203e1: DO NOT apply #1203d6's `{defined, implemented}` allow-list here.
+
+        It is the same `status == "defined"` predicate #1203d6 corrected in `plan_probe`, and it
+        has the same effect: 152 of the 153 `mcp:server:*` records in the corpus are
+        `implemented`, so this returns [] and the MCP battery never runs -- `mcp_probes.total`
+        is 0 in **100% of the 2414 gate records across 54 runs**, and
+        `deliverability.functionally_validated`'s `mcp_counts["failed"] == 0` term is therefore
+        vacuous. Everything about that looks like the twin of #1203d6. It is not.
+
+        The MCP server is NOT SUPPOSED TO BE RUNNING during a run. `mcp_server/app/start.sh`
+        says so on its first line: "Launch the FastMCP server (agentsuite-red pool runs this as
+        a subprocess)." The pipeline builds it (123 runs carry `mcp_server/`) and ships it; the
+        DOWNSTREAM consumer starts it, which is why 0 of 191 generated composes declare an mcp
+        service and why no MCP container has ever existed.
+
+        So a run-time MCP probe cannot pass, by design. The one run whose server record was
+        `defined` proves it: r138 probed `http://localhost:8890/mcp` four times and got
+        `transport: [Errno 111] Connection refused` every time. Widening this filter would add a
+        permanently failing probe to every run -- `fail_count += 1`, run `status: failed`, and
+        the "no successful RunHub run" blocker -- which is exactly the shape that cost r151 a
+        launch and $11.70 before it was caught.
+
+        What IS wrong here is reported elsewhere and is not this function's to fix: the agent
+        facing surface is never exercised anywhere, which is the mechanical reason #1202xr (26%
+        of generated MCP tools cannot pass a query parameter) survived 144 runs. Exercising it
+        needs a consumer that starts the server, not a probe that pretends one did.
+
+        The status filter is left exactly as it was. Keeping it is the correct behaviour for the
+        wrong reason, so this docstring is the fix: `test_1203e1_*` fails if the allow-list is
+        ever imported here, which forces whoever tries to read this first.
+        """
         if self.mcp_registry is None or not hasattr(self.mcp_registry, "get_mcp_servers"):
             return []
         return [s for s in (self.mcp_registry.get_mcp_servers() or {}).values()
