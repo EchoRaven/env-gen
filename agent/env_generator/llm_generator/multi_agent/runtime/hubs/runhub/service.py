@@ -414,6 +414,9 @@ class RunHub:
                     # #1001: hand over the headers #1000 preserved. Without this the
                     # classifier cannot quote `Allow` and a 405 stays "unexpected status".
                     headers=raw.get("headers"),
+                    # #1203e0: whether the plan could ask a well-formed question. Computed by
+                    # the planner, which is the only place that knows what it sent.
+                    request_complete=getattr(plan, "request_complete", True),
                 )
                 probe_record = {
                     "method": plan.method, "path": ep.get("path"), "url": plan.url,

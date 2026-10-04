@@ -32,6 +32,13 @@ class ProbePlan:
     url: str
     body: Optional[Dict[str, Any]] = None
     headers: Dict[str, str] = field(default_factory=lambda: {"accept": "application/json"})
+    # #1203e0: did this plan supply everything the contract says the endpoint REQUIRES?
+    # `plan_probe` sends `example_body or {}` and the one caller never passes an
+    # `example_body`, so for any endpoint with a required request field the answer is no --
+    # and the app's 400/422 is then the CORRECT answer to a malformed question, which
+    # `classify_probe_result` must not score against the handler. Default True so every
+    # pre-#1203e0 construction keeps its meaning.
+    request_complete: bool = True
 
 
 @dataclass
@@ -47,6 +54,27 @@ class ProbeOutcome:
 
 
 _DESTRUCTIVE = {"DELETE"}
+
+
+def _required_request_fields_1203e0(endpoint: Dict[str, Any]) -> set:
+    """The request fields the contract says are REQUIRED, per the registry's own convention.
+
+    `schema.request` is a dict of ``field -> type`` where a trailing ``?`` means optional --
+    measured over every run directory: `request` is a dict in 4505 records and absent in 816,
+    its values are `str` 6164 times, `dict` 48 and `bool` 5, and 2090 of the string types carry
+    no ``?`` against 4074 that do.
+
+    A non-string value counts as required, which is not a guess: the prober supplies NOTHING,
+    so anything declared is something it did not send. The question this answers is "did we ask
+    a well-formed question", and the honest answer for an unrecognised type is no.
+    """
+    sch = endpoint.get("schema")
+    req = sch.get("request") if isinstance(sch, dict) else None
+    if not isinstance(req, dict):
+        return set()
+    return {f for f, t in req.items()
+            if not (isinstance(t, str) and t.rstrip().endswith("?"))}
+
 
 # #1203d6: the statuses an endpoint can hold and still be worth asking. Corpus-wide the only
 # values that exist are `implemented` (4968), `defined` (249) and `deprecated` (83).
@@ -134,7 +162,12 @@ def plan_probe(
         return ProbeSkip(reason="path_params")
 
     url = base_url.rstrip("/") + (path if path.startswith("/") else "/" + path)
-    return ProbePlan(method=method, url=url, body=body)
+    # #1203e0: an honest record of whether the question is well formed. Note this is a set
+    # DIFFERENCE, not a flag: the day a caller starts passing `example_body`, the endpoints it
+    # covers become complete on their own, with no second place to update.
+    _missing1203e0 = _required_request_fields_1203e0(endpoint) - set((body or {}).keys())
+    return ProbePlan(method=method, url=url, body=body,
+                     request_complete=not _missing1203e0)
 
 
 def classify_probe_result(
@@ -143,6 +176,7 @@ def classify_probe_result(
     auth_required: bool,
     transport_error: Optional[str] = None,
     headers: Optional[dict] = None,
+    request_complete: bool = True,          # #1203e0
 ) -> ProbeOutcome:
     if transport_error == "connection_refused":
         return ProbeOutcome(verdict="fail", severity="P0",
@@ -164,6 +198,35 @@ def classify_probe_result(
     if status_code == 404:
         return ProbeOutcome(verdict="fail", severity="P1",
                             note="route not wired (404 on declared endpoint)")
+    # #1203e0: a 400/422 answering a request we could not make well-formed. The app is
+    # REJECTING A MALFORMED REQUEST, which is correct behaviour, and scoring it against the
+    # handler is the same category error the line above this one already avoids for auth:
+    # `401/403 when auth_required -> pass, "auth-protected as expected"`.
+    #
+    # MEASURED over every run directory: of the 369 failing probe records on disk, 115 are
+    # `unexpected status 422` and 32 `unexpected status 400`, i.e. **147 (40%) are this** --
+    # `POST /auth/register`, `/auth/login`, `/oauth/token`, all probed with `{}` because
+    # `plan_probe`'s only caller never passes an `example_body`. `fail_count > 0` then raises
+    # the blocker "latest run has N failed endpoint probe(s)", which cannot self-clear: the
+    # probe will send `{}` again next tick.
+    #
+    # It had been largely hidden by a SECOND defect: the old status rule skipped `implemented`
+    # endpoints (#1203d6), so by the time validation ran the auth pair was usually already
+    # promoted and never asked. Fixing d6 removed that shield -- r151 was stopped at $11.70
+    # nine minutes in once its registry showed `POST /auth/register` and `POST /auth/login`
+    # heading for exactly this, which would have been a permanent blocker on
+    # FRAMEWORK-OWNED endpoints.
+    #
+    # What this verdict claims is only what the probe established: the route is wired and the
+    # handler validates. A 404 would still have failed, and so does a 500 below -- the two
+    # answers that ARE about the handler.
+    if status_code in (400, 422) and not request_complete:
+        return ProbeOutcome(
+            verdict="pass",
+            note="%d: route wired and validating — this probe sent no request data, and the "
+                 "contract declares required field(s) it cannot invent, so the rejection is "
+                 "the correct answer to a malformed question, not a verdict on the handler "
+                 "(a 404 or 5xx here would have been)" % status_code)
     # #1001: a 405 on a registered, implemented endpoint is a CONTRACT violation, not an
     # oddity. It fell through to the P2 catch-all below as "unexpected status 405", which is
     # what r162's backend lane was working from while nine open tasks piled up behind it.
