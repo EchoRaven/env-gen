@@ -85,7 +85,11 @@ def orch(tmp_path, monkeypatch):
     o = _Orch(tmp_path)
     # ★ Stand in for the EXTERNAL world only (the tree's hash), never for anything the patch
     # itself must derive -- the mistake recorded in #1203b4.
-    monkeypatch.setattr(FV, "backend_source_signature", lambda _p: "SIG-A")
+    # ★ #1203f0 moved what this function reads: `tree_signature_1203f0` (backend AND frontend),
+    # because the gate it serves builds both. The stand-in has to follow the target — patching the
+    # old name silently stopped intercepting and five of these tests went red. Same lesson as
+    # #1203b4: a stand-in may replace the outside world, but it has to replace the CURRENT one.
+    monkeypatch.setattr(FV, "tree_signature_1203f0", lambda _p: "SIG-A")
     monkeypatch.setenv("ENVGEN_FRESH_SMOKE_GATE", "1")
     return o
 
@@ -151,7 +155,7 @@ def test_the_park_is_bound_to_the_tree_it_was_taken_on(orch, monkeypatch):
     calls = _stub_validation(monkeypatch,
                             [{"name": "docker_up", "status": "fail", "detail": DISK}])
     _run(orch)
-    monkeypatch.setattr(FV, "backend_source_signature", lambda _p: "SIG-B")
+    monkeypatch.setattr(FV, "tree_signature_1203f0", lambda _p: "SIG-B")
     _run(orch)
     assert len(calls) == 2, "a changed backend stayed parked under the old tree's latch"
 

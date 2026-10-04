@@ -35,7 +35,8 @@ for _p in (ROOT, LLM):
 import pytest  # noqa: E402
 
 from multi_agent.runtime.framework_validation import (  # noqa: E402
-    backend_source_signature, ensure_fresh_smoke_before_cut, fresh_smoke_decision)
+    backend_source_signature, ensure_fresh_smoke_before_cut, fresh_smoke_decision,
+    tree_signature_1203f0)
 
 
 def _app(tmp_path, backend=None, frontend=None, sql=None):
@@ -52,6 +53,12 @@ def _app(tmp_path, backend=None, frontend=None, sql=None):
     return root
 
 
+# #1203f0: the two tests immediately below still exercise `backend_source_signature` itself —
+# that function is unchanged and still deliberately excludes the frontend. What moved is which
+# signature the CUT-TIME decision keys on: `tree_signature_1203f0` (backend AND frontend), because
+# the check it gates (`docker_up`) builds both, and a FRONTEND build failure used to latch on a
+# BACKEND hash that no frontend fix could clear. The cut-check tests below were updated to seed
+# the signature the function now reads; their intent ("nothing drifted") is unchanged.
 # ------------------------- backend_source_signature -------------------------
 
 def test_signature_stable_and_flips_on_backend_py_edit(tmp_path):
@@ -146,7 +153,7 @@ def _patch_tool(monkeypatch):
 def test_no_drift_cuts_without_smoke(tmp_path, monkeypatch):
     _patch_tool(monkeypatch)
     root = _app(tmp_path, backend={"main.py": "app = 1\n"})
-    orch = _orch_for_cutcheck(tmp_path, validated_sig=backend_source_signature(root))
+    orch = _orch_for_cutcheck(tmp_path, validated_sig=tree_signature_1203f0(root))
     ok = asyncio.run(ensure_fresh_smoke_before_cut(orch))
     assert ok is True
     assert _FakeTool.instances == []  # cheap path: no docker boot when nothing drifted
@@ -160,7 +167,7 @@ def test_drift_runs_fresh_smoke_and_cuts_on_pass(tmp_path, monkeypatch):
     assert ok is True
     assert len(_FakeTool.instances) == 1 and _FakeTool.instances[0].executed
     # the fresh pass re-stamps: the next cut attempt on the same tree is cheap
-    assert orch._smoke_backend_sig == backend_source_signature(root)
+    assert orch._smoke_backend_sig == tree_signature_1203f0(root)
     assert _FakeTool.instances and asyncio.run(ensure_fresh_smoke_before_cut(orch)) is True
     assert len(_FakeTool.instances) == 1  # no second boot
 
@@ -263,12 +270,25 @@ def test_cut_proceeds_when_fresh_smoke_gate_clears(tmp_path, monkeypatch):
 # ----------------------------- stamp-site wiring -----------------------------
 
 def test_maybe_run_stamps_signature_on_pass_source_contract():
-    """maybe_run must compute the backend sig BEFORE tool.execute() (the integration
-    tree can be merged-into during the await) and stamp it in the PASSED branch."""
+    """maybe_run must compute the tree sig BEFORE tool.execute() (the integration tree can be
+    merged-into during the await) and stamp it in the PASSED branch.
+
+    #1203f0 renamed what is computed here from `backend_source_signature` to
+    `tree_signature_1203f0` — backend AND frontend, because the check this stamp gates
+    (`docker_up`) builds both. The ORDERING contract this test exists for is unchanged, and it has
+    to follow the name or it stops asserting anything: `src.index` raises on a missing substring,
+    which is at least loud, but a laxer matcher would have passed silently."""
     import inspect
     from multi_agent.runtime.framework_validation import FrameworkValidation
     src = inspect.getsource(FrameworkValidation.maybe_run)
-    pre = src.index("backend_source_signature")
+    # ★ COMMENTS STRIPPED. #1203f0's comment on the stamp line explains that
+    # `_smoke_backend_sig` is written from two places, and `src.index` found that MENTION first —
+    # before `await tool.execute()` — so the ordering assertion below failed on the explanation
+    # rather than on the code. Second time in one session (#1203e6's comment tripped its own
+    # test the same way): a source-contract assertion that cannot tell code from the comment
+    # about it will keep catching the comment.
+    src = "\n".join(ln for ln in src.split("\n") if not ln.lstrip().startswith("#"))
+    pre = src.index("tree_signature_1203f0")
     execute_at = src.index("await tool.execute()")
     assert pre < execute_at, "sig must be computed BEFORE the smoke boots"
     stamp_at = src.index("_smoke_backend_sig")

@@ -94,6 +94,38 @@ def backend_source_signature(app_root: Any) -> Optional[str]:
         return None
 
 
+def tree_signature_1203f0(app_root: Any) -> Optional[str]:
+    """The signature of the tree `docker_up` actually BUILDS: backend AND frontend.
+
+    #501 established this combination and its reasoning for the checklist self-heal, in the exact
+    words this patch needs: "a stale `build:frontend` re-invalidated by a FRONTEND-only fix must
+    also grant a refresh -- r70 wedged on `verification_checklist_not_ready` because #492 keyed on
+    the backend signature alone, so a build:frontend that went stale while the backend stayed
+    stable never re-armed". Combined changes if EITHER lane's source changes; `None` only when
+    both are unavailable, which preserves every caller's "cannot compute -> do not block" path.
+
+    #1203f0: the pre-cut fresh smoke was the THIRD site with that bug and still keyed on the
+    backend alone, while the check it gates -- `docker_up` -- builds both services. So a FRONTEND
+    build failure stamps `_fresh_smoke_fail_sig` with a BACKEND hash, `fresh_smoke_decision`
+    returns "hold" for that signature until the BACKEND changes, and the frontend lane's fix
+    cannot re-arm it. The hold says "waiting for a lane fix" while the lane that can fix it is
+    the one whose edits are invisible here.
+
+    Live in r154: `docker_up` failed on a rollup build error, the frontend lane committed at
+    04:11:16, a fresh validation PASSED at 04:11:58 with `fail_count=0` -- and the latch message
+    printed again at 04:12:28. Historically the message appears 30 times across 6 runs, 19 of them
+    in r59 alone.
+
+    Extracted rather than copied a third time: #501's own site now calls this, so the three
+    consumers cannot drift about what "the tree changed" means (#1032).
+    """
+    be = backend_source_signature(app_root)
+    fe = frontend_source_signature(app_root)
+    if be is None and fe is None:
+        return None
+    return "%s|%s" % (be, fe)
+
+
 def frontend_source_signature(app_root: Any) -> Optional[str]:
     """#501 (netflix r70, live): stable content hash of ``app/frontend/src/**`` source
     (jsx/tsx/js/ts/mjs/css) — the code that determines the FRONTEND build. Mirrors
@@ -169,7 +201,7 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
         app_root = Path(out_dir) / "app"
         if not app_root.exists():
             app_root = Path(out_dir)
-        cur = backend_source_signature(app_root)
+        cur = tree_signature_1203f0(app_root)      # #1203f0: the tree docker_up BUILDS
         decision = fresh_smoke_decision(
             cur,
             getattr(orch, "_smoke_backend_sig", None),
@@ -818,9 +850,7 @@ def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
                 # stable never re-armed once the flat budget was spent. Combined sig changes if
                 # EITHER lane's source changes → additive (strictly more refreshes, still bounded by
                 # the hard cap). None only when BOTH are unavailable (preserves the flat-path fallback).
-                _be = backend_source_signature(_app_root)
-                _fe = frontend_source_signature(_app_root)
-                cur_sig = None if (_be is None and _fe is None) else f"{_be}|{_fe}"
+                cur_sig = tree_signature_1203f0(_app_root)   # #1203f0: one implementation
         except Exception:
             cur_sig = None
         _flat = used < _CHECKLIST_REFRESH_FLAT_CAP
@@ -1667,7 +1697,10 @@ class FrameworkValidation:
             _app_root_155 = Path(getattr(orch, "output_dir", ".")) / "app"
             if not _app_root_155.exists():
                 _app_root_155 = Path(getattr(orch, "output_dir", "."))
-            _pre_smoke_sig = backend_source_signature(_app_root_155)
+            # #1203f0: MUST use the same signature as the cut-time decision above -- these two
+            # values are compared (`_smoke_backend_sig` is written from both). Changing one alone
+            # would make them never match and re-boot docker every tick.
+            _pre_smoke_sig = tree_signature_1203f0(_app_root_155)
             tool = RunValidationTool(workspace=None)
             tool._hubs = orch.hubs
             tool._agent_id = "orchestrator"
