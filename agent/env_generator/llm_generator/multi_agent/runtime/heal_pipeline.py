@@ -2257,6 +2257,15 @@ class HealPipeline:
                         "#1202sd rewrote %s <Route path> that React Router cannot match "
                         "(a `:` must follow a `/`, so `/@:username` compiles to a literal and "
                         "the page is unreachable): %s", _ur.get("routes"), _ur.get("repaired"))
+                for _rf1203f6 in (_ur.get("refused") or [])[:4]:
+                    # #1203f6: #1202iy stopped this site CLAIMING a write it had not made and
+                    # recorded the refusal in `refused` -- which nothing read. The pattern I
+                    # followed had the hole I then made. An unrewritten route is the page
+                    # staying unreachable, which is why #1202iy went looking in the first
+                    # place.
+                    orch._logger.warning(
+                        "#1203f6 %s keeps its unmatchable <Route path> (the write was "
+                        "refused, so the page stays unreachable)", _rf1203f6)
             except Exception as _ur_err:
                 orch._logger.debug("#1202sd route repair skipped: %s", _ur_err)
             _eb = repair_frontend_escaped_backticks(fe)
@@ -2365,6 +2374,15 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend auth-token localStorage key canonicalized to 'access_token' "
                     "(lane used a divergent key api.js/pages disagreed on): %s", _tk.get("normalized"))
+            for _rf1203f6 in (_tk.get("refused") or [])[:4]:
+                # #1203f6: #317 is the oldest of these fixes and has the same hole -- it put
+                # the refusal in `refused` and nothing ever read it. A file left out of the
+                # canonicalization is the r85/r86 wedge this whole site exists for: api.js
+                # and the pages disagreeing about the token key, so the app looks logged out
+                # after a successful login.
+                orch._logger.warning(
+                    "#1203f6 %s keeps its divergent auth-token key (the write was refused, "
+                    "so api.js and the pages can still disagree)", _rf1203f6)
             # VISUAL/self-contained (#75b, outlook run-62): a lane paints a CONTENT surface
             # (inbox reading-pane / feed / dashboard) with a full-bleed EXTERNAL stock photo
             # (a mountain unsplash bg) — it doesn't match the clean reference AND is an
@@ -2507,6 +2525,13 @@ class HealPipeline:
                     orch._logger.warning(
                         "Frontend token key reconciled — the login page now also stores "
                         "the key api.js reads: %s", _tk.get("added"))
+                for _uw1203f6 in (_tk.get("unwritten") or [])[:4]:
+                    # #1203f6: unwritten means the login page still does NOT store the key
+                    # api.js reads, so every authenticated request 401s after a successful
+                    # login -- the failure #1108 exists for, not a cosmetic miss.
+                    orch._logger.warning(
+                        "#1203f6 token key STILL unwritten (login will look like it worked "
+                        "and every request after it will 401): %s", _uw1203f6)
             except Exception as _tke:
                 orch._logger.debug("token key repair skipped: %s", _tke)
             # INVERSE of the above: a component DEFAULT-imports api (`import api from
@@ -2664,6 +2689,12 @@ class HealPipeline:
                         orch._logger.warning(
                             "Frontend api PATHS reconciled to contract: %s",
                             _pr.get("rewritten")[:10])
+                    for _uw1203f6 in (_pr.get("unwritten") or [])[:4]:
+                        # #1203f6: unwritten means the call still names a path no contract
+                        # route matches, so the page keeps 404ing.
+                        orch._logger.warning(
+                            "#1203f6 api path STILL unreconciled (the call 404s): %s",
+                            _uw1203f6)
             except Exception as _pp_exc:
                 orch._logger.debug("frontend api-path reconcile skipped: %s", _pp_exc)
         except Exception as exc:

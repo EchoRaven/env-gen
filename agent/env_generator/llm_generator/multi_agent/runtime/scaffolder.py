@@ -2406,6 +2406,15 @@ volumes:
                     orch._logger.info(
                         "#576 mounted shared nav '%s' on %d chrome-less projected page(s): %s",
                         _mrep.get("nav"), len(_mrep["mounted"]), _mrep["mounted"])
+                # #1203f6: #1203f3 made the refusal reportable and then reported it to
+                # nobody -- the same "the fact reached a return value, not a recipient"
+                # shape the f-series spent the day removing. A page left chrome-less is
+                # what the visual judge charges for on every dimension at once (r138: four
+                # such pages, all four in visual_screens_below), so it has to be said here.
+                for _un1203f6 in (_mrep.get("unmounted") or [])[:4]:
+                    orch._logger.warning(
+                        "#1203f6 %s stays chrome-less: the shared-nav write did not land",
+                        _un1203f6)
             except Exception as _e:
                 orch._logger.debug("#576 shared-nav mount skipped: %s", _e)
             # #534/#535: wire the CORRECT-but-unwired archetype components — a detail
