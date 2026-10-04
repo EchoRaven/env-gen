@@ -441,10 +441,30 @@ def _page_name_by_route_1202fo(hub_registry) -> Dict[str, str]:
     how many walks ran (r96 ran three). The same mismatch also lets an invented name ADD a
     blocker of its own instead of superseding the page's record.
 
-    The record already carries the URL it validated, and routes are unique per page, so
-    the record can be attributed without guessing. #237 already aliases by SUFFIX
-    (``explore_page`` satisfies ``explore``); that cannot bridge ``live_page`` ->
-    ``live_discover``, which shares no stem -- only the route does.
+    The record already carries the URL it validated, so it can be attributed without
+    guessing. #237 already aliases by SUFFIX (``explore_page`` satisfies ``explore``); that
+    cannot bridge ``live_page`` -> ``live_discover``, which shares no stem -- only the route
+    does.
+
+    #1203f8 -- WHY THIS NO LONGER SAYS "routes are unique per page". It did, as the reason
+    attribution needs no guess, and that is FALSE: 19 runs on disk register a route under two
+    names that both carry a route AND a component, so the two are indistinguishable from real
+    pages (r146: `login` and `login_modal` both on `/login`). #1203b0 made it easier, by
+    giving the lane the fields it had been missing, though the corpus says the shape mostly
+    predates it (orchestrator alone wrote 16 of 21).
+
+    The guess-free part was never uniqueness -- it is the ``ambiguous`` set below, which drops
+    such a route entirely, so it contributes no attribution at all. Pinned by
+    test_1202fo_flow_route_attribution.py::test_two_pages_on_one_route_are_never_guessed.
+
+    MEASURED AND DELIBERATELY NOT EXTENDED: for a dropped route the supersede key falls back
+    to the record's own name, i.e. the exact latch #1202fq removes, silently. Across the
+    corpus that costs one record pair (instagram run79: `/login` held
+    ``ui_flow:login`` success beside ``ui_flow:login_page`` failure) and that run delivered
+    four milestones. A second extension looks tempting and is worth as little: 109 UI
+    evidence records carry ``route`` or ``page`` in their metadata with no ``url``, which this
+    resolver cannot use -- and not one of them sits in a run where two differently-named
+    records on one anchor disagree. Both would be detectors with zero corpus firings.
     """
     reg = getattr(hub_registry, "registryhub", None)
     if reg is None:
@@ -455,8 +475,10 @@ def _page_name_by_route_1202fo(hub_registry) -> Dict[str, str]:
         return {}
     if not isinstance(pages, dict):
         return {}
-    out: Dict[str, str] = {}
-    ambiguous = set()
+    # #1203f9: collect first, decide after. Deciding inside the loop meant the SECOND name
+    # on a route could only ever make it ambiguous, with no chance to ask whether the two
+    # names are the same journey.
+    _by_route_1203f9: Dict[str, List[str]] = {}
     for key, pg in pages.items():
         if not isinstance(pg, dict):
             continue
@@ -464,12 +486,41 @@ def _page_name_by_route_1202fo(hub_registry) -> Dict[str, str]:
         name = str(pg.get("name") or key or "").strip()
         if not route or not name:
             continue
-        if route in out and out[route] != name:
-            ambiguous.add(route)      # two pages on one route: never guess
+        _seen1203f9 = _by_route_1203f9.setdefault(route, [])
+        if name not in _seen1203f9:
+            _seen1203f9.append(name)
+    out: Dict[str, str] = {}
+    for route, _names1203f9 in _by_route_1203f9.items():
+        if len(_names1203f9) == 1:
+            out[route] = _names1203f9[0]
             continue
-        out[route] = name
-    for r in ambiguous:
-        out.pop(r, None)
+        # #1203f9 -- `login` AND `login_page` ON ONE ROUTE IS ONE PAGE, NOT AN AMBIGUITY.
+        #
+        # Dropping the route was the right answer to "two pages on one route", and it is the
+        # wrong answer to "one page registered twice". #237 settled which is which, in this
+        # file: `_flow_key` exists because "`explore` / `explore_page` / `explore_screen` are
+        # the SAME user journey ... a verifier record under either spelling satisfies the
+        # flow". So the suffix pair is not two journeys by this module's own definition, and
+        # this resolver was the one place that did not ask.
+        #
+        # Measured over the registries on disk: 34 routes in 20 runs carry two names, and 26
+        # of them differ ONLY by that suffix (`search`/`search_page`, `profile`/`profile_page`,
+        # `reels`/`reels_page`). Each was dropped, so #1202fq's supersede fell back to the
+        # record's own spelling for it -- the exact latch #1202fq removes, reinstated for a
+        # third of the routes it was meant to cover. instagram run79 is the one pair where it
+        # cost something visible: `/login` held `ui_flow:login` SUCCESS beside
+        # `ui_flow:login_page` FAILURE, two keys, the stale one still "the newest word on its
+        # flow".
+        #
+        # The remaining 8 are genuinely different names (`search_page`/`search_results`,
+        # `auth_login`/`login`, `for_you_page`/`fyp_feed`) and still drop out: never guess.
+        if len({_flow_key(n) for n in _names1203f9}) == 1:
+            # Prefer the canonical spelling when it is itself registered; otherwise take a
+            # deterministic one of the names that ARE registered. Never invent a name: the
+            # value becomes a supersede key, and a key no record carries retires nothing.
+            _canon1203f9 = _flow_key(_names1203f9[0])
+            out[route] = (_canon1203f9 if _canon1203f9 in _names1203f9
+                          else sorted(_names1203f9)[0])
     return out
 
 

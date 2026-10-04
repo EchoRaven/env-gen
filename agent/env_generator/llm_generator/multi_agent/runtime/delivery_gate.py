@@ -723,7 +723,30 @@ def _ui_evidence_breadth_739(validation_results: Any,
             _kind830 = _m830.group(1) if _m830 else None
         if _kind830 not in _UI_SMOKE_EVIDENCE_CHECKS:
             continue
+        # #1203f9: CANONICALISE THE TARGET, the way the other reader of this store already
+        # does. `flow_coverage._index_ui_flow_records` keys every record through #237's
+        # `_flow_key` -- "`explore` / `explore_page` / `explore_screen` are the SAME user
+        # journey ... a verifier record under either spelling satisfies the flow" -- and this
+        # function keyed by the raw name, so the two readers of one store disagreed about
+        # record IDENTITY. Same shape as #1202fn/#1202fp/#1202fq/#1202fs, one level down.
+        #
+        # instagram run79 shipped it: `/login` carried `ui_flow:login` SUCCESS beside
+        # `ui_flow:login_page` FAILURE. Two keys here, one key in flow_coverage, and the stale
+        # failure was still "the newest word on its flow" for the gate. #1202fq could not help
+        # -- it needs a `metadata.url` on the record it rekeys, and a stale failure written
+        # long ago usually has none (1565 of 2069 UI records on disk carry no url at all).
+        #
+        # The KIND stays in the key, so `ui_smoke:login` never merges into `ui_flow:login`.
         _key = str(r.get("name") or r.get("task_id") or id(r))
+        try:
+            from .flow_coverage import _flow_key as _fk1203f9
+            _p1203f9 = _key.split(":", 2)
+            if len(_p1203f9) == 3 and _p1203f9[0] == "validation" and _p1203f9[2]:
+                _c1203f9 = _fk1203f9(_p1203f9[2])
+                if _c1203f9:
+                    _key = "validation:%s:%s" % (_p1203f9[1], _c1203f9)
+        except Exception:
+            pass
         # #1202fq: SUPERSEDE BY THE PAGE, NOT BY THE SPELLING.
         #
         # #757 retires a failure once a later pass answers the same flow, and says so:
@@ -737,11 +760,18 @@ def _ui_evidence_breadth_739(validation_results: Any,
         # validation_ui_evidence_failed at that point were 28h+ old and every fresh walk
         # this run had passed; the check had become the latch #757 exists to prevent.
         #
-        # The record already carries the URL it validated and routes are unique per page,
-        # so keying by the registered page needs no guessing. Same map as #1202fo uses in
-        # flow_coverage -- deliberately the SAME function, because this whole batch has
-        # been finding one evidence store read by two consumers that each implemented half
-        # the rules.
+        # The record already carries the URL it validated, so keying by the registered page
+        # needs no guessing. Same map as #1202fo uses in flow_coverage -- deliberately the
+        # SAME function, because this whole batch has been finding one evidence store read by
+        # two consumers that each implemented half the rules.
+        #
+        # #1203f8: this used to add "and routes are unique per page" as the reason. 19 runs on
+        # disk say otherwise -- a route registered under two names that BOTH carry a route and
+        # a component. What makes the attribution guess-free is that #1202fo DROPS such a
+        # route, so it maps to nothing and `_key` stays the record's own name: the pre-#1202fq
+        # behaviour, for that route only. See #1202fo's docstring for what that costs measured
+        # (one pair, in a run that delivered) and for the extension that was measured and not
+        # made.
         if page_by_route:
             try:
                 from .flow_coverage import _route_of_url_1202fo as _rt1202fq
