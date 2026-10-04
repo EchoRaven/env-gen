@@ -41,7 +41,12 @@ from multi_agent.runtime.hubs.runhub.probes import (  # noqa: E402
     ProbePlan, ProbeSkip, _required_request_fields_1203e0, classify_probe_result, plan_probe)
 
 URL = "http://localhost:8000"
-REGISTER = {"method": "POST", "path": "/auth/register", "status": "implemented",
+# ★ #1203e3 note: this used to be `POST /auth/register`, which is the shape that stopped r151 —
+# but e3 now skips the framework's own fixed surface BEFORE the body is built, so that endpoint
+# can no longer reach this code and a fixture using it would test an unreachable path. The field
+# list is kept verbatim (two required, two optional) on a BUSINESS write, which is where the
+# remaining 134 corpus cases live. See test_a_framework_endpoint_never_reaches_this_clause.
+REGISTER = {"method": "POST", "path": "/api/comments", "status": "implemented",
             "auth_required": False,
             "schema": {"request": {"email": "str", "password": "str",
                                    "name": "str?", "tenant_id": "str?"}}}
@@ -54,7 +59,7 @@ def _plan(ep, **kw):
 # ---------------------------------------------------------------- the predicate
 
 def test_r151s_register_declares_two_required_fields():
-    """★ The live record that stopped r151, verbatim."""
+    """★ The live field list that stopped r151, verbatim (on a business path — see REGISTER)."""
     assert _required_request_fields_1203e0(REGISTER) == {"email", "password"}
 
 
@@ -190,3 +195,14 @@ def test_the_service_hands_the_flag_to_the_classifier():
     i = src.index("outcome = classify_probe_result(")
     j = src.index("probe_record = {", i)
     assert "request_complete=" in src[i:j], src[i:j]
+
+
+def test_a_framework_endpoint_never_reaches_this_clause():
+    """★ #1203e3 took over the case this patch was written for. `POST /auth/register` is on the
+    framework's fixed list and is now skipped before a body is built, so #1203e0's remaining job
+    is the 134 non-framework endpoints that declare required fields. Pinned so the two patches
+    cannot silently start fighting over the same endpoint."""
+    r = plan_probe({"method": "POST", "path": "/auth/register", "status": "implemented",
+                    "schema": {"request": {"email": "str", "password": "str"}}},
+                   base_url=URL, auth_required=False)
+    assert isinstance(r, ProbeSkip) and r.reason == "framework_fixed", r

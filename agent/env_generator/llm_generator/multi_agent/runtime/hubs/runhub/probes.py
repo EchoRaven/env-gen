@@ -43,7 +43,7 @@ class ProbePlan:
 
 @dataclass
 class ProbeSkip:
-    reason: str  # "auth_required" | "destructive" | "not_live" | "path_params"
+    reason: str  # "auth_required"|"destructive"|"not_live"|"path_params"|"framework_fixed"
 
 
 @dataclass
@@ -79,6 +79,24 @@ def _required_request_fields_1203e0(endpoint: Dict[str, Any]) -> set:
 # #1203d6: the statuses an endpoint can hold and still be worth asking. Corpus-wide the only
 # values that exist are `implemented` (4968), `defined` (249) and `deprecated` (83).
 _LIVE_STATUSES_1203D6 = {"defined", "implemented"}
+
+
+def _framework_fixed_1203e3(endpoint: Dict[str, Any]) -> bool:
+    """Is this one of the FRAMEWORK's own fixed contract endpoints rather than the lane's?
+
+    Delegates to `#1202kf`'s list -- 14 (method, path) pairs: `/auth/register`, `/auth/login`,
+    the four `/oauth/*`, the two `/.well-known/*`, `/health`, and the `/api/v1/*` tenant control
+    plane -- rather than restating it, so the two consumers cannot drift about what "the
+    framework's own surface" means. #1202kf introduced it for the dead-code audit with the words
+    "the framework's own endpoints are not the lane's dead code"; the same sentence applies to
+    probing. Imported lazily: this module is a pure leaf and coverage_audit is not.
+    """
+    try:
+        from ...coverage_audit import _framework_fixed_1202kf
+    except Exception:          # a probe must never be the reason a run dies
+        return False
+    return (str(endpoint.get("method") or "").upper(),
+            str(endpoint.get("path") or "").rstrip("/") or "/") in _framework_fixed_1202kf()
 
 # #1203d9: a path the prober cannot fill in. `plan_probe` builds `base_url + path` literally, so
 # `GET /api/places/{id}` is requested as the string `/api/places/{id}`, 404s, and
@@ -160,6 +178,32 @@ def plan_probe(
     # `auth_required` -- those reasons say more than this one does.
     if _PATH_PARAM_1203D9.search(path):
         return ProbeSkip(reason="path_params")
+
+    # #1203e3: the framework's OWN fixed surface, asked generically, answers correctly and tells
+    # us nothing -- and it is where almost every probe failure comes from. Measured over every
+    # probe record on disk: the fixed surface was probed 414 times for **171 failures (41%)**,
+    # against 203 failures in 45981 business-endpoint probes (0.4%). A hundredfold difference in
+    # failure rate between two halves of one battery is not the app being worse on one half.
+    #
+    # It is generic probing being wrong there. `POST /auth/login` sent `{}` answers 401 and
+    # `POST /oauth/token` answers 422 -- both correct, both uninformative -- and `api_smoke`
+    # already exercises this surface PROPERLY one stage earlier, with a real body and real
+    # credentials (`auth_register_login`), while the healthcheck stage already pings `/health`.
+    # Live confirmation from r152, probing it for the first time because #1203d6 un-skipped
+    # `implemented`: run #3 failed on exactly five endpoints and all five are on this list
+    # (`/oauth/register`, `GET`+`POST /oauth/authorize`, `/oauth/token`, `/auth/login`). Four of
+    # them because the framework registers its own request schema as `{}` or `null` while its
+    # handlers require fields, so #1203e0 cannot even see them as incomplete.
+    #
+    # Those five recur every tick, which is worse than one failing gate record: no NEW run can
+    # ever satisfy `last_successful_run_since` (completed AND fail_count == 0), so the gate goes
+    # on reading an ever-staler earlier run until `stale_build_evidence` holds the release.
+    #
+    # 7 of 172 runs lose their last probeable endpoint to this, and all seven registered ONLY
+    # these 14 and zero or one business endpoint -- a run whose lane never authored an API.
+    # `functionally_validated` going False there is the correct answer, not a wedge.
+    if _framework_fixed_1203e3(endpoint):
+        return ProbeSkip(reason="framework_fixed")
 
     # MEASURED AND DELIBERATELY NOT SKIPPED: a framework probe route (`/__noop__`,
     # `/__noop_monitoring_read_not_write__`). 101 such endpoints are registered across 68 runs
