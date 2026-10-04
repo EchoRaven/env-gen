@@ -167,6 +167,25 @@ def docker_up_host_fault_1202de(detail: Any) -> str:
     return _host_fatal_1202de(d)
 
 
+def _salient_200_1203e9(detail: Any) -> str:
+    """200 characters SELECTED from `detail`, never its first 200.
+
+    `_salient_error` returns the last marker-matching lines, or the TAIL when nothing matches
+    ("never the misleading prefix", #182). A caller that then slices `[:200]` undoes exactly that,
+    which is what #1203e6 removed from RunHub's compose log and what this removes here. Falls back
+    to the tail, never the head, so even a total failure of the selector cannot reintroduce the
+    front-cut.
+    """
+    d = detail if isinstance(detail, str) else ("" if detail is None else str(detail))
+    if not d:
+        return ""
+    try:
+        from .framework_validation import _salient_error
+        return _salient_error(d, cap=200) or d[-200:]
+    except Exception:
+        return d[-200:]
+
+
 def docker_up_owner(detail: Any) -> str:
     """'frontend'/'backend' when the build-failure tail names exactly one
     side's toolchain; 'verifier' (the diagnose-first route) otherwise."""
@@ -2023,7 +2042,24 @@ class RemediationDispatcher:
                             "%r — OPERATOR ACTION required (free the port / reclaim disk "
                             "/ start the daemon). No remediation dispatched: no lane can "
                             "fix this, and one asked to will eventually claim it did. "
-                            "Detail: %s", _hf1202de, str(detail)[:200])
+                            # #1203e9: `detail` was replaced ~20 lines up by
+                            # `_salient_978(detail, cap=600)`, which returns `text[-cap:]` when no
+                            # line matches an error MARKER -- so `[:200]` cut the FRONT off a tail
+                            # and printed a mid-word fragment. r154, live: this line's Detail read
+                            # `nfusion"`. The same double-cut #1203e6 removed from RunHub's
+                            # compose-failure log, in a second place.
+                            #
+                            # Measured over the run logs on disk: 14 of these lines exist, 13 of
+                            # them readable (r149's disk-full message matches a marker, so the
+                            # selector returns whole lines) and 1 mangled -- and the mangled one
+                            # is exactly the token class #1203e6 just ADDED. `Error response from
+                            # daemon: Conflict...` contains no `error:` marker, so it takes the
+                            # tail branch, and `No such container` (26 records across 25 runs)
+                            # will now take it too. My own patch made this more frequent.
+                            #
+                            # Select 200 salient characters instead of front-cutting 600. Guarded
+                            # separately because `_salient_978` is bound inside a try above.
+                            "Detail: %s", _hf1202de, _salient_200_1203e9(detail))
                         continue
                     # FIX #143: when the captured build tail names exactly one
                     # side's toolchain, skip the verifier diagnose-hop and P0
