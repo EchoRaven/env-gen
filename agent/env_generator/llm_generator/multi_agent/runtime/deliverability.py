@@ -159,6 +159,53 @@ def probed_something_1203d6(ep_counts: Dict[str, int]) -> bool:
     return int(ep_counts.get("passed", 0) or 0) > 0
 
 
+def _other_writers_failures_1203e8(runs, chosen_run_id: str,
+                                   since_ts: float = 0.0) -> List[str]:
+    """What the probe writers the gate did NOT read found. `METHOD /path (code)`, sorted.
+
+    The gate judges one run: `last_successful_run_since`, which requires `completed` AND
+    `fail_count == 0`. Two writers produce runs (#1203e4), and the one with the WIDER coverage is
+    systematically disqualified by its own findings: `RunHub.run_start`'s generic battery probes
+    every live endpoint anonymously, so a single 404 anywhere marks its run `failed` and the gate
+    reads `validation_tools`' authenticated sweep instead. The run that finds more is the run that
+    counts less.
+
+    r153, live: the battery's runs carry `POST /auth/signup (404)` twice, `POST /api/auth/signup
+    (404)` and `POST /api/auth/login (401)` -- lane-declared auth aliases that are not wired --
+    while the gate record reads `endpoint_probes {total: 7, passed: 7}` from the other writer.
+    Four findings, invisible to anyone reading the ledger afterwards.
+
+    This RECORDS, it does not block. #1203e7 blocks on 5xx only, because a 401 on a write whose
+    contract says `auth_required: false` may be the contract's error and a declared endpoint's 404
+    is GATE-C1's job -- those judgements are deliberately not made here. But "not blockable" is not
+    "not worth writing down": the ledger is what a post-mortem has, and it was showing one
+    writer's answer as though it were the only one.
+    """
+    newest: Dict[str, tuple] = {}       # writer -> (started_at, run)
+    for r in runs or []:
+        if not isinstance(r, dict):
+            continue
+        when = r.get("started_at", 0.0)
+        if not isinstance(when, (int, float)) or isinstance(when, bool):
+            continue
+        if float(when) < float(since_ts or 0.0):
+            continue
+        if str(r.get("id") or "") == str(chosen_run_id or ""):
+            continue                    # the gate already reports this one
+        w = str(r.get("started_by") or "")
+        prev = newest.get(w)
+        if prev is None or float(when) >= prev[0]:
+            newest[w] = (float(when), r)
+    out = set()
+    for w, (_when, r) in newest.items():
+        for p in (r.get("probes") or []):
+            if not isinstance(p, dict) or p.get("verdict") != "fail":
+                continue
+            out.add("%s %s (%s)" % (str(p.get("method") or "?").upper(),
+                                    p.get("path") or "?", p.get("status_code")))
+    return sorted(out)
+
+
 def _server_error_probes_1203e7(runs, since_ts: float = 0.0,
                                 unreadable: Optional[List[str]] = None) -> List[str]:
     """Endpoints whose NEWEST probe record in this session is a 5xx. `METHOD /path (code)`, sorted.
@@ -2381,6 +2428,18 @@ def compute_deliverability(hub_registry, app_root,
         from .message_format import warn_once_1201    # #940: function-local, as every other
         warn_once_1201("compute_deliverability.server_errors_1203e7",   # use in this file is
                        "the 5xx-probe blocker #1203e7", _e7exc)
+    # #1203e8: and say what the writers the gate did NOT read found, so the ledger stops showing
+    # one writer's answer as though it were the only one. Records, never blocks.
+    try:
+        _other1203e8 = _other_writers_failures_1203e8(
+            runhub.list_runs(limit=200), str((last_run or {}).get("id") or ""),
+            since_ts=float(session_start_ts or 0.0))
+        if _other1203e8:
+            ep_counts["other_writer_failures_1203e8"] = _other1203e8[:12]
+    except Exception as _e8exc:
+        from .message_format import warn_once_1201 as _w1203e8
+        _w1203e8("compute_deliverability.other_writers_1203e8",
+                 "the other-writer probe summary #1203e8", _e8exc)
     if _5xx1203e7:
         ep_counts["server_errors_1203e7"] = list(_5xx1203e7)
         # #1202tu's ratchet: a blocker that can decline delivery must dispatch somebody. The
