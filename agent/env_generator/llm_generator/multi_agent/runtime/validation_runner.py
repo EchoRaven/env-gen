@@ -1683,6 +1683,7 @@ def run_smoke_validation(
         }
         reg = _http("POST", f"{base}/auth/register", body=_cred)
         token = _tok(reg["body_text"]) if reg["status"] in (200, 201) else None
+        login = None
         if not token:
             # register may not mint a token, or the user already exists → login.
             # Send username + email both so username- or email-login both resolve.
@@ -1690,8 +1691,25 @@ def run_smoke_validation(
                           body={"username": "smoke_user", "email": "smoke@smoke-test.local",
                                 "password": "smoke-pw-12345"})
             token = _tok(login["body_text"])
-        _add("auth_register_login", bool(token),
-             "" if token else f"register={reg['status']} + login; no access_token ({reg['body_text'][:200]})")
+        # #1203d7: SAY WHAT FAILED. This reported `reg["body_text"]` -- the REGISTER response --
+        # while the thing that failed is the LOGIN, whose status and body were computed on the
+        # line above and then discarded. Measured over every run directory: 99 records of this
+        # failure across 49 runs, and in 30 of them (30%) the register body only says the user
+        # already exists ("duplicate key value violates unique constraint"), which is the
+        # EXPECTED answer -- so the only evidence kept for a delivery-blocking failure was a
+        # harmless message, and why login refused was written down nowhere. r149's 1.1.0 was
+        # held by this and its reason is unrecoverable from disk.
+        #
+        # The register body is NOT dropped: in the other 69 it carries the real cause (55
+        # `relation "tenants" does not exist`, 5 `'OAuthStore' object has no attribute 'db'`,
+        # 4 bad request body, 4 database unreachable). Both are reported, login first, each
+        # capped at 130 so the pair plus its labels fits the 300-character budget #1203d5 gave
+        # this line (2x140 came to 309 -- the labels are not free).
+        if not token:
+            _d7 = "login=%s (%s)" % (
+                (login or {}).get("status"), str((login or {}).get("body_text") or "")[:130])
+            _d7 += "; register=%s (%s)" % (reg["status"], str(reg["body_text"] or "")[:130])
+        _add("auth_register_login", bool(token), "" if token else _d7)
         if not token:
             return _finalize(checks, backend_port, endpoint_results)
 

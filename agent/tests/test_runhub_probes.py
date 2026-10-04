@@ -54,10 +54,24 @@ class ProbePlanTests(unittest.TestCase):
         self.assertEqual(result.reason, "destructive")
 
     def test_undefined_endpoint_skipped(self) -> None:
+        """#1203d6: the intent is intact -- a status that is not live stays unprobed -- but the
+        reason is now `not_live`, because the old predicate `status != "defined"` swept in
+        `implemented`, which is 94% of every endpoint record in the corpus and is exactly the
+        status the FRAMEWORK writes after auditing that the route answers.
+
+        ★ This fixture is why that went unnoticed for 169 runs: `draft` appears in no run
+        directory anywhere. The test was green against a status the system never produces while
+        the real data took the other branch. See test_1203d6_* for the measurement."""
         ep = {"method": "GET", "path": "/api/wip", "status": "draft"}
         result = plan_probe(ep, base_url="http://localhost:8000")
         self.assertIsInstance(result, ProbeSkip)
-        self.assertEqual(result.reason, "not_defined")
+        self.assertEqual(result.reason, "not_live")
+
+    def test_implemented_endpoint_is_probed(self) -> None:
+        """#1203d6: the status this skip used to swallow."""
+        ep = {"method": "GET", "path": "/api/videos/feed", "status": "implemented",
+              "auth_required": False}
+        self.assertIsInstance(plan_probe(ep, base_url="http://localhost:8000"), ProbePlan)
 
 
 class ProbeOutcomeClassificationTests(unittest.TestCase):

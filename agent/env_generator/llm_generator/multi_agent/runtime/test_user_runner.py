@@ -728,8 +728,22 @@ async def run_browser_test_user(
                 # backend or credential fault, which narrows the note the lane acts on.
                 try:
                     if (not ok_auth) and report.get("api_login_ok") and _auth_status:
+                        # #1203d8: this read `_s["name"]`. These dicts are built by `step()`
+                        # forty lines up as {"step", "ok", "note"} -- there is exactly one
+                        # writer and the key is `step`. `str({}.get("name", ""))` is `""` and
+                        # `"".startswith(...)` is False, so the branch was dead BY
+                        # CONSTRUCTION: #612's note has never once been attached, in any run.
+                        #
+                        # `name` is the right key on a PAGE dict (four other reads in this file
+                        # are pages, and pages do carry it) -- a page-shaped key read off a
+                        # step-shaped dict. What it cost: the note says the SAME credentials DO
+                        # authenticate over the API, i.e. the form-drive failure is neither a
+                        # backend nor a credential fault, and it feeds `browser_ui_unusable` --
+                        # a HARD gate that by FIX #152 never escape-releases. r146's 1.1.0 died
+                        # held by it. The one sentence that would have narrowed the frontend's
+                        # work never reached the lane, or anywhere else.
                         for _s in report.get("steps") or []:
-                            if isinstance(_s, dict) and str(_s.get("name", "")).startswith(
+                            if isinstance(_s, dict) and str(_s.get("step", "")).startswith(
                                     "auth flow stores a token"):
                                 _s["note"] = (str(_s.get("note") or "").rstrip(". ")
                                               + " — and the SAME creds DO authenticate over "

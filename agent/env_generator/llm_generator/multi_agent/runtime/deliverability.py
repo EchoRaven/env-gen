@@ -138,6 +138,24 @@ class DeliverabilityReport:
         }
 
 
+def probed_something_1203d6(ep_counts: Dict[str, int]) -> bool:
+    """Did the latest run actually ASK the app anything?
+
+    `functionally_validated` downgrades the dead-artifact, visual and ui_flow blockers from hard
+    to warning, and it used to be satisfied by `failed == 0` alone -- which a run that skipped
+    every endpoint satisfies by construction, not by merit. Measured over the gate ledgers: 146
+    of 532 `deliverable` verdicts (27%, 9 runs; 47 in r149, 24 in r148, 14 in r145) rest on a
+    run whose endpoint probes were 100% skipped. `passed` and `skipped` were already counted and
+    already written to `delivery_gate.jsonl`; nothing ever read them (#1202wk).
+
+    `total == 0` means there is nothing to ask about, which other gates own, so this predicate
+    must not wedge such a run: it answers True there.
+    """
+    if int(ep_counts.get("total", 0) or 0) == 0:
+        return True
+    return int(ep_counts.get("passed", 0) or 0) > 0
+
+
 def _probe_counts(probes: list) -> Dict[str, int]:
     counts = {"total": len(probes or []), "passed": 0, "failed": 0, "skipped": 0}
     for p in probes or []:
@@ -2235,8 +2253,19 @@ def compute_deliverability(hub_registry, app_root,
     # provably-working app (smoke #14: 17 "dead" artifacts, all real+used). HARD
     # gates still block: no run / failed probes / MISSING seed / visual
     # NEEDS_REVISION (an explicit FAIL) / story evidence.
+    # #1203d6: ask for EVIDENCE, not for the absence of bad news. This flag downgrades the
+    # dead-artifact, visual and ui_flow blockers from hard to warning, and it used to be
+    # satisfied by `failed == 0` alone -- which a run that skipped every endpoint satisfies by
+    # construction. Measured over the gate ledgers: 146 of 532 `deliverable` verdicts (27%, 9
+    # runs) had `endpoint_probes` all-skipped, 47 of them in r149. `passed` and `skipped` were
+    # already being counted one function up; neither was ever read (#1202wk: the fact that only
+    # reaches a log). The counts already reach `delivery_gate.jsonl`, so the missing piece was
+    # never reporting -- it was that nothing ACTED on them. #1203d6's planner change above is
+    # the root-cause fix; this is the ratchet that stops a future skip rule from quietly buying
+    # the relaxations back.
     functionally_validated = (
         run_within_session
+        and probed_something_1203d6(ep_counts)      # #1203d6
         and ep_counts.get("failed", 0) == 0
         and mcp_counts.get("failed", 0) == 0
     )

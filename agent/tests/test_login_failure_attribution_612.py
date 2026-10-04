@@ -105,9 +105,14 @@ def test_the_direct_api_login_is_folded_in_as_a_fourth_signal(src):
 
 
 def test_the_corroboration_only_fires_when_the_form_drive_FAILED(src):
+    """★ #1203d8: this read `src[i - 700 : i + 100]` and broke the moment the comment above the
+    anchor grew -- which is exactly what `_after`'s own docstring, sixty lines up in THIS file,
+    warns about. A file can explain the rule and still break it one test later (#1202w3).
+    Both ends are landmarks now."""
     i = src.index("nor a credential fault")
-    window = src[i - 700:i + 100]
-    assert "not ok_auth" in window and 'report.get("api_login_ok")' in window
+    j = src.rindex("if (not ok_auth)", 0, i)
+    window = src[j:i]
+    assert 'report.get("api_login_ok")' in window, window[:300]
 
 
 def test_the_corroboration_cannot_raise(src):

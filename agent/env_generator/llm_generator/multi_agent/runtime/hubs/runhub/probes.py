@@ -2,7 +2,7 @@
 
 `plan_probe(endpoint_dict, base_url, example_body=None)` returns either:
   - `ProbePlan(method, url, headers, body)` — ready to execute
-  - `ProbeSkip(reason)` — endpoint should not be probed (auth, destructive, draft)
+  - `ProbeSkip(reason)` — endpoint should not be probed (auth, destructive, deprecated)
 
 `classify_probe_result(status_code, body_excerpt, auth_required, transport_error)`
 returns a `ProbeOutcome(verdict, severity, note)`.
@@ -20,6 +20,8 @@ Verdict matrix:
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
@@ -34,7 +36,7 @@ class ProbePlan:
 
 @dataclass
 class ProbeSkip:
-    reason: str  # "auth_required" | "destructive" | "not_defined"
+    reason: str  # "auth_required" | "destructive" | "not_live" | "path_params"
 
 
 @dataclass
@@ -45,6 +47,26 @@ class ProbeOutcome:
 
 
 _DESTRUCTIVE = {"DELETE"}
+
+# #1203d6: the statuses an endpoint can hold and still be worth asking. Corpus-wide the only
+# values that exist are `implemented` (4968), `defined` (249) and `deprecated` (83).
+_LIVE_STATUSES_1203D6 = {"defined", "implemented"}
+
+# #1203d9: a path the prober cannot fill in. `plan_probe` builds `base_url + path` literally, so
+# `GET /api/places/{id}` is requested as the string `/api/places/{id}`, 404s, and
+# `classify_probe_result` scores it `fail` P1 -- which `deliverability` turns into the blocker
+# "latest run has N failed endpoint probe(s)".
+#
+# This is NOT hypothetical and NOT introduced by #1203d6: of the 369 `fail` probes already on
+# disk, 50 (14%) are templated paths -- `GET /api/titles/{id}`, `/api/genres/{id}/titles`. It is
+# a pre-existing false-blocker on the 27 templated endpoints the old status rule happened to
+# probe, and #1203d6 would have multiplied it by ~20 (526 of the 3864 endpoints it makes
+# probeable, across 161 runs). Asking requires an id the prober does not have, and inventing one
+# would fabricate the answer, so the honest verdict is "not asked", named as such.
+#
+# Measured form: `{x}` only -- 1516 of the 5300 endpoint records. Neither `/:x` (Express) nor
+# `<x>` (Flask) appears anywhere in the corpus, so the predicate is not widened to guess at them.
+_PATH_PARAM_1203D9 = re.compile(r"\{[^/{}]+\}")
 
 
 def plan_probe(
@@ -61,9 +83,33 @@ def plan_probe(
     the projector, so the caller resolves it and passes it; `None` keeps the raw read, which
     is what every pre-#1202kl caller relies on.
     """
-    status = (endpoint.get("status") or "defined")
-    if status != "defined":
-        return ProbeSkip(reason="not_defined")
+    # #1203d6: this used to skip every status that was not exactly "defined", reporting it as
+    # `not_defined` -- and the only other live status in this system is `implemented`, which the
+    # FRAMEWORK assigns to an endpoint after auditing that its route exists and answers.
+    #
+    # So the probe battery skipped precisely the endpoints the framework had verified, and
+    # probed the ones that were merely declared and might not be built yet (a `defined`
+    # endpoint with no route 404s -> fail P1). Backwards in both directions.
+    #
+    # MEASURED over every run directory: 4968 of the 5300 endpoint records are `implemented`
+    # (94%, 169 runs), 249 `defined`, 83 `deprecated`. There is NO draft/planned status anywhere
+    # in the corpus -- the case this skip was written for does not exist. 11543 of the 58000
+    # probe records in the corpus are `not_defined` skips, and in r149 and r140 every single one
+    # of them (256/256 and 424/424) names an `implemented` endpoint.
+    #
+    # What that cost: `deliverability.functionally_validated` asks only whether any probe
+    # FAILED, so a run that enumerated 29 endpoints and probed none of them satisfied it -- and
+    # that flag downgrades the dead-artifact, visual and ui_flow blockers from hard to warning.
+    # 146 of the 532 `deliverable` verdicts in the gate ledgers (27%, 9 runs, r149/r148/r145
+    # among them) rest on a run whose probes were 100% skipped. #1203d6 also makes that flag
+    # ask for evidence rather than for the absence of bad news.
+    # The original intent survives as an ALLOW-list: probe what is live, skip what is not.
+    # `agent/tests/test_runhub_probes.py` pinned this branch with `status: "draft"` -- a value
+    # that appears in no run directory -- so the test stayed green while the real data took the
+    # other path for 169 runs. Fixture shape is test blindness.
+    status = str(endpoint.get("status") or "defined").lower()
+    if status not in _LIVE_STATUSES_1203D6:
+        return ProbeSkip(reason="not_live")
 
     method = (endpoint.get("method") or "GET").upper()
     path = endpoint.get("path") or "/"
@@ -81,6 +127,11 @@ def plan_probe(
     body: Optional[Dict[str, Any]] = None
     if method in ("POST", "PUT", "PATCH"):
         body = example_body if example_body is not None else {}
+
+    # Last, so a templated DELETE still reads as `destructive` and a templated authed write as
+    # `auth_required` -- those reasons say more than this one does.
+    if _PATH_PARAM_1203D9.search(path):
+        return ProbeSkip(reason="path_params")
 
     url = base_url.rstrip("/") + (path if path.startswith("/") else "/" + path)
     return ProbePlan(method=method, url=url, body=body)
