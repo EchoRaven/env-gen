@@ -349,8 +349,24 @@ class RunHub:
                     "compose up FAILED for run %s (rc=%s) — the app never booted, so every "
                     "check after this is measuring nothing. Cause: %s",
                     run_id, up_result.returncode,
-                    _cause1119[:400] or "(compose produced no stderr — check the compose file "
-                                        "exists and the daemon is reachable)")
+                    # #1203e6: this was `_cause1119[:400]`, and `_salient_stderr_1119` returns
+                    # `text[-cap:]` whenever no line matches an error MARKER -- so the slice cut
+                    # the front off a string that was already a tail, throwing away the very
+                    # error #1119 had just preserved. `Error response from daemon:` does not
+                    # contain the marker `error:` (no colon after "error"), so a compose failure
+                    # reported that way takes exactly that path.
+                    #
+                    # Live, twice in one hour of r152: the log read `Cause: d` and
+                    # `Cause: 1  Creating` -- compose progress lines -- while the `compose_stderr`
+                    # field stored beside it (capped at 500, never re-sliced) ended with
+                    # `...You have to remove (or rename) that container to be able to reuse that
+                    # name.` and `Error response from daemon: No such container: e702cb63...`.
+                    # The operator-facing line named a container being created; the cause was a
+                    # stale container from another run.
+                    #
+                    # One string, one cap, no second slice: the class cannot come back here.
+                    _cause1119 or "(compose produced no stderr — check the compose file "
+                                  "exists and the daemon is reachable)")
                 self._emit("run_completed", run_id,
                            {"reason": "compose_up_failed",
                             # #748: the payload carries the cause, not just the label.

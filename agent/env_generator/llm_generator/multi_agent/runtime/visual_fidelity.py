@@ -1403,6 +1403,23 @@ _COMPOSE_FATAL_1202DC = (
      "a HOST PORT this app's compose binds is taken — free it"),
     ("Cannot connect to the Docker daemon",
      "the docker daemon is not reachable from this process"),
+    # #1203e6: docker's own container bookkeeping, measured over the 498 `compose_stderr`
+    # records on disk. `No such container` appears in 26 of them across 25 DIFFERENT runs and
+    # matched none of the tokens above; the name clash appears once. Both are the host's state,
+    # not the app's code: docker refuses because a container with that name already exists (left
+    # by a run that was never cleaned up) or because one vanished mid-operation. No lane edit can
+    # change either, which is exactly what this list is for -- and unlike the port tokens, which
+    # are deliberately absent from #1202mh's futile list because `docker/` is lane-authored,
+    # nothing a lane can write affects another run's leftovers.
+    #
+    # Found because #1203e6's other half stopped hiding them: r152 hit both within an hour while
+    # 146 containers from other runs were on the host.
+    ("You have to remove (or rename) that container",
+     "a container from another run still holds this name — remove the leftover container; "
+     "nothing in the app is wrong"),
+    ("No such container",
+     "docker lost a container mid-operation (another process removed it, or the daemon's state "
+     "is inconsistent) — retry the boot; no source change can affect it"),
 )
 
 

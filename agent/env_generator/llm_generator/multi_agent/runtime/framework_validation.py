@@ -241,7 +241,31 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
         _hf1203d5 = ""
         try:
             from .remediation_dispatcher import docker_up_host_fault_1202de
-            _why1203d5 = [docker_up_host_fault_1202de(c.get("detail")) for c in _fails1203d5]
+            # #1203e5: two ways a failing check can be NOT THE APP'S, not one. The second is the
+            # chain executor's own `environment_1202od` verdict -- "the steps never reached the
+            # app ... not the lanes' failure -- so the retry is the remedy" -- which #1203d5
+            # could not see because `validation_runner` flattened it into prose. r152 recorded
+            # `fresh_smoke` holding on "This is the stack, not the code: no lane edit can change
+            # it. Re-run the validation once the stack is up." while this function's latch was
+            # about to demand exactly the lane edit that sentence rules out: `fresh_smoke_decision`
+            # returns "hold" for this signature until the BACKEND SOURCE changes. A ledger entry
+            # whose stated remedy the code cannot honour is the same defect as #1203d4/d5/d7.
+            #
+            # That sentence is only visible at all because #1203d5 widened this line's evidence
+            # budget from 60 characters to 300; the corpus has 39 gate records of
+            # `business_chain_environment_blocked` across 7 runs (r147 21, r136 6, r144 5), so the
+            # verdict fires regularly while every earlier hold record had it cut off.
+            #
+            # HONEST LIMIT: this only decides differently when the exonerated checks are ALL of
+            # them. r152's own tick also failed `frontend_reachable`, whose comment says a
+            # container "crashed after start" can be the nginx env-var bug -- genuinely the
+            # code's -- so r152 would still have held. "Two services down means the stack is
+            # down" is the kind of predicate I would be inventing, and it is not applied.
+            def _not_the_apps_1203e5(c):
+                if str((c or {}).get("kind") or "") == "environment_1202od":
+                    return "the chains never reached the app (environment_1202od)"
+                return docker_up_host_fault_1202de((c or {}).get("detail"))
+            _why1203d5 = [_not_the_apps_1203e5(c) for c in _fails1203d5]
             if _fails1203d5 and all(_why1203d5):
                 _hf1203d5 = next(w for w in _why1203d5 if w)
         except Exception as _hfexc:          # a classifier slip must not block delivery

@@ -1400,8 +1400,16 @@ def run_smoke_validation(
     endpoint_results: List[Dict[str, Any]] = []
     chain_results: List[Dict[str, Any]] = []
 
-    def _add(name: str, ok: bool, detail: str = "") -> None:
-        checks.append({"name": name, "status": "pass" if ok else "fail", "detail": detail})
+    def _add(name: str, ok: bool, detail: str = "", kind: str = "") -> None:
+        # #1203e5: `kind` carries a STRUCTURED verdict about whose failure this is, beside the
+        # prose. `chain_executor` already computes `kind == "environment_1202od"` -- "the steps
+        # never reached the app ... not the lanes' failure -- say which it is, SO THE RETRY IS
+        # THE REMEDY" -- and the branch below flattened it into an English sentence exactly
+        # where the component that decides whether to retry would have read it.
+        _rec = {"name": name, "status": "pass" if ok else "fail", "detail": detail}
+        if kind:
+            _rec["kind"] = kind
+        checks.append(_rec)
 
     if not compose_file.exists():
         return {"passed": False, "summary": f"no compose file at {compose_file}",
@@ -2002,7 +2010,8 @@ def run_smoke_validation(
                      "NOT VERIFIED — the app was unreachable while the chains ran, so these "
                      "steps got no answer at all (%d step(s), e.g. %s). This is the stack, "
                      "not the code: no lane edit can change it. Re-run the validation once "
-                     "the stack is up." % (len(_env1202od), str(_env1202od[0])[:160]))
+                     "the stack is up." % (len(_env1202od), str(_env1202od[0])[:160]),
+                     kind="environment_1202od")   # #1203e5: and say it in a field, not only in English
             else:
                 # #1202rc: a `missing` step leaves the chain PASSING (#927), so a handler
                 # nobody can reach is invisible on exactly the branch that reports success.
