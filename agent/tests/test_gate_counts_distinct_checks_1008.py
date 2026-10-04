@@ -22,12 +22,12 @@ import inspect
 import pytest
 
 
-def _dedup(failed):
-    """The shape #1008 installed, extracted so the behaviour can be pinned directly."""
-    seen = {}
-    for c in sorted(str(x) for x in failed):
-        seen[c] = seen.get(c, 0) + 1
-    return len(seen), [(f"{k} x{v}" if v > 1 else k) for k, v in sorted(seen.items())]
+# #1203d4: this file used to carry its own copy of the shape, "extracted so the behaviour can
+# be pinned directly" -- which meant these four tests pinned the COPY, and the second writer of
+# the same dict (the hold ledger) was free to go on counting instances, which it did. The
+# shipped code is now one callable helper, so the tests below exercise it instead of a replica.
+from env_generator.llm_generator.multi_agent.orchestrator import (  # noqa: E402
+    _distinct_checks_1203d4 as _dedup)
 
 
 def test_r164s_six_become_one():
@@ -55,12 +55,13 @@ def test_empty_is_zero():
 def test_the_orchestrator_uses_the_distinct_count():
     from env_generator.llm_generator.multi_agent import orchestrator as orch
     src = inspect.getsource(orch)
-    assert "_seen1008" in src
+    assert "_distinct_checks_1203d4" in src
     fn = next(n for n in ast.walk(ast.parse(src))
               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-              and "_seen1008" in ast.unparse(n))
+              and "Framework deliver declined" in ast.unparse(n))
     body = ast.unparse(fn)
-    assert "len(_seen1008)" in body, "the count must come from the deduped map"
+    assert "_distinct_checks_1203d4(_failed)" in body, \
+        "the log line must take its count from the shared helper"
     assert "len(_failed)" not in body, "the instance count must no longer be reported"
 
 

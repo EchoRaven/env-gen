@@ -161,6 +161,33 @@ _WAITING_HOLDS_1202UO = frozenset({
 })
 
 
+def _distinct_checks_1203d4(failed):
+    """How far from green is this app? Count CHECKS, not entries, and keep the instance
+    count beside the name.
+
+    #1008 established this for the log line: r164 logged "6 failed check(s)" where all six
+    entries were `deliverability_ui_page_unwired` -- one check, six pages -- and that number
+    "is what an operator (and the orchestrator deciding whether to attempt delivery) reads as
+    the app's distance from green".
+
+    #1203d4: the SAME `gate["failed_checks"]` is rendered a second time, twenty lines down,
+    into the hold ledger (#1202wc) -- the artifact a post-mortem reads to learn why a run
+    never delivered -- and that writer was still counting entries. Measured over every gate
+    ledger on disk: 711 of 7995 records with failed checks (8.9%) across 66 runs carry a
+    duplicate; worst is googlemaps-r16 at 16 entries / 7 distinct. r149's hold line read
+    "4 failed check(s)" while listing `deliverability_guard_tampering` twice.
+
+    Both writers now call THIS, so the two numbers cannot drift apart again (#1202lf: fixing
+    one reader is worse than fixing none, because the fix looks done).
+    """
+    seen: Dict[str, int] = {}
+    for c in failed or []:
+        k = str(c)
+        seen[k] = seen.get(k, 0) + 1
+    shown = [(f"{k} x{v}" if v > 1 else k) for k, v in sorted(seen.items())]
+    return len(seen), shown
+
+
 def _note_delivery_hold_1202tk(orch, hold: str, detail: str = "") -> None:
     """Append one line to ``logs/delivery_hold.jsonl``: WHY a clear gate did not ship. #1202tk
 
@@ -5424,15 +5451,12 @@ class Orchestrator:
                 #
                 # Worse, that particular check is in _COVERED_ELSEWHERE — deliberately never
                 # dispatched — so six entries inflate the distance while producing no work.
-                _seen1008: Dict[str, int] = {}
-                for _c in _failed:
-                    _seen1008[_c] = _seen1008.get(_c, 0) + 1
-                _shown = [(f"{k} x{v}" if v > 1 else k) for k, v in sorted(_seen1008.items())]
+                _n1008, _shown = _distinct_checks_1203d4(_failed)   # #1203d4: one impl
                 if _failed != getattr(self, "_fwdeliver_last_failed", None):
                     self._fwdeliver_last_failed = _failed
                     self._logger.warning(
                         "Framework deliver declined: delivery gate has %d failed check(s): %s",
-                        len(_seen1008), _shown,
+                        _n1008, _shown,
                     )
                 # FIX #120 (run-38): a STALE build:* failure checklist (transient
                 # run_validation fail mid visual-churn, never re-recorded) must not
@@ -5820,10 +5844,15 @@ class Orchestrator:
                     # kind with an EMPTY detail -- 79% of every hold those three runs wrote
                     # -- while the failing check names sat in the line above. The count goes
                     # first so a truncated list is still honest about what it left out (#1034).
-                    _fc1202wc = [str(c) for c in (_gate1202qx.get("failed_checks") or [])]
+                    # #1203d4: count CHECKS, not entries -- same helper as the log line
+                    # above, so the ledger and the log can no longer disagree about how far
+                    # from green this app is. 711/7995 records (8.9%, 66 runs) had a
+                    # duplicate; r149 wrote "4" while listing guard_tampering twice.
+                    _n1202wc, _fc1202wc = _distinct_checks_1203d4(
+                        _gate1202qx.get("failed_checks"))
                     _note_delivery_hold_1202tk(   # #1202tk
                         self, "gate_failed_checks",
-                        "%d failed check(s): %s" % (len(_fc1202wc), ", ".join(_fc1202wc)))
+                        "%d failed check(s): %s" % (_n1202wc, ", ".join(_fc1202wc)))
                     return  # not deliverable yet
                 from .runtime.framework_validation import stack_known_serving_1202qx
                 if not stack_known_serving_1202qx(

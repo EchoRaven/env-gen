@@ -148,6 +148,13 @@ def fresh_smoke_decision(cur_sig: Optional[str], validated_sig: Optional[str],
     return "smoke"
 
 
+# #1203d5: how long a HOST fault parks the pre-cut fresh smoke before it is retried.
+# Mirrors orchestrator.FWVAL_SLOW_INTERVAL_S, whose rule (PIPE-C2) this path was missing:
+# "DON'T hard-stop either: allow one SLOW retry per slow_interval so a transient
+# environmental failure still eventually records the gate-required RunHub run."
+HOSTFAULT_RETRY_S_1203D5 = 300
+
+
 async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
     """Cut-time guard: ``True`` → proceed to create_release, ``False`` → hold this
     tick. Called AFTER _commit_framework_delivery (the tree is final). Best-effort:
@@ -170,6 +177,30 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
             getattr(orch, "_fresh_smoke_fail_sig", None))
         if decision == "cut":
             return True
+        # #1203d5: a HOST fault (full disk, busy port, dead daemon) means the smoke never got
+        # to ASK the app anything, so the tree below must not be stamped as having failed --
+        # and it is not. But an un-stamped tree returns "smoke" forever, which would re-boot
+        # docker every tick. Park it on a timer instead, the way PIPE-C2 parks framework
+        # validation: the host condition can clear with no source change at all (r149: an
+        # operator reclaimed 90GB), and a latch that only a lane edit can release would wedge
+        # the release until someone happened to touch the backend.
+        if decision == "smoke" and getattr(
+                orch, "_fresh_smoke_hostfault_sig_1203d5", None) == cur:
+            _hf_age = time.time() - float(
+                getattr(orch, "_fresh_smoke_hostfault_ts_1203d5", 0.0) or 0.0)
+            if _hf_age < HOSTFAULT_RETRY_S_1203D5:
+                _hf_was = str(getattr(orch, "_fresh_smoke_hostfault_why_1203d5", "") or "?")
+                orch._logger.error(
+                    "RELEASE HELD: the pre-cut fresh api_smoke could not run %.0fs ago on a "
+                    "HOST fault (%s) -- OPERATOR ACTION required (reclaim disk / free the "
+                    "port / start the daemon). The app was NOT tested, so this tree is NOT "
+                    "recorded as failing; retrying in %.0fs.",
+                    _hf_age, _hf_was, HOSTFAULT_RETRY_S_1203D5 - _hf_age)
+                orch._fresh_smoke_hold_reason_1202wc = (   # #1203d5
+                    "pre-cut fresh api_smoke could not run: HOST FAULT (%s) -- OPERATOR "
+                    "ACTION required; the app was NOT tested and this tree is NOT recorded "
+                    "as failing; retrying in %ds" % (_hf_was, int(HOSTFAULT_RETRY_S_1203D5)))
+                return False
         if decision == "hold":
             orch._logger.warning(
                 "RELEASE HELD: the backend still matches the tree that FAILED the "
@@ -200,19 +231,70 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
                 "PRE-CUT FRESH SMOKE PASSED (run %s) — the release ships a "
                 "validated backend.", data.get("runhub_run_id"))
             return True
+        _fails1203d5 = [c for c in (data.get("checks") or []) if c.get("status") == "fail"]
+        # #1203d5: WHOSE fault was it? #1202de already owns that question for a compose
+        # failure -- and its own docstring is this bug's precedent: netflix-r43 asked a
+        # backend engineer to fix `pg_wal ... No space left on device`, churned 45 minutes,
+        # then closed the P0 claiming a change that exists in no commit, and the verifier
+        # rubber-stamped it. Only when EVERY failing check is host-explainable is the app
+        # exonerated; one unexplained failure and the tree is latched as before.
+        _hf1203d5 = ""
+        try:
+            from .remediation_dispatcher import docker_up_host_fault_1202de
+            _why1203d5 = [docker_up_host_fault_1202de(c.get("detail")) for c in _fails1203d5]
+            if _fails1203d5 and all(_why1203d5):
+                _hf1203d5 = next(w for w in _why1203d5 if w)
+        except Exception as _hfexc:          # a classifier slip must not block delivery
+            orch._logger.warning(
+                "#1203d5 host-fault classifier unavailable (%s); treating the failing "
+                "pre-cut smoke as the app's, which is the pre-#1203d5 behaviour", _hfexc)
+        if _hf1203d5:
+            orch._fresh_smoke_hostfault_sig_1203d5 = cur
+            orch._fresh_smoke_hostfault_ts_1203d5 = time.time()
+            orch._fresh_smoke_hostfault_why_1203d5 = _hf1203d5
+            orch._logger.error(
+                "RELEASE HELD: the pre-cut fresh api_smoke FAILED on a HOST fault (%s) and "
+                "on nothing else -- OPERATOR ACTION required. Not recording this tree as "
+                "failing: the app was never asked. Retrying in %ds.",
+                _hf1203d5, int(HOSTFAULT_RETRY_S_1203D5))
+            orch._fresh_smoke_hold_reason_1202wc = (   # #1203d5
+                "pre-cut fresh api_smoke could not run: HOST FAULT (%s) -- OPERATOR ACTION "
+                "required; the app was NOT tested and this tree is NOT recorded as failing; "
+                "retrying in %ds" % (_hf1203d5, int(HOSTFAULT_RETRY_S_1203D5)))
+            return False
+        # #1203d5: this tree WAS tested and it is the app's. Drop any host-fault park taken on
+        # the same signature, so the two latches can never both claim it -- the ordering above
+        # already prefers "hold", but a state that contradicts itself is a trap for the next
+        # reader of this function.
+        orch._fresh_smoke_hostfault_sig_1203d5 = None
         orch._fresh_smoke_fail_sig = cur
-        _failed = [f"{c.get('name')}:{(c.get('detail') or '')[:60]}"
-                   for c in (data.get("checks") or []) if c.get("status") == "fail"]
+        # #1203d5: #182 built `_salient_error` in THIS file so a long validation detail is
+        # never reported by a blind prefix slice -- and this writer, 180 lines above it, was
+        # doing exactly that at 60 characters. Measured over every hold ledger on disk: 9 of
+        # the 10 `fresh_smoke` records were cut at 60, r149's mid-word
+        # ("GET readback does NOT contain i", `{"detail":"could not `) and r146's before the
+        # failing step was named at all, because a framework notice had been prepended
+        # upstream and spent the whole window (#1202vx, in a second place). The ledger field
+        # accepts 400 characters; the shortfall was self-imposed. 300 is what is left of that
+        # field after this line's own 70-character preamble and a check name, so one failing
+        # check -- which is what 10 of the 10 real records carry -- now gets 300 instead of 60.
+        # The budget is shared and floored at the old 60, so with five or more failing checks
+        # the ledger's own 400-character cap still clips the tail exactly as it did before.
+        _budget1203d5 = max(60, 300 // max(1, len(_fails1203d5)))
+        _failed = [f"{c.get('name')}:{_salient_error(c.get('detail'), cap=_budget1203d5)}"
+                   for c in _fails1203d5]
         orch._logger.error(
             "RELEASE HELD: the post-smoke backend edit FAILS a fresh api_smoke "
             "(%s) — NOT cutting a release that crashes on cold start (gmrun3 "
             "class). The failing run is recorded; remediation routes to the lane. "
             "A backend source change re-arms this check.",
-            _failed or (getattr(res, "error_message", "") or "?")[:160])
+            _failed or _salient_error(
+                getattr(res, "error_message", ""), cap=160) or "?")   # #1203d5
         orch._fresh_smoke_hold_reason_1202wc = (   # #1202wc
             "post-smoke backend edit FAILS a fresh api_smoke (%d failing check(s)): %s"
             % (len(_failed),
-               ", ".join(_failed) or (getattr(res, "error_message", "") or "?")[:160]))
+               ", ".join(_failed) or _salient_error(                    # #1203d5
+                   getattr(res, "error_message", ""), cap=160) or "?"))
         return False
     except Exception as _exc:
         try:
