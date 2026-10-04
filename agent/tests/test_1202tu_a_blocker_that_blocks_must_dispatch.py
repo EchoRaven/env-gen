@@ -111,7 +111,17 @@ def _blocker_prose_literals():
         if isinstance(node, ast.Return) and isinstance(node.value, ast.List):
             targets = node.value.elts
         elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "append"):
+                and node.func.attr == "append"
+                # #1203e7: the receiver has to be the BLOCKER list. This matched any
+                # `.append(<prose>)` in the file, and the assertion it feeds says "these
+                # BLOCKERS can DECLINE delivery and dispatch nobody" -- only `blockers` can do
+                # that. A diagnostic list (`unreadable.append("... has status_code=%r")`, added
+                # by #1203e7 so an unparseable probe record is reported instead of silently
+                # counted clean) is not a blocker and routes to nobody by design. The seven real
+                # findings this ratchet was built on are all `blockers.append`, so narrowing to
+                # the receiver keeps every one of them -- see the counter-proof below.
+                and isinstance(node.func.value, ast.Name)
+                and "blocker" in node.func.value.id.lower()):
             targets = node.args
         if not targets:
             continue
@@ -248,3 +258,37 @@ def test_every_named_elsewhere_claim_is_true():
     assert bogus == [], (
         "these exemptions name a check that is neither owned nor classified anywhere, so the "
         "blocker they excuse may in fact dispatch nobody: %s" % bogus)
+
+
+def test_the_narrowed_receiver_still_catches_a_real_blocker():
+    """★ #1203e7's counter-proof for narrowing the scan to `blockers.append`: a planted blocker
+    with unroutable prose must still be found, or the narrowing gutted the ratchet."""
+    tree = ast.parse(
+        'def f():\n'
+        '    blockers = []\n'
+        '    blockers.append("something nobody owns happened in this run, at length")\n')
+    found = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append"
+                and isinstance(node.func.value, ast.Name)
+                and "blocker" in node.func.value.id.lower()):
+            for elt in node.args:
+                p = _lit_prefix(elt)
+                if p and len(p) > 30:
+                    found.append(p)
+    assert found, "the narrowed receiver check no longer sees a plain blockers.append"
+
+
+def test_the_narrowed_receiver_ignores_a_diagnostic_list():
+    """And the thing it was narrowed FOR: a non-blocker list is not a delivery decision."""
+    tree = ast.parse(
+        'def f():\n'
+        '    unreadable = []\n'
+        '    unreadable.append("GET /x has status_code=%r, which is not a number" % 1)\n')
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append"
+                and isinstance(node.func.value, ast.Name)
+                and "blocker" in node.func.value.id.lower()):
+            raise AssertionError("a diagnostic list is still being read as a blocker")

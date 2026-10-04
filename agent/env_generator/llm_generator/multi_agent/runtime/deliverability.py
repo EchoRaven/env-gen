@@ -159,6 +159,91 @@ def probed_something_1203d6(ep_counts: Dict[str, int]) -> bool:
     return int(ep_counts.get("passed", 0) or 0) > 0
 
 
+def _server_error_probes_1203e7(runs, since_ts: float = 0.0,
+                                unreadable: Optional[List[str]] = None) -> List[str]:
+    """Endpoints whose NEWEST probe record in this session is a 5xx. `METHOD /path (code)`, sorted.
+
+    Keyed by (WRITER, method, path), and arriving at that key took two corrected drafts, both
+    caught by replaying against r152's own records rather than by reasoning:
+
+      draft 1, "does the LATEST RUN show a 5xx" -- blocked nothing. At delivery the newest run was
+      a `validation_tools` one (00:12:05) that the battery's finding is not in; the battery's last
+      look was three runs earlier. The two writers interleave, so "the latest run" is just
+      whichever went last.
+
+      draft 2, "per ENDPOINT, newest record wins" -- also blocked nothing, and for a much more
+      interesting reason. The two writers DISAGREE about this endpoint at the same minutes:
+      23:52:59 `""` pass/200, 23:55:45 `orchestrator` fail/500, 23:57:07 `""` pass/200, 23:59:06
+      and 23:59:42 `orchestrator` fail/500, 00:05:44 and 00:12:05 `""` pass/200. Not a flapping
+      app: `api_smoke` probes WITH a real token and the generic battery probes ANONYMOUSLY, so
+      `GET /api/users/suggested` answers 200 to one and 500 to the other -- a handler that crashes
+      with no user context instead of returning 401. Letting "newest" span both writers averages a
+      real defect away, which is exactly what #1203e4 said these two sets must not be allowed to
+      do to each other.
+
+    So: within ONE writer's own sequence, is the newest thing it knows about this endpoint a 5xx?
+    A later probe BY THE SAME WRITER that gets 200 retires it; a different writer's 200 does not,
+    because it asked a different question.
+
+    THE BLOCKER THIS FEEDS COULD NOT FIRE. `compute_deliverability` reads
+    `last_run = runhub.last_successful_run_since(...)`, which filters `fail_count == 0`, and
+    `fail_count` counts exactly the failing probes -- so `ep_counts["failed"]` on that run is 0 by
+    construction and "latest run has N failed endpoint probe(s)" was unreachable. Measured across
+    every gate ledger on disk: that prose appears in **0 files**, as does the MCP twin, against 47
+    for "dead artifact" and 56 for "no successful RunHub run" -- so the corpus has blocker prose
+    and these two simply never fired.
+
+    r152 shipped through the hole. `GET /api/users/suggested` went `pass/200` at 22:52 and
+    `fail/500` from 23:45 in six consecutive validation runs; those runs were therefore `failed`
+    and could not qualify, so the gate read a `validation_tools` run -- the other writer (#1203e4),
+    which probes only what api_smoke exercised and never touched that endpoint. `ok=True`,
+    `failed_checks=[]`, v1.0.0 delivered with a P1 server error. The remediation had been
+    dispatched (124 mentions in the run log); nothing required it to land.
+
+    ONLY 5xx, deliberately. Of the 369 failing probe records on disk, #1203e3/d9/e0 account for
+    266, and of the 154 that remain 91 are 401 and 54 are 404 -- two classes I cannot adjudicate
+    safely. A 401 on a write whose contract says `auth_required: false` may be the CONTRACT's
+    error (#1202zr: the framework itself advised declaring writes public), and a 404 on a declared
+    endpoint is already GATE-C1's job via `_unimplemented_route`'s calibrated exemptions. A 5xx is
+    never the correct answer to any probe: 6 records, all of them r152's regression. So the new
+    hard blocker would have fired exactly once in the whole corpus, on a real one.
+    """
+    if unreadable is None:
+        unreadable = []
+    newest: Dict[tuple, tuple] = {}     # (writer, method, path) -> (started_at, code, verdict)
+    for r in runs or []:
+        if not isinstance(r, dict):
+            continue
+        when = r.get("started_at", 0.0)
+        # #883's ratchet caught the first draft swallowing an unreadable value into `code = 0`
+        # inside an `except`, which reads as "not a server error" -- the permissive side, with no
+        # one told. There is no exception path here now: a value that is not a number is NOT
+        # silently a zero, it is counted and handed back, so the caller can say the gate could
+        # not read N probe records rather than implying it read them and found nothing.
+        if not isinstance(when, (int, float)) or isinstance(when, bool):
+            unreadable.append("run %s has a non-numeric started_at" % (r.get("id") or "?"))
+            continue
+        if float(when) < float(since_ts or 0.0):
+            continue
+        for p in (r.get("probes") or []):
+            if not isinstance(p, dict):
+                continue
+            key = (str(r.get("started_by") or ""),
+                   str(p.get("method") or "?").upper(), str(p.get("path") or "?"))
+            raw = p.get("status_code")
+            if raw is None:
+                continue        # a skip carries no status; it says nothing either way
+            if not isinstance(raw, int) or isinstance(raw, bool):
+                unreadable.append("%s %s has status_code=%r" % (key[1], key[2], raw))
+                continue
+            prev = newest.get(key)
+            if prev is None or float(when) >= prev[0]:
+                newest[key] = (float(when), raw, str(p.get("verdict")))
+    return sorted({"%s %s (%d)" % (k[1], k[2], v[1])
+                   for k, v in newest.items()
+                   if v[2] == "fail" and 500 <= v[1] < 600})
+
+
 def _probe_source_1203e4(run) -> str:
     """WHICH writer produced the probe records the gate is about to judge the app on.
 
@@ -2271,6 +2356,45 @@ def compute_deliverability(hub_registry, app_root,
     if last_run:   # #1203e4: say WHOSE evidence this is, and which run it was
         ep_counts["source_1203e4"] = _probe_source_1203e4(last_run)
         ep_counts["run_id_1203e4"] = str(last_run.get("id") or "")
+    # #1203e7: and read the NEWEST evidence, not only the newest FLATTERING evidence. The two
+    # terms are different questions: `last_run` answers "did a clean run happen this session",
+    # which must keep using `last_successful_run_since`; a 5xx is about what the app does NOW.
+    _5xx1203e7: List[str] = []
+    try:
+        _unread1203e7: List[str] = []
+        _5xx1203e7 = _server_error_probes_1203e7(
+            runhub.list_runs(limit=200), since_ts=float(session_start_ts or 0.0),
+            unreadable=_unread1203e7)
+        if _unread1203e7:      # #883: say what could not be read instead of counting it clean
+            ep_counts["unreadable_probe_records_1203e7"] = _unread1203e7[:10]
+    except Exception as _e7exc:
+        # #883's ratchet: an empty default here READS AS CLEAN, so it must announce itself or it
+        # is a fallback that masks a failure. Both channels, because they answer different
+        # readers: `_swallowed_790` is the gate's own "this check did not run, the release is
+        # unverified on that axis" ledger, `warn_once_1201` the once-per-process operator line.
+        try:
+            from .delivery_gate import _swallowed_790
+            _swallowed_790("deliverability.server_errors_1203e7", _e7exc,
+                           "no 5xx found (NOT evidence that none exist)")
+        except Exception:
+            pass
+        from .message_format import warn_once_1201    # #940: function-local, as every other
+        warn_once_1201("compute_deliverability.server_errors_1203e7",   # use in this file is
+                       "the 5xx-probe blocker #1203e7", _e7exc)
+    if _5xx1203e7:
+        ep_counts["server_errors_1203e7"] = list(_5xx1203e7)
+        # #1202tu's ratchet: a blocker that can decline delivery must dispatch somebody. The
+        # phrase "failed endpoint probe(s)" is deliberate -- `_deliverability_check_token` already
+        # maps it to `deliverability_failed_endpoint_probes`, the token minted for the blocker
+        # that could never fire. Reviving that token beats minting a second name for one fact
+        # (#1032), and `_GATE_OWNER` now carries the body that tells the backend what to do.
+        blockers.append(
+            "%d failed endpoint probe(s) answering 5xx (newest result from the probe that saw "
+            "it): %s — a server error is never a correct answer to a probe, and this does not "
+            "clear by re-running. An anonymous probe getting 5xx where an authenticated one gets "
+            "200 is a handler that crashes with no user context instead of answering 401; both "
+            "readings are real and neither cancels the other."
+            % (len(_5xx1203e7), join_capped(_5xx1203e7, len(_5xx1203e7), cap=6, sep=", ")))
     if ep_counts.get("failed", 0) > 0:
         blockers.append(
             f"latest run has {ep_counts['failed']} failed endpoint probe(s)")

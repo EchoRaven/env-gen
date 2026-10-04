@@ -2369,6 +2369,24 @@ class RemediationDispatcher:
         (complements #45's failed_checks log). Conservative: ambiguous / relaxed /
         framework-deterministic checks are logged, not mis-routed. Best-effort."""
         _GATE_OWNER = {
+            # #1203e7: `deliverability_failed_endpoint_probes` has existed in
+            # `_deliverability_check_token` since the gate was written and never had an owner,
+            # because the blocker that mints it could not fire: it read the last SUCCESSFUL run,
+            # which is selected for `fail_count == 0`. That prose appears in 0 of the gate ledgers
+            # on disk. Now that #1203e7 reads the newest result per probe, the token arrives here
+            # and needs a body.
+            "deliverability_failed_endpoint_probes": (
+                "backend", "Fix the endpoint(s) answering 5xx (blocks delivery)",
+                "a probe got a 5xx from an endpoint your contract declares. A server error is "
+                "never a correct answer: not to a malformed body (that is 400/422), not to a "
+                "missing token (401), not to an absent row (404). Read the backend log for the "
+                "traceback and guard the case the handler is crashing on.\n\n"
+                "If the SAME endpoint answers 200 to the api_smoke sweep and 5xx to the generic "
+                "probe, the difference is the token: api_smoke sends one and the generic probe "
+                "does not. The handler is dereferencing a user/tenant that is absent rather than "
+                "returning 401 — r152's `GET /api/users/suggested` is exactly that. Fix the "
+                "unauthenticated path; do not add auth to the declaration to make the probe stop "
+                "asking."),
             # #1202ou: the two auth-tampering blockers, routed. The gate-level check carries
             # its name only, so this body names the patterns to delete.
             "deliverability_guard_tampering": (

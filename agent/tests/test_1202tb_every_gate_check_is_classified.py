@@ -78,7 +78,13 @@ _EXEMPT_1202TB = {
     # refuses; each needs one real firing to show what it looks like first.
     "deliverability_critical_flows_invalid": "materials/spec shape; owner ambiguous, never fired",
     "deliverability_critical_visuals_needs_revision": "visual gate has its own attempt loop; never fired",
-    "deliverability_failed_endpoint_probes": "probe failure may be the stack, not the code; never fired",
+    # #1203e7 dropped this exemption, and both halves of its reason are why. "never fired" was
+    # structural, not incidental: the blocker read the last SUCCESSFUL run, which is selected for
+    # `fail_count == 0`, so `failed > 0` was unreachable and the prose appears in 0 of the gate
+    # ledgers on disk. And "may be the stack, not the code" no longer applies to what fires now:
+    # #1203e7 blocks on 5xx ONLY, which means the handler ran and crashed. A stack that is down
+    # answers with a transport error and no status code at all, and the predicate requires an
+    # integer 5xx, so it cannot pick that up. It is routed to backend in `_GATE_OWNER` now.
     "deliverability_failed_mcp_probes": "same, for the MCP surface; never fired",
 }
 
