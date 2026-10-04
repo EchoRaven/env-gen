@@ -114,7 +114,10 @@ def _has_passing_ui_evidence(hub_registry) -> bool:
 class DeliverabilityReport:
     last_successful_run: Optional[dict] = None
     run_within_session: bool = False
-    endpoint_probes: Dict[str, int] = field(default_factory=dict)
+    # #1203e4 put `source_1203e4` / `run_id_1203e4` beside the counts, so this is no
+    # longer int-only. Every reader takes named count keys (`total`/`passed`/`failed`),
+    # so the extra strings pass through the cap and into the ledger untouched.
+    endpoint_probes: Dict[str, Any] = field(default_factory=dict)
     mcp_probes: Dict[str, int] = field(default_factory=dict)
     coverage: Dict[str, Any] = field(default_factory=dict)
     seed_data: Dict[str, Any] = field(default_factory=dict)
@@ -154,6 +157,36 @@ def probed_something_1203d6(ep_counts: Dict[str, int]) -> bool:
     if int(ep_counts.get("total", 0) or 0) == 0:
         return True
     return int(ep_counts.get("passed", 0) or 0) > 0
+
+
+def _probe_source_1203e4(run) -> str:
+    """WHICH writer produced the probe records the gate is about to judge the app on.
+
+    `RunHub` runs are created by two different things and the gate reads whichever one happened
+    to be the most recent `completed` run with `fail_count == 0`. They are not interchangeable:
+
+      ``""``             -- `tools/validation_tools.RunValidationTool`, which records the
+                            endpoints API_SMOKE ACTUALLY EXERCISED, with a real token and a real
+                            body. 3317 runs on disk, and every one of their probe records carries
+                            `endpoint_id` and no `severity`.
+      ``"orchestrator"`` -- `RunHub.run_start`'s generic battery, which asks every registered
+                            endpoint ANONYMOUSLY with an empty body. 1434 runs, records carrying
+                            `severity` and `url`. The two sets never overlap.
+
+    The summary the gate wrote named neither, so `endpoint_probes {total: 19, passed: 19}` could
+    mean "api_smoke exercised 19 endpoints with credentials" or "an anonymous sweep got 19 2xx",
+    and nothing on disk said which. r152 alternated between the two every few minutes -- and
+    reading that field without this, I attributed a `passed: 19` to #1203d6 when it belonged to
+    the other writer entirely, and had to retract it. The field is the gate's primary functional
+    evidence; it has to say where the evidence came from.
+
+    Raw value, deliberately not mapped to a friendlier name: the mapping above is what the corpus
+    shows TODAY, and a third writer would be mislabelled by a guess but merely unfamiliar here.
+    """
+    try:
+        return str((run or {}).get("started_by") or "") or "(unset)"
+    except Exception:
+        return "(unknown)"
 
 
 def _probe_counts(probes: list) -> Dict[str, int]:
@@ -2235,6 +2268,9 @@ def compute_deliverability(hub_registry, app_root,
 
     ep_counts = _probe_counts(last_run.get("probes") if last_run else [])
     mcp_counts = _probe_counts(last_run.get("mcp_probes") if last_run else [])
+    if last_run:   # #1203e4: say WHOSE evidence this is, and which run it was
+        ep_counts["source_1203e4"] = _probe_source_1203e4(last_run)
+        ep_counts["run_id_1203e4"] = str(last_run.get("id") or "")
     if ep_counts.get("failed", 0) > 0:
         blockers.append(
             f"latest run has {ep_counts['failed']} failed endpoint probe(s)")
