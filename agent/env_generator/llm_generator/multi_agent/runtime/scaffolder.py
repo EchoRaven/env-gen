@@ -1977,6 +1977,15 @@ volumes:
             ui_pages = drop_sentinel_pages_1202hp(ui_pages)
             ui_pages = drop_component_page_twins_1087(ui_pages, registryhub)
             rep = scaffold_pages_from_contract(fe, ui_pages)
+            if rep.get("skipped"):
+                # #1203f7: this can only fire if scaffold_frontend_baseline (called earlier in
+                # this same method) did not create src/, i.e. something upstream already went
+                # wrong -- and then NO contract page is scaffolded at all. Its own sentence
+                # cannot be found in the corpus because nothing logged it, so there is no
+                # evidence it has ever fired; that is a reason to make it visible, not a
+                # reason to assume it cannot.
+                orch._logger.warning(
+                    "#1203f7 no contract page was scaffolded: %s", rep.get("skipped"))
             # #1202at: #951 detects the projector/lane tug-of-war, calls it "waste either
             # way", and then clobbers anyway while telling nobody who could stop it. r32
             # burned three rounds each on GenresPage and LoginPage; the lane never learns
@@ -2393,6 +2402,14 @@ volumes:
                     orch._logger.info(
                         "#440 recovered agent nav '%s' into %d page(s): %s",
                         _nrep.get("nav"), len(_nrep["rewired"]), _nrep["rewired"])
+                if _nrep.get("skipped"):
+                    # #1203f7: #578 computes exactly WHY the nav could not be spread and
+                    # returns the sentence; nothing read it. The outcome is the pages keeping
+                    # no chrome, which is the cost #576's docstring measured on r139 (0.28 vs
+                    # 0.85 on a one-line difference), so the reason has to be said where
+                    # someone reading the run can act on it.
+                    orch._logger.warning("#1203f7 #440 did not rewire the nav: %s",
+                                         _nrep.get("skipped"))
             except Exception as _e:
                 orch._logger.debug("#440 agent-nav recovery skipped: %s", _e)
             # #576: a projected page that renders NO nav is invisible to #440 (which only
@@ -2411,6 +2428,14 @@ volumes:
                 # shape the f-series spent the day removing. A page left chrome-less is
                 # what the visual judge charges for on every dimension at once (r138: four
                 # such pages, all four in visual_screens_below), so it has to be said here.
+                if _mrep.get("skipped"):
+                    # #1203f7: same as #440 above, plus the two gates #1203f5 added (a
+                    # lower-case module name JSX would read as an HTML tag, and a module with
+                    # no default export whose import Rollup would reject). Those two refuse
+                    # ON PURPOSE and the refusal is the right answer -- but the pages are
+                    # still chrome-less, and the shell that could not be used is named here.
+                    orch._logger.warning("#1203f7 #576 did not mount a shared nav: %s",
+                                         _mrep.get("skipped"))
                 for _un1203f6 in (_mrep.get("unmounted") or [])[:4]:
                     orch._logger.warning(
                         "#1203f6 %s stays chrome-less: the shared-nav write did not land",

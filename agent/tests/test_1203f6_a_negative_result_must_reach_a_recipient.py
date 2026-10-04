@@ -42,27 +42,65 @@ for _p in (str(ROOT), str(ROOT / "env_generator" / "llm_generator")):
 # predates the series and already has readers, and its name does not promise a write.
 _NEGATIVE_KEYS = ("unwritten", "unmounted", "unrepairable", "refused")
 
-SOURCES = ("frontend_scaffold.py",)
-CONSUMERS = ("heal_pipeline.py", "scaffolder.py", "remediation_dispatcher.py",
-             "deliverability.py", "validation_runner.py", "framework_validation.py")
+# #1203f7: `skipped` is BOTH, and the shape of its value says which. A formatted or literal
+# SENTENCE is a negative result -- `{comp}: no default export` means pages stay chrome-less
+# and the reason is known. `True` beside a separate `reason` is an informational "nothing to
+# do" (enforce_measured_dark_theme: "measured theme is not dark"), and an int is a counter
+# whose dict is published whole (deliverability._probe_counts). Measured over runtime/: 4
+# string producers, 4 True ones, 2 counters -- so adding the name alone to _NEGATIVE_KEYS
+# would have demanded readers for six states that are not failures.
+_CONDITIONAL_KEYS = ("skipped",)
+
+# The whole tree, not one file (#1202tb): the rule has to hold for the module someone adds
+# tomorrow. Measured when it was widened: every unwritten/unmounted/unrepairable/refused key
+# outside frontend_scaffold.py already had a reader, so widening cost nothing and the sweep
+# now covers backend_scaffold, route_projector, heal_pipeline and the rest.
+RUNTIME_MODULES = tuple(sorted(p.name for p in (RUNTIME).rglob("*.py")))
+SOURCES = RUNTIME_MODULES
+CONSUMERS = RUNTIME_MODULES
+
+
+def _is_sentence(node):
+    """A dict value that is a string -- an f-string or a literal. Not True, not an int."""
+    return (isinstance(node, ast.JoinedStr)
+            or (isinstance(node, ast.Constant) and isinstance(node.value, str)))
 
 
 def _producers():
     """{function name: {negative keys it writes into its result}}"""
     out = {}
     for name in SOURCES:
-        tree = ast.parse((RUNTIME / name).read_text(encoding="utf-8"))
+        p = RUNTIME / name
+        if not p.is_file():
+            continue
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8", errors="ignore"))
+        except SyntaxError:
+            continue
+        spans = [(f.lineno, f.end_lineno, f.name) for f in ast.walk(tree)
+                 if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))]
         for fn in ast.walk(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             keys = set()
             for node in ast.walk(fn):
-                # result["unwritten"] / result.setdefault("unwritten", []) / {"unwritten": x}
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Constant) and sub.value in _NEGATIVE_KEYS:
                         keys.add(sub.value)
             if keys:
-                out[fn.name] = keys
+                out.setdefault(fn.name, set()).update(keys)
+        # the conditional ones are classified by the VALUE, so they need the dict literal
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            for k, v in zip(node.keys, node.values):
+                if not (isinstance(k, ast.Constant) and k.value in _CONDITIONAL_KEYS):
+                    continue
+                if not _is_sentence(v):
+                    continue
+                owner = [f for f in spans if f[0] <= k.lineno <= f[1]]
+                if owner:
+                    out.setdefault(owner[-1][2], set()).add(k.value)
     return out
 
 
@@ -159,9 +197,31 @@ class EveryNegativeKeyHasAReader(unittest.TestCase):
                         ("reconcile_frontend_api_paths", "unwritten"),
                         ("repair_frontend_unmatchable_routes_1202sd", "refused"),
                         ("repair_frontend_missing_local_exports", "unwritten"),
-                        ("repair_frontend_named_default_imports", "unrepairable")):
+                        ("repair_frontend_named_default_imports", "unrepairable"),
+                        # #1203f7's three, classified by the VALUE being a sentence
+                        ("mount_shared_nav_on_projected_pages", "skipped"),
+                        ("recover_agent_nav", "skipped"),
+                        ("scaffold_pages_from_contract", "skipped")):
             self.assertIn(fn, prod, "the scan stopped seeing %s" % fn)
             self.assertIn(key, prod[fn], "the scan stopped seeing %s's %r" % (fn, key))
+
+
+class TheDiscriminatorExcludesInformationalStates(unittest.TestCase):
+    """#1203f7: `skipped` alone is not a negative result. Pinning the exclusions matters as
+    much as the inclusions -- demanding a reader for "measured theme is not dark" would be
+    noise presented as rigor, and the sweep would have to be weakened to shut it up."""
+
+    def test_a_true_valued_skip_is_not_required_to_be_read(self):
+        prod = _producers()
+        self.assertNotIn("skipped", prod.get("enforce_measured_dark_theme", set()),
+                         "a `skipped: True` beside a separate `reason` is an informational "
+                         "state, not an unlanded repair")
+
+    def test_a_counter_named_skipped_is_not_required_to_be_read(self):
+        prod = _producers()
+        self.assertNotIn("skipped", prod.get("_probe_counts", set()),
+                         "an int counter whose dict is published whole is not a negative "
+                         "result key")
 
 
 if __name__ == "__main__":
