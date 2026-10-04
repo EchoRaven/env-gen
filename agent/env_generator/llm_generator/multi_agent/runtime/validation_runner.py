@@ -263,8 +263,38 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
             _tail = _full[-600:]
         if _build_context_race_1202iw(_full):
             _tail = (_tail or "") + _RACE_NOTE_1202IW
-        _LOG.warning("compose spawn: %s %s FAILED rc=%s — transcript tail:\n%s",
-                     _bin, _verb, cp.returncode, _tail or "(the command produced no output)")
+        # #1203f1: KEEP THE WHOLE TRANSCRIPT. #1129 made this line carry the error instead of the
+        # epilogue, and said why: "the compile error itself -- the Vite/rollup/tsc diagnostic
+        # naming the file and the symbol -- goes to STDOUT". `_salient_error` delivers that
+        # whenever a line matches an error marker. When none does it falls back to `text[-cap:]`,
+        # and for a build whose output ENDS in a stack trace that tail is the frames.
+        #
+        # r154, live: `docker build FAILED (attempt 2/2)` reported `x Build failed in 2.63s` --
+        # which `_is_void_hit_1202iv` correctly classifies as content-free, so the selector took
+        # the tail, and the tail was 20 rollup frames starting mid-word (`t FunctionScope...`).
+        # `Maximum call stack`, `RangeError`, `error during build` and `ERROR:` appear ZERO times
+        # anywhere in that run's log: whatever rollup said above its frames was never written down.
+        #
+        # This does not touch the selection -- changing a window needs evidence of what the window
+        # missed, and that evidence is exactly what was gone. It makes the evidence EXIST. Same
+        # move as #1203c9, which saves the browser walk's raw answer to `logs/` for the same reason
+        # ("its words are kept ... so the walk is not lost"), and the next build failure is then
+        # diagnosable without re-running anything.
+        _saved_1203f1 = ""
+        if _full:
+            try:
+                from pathlib import Path as _P1203f1
+                _d1203f1 = _P1203f1(str(cwd)).parent / "logs"
+                _d1203f1.mkdir(parents=True, exist_ok=True)
+                _f1203f1 = _d1203f1 / ("compose_%s_failure_1203f1.log" % str(_verb or "cmd"))
+                _f1203f1.write_text(_full, encoding="utf-8", errors="replace")
+                _saved_1203f1 = " — FULL transcript (%d chars) kept at %s" % (
+                    len(_full), _f1203f1)
+            except Exception:
+                pass        # a failed save must not also silence the tail below
+        _LOG.warning("compose spawn: %s %s FAILED rc=%s%s — transcript tail:\n%s",
+                     _bin, _verb, cp.returncode, _saved_1203f1,
+                     _tail or "(the command produced no output)")
         # #1202cn: say when the HOST is the problem, because no lane can fix it.
         #
         # r37 ran 168 minutes and spent $371.74 over 4910 calls without ever reaching a
