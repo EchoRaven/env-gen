@@ -14,11 +14,17 @@ MEASURED over the registries on disk, reading `route` the way the code does (not
 holds a SOURCE FILE in 946 records and is not a route at all -- a first pass that conflated
 them inflated nothing and deflated nothing, but it was the wrong column):
 
-    34 routes in 20 runs carry two names
-    26 of them differ ONLY by the #237 suffix (search/search_page, profile/profile_page,
-       reels/reels_page, home_feed/home_feed_page ...)        <- dropped for no reason
-     8 are genuinely different (search_page/search_results, auth_login/login,
+    46 routes carry two or more distinct page names
+    26 of them, across 16 runs, differ ONLY by the #237 suffix (search/search_page,
+       profile/profile_page, reels/reels_page ...)             <- dropped for no reason
+    20 are genuinely different (search_page/search_results, auth_login/login,
        for_you_page/fyp_feed, login_modal/login_page)          <- must keep dropping
+
+(#1203fa: the first pass counted the RAW `route` strings and got 34/26/8. This resolver keys by
+`_route_of_url_1202fo`, which drops scheme, host, `?`/`#` and a trailing slash, so `/` and
+`/?comments=1` are ONE route to it. Replaying the function over the corpus -- rather than
+re-deriving its rule -- produced 46/26/20, and the 26 was right all along because it is the
+figure the function itself yields.)
 
 So #1202fq's supersede fell back to the record's own spelling on 26 routes: the latch it
 removes, reinstated for three quarters of the ambiguous routes it was meant to cover.

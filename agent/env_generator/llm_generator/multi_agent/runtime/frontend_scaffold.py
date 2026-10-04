@@ -6770,9 +6770,19 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
                 # this touches carries the framework's own `data-projected=` marker, tested
                 # at the top of this loop. So the framework was refused permission to revise
                 # a page it projected itself, and said it had mounted the nav anyway: 32
-                # refusals over 8 runs, and 10 pages shipped without the app's chrome
-                # (r138: live_discover, messages_dm_empty, notifications_activity and
-                # fyp_feed_logged_out, all four in that run's visual_screens_below).
+                # refusals over 8 runs.
+                #
+                # #1203fa CORRECTS the delivered-harm figure this comment first carried ("10
+                # pages", then "7 across r124 and r138"). Both were built by matching refusals
+                # DURING a run against pages missing the shell AT DELIVERY, which is two points
+                # in time. Replaying this function over the delivered frontends says 3 pages in
+                # ONE run: r124's FollowingSuggestedCreators, FriendsSuggestedCreators and
+                # SettingsMoreMenu, the only delivered pages that still carry the projected
+                # marker AND lack the shell their siblings mount. r138 drops out entirely --
+                # 0 of its 14 delivered pages carry `data-projected=`, so the lane had rewritten
+                # them by the cut and this pass would never have touched them. Its four screens
+                # really are in `visual_screens_below`; that is a fact about the visual gate and
+                # not evidence about this write.
                 if _fw_write_1202cw(
                         p, body, encoding="utf-8",
                         clobber_ok=("#576/#1203f3: the page carries the framework's own "

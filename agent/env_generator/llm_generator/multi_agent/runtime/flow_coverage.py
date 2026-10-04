@@ -447,11 +447,11 @@ def _page_name_by_route_1202fo(hub_registry) -> Dict[str, str]:
     does.
 
     #1203f8 -- WHY THIS NO LONGER SAYS "routes are unique per page". It did, as the reason
-    attribution needs no guess, and that is FALSE: 19 runs on disk register a route under two
+    attribution needs no guess, and that is FALSE: 16 runs on disk register one route under two
     names that both carry a route AND a component, so the two are indistinguishable from real
     pages (r146: `login` and `login_modal` both on `/login`). #1203b0 made it easier, by
     giving the lane the fields it had been missing, though the corpus says the shape mostly
-    predates it (orchestrator alone wrote 16 of 21).
+    predates it (the orchestrator alone wrote most of them).
 
     The guess-free part was never uniqueness -- it is the ``ambiguous`` set below, which drops
     such a route entirely, so it contributes no attribution at all. Pinned by
@@ -503,17 +503,26 @@ def _page_name_by_route_1202fo(hub_registry) -> Dict[str, str]:
         # flow". So the suffix pair is not two journeys by this module's own definition, and
         # this resolver was the one place that did not ask.
         #
-        # Measured over the registries on disk: 34 routes in 20 runs carry two names, and 26
-        # of them differ ONLY by that suffix (`search`/`search_page`, `profile`/`profile_page`,
+        # Measured by REPLAYING this function over the 171 registries on disk: 46 routes
+        # carry two or more distinct page names, and 26 of them -- across 16 runs -- differ
+        # ONLY by that suffix (`search`/`search_page`, `profile`/`profile_page`,
         # `reels`/`reels_page`). Each was dropped, so #1202fq's supersede fell back to the
-        # record's own spelling for it -- the exact latch #1202fq removes, reinstated for a
-        # third of the routes it was meant to cover. instagram run79 is the one pair where it
+        # record's own spelling for it -- the exact latch #1202fq removes, reinstated for more
+        # than half the routes it was meant to cover. instagram run79 is the one pair where it
         # cost something visible: `/login` held `ui_flow:login` SUCCESS beside
         # `ui_flow:login_page` FAILURE, two keys, the stale one still "the newest word on its
         # flow".
         #
-        # The remaining 8 are genuinely different names (`search_page`/`search_results`,
+        # The remaining 20 are genuinely different names (`search_page`/`search_results`,
         # `auth_login`/`login`, `for_you_page`/`fyp_feed`) and still drop out: never guess.
+        #
+        # #1203fa corrects those counts. The first pass read the RAW `route` string and got
+        # 34/26/8; this resolver keys by `_route_of_url_1202fo(route)`, which strips the
+        # scheme, the host, `?`/`#` and a trailing slash -- so `/` and `/?comments=1` are ONE
+        # route to it, and `/my-list` and `/my-list/` are too. Counting the raw strings merged
+        # nothing and undercounted the population. The 26 is unchanged because it was always
+        # the figure this function produces; replaying the function instead of re-deriving its
+        # rule is what made the other two agree with it.
         if len({_flow_key(n) for n in _names1203f9}) == 1:
             # Prefer the canonical spelling when it is itself registered; otherwise take a
             # deterministic one of the names that ARE registered. Never invent a name: the

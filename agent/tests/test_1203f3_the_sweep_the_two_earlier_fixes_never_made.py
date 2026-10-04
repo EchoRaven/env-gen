@@ -22,15 +22,18 @@ mine, because a predicate I invent over-matches:
   * the two dedupe repairs remove only what their dedupe function proved redundant and route
     everything else to `conflicts`.
 
-MEASURED HARM, in delivered apps: the nav mount was refused 32 times across 8 runs. Checking
-the DELIVERED tree of each, r124 and r138 ship 7 refused pages that still do not render the
-shell their siblings do. All four of r138's -- for_you, messages_dm_empty,
-notifications_activity, live_discover -- are in that run's `visual_screens_below` (7 screens,
-blocking average 0.1457), by the mechanism the function's own docstring measured on r139: two
-projected pages differing in one `<TopNav />` line scored 0.28 against 0.85. The other six runs
-are not counted either way: this check reads the FINAL page set, and the dominance gate is
-evaluated per call, so a run that fails the gate at delivery may well have passed it when the
-refusal happened. 7 is the floor, not the total.
+MEASURED HARM, in delivered apps: the nav mount was refused 32 times across 8 runs. Replaying
+the REAL function over each delivered frontend (not re-deriving its rule) says 3 pages in ONE
+run would now be mounted: r124's FollowingSuggestedCreators, FriendsSuggestedCreators and
+SettingsMoreMenu. The mechanism's cost is the one #576's own docstring measured on r139: two
+projected pages differing in a single `<TopNav />` line scored 0.28 against 0.85.
+
+(#1203fa corrects this. It first said 10 pages, then 7 across r124 and r138, both arrived at by
+matching refusals DURING a run against pages missing the shell AT DELIVERY -- two points in
+time. r138 drops out completely: 0 of its 14 delivered pages carry `data-projected=`, so the
+lane had rewritten them before the cut and this pass would never have touched them. Its four
+screens are in `visual_screens_below`, which is a fact about the visual gate, not evidence
+about this write.)
 """
 import sys
 import tempfile
