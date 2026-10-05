@@ -523,6 +523,89 @@ def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
         return {"repaired": repaired or False, "conflicts": all_conflicts}
 
 
+_ROUTE_LINE_1203FF = re.compile(r"^\s*<Route\s.*/>\s*$")
+
+
+def dedupe_identical_routes_1203ff(frontend_dir) -> Dict[str, object]:
+    """Remove BYTE-IDENTICAL single-line ``<Route .../>`` duplicates from a router.
+
+    r157 SHIPPED three of them:
+
+        <Route path="/:username" element={<ProfileOwnPage />} />
+        <Route path="/:username" element={<ProfileOwnPage />} />
+        <Route path="/:username" element={<ProfileOwnPage />} />
+
+    and its git history shows how, across four commits: the lane writes `/@:username` beside
+    an existing `/:username`; #1202sd rewrites the unmatchable one to `/:username`, which is
+    now a duplicate; the lane merges and re-adds `/@:username`; #1202sd rewrites again. Each
+    cycle leaves one more copy. Six rewrites in that run, three identical routes delivered.
+
+    #1202sd is ONE cause and not the only one: r112 ships a duplicate with #1202sd never
+    firing. So this deduplicates the RESULT rather than patching one producer. Measured over
+    the 177 delivered App.jsx on disk: 12 carry duplicates, 19 redundant routes in all, and
+    every one of them is a byte-identical line -- same path AND same element.
+
+    WHY REMOVING IS BEHAVIOUR-PRESERVING: `<Routes>` matches one child, so a second identical
+    `<Route>` can never be reached. Two GUARDS keep it that way:
+
+      * only a line whose stripped form both starts the tag and ends `/>` -- the complete tag
+        on one line. 141 of the corpus's 2735 `<Route>` tags span several lines, and a
+        line-based pass would delete half of one. Those are left alone.
+      * only a file with ONE ``<Routes`` block. Two routers in one file could legitimately
+        each carry `/:username`, and then the copies are not redundant. No file on disk has
+        two (0 of 182), so this guard protects a case that does not occur yet rather than one
+        that does -- a predicate true today is not a promise about tomorrow's code (#947).
+
+    Byte-identical only, which is the same line this repo already draws in
+    `dedupe_identical_toplevel_blocks`: anything it cannot prove redundant is left for the
+    lane. Never raises.
+    """
+    result: Dict[str, object] = {"deduped": [], "skipped": []}
+    try:
+        src = Path(frontend_dir) / "src"
+        if not src.is_dir():
+            return result
+        for f in sorted(src.glob("**/*")):
+            if f.suffix.lower() not in _FRONT_EXTS or "node_modules" in str(f):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if "<Route" not in text:
+                continue
+            if len(re.findall(r"<Routes[\s>]", text)) > 1:
+                result["skipped"].append(
+                    "%s: more than one <Routes> block, so identical paths may belong to "
+                    "different routers" % f.name)
+                continue
+            lines = text.split("\n")
+            seen: Set[str] = set()
+            drop: Set[int] = set()
+            for i, ln in enumerate(lines):
+                if not _ROUTE_LINE_1203FF.match(ln):
+                    continue
+                key = ln.strip()
+                if key in seen:
+                    drop.add(i)
+                else:
+                    seen.add(key)
+            if not drop:
+                continue
+            new_text = "\n".join(ln for i, ln in enumerate(lines) if i not in drop)
+            if _fw_write_1202cw(
+                    f, new_text, encoding="utf-8",
+                    clobber_ok=("#1203ff: dropping <Route> lines that are BYTE-IDENTICAL to "
+                                "one already in the same single router, where the second can "
+                                "never be matched; a line that differs at all is kept")):
+                result["deduped"].append((f.name, len(drop)))
+            else:
+                result.setdefault("unwritten", []).append((f.name, len(drop)))
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]:
     r"""#1202sd — rewrite a `<Route path>` React Router cannot match, wherever the LANE wrote it.
 

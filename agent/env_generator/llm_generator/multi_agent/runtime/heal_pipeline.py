@@ -2268,6 +2268,26 @@ class HealPipeline:
                         "refused, so the page stays unreachable)", _rf1203f6)
             except Exception as _ur_err:
                 orch._logger.debug("#1202sd route repair skipped: %s", _ur_err)
+            # #1203ff: and remove the duplicates the rewrite above can CREATE. Its own try,
+            # because #1202sd is one cause and not the only one -- r112 shipped a duplicate
+            # with #1202sd never firing, so this must run whether that repair fired or not.
+            try:
+                from .frontend_scaffold import dedupe_identical_routes_1203ff
+                _dr = dedupe_identical_routes_1203ff(fe)
+                if _dr.get("deduped"):
+                    orch._logger.warning(
+                        "#1203ff dropped %s byte-identical <Route> line(s) that could never "
+                        "be matched (r157 shipped three copies of one route): %s",
+                        sum(n for _f, n in _dr["deduped"]), _dr.get("deduped"))
+                for _du1203ff in (_dr.get("unwritten") or [])[:4]:
+                    orch._logger.warning(
+                        "#1203ff duplicate <Route> lines STAND (the write did not land): %s",
+                        _du1203ff)
+                for _ds1203ff in (_dr.get("skipped") or [])[:4]:
+                    orch._logger.warning(
+                        "#1203ff did not deduplicate: %s", _ds1203ff)
+            except Exception as _dr_err:
+                orch._logger.debug("#1203ff route dedupe skipped: %s", _dr_err)
             _eb = repair_frontend_escaped_backticks(fe)
             if _eb.get("repaired"):
                 orch._logger.warning(
