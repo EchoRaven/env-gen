@@ -434,6 +434,76 @@ def _infer_sql_type(col: str) -> str:
     return "text"
 
 
+# --- #1203fp: THE AUTO-REGISTRATION HANDED THE REGISTRY A PATH THE REGISTRY FORBIDS ----
+#
+# `auto_from_ui_declaration` below copies a path out of a ui_page's `apis_used` VERBATIM and
+# appends it as an endpoint. `apis_used` carries the parameterised form with a BARE placeholder
+# -- `POST /api/videos/{}/like` -- written there by the frontend lane AND by the orchestrator
+# itself (r153/r157: writer=orchestrator). RegistryHub's #1202xl guard then refuses it: "every
+# {...} must be a NAMED identifier and must be the WHOLE segment". The refusal becomes
+# `phase='partial_failure'`, and orchestrator.run() raises `RuntimeError: Kickoff did not
+# finalize cleanly` -- which kills the whole run.
+#
+# It kills it AFTER the first delivery, because this is the kickoff for the NEXT milestone.
+# Measured over the corpus, every instance identical in shape:
+#
+#     run   failing path                   releases cut before it died
+#     r145  /api/videos/{}                 1.0.0
+#     r146  /api/videos/{}                 1.0.0, 1.1.0
+#     r147  /api/videos/{}/comments        1.0.0
+#     r152  /api/videos/{}/comments        1.0.0
+#     r153  /api/videos/{}/comments        1.0.0
+#     r156  /api/videos/{}/comments        1.0.0
+#     r157  /api/videos/{}/comments        1.0.0
+#     r160  /api/videos/{}/like            1.0.0
+#
+# Eight runs, all `source=auto_from_ui_declaration`, all rejected for the bare placeholder, all
+# stopping at the first milestone of a four-milestone plan. 119 such `apis_used` entries exist
+# across 15 runs; the eight are the ones where the entry was not already a known endpoint, so
+# the append actually fired.
+#
+# #1202xl is RIGHT to refuse: a route with a bare `{}` cannot be served, and r121 shipped an MCP
+# tool pointing at `{encodeURIComponent}(id)` for want of this guard. Its blast-radius
+# measurement -- "of the 4,940 registered paths in the corpus, exactly 2 are newly rejected ...
+# Zero collateral" -- counted paths that were already STORED, and a `{}` path could never be
+# stored precisely because it is refused. So the collateral was invisible to the instrument.
+#
+# The RAISE stays. `orchestrator.run()` turning a `partial_failure` into a RuntimeError is what
+# stops a run continuing on a contract that did not finalize, and softening it here would be a
+# decision about delivery semantics made on the evidence of one cause -- all eight observed
+# instances are this bare placeholder, so the cause is what there is evidence to remove. If a
+# second `partial_failure` cause ever shows up killing a post-delivery run, that is the moment
+# to ask whether the abort should be scoped to the MILESTONE rather than the run.
+#
+# The producer is what changes. `{id}` is not invented here: it is the registry's own dominant
+# convention, measured over every parameterised segment in the corpus -- 1100 bare `{name}` vs
+# 510 `{x_id}` vs 4 `{xId}`, `{id}` alone 979 times, and after each noun segment the bare form
+# leads (`videos` -> `id` 445 vs `video_id` 198, `titles` -> `id` 132, `comments` -> `id` 85).
+# So no singularisation heuristic is needed and the generated skeleton keeps serving the shape
+# the rest of the corpus already uses.
+#
+# The membership test becomes param-BLIND at the same time, and has to: renaming the placeholder
+# would otherwise let `POST /api/videos/{}/like` append a twin of an already-declared
+# `POST /api/videos/{video_id}/like`, trading a crash for a duplicate registration. Blind
+# comparison is also what `_canon_endpoint_1135` does for the same reason one layer out.
+def _name_bare_path_params_1203fp(path: Any) -> str:
+    """`/api/videos/{}/like` -> `/api/videos/{id}/like`. Any already-named segment is left
+    exactly as it is, so a path the registry would accept is returned unchanged."""
+    return "/".join("{id}" if _seg == "{}" else _seg
+                    for _seg in str(path or "").split("/"))
+
+
+def _param_blind_key_1203fp(method: Any, path: Any):
+    """`(METHOD, path)` with every complete `{...}` segment collapsed to `{}` — so
+    `{id}`, `{video_id}` and `{}` are one endpoint for the purpose of "do we already know it".
+    A malformed segment is left alone: it is not a parameter and must not silently become one."""
+    _segs = []
+    for _seg in str(path or "").split("/"):
+        _segs.append("{}" if (len(_seg) >= 2 and _seg.startswith("{") and _seg.endswith("}"))
+                     else _seg)
+    return (str(method or "GET").upper(), "/".join(_segs).rstrip("/"))
+
+
 def _canonical_response_key(method: Any, path: Any) -> str:
     """PROPOSAL #46: the CANONICAL response envelope key the route_projector
     actually emits — ``item`` (single) or ``items`` (collection).
@@ -806,9 +876,9 @@ def _build_contract(
         out = set()
         for ep in endpoints:
             if isinstance(ep, Mapping):
-                m = str(ep.get("method") or "GET").upper()
-                pth = str(ep.get("path") or "")
-                out.add((m, pth.rstrip("/")))
+                # #1203fp: param-BLIND, so a declared `{video_id}` already covers the
+                # `apis_used` form that writes the same endpoint as `{}`.
+                out.add(_param_blind_key_1203fp(ep.get("method"), ep.get("path")))
         return out
     _known = _known_eps()
     for src_list in (ui_pages, ui_components):
@@ -823,9 +893,16 @@ def _build_contract(
                     m, pth = "GET", parts[0].rstrip("/")
                 else:
                     continue
-                if not pth.startswith("/api/") or (m, pth) in _known:
+                if not pth.startswith("/api/"):
                     continue
-                _known.add((m, pth))
+                # #1203fp: name the bare placeholder BEFORE the membership test and the append,
+                # so the registry is handed a path its own #1202xl guard accepts and a declared
+                # twin under a different param name is recognised rather than duplicated.
+                pth = _name_bare_path_params_1203fp(pth)
+                _key1203fp = _param_blind_key_1203fp(m, pth)
+                if _key1203fp in _known:
+                    continue
+                _known.add(_key1203fp)
                 endpoints.append({"method": m, "path": pth,
                                   "auth_required": True,
                                   "response_key": _canonical_response_key(m, pth),
