@@ -770,7 +770,28 @@ def _ui_flow_missing_names(orch) -> List[str]:
         _cfc = globals().get("compute_flow_coverage")
         if _cfc is None:
             from .flow_coverage import compute_flow_coverage as _cfc
-        report = _cfc(orch.hubs.registryhub)
+        # #1203fu: the HUBS CONTAINER, not the RegistryHub. `_derive_ui_spec_from_hub`
+        # opens with `workhub = getattr(hub_registry, "workhub", None); if workhub is None:
+        # return None` -- a RegistryHub has no `.workhub`, so this returned
+        # `FlowCoverageReport(source="none")` and an EMPTY list on every call since #981/#280
+        # landed. The parameter is named `hub_registry` all the way down
+        # (`compute_deliverability(hub_registry, ...)`) while every working caller passes the
+        # container: `delivery_gate.py` does `compute_flow_coverage(hubs, None)` and
+        # `compute_deliverability(hubs, ...)`. The name invited the wrong object.
+        #
+        # Measured on r162's real hubs: passing the RegistryHub gives source="none",
+        # failed=[], missing=[]; passing a container with `.workhub` + `.registryhub` gives
+        # source="pages" and five missing flows. And at the artifact level, 0 of 26
+        # `deliverability_ui_flow_missing` remediation tasks in r14x-r16x name a single flow.
+        #
+        # What was dead because of it, on the two biggest blockers in the corpus
+        # (`deliverability_ui_flow_failed` 2503 red records / 81 runs;
+        #  `deliverability_ui_flow_missing` 1049 / 104): #280's and #981's instance naming,
+        # #1176's auth contradiction, #1177's ui_smoke refresh, #1182's control-absence
+        # answer, and #1203ft's replay of the walk's own words -- all of them hang off these
+        # lists being non-empty. Same shape as #1178, which fixed it for the sibling producer
+        # and whose comment says "the two readers must agree".
+        report = _cfc(orch.hubs)
         seen: set = set()
         out: List[str] = []
         for f in (getattr(report, "missing", None) or []):
@@ -1518,7 +1539,28 @@ def _ui_flow_failed_names(orch) -> List[str]:
         _cfc = globals().get("compute_flow_coverage")
         if _cfc is None:
             from .flow_coverage import compute_flow_coverage as _cfc
-        report = _cfc(orch.hubs.registryhub)
+        # #1203fu: the HUBS CONTAINER, not the RegistryHub. `_derive_ui_spec_from_hub`
+        # opens with `workhub = getattr(hub_registry, "workhub", None); if workhub is None:
+        # return None` -- a RegistryHub has no `.workhub`, so this returned
+        # `FlowCoverageReport(source="none")` and an EMPTY list on every call since #981/#280
+        # landed. The parameter is named `hub_registry` all the way down
+        # (`compute_deliverability(hub_registry, ...)`) while every working caller passes the
+        # container: `delivery_gate.py` does `compute_flow_coverage(hubs, None)` and
+        # `compute_deliverability(hubs, ...)`. The name invited the wrong object.
+        #
+        # Measured on r162's real hubs: passing the RegistryHub gives source="none",
+        # failed=[], missing=[]; passing a container with `.workhub` + `.registryhub` gives
+        # source="pages" and five missing flows. And at the artifact level, 0 of 26
+        # `deliverability_ui_flow_missing` remediation tasks in r14x-r16x name a single flow.
+        #
+        # What was dead because of it, on the two biggest blockers in the corpus
+        # (`deliverability_ui_flow_failed` 2503 red records / 81 runs;
+        #  `deliverability_ui_flow_missing` 1049 / 104): #280's and #981's instance naming,
+        # #1176's auth contradiction, #1177's ui_smoke refresh, #1182's control-absence
+        # answer, and #1203ft's replay of the walk's own words -- all of them hang off these
+        # lists being non-empty. Same shape as #1178, which fixed it for the sibling producer
+        # and whose comment says "the two readers must agree".
+        report = _cfc(orch.hubs)
         seen: set = set()
         out: List[str] = []
         for f in (getattr(report, "failed", None) or []):

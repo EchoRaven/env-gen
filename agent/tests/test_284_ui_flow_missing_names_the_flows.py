@@ -68,14 +68,32 @@ def test_missing_names_recovered_from_flow_coverage(monkeypatch):
     class _RH:
         pass
 
+    class _WH:
+        def list_documents(self, kind=None):
+            return []
+
     class _Hubs:
         registryhub = _RH()
+        workhub = _WH()
 
     class _Orch:
         hubs = _Hubs()
 
     assert rd._ui_flow_missing_names(_Orch()) == ["fyp_feed", "login_modal_route"]
-    assert called["hub"] is _Orch.hubs.registryhub
+    # #1203fu: the CONTAINER, not the RegistryHub. This assertion used to read
+    # `called["hub"] is _Orch.hubs.registryhub` and that is how the defect survived: the
+    # stand-in above accepts any object, so the test stayed green while the real
+    # `compute_flow_coverage` was being handed something it rejects on its first line
+    # (`workhub = getattr(hub_registry, "workhub", None); if workhub is None: return None`),
+    # returning `source="none"` and an EMPTY missing list on every call in production. 0 of 26
+    # `deliverability_ui_flow_missing` tasks across r14x-r16x named a single flow. Same shape
+    # #1178 fixed for the sibling producer, and the same reason it was invisible.
+    assert called["hub"] is _Orch.hubs
+    # ... and pin what the REAL function needs, so a future stand-in cannot re-freeze the bug:
+    # whatever is passed must carry `.workhub`, which a RegistryHub does not.
+    assert getattr(called["hub"], "workhub", None) is not None
+    from multi_agent.runtime.flow_coverage import _derive_ui_spec_from_hub as _spec
+    assert _spec(_RH()) is None, "a RegistryHub alone must still be rejected upstream"
 
 
 def test_missing_names_never_raises(monkeypatch):
