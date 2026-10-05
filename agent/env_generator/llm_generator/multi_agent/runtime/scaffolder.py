@@ -2391,6 +2391,27 @@ volumes:
                     "%d route(s) wired (app_wired=%s)",
                     len(rep.get("scaffolded") or []), rep.get("routes", 0),
                     rep.get("app_wired"))
+            # #1203fh: `_ensure_framework_auth_pages` discards every ui_page the lane
+            # registered on /login or /signup so the framework's wired auth form wins the
+            # route. The drop is right; it was silent. 38 runs across r57-r159 register
+            # such a record (login_modal/LoginModalPage, NetflixLoginPage, login_route,
+            # ...) and the registry keeps claiming `route=/login` afterwards, so the only
+            # way the lane could learn it was by re-pointing App.jsx and watching the next
+            # projection write it back -- which is exactly what r159 did, four edits deep.
+            # The RULE now ships in App.jsx's own header (#1203fh there); this is the
+            # computed half: WHICH records this pass discarded.
+            _authtaken1203fh = rep.get("auth_routes_taken_1203fh") or []
+            if _authtaken1203fh:
+                try:
+                    from .message_format import join_capped as _jc1203fh
+                    _shown1203fh = _jc1203fh(_authtaken1203fh, len(_authtaken1203fh), cap=4)
+                except Exception:
+                    _shown1203fh = ", ".join(map(str, _authtaken1203fh[:4]))
+                orch._logger.warning(
+                    "#1203fh the framework owns /login + /signup, so %d lane ui_page "
+                    "registration(s) were dropped from this projection: %s -- the page "
+                    "file (if any) is not routed and the registry record still says it is",
+                    len(_authtaken1203fh), _shown1203fh)
             # #440: recover the lane's HIGH-FIDELITY nav (e.g. NetflixTopNav) into the
             # projector pages — the lane authors a rich nav/header component but leaves
             # it ORPHANED while the projector's generic inline nav ships. Safe no-op

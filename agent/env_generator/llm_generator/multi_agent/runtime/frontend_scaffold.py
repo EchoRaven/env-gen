@@ -10580,6 +10580,18 @@ def _render_routed_app(entries: List[tuple]) -> str:
         "// contract so the app is navigable by construction. Filling page bodies?\n"
         "// Edit the files in ./pages/. Taking over routing yourself? Delete the\n"
         "// marker line above and this file becomes yours (never overwritten).\n"
+        # #1203fh: the ONE rule about this file a lane cannot discover from it.
+        # `_ensure_framework_auth_pages` drops any ui_page registered on /login or
+        # /signup (38 runs across r57-r159 register one), and until now the only
+        # record of that was its docstring -- so r159's lane re-pointed both routes
+        # at its own pages, had them written back by the next projection, and needed
+        # four App.jsx edits to arrive at the answer named here. Stated as a RULE and
+        # unconditional, because it holds in every run and a header that varied per
+        # run would make this file non-idempotent; WHICH record was dropped is a
+        # computed fact and goes to the log instead (the #1203fg division).
+        "// /login + /signup stay framework-owned: a ui_page registered on those\n"
+        "// routes is dropped here, so wrap LoginPage in your own surface (modal,\n"
+        "// overlay) rather than re-pointing those routes at a page of your own.\n"
         "import { BrowserRouter, Routes, Route } from 'react-router-dom';\n"
         f"{imports}\n\n"
         "export default function App() {\n"
@@ -10991,18 +11003,49 @@ def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
         return app_jsx, []
 
 
-def _ensure_framework_auth_pages(ui_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _ensure_framework_auth_pages(
+        ui_pages: List[Dict[str, Any]],
+        dropped: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """The framework OWNS the auth UI: /auth/register + /auth/login are
     framework-scaffolded, and the frontend lane consistently ships a dead/unwired
     login (no submit, no API call) or omits /signup entirely (youtube run #20/#21:
     the test-user walkthrough can't register → can't log in → the whole UI is
     unusable). Force a functional /login AND /signup into the contract, DROPPING any
     lane-declared page on those routes so the framework's wired auth form always
-    wins the route. Universal + deterministic; no app-specific assumptions."""
+    wins the route. Universal + deterministic; no app-specific assumptions.
+
+    #1203fh: the drop is right and it was SILENT. 38 runs across r57-r159 register a
+    ui_page on /login or /signup whose component is not the framework's own
+    (login_modal/LoginModalPage, NetflixLoginPage, login_route/LoginRoute, ...); every
+    one of those records is discarded here, and the only trace was this docstring. The
+    registry record is left intact claiming `route=/login`, so the lane has no way to
+    learn that its page will never be routed, and r159 shows what that costs: the lane
+    re-pointed App.jsx at LoginModalPage/SignupModalPage at 07:34 while the file still
+    carried `@framework-managed-routes` (so the next projection, 07:37, wrote it back),
+    and only at 07:40 — four App.jsx edits and ~14 minutes later — did it find the
+    marker's documented escape hatch.
+
+    `dropped` is an out-list so the caller can SAY this; the signature stays
+    append-only because `test_frontend_auth_page_projection` calls it positionally.
+    What it collects is one readable line per discarded record, not the record, because
+    its only consumer is the sentence the scaffolder writes to the lane.
+
+    Nothing is rewritten: the record stays as the lane registered it, per #1202d's
+    finding that auto-reconciliation of lane declarations produces false rewrites."""
     auth_routes = {"/login", "/signup"}
-    kept = [p for p in (ui_pages or [])
-            if isinstance(p, dict)
-            and str(p.get("route") or "").strip().rstrip("/").lower() not in auth_routes]
+    kept: List[Dict[str, Any]] = []
+    for p in (ui_pages or []):
+        if not isinstance(p, dict):
+            continue
+        _rt = str(p.get("route") or "").strip().rstrip("/").lower()
+        if _rt not in auth_routes:
+            kept.append(p)
+            continue
+        if dropped is not None:
+            _where = str(p.get("path") or p.get("component") or "").strip()
+            dropped.append("%s @ %s%s" % (
+                str(p.get("name") or p.get("id") or "?"), _rt,
+                (" (%s)" % _where) if _where else ""))
     auth = [
         {"id": "login_page", "route": "/login", "component": "LoginPage", "name": "Login"},
         {"id": "signup_page", "route": "/signup", "component": "SignupPage", "name": "Signup"},
@@ -11895,8 +11938,9 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
         # ships dead/unwired login pages or omits /signup → unusable app). Only when
         # there are pages to scaffold — an empty contract stays a no-op (don't write
         # a premature auth-only App.jsx before the contract is ready).
+        _auth_dropped_1203fh: List[str] = []
         if ui_pages:
-            ui_pages = _ensure_framework_auth_pages(ui_pages)
+            ui_pages = _ensure_framework_auth_pages(ui_pages, _auth_dropped_1203fh)
 
         scaffolded: List[str] = []
         entries: List[tuple] = []
@@ -12393,6 +12437,9 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
         return {"scaffolded": sorted(scaffolded), "routes": len(entries),
                 "app_wired": app_wired, "injected_routes": injected_routes,
                 "default_import_repairs": _fixed_632,
+                # #1203fh: which lane auth-page records this pass discarded, so the
+                # caller can tell the lane instead of leaving it to re-derive.
+                "auth_routes_taken_1203fh": list(_auth_dropped_1203fh),
                 "orphan_pages_not_written": sorted(_orphans_1202mp)}
     except Exception as exc:  # never raise into the orchestrator
         return {"scaffolded": [], "routes": 0, "app_wired": False,
