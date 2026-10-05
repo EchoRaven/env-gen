@@ -4437,11 +4437,31 @@ def _projected_owner_note(proj: set, method: Any, path: Any,
     return ""
 
 
+# #1203fg: THE MARK THAT SAYS "CONSTANT, NOT COMPUTED".
+#
+# Both notes below are the SAME text on every occurrence -- they explain how ownership works,
+# they do not say anything about this step. `_unknown_id_hint` is the opposite: it computes
+# what THIS step must do differently, which is why #1202df spends a whole evidence window on
+# it rather than on the banner in front.
+#
+# Nothing downstream could tell them apart, and r158 is what that cost. The 260-character
+# constant below contains " — ", so `_clip_keeping_guidance_1202df`'s `rfind` landed INSIDE
+# it and treated its tail as the remedy; it also contains the word "traceback", which is one
+# of `_ERR_MARKERS`, so the line reached that clipper at all. The hold ledger recorded
+# `business_chain:ck the traceback: if it names custom_routes.py...` -- 150 characters of
+# generic advice, mid-word, naming neither the chain nor the step nor the status.
+#
+# One shared mark rather than a list of known texts: a note added later is covered by using
+# the same prefix, and #947's rule holds -- a hardcoded list of today's strings cannot say
+# tomorrow's are safe. The substring every existing test asserts on ("FRAMEWORK-PROJECTED",
+# "lane cannot edit it") is untouched.
+_FW_NOTE_MARK_1203FG = " [fw-note: "
+
 _PROJECTED_NOTE_1202NG = (
-    " [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
-    "the lane cannot edit it, fix the projector/contract]")
+    _FW_NOTE_MARK_1203FG + "FRAMEWORK-PROJECTED route — served by a _projected_ handler "
+    "in main.py; the lane cannot edit it, fix the projector/contract]")
 _BOTH_DECLARE_NOTE_1202NG = (
-    " [BOTH a _projected_ handler in main.py and a lane route in "
+    _FW_NOTE_MARK_1203FG + "BOTH a _projected_ handler in main.py and a lane route in "
     "custom_routes.py declare this path — main.py decides per route which "
     "one serves, so check the traceback: if it names custom_routes.py the "
     "fix is there, and only if it names a _projected_ handler is this the "

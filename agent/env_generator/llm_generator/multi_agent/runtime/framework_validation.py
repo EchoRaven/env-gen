@@ -421,6 +421,10 @@ def _is_void_hit_1202iv(line: str) -> bool:
 # separator (chain_executor lines 1648/1659/1663 all open with it), and it is always the
 # LAST such clause, so `rfind` isolates it without parsing.
 _HINT_SEP_1202DF = " — "
+# #1203fg: the appender's own mark for a CONSTANT note (chain_executor). Imported lazily at
+# module level would create a cycle, so the literal is shared by value and pinned by a test
+# that compares the two -- a copy nobody checks is how the two sides drift apart.
+_FW_NOTE_MARK_1203FG = " [fw-note: "
 
 
 def _clip_keeping_guidance_1202df(out: str, cap: int) -> str:
@@ -447,6 +451,27 @@ def _clip_keeping_guidance_1202df(out: str, cap: int) -> str:
     """
     if len(out) <= cap:
         return out
+    # #1203fg: A CONSTANT NOTE IS NOT THE REMEDY. Drop it BEFORE spending the budget.
+    #
+    # `chain_executor` appends two unrelated things through the same tail: a remedy it
+    # COMPUTED for this step, and a note that is identical on every occurrence. The logic
+    # below is written for the first and was being handed the second -- r158's ledger carried
+    # 150 characters of "check the traceback: if it names custom_routes.py..." and not one
+    # word of which chain, step or status. The note's own " — " is what `rfind` found, and the
+    # note's own "traceback" is why an error marker matched at all.
+    #
+    # A stub stays so the omission announces itself (#883): the note is a constant, so a
+    # reader who wants it can read it once in chain_executor rather than in every record.
+    _nmark1203fg = out.find(_FW_NOTE_MARK_1203FG)
+    if _nmark1203fg > 0:
+        _stub1203fg = " [fw-note]"
+        _base1203fg = out[:_nmark1203fg].rstrip()
+        _room1203fg = max(1, cap - len(_stub1203fg))
+        if len(_base1203fg) <= _room1203fg:
+            return _base1203fg + _stub1203fg
+        # The finding alone still overruns, and it may carry a COMPUTED remedy of its own,
+        # so hand it back to this function -- which cannot re-enter here, the mark is gone.
+        return _clip_keeping_guidance_1202df(_base1203fg, _room1203fg) + _stub1203fg
     idx = out.rfind(_HINT_SEP_1202DF)
     if idx <= 0:
         return out[:cap]
