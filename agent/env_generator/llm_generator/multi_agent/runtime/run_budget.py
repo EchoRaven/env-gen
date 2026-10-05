@@ -169,6 +169,49 @@ def converging_at_the_gate_1202lo(output_dir, now=None) -> bool:
         return False
 
 
+def _caps_1203fd(caps: Dict[str, Any]) -> Dict[str, Any]:
+    """The run's ceilings, INCLUDING the spend cap, which this ledger never carried.
+
+    #1203fd: `caps` held `max_wall_sec`, `max_ticks` and `unlimited`. The spend ceiling --
+    the one that actually stops most runs -- lived only in the process environment, so a
+    reader of a finished run could not tell what cap it had. I hit that myself: to confirm
+    r155 was launched at $300 I had to read `/proc/<pid>/environ` while it was still alive,
+    and after it exited that answer was gone. Same shape as #1203f4, one ledger over.
+
+    It also records the HARD ceiling, because the cap alone misstates where a run stops.
+    #1183 multiplies it by 1.25 once the delivery gate has passed and #1202cz by 1.15 while
+    the visual gate reports it is still improving ("a cap that kills a converging run loses
+    everything it already bought" -- three runs, ~$1,195, zero delivered). r155 was launched
+    at $300 and stopped at $351.22, which is correct and was not readable from anywhere.
+    Which multiplier applies depends on run state at the moment of the check, so this
+    records the UPPER bound and names it as such.
+
+    Absent is not zero (#1026b): no cap configured records None, not 0.0, because 0.0 is
+    also how the enforcement spells "unlimited".
+    """
+    out: Dict[str, Any] = {
+        "max_wall_sec": float(caps["max_wall_sec"]),
+        "max_ticks": int(caps["max_ticks"]),
+        "unlimited": bool(caps.get("unlimited", False)),
+    }
+    try:
+        import os as _os1203fd
+        _raw = (_os1203fd.environ.get("ENVGEN_MAX_SPEND_USD") or "").strip()
+        _cap = float(_raw) if _raw else 0.0
+        out["max_spend_usd"] = _cap if _cap > 0 else None
+        if _cap > 0:
+            _os_raw = (_os1203fd.environ.get("ENVGEN_DELIVERY_OVERSHOOT") or "").strip()
+            try:
+                _shoot = float(_os_raw) if _os_raw else 1.25
+            except ValueError:
+                _shoot = 1.25
+            _shoot = min(2.0, max(1.0, _shoot))
+            out["max_spend_hard_ceiling_1203fd"] = round(_cap * _shoot, 2)
+    except Exception:
+        out["max_spend_usd"] = None
+    return out
+
+
 class RunBudget:
     """Owns run_budget.json. Constructed with the run's output_dir + a logger."""
 
@@ -462,8 +505,7 @@ class RunBudget:
         """
         try:
             payload = {
-                "caps": {"max_wall_sec": float(caps["max_wall_sec"]), "max_ticks": int(caps["max_ticks"]),
-                         "unlimited": bool(caps.get("unlimited", False))},
+                "caps": _caps_1203fd(caps),
                 "usage": {
                     "started_at": started_at,
                     "elapsed_sec": round(float(elapsed), 1),

@@ -804,7 +804,7 @@ class PathRoutedWorkspace:
 # across 30 runs back to 8 functions therefore meant grepping run logs, which is exactly the
 # work #1202fc set out to remove -- from one step further out.
 _LANE_CLOBBERS_1202CW: Dict[str, Dict[str, int]] = {
-    "refused": {}, "declared": {}, "refused_by_1203f4": {}}
+    "refused": {}, "declared": {}, "refused_by_1203f4": {}, "declared_by_1203fc": {}}
 
 
 def _app_relative_1202cw(path: Any) -> Optional[str]:
@@ -921,6 +921,18 @@ def framework_write_1202cw(path: Any, text: str, *, clobber_ok: str = "",
         key = _app_relative_1202cw(p) or str(p)
         bucket = "declared" if clobber_ok else "refused"
         _LANE_CLOBBERS_1202CW[bucket][key] = _LANE_CLOBBERS_1202CW[bucket].get(key, 0) + 1
+        if clobber_ok:
+            # #1203fc: name the actor for a DECLARED overwrite too. #1202fc did it for the
+            # warning and #1203f4 for the refusals, and `declared` -- the census this ledger
+            # exists for, "the number #1011 measured at ~22,000 and which nothing has been
+            # able to see since" -- still counted paths only. r155 made the cost concrete:
+            # 37 declared writes across 9 files and NO WAY, even in principle, to tell which
+            # projector argued for any of them, so the live check of #1203f3's new
+            # declarations could not be made. Auditing whether a declaration still holds
+            # (#1202tb's question) needs the same thing.
+            _dsite1203fc = _calling_site_1202fc()
+            _dby1203fc = _LANE_CLOBBERS_1202CW["declared_by_1203fc"]
+            _dby1203fc[_dsite1203fc] = _dby1203fc.get(_dsite1203fc, 0) + 1
         if not clobber_ok:
             # One lookup serves both the census and the warning. The warning still fires only
             # on the first refusal per path -- the census is what counts the other 24.
@@ -1009,8 +1021,9 @@ def lane_clobbers_1202cw() -> Dict[str, Dict[str, int]]:
     which nothing has been able to see since.
 
     ``refused_by_1203f4`` is the same refusals keyed by CALL SITE rather than by path
-    (#1203f4). The line numbers in it belong to the build that produced them, so a reading
-    taken against a later checkout must be grouped by function name; the function name is
-    what identifies the actor.
+    (#1203f4), and ``declared_by_1203fc`` does the same for the declared ones. The line
+    numbers in both belong to the build that produced them, so a reading taken against a
+    later checkout must be grouped by function name; the function name is what identifies
+    the actor.
     """
     return {k: dict(v) for k, v in _LANE_CLOBBERS_1202CW.items()}
