@@ -137,16 +137,69 @@ def _run_compose(
         except Exception:
             pass
     cmd = [_rt936(), "compose", "-f", str(compose_file)] + args  # #961
-    return subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        encoding='utf-8',
-        errors='replace',
-        env={**os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
-    )
+
+    def _spawn_1203fm():
+        return subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding='utf-8',
+            errors='replace',
+            env={**os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
+        )
+
+    cp = _spawn_1203fm()
+    # #1203fm: THE AGENT-FACING BUILD PATH DID NOT KNOW ABOUT #1202iw.
+    #
+    # #1202iw detects the build-context tar race and #1203fk makes the retry wait for the tree
+    # to settle -- both inside `validation_runner._build_with_retry`. This function is the OTHER
+    # build path: every `docker_up(build=true)` / `DockerBuildTool` / `build --no-cache` an AGENT
+    # runs comes through here, and it carried neither. So the agent got the raw tar errors with
+    # nothing saying whose race it was.
+    #
+    # r160, live, 10:21:25 -- exactly the r110 failure #1202iw's docstring describes, by almost
+    # the same title. The verifier filed P0 `task_530d9958d1` "Frontend Docker build fails while
+    # packaging build context: unexpected EOF", its `bug_artifacts.stack_trace` quoting
+    # "Can't add file app/frontend/src/pages/MoreSettingsPage.jsx to tar: archive/tar: missed
+    # writing 2342993 bytes", and the frontend lane "fixed" it by adding a `.dockerignore` to
+    # "exclude the corrupt captured media file ... identified in tar missed-write errors". The
+    # file was not corrupt and the app was not wrong: a lane rewrote app configuration for a
+    # race in the framework's own packaging step, which is the one thing `_RACE_NOTE_1202IW`
+    # exists to forbid ("Do not open a bug for it and do not rewrite the file docker named").
+    # None of it reached `validation_runner`'s transcripts -- both of r160's saved build logs
+    # carry ZERO race signatures -- which is why #1203fk's settle never fired and why patching
+    # one build path left the other one answering for it.
+    #
+    # Same two things the other path gets, no more: settle and retry ONCE on a race, and when
+    # the retry still loses, append the diagnosis so whoever reads the failure is told not to
+    # open a bug. Any non-build compose call, and any failure that is not this race, is
+    # untouched.
+    try:
+        if cp.returncode != 0 and any(a in ("build", "--build") for a in args):
+            from multi_agent.runtime.validation_runner import (
+                _build_context_race_1202iw, _settle_build_context_1203fk,
+                _RACE_DIAGNOSIS_1203FK, _RACE_EXHAUSTED_1203FK)
+            _out1203fm = ((cp.stdout or "") + "\n" + (cp.stderr or ""))
+            if _build_context_race_1202iw(_out1203fm):
+                _ctx1203fm = Path(compose_file).parent.parent / "app"
+                if not _ctx1203fm.is_dir():
+                    _ctx1203fm = Path(cwd)
+                _settle_build_context_1203fk(_ctx1203fm)
+                cp = _spawn_1203fm()
+                if cp.returncode != 0:
+                    _again1203fm = ((cp.stdout or "") + "\n" + (cp.stderr or ""))
+                    if _build_context_race_1202iw(_again1203fm):
+                        cp = subprocess.CompletedProcess(
+                            cp.args, cp.returncode, cp.stdout,
+                            (cp.stderr or "") + _RACE_DIAGNOSIS_1203FK
+                            + _RACE_EXHAUSTED_1203FK)
+    except Exception:
+        # A missing helper or an unreadable context must never turn a build result into an
+        # exception: the caller's own failure handling is strictly better than no result.
+        pass
+    return cp
 
 
 def _operator_only_notice_1202mh(text) -> str:
