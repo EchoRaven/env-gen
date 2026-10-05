@@ -11003,6 +11003,40 @@ def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
         return app_jsx, []
 
 
+def framework_auth_apis_used_1203fs() -> List[str]:
+    """The endpoints the framework's OWN auth page template calls, read OFF that template.
+
+    #1203fs: the framework registers `login_page`/`signup_page` with NO `apis_used`, then
+    projects `_AUTH_PAGE_TEMPLATE` into those files -- and that template calls the auth API, so
+    `_api_client_calls_1202vk` returns True on the projected source (verified by calling it).
+    Its own gate then declines delivery:
+
+        "N registered ui_page(s) declare `apis_used: []` while their own source calls an API:
+         login_page (LoginPage.jsx); signup_page (SignupPage.jsx)"
+
+    Measured over the corpus by the gate's own prose, counting only records whose instance list
+    is EXACTLY the framework's two injected ids: 79 blocker records across 8 runs -- r137 42,
+    r144 7, r152 6, r154 6, r156 6, r147 5, r155 4, r134 3. Every one transient (the lane
+    eventually enriches the registration and it clears), terminal in none, which is why this
+    removes the contradiction at its source rather than filing or exempting anything: the
+    framework is declaring what the framework will emit, and the gate then never fires.
+
+    Read off `_AUTH_PAGE_TEMPLATE` instead of spelled here, so a change to the template carries
+    the declaration with it -- the two cannot drift, which is the whole defect. If the template
+    ever stops naming exactly one method, this returns [] and the callers leave `apis_used`
+    absent: today's behaviour, rather than a stale pair that would re-create the mismatch in the
+    other direction (an OVERSTATED declaration).
+    """
+    try:
+        methods = sorted(set(re.findall(r"method:\s*'([A-Z]+)'", _AUTH_PAGE_TEMPLATE)))
+        paths = sorted(set(re.findall(r"'(/auth/[A-Za-z0-9_/-]+)'", _AUTH_PAGE_TEMPLATE)))
+        if len(methods) != 1 or not paths:
+            return []
+        return ["%s %s" % (methods[0], _p) for _p in paths]
+    except Exception:
+        return []
+
+
 def _ensure_framework_auth_pages(
         ui_pages: List[Dict[str, Any]],
         dropped: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -11046,9 +11080,15 @@ def _ensure_framework_auth_pages(
             dropped.append("%s @ %s%s" % (
                 str(p.get("name") or p.get("id") or "?"), _rt,
                 (" (%s)" % _where) if _where else ""))
+    # #1203fs: declare what this projection will actually call. `_project_page_component`
+    # chooses the auth template from `_is_auth_page`, never from `apis_used`, so the projection
+    # is byte-identical; what changes is that the record no longer contradicts the file.
+    _auth_apis_1203fs = framework_auth_apis_used_1203fs()
     auth = [
-        {"id": "login_page", "route": "/login", "component": "LoginPage", "name": "Login"},
-        {"id": "signup_page", "route": "/signup", "component": "SignupPage", "name": "Signup"},
+        {"id": "login_page", "route": "/login", "component": "LoginPage", "name": "Login",
+         "apis_used": list(_auth_apis_1203fs)},
+        {"id": "signup_page", "route": "/signup", "component": "SignupPage", "name": "Signup",
+         "apis_used": list(_auth_apis_1203fs)},
     ]
     return auth + kept
 

@@ -504,6 +504,29 @@ def _param_blind_key_1203fp(method: Any, path: Any):
     return (str(method or "GET").upper(), "/".join(_segs).rstrip("/"))
 
 
+def _fw_auth_apis_1203fs() -> List[str]:
+    """The auth endpoints the projector's own template calls, or `[]`.
+
+    #1203fs: BOTH of this module's auth-page producers registered `login_page` / `signup_page`
+    with no `apis_used`, and the registry is what the deliverability gate reads -- so the gate
+    declined delivery on a contradiction the framework had created between its own registration
+    and its own projected file (79 blocker records across 8 runs; the measurement is in
+    `framework_auth_apis_used_1203fs`).
+
+    TWO producers, one fix. Their dict literals are byte-identical, which is why the edit below
+    replaces both occurrences rather than the first: fixing one reader and leaving the other is
+    a shape this codebase has paid for (#1202lh, and "fixing one reader is worse than none").
+
+    Lazily imported and guarded: `frontend_scaffold` does not import this module, so there is no
+    cycle, and on any import fault the callers leave `apis_used` absent -- exactly today's
+    behaviour, rather than a hardcoded pair that could drift from the template."""
+    try:
+        from ..frontend_scaffold import framework_auth_apis_used_1203fs as _f
+        return list(_f() or [])
+    except Exception:
+        return []
+
+
 def _canonical_response_key(method: Any, path: Any) -> str:
     """PROPOSAL #46: the CANONICAL response envelope key the route_projector
     actually emits — ``item`` (single) or ``items`` (collection).
@@ -627,12 +650,15 @@ def derive_frontend_pages_from_spec_1202pf(project_root: Any) -> List[Dict[str, 
                            .read_text(encoding="utf-8"))
     except Exception:
         return []
+    _fwauth1203fs = _fw_auth_apis_1203fs()      # #1203fs: declare what the projection calls
     pages: List[Dict[str, Any]] = [{
         "id": "login_page", "route": "/login", "component": "LoginPage",
         "purpose": "Authenticate the user (framework-owned auth surface).",
+        "apis_used": list(_fwauth1203fs),
     }, {
         "id": "signup_page", "route": "/signup", "component": "SignupPage",
         "purpose": "Register a new user (framework-owned auth surface).",
+        "apis_used": list(_fwauth1203fs),
     }]
     seen = {"/login", "/signup"}
     for sc in (spec.get("screens") or []) if isinstance(spec, dict) else []:
@@ -671,12 +697,15 @@ def derive_frontend_pages_from_endpoints(
     fall back to one page per business ``tables`` entry (skipping infra/spine tables)
     so the salvage isn't login-only. Empty-in → just the login page; no app-specific
     names."""
+    _fwauth1203fs = _fw_auth_apis_1203fs()      # #1203fs: declare what the projection calls
     pages: List[Dict[str, Any]] = [{
         "id": "login_page", "route": "/login", "component": "LoginPage",
         "purpose": "Authenticate the user (framework-owned auth surface).",
+        "apis_used": list(_fwauth1203fs),
     }, {
         "id": "signup_page", "route": "/signup", "component": "SignupPage",
         "purpose": "Register a new user (framework-owned auth surface).",
+        "apis_used": list(_fwauth1203fs),
     }]
     seen_routes = {"/login", "/signup"}
     _baseline = len(pages)  # auth pages; resource pages are appended past this
