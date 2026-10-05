@@ -46,6 +46,47 @@ import json as _json
 _LOG = logging.getLogger(__name__)
 
 
+def _transcript_path_1203fe(log_dir: Any, verb: Any) -> Any:
+    """Where a compose failure transcript goes: one file PER FAILURE, name-safe.
+
+    #1203fe fixes two flaws in #1203f1, both found by reading what it produced on r156.
+
+    ONE FILE PER VERB OVERWROTE THE EARLIER FAILURE. r156 failed `build` twice, at 22:08:31
+    and 22:41:37, and both log lines point at `compose_build_failure_1203f1.log`, which holds
+    only the 22:41 run. A pointer to a file whose contents have been replaced is the shape
+    this series has spent its time removing -- reproduced inside the patch that removed it.
+
+    It cost a real diagnosis. The surviving transcript ends in `archive/tar: missed writing
+    12934618 bytes` and `unexpected EOF`, and the same byte count appears again on
+    `Can't close tar writer`, which says the receiving end went away rather than that a file
+    shrank. Telling a progressive cause (space filling) from a one-off (the daemon dropping
+    the stream) needs the FIRST failure to compare against, and for r156 that is gone.
+
+    THE VERB WENT IN RAW, so `up -d --remove-orphans` produced
+    `compose_up -d --remove-orphans_failure_1203f1.log`: a filename with spaces that an
+    ordinary `compose_*_failure_1203f1.log` glob does not match, which is how I missed it.
+
+    The first failure keeps the plain name so existing readers and the #1203f1 test are
+    unaffected; later ones take an attempt number, so the names sort in the order the
+    failures happened.
+    """
+    from pathlib import Path as _P
+    d = _P(str(log_dir))
+    # A SUBSTITUTION, not a truncated join. #1034's ratchet flags `join(...)[:N]` because a
+    # list shown cut must say how much it cut -- which is right, and does not apply to a
+    # filename slug, where there is no count a reader could want. Writing it as a sanitising
+    # `re.sub` says that structurally instead of asking the ratchet for an exception (#1202w0:
+    # a ratchet stopping me is not an obstacle, it is the rule asking to be followed).
+    slug = re.sub(r"[^0-9A-Za-z._-]+", "_", str(verb or "cmd"))[:40].strip("_") or "cmd"
+    first = d / ("compose_%s_failure_1203f1.log" % slug)
+    if not first.exists():
+        return first
+    n = 2
+    while (d / ("compose_%s_failure_%d_1203f1.log" % (slug, n))).exists():
+        n += 1
+    return d / ("compose_%s_failure_%d_1203f1.log" % (slug, n))
+
+
 def pick_auth_probe_endpoint_1202ih(gets):
     """The GET whose CONTRACT promises a denial, or None when none does.
 
@@ -286,7 +327,7 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
                 from pathlib import Path as _P1203f1
                 _d1203f1 = _P1203f1(str(cwd)).parent / "logs"
                 _d1203f1.mkdir(parents=True, exist_ok=True)
-                _f1203f1 = _d1203f1 / ("compose_%s_failure_1203f1.log" % str(_verb or "cmd"))
+                _f1203f1 = _transcript_path_1203fe(_d1203f1, _verb)   # #1203fe
                 _f1203f1.write_text(_full, encoding="utf-8", errors="replace")
                 _saved_1203f1 = " — FULL transcript (%d chars) kept at %s" % (
                     len(_full), _f1203f1)

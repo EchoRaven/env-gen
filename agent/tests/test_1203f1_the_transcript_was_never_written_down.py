@@ -48,6 +48,11 @@ def test_the_whole_transcript_is_written(tmp_path):
     full = ("Service frontend  Building\n" + "    at CallExpression.bind (rollup.js:1)\n" * 40
             + "x Build failed in 2.63s")
     ns = {"cwd": str(docker), "_verb": "build", "_full": full}
+    # #1203fe moved the filename construction into `VR._transcript_path_1203fe`, so the
+    # stanza now CALLS it. A stanza exec'd in isolation must be given what it calls, or the
+    # `except Exception: pass` inside it swallows a NameError and the test sees "no file
+    # written" for the wrong reason.
+    ns["_transcript_path_1203fe"] = VR._transcript_path_1203fe
     exec(compile(_stanza(), "<f1>", "exec"), ns)
     saved = tmp_path / "logs" / "compose_build_failure_1203f1.log"
     assert saved.is_file(), list((tmp_path).rglob("*"))
@@ -59,6 +64,11 @@ def test_the_whole_transcript_is_written(tmp_path):
 def test_the_note_names_the_size_so_a_reader_knows_it_is_complete(tmp_path):
     docker = tmp_path / "docker"; docker.mkdir()
     ns = {"cwd": str(docker), "_verb": "build", "_full": "x" * 1234}
+    # #1203fe moved the filename construction into `VR._transcript_path_1203fe`, so the
+    # stanza now CALLS it. A stanza exec'd in isolation must be given what it calls, or the
+    # `except Exception: pass` inside it swallows a NameError and the test sees "no file
+    # written" for the wrong reason.
+    ns["_transcript_path_1203fe"] = VR._transcript_path_1203fe
     exec(compile(_stanza(), "<f1>", "exec"), ns)
     assert "1234 chars" in ns["_saved_1203f1"], ns["_saved_1203f1"]
 
@@ -68,6 +78,11 @@ def test_an_empty_transcript_writes_nothing(tmp_path):
     add a false trail."""
     docker = tmp_path / "docker"; docker.mkdir()
     ns = {"cwd": str(docker), "_verb": "build", "_full": ""}
+    # #1203fe moved the filename construction into `VR._transcript_path_1203fe`, so the
+    # stanza now CALLS it. A stanza exec'd in isolation must be given what it calls, or the
+    # `except Exception: pass` inside it swallows a NameError and the test sees "no file
+    # written" for the wrong reason.
+    ns["_transcript_path_1203fe"] = VR._transcript_path_1203fe
     exec(compile(_stanza(), "<f1>", "exec"), ns)
     assert ns["_saved_1203f1"] == ""
     assert not (tmp_path / "logs").exists()
@@ -77,6 +92,11 @@ def test_an_unwritable_destination_does_not_break_the_report(tmp_path):
     """★ The invariant: the save is best-effort. A failed save must not also lose the tail — the
     whole point of #1129 was that this line carries the error."""
     ns = {"cwd": "/proc/one/does/not/mkdir/here/docker", "_verb": "build", "_full": "boom"}
+    # #1203fe moved the filename construction into `VR._transcript_path_1203fe`, so the
+    # stanza now CALLS it. A stanza exec'd in isolation must be given what it calls, or the
+    # `except Exception: pass` inside it swallows a NameError and the test sees "no file
+    # written" for the wrong reason.
+    ns["_transcript_path_1203fe"] = VR._transcript_path_1203fe
     exec(compile(_stanza(), "<f1>", "exec"), ns)
     assert ns["_saved_1203f1"] == ""
 
@@ -86,6 +106,8 @@ def test_the_verb_is_in_the_filename(tmp_path):
     docker = tmp_path / "docker"; docker.mkdir()
     for verb in ("build", "up"):
         ns = {"cwd": str(docker), "_verb": verb, "_full": "cause-of-%s" % verb}
+        # #1203fe moved the filename construction into `VR._transcript_path_1203fe`.
+        ns["_transcript_path_1203fe"] = VR._transcript_path_1203fe
         exec(compile(_stanza(), "<f1>", "exec"), ns)
     logs = tmp_path / "logs"
     assert (logs / "compose_build_failure_1203f1.log").read_text() == "cause-of-build"
@@ -95,6 +117,11 @@ def test_the_verb_is_in_the_filename(tmp_path):
 def test_a_missing_verb_still_produces_a_file(tmp_path):
     docker = tmp_path / "docker"; docker.mkdir()
     ns = {"cwd": str(docker), "_verb": None, "_full": "x"}
+    # #1203fe moved the filename construction into `VR._transcript_path_1203fe`, so the
+    # stanza now CALLS it. A stanza exec'd in isolation must be given what it calls, or the
+    # `except Exception: pass` inside it swallows a NameError and the test sees "no file
+    # written" for the wrong reason.
+    ns["_transcript_path_1203fe"] = VR._transcript_path_1203fe
     exec(compile(_stanza(), "<f1>", "exec"), ns)
     assert (tmp_path / "logs" / "compose_cmd_failure_1203f1.log").is_file()
 
