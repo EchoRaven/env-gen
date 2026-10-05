@@ -1547,6 +1547,66 @@ def _ui_flow_failed_extra(failed: Sequence[Any]) -> str:
             "record flips to success.")
 
 
+def ui_flow_failed_evidence_1203ft(orch, failed: Sequence[Any]) -> str:
+    """#1203ft: REPLAY what the walk recorded, not just which flow it was about.
+
+    `#981`'s own docstring names this cost and then fixes only half of it: *"r159 spent its
+    last hours on exactly that check with the walk's own findings (a blank player page, a broken
+    POST /api/continue-watching) sitting unused in the report."* It made
+    `deliverability_ui_flow_failed` name the flows; the findings are still only pointed AT
+    ("open the evidence on the named flow"), so the one sentence that says what broke stays in
+    the hub while the lane goes looking for it.
+
+    The sentence exists. Measured over the corpus, of the failing `validation:ui_flow:*` records
+    177 carry an `evidence.summary` / `evidence.reason` and 66 do not, and the 177 read like:
+
+        "Fresh comments UI flow failed after signup: posting a comment on /video/35 sent
+         Authorization but POST /api/comments returned 401; bug task_07f26bcdce filed."
+        "Landing page /signup renders a blank <div id='root'></div> due to a React error thrown
+         by <Routes> mounted outside a Router. Flow cannot begin."
+        "Profile creation UI flow fails after signup: POST /api/profiles returned 401 and
+         /auth/login request_failed."
+
+    `deliverability_ui_flow_failed` is the corpus's second-biggest blocker -- 2503 red gate
+    records across 81 runs -- and it is half of the pair (with `validation_ui_evidence_failed`)
+    that the STUCK breaker finds still failing when it aborts a run: r134, r137 and r158 all
+    died with one or both of them open after 75 minutes of lane time.
+
+    Additive, like #1176/#1177/#1182 beside it: returns "" when no named flow has a recorded
+    summary, so the existing text is unchanged wherever the walk left none. Matches by the
+    record name the gate uses (`validation:ui_flow:<flow>`), and never raises.
+    """
+    try:
+        names = [str(x).strip() for x in (failed or []) if str(x).strip()]
+        if not names:
+            return ""
+        rows = orch.hubs.codehub.list_checks() or []
+        said: Dict[str, str] = {}
+        for c in rows:
+            if not isinstance(c, Mapping):
+                continue
+            nm = str(c.get("name") or "")
+            if not nm.startswith("validation:ui_flow:"):
+                continue
+            flow = nm.split("validation:ui_flow:", 1)[1].strip()
+            if flow not in names or str(c.get("status")) in ("success", "passed", "pass"):
+                continue
+            ev = c.get("evidence")
+            txt = ""
+            if isinstance(ev, Mapping):
+                txt = str(ev.get("summary") or ev.get("reason") or "").strip()
+            if txt:
+                said[flow] = txt[:400]
+        if not said:
+            return ""
+        lines = ["%s — %s" % (f, said[f]) for f in names if f in said]
+        return ("\n\nWHAT THE WALK RECORDED on each (its own words, from the failing "
+                "record):\n- " + "\n- ".join(lines))
+    except Exception as _exc_1203ft:
+        _swallowed_1152("ui_flow_failed_evidence_1203ft", _exc_1203ft, "'' = names only")
+        return ""
+
+
 def _ui_flow_missing_extra(missing: Sequence[Any]) -> str:
     """The gate-specific remediation body for deliverability_ui_flow_missing. Names the exact
     missing flows and states the contradiction that broke r68 out loud — so a verifier that
@@ -3212,7 +3272,11 @@ class RemediationDispatcher:
                         # #1176: same 401/403 diagnosis, other check -- a failing ui_flow
                         # record carries the same evidence shape. Silent when the flow name
                         # does not resolve to a declared ui_page route.
-                        _extra = (_ui_flow_failed_extra(_ff) + auth_contradiction_1176(orch, _ff)
+                        _extra = (_ui_flow_failed_extra(_ff)
+                                  # #1203ft: and what the walk actually recorded about each,
+                                  # which #981 pointed at and did not carry.
+                                  + ui_flow_failed_evidence_1203ft(orch, _ff)
+                                  + auth_contradiction_1176(orch, _ff)
                                   + control_absence_contradicted_1182(orch, _ff)
                                   # Symmetry: the other three diagnoses are wired to BOTH
                                   # branches and #1177's absence here was an oversight, not a
