@@ -291,6 +291,45 @@ def _red_checklist_checks_799(orch) -> List[str]:
         return []
 
 
+def _state_entities_missing_write_1203fn(orch) -> List[str]:
+    """#1203fn: WHICH state-bearing table has no write. `completeness_state_entity_no_write`
+    decides delivery, and the paragraph the lane receives names no table at all:
+
+        "a state-bearing table (it has mutable columns like progress_seconds / status /
+         value) has a GET but NO POST/PUT/PATCH"
+
+    `progress_seconds / status / value` are netflix Continue-Watching columns, so in a tiktok
+    run they point at nothing. 26 tasks across 26 corpus runs carry exactly that text and name
+    no entity -- the lane is told a table exists and sent to find it.
+
+    The instance is already computed twice over. `check_state_entity_no_write` builds a
+    per-entity `detail` AND a `suggested_fix` ("Declare + implement a write endpoint for
+    `creators` ... so `verified, followers_count, ...` can be persisted"), and the gate publishes
+    them under its `completeness` key. r160, live: `entity: "creators"`, mutable columns
+    `verified, followers_count, following_count, likes_count` -- none of which reached the
+    backend lane. Same shape as #798/#799/#982 one row up in this very table, and the same
+    shape as #1203fg: a constant paragraph standing where a computed fact belongs.
+
+    Recomputed from the hubs through the SHIPPED classifier rather than re-derived here, so the
+    names the lane is given cannot disagree with the names that blocked it (#1032). Best-effort:
+    any fault -> [], and the lane gets today's generic text rather than nothing.
+    """
+    try:
+        from .completeness_audit import state_entities_missing_write
+        _hubs = getattr(orch, "hubs", None)
+        _rh = getattr(_hubs, "registryhub", None)
+        _sh = getattr(_hubs, "schema_hub", None)
+        endpoints = (_rh.get_endpoints() if _rh is not None else {}) or {}
+        tables = (_sh.list_tables() if _sh is not None else {}) or {}
+        out: List[str] = []
+        for entity, cols in sorted(state_entities_missing_write(tables, endpoints).items()):
+            _c = ", ".join(str(c) for c in (cols or []))
+            out.append("`%s` — mutable column(s): %s" % (entity, _c or "(none reported)"))
+        return out[:6]
+    except Exception:
+        return []
+
+
 def _canon_endpoint_1135(method, path) -> str:
     """`POST /api/titles/1/rating` and `POST /api/titles/2/rating` are one endpoint.
 
@@ -3029,6 +3068,15 @@ class RemediationDispatcher:
                         _inst = list(_red799)
                         _extra = ("\n\nTHE CHECK(S) THAT ARE NOT GREEN right now:\n- "
                                   + "\n- ".join(_red799))
+                elif name == "completeness_state_entity_no_write":
+                    # #1203fn: the `how` above describes the CLASS with netflix's own example
+                    # columns; these are the tables this run actually has, so the lane does not
+                    # have to go and find what the gate already identified.
+                    _sew1203fn = _state_entities_missing_write_1203fn(orch)
+                    if _sew1203fn:
+                        _inst = list(_sew1203fn)
+                        _extra = ("\n\nTHE TABLE(S) THAT ARE READ-ONLY right now — add the "
+                                  "write for THESE:\n- " + "\n- ".join(_sew1203fn))
                 if name == "business_chain_failing":
                     # FIX #148: the failing steps answering the projection's #124
                     # action-endpoint stub 404 need a BACKEND route, not a chain
