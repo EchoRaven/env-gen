@@ -515,7 +515,14 @@ def _write_build_fingerprint(cwd: Path, val: Optional[str]) -> None:
 #     Error response from daemon: Error processing tar file(exit status 1): unexpected EOF
 #
 # 26 of the 423 failed builds in this corpus (6.1%) are this, across tiktok and netflix. The
-# retry clears it every time -- but nothing SAID so, and in r110 the verifier read the failure
+# retry clears it every time -- FALSIFIED by r159 (#1203fk): four consecutive builds lost the
+# same race in two minutes while the orchestrator logged "a lane is actively editing", the four
+# `build:*` checks stayed red, and the run hit its wall cap with nothing delivered. The claim
+# was true of every instance #1202iw could see and is not a property of the retry, because the
+# retry re-tarred immediately; it holds only when the lanes happen to be quiet by then, which
+# is the condition #1203fk now waits for. Left here rather than deleted: the number is real and
+# the sentence is how the next reader learns which half of it was the measurement.
+# What the silence cost separately: in r110 the verifier read the failure
 # and filed `Docker frontend build fails while packaging frontend assets` as a P0. That P0 was
 # still open at the delivery cut and is named in the #743 blocker line that kept the run from
 # releasing. A lane cannot fix a race in the framework's own packaging step; it can only
@@ -527,18 +534,156 @@ _BUILD_CONTEXT_RACE_1202IW = re.compile(
     re.I,
 )
 
-_RACE_NOTE_1202IW = (
+# #1203fk: the diagnosis and the PROMISE are separate sentences, because only one of them is
+# always true. The note used to end "the retry below re-tars a settled directory and succeeds"
+# on EVERY attempt including the last, where there is no retry below -- and r159's four
+# `build:*` checks each shipped that sentence while the attempts were already spent. The
+# diagnosis holds either way; the promise is appended only when an attempt actually remains,
+# and the final attempt says instead that the race outlasted them, which is still not app code.
+_RACE_DIAGNOSIS_1203FK = (
     " [#1202iw] This is the FRAMEWORK's build-context packaging racing the lanes' own writes "
     "-- docker tars app/ while an agent is still writing into it, so a file changes size "
     "mid-stream and the tar aborts. It is NOT a defect in the application code and NO source "
-    "change can fix it; the retry below re-tars a settled directory and succeeds. Do not open "
-    "a bug for it and do not rewrite the file docker named."
+    "change can fix it."
 )
+_RACE_RETRY_PROMISE_1203FK = (
+    " The retry below waits for the context to stop changing (#1203fk) and then re-tars a "
+    "settled directory. Do not open a bug for it and do not rewrite the file docker named."
+)
+_RACE_EXHAUSTED_1203FK = (
+    " Every build attempt lost the same race, so there is no retry left to settle it -- but "
+    "nothing here says the app is wrong either. Do not open a bug for it and do not rewrite "
+    "the file docker named; this needs a quieter tree, not a source change."
+)
+# Kept under its original name: `_RACE_NOTE_1202IW` is what the pre-#1203fk corpus carries, and
+# the retry-bearing form is the one that was right in the common case.
+_RACE_NOTE_1202IW = _RACE_DIAGNOSIS_1203FK + _RACE_RETRY_PROMISE_1203FK
 
 
 def _build_context_race_1202iw(transcript: Any) -> bool:
     """True when a build transcript carries the context-tar race signature."""
     return bool(_BUILD_CONTEXT_RACE_1202IW.search(str(transcript or "")))
+
+
+# --- #1203fk: MAKE THE RETRY'S OWN CLAIM TRUE ----------------------------------------
+# `_RACE_NOTE_1202IW` has said since #1202iw that "the retry below re-tars a SETTLED
+# directory", and `_build_with_retry`'s docstring says "The retry clears it every time".
+# Nothing settled it: the retry re-ran `docker build` immediately, so when the lanes are
+# writing continuously the second tar loses the same race as the first.
+#
+# r159 is what that costs. In its last two minutes the build failed four times --
+# 09:14:38, 09:15:07, 09:15:59, 09:16:22 -- every one `Error processing tar file(exit status
+# 1): unexpected EOF`, while the orchestrator logged "a lane is actively editing". All four
+# `build:*` CodeHub checks went to `status=failure` carrying this very note, that is what
+# `verification_checklist_not_ready` reads, and the orchestrator's last word was "Delivery
+# gate is otherwise green, but deliver_project is still refused by
+# verification_checklist_not_ready". The run died on the 7200s milestone wall cap having
+# delivered nothing, at $268.88.
+#
+# Scope, honestly: the race appears 299 times across 37 of the corpus logs (#1202iw measured
+# 26 of 423 failed builds, 6.1%), but r159 is the ONLY one of the seven runs whose terminal
+# gate blocker was `verification_checklist_not_ready` whose build checks died of it -- r144's
+# was a connection refused, and the four older ones carry no detail. So this is one lost run
+# plus 299 wasted builds, and the fix is sized to match: wait, bounded, only after a race.
+#
+# NOT done, with the reason: `verification_checklist_not_ready` could learn to treat an
+# all-four race failure as infra rather than app, the way #1202of's `environment_blocked`
+# separates "the app was unreachable" from "the app is wrong". That trades one silence for a
+# worse one -- a gate that stops blaming the app for a build it never completed is a gate that
+# can ship an unbuilt app. The state this prevents is the one worth removing.
+_SETTLE_SAMPLE_1203FK = float(os.environ.get("ENVGEN_BUILD_SETTLE_SAMPLE_SEC", "1.5") or 1.5)
+_SETTLE_STABLE_1203FK = int(os.environ.get("ENVGEN_BUILD_SETTLE_STABLE", "2") or 2)
+_SETTLE_CAP_1203FK = float(os.environ.get("ENVGEN_BUILD_SETTLE_CAP_SEC", "30") or 30)
+
+
+def _context_fingerprint_1203fk(root) -> Tuple[int, int, int]:
+    """(file count, total bytes, newest mtime_ns) over the build context tree.
+
+    Size AND mtime, because the race is a file whose SIZE changed between docker's `stat` and
+    its `read` -- an editor that rewrites a file within one mtime granule moves the size even
+    when the timestamp looks unchanged. A file that vanishes mid-walk is skipped rather than
+    raising: this runs to decide whether to wait, and must never be the reason a build does
+    not happen.
+    """
+    # A root that is not a directory gets the sentinel, NOT (0, 0, 0). `os.walk` on a missing
+    # path yields nothing without raising, so an empty tree and a wrong path would otherwise
+    # fingerprint identically -- and (0, 0, 0) is perfectly STABLE, so the settle below would
+    # report a quiet tree for a directory it never found. The sentinel is what makes "I could
+    # not look" a different answer from "nothing is moving"; my own test caught this.
+    try:
+        if root is None or not os.path.isdir(str(root)):
+            return (-1, -1, -1)
+    except Exception:
+        return (-1, -1, -1)
+    count = 0
+    size = 0
+    newest = 0
+    try:
+        for dirpath, dirnames, filenames in os.walk(str(root)):
+            dirnames[:] = [d for d in dirnames
+                           if d not in ("node_modules", "__pycache__", ".git", "dist", "build")]
+            for name in filenames:
+                try:
+                    st = os.stat(os.path.join(dirpath, name))
+                except OSError:
+                    continue
+                count += 1
+                size += int(st.st_size)
+                newest = max(newest, int(getattr(st, "st_mtime_ns", 0) or 0))
+    except Exception:
+        return (-1, -1, -1)
+    return (count, size, newest)
+
+
+def _settle_build_context_1203fk(
+        root, *, sample: float = None, stable: int = None, cap: float = None,
+        fingerprint=None, sleep=None, clock=None) -> Tuple[bool, float]:
+    """Wait until the build context stops changing. Returns ``(settled, seconds_waited)``.
+
+    Settled means `stable` consecutive fingerprints agree. `cap` bounds the total wait, so a
+    tree that never goes quiet costs a known amount and the build still runs -- the caller
+    tars whatever is there, exactly as it did before this existed, and `settled=False` says so.
+
+    Every collaborator is injectable so the tests neither sleep nor race: a fingerprint
+    sequence IS the scenario.
+    """
+    _sample = _SETTLE_SAMPLE_1203FK if sample is None else sample
+    _stable = _SETTLE_STABLE_1203FK if stable is None else stable
+    _cap = _SETTLE_CAP_1203FK if cap is None else cap
+    _fp = fingerprint or (lambda: _context_fingerprint_1203fk(root))
+    _sleep = sleep or time.sleep
+    _clock = clock or time.monotonic
+    if _stable < 2 or _cap <= 0:
+        # A caller that asks for no stability is asking for no wait; say it did not settle
+        # rather than claiming a quiet tree nobody checked for.
+        return (False, 0.0)
+    started = _clock()
+    try:
+        prev = _fp()
+    except Exception:
+        return (False, 0.0)
+    if prev == (-1, -1, -1):
+        # The fingerprint could not read the tree. Waiting for a path nobody can see to stop
+        # changing would report `settled=True` on a stable sentinel, which is the fallback that
+        # masks a failure -- so say it did not settle and let the build run as it always did.
+        return (False, 0.0)
+    agree = 1
+    while True:
+        waited = _clock() - started
+        if waited >= _cap:
+            return (False, waited)
+        _sleep(_sample)
+        try:
+            cur = _fp()
+        except Exception:
+            return (False, _clock() - started)
+        if cur == prev:
+            agree += 1
+            if agree >= _stable:
+                return (True, _clock() - started)
+        else:
+            agree = 1
+            prev = cur
 
 
 def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
@@ -562,7 +707,20 @@ def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
                           attempt + 1)
             return True, ""
         tail = (((cp.stdout or "") + "\n" + (cp.stderr or "")).strip())[-3000:]
-        _raced_1202iw = _raced_1202iw or _build_context_race_1202iw(tail)
+        _this_race_1203fk = _build_context_race_1202iw(tail)
+        _raced_1202iw = _raced_1202iw or _this_race_1203fk
+        _more_1203fk = attempt < _BUILD_RETRIES
+        if _this_race_1203fk and _more_1203fk:
+            # #1203fk: do what the note has always promised -- settle the context, THEN re-tar.
+            # Only on a race, and only when an attempt remains: an app build failure must not
+            # buy itself a wait, and the last attempt has nothing to settle for.
+            _ctx_1203fk = Path(cwd).parent / "app"
+            if not _ctx_1203fk.is_dir():
+                _ctx_1203fk = Path(cwd)
+            _settled_1203fk, _waited_1203fk = _settle_build_context_1203fk(_ctx_1203fk)
+            _LOG.info("compose spawn: #1203fk the build context tar raced the lanes; waited "
+                      "%.1fs for %s to stop changing (settled=%s) before re-tarring",
+                      _waited_1203fk, _ctx_1203fk.name, _settled_1203fk)
         if timed_out:
             last = (f"docker build exceeded {_DOCKER_BUILD_TIMEOUT}s "
                     f"(attempt {attempt + 1}/{_BUILD_RETRIES + 1}) — most likely a hung "
@@ -570,8 +728,12 @@ def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
                     f"packages from the network). Raise ENVGEN_DOCKER_BUILD_TIMEOUT if this is a "
                     f"genuinely slow cold build. Build transcript tail:\n" + tail)
         else:
+            _note_1203fk = ""
+            if _this_race_1203fk:
+                _note_1203fk = _RACE_DIAGNOSIS_1203FK + (
+                    _RACE_RETRY_PROMISE_1203FK if _more_1203fk else _RACE_EXHAUSTED_1203FK)
             last = (f"docker build FAILED (attempt {attempt + 1}/{_BUILD_RETRIES + 1})."
-                    + (_RACE_NOTE_1202IW if _build_context_race_1202iw(tail) else "")
+                    + _note_1203fk
                     + f" Transcript tail:\n" + tail)
     return False, last
 
