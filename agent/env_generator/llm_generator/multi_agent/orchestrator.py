@@ -6349,14 +6349,52 @@ class Orchestrator:
                     # squad (findings are advisory once we've decided to ship) and drop the
                     # handle so it can't be re-read; the release then proceeds this tick.
                     _tu_task = getattr(self, "_tu_squad_task", None)
+                    # #1203fj: READ A VERDICT THAT IS ALREADY IN HAND BEFORE DROPPING IT.
+                    #
+                    # The escape exists so the release never waits forever, and `squad_gate_
+                    # tick_action`'s docstring says plainly that it "is evaluated by the caller
+                    # BEFORE this and can RELEASE the gate regardless of task state". Evaluated
+                    # before is right; DISCARDING an answer that has already been computed is
+                    # not -- reading a finished task's result costs nothing, and the squad has
+                    # usually finished moments after the budget expired. r159: the squad logged
+                    # `verdict=DEFECTS: 5 open P0` at 08:09:17, thirteen seconds past its 900s
+                    # budget, and the escape at 08:16:35 still reported `0 attempts` and
+                    # "possibly-open" -- seven minutes after the number existed.
+                    #
+                    # Measured over r130-r159: 19 escapes in 16 runs fired with the verdict
+                    # already logged, and the `consume` branch above has not run since r135 --
+                    # 24 consecutive runs. Two instruments are dead as a result, each with its
+                    # own ticket and its own recording site inside that branch:
+                    #   * #1202ut ("the one place this number exists. Recording it here is what
+                    #     lets the hold ledger's `defects=` be anything but '?'") -- and the
+                    #     ledger reads `defects=?` in all 169 squad holds of r135-r159;
+                    #   * #1202rd's relaunch guard, which needs the app signature AT the verdict
+                    #     to tell "the lanes fixed something" from "nothing moved" -- and
+                    #     `squad_relaunch_blocked_1202rd` has held 0 times in 13 runs.
+                    #
+                    # The release DECISION is deliberately unchanged: every verdict in this arc
+                    # is DEFECTS, so blocking here would simply stop delivering (what r142 cost
+                    # $153 to learn). This records the verdict and says the number out loud.
+                    from .runtime.test_user_squad import (
+                        squad_verdict_in_hand_1203fj as _inhand1203fj)
+                    _p01203fj = _inhand1203fj(_tu_task)
+                    if _p01203fj is not None:
+                        self._tu_squad_last_p0_1202ut = _p01203fj           # #1202ut
+                        try:                                               # #1202rd
+                            self._tu_squad_verdict_sig_1202rd = (
+                                self._compute_app_source_signature(), _p01203fj)
+                        except Exception:
+                            self._tu_squad_verdict_sig_1202rd = None
                     if _tu_task is not None and not _tu_task.done():
                         _tu_task.cancel()
                     self._tu_squad_task = None
                     self._logger.warning(
                         "Test-user squad gate RELEASED (escape after %ss / %s attempts) — "
-                        "delivering with possibly-open test-user defects.",
+                        "delivering with %s test-user defects.",
                         int(_now - self._tu_squad_deferred_since),
-                        getattr(self, "_tu_squad_attempts", 0))
+                        (getattr(self, "_tu_squad_attempts", 0) or 0),
+                        ("%d open P0" % _p01203fj) if _p01203fj is not None
+                        else "possibly-open")
                     # #1133b: the FOURTH deferral source. #1133 credited page-build and both
                     # visual releases; the squad gate defers delivery on the same clock (up to
                     # squad_release_decision's 900s / 3 attempts) and was still billing the

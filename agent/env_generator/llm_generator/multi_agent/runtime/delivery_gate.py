@@ -2957,7 +2957,7 @@ def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
     # before that fix still holds them, and restore puts them back. googlemaps-r16's second
     # resume raised here eight times — pinned in one shot by the traceback #1202el added:
     #   delivery_gate.py:2250 in convergence_grace / `if grace_used >= max_grace`
-    # from orchestrator.py:4307 `grace_used=getattr(self, "_fwdeliver_grace_count", 0)`,
+    # from orchestrator.py:4307 `grace_used=(getattr(self, "_fwdeliver_grace_count", 0) or 0)`,
     # whose default never fires because the attribute EXISTS and holds None.
     if (grace_used or 0) >= max_grace:
         return 0.0

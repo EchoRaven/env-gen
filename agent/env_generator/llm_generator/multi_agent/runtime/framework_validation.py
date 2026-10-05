@@ -1707,7 +1707,7 @@ class FrameworkValidation:
             # eventually record the gate-required RunHub run (else: silent budget
             # death, 0 release). _fwval_should_attempt gates the slow phase by a
             # wall-clock interval; attempts stays pinned at the cap (logs read 6/6).
-            _attempts = getattr(orch, "_framework_validation_attempts", 0)
+            _attempts = (getattr(orch, "_framework_validation_attempts", 0) or 0)
             _now = time.time()
             if not _fwval_should_attempt(
                     _attempts, getattr(orch, "_fwval_last_attempt_ts", 0.0), _now):
@@ -1985,7 +1985,7 @@ class FrameworkValidation:
                         and _app_sig != _prev_app_sig_1047)
                     orch._fwval_chain_sig = _chain_sig
                     orch._fwval_app_sig = _app_sig
-                    orch._fwval_stuck_count = getattr(orch, "_fwval_stuck_count", 0) + 1
+                    orch._fwval_stuck_count = (getattr(orch, "_fwval_stuck_count", 0) or 0) + 1
                     try:
                         orch._logger.warning(
                             "#1047 stuck++ (%d): app_sig moved=%s (now=%s prev=%s) "

@@ -1028,6 +1028,45 @@ def squad_gate_tick_action(*, task_exists: bool, task_done: bool) -> str:
     return "consume"
 
 
+def squad_verdict_in_hand_1203fj(task) -> Optional[int]:
+    """The open-P0 count a FINISHED background squad already computed, or None.
+
+    The wall-clock escape (`squad_release_decision`) is evaluated before
+    `squad_gate_tick_action` and releases the gate whatever the task is doing -- which is
+    right, the release must not wait forever. What was wrong is that the escape path then
+    dropped the handle without ever reading it, so a verdict computed seconds after the
+    budget expired was thrown away with it. r159: `verdict=DEFECTS: 5 open P0` at 08:09:17,
+    thirteen seconds past the 900s budget; the escape at 08:16:35 still said `0 attempts`
+    and "possibly-open".
+
+    Measured r130-r159: 19 escapes in 16 runs fired with the verdict already logged, and the
+    `consume` branch has not run since r135 -- 24 consecutive runs. Both recording sites live
+    only in that branch, so both are dead: the hold ledger reads `defects=?` in all 169 squad
+    holds of r135-r159 (#1202ut's comment says that branch is "the one place this number
+    exists"), and #1202rd's relaunch guard, which needs the app signature AT the verdict, has
+    held 0 times in 13 runs.
+
+    Returns None for every shape that carries no verdict -- no task, a task still running, a
+    cancelled or failed one, a result that is not the report dict -- so the caller's escape
+    path is unchanged except that it now knows the number when there is one. Never raises:
+    this sits on the release path and an unreadable verdict must not take a delivery with it.
+    """
+    if task is None:
+        return None
+    try:
+        if not task.done():
+            return None
+        result = task.result()
+    except Exception:
+        return None
+    if not isinstance(result, dict):
+        return None
+    try:
+        return int((result.get("bugs") or {}).get("p0", 0))
+    except Exception:
+        return None
+
+
 # #1202rt: WHEN THE REALISM JUDGE RUNS.
 #
 # #1202rh built the judge -- an independent subagent that uses the app for an ordinary task and
