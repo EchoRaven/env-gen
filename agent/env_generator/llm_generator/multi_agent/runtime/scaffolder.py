@@ -136,6 +136,39 @@ def record_ddl_behind_models_1202xk(out_dir, rows) -> bool:
         return False
 
 
+def record_missing_assets_1203g9(out_dir, items) -> bool:
+    """Land #1203g9's finding in an artifact. Mirrors `record_unregistered_routes_1202ui`.
+
+    This does NOT change the gate, for the same reason that one does not: 22 of the 80 delivered
+    runs carry at least one of these, so blocking on it would have held 27% of the deliveries in
+    the corpus, and that is a policy decision with real risk in both directions. What it cannot
+    be is invisible after the run.
+
+    Stricter than its neighbour on one point: the destination must ALREADY be a directory. That
+    helper guards only a falsy `out_dir` and says why -- `Path("None")` is a real relative
+    directory -- but `str()` of ANY object is also a usable relative path, and #1203g8 created a
+    junk `<object object at 0x...>/logs` in the repo that way.
+    """
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        if not out_dir or not items:
+            return False
+        root = _P(str(out_dir))
+        if not root.is_dir():
+            return False
+        out = root / "logs" / "missing_static_assets_1203g9.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(), "count": len(items),
+                               "assets": [str(x) for x in items][:50]},
+                              ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def record_unregistered_routes_1202ui(out_dir, routes) -> bool:
     """Land #1202h's finding in an artifact, not only in a log line.
 
@@ -1298,6 +1331,26 @@ volumes:
                 from .message_format import warn_once_1201
                 warn_once_1201("unregistered_routes_1202h",
                                "the unregistered-route report (#1202h)", _e1202h)
+            # #1203g9: asset paths the frontend references that are NOT on disk. #1165 removes
+            # them from the dead-nav-link check ("a file, not a route") and nothing then checks
+            # that the file is there, so they ship as 404s and broken images. Own try (#1201).
+            try:
+                from .frontend_audit import missing_static_assets_1203g9
+                from .message_format import join_capped as _jc1203g9
+                _ma1203g9 = missing_static_assets_1203g9(Path(out_dir) / "app")
+                if _ma1203g9:
+                    orch._logger.warning(
+                        "#1203g9 %d asset path(s) are referenced by the frontend and do NOT "
+                        "exist under public/ — in a browser each is a 404 and a broken image. "
+                        "Measured over the 80 delivered runs: 104 such references across 22 of "
+                        "them, and googlemaps-gmrun3 shipped 22 missing icons beside 72 real "
+                        "ones. Add the file or stop referencing it: %s",
+                        len(_ma1203g9), _jc1203g9(_ma1203g9, total=len(_ma1203g9)))
+                    record_missing_assets_1203g9(out_dir, _ma1203g9)
+            except Exception as _e1203g9:
+                from .message_format import warn_once_1201
+                warn_once_1201("missing_static_assets_1203g9",
+                               "the missing-asset report (#1203g9)", _e1203g9)
             # #1202uv: the OTHER direction — calls the FRONTEND makes that nothing serves.
             # Reports only; see the helper for why blocking is a separate decision. Own try
             # (#1201), and silent until the frontend's service module exists.

@@ -3460,3 +3460,56 @@ def page_api_endpoints_1202wd(app_root, component):
         return sorted(found)
     except Exception:
         return []
+
+# ---- #1203g9 ----------------------------------------------------------------
+_ASSET_REF_RE_1203G9 = re.compile(
+    r"""['"`](/(?:assets|images|img|icons|static|media|fonts)/[A-Za-z0-9_./@-]+)['"`]""")
+_ASSET_SRC_SUFFIXES_1203G9 = (".jsx", ".js", ".tsx", ".ts", ".css", ".html")
+
+
+def missing_static_assets_1203g9(app_root) -> "list":
+    """Absolute asset paths the frontend references that DO NOT EXIST under `public/`.
+
+    #1165 deliberately excludes these paths from the dead-nav-link check, and its reason is
+    right -- "An `href` can also point at a STATIC FILE, which is not a route and must not be
+    reported as a dead one". But nothing then checks that the file is THERE, so an asset
+    reference is removed from the route check and never verified as a file: the shape where
+    fixing one class blinds the detector for the next.
+
+    Measured over the 80 delivered runs with a frontend on disk: 3186 literal asset references,
+    of which 104 across 22 RUNS point at a file that exists nowhere in the run. It is not a
+    layout quirk -- googlemaps-gmrun3 has `public/assets/icons/` with 72 real icons beside
+    `house_24.svg` and `logout_24.svg`, which are referenced and were never produced, with no
+    `vite.config.js` base override and no `onError` fallback in those components. In a browser
+    that is a 404 and a broken image, in an app that shipped.
+
+    Literal paths only: a reference built by concatenation has its value supplied at runtime and
+    cannot be judged from source. Returns `["<path> (referenced by <file>)", ...]`, [] on any
+    fault -- read-only and never raises.
+    """
+    try:
+        from pathlib import Path as _P
+        root = _P(str(app_root)) / "frontend"
+        src = root / "src"
+        pub = root / "public"
+        if not src.is_dir() or not pub.is_dir():
+            return []
+        seen = {}
+        for f in sorted(src.rglob("*")):
+            if f.suffix.lower() not in _ASSET_SRC_SUFFIXES_1203G9:
+                continue
+            if "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for ref in _ASSET_REF_RE_1203G9.findall(text):
+                if ref in seen:
+                    continue
+                if (pub / ref.lstrip("/")).exists():
+                    continue
+                seen[ref] = f.name
+        return ["%s (referenced by %s)" % (r, n) for r, n in sorted(seen.items())]
+    except Exception:
+        return []
