@@ -1017,6 +1017,65 @@ def _word_boundary_markers(rows: List[dict]) -> List[str]:
     return sorted(hits)
 
 
+def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
+    """#1203ga: the SAME parentage question as #1168, asked of the seed FILE instead of a database.
+
+    `#1168` audits this well and can almost never run: it answers from `_psql` against the live
+    app database, and `#1039`'s note in this same module records what that is worth -- the live
+    probe "DID NOT RUN" for essentially the whole project, so a check whose only source is the
+    database is a check that is usually absent. Measured: `orphan_fk_rows` appears in the hub
+    output of 3 runs in the corpus.
+
+    The authored seed is on disk the whole time. Counted over the 184 runs that have one, with
+    #1168's OWN derivation rule (`<x>_id` -> a table named `<x>`/`<x>s`/`<x>es`) and only tables
+    that carry an explicit `id`: 10883 foreign-key values, of which **247 across 10 runs point at
+    a row that is not in the file** -- 4 of those runs DELIVERED. The largest are
+    `likes.user_id` 42, `comments.user_id` 30, `comment_likes.user_id` 22, `saves.user_id` 20,
+    `video_likes.video_id` 15; netflix-r32 ships `title_genres`, `my_list`, `ratings` and
+    `continue_watching` all pointing at titles 7-12 while `titles` holds ids 1-6.
+
+    And the instruction is already given: `audit_authored_seed`'s blocker text ends "rewrite
+    app/backend/seed_data.json (keep it FK-valid)". Nothing checked it -- the same shape as
+    #1203fz (an instruction with no tool) and #1203g9 (a path excused, then never verified).
+
+    REPORTED, NOT A VERDICT, which is #1168's stated policy for this exact property and its
+    reason: "a false seed blocker wedges a run (#566j), and this is evidence for the lane". The
+    blast radius if it were promoted is 10 of 184 runs and 4 of 80 deliveries; that promotion
+    wants a run's worth of evidence behind it, not a side effect of adding the measurement.
+
+    Only tables with an explicit `id` are targets: without one the row numbering is the
+    database's to choose, and guessing it would invent findings. Same return shape as #1168 --
+    ``{"table.column": orphan_count}``, ``{}`` on anything unexpected. Never raises.
+    """
+    out: Dict[str, int] = {}
+    try:
+        if not isinstance(data, dict):
+            return {}
+        tables = {k: v for k, v in data.items() if isinstance(v, list)}
+        ids: Dict[str, set] = {}
+        for name, rows in tables.items():
+            if rows and isinstance(rows[0], dict) and "id" in rows[0]:
+                ids[name] = {r.get("id") for r in rows if isinstance(r, dict)}
+        if not ids:
+            return {}
+        for tbl, rows in tables.items():
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                for col, val in row.items():
+                    if col == "id" or not str(col).endswith("_id") or val is None:
+                        continue
+                    base = str(col)[:-3]
+                    target = next((c for c in (base, base + "s", base + "es") if c in ids), None)
+                    if target is None or not isinstance(val, (int, str)):
+                        continue
+                    if val not in ids[target]:
+                        out["%s.%s" % (tbl, col)] = out.get("%s.%s" % (tbl, col), 0) + 1
+        return out
+    except Exception:
+        return {}
+
+
 def audit_authored_seed(data: Any) -> List[str]:
     """Content-quality issues with an authored seed mapping ({table: [rows]}).
 
@@ -1185,4 +1244,5 @@ def amplify_authored_seed(data: Any, min_total: Optional[int] = None) -> Any:
 
 
 __all__ = ["SeedReport", "audit_seed_data", "detect_placeholder_score",
-           "audit_authored_seed", "amplify_authored_seed"]
+           "audit_authored_seed", "amplify_authored_seed",
+           "orphan_fk_rows_in_authored_seed_1203ga"]

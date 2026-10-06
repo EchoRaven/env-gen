@@ -2839,6 +2839,32 @@ def compute_deliverability(hub_registry, app_root,
                 blockers.append(
                     "authored seed quality: " + "; ".join(_issues)
                     + " — rewrite app/backend/seed_data.json (keep it FK-valid).")
+            # #1203ga: and CHECK the "keep it FK-valid" the line above asks for. #1168 audits
+            # the same property from the live database, which #1039 records as essentially
+            # never available -- `orphan_fk_rows` reaches the hub output of 3 corpus runs. The
+            # file is on disk the whole time: 247 dangling references across 10 runs, 4 of them
+            # delivered. Reported, not blocking, which is #1168's stated policy for this exact
+            # property ("evidence for the lane", #566j: a false seed blocker wedges a run).
+            try:
+                from .seed_audit import orphan_fk_rows_in_authored_seed_1203ga
+                _orph1203ga = orphan_fk_rows_in_authored_seed_1203ga(_data)
+                if _orph1203ga:
+                    _n1203ga = sum(_orph1203ga.values())
+                    _log1203ga = logging.getLogger(__name__)
+                    _log1203ga.warning(
+                        "#1203ga the authored seed has %d row(s) whose foreign key points at a "
+                        "row that is NOT in seed_data.json: %s. The seed blocker above already "
+                        "says \"keep it FK-valid\" and nothing checked it; #1168 asks the same "
+                        "question of the live database, which is almost never up. netflix-r32 "
+                        "shipped title_genres/my_list/ratings/continue_watching all pointing at "
+                        "titles 7-12 while `titles` holds 1-6. Reported, not blocking.",
+                        _n1203ga,
+                        # #1034: a count must not sit beside a SILENT cut. `join_capped`
+                        # declares what it left out; `[:8]` did not, and that ratchet caught it.
+                        join_capped(["%s=%d" % (k, v) for k, v in sorted(_orph1203ga.items())],
+                                    total=len(_orph1203ga), cap=8))
+            except Exception as _e1203ga:
+                _gate_absent_792("authored_seed_orphan_fk_1203ga", _e1203ga, "audit")
     except Exception:
         pass
 
