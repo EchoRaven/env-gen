@@ -120,9 +120,66 @@ class AgentActionStageMixin:
             provider = ep.get("provider")
             if provider and provider != lane:
                 continue
-            if (ep.get("kind") or "").lower() in (
-                    "infra", "auth", "spine", "control", "system"):
-                continue
+            # #1203fy: THIS EXEMPTION HAD NEVER FIRED, FOR ANY KIND, IN ANY RUN.
+            #
+            # `registryhub._tag_parked_probe_1202dw` writes the tag to `metadata["kind"]` -- its
+            # own docstring says "Every one of those gates ALREADY exempts `metadata.kind` in
+            # FIXED_ENDPOINT_KINDS", and that is the convention every other reader follows
+            # (`chain_executor`, `database_scaffold`, `backend_audit`, `delivery_gate`,
+            # `lifecycle`). This one read the TOP level. Counted over every run directory:
+            # of 5747 registered endpoints, `kind` at the top level appears ZERO times, while
+            # 2696 carry `metadata.kind` (oauth 1104, infra 892, auth 368, control 293,
+            # business 39). So the skip was structurally dead and every framework endpoint the
+            # lane "owned" fell through into the nudge below.
+            #
+            # The nudge is not advisory. It says "you CANNOT finish until they do" and
+            # "ACTION THIS STEP: take the FIRST one and WRITE its FastAPI route handler with
+            # real DB logic" -- so the lane writes the framework's probe, and
+            # `deliverability_parked_probe_route` then blocks delivery on it. #1203b5 named
+            # that exact loop ("NEVER ASK A LANE TO IMPLEMENT THE FRAMEWORK'S OWN PROBE") and
+            # closed the task-generator half of it; this emitter kept it open. r164's backend
+            # notebook is the lane saying so in its own words: "Implementation progress prompt
+            # suggested adding __noop handlers, but current delivery-blocking WorkHub task
+            # explicitly requires deleting/deregistering them".
+            #
+            # Replayed over the 203 runs with a backend on disk: 106 endpoints were listed,
+            # 30 after this change (-76 across 26 runs) -- 64 `infra`, 10 `control` (the
+            # control plane's own five paths, in r141/r151, every one `is_control_surface_path`
+            # and served from the framework-generated main.py) and 2 `POST /auth/signup`,
+            # which #1203fw just made the framework itself serve. Ten of the 106 were parked
+            # `__` probes, in nine runs including r163 and r164; after this, zero.
+            #
+            # `is_business` rather than a fourth copy of the kind list: `lifecycle` carries the
+            # one predicate and says why -- "Six modules re-listed this surface and all six
+            # omitted the same three. Imported, not re-listed." It reads the kind from either
+            # shape, consults FIXED_ENDPOINT_KINDS (which already contains `control`, the set
+            # this site chose), and its path net "only ever REMOVES a framework-owned path from
+            # the business set, never adds one" -- so this cannot start demanding anything new.
+            #
+            # `system` is kept because it was in the local list and is NOT in
+            # FIXED_ENDPOINT_KINDS; measured, it occurs 0 times in the corpus, so it is carried
+            # only so that fixing the key cannot WIDEN what this prompt asks for.
+            try:
+                from ....runtime.lifecycle import is_business as _isb1203fy, \
+                    endpoint_kind as _ek1203fy
+                if (not _isb1203fy(ep)) or _ek1203fy(ep) == "system":
+                    continue
+            except ImportError:
+                # #1201: a dead exemption is exactly what this fix is about, so say when the
+                # predicate could not be reached instead of silently nudging again.
+                self._logger.warning(
+                    "#1203fy could not import lifecycle.is_business; the framework-endpoint "
+                    "exemption for the IMPLEMENTATION PROGRESS nudge is NOT being applied")
+            # Defence in depth, the way #1202ds's path check was kept beside the kind tag: a
+            # caller that states its own kind KEEPS it (`_tag_parked_probe_1202dw`), so a probe
+            # registered as `kind="business"` would still reach here. 0 such today.
+            try:
+                from ....runtime.kickoff.schema_tolerance import (
+                    _is_framework_probe_1203b5 as _probe1203fy)
+                if _probe1203fy(ep.get("path") or ""):
+                    continue
+            except ImportError:
+                pass
             owned.append(ep)
         if not owned:
             return None

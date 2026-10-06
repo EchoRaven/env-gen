@@ -1,6 +1,6 @@
 r"""#1203b5: kickoff must not ask a lane to IMPLEMENT the framework's own probe.
 
-`registryhub._infra_kind_for_probe` tags a `__`-prefixed registration `kind="infra"` so that
+`registryhub._tag_parked_probe_1202dw` tags a `__`-prefixed registration `kind="infra"` so that
 "the exemption they already implement start[s] working, and any gate added later inherits it".
 This generator is a later consumer and did not inherit it: it walked `contract["endpoints"]`
 and emitted `impl.endpoint.<m>.<p>` plus `validate.api_smoke.<m>.<p>` for every (method, path),

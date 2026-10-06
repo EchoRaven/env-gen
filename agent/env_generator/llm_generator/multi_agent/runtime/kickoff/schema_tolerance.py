@@ -364,7 +364,7 @@ def synthesize_task_tree(contract: Mapping[str, Any]) -> List[Dict[str, Any]]:
             continue
         # #1203b5: NEVER ASK A LANE TO IMPLEMENT THE FRAMEWORK'S OWN PROBE.
         #
-        # `registryhub._infra_kind_for_probe` tags a `__`-prefixed registration `kind="infra"`
+        # `registryhub._tag_parked_probe_1202dw` tags a `__`-prefixed registration `kind="infra"`
         # precisely so "the exemption they already implement start[s] working, and any gate
         # added later inherits it". This generator is a later consumer and did not inherit it,
         # so it emitted `impl.endpoint.get.__noop_orchestrator_probe` and the matching

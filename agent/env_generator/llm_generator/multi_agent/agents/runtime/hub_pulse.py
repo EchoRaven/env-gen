@@ -938,7 +938,11 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
             )
         lines.append(
             "  -> nudge via `send_message(to_agent=<assignee>, ...)`, "
-            "or reassign via `workhub_create_task` to another agent."
+            # #1203g0: `workhub_create_task` IS NOT A TOOL. Swept over every `NAME = "..."`
+            # declaration in the tools package -- 290 of them -- and it is not one; creating is
+            # `workhub_task(action="create", ...)`, which is what `approval.py` keys its
+            # create-gate on and what `base.py` annotates as "create/claim/complete".
+            "or reassign via `workhub_task(action=\"create\", ...)` to another agent."
         )
 
     latest_run = pulse.get("latest_run")

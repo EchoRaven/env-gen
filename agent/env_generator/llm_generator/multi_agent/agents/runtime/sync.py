@@ -556,7 +556,7 @@ class AgentSync:
                 f" id={evt.get('id')} {payload_preview}"
             )
         if len(events) > 12:
-            parts.append(f"  ... and {len(events) - 12} more. Use eventhub_list_inbox to see all.")
+            parts.append(f"  ... and {len(events) - 12} more. Use eventhub_inbox to see all.")   # #1203g0: list_inbox is not a tool
         parts.append(
             "Review these events and act on any that are relevant to your current task."
         )

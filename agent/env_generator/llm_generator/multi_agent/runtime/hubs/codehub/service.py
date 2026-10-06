@@ -368,7 +368,10 @@ class CodeHub:
             return {
                 "error": "linked_tasks_required",
                 "hint": "Every PR must reference at least one WorkHub task. "
-                        "Create one with workhub_create_task or link an existing one.",
+                        # #1203g0: `workhub_create_task` is not a tool; this hint named
+                        # a name an agent cannot call. Creating is an ACTION on `workhub_task`.
+                        "Create one with workhub_task(action='create', ...) "
+                        "or link an existing one.",
             }
 
         # Gate 2: orchestrator auto-injection (unless author is orchestrator)
@@ -405,7 +408,9 @@ class CodeHub:
                 return {
                     "error": "linked_tasks_unknown",
                     "unknown": unknown_tasks,
-                    "hint": "Create the WorkHub task first via workhub_create_task.",
+                    # #1203g0: the same non-existent name.
+                    "hint": "Create the WorkHub task first via "
+                            "workhub_task(action='create', ...).",
                 }
 
         # Gate 6: every linked_page must exist in WorkHub

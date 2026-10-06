@@ -1506,7 +1506,15 @@ def _no_page_declares_an_api_1202rm(hub_registry) -> List[str]:
                         ((str(x.get("path") or ""), x) for x in eps if isinstance(x, dict)))):
             if not isinstance(_e, dict):
                 continue
-            if str(_e.get("kind") or "").lower() in ("infra", "auth", "oauth"):
+            # #1203fy: the same wrong key as the IMPLEMENTATION PROGRESS nudge, and a third
+            # hand-written copy of the kind list. `kind` at the top level occurs 0 times in
+            # 5747 corpus endpoints -- the tag lives in `metadata.kind` -- so this clause has
+            # never excluded anything either, and the comment above is why nothing broke: the
+            # `_fixed` PATH net catches the surface this was meant to catch. Replayed over
+            # every run directory, the `len(business) < 2` verdict flips in 0 runs, so this is
+            # a correctness alignment with no behaviour change today; it is made anyway because
+            # the next reader of `kind` should find one convention, not two.
+            if _endpoint_kind_1203fy(_e) in _FIXED_ENDPOINT_KINDS_1203FY:
                 continue
             _path = str(_e.get("path") or _k or "")
             if any(_f in _path for _f in _fixed):
@@ -1906,6 +1914,31 @@ def _operator_identity_blockers_1202rj(app_root) -> List[str]:
         return []
 
 
+# #1203fy: the kind lives under `metadata` (0 of 5747 corpus endpoints carry a top-level
+# `kind`), and the fixed surface has ONE canonical list. `lifecycle` carries both and states
+# the rule: "Six modules re-listed this surface and all six omitted the same three. Imported,
+# not re-listed." Imported lazily with an explicit empty-set fallback rather than a silent one,
+# so a broken import degrades to "no kind exemption" -- the pre-#1203fy behaviour -- and says so.
+_FIXED_ENDPOINT_KINDS_1203FY: frozenset = frozenset()
+try:
+    from .kickoff.contract import FIXED_ENDPOINT_KINDS as _FIXED_ENDPOINT_KINDS_1203FY
+except Exception as _exc_1203fy_kinds:  # pragma: no cover - import-safety guard
+    _gate_absent_792("_FIXED_ENDPOINT_KINDS_1203FY", _exc_1203fy_kinds, "run")
+
+
+def _endpoint_kind_1203fy(rec: Any) -> str:
+    """The endpoint's kind wherever it landed. Delegates to `lifecycle.endpoint_kind`."""
+    try:
+        from .lifecycle import endpoint_kind as _ek
+        return _ek(rec)
+    except Exception:
+        if not isinstance(rec, dict):
+            return ""
+        md = rec.get("metadata")
+        return str((md or {}).get("kind") if isinstance(md, dict) else ""
+                   or rec.get("kind") or "").strip().lower()
+
+
 def _parked_probe_routes_1202y7(app_root) -> List[str]:
     """Routes the app SERVES with a path segment starting `__`. `[]` on failure.
 
@@ -1965,9 +1998,29 @@ def _parked_probe_routes_1202y7(app_root) -> List[str]:
                 "with the product: %s. A path beginning `__` is this framework's own "
                 "convention for its machinery, so a visitor reading the app's OpenAPI sees "
                 "the builder's scaffolding; the r140 instance was public, unauthenticated "
-                "and counted rows in four business tables. Delete the handler AND its "
-                "registry entry. If a check pushed you to add it, the check is asking about "
-                "the BUSINESS endpoints -- make one of those read its data instead."
+                "and counted rows in four business tables. "
+                # #1203fz: NAME THE ACTION THAT ACTUALLY CLEARS THIS. The line used to read
+                # "Delete the handler AND its registry entry", and half of that is impossible:
+                # the lane's tool surface has `registryhub_register_endpoint` and
+                # `registryhub_deprecate_endpoint` and NO delete/unregister tool for an
+                # endpoint. r164's backend notebook says it three times -- "No direct
+                # unregister tool is available", "RegistryHub retains deprecated historical
+                # `__` endpoint entries because no delete tool is available" -- and once it
+                # believed the instruction over the gate: "the blocking state was registry
+                # contract presence; changed RegistryHub endpoint status to removed". It is
+                # not: this detector reads `served_routes(backend)`, which is CODE.
+                #
+                # Measured over every run directory: 14 probes across 8 runs (r121, r125, r123,
+                # r164, r114, r120, netflix-r6, netflix-r24) sit retired in the registry with
+                # the handler still in the source -- the half-repair this sentence invites,
+                # each one still blocking. 57 across 48 runs did it the other way and cleared.
+                "DELETING THE HANDLER is what clears this check -- it reads the routes your "
+                "backend SERVES, not the registry. There is no tool that deletes an endpoint "
+                "registration, and `registryhub_deprecate_endpoint` does NOT clear this: a "
+                "deprecated entry whose handler is still in the source still ships the route. "
+                "Leaving the registration behind is fine. If a framework task pushed you to "
+                "add it, that was #1203fy (fixed): the check wanting data is asking about the "
+                "BUSINESS endpoints -- make one of those read its data instead."
                 % (len(hits), join_capped(hits, total=len(hits), cap=5, sep="; "))]
     except Exception as exc:
         _gate_absent_792("_parked_probe_routes_1202y7", exc, "run")
