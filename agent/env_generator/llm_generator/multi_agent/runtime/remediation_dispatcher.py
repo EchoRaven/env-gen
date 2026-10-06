@@ -816,6 +816,21 @@ def _ui_evidence_failed_pages(orch) -> List[str]:
     computed and unused.
 
     Best-effort -> [] falls back to the generic body."""
+    _report = _ui_evidence_report_1203fx(orch)
+    return [str(x) for x in (_report or {}).get("pages_failed") or []
+            if str(x) and str(x) != "?"]
+
+
+def _ui_evidence_report_1203fx(orch) -> Dict[str, Any]:
+    """#1203fx: the ONE fetch of the UI-evidence verdict, shared by both of its consumers.
+
+    `_ui_evidence_failed_pages` reads `pages_failed` off this; `ui_evidence_failed_evidence_1203fx`
+    reads `words_failed`. Duplicating the fetch is precisely #1178 -- a second copy that reached
+    for `_last_validation_results` / `_validation_results`, two attributes the Orchestrator does
+    not have, and so returned nothing for every call since #982 landed while the gate one line
+    above could name the page. One reader, one chance to be wrong.
+
+    Best-effort -> {} , which both consumers read as "nothing to say"."""
     try:
         _b = globals().get("_ui_evidence_breadth_739")
         if _b is None:
@@ -844,11 +859,68 @@ def _ui_evidence_failed_pages(orch) -> List[str]:
         if not _results:
             _results = (getattr(orch, "_last_validation_results", None)
                         or getattr(orch, "_validation_results", None))
-        report = _b(_results)
-        return [str(x) for x in (report or {}).get("pages_failed") or [] if str(x) and str(x) != "?"]
+        return dict(_b(_results) or {})
     except Exception as _exc_1152:
-        _swallowed_1152("_ui_evidence_failed_pages", _exc_1152, "[] = nothing to remediate")
-        return []
+        _swallowed_1152("_ui_evidence_report_1203fx", _exc_1152, "{} = nothing to remediate")
+        return {}
+
+
+def ui_evidence_failed_evidence_1203fx(orch, pages: Sequence[Any]) -> str:
+    """#1203fx: REPLAY what the failing UI record said, on the branch that blocks most often.
+
+    `_ui_evidence_failed_extra` ends with "open each page, reproduce what the record reports,
+    repair it, then re-run the walk" -- an instruction to reproduce a report it never quotes.
+    The gate has the sentence: `_ui_evidence_breadth_739` builds a `_blob` of
+    error/detail/message/reason/evidence/output off every failing record to run #1154's
+    reachability match, and then returns page NAMES only.
+
+    Measured by replaying `_record_own_words_1203fx` over the 291 failing
+    `validation:ui_{flow,smoke}:*` records on disk (89 runs): 253 carry words it can reach across
+    83 runs, 38 carry only a screenshot or a run id. Replaying the whole diagnosis: of the 85
+    runs with a failing page it speaks in 79 and stays silent in 6. (An earlier pass of this measurement said 285/291 and
+    was wrong -- it asked `len(json.dumps(evidence)) > 20` rather than asking the function.)
+    Of the 508 tasks across 92 runs whose body names this check, 319 name the failing pages and
+    0 quote a record -- the pre-fix baseline. `validation_ui_evidence_failed`
+    is the instrument for the single most common live blocker (#1040: "7 of the last 10
+    declining runs"; r134/r137/r158 all died with it or its sibling open after 75 minutes of
+    lane time).
+
+    DELIBERATELY one-branch, unlike #1176/#1177/#1182/#1185 beside it. `deliverability_ui_flow_failed`
+    already carries its records' words through #1203ft, which reads codehub's
+    `validation:ui_flow:<flow>` rows; wiring this there too would print the same sentence twice
+    under two headings. #1188 pins that asymmetry so a later audit reads it as a decision
+    rather than as #1177's oversight.
+
+    Additive: "" when no named page has words, so the existing body is unchanged there.
+    Never raises -- the dispatcher swallows exceptions, which would silently degrade the task
+    to #1178's 789-character generic text.
+    """
+    try:
+        names = [str(x).strip() for x in (pages or []) if str(x).strip()]
+        if not names:
+            return ""
+        said = (_ui_evidence_report_1203fx(orch) or {}).get("words_failed") or {}
+        if not isinstance(said, Mapping) or not said:
+            return ""
+        lines = ["%s — %s" % (n, str(said[n])[:400]) for n in names if said.get(n)]
+        if not lines:
+            return ""
+        # #1034's rule: cut, but DECLARE the cut. 8 matches `_prose[:8]` in this same
+        # dispatcher. Projected over every run directory, 74 of the 79 runs where this fires
+        # quote 7 or fewer and are untouched; the 5 that are cut reported ONE global defect
+        # once per page (10, 11 and 12 pages) -- exactly the case #1043's auth-root hint
+        # above already tells the lane to treat as one.
+        _cut = len(lines) - 8
+        _head = ("\n\nWHAT THE FAILING RECORD SAYS about each (its own words — this is the "
+                 "report the paragraph above tells you to reproduce):\n- ")
+        if _cut > 0:
+            return (_head + "\n- ".join(lines[:8])
+                    + "\n\n(%d more failing page(s) carry a recorded sentence too, not shown "
+                      "here — read them off the hub once these are fixed.)" % _cut)
+        return _head + "\n- ".join(lines)
+    except Exception as _exc_1203fx:
+        _swallowed_1152("ui_evidence_failed_evidence_1203fx", _exc_1203fx, "'' = names only")
+        return ""
 
 
 # #1043: flows whose NAME says they are the authentication step every other flow depends on.
@@ -1159,7 +1231,21 @@ _UI_SMOKE_PREFIX_1177 = "validation:ui_smoke"
 
 
 def ui_smoke_refresh_1177(orch, pages: Sequence[Any]) -> str:
-    """Correct the refresh instruction for failing records `run_validation` cannot rewrite."""
+    """Correct the refresh instruction for failing records `run_validation` cannot rewrite.
+
+    #1203fx, MEASURED AND DELIBERATELY NOT CHANGED: step 1 below says "reproduce what the
+    record claims" without quoting the claim -- the same shape #1203fx fixed in
+    `_ui_evidence_failed_extra`. On the `validation_ui_evidence_failed` branch it is already
+    answered, because #1203fx composes into the same `_extra` over the same page list. The
+    only gap left is the `deliverability_ui_flow_failed` branch, where #1203ft reads
+    `validation:ui_flow:*` rows and so cannot see a `ui_smoke` record.
+
+    That gap was measured rather than guessed: the intersection this function needs (a failing
+    `ui_smoke` record whose last name segment is also a failing flow on that branch) is 11
+    records across 3 runs, of which 5 carry quotable words -- and all 5 are in ONE run
+    (netflix-local-r26) saying "browser_navigate closed the driver", which #1199's
+    `_DRIVER_GONE_RE_1199` already classifies as not evidence about the product. A third
+    quoting path for one run's infrastructure noise is not worth its surface."""
     try:
         root = getattr(orch, "output_dir", None)
         if not root:
@@ -3294,7 +3380,11 @@ class RemediationDispatcher:
                         # #1176: append the contract-vs-public-route diagnosis when the
                         # failing record names a 401/403. Empty string when it does not
                         # apply, so the #982 text is unchanged in every other case.
-                        _extra = (_ui_evidence_failed_extra(_fp) + auth_contradiction_1176(orch, _fp)
+                        _extra = (_ui_evidence_failed_extra(_fp)
+                                  # #1203fx: and WHAT the record says, which the #982 body
+                                  # tells the lane to reproduce without ever quoting it.
+                                  + ui_evidence_failed_evidence_1203fx(orch, _fp)
+                                  + auth_contradiction_1176(orch, _fp)
                                   # #1177: and correct the refresh instruction for any
                                   # failing ui_smoke record, which run_validation cannot rewrite.
                                   + ui_smoke_refresh_1177(orch, _fp)

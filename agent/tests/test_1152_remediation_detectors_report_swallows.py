@@ -42,9 +42,21 @@ def test_the_reporter_never_raises():
     rd._swallowed_1152("probe2", Nasty(), "[]")   # must not propagate
 
 
+# #1203fx: `_ui_evidence_failed_pages` no longer fetches for itself -- the fetch moved into
+# `_ui_evidence_report_1203fx`, shared with a second consumer so #1178 cannot recur in a copy.
+# The guard FOLLOWS the swallow instead of being dropped: the detector must still delegate to
+# the named helper, and that helper must still report. A detector that merely stopped having a
+# try/except would fail the first assertion.
+_FETCH_DELEGATE_1203FX = {"_ui_evidence_failed_pages": "_ui_evidence_report_1203fx"}
+
+
 def test_each_detector_reports_before_returning_empty():
     for fn in FOUR:
         b = _body(fn)
+        _d = _FETCH_DELEGATE_1203FX.get(fn)
+        if _d:
+            assert "%s(orch)" % _d in b, "%s no longer delegates to %s" % (fn, _d)
+            b = _body(_d)
         assert "_swallowed_1152(" in b, "%s still swallows silently" % fn
         assert "except Exception as _exc_1152:" in b, fn
 

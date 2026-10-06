@@ -668,6 +668,96 @@ def _page_by_route_1202fq(hubs) -> Dict[str, str]:
         return {}
 
 
+# #1203fx: the field names that hold a SENTENCE, in preference order. `summary` and `reason`
+# are the normaliser's own spellings; the rest are what individual verifier writers used
+# instead, each confirmed present on failing records on disk. Deliberately NOT here:
+# `console_errors` / `network_errors` (an int in some records, a list of dicts in others),
+# `observed_dom` (markup), `screenshot` / `url` / `run_id` / `verdict` / `flow` (not prose).
+_WORD_FIELDS_1203FX = (
+    "summary", "reason", "failure_reason", "note", "notes", "root_cause_hypothesis",
+    "root_cause", "failing_request", "console_error", "error", "detail", "message",
+)
+
+
+def _record_own_words_1203fx(record: Any) -> str:
+    """#1203fx: the one sentence a failing UI evidence record says about ITSELF.
+
+    `_ui_evidence_failed_extra` tells the lane to "open each page, reproduce what the record
+    reports" -- and never reports it. The sentence is on the record the gate blocked on.
+    Measured over every run directory by REPLAYING THIS FUNCTION over the 291 failing
+    `validation:ui_{flow,smoke}:*` records on disk (89 runs): 253 carry words it can reach
+    (83 runs), 38 do not. The first pass of this measurement said "285 of 291" and was wrong -- it asked
+    `len(json.dumps(evidence)) > 20` instead of asking this function, so it counted a record
+    whose whole evidence is `{"screenshot": "...", "verdict": "fail"}` as carrying words. A
+    number about a function has to come from the function.
+
+    The field list below is what that replay cost: `summary`/`reason` alone reach 222 of the
+    291, and the other 31 are the SAME sentence under a writer's own spelling -- an
+    `expected`/`actual` pair (10), `root_cause_bug` (6), `failure_reason` (5), `note`/`notes`
+    (4), `failing_request` (2), `root_cause_hypothesis` (2), `console_error` (2). The 38 left
+    carry only `run_id`, `screenshot` or `flow`: nothing was written down, and no field list
+    can invent it.
+
+    The records read like
+
+        "Fresh /directions flow fails after Search with TypeError .map is not a function in
+         DirectionsPanel; no network errors."
+        "Directions flow failed: origin/destination fields could be filled but route submit
+         control was not interactable."
+        "Revalidation login flow still failed: POST /auth/login returned 401 with valid
+         verifier credentials."
+
+    which is the whole repair, already written down. This is #1203ft's defect on the sibling
+    check: that one carries the walk's words into `deliverability_ui_flow_failed`, reading
+    codehub's `validation:ui_flow:<flow>` rows directly -- a shape that cannot see the 54
+    failing `ui_smoke` records, and that is not wired to this branch at all.
+
+    Collected HERE rather than by a second reader in the dispatcher on purpose. Labelling a
+    record by its page takes #1032's five fallbacks, #1203f9's canonicalisation and #1202fq's
+    route keying; a consumer that re-derived any of that is the "one store, two consumers,
+    each implementing half the rules" defect this batch keeps finding (#1202fn/fp/fq/fs,
+    #1203f9). The words therefore come from the SAME record, under the same superseding
+    rules, as the page name they are printed beside.
+
+    Field order is widest-first across both record shapes: `_get_validation_results` lifts
+    `evidence.summary` to the top level while `hub_registry.get_validation_results` need not,
+    so both spellings are tried before the narrower error fields. Returns "" when the writer
+    left no words -- the caller then prints the name alone, exactly as before.
+    """
+    if not isinstance(record, dict):
+        return ""
+    _ev = record.get("evidence")
+    if not isinstance(_ev, dict):
+        _ev = {}
+
+    def _pick(*names) -> str:
+        # Widest-first across both record shapes: `_get_validation_results` lifts
+        # `evidence.summary` to the top level while `hub_registry.get_validation_results`
+        # need not, so each name is tried on the record and then on its evidence.
+        for _n in names:
+            for _holder in (record, _ev):
+                _v = _holder.get(_n)
+                if isinstance(_v, str) and _v.strip():
+                    return _v.strip()
+        return ""
+
+    _txt = _pick(*_WORD_FIELDS_1203FX)
+    if _txt:
+        return _txt
+    # Composed, not extracted -- these writers split the sentence across two fields.
+    _exp, _act = _pick("expected"), _pick("actual")
+    if _exp and _act:
+        return "expected %s; actual %s" % (_exp, _act)
+    # Last: a pointer rather than a report. Printed because "the root cause is filed as X"
+    # is still what this record says, and the lane can open X; NOT promoted above the prose
+    # fields, because a bare task id under a "its own words" heading would be the
+    # category-without-the-instance shape this whole batch has been removing.
+    _bug = _pick("root_cause_bug")
+    if _bug:
+        return "root cause filed as %s — open that task for the detail" % _bug
+    return ""
+
+
 def _ui_evidence_breadth_739(validation_results: Any,
                              page_by_route: Any = None,
                              stale_before: float = 0.0) -> Dict[str, Any]:
@@ -812,6 +902,9 @@ def _ui_evidence_breadth_739(validation_results: Any,
                 del _latest757[_k]
     passed: List[str] = []
     failed: List[str] = []
+    # #1203fx: keyed by the SAME page label the verdict is keyed by, and filtered to
+    # `pages_failed` at the return -- so a record folded back by #1154 keeps its words too.
+    words_1203fx: Dict[str, str] = {}
     for r in _latest757.values():
         meta = r.get("metadata", {}) or {}
         # #757: the record's own `name` is the reliable label — r149 printed "passed ? / failed
@@ -852,6 +945,12 @@ def _ui_evidence_breadth_739(validation_results: Any,
             # NOT unconditional: if NOTHING passed, the app really may be dead and this must
             # still block. Discounted only when another UI record passed, which is proof the
             # origin is reachable and this record is stale infrastructure noise.
+            # #1203fx: the words, before the unreachable test decides WHICH list the page
+            # lands in -- `_blob` below is the proof they were in hand all along and spent
+            # only on a substring match.
+            _w1203fx = _record_own_words_1203fx(r)
+            if _w1203fx:
+                words_1203fx.setdefault(page, _w1203fx)
             _blob = " ".join(str(r.get(k) or "") for k in
                              ("error", "detail", "message", "reason", "evidence", "output"))
             if (any(m in _blob for m in _UNREACHABLE_1154)
@@ -871,6 +970,10 @@ def _ui_evidence_breadth_739(validation_results: Any,
         # Reported, never blocking (#790's category): the check could not run.
         "unreachable_records": len(unreachable),
         "pages_unreachable": sorted(set(unreachable)),
+        # #1203fx: what each BLOCKING page's own record says. Additive; every existing
+        # consumer reads the keys above and is unaffected.
+        "words_failed": {_p: words_1203fx[_p] for _p in sorted(set(failed))
+                         if words_1203fx.get(_p)},
     }
 
 

@@ -75,9 +75,12 @@ def test_a_clean_run_reports_no_failures():
     # #1154 added two keys. This assertion is deliberately key-for-key -- the same
     # contract shape #750 and #558 extended rather than loosened -- so a new key has to
     # be declared here on purpose instead of appearing unnoticed.
+    # #1203fx declares its key here on purpose, which is what this assertion is for: the
+    # words of each BLOCKING page, so a clean run carries none.
     assert b == {"passed_records": 2, "failed_records": 0,
                  "pages_passed": ["a", "b"], "pages_failed": [],
-                 "unreachable_records": 0, "pages_unreachable": []}
+                 "unreachable_records": 0, "pages_unreachable": [],
+                 "words_failed": {}}
 
 
 def test_non_ui_records_are_ignored():

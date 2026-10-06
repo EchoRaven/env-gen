@@ -57,9 +57,58 @@ def test_each_diagnosis_is_defined_and_self_gating():
 
 def test_the_producer_still_reads_a_real_orchestrator_api():
     """#1178 itself: the page list feeding all of the above must come from a name that
-    exists on the real Orchestrator, not a plausible-looking one."""
+    exists on the real Orchestrator, not a plausible-looking one.
+
+    #1203fx moved the fetch into `_ui_evidence_report_1203fx` so its two consumers cannot
+    drift apart the way #1178's copy did. The guard follows it instead of being relaxed: the
+    shared fetch must still reach a real attribute, AND the page producer must still reach
+    the shared fetch -- otherwise a future edit could satisfy this test with a fetch nothing
+    calls."""
     from env_generator.llm_generator.multi_agent.orchestrator import Orchestrator
-    src = inspect.getsource(rd._ui_evidence_failed_pages)
-    m = re.search(r'getattr\(orch, "(_get_validation_results)"', src)
-    assert m, "the producer must reach for _get_validation_results first"
+    fetch = inspect.getsource(rd._ui_evidence_report_1203fx)
+    m = re.search(r'getattr\(orch, "(_get_validation_results)"', fetch)
+    assert m, "the shared fetch must reach for _get_validation_results first"
     assert hasattr(Orchestrator, m.group(1))
+    for consumer in (rd._ui_evidence_failed_pages, rd.ui_evidence_failed_evidence_1203fx):
+        src = inspect.getsource(consumer)
+        assert "_ui_evidence_report_1203fx(orch)" in src, (
+            f"{consumer.__name__} must go through the shared fetch, not its own copy")
+    # and the two keys they read are the two the gate actually returns
+    from env_generator.llm_generator.multi_agent.runtime import delivery_gate as dg
+    _rep = dg._ui_evidence_breadth_739([
+        {"name": "validation:ui_flow:checkout", "status": "failed",
+         "metadata": {"check": "ui_flow", "flow": "checkout"},
+         "evidence": {"summary": "the submit control was not interactable"}},
+    ])
+    assert _rep.get("pages_failed") == ["checkout"], _rep
+    assert _rep.get("words_failed") == {
+        "checkout": "the submit control was not interactable"}, _rep
+
+
+# #1203fx: diagnoses that belong to ONE branch on purpose. #1188 exists because #1177 was
+# missing from a branch by oversight, so a one-branch diagnosis has to be declared as a
+# decision -- and the declaration has to be falsifiable, or it is just a comment. Each entry
+# is (function, the branch it belongs to, the branch it must stay OUT of, why).
+_BRANCH_LOCAL_1203FX = (
+    ("ui_evidence_failed_evidence_1203fx", "validation_ui_evidence_failed",
+     "deliverability_ui_flow_failed",
+     "the ui_flow branch already carries its records' words through #1203ft"),
+    ("ui_flow_failed_evidence_1203ft", "deliverability_ui_flow_failed",
+     "validation_ui_evidence_failed",
+     "it reads codehub's validation:ui_flow:<flow> rows, which cannot see ui_smoke records"),
+)
+
+
+def test_the_one_branch_diagnoses_stay_on_their_own_branch():
+    ui_ev = _branch("validation_ui_evidence_failed", "deliverability_ui_flow_failed")
+    ui_fl = _branch("deliverability_ui_flow_failed", "deliverability_ui_flow_missing")
+    where = {"validation_ui_evidence_failed": ui_ev, "deliverability_ui_flow_failed": ui_fl}
+    for fn, belongs, excluded, why in _BRANCH_LOCAL_1203FX:
+        assert f"{fn}(orch," in where[belongs], f"{fn} fell out of its own branch"
+        assert fn not in where[excluded], (
+            f"{fn} appeared on the {excluded} branch; {why}, so the sentence would print "
+            f"twice under two headings")
+        f = getattr(rd, fn, None)
+        assert callable(f), f"{fn} is wired but not defined"
+        assert f(None, ["nothing"]) == "", f"{fn} must be silent (not raise) with no orch"
+        assert f(object(), []) == "", f"{fn} must be silent for an empty page list"

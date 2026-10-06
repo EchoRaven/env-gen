@@ -62,8 +62,16 @@ def test_the_orchestrator_really_exposes_what_the_producer_reads():
     """★ The guard that was missing. A name the producer depends on must exist on the class
     it is handed — otherwise the read fails open to [] and the remediation silently degrades
     to generic text with nothing in any log to say so."""
-    src = inspect.getsource(rd._ui_evidence_failed_pages)
+    # #1203fx: the fetch moved into `_ui_evidence_report_1203fx` so its two consumers share
+    # one reader -- #1178 was a duplicated reader that drifted, so a second copy is the thing
+    # to prevent. The guard follows it and gets STRICTER: the shared fetch must read the real
+    # attribute, AND every consumer must reach the shared fetch, so a fetch nothing calls
+    # cannot satisfy this test.
+    src = inspect.getsource(rd._ui_evidence_report_1203fx)
     assert "_get_validation_results" in src
     assert hasattr(Orchestrator, "_get_validation_results"), (
         "the producer's primary source must be a real attribute of the real Orchestrator")
     assert callable(getattr(Orchestrator, "_get_validation_results"))
+    for _consumer in (rd._ui_evidence_failed_pages, rd.ui_evidence_failed_evidence_1203fx):
+        assert "_ui_evidence_report_1203fx(orch)" in inspect.getsource(_consumer), (
+            "%s must go through the shared fetch" % _consumer.__name__)
