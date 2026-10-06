@@ -262,6 +262,7 @@ Returns errors with line numbers and suggestions.
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
         self.workspace = workspace
         self._tool_cache = {}  # Cache which tools are available
+        self._lint_cache_1203g5 = {}   # #1203g5: content-hash -> ToolResult
     
     @property
     def tool_definition(self):
@@ -355,21 +356,107 @@ Returns errors with line numbers and suggestions.
         if not file_path.exists():
             return ToolResult(success=False, error_message=f"File not found: {path}")
         
+        # #1203g5: LINTING THE SAME BYTES TWICE COSTS A SECOND AND ANSWERS THE SAME.
+        #
+        # `lint` is the single most expensive tool by wall clock in the corpus: of 7214s of
+        # recorded tool time, 1156s is lint -- 16.0%, over 1165 calls at 992ms each. Measured
+        # over r160-r164's agent logs with the writes attributed per file, 1004 of 1978 lint
+        # calls (51%) re-lint a path that NOTHING has written since the previous lint, and
+        # 1003 of those 1004 returned a byte-identical result. (The one exception is
+        # `app/backend/main.py`, written by a DIFFERENT agent between the two calls -- which a
+        # content hash handles correctly and a per-agent "unchanged?" flag would not.)
+        #
+        # 1003 x 992ms is ~16.6 minutes across five runs, ~3.3 per run, against a 7200s
+        # per-milestone wall cap that r159 died on with zero delivery.
+        #
+        # The dedup of #1191 cannot help: it collapses a repeated RESULT in the context, and
+        # lint results have a median length of 77 bytes -- far below its 1500-byte floor, whose
+        # reasoning ("a pointer costs about as much as the body") is right for them. The cost
+        # here is the subprocess, not the tokens, so the only way to not pay it is to not run it.
+        #
+        # Keyed on the CONTENT hash, not mtime: a hash cannot lie about a rewrite that kept the
+        # timestamp, and `lint`'s only parameter is `path`, so identical bytes have no other
+        # input that could change the verdict. Bounded so a long run cannot grow it without
+        # limit; cleared wholesale rather than by age, because every entry is equally valid
+        # while its hash matches.
+        _cached_1203g5 = self._lint_cache_get_1203g5(file_path)
+        if _cached_1203g5 is not None:
+            return _cached_1203g5
+        
         ext = file_path.suffix.lower()
         
         if ext == '.py':
-            return self._lint_python(file_path)
+            _res = self._lint_python(file_path)
         elif ext == '.json':
-            return self._lint_json(file_path)
+            _res = self._lint_json(file_path)
         elif ext in ['.js', '.jsx', '.ts', '.tsx']:
-            return self._lint_javascript(file_path)
+            _res = self._lint_javascript(file_path)
         elif ext == '.sql':
-            return self._lint_sql(file_path)
+            _res = self._lint_sql(file_path)
         else:
-            return ToolResult(
+            _res = ToolResult(
                 success=True,
                 data=f"No lint rules for {ext} files"
             )
+        self._lint_cache_put_1203g5(file_path, _res)   # #1203g5
+        return _res
+
+    # ---- #1203g5 ---------------------------------------------------------------
+    _LINT_CACHE_MAX_1203G5 = 256
+
+    def _lint_content_key_1203g5(self, file_path) -> "str | None":
+        """sha256 of the file's bytes, or None when it cannot be read.
+
+        None disables the cache for this call rather than guessing a key -- a wrong key would
+        serve one file's verdict for another's bytes, which is worse than paying the second.
+        """
+        try:
+            import hashlib
+            with open(file_path, "rb") as _fh:
+                return hashlib.sha256(_fh.read()).hexdigest()
+        except Exception:
+            return None
+
+    def _lint_cache_get_1203g5(self, file_path):
+        """The verdict already computed for these exact bytes, or None."""
+        try:
+            _k = self._lint_content_key_1203g5(file_path)
+            if not _k:
+                return None
+            _c = getattr(self, "_lint_cache_1203g5", None)
+            if not isinstance(_c, dict):
+                return None
+            _hit = _c.get(_k)
+            if _hit is None:
+                return None
+            # A COPY, not the stored object. #1203g4 had just been fixed for the same hazard
+            # one layer up: a caller that annotates the result would otherwise be editing the
+            # cache, and every later hit would serve the annotation as if lint had said it.
+            # Lint reports have a median length of 77 bytes, so the copy is free beside the
+            # ~992ms it replaces; a failure to copy returns None and pays the lint instead.
+            try:
+                import copy as _copy
+                return _copy.deepcopy(_hit)
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    def _lint_cache_put_1203g5(self, file_path, result) -> None:
+        """Remember this verdict under the file's content hash. Never raises."""
+        try:
+            _k = self._lint_content_key_1203g5(file_path)
+            if not _k or result is None:
+                return
+            _c = getattr(self, "_lint_cache_1203g5", None)
+            if not isinstance(_c, dict):
+                _c = {}
+                self._lint_cache_1203g5 = _c
+            if len(_c) >= self._LINT_CACHE_MAX_1203G5:
+                _c.clear()
+            _c[_k] = result
+        except Exception:
+            pass
     
     def _syntax_check_python_635(self, file_path: Path) -> ToolResult:
         """#635 — answer the question when ruff is absent, instead of refusing.
