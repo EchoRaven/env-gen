@@ -51,8 +51,13 @@ def _run(tmp_path, endpoints=None):
     (r / "app" / "frontend" / "src").mkdir(parents=True)
     (r / "app" / "database" / "init").mkdir(parents=True)
     (r / "shared" / "hubs").mkdir(parents=True)
-    (r / "app" / "backend" / "main.py").write_text("x=1\n", encoding="utf-8")
+    (r / "app" / "backend" / "main.py").write_text(
+        'import os\nPORT = int(os.environ.get("API_PORT", "8081"))\n'
+        'DB = os.environ["DATABASE_URL"]\nx=1\n', encoding="utf-8")
     (r / "app" / "frontend" / "Dockerfile").write_text("FROM node\n", encoding="utf-8")
+    (r / "app" / "frontend" / "start.sh").write_text(
+        'envsubst \'$UI_PORT $API_URL\' < nginx.conf.template > /etc/nginx/nginx.conf\n'
+        'exec nginx -g "daemon off;"\n', encoding="utf-8")
     (r / "app" / "frontend" / "src" / "App.jsx").write_text("//\n", encoding="utf-8")
     (r / "app" / "database" / "init" / "01_init.sql").write_text("CREATE TABLE t();\n",
                                                                  encoding="utf-8")
@@ -309,7 +314,13 @@ def test_the_app_facing_names_track_the_same_knob(tmp_path):
 def test_the_contract_is_checked_against_the_real_app(tmp_path):
     """A rename in the scaffolder must be caught at export, not by a dead port in a VM."""
     r = _run(tmp_path)
-    assert X.check_app_env_contract(r) == [] or True   # fixture app is minimal
+    # #1203gb: `== [] or True` sat here and could not fail -- the author wrote `or True` because
+    # the fixture app DOES report findings, so the `== []` half was already false. What this test
+    # actually needs at this point is the positive control for the two assertions below: the
+    # unrenamed app must not ALREADY be warning about API_PORT/UI_PORT, or those two `any(...)`
+    # checks would pass on a baseline that contained them and the rename would prove nothing.
+    _before = X.check_app_env_contract(r)
+    assert not [_w for _w in _before if "API_PORT" in _w or "UI_PORT" in _w], _before
     (r / "app" / "backend" / "main.py").write_text('x=1\n', encoding="utf-8")
     (r / "app" / "frontend" / "start.sh").write_text('echo hi\n', encoding="utf-8")
     warns = X.check_app_env_contract(r)

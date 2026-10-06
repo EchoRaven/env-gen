@@ -94,7 +94,9 @@ def test_restore_leaves_a_fresh_default_alone(tmp_path):
     o2._fwdeliver_stuck_count = 0          # what a fresh milestone sets
     restore_gate_counters_1202ce(o2, KEY)
     assert o2._fwdeliver_stuck_count == 0
-    assert o2._fwdeliver_stuck_count >= 3 or True     # the comparison must not raise
+    # #1203gb: this was `>= 3 or True`, which cannot fail. The property the comment names is
+    # that the restored value is an INT -- a `None` would make every `>=` in the gate raise.
+    assert isinstance(o2._fwdeliver_stuck_count, int)
 
 
 def test_a_deliberate_none_still_round_trips(tmp_path):

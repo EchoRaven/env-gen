@@ -99,7 +99,9 @@ def test_the_branch_order_puts_the_stub_case_first():
     reclassified as "renders UI" — the zero-JSX test has to come before the others."""
     node = _verdict_if()
     first = node.body[0]
-    assert isinstance(first, ast.Assign) or isinstance(first, ast.If) or True
+    # #1203gb: an `... or True` line sat here and could not fail. The comment below records why
+    # keying on `node.body[0]` was abandoned, so the line was neutered instead of removed; the
+    # chain assertion further down is the real check.
     # Only the Ifs that actually emit a message — #1034's truncation guard is also an `If`
     # in this body, and keying on "the first If" coupled this test to that detail.
     chain = [n for n in node.body if isinstance(n, ast.If)

@@ -488,9 +488,14 @@ def test_V25_star_playwright_launch_app_triggered_is_functional():
 
 def test_jira_db_smoke_pass_default_classifier_not_called_on_pass():
     """A passing run never reaches the classifier (it's invoked only on failure).
-    Asserting here is a documentation reminder: classifier is for FAILED runs."""
-    # No call to classify(); this test exists to pin the documented expectation.
-    assert True
+
+    #1203gb: the body was `assert True`, and the docstring admitted it -- "asserting here is a
+    documentation reminder". `classifier.py` lives in this test package, so the decision this
+    names ("only on failure") is made by the harness that drives runs, not by anything importable
+    here; there is no call site in the product to assert against. A skip states that plainly, so
+    the suite reports it as not-a-check instead of as a pass."""
+    pytest.skip("documentation only: the invoke-on-failure rule lives outside this package, "
+                "so nothing here can fail if it is broken")
 
 
 # ---------------------------------------------------------------------------

@@ -23,7 +23,10 @@ def test_the_worse_of_the_two_scores_decides():
     import ast
     import inspect
     src = inspect.getsource(vf._persist_verdict)
-    assert "_worst942" in src and "similarity_live" in src.split("_worst942")[0][-600:] or True
+    # #1203gb: an `... or True` soft source check sat here and could not fail -- and it used a
+    # 600-byte window, which #943 forbids. The AST walk below is the real check; `src` is still
+    # read, so the import above is not dead.
+    assert "_worst942" in src, "the worse-of-two helper is gone from _persist_verdict"
     tree = ast.parse(inspect.getsource(vf))
     fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
           and n.name == "_persist_verdict"][0]

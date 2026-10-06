@@ -23,6 +23,7 @@ about whether this run can start.
 """
 import ast
 import os
+from pathlib import Path
 import socket
 import sys
 
@@ -120,13 +121,42 @@ def test_the_note_says_what_changed_and_why():
     assert "92 of 92" in src, "the measurement that justifies the split is gone"
 
 
+def _taken_probe():
+    """The real `_taken_1202xq`, compiled from the orchestrator and callable.
+
+    #1203gb: this test's docstring says "the probe itself, EXERCISED rather than read" and its
+    body ended in `assert True` — it bound a socket and then asserted nothing, so it could not
+    fail however the probe behaved. The predicate is nested inside `_preflight_check`, which is
+    why the siblings read it via AST; it closes over only `socket` and `_probe_faults_1202xq`,
+    so it can be compiled and CALLED with those supplied."""
+    tree = ast.parse(Path(_ORCH).read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+              and n.name == "_taken_1202xq")
+    ns = {"socket": socket, "_probe_faults_1202xq": {}}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), "<_taken_1202xq>", "exec"), ns)
+    return ns["_taken_1202xq"], ns["_probe_faults_1202xq"]
+
+
 def test_a_free_port_is_not_reported_blocked():
     """The probe itself, exercised rather than read."""
+    taken, faults = _taken_probe()
     port = _free_port()
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        s.bind(("0.0.0.0", port))          # bind succeeds -> not taken
-    assert True
+    assert taken(port) is False, "a free port was reported as taken"
+    assert faults == {}, faults
+
+
+def test_a_held_port_is_reported_blocked():
+    """The other half: the probe must say True for a port something else is holding, or the
+    whole verdict is vacuous in the direction that matters."""
+    taken, faults = _taken_probe()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+        held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        held.bind(("0.0.0.0", 0))
+        held.listen(1)
+        port = held.getsockname()[1]
+        assert taken(port) is True, "a port held by a live listener read as free"
+    assert faults == {}, faults
 
 
 def test_a_held_port_is_detected():
