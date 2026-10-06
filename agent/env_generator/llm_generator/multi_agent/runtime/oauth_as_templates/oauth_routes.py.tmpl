@@ -321,7 +321,29 @@ def build_router(db: OAuthStore, jwt_manager: JWTManager) -> APIRouter:
             ttl_seconds=ACCESS_TOKEN_TTL,
         )
 
+    # #1203fw: `signup` is the spelling the generated apps ask for, and the framework served
+    # only `register`. Measured over the corpus by registered path and by hand-written handler
+    # in `custom_routes.py`:
+    #
+    #     /auth/register      184 registered   10 hand-written
+    #     /auth/login         184 registered   16 hand-written
+    #     /auth/signup         35 registered   38 hand-written   <- served by nobody
+    #     /api/auth/signup     29 registered   31 hand-written   <- served by nobody
+    #
+    # So 69 lanes hand-rolled a registration handler -- password hashing, tenant resolution,
+    # token minting -- for a surface the framework already claims as its own
+    # (`FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl` names `/auth/` and `/api/auth/`, and the
+    # middleware exempts them from business-auth enforcement for that reason). Each hand-roll
+    # can reintroduce a bug this handler has already fixed -- tiktok-r163 filed exactly that:
+    # "POST /api/auth/signup ignores X-Tenant-Id and creates user in default tenant", which is
+    # the tenant resolution the login handler below carries a comment about.
+    #
+    # One alias covers both rows: the skeleton mounts this router BARE and again with
+    # `prefix="/api"` (`include_router(_as_router)` + `include_router(_as_router, prefix="/api")`),
+    # so `/api/auth/signup` follows from `/auth/signup` for free. `/api/auth/register` and
+    # `/api/auth/login` were already served the same way -- the gap was only the spelling.
     @router.post("/auth/register", status_code=201)
+    @router.post("/auth/signup", status_code=201)
     async def auth_register(request: Request) -> JSONResponse:
         try:
             body = await request.json()
