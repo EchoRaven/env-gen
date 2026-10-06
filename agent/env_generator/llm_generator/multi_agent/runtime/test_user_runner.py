@@ -29,7 +29,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 try:   # #646: one viewport for the whole pipeline (see _bootstrap for why)
     from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
@@ -70,6 +70,19 @@ _PROBE = """() => {
 
 
 _TOKEN_JS = "() => localStorage.getItem('access_token') || localStorage.getItem('token')"
+
+# #1203g1: the response URLs that count as "the app talked to its auth surface". Taken from the
+# framework's own list so the watcher and the surface cannot drift; `/.well-known/` is dropped
+# because a discovery document is not a login attempt.
+# NO FALLBACK. The first version of this guarded the import with an `except` that re-listed the
+# prefixes by hand -- and the import was WRONG (the constant lives in `lifecycle`, not
+# `registryhub`), so the hand-written copy was silently the one in use: the exact drift the
+# import exists to prevent, hidden by its own safety net. An ImportError here is a real
+# programming error and must be loud.
+from .lifecycle import FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl as _FW_AUTH_1203G1
+
+_AUTH_OBSERVED_PREFIXES_1203G1 = tuple(
+    _p for _p in _FW_AUTH_1203G1 if "well-known" not in _p)
 # A URL still on an auth route means the flow did not get the user into the app.
 _AUTH_ROUTE_SEGS = ("/login", "/signup", "/signin", "/register")
 
@@ -664,7 +677,22 @@ async def run_browser_test_user(
 
                     def _on_auth_resp(_r):
                         try:
-                            if "/auth/" in _r.url:
+                            # #1203g1: WATCH THE SURFACE THE FRAMEWORK ACTUALLY SERVES. This
+                            # tested `"/auth/" in url`, which does not match `/oauth/token` --
+                            # the framework's own OAuth2 token endpoint -- nor `/api/oauth/*`.
+                            # An app logging in there produces an EMPTY `_auth_status`, and the
+                            # note ladder below reads empty as "the form sent no /auth request
+                            # -- the form is not wired to the API". Imported rather than
+                            # re-listed, for the reason `lifecycle` gives about this exact
+                            # constant: six modules re-listed the auth surface and all six
+                            # omitted the same three.
+                            #
+                            # Measured: 0 frontends in the corpus call `/oauth/` today, so this
+                            # changes no existing note -- it is the drift that is being closed,
+                            # not a live miss. It cannot change a VERDICT either: `ok_auth` is
+                            # `bool(token) and navigated and landed` and never reads
+                            # `_auth_status`, and `browser_unusable_signals` does not read it.
+                            if any(_seg in _r.url for _seg in _AUTH_OBSERVED_PREFIXES_1203G1):
                                 _auth_status.append(int(_r.status))
                         except Exception:
                             pass
@@ -688,25 +716,9 @@ async def run_browser_test_user(
                         _affordance = False
                     landed = _landed_in_the_app_1126(path, "/login", _affordance)
                     ok_auth = bool(token) and navigated and landed
-                    if ok_auth:
-                        _auth_note = ""
-                    elif token and navigated and not landed:
-                        # #1126: credentials were fine -- the POST-LOGIN DESTINATION is wrong.
-                        _auth_note = (
-                            f"login SUCCEEDED (token stored) but landed on {path!r}, which "
-                            "still shows a way to sign in — the user is back on the signed-out "
-                            "page. Redirect to a route that requires auth, not to '/'.")
-                    elif not _auth_status:
-                        _auth_note = (f"submit sent NO /auth request (token={bool(token)} "
-                                      f"url={url}) — the form is not wired to the API")
-                    elif all(s >= 400 for s in _auth_status):
-                        _auth_note = (f"the form IS wired but /auth returned "
-                                      f"{sorted(set(_auth_status))} — credentials / backend, "
-                                      f"NOT a wiring bug")
-                    else:
-                        _auth_note = (f"/auth returned {sorted(set(_auth_status))} but "
-                                      f"token={bool(token)} and navigated={navigated} — "
-                                      f"response shape or post-login handling")
+                    _auth_note = auth_note_1203g1(
+                        ok_auth=ok_auth, token=token, navigated=navigated, landed=landed,
+                        path=path, url=url, auth_status=_auth_status)
                     step("auth flow stores a token + navigates into the app", ok_auth, _auth_note)
                 except Exception as exc:
                     step("auth flow", False, f"exception: {exc}")
@@ -927,6 +939,68 @@ async def run_browser_test_user(
         return report
 
     return _finalize_walkthrough(report)
+
+
+def auth_note_1203g1(*, ok_auth: bool, token: Any, navigated: bool, landed: bool,
+                     path: str, url: str, auth_status: Sequence[int]) -> str:
+    """The auth step's NOTE, as a pure function of what the drive observed.
+
+    Extracted for the same reason `_finalize_walkthrough` was -- "so the HOLLOW verdict is
+    unit-testable with a synthetic report (the browser path can't run in the test suite)". The
+    ladder had grown five branches, one of them (#1203g1) printing a claim its own parenthetical
+    contradicted, and none of it could be exercised without Playwright.
+
+    Returns "" when the auth flow worked. Never raises.
+    """
+    if ok_auth:
+        return ""
+    elif token and navigated and not landed:
+        # #1126: credentials were fine -- the POST-LOGIN DESTINATION is wrong.
+        return (
+            f"login SUCCEEDED (token stored) but landed on {path!r}, which "
+            "still shows a way to sign in — the user is back on the signed-out "
+            "page. Redirect to a route that requires auth, not to '/'.")
+    elif not auth_status and token:
+        # #1203g1: A STORED TOKEN CONTRADICTS "NOT WIRED", so the claim is
+        # withdrawn here rather than printed over its own counter-evidence.
+        #
+        # This branch printed `(token=True ...) — the form is not wired to the
+        # API` three times, in r119, r124 and r164 (r164's task_68ca737566). A
+        # token in storage is proof that SOMETHING obtained one, and all three
+        # apps store it only inside an API response handler behind `if (token)`
+        # -- checked in their own source -- so "not wired" is false on its face.
+        #
+        # #612 wrote the rule this restores: "REPORT THE OBSERVATION, NOT A
+        # GUESS AT ITS CAUSE ... the causal clause was an inference the harness
+        # had no basis for, and it is load-bearing: it lands in the failure
+        # ledger and sends the frontend lane to re-wire a form that is already
+        # wired." It removed the unconditional claim from the ladder and left it
+        # unconditional INSIDE this branch.
+        #
+        # What is said instead is only what was seen, plus the two things the
+        # lane can check. One of them is about the HARNESS: `_drive_auth_form`
+        # returns the stored token BEFORE clicking, so a token present when the
+        # drive starts means the form was never submitted at all.
+        return (
+            f"a token IS stored (url={url}) but the listener saw no response "
+            f"from the auth surface, and the page did not leave the login "
+            f"route — so this is NOT evidence the form is unwired. Check two "
+            f"things: (1) does the login request go to a path under /auth/ or "
+            f"/oauth/ (those are the only ones watched); (2) does the app "
+            f"navigate away after storing the token. Note the harness returns "
+            f"a pre-existing token WITHOUT submitting the form, so a token "
+            f"already in storage produces exactly this reading.")
+    elif not auth_status:
+        return (f"submit sent NO /auth request (token={bool(token)} "
+                      f"url={url}) — the form is not wired to the API")
+    elif all(s >= 400 for s in auth_status):
+        return (f"the form IS wired but /auth returned "
+                      f"{sorted(set(auth_status))} — credentials / backend, "
+                      f"NOT a wiring bug")
+    else:
+        return (f"/auth returned {sorted(set(auth_status))} but "
+                      f"token={bool(token)} and navigated={navigated} — "
+                      f"response shape or post-login handling")
 
 
 def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:

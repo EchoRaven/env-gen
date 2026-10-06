@@ -52,19 +52,47 @@ def _after(text: str, i: int, until: str = "\ndef ") -> str:
 
 # --- the claim is no longer unconditional ------------------------------------------------
 
+def _ladder_strings(src):
+    """The string constants of the note ladder, over the AST.
+
+    #1203g1 extracted the ladder into `auth_note_1203g1` (same reason `_finalize_walkthrough`
+    was extracted: the browser path cannot run under pytest). Anchoring on `src.index("#612")`
+    and reading to the next `def` stopped covering it the moment that happened -- the first
+    `#612` mention is now in a comment several functions earlier. The function is the landmark.
+
+    One entry per RETURNED note, not per string Constant: the notes are f-strings, so the AST
+    splits each into several pieces and "submit sent NO /auth request" and "not wired to the API"
+    land in different ones -- a first version of this helper compared them as if they were
+    separate notes. `ast.unparse` puts each note back together.
+    """
+    import ast
+    fn = next(n for n in ast.walk(ast.parse(src))
+              if isinstance(n, ast.FunctionDef) and n.name == "auth_note_1203g1")
+    return [ast.unparse(n.value) for n in ast.walk(fn)
+            if isinstance(n, ast.Return) and n.value is not None]
+
+
 def test_the_unconditional_not_wired_claim_is_gone(src):
-    i = src.index("#612")
-    window = _after(src, i)
-    assert 'else f"login did nothing' not in window
-    # it survives ONLY inside the branch that has evidence for it
-    j = window.index("submit sent NO /auth request")
-    assert "not wired to the API" in window[j:]
+    strings = _ladder_strings(src)
+    assert strings, "the ladder has no strings -- the anchor is wrong"
+    assert not any("login did nothing" in t for t in strings)
+    # it survives ONLY in the one branch that has evidence for it
+    holders = [t for t in strings if "not wired to the API" in t]
+    assert len(holders) == 1, holders
+    assert "submit sent NO /auth request" in holders[0], holders[0]
 
 
 def test_the_no_request_branch_is_the_only_one_that_says_not_wired(src):
-    i = src.index("#612")
-    window = _after(src, i)
-    assert window.count("not wired to the API") == 2      # the branch + the comment's quote
+    """#1203g1: counted over the ladder's STRING CONSTANTS, so the comments that quote the
+    claim while explaining it are not counted as the claim."""
+    assert sum("not wired to the API" in t for t in _ladder_strings(src)) == 1
+
+
+def test_a_stored_token_is_not_called_unwired_1203g1(src):
+    """#1203g1 — the gap #612 left: the claim stayed unconditional INSIDE its branch, and
+    printed `token=True` beside itself in r119, r124 and r164."""
+    strings = _ladder_strings(src)
+    assert any("NOT evidence the form is unwired" in t for t in strings), strings
 
 
 def test_a_4xx_is_reported_as_credentials_not_wiring(src):
@@ -78,10 +106,19 @@ def test_a_2xx_without_a_token_is_reported_as_shape(src):
 
 
 def test_the_statuses_are_captured_from_the_page(src):
-    i = src.index("def _on_auth_resp")
-    window = src[i - 200:i + 500]
+    """#1203g1: landmarks at BOTH ends. This read `src[i - 200:i + 500]` -- a fixed byte window,
+    which `_after`'s docstring sixty lines up in THIS file forbids, and which broke the moment
+    the comment inside the listener grew (the #1202w3 shape: a file can state the rule and still
+    break it one test later). And the watched surface is no longer a literal: `"/auth/"` misses
+    `/oauth/token`, which is the framework's OWN token endpoint."""
+    i = src.index("_auth_status: List[int] = []")
+    window = _after(src, i, "token = await _drive_auth_form")
+    assert "def _on_auth_resp" in window
     assert 'page.on("response", _on_auth_resp)' in window
-    assert '"/auth/" in _r.url' in window
+    assert "_AUTH_OBSERVED_PREFIXES_1203G1" in window, window[-300:]
+    # and the surface did not SHRINK: what #612 watched is still watched
+    assert "/auth/" in r._AUTH_OBSERVED_PREFIXES_1203G1
+    assert "/oauth/" in r._AUTH_OBSERVED_PREFIXES_1203G1
 
 
 def test_the_listener_is_removed_after_the_drive(src):
