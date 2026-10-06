@@ -865,6 +865,66 @@ def _ui_evidence_report_1203fx(orch) -> Dict[str, Any]:
         return {}
 
 
+_INCOMPLETE_TASK_ACTION_1203G3 = {
+    "implement_endpoint": ("write the route handler in app/backend and then "
+                           "registryhub_register_endpoint(..., status='implemented')"),
+    "implement_table": ("create the table and then "
+                        "registryhub_register_table(..., status='implemented')"),
+    "validate_api_smoke": ("re-run run_validation so a PASSING contract-test record "
+                           "exists for the endpoint"),
+}
+
+
+def incomplete_task_reasons_1203g3(tasks: Sequence[Any]) -> str:
+    """#1203g3: the REASON each required task is still open, and the action that clears it.
+
+    `incomplete_required_tasks` computes a per-task `reason` -- one of exactly three, from its
+    three branches -- and the re-wake message read only `id` and `assignee`. What it offered
+    instead was a single parenthetical, "(verifier: re-run run_validation to record the missing
+    per-endpoint contract tests)", which is right for ONE of the three kinds.
+
+    Replayed over every run directory: 9 runs end with required tasks still open, 123 of them,
+    and 81 (66%) are assigned to BACKEND -- `implement_endpoint` 66 and `implement_table` 15,
+    whose reasons are "endpoint not implemented in registry" and "table not implemented in
+    registry". Re-running run_validation clears neither. So two thirds of the recipients were
+    handed a verifier's instruction while the sentence that applied to them was discarded one
+    line earlier.
+
+    Additive and tolerant: "" when the tasks carry no reason, so a caller with an older payload
+    keeps the previous text. Never raises -- this runs on the remediation path.
+    """
+    try:
+        rows: List[str] = []
+        _kinds: List[str] = []
+        for _t in (tasks or []):
+            if not isinstance(_t, Mapping):
+                continue
+            _r = str(_t.get("reason") or "").strip()
+            if not _r:
+                continue
+            _k = str(_t.get("kind") or "").strip()
+            if _k and _k not in _kinds:
+                _kinds.append(_k)
+            rows.append("%s (%s) — %s" % (_t.get("id"), _k or "?", _r))
+        if not rows:
+            return ""
+        _shown = rows[:8]
+        _cut = len(rows) - len(_shown)
+        out = ("\n\nWHY EACH IS STILL OPEN (the gate's own reason, not a guess):\n- "
+               + "\n- ".join(_shown))
+        if _cut > 0:
+            out += "\n- (+%d more with the same shape)" % _cut
+        _acts = [(_k, _INCOMPLETE_TASK_ACTION_1203G3[_k])
+                 for _k in _kinds if _k in _INCOMPLETE_TASK_ACTION_1203G3]
+        if _acts:
+            out += ("\n\nWHAT CLEARS EACH KIND:\n- "
+                    + "\n- ".join("%s: %s" % (_k, _a) for _k, _a in _acts))
+        return out
+    except Exception as _exc_1203g3:
+        _swallowed_1152("incomplete_task_reasons_1203g3", _exc_1203g3, "'' = ids only")
+        return ""
+
+
 def ui_evidence_failed_evidence_1203fx(orch, pages: Sequence[Any]) -> str:
     """#1203fx: REPLAY what the failing UI record said, on the branch that blocks most often.
 
@@ -3530,14 +3590,18 @@ class RemediationDispatcher:
                         for _a, _ts in _by_assignee.items():
                             _ids = join_capped([str(t.get("id")) for t in _ts],
                                                len(_ts), cap=8, sep=", ")
+                            # #1203g3: the per-task REASON the gate already computed, plus the
+                            # action that clears that KIND. The parenthetical this replaces was
+                            # a verifier instruction sent to every assignee, and 81 of the 123
+                            # open tasks in the corpus belong to BACKEND.
+                            _why1203g3 = incomplete_task_reasons_1203g3(_ts)
                             _wmsg = _create_message(
                                 source_agent_id="orchestrator", target_agent_id=_a,
                                 content=(
                                     f"URGENT: delivery is blocked — you have {len(_ts)} "
                                     f"unfinished required task(s) whose evidence is still "
-                                    f"missing ({_ids}). Claim + COMPLETE them now (verifier: "
-                                    "re-run run_validation to record the missing per-endpoint "
-                                    "contract tests), then finish."),
+                                    f"missing ({_ids}). Claim + COMPLETE them now, then "
+                                    f"finish.{_why1203g3}"),
                                 msg_type="task_ready", priority="urgent", persist=True,
                                 tags=[_itn, "remediation"])
                             if _a == "verifier":
