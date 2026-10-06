@@ -14,6 +14,8 @@ A 429 rate limit and an ordinary 400 request error are NOT terminal (still bound
 """
 import asyncio
 import sys
+
+import pytest
 from pathlib import Path
 
 THIS = Path(__file__).resolve().parent
@@ -69,11 +71,11 @@ def test_terminal_error_fails_fast_and_latches():
         calls["n"] += 1
         raise _FakeErr("Spend exceeded. Budget for mg key mg-api-71b41b05af9a", 400)
 
-    try:
+    # #1203gc: this was `assert False, "should have raised"` inside the try, with
+    # `except Exception: pass` below it -- AssertionError IS an Exception, so the guard was
+    # swallowed by its own handler and a non-raising _retry_with_backoff passed this line.
+    with pytest.raises(Exception):
         asyncio.run(c._retry_with_backoff(boom))
-        assert False, "should have raised"
-    except Exception:
-        pass
     assert calls["n"] == 1, f"terminal error must NOT be retried, got {calls['n']} calls"
     assert L.terminal_llm_error() is not None
     assert "spend exceeded" in L.terminal_llm_error().lower()

@@ -30,13 +30,34 @@ else
 fi
 
 printf 'pid=%s\nsession=%s\nstarted=%s\nargs=%s\n' \
-  "$$" "${CLAUDE_SESSION_ID:-unknown}" "$(date -Is)" "${*:-tests/ -q}" > "$INFO"
+  "$$" "${CLAUDE_SESSION_ID:-unknown}" "$(date -Is)" "${*:-<every test root, see below>}" > "$INFO"
 trap 'rm -f "$INFO"' EXIT
 
 export ENVGEN_SUITE_LOCK_HELD=1   # conftest: this run IS the holder, do not warn
 PY=${SUITE_PYTHON:-/home/haibotong/miniconda3/envs/dt/bin/python}
-[ $# -eq 0 ] && set -- tests/ -q
 cd agent || exit 1
+
+# #1203gc: the default used to be `tests/` alone, and `tests/` means agent/tests/ from here.
+# Two other test roots exist in this repo and the gate never ran either of them:
+#   env_generator/llm_generator/multi_agent/tests/   78 tests, 1.9s -- lifecycle,
+#       database_scaffold, oauth_scaffold, mcp_scaffold, dockerfile_lint, codehub.service
+#   ../tests/                                        41 tests, 1.7s -- approval endpoints,
+#       multitenant auth, chat console, generation task db
+# 119 passing tests on live product modules, 3.6s, outside every patch gate since 2026-06-18
+# (3b71e337 made both roots local-only; agent/tests is local-only too and IS run, so being
+# untracked was never the reason). lifecycle.py in particular is the canonical endpoint-kind
+# predicate module, patched as recently as #1203fy against the agent/tests suite alone.
+# Absent roots are skipped rather than failing collection, because all three are untracked and
+# a fresh clone has none of them.
+if [ $# -eq 0 ]; then
+  ROOTS=""
+  for _root in tests ../tests env_generator/llm_generator/multi_agent/tests; do
+    [ -d "$_root" ] && ROOTS="$ROOTS $_root"
+  done
+  echo "[suite] roots:$ROOTS"
+  # shellcheck disable=SC2086  # word splitting is what builds the argv here
+  set -- $ROOTS -q
+fi
 "$PY" -m pytest "$@"
 rc=$?
 echo "[suite] exit=$rc"

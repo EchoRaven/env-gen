@@ -10,21 +10,40 @@ THIS_DIR = Path(__file__).resolve().parent
 AGENT_DIR = THIS_DIR.parent
 sys.path.insert(0, str(AGENT_DIR / "env_generator" / "llm_generator"))
 
-REAL_LOGS = AGENT_DIR / ".agent_logs"
+def _newest_real_logs():
+    """The most recently written `.agent_logs` that actually holds events.
+
+    Prefers where runs write today; falls back to the pre-migration location so a host that
+    still has old-style logs is not skipped. Returns None only when neither exists, which is
+    the fresh-clone case the skip is for."""
+    cands = list((AGENT_DIR.parent / "generated").glob("*/.agent_logs"))
+    cands.append(AGENT_DIR / ".agent_logs")
+    live = [d for d in cands if d.is_dir() and any(d.rglob("*.jsonl"))]
+    return max(live, key=lambda d: d.stat().st_mtime) if live else None
+
+
+REAL_LOGS = _newest_real_logs()
+_HAVE_LOGS = REAL_LOGS is not None
+_WHY = "no .agent_logs/ with *.jsonl under generated/*/ or agent/ — a fresh clone has no runs"
 
 
 class ObservabilityE2ETests(unittest.TestCase):
-    @unittest.skipUnless(REAL_LOGS.exists() and any(REAL_LOGS.rglob("*.jsonl")),
-                          "no real .agent_logs/ event files (*.jsonl) present")
+    @unittest.skipUnless(_HAVE_LOGS, _WHY)
     def test_aggregate_real_logs_produces_nontrivial_stats(self) -> None:
         from multi_agent.runtime.observability.log_parser import aggregate_logs
         stats = aggregate_logs(REAL_LOGS)
-        # We've shipped 17 cutovers worth of generations - expect substantial data
-        self.assertGreater(stats.total_agents, 0)
+        files = sorted(REAL_LOGS.rglob("*.jsonl"))
+        # #1203gc: `> 0` was all this asserted, which a parser that read one file and dropped the
+        # rest would satisfy. Two exact invariants hold instead, measured over r161-r164 (8 agent
+        # dirs each; 33/21/20/33 files; 14997/9575/7836/18181 events): every agent DIRECTORY is
+        # counted, and every LINE becomes an event. Both are tree-independent.
+        self.assertEqual(stats.total_agents, len({f.parent for f in files}),
+                         "an agent directory was dropped")
+        lines = sum(sum(1 for _ in f.open(encoding="utf-8", errors="ignore")) for f in files)
+        self.assertEqual(stats.total_events, lines, "events and log lines disagree")
         self.assertGreater(stats.total_events, 0)
 
-    @unittest.skipUnless(REAL_LOGS.exists() and any(REAL_LOGS.rglob("*.jsonl")),
-                          "no real .agent_logs/ event files (*.jsonl) present")
+    @unittest.skipUnless(_HAVE_LOGS, _WHY)
     def test_render_real_dashboard_produces_valid_html(self) -> None:
         from multi_agent.runtime.observability.log_parser import aggregate_logs
         from multi_agent.runtime.observability.dashboard import render_dashboard

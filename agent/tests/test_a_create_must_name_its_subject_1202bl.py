@@ -33,12 +33,6 @@ _SRC = (THIS_DIR.parent / "env_generator" / "llm_generator" / "multi_agent" / "r
         / "route_projector.py")
 
 
-def _block_else():
-    """The no-subject-FK branch of the same emission."""
-    b = _block()
-    return b[b.index("else:"):]
-
-
 def _block():
     """Landmark-bounded (#943): the marker to the end of its own emission."""
     src = _SRC.read_text(encoding="utf-8")
@@ -82,8 +76,7 @@ class CreateMustNameItsSubjectTests(unittest.TestCase):
         profile with no name, which the picker renders as a blank tile. No subject FK
         exists to require, so the branch above cannot fire; the create must still have
         been given a field."""
-        b = _block()
-        b = b[b.index("else:"):]
+        b = _block_else()      # #1203gc: the helper was defined twice and called nowhere
         self.assertIn("if not valid:", b)
         self.assertIn("status_code=400", b)
 

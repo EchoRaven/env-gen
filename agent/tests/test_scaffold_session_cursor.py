@@ -59,16 +59,25 @@ def test_session_exposes_cursor_delegating_to_driver_connection():
     assert out[0] == "RAW_CURSOR"            # delegated to the raw DBAPI cursor
     (a, k), = drv.calls
     assert a == ()                           # no positional name passed through
-    # dict rows requested by default when a psycopg lib is present (env-dependent)
+    # dict rows requested by default when a psycopg lib is present (env-dependent).
+    # #1203gc: both assertions used to sit inside `try: ... except Exception:` blocks, which
+    # catch AssertionError, so NEITHER could fail -- a _Session that injected no row factory at
+    # all passed this test. Decide which library is present FIRST (catching only ImportError),
+    # then assert outside the try. psycopg is installed here and `row_factory=dict_row` is
+    # really being passed, so this now has something to hold onto.
     try:
         from psycopg.rows import dict_row  # noqa: F401
-        assert k.get("row_factory") is not None
-    except Exception:
+        _lib = "psycopg"
+    except ImportError:
         try:
             from psycopg2.extras import RealDictCursor  # noqa: F401
-            assert k.get("cursor_factory") is not None
-        except Exception:
-            pass  # neither lib installed here — delegation itself still holds
+            _lib = "psycopg2"
+        except ImportError:
+            _lib = None          # neither installed — delegation itself still holds
+    if _lib == "psycopg":
+        assert k.get("row_factory") is not None, k
+    elif _lib == "psycopg2":
+        assert k.get("cursor_factory") is not None, k
 
 
 def test_cursor_respects_explicit_positional_name():

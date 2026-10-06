@@ -71,6 +71,94 @@ def test_no_test_in_the_suite_asserts_something_unfalsifiable():
     )
 
 
+# --- #1203gc: an assert swallowed by the handler that wraps it ----------------------------------
+# A second way to write a check that cannot fail: put the `assert` inside a `try` whose handler
+# catches Exception. AssertionError IS an Exception, so the handler eats the verdict.
+#   test_326:  `assert False, "should have raised"` then `except Exception: pass`
+#              -- a _retry_with_backoff that stopped raising passed that line
+#   scaffold_session_cursor: `assert k.get("row_factory") is not None` then `except Exception`,
+#              nested twice -- a Session injecting NO row factory passed the test
+# A handler that re-raises, asserts, or calls pytest.fail still fails the test, so those are not
+# flagged; two sites in this suite rely on exactly that and are fine.
+
+_SWALLOWING_EXC = {"Exception", "BaseException", "AssertionError"}
+
+
+def _handler_catches_assertionerror(handler: ast.ExceptHandler) -> bool:
+    if handler.type is None:
+        return True                                    # bare `except:`
+    named = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    for n in named:
+        if isinstance(n, ast.Name) and n.id in _SWALLOWING_EXC:
+            return True
+        if isinstance(n, ast.Attribute) and n.attr in _SWALLOWING_EXC:
+            return True
+    return False
+
+
+def _handler_still_fails(handler: ast.ExceptHandler) -> bool:
+    for n in ast.walk(handler):
+        if isinstance(n, (ast.Raise, ast.Assert)):
+            return True
+        if isinstance(n, ast.Call):
+            name = getattr(n.func, "attr", None) or getattr(n.func, "id", None)
+            if name in ("fail", "xfail", "skip"):
+                return True
+    return False
+
+
+def swallowed_asserts_1203gc(tree: ast.AST):
+    """Every `try` whose body asserts and whose handler discards the AssertionError."""
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        if not any(isinstance(x, ast.Assert) for stmt in node.body for x in ast.walk(stmt)):
+            continue
+        for h in node.handlers:
+            if _handler_catches_assertionerror(h) and not _handler_still_fails(h):
+                found.append((node.lineno, "the handler on line %d discards the assert's "
+                                           "AssertionError" % h.lineno))
+    return found
+
+
+def test_no_assertion_in_the_suite_is_swallowed_by_its_own_handler():
+    offenders = []
+    for path in sorted(TESTS_DIR.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for lineno, why in swallowed_asserts_1203gc(tree):
+            offenders.append("%s:%d -- %s" % (path.relative_to(TESTS_DIR), lineno, why))
+    assert not offenders, (
+        "These assertions are caught and discarded by the try that wraps them. Decide which "
+        "exception you meant to tolerate (`except ImportError:`) or use `pytest.raises`:\n  "
+        + "\n  ".join(offenders))
+
+
+def test_the_swallow_predicate_catches_the_shape_that_shipped():
+    shipped = (
+        "try:\n    assert False, 'should have raised'\nexcept Exception:\n    pass\n",
+        "try:\n    assert k is not None\nexcept Exception:\n    pass\n",
+        "try:\n    assert x\nexcept:\n    pass\n",
+        "try:\n    assert x\nexcept (ValueError, Exception):\n    pass\n",
+    )
+    for src in shipped:
+        assert swallowed_asserts_1203gc(ast.parse(src)), src
+
+
+def test_the_swallow_predicate_leaves_handlers_that_still_fail_alone():
+    for src in (
+        "try:\n    assert x\nexcept Exception:\n    raise\n",
+        "try:\n    assert x\nexcept Exception as e:\n    assert 'boom' in str(e)\n",
+        "try:\n    assert x\nexcept Exception as e:\n    pytest.fail(str(e))\n",
+        "try:\n    assert x\nexcept ImportError:\n    pass\n",
+        "try:\n    y = f()\nexcept Exception:\n    pass\n",       # no assert in the body
+    ):
+        assert not swallowed_asserts_1203gc(ast.parse(src)), src
+
+
 # --- the ratchet's own power, pinned on the six lines it was built from -------------------------
 # Each string below is a line that really shipped in this suite. If the predicate stops catching
 # one, the counter-test goes red rather than the ratchet quietly going blind.
