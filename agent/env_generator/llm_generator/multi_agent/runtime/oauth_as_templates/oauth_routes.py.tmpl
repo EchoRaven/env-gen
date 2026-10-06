@@ -373,20 +373,39 @@ def build_router(db: OAuthStore, jwt_manager: JWTManager) -> APIRouter:
         tenant_id = str(body.get("tenant_id") or request.headers.get("x-tenant-id") or "default")
         email = str(body.get("email") or "").strip()
         username = str(body.get("username") or "").strip()
+        # #1203fv: `identifier` is the single-field shape a login form actually posts, and it is
+        # what the generated contracts themselves declare: 27 runs register this endpoint with
+        # `request.identifier` while this handler read only `email`/`username`. Tried against
+        # BOTH lookups because an identifier may be either, and only after the explicit fields
+        # so a body that names both keeps its old meaning exactly.
+        identifier = str(body.get("identifier") or "").strip()
         user = None
         try:
             if email:
                 user = db.verify_user_password(email, password, tenant_id=tenant_id)
             if not user and username:
                 user = db.verify_user_by_username(username, password, tenant_id=tenant_id)
+            if not user and identifier:
+                user = db.verify_user_password(identifier, password, tenant_id=tenant_id)
+                if not user:
+                    user = db.verify_user_by_username(
+                        identifier, password, tenant_id=tenant_id)
         except DatabaseUnavailable:  # #555: Postgres momentarily down → RETRYABLE 503, not 500
             return JSONResponse(_DB_DOWN_503, status_code=503, headers=_RETRY_AFTER)
         if not user:
             return JSONResponse({"detail": "invalid credentials"}, status_code=401)
         token = _mint_user_token(request, user, client_id="auth")
+        # #1203fv: `user`, like /auth/register twenty lines up. The asymmetry was indefensible on
+        # its own terms -- a client that stores the user object at registration had nothing to
+        # re-read after a login -- and 27 runs' own contracts declare `response.user` here.
+        # Measured cost of not sending it: 22 runs' backend lanes added a SECOND
+        # `@router.post("/auth/login")` in `custom_routes.py` to shadow this handler, in a file
+        # whose generated header says the auth surface is framework-owned and must not be
+        # hand-edited -- and `deliverability_guard_tampering` then blocks the delivery for the
+        # shadow. 321 bug tasks across 87 runs name `auth/login` in their title.
         return JSONResponse(
             {"access_token": token, "token_type": "Bearer",
-             "expires_in": ACCESS_TOKEN_TTL})
+             "expires_in": ACCESS_TOKEN_TTL, "user": user})
 
     return router
 
