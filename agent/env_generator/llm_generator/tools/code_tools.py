@@ -47,6 +47,17 @@ from typing import Optional
 
 # ===== Grep Tool =====
 
+def _binary_note_1203g6(n: int) -> str:
+    """#1203g6: what grep did NOT read, in its own result. "" when nothing was skipped."""
+    try:
+        n = int(n or 0)
+    except Exception:
+        return ""
+    if n <= 0:
+        return ""
+    return ", %d binary file(s) skipped" % n
+
+
 class GrepTool(BaseTool):
     """
     Search file contents using regex.
@@ -155,7 +166,35 @@ Examples:
                         files.append(Path(root) / f)
         
         # Search files
+        skipped_binary_1203g6 = 0        # #1203g6
         for file_path in files:
+            # #1203g6: READING 400 MB OF MP4 LINE BY LINE.
+            #
+            # `grep` is the third most expensive tool in the corpus by wall clock -- 857s of
+            # 7214s -- and its per-call cost varies a thousandfold: r164's backend averaged
+            # 16ms over 16 calls while r153's backend averaged 9722ms over 6, and one call in
+            # r148 took 28.2 SECONDS. The loop below opens every file matching `include`
+            # (default `*`) in text mode with `errors='replace'` and iterates its lines.
+            #
+            # Measured on the app trees it searches: tiktok-r153 is 412.1 MB across 205 files,
+            # of which 411.5 MB -- 99.9% -- is BINARY: 35 seed `.mp4` files totalling 406.8 MB
+            # (one is 30.6 MB), plus 68 jpg/jpeg/woff2. The TEXT is 0.5 MB in 97 files.
+            # r152 is identical; googlemaps-r16 is 140.3 MB of binary across 805 files.
+            #
+            # A regex match inside video bytes is never a useful answer, so the NUL sniff that
+            # GNU grep itself uses decides it: a NUL in the first 4 KiB means binary. That is a
+            # read of 4 KiB instead of 30 MB per such file.
+            #
+            # NOT SILENT: the count is reported with the results. A tool that quietly searched
+            # fewer files than it was asked to would be the masked-failure shape the project
+            # forbids -- a lane concluding "the string is nowhere" has to know what was not read.
+            try:
+                with open(file_path, 'rb') as _bfh:
+                    if b"\0" in _bfh.read(4096):
+                        skipped_binary_1203g6 += 1
+                        continue
+            except Exception:
+                pass
             files_searched += 1
             file_matches = 0
             
@@ -206,7 +245,10 @@ Examples:
         if not results:
             return ToolResult(
                 success=True,
-                data={"matches": 0, "info": f"No matches for '{pattern}' in {search_scope} ({files_searched} files searched)"}
+                data={"matches": 0,
+                      "info": f"No matches for '{pattern}' in {search_scope} "
+                              f"({files_searched} files searched"
+                              + _binary_note_1203g6(skipped_binary_1203g6) + ")"}
             )
         
         # SWE-agent style output: summary + detailed matches
@@ -227,6 +269,9 @@ Examples:
         if len(results) >= self.MAX_RESULTS:
             output.append(f"\n... (showing first {self.MAX_RESULTS} results, more exist)")
         
+        if skipped_binary_1203g6:
+            output.append(_binary_note_1203g6(skipped_binary_1203g6).lstrip(", ").capitalize()
+                          + " -- if you expected a hit inside one, grep it by name.")
         output.append(f"End of matches for \"{pattern}\" in {search_scope}")
         
         return ToolResult(
