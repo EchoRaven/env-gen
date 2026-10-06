@@ -1133,6 +1133,50 @@ def _reachable_by_limit_1202wa(base: str, path: str, token, total: int) -> bool:
     return isinstance(rows, list) and len(rows) >= total
 
 
+def record_phase_timings_1203g8(project_dir, phases, total_sec) -> bool:
+    """#1203g8: how long each api_smoke phase took. Never raises; False when it could not write.
+
+    `run_validation` is the biggest single consumer of a run's wall clock -- one sampled call
+    took 376.8 SECONDS, and it is the per-milestone wall cap (7200s) that killed r159 with zero
+    delivery. It records 26 checks and, until now, not one duration: `_add` stored
+    `{name, status, detail}` and `perf_counter` appeared nowhere in this module. So a run could
+    say WHICH check failed and never which one spent the time.
+    
+    What reaches disk today is thinner still: the persisted evidence for `validation:api_smoke`
+    is `{check, source, summary}` -- a single line -- so even the 26 verdicts are not durable.
+    This artifact is therefore the only place the breakdown can live, and it follows the
+    convention its neighbours use (`tool_timings_1202wl.json`,
+    `list_total_unreachable_1202w0.jsonl`): one JSON object per call, appended.
+
+    Written from `_finalize`, which every one of the eight return paths already goes through for
+    #1202qe's reason -- "every return path after the snapshot" -- so a validation that bails at
+    `docker_up` is measured exactly like one that runs to the end. That is the case that matters
+    most: a phase that fails early is cheap, and one that times out is not.
+    """
+    try:
+        from pathlib import Path as _P
+        if not project_dir or not phases:
+            return False
+        # #1203g8: the destination must ALREADY be a directory. The first version did
+        # `Path(str(project_dir))` and `mkdir(parents=True)`, so a caller passing something that
+        # is not a path -- my own test passed `object()` -- created `<object object at 0x...>/logs`
+        # RELATIVE TO THE CWD, which put a junk directory in the repo. A run's project dir always
+        # exists by the time validation runs, so requiring it costs nothing and makes a bad
+        # argument answer False instead of writing somewhere nobody will look.
+        root = _P(str(project_dir))
+        if not root.is_dir():
+            return False
+        out = root / "logs" / "validation_phase_timings_1203g8.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"at": time.time(), "total_sec": round(float(total_sec or 0.0), 2),
+               "phases": [{"name": str(n), "sec": round(float(v), 2)} for n, v in phases]}
+        with out.open("a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def record_list_total_unreachable_1202w0(project_dir, findings) -> bool:
     """Land #1202w0's finding in an artifact. Same shape and same guard as #1202uv.
 
@@ -1630,8 +1674,14 @@ def run_smoke_validation(
     compose_file = project_dir / "docker" / "docker-compose.yml"
     cwd = project_dir / "docker"
     checks: List[Dict[str, Any]] = []
+    _phase_timings_1203g8: List[tuple] = []     # #1203g8
     endpoint_results: List[Dict[str, Any]] = []
     chain_results: List[Dict[str, Any]] = []
+
+    # #1203g8: the clock each phase is measured against. The work for a phase happens BETWEEN
+    # two `_add` calls, so the delta from the previous one is that phase's own cost.
+    _phase_t0_1203g8 = [time.perf_counter()]
+    _phase_start_1203g8 = time.perf_counter()
 
     def _add(name: str, ok: bool, detail: str = "", kind: str = "") -> None:
         # #1203e5: `kind` carries a STRUCTURED verdict about whose failure this is, beside the
@@ -1642,6 +1692,16 @@ def run_smoke_validation(
         _rec = {"name": name, "status": "pass" if ok else "fail", "detail": detail}
         if kind:
             _rec["kind"] = kind
+        # #1203g8: seconds since the previous phase ended. On the record too, so a caller that
+        # already reads `checks` gets it without reaching for the artifact.
+        try:
+            _now1203g8 = time.perf_counter()
+            _sec1203g8 = max(0.0, _now1203g8 - _phase_t0_1203g8[0])
+            _phase_t0_1203g8[0] = _now1203g8
+            _rec["sec"] = round(_sec1203g8, 2)
+            _phase_timings_1203g8.append((name, _sec1203g8))
+        except Exception:
+            pass
         checks.append(_rec)
 
     if not compose_file.exists():
@@ -1725,7 +1785,9 @@ def run_smoke_validation(
         _add("docker_up", False,
              "smoke-validation lock not acquired within 600s — another validation is "
              "holding it; deferring to avoid a concurrent docker down/up race (will retry).")
-        return _finalize(checks, None, endpoint_results)
+        return _finalize(checks, None, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
     try:
         # 1. Clean boot (no stale postgres volume — see DockerUpTool fresh=True).
         # FIX #113: re-stage design assets by construction before the image build —
@@ -1796,7 +1858,9 @@ def run_smoke_validation(
             _bok, _bdetail = _build_with_retry(compose_file, cwd)
             if not _bok:
                 _add("docker_up", False, _bdetail)
-                return _finalize(checks, backend_port, endpoint_results)
+                return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
             _write_build_fingerprint(cwd, _fp)
         up, _ = _compose_capture(compose_file, "up", "-d", "--remove-orphans",
                                  cwd=cwd, timeout=_UP_ONLY_TIMEOUT)
@@ -1844,13 +1908,17 @@ def run_smoke_validation(
             if _hf:
                 _detail = _hf + "\n\n--- raw ---\n" + _detail
             _add("docker_up", False, _detail)
-            return _finalize(checks, backend_port, endpoint_results)
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
         _add("docker_up", True)
 
         backend_port = _backend_host_port(compose_file, cwd)
         if not backend_port:
             _add("backend_port", False, "could not resolve backend published port")
-            return _finalize(checks, backend_port, endpoint_results)
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
 
         base = f"http://localhost:{backend_port}"
 
@@ -1866,7 +1934,9 @@ def run_smoke_validation(
         if not healthy:
             logs = _compose(compose_file, "logs", "--tail", "30", "backend", cwd=cwd, timeout=30)
             _add("backend_health", False, "/health not 200 within timeout. logs:\n" + (logs.stdout or logs.stderr)[-1200:])
-            return _finalize(checks, backend_port, endpoint_results)
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
         _add("backend_health", True)
         # #1202qe: the freshly seeded state, before any check writes to it; restored in
         # _finalize so the next capture sees the seed, not this validation's test accounts.
@@ -1952,7 +2022,9 @@ def run_smoke_validation(
             _d7 += "; register=%s (%s)" % (reg["status"], str(reg["body_text"] or "")[:130])
         _add("auth_register_login", bool(token), "" if token else _d7)
         if not token:
-            return _finalize(checks, backend_port, endpoint_results)
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
 
         # 4. Every business endpoint reachable (status < 500 = no crash) AND —
         #    GATE-C1 — actually implemented when its registration claims so:
@@ -2311,10 +2383,14 @@ def run_smoke_validation(
                  "could not resolve the frontend service's published port "
                  "(container not running?)")
 
-        return _finalize(checks, backend_port, endpoint_results, chain_results)
+        return _finalize(checks, backend_port, endpoint_results, chain_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
     except Exception as exc:
         _add("runner_error", False, f"{type(exc).__name__}: {exc}")
-        return _finalize(checks, backend_port, endpoint_results, chain_results)
+        return _finalize(checks, backend_port, endpoint_results, chain_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
     finally:
         if teardown:
             try:
@@ -2344,7 +2420,9 @@ _VALIDATION_SCOPE_1202QE: List[Any] = []
 
 def _finalize(checks: List[Dict[str, Any]], backend_port: Optional[int],
               endpoint_results: Optional[List[Dict[str, Any]]] = None,
-              chain_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+              chain_results: Optional[List[Dict[str, Any]]] = None,
+              *, phases_1203g8=None, project_dir_1203g8=None,
+              started_1203g8=None) -> Dict[str, Any]:
     while _VALIDATION_SCOPE_1202QE:          # #1202qe: every return path after the snapshot
         try:
             _VALIDATION_SCOPE_1202QE.pop().__exit__(None, None, None)
@@ -2355,6 +2433,11 @@ def _finalize(checks: List[Dict[str, Any]], backend_port: Optional[int],
     passed = bool(checks) and all(c["status"] == "pass" for c in checks)
     fails = [c["name"] for c in checks if c["status"] != "pass"]
     summary = "all api_smoke checks passed" if passed else f"FAILED: {', '.join(fails)}"
+    # #1203g8: write the breakdown from the ONE place every return path goes through.
+    if phases_1203g8:
+        record_phase_timings_1203g8(
+            project_dir_1203g8, phases_1203g8,
+            (time.perf_counter() - started_1203g8) if started_1203g8 else 0.0)
     return {"passed": passed, "summary": summary, "checks": checks,
             "backend_port": backend_port, "endpoints": endpoint_results or [],
             "chains": chain_results or []}
