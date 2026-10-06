@@ -39,6 +39,68 @@ _SAID: Dict[str, bool] = {}
 
 
 
+# ---- #1203g7 ----------------------------------------------------------------
+# RESOLVING ONE CONTAINER COST 48 `docker inspect` CALLS.
+#
+# `compute_deliverability` takes 5.47s on tiktok-r164's tree and 2.87s of that -- 52% -- is 112
+# subprocesses, dominated by `docker inspect <id>`: this machine has 16 containers named
+# `database`, and EACH WAS INSPECTED THREE TIMES in one pass, because three callers each resolve
+# the container independently and each loops over every candidate id. The label they read is the
+# same one every time. `deliverability_check` is the second most expensive tool in the corpus
+# (931s over 443 calls, 2101ms each), so this is paid 443 times over.
+#
+# A container's labels are fixed when it is CREATED -- `docker update` cannot change them -- and
+# an id is unique and never reused, so caching `config_files` BY ID is exact, not a heuristic.
+# `State.Status` is deliberately NOT cached: it changes, and a stale "running" is the confident
+# wrong answer #962 exists to prevent.
+_CONFIG_FILES_LABEL_1203G7: "dict" = {}
+# #647 wants the measurement behind the number, and here it is: this host currently has 194
+# containers (`docker ps -a -q | wc -l`), of which 16 answer `name=database` alone -- the probe
+# filters by service name and inspects every candidate, so one long session can accumulate
+# several hundred distinct ids as stacks are created and torn down. 512 is ~2.6x the present
+# population, which leaves room for that churn while keeping the map small enough to be free.
+# Past it the map is CLEARED wholesale rather than evicted by age: every entry stays valid for
+# as long as its container id exists, so there is no "stalest" entry to pick.
+_LABEL_CACHE_MAX_1203G7 = 512
+
+
+def clear_label_cache_1203g7() -> None:
+    """Forget every cached container label.
+
+    The cache deliberately OUTLIVES a single call -- that is where the saving is, since the
+    redundancy was three callers each inspecting the same ids, and within one caller each id is
+    visited once. In production that is sound: labels are fixed at create time and ids are never
+    reused, so the same id always has the same label.
+
+    A TEST that reuses a container id while changing what the fake daemon says about it is
+    therefore describing a transition docker cannot make, and must reset the cache first --
+    `test_container_id_ambiguous_962` does exactly that between its cases.
+    """
+    _CONFIG_FILES_LABEL_1203G7.clear()
+
+
+def _config_files_label_1203g7(rt: str, cid: str, timeout: float) -> "str | None":
+    """The compose `config_files` label of container `cid`, cached for the process.
+
+    None means "could not ask" -- distinct from "" which is a container with no such label, and
+    is itself cached: a container that is not part of a compose project will never grow one.
+    """
+    key = (str(rt), str(cid))
+    if key in _CONFIG_FILES_LABEL_1203G7:
+        return _CONFIG_FILES_LABEL_1203G7[key]
+    try:
+        out = subprocess.run(
+            [rt, "inspect", cid, "--format",
+             "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}"],
+            capture_output=True, text=True, timeout=timeout).stdout.strip()
+    except Exception:
+        return None
+    if len(_CONFIG_FILES_LABEL_1203G7) >= _LABEL_CACHE_MAX_1203G7:
+        _CONFIG_FILES_LABEL_1203G7.clear()
+    _CONFIG_FILES_LABEL_1203G7[key] = out
+    return out
+
+
 def _own_lifecycle_note_1202kz(compose_file: Any) -> str:
     """#1202kz: did THIS process put the stack in this state on purpose?
 
@@ -109,17 +171,21 @@ def _exited_container_reason_1202av(rt: str, service: str, want: str, timeout: i
                 capture_output=True, text=True, timeout=timeout)
             ids = [x for x in ps.stdout.split() if x]
         for cid in ids:
+            # #1203g7: the LABEL decides whether this container is even ours, and it is
+            # immutable, so it comes from the cache. The STATUS is asked only for the one
+            # container that passes -- it changes, and a cached status would be exactly the
+            # confident wrong answer #962 exists to prevent. On this machine that turns 16
+            # inspects per call into 16 cache reads plus at most one live inspect.
+            lbl = _config_files_label_1203g7(rt, cid, timeout)
+            if not lbl or not (lbl == want or want in lbl.split(",")):
+                continue
             try:
                 out = subprocess.run(
                     [rt, "inspect", cid, "--format",
-                     "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}"
-                     "|{{.State.Status}}|{{.State.ExitCode}}"],
+                     "{{.State.Status}}|{{.State.ExitCode}}"],
                     capture_output=True, text=True, timeout=timeout).stdout.strip()
-                lbl, _, rest = out.partition("|")
-                status, _, code = rest.partition("|")
+                status, _, code = out.partition("|")
             except Exception:
-                continue
-            if not lbl or not (lbl == want or want in lbl.split(",")):
                 continue
             if status == "running":
                 continue
@@ -232,12 +298,8 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
         want = str(compose_file)
         matched = []
         for cid in ids:
-            try:
-                lbl = subprocess.run(
-                    [rt, "inspect", cid, "--format",
-                     "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}"],
-                    capture_output=True, text=True, timeout=timeout).stdout.strip()
-            except Exception:
+            lbl = _config_files_label_1203g7(rt, cid, timeout)   # #1203g7
+            if lbl is None:
                 continue
             if lbl and (lbl == want or want in lbl.split(",")):
                 matched.append(cid)

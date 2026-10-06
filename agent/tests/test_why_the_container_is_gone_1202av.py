@@ -30,12 +30,21 @@ def _cp(stdout=""):
 
 
 class WhyTheContainerIsGoneTests(unittest.TestCase):
+    def setUp(self):
+        # #1203g7 caches a container's immutable `config_files` label by id. These cases reuse
+        # the SAME id while changing what the fake daemon reports about it -- a transition docker
+        # cannot make -- so each one starts from an empty cache.
+        cr.clear_label_cache_1203g7()
+
+    def tearDown(self):
+        cr.clear_label_cache_1203g7()
+
     def test_an_exited_container_of_this_run_explains_itself(self):
         def _run(argv, **kw):
             if argv[1] == "ps":
                 return _cp("abc123def456\n")
             if argv[1] == "inspect":
-                return _cp("%s|exited|1" % _WANT)
+                return _cp(_WANT if "config_files" in argv[-1] else "exited|1")   # #1203g7
             if argv[1] == "logs":
                 return _cp("FATAL: data directory has wrong ownership")
             return _cp()
@@ -53,7 +62,7 @@ class WhyTheContainerIsGoneTests(unittest.TestCase):
             if argv[1] == "ps":
                 return _cp("abc123def456\n")
             if argv[1] == "inspect":
-                return _cp("/runs/r31/docker/docker-compose.yml|exited|1")
+                return _cp("/runs/r31/docker/docker-compose.yml" if "config_files" in argv[-1] else "exited|1")   # #1203g7
             return _cp()
 
         with mock.patch.object(cr.subprocess, "run", _run):
@@ -65,7 +74,7 @@ class WhyTheContainerIsGoneTests(unittest.TestCase):
             if argv[1] == "ps":
                 return _cp("abc123def456\n")
             if argv[1] == "inspect":
-                return _cp("%s|running|0" % _WANT)
+                return _cp(_WANT if "config_files" in argv[-1] else "running|0")   # #1203g7
             return _cp()
 
         with mock.patch.object(cr.subprocess, "run", _run):
@@ -101,8 +110,8 @@ class WhyTheContainerIsGoneTests(unittest.TestCase):
             if argv[1] == "inspect":
                 cid = argv[2]
                 if cid == "theone":
-                    return _cp("%s|exited|3" % _WANT)
-                return _cp("/runs/elsewhere/docker-compose.yml|exited|1")
+                    return _cp(_WANT if "config_files" in argv[-1] else "exited|3")   # #1203g7
+                return _cp("/runs/elsewhere/docker-compose.yml" if "config_files" in argv[-1] else "exited|1")   # #1203g7
             if argv[1] == "logs":
                 return _cp("could not translate host name \"database\"")
             return _cp()
@@ -122,7 +131,7 @@ class WhyTheContainerIsGoneTests(unittest.TestCase):
             if argv[1] == "ps":
                 return _cp("abc123def456\n")
             if argv[1] == "inspect":
-                return _cp("%s|exited|1" % _WANT)
+                return _cp(_WANT if "config_files" in argv[-1] else "exited|1")   # #1203g7
             return _cp()
 
         with mock.patch.object(cr.subprocess, "run", _run):

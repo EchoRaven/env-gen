@@ -22,6 +22,17 @@ import pytest
 from env_generator.llm_generator.multi_agent.runtime import container_runtime as cr
 
 
+@pytest.fixture(autouse=True)
+def _clear_label_cache_1203g7():
+    """#1203g7 caches a container's `config_files` label by id, because it is immutable in
+    production and the same ids were being inspected by three callers in one pass. These cases
+    reuse the SAME ids while changing what the fake daemon says about them -- a transition docker
+    cannot make -- so each one starts from an empty cache."""
+    cr.clear_label_cache_1203g7()
+    yield
+    cr.clear_label_cache_1203g7()
+
+
 def _fake_run(mapping):
     """Build a subprocess.run stand-in dispatching on a distinctive argv fragment."""
     def _run(argv, **kw):
