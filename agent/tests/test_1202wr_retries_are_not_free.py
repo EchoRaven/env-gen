@@ -23,6 +23,8 @@ from utils import llm as _llm  # noqa: E402
 def _reset():
     _llm._LLM_USAGE["retries"] = 0
     _llm._LLM_USAGE["retry_sec"] = 0.0
+    _llm._LLM_USAGE["retry_by_error"] = {}          # #1203g4
+    _llm._LLM_USAGE["retry_sec_by_error"] = {}      # #1203g4
 
 
 def test_usage_reports_retries_at_all():
@@ -55,13 +57,29 @@ def test_a_negative_duration_cannot_shrink_the_total():
     assert _llm.llm_usage()["retry_sec"] == 5.0
 
 
+# #1203g4 declares its two keys here on purpose, which is what this assertion is for: a key the
+# retry recorder touches must be named, so one added by accident still fails the test.
+_RETRY_KEYS = ("retries", "retry_sec", "retry_by_error", "retry_sec_by_error")
+
+
 def test_the_existing_totals_are_untouched():
     """A new key must not disturb what run_budget already carries."""
     _reset()
-    before = {k: v for k, v in _llm.llm_usage().items() if k not in ("retries", "retry_sec")}
+    before = {k: v for k, v in _llm.llm_usage().items() if k not in _RETRY_KEYS}
     _llm.record_llm_retry_1202wr(3.0)
-    after = {k: v for k, v in _llm.llm_usage().items() if k not in ("retries", "retry_sec")}
+    after = {k: v for k, v in _llm.llm_usage().items() if k not in _RETRY_KEYS}
     assert before == after
+
+
+def test_every_declared_retry_key_is_actually_touched():
+    """#1203g4: the exclusion list is not a free pass -- each name in it must be a key the
+    recorder really changes, or the test above would be excusing something it never checked."""
+    _reset()
+    before = dict(_llm.llm_usage())
+    _llm.record_llm_retry_1202wr(2.0, "RateLimitError")
+    after = dict(_llm.llm_usage())
+    moved = {k for k in _RETRY_KEYS if before.get(k) != after.get(k)}
+    assert moved == set(_RETRY_KEYS), sorted(set(_RETRY_KEYS) - moved)
 
 
 def test_the_recorder_is_called_on_the_failure_path():

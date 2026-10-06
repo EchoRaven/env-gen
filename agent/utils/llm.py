@@ -1095,15 +1095,41 @@ _LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unre
               # the channel that already exists: run_budget writes `llm_usage()` wholesale,
               # so a new key here reaches run_budget.json with no further wiring (#1032 --
               # the alternative was a second reporting path beside a good one).
-              "retries": 0, "retry_sec": 0.0}
+              "retries": 0, "retry_sec": 0.0,
+              # #1203g4: WHICH ERROR, not just how many. `retry_sec` says 3.9 hours of the
+              # corpus's 43.5 process-wall hours went to re-rolls -- 8.9%, and 36.8% of
+              # tiktok-r158 alone (4353s, a $467.84 run) -- and nothing on disk can say
+              # whether that wait was CORRECT. A rate-limit sleep is the provider's price;
+              # a timeout or a malformed-response re-roll is waste, and the two cost the
+              # same wall clock. The error type exists at the retry site and went only to
+              # `logger.info`: r151-r164, the last fourteen runs, persist NO main generation
+              # log, so the attribution is unrecoverable from the artifacts.
+              #
+              # Same channel as #1202wr for the same reason it gave: run_budget writes
+              # `llm_usage()` wholesale, so these reach run_budget.json with no new wiring
+              # and are carried across resumes by the code that already carries the dollars.
+              "retry_by_error": {}, "retry_sec_by_error": {}}
 
 
-def record_llm_retry_1202wr(elapsed_sec: Any = 0.0) -> None:
-    """One failed attempt that will be retried, and the seconds it burned. Never raises."""
+def record_llm_retry_1202wr(elapsed_sec: Any = 0.0, error_type: Any = None) -> None:
+    """One failed attempt that will be retried, and the seconds it burned. Never raises.
+
+    #1203g4: `error_type` is optional so an older caller keeps working, and an absent type is
+    bucketed under "unknown" rather than dropped -- a retry that cannot name its error is
+    exactly the state this counter exists to end, so it must be visible as such.
+    """
     try:
         _LLM_USAGE["retries"] = int(_LLM_USAGE.get("retries") or 0) + 1
+        _sec = max(0.0, float(elapsed_sec or 0.0))
         _LLM_USAGE["retry_sec"] = round(
-            float(_LLM_USAGE.get("retry_sec") or 0.0) + max(0.0, float(elapsed_sec or 0.0)), 2)
+            float(_LLM_USAGE.get("retry_sec") or 0.0) + _sec, 2)
+        _k = str(error_type or "unknown").strip() or "unknown"
+        _n = _LLM_USAGE.setdefault("retry_by_error", {})
+        _t = _LLM_USAGE.setdefault("retry_sec_by_error", {})
+        if isinstance(_n, dict):
+            _n[_k] = int(_n.get(_k) or 0) + 1
+        if isinstance(_t, dict):
+            _t[_k] = round(float(_t.get(_k) or 0.0) + _sec, 2)
     except Exception:
         pass
 
@@ -1410,6 +1436,12 @@ def llm_usage() -> Dict[str, Any]:
     ``cached`` is what makes the 91% hit rate legible at a glance.
     """
     u = dict(_LLM_USAGE)
+    # #1203g4: `dict()` is shallow, so the per-error breakdowns would be the LIVE dicts. A
+    # caller that annotated the report would be editing the counters, and run_budget writes
+    # this straight to JSON across resumes. Copy the nested ones; everything else is scalar.
+    for _k1203g4 in ("retry_by_error", "retry_sec_by_error"):
+        if isinstance(u.get(_k1203g4), dict):
+            u[_k1203g4] = dict(u[_k1203g4])
     u["uncached"] = max(0, u["prompt"] - u["cached"])
     p_in = _price_env_1163("ENVGEN_PRICE_IN_PER_M")
     p_cache = _price_env_1163("ENVGEN_PRICE_CACHED_PER_M")
@@ -2073,7 +2105,9 @@ class BaseLLMClient(ABC):
                 return result
             except Exception as e:
                 elapsed = (datetime.now() - attempt_start).total_seconds()
-                record_llm_retry_1202wr(elapsed)   # #1202wr
+                # #1203g4: the type is already in hand one line below (`error_type`); passing
+                # it here is what makes 8.9% of the corpus's wall clock attributable.
+                record_llm_retry_1202wr(elapsed, type(e).__name__)   # #1202wr / #1203g4
                 last_error = e
                 error_type = type(e).__name__
                 error_msg = str(e)[:200]  # Truncate long errors
