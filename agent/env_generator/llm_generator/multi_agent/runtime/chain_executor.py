@@ -2728,6 +2728,31 @@ def _where_it_is_1202nj(payload, parts, cur, walked) -> str:
         return ""
 
 
+_UNRESOLVED_DOLLAR_IN_PATH_1203G2 = re.compile(r"\$\{[^}]*\}")
+
+
+def _vacuous_on_placeholder_note_1203g2(path, ok) -> str:
+    """#1203g2 — the one-line mark on a step that PASSED with an unresolved `${...}` in its path.
+
+    Empty for every other step: a FAILING step with a leftover placeholder is already explained
+    (`skipped — depends on X from a failed earlier step`, 364 of the 411 corpus instances), and a
+    resolved path needs nothing. Returns "" on any bad input rather than raising -- this runs on
+    the recording path of every chain step.
+    """
+    try:
+        if ok is not True:
+            return ""
+        if not _UNRESOLVED_DOLLAR_IN_PATH_1203G2.search(str(path or "")):
+            return ""
+        return (" ⚠ #1203g2: this step PASSED on a path whose `${...}` never resolved, so the "
+                "request went to a route that does not exist. For a denial expectation that is "
+                "deliberate (resolving it to an id the prober owns would read as a leak), but "
+                "the result verifies NOTHING about the real endpoint -- do not read this as "
+                "evidence that it enforces auth.")
+    except Exception:
+        return ""
+
+
 def classify_endpoint_failure(status, body_text):
     """``"ok"`` | ``"framework_defect"`` | ``"broken"`` for one endpoint probe result."""
     try:
@@ -4116,6 +4141,22 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # them, with 392 PASSING chains using one. Rejecting them would have cost real work and
         # caught nothing. The value only becomes wrong once the server says so.
         note = note + _unknown_id_hint_682(status, body, note)
+        # #1203g2: SAY WHEN A PASS PROVED NOTHING. The unresolved-placeholder fallback above
+        # deliberately leaves the literal in a DENIAL step's path -- "a denial step must NEVER
+        # fall here ... leave the literal (404s, tolerated by the denial expectation)" -- because
+        # resolving it to an id the prober owns would read as a leak. That trade is right and the
+        # reasoning is in the code; what was missing is any mark on the RESULT.
+        #
+        # So the record said `ok=True`, `note=""`, for a request to a path that does not exist:
+        # `POST /api/videos/${vid}/like -> 401, expected [401, 403]`. An auth middleware answers
+        # 401 before routing, so that 401 cannot tell "this endpoint requires auth" from "the
+        # server 401s everything". Measured over every run directory: 21 such steps across 10
+        # runs, every one with an empty note. 19 of the 21 are corroborated -- a sibling step on
+        # the same canonical endpoint passed with a RESOLVED path -- and the 2 that stand alone
+        # are both `DELETE /api/v1/tenants/{}` on the framework's own control surface, so the
+        # verdict is left exactly as it is. What changes is that the record now says so, instead
+        # of a reader having to re-derive it from the fallback's source.
+        note = note + _vacuous_on_placeholder_note_1203g2(path, ok)
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
