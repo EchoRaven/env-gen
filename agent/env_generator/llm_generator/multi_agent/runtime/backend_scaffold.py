@@ -67,7 +67,11 @@ def get_current_user(authorization: str = Header(default=None), db: Session = De
         raise HTTPException(status_code=401, detail="missing bearer token")
     token = authorization.split(" ", 1)[1].strip()
     if not _PUBLIC_PEM:
-        raise HTTPException(status_code=401, detail="auth unavailable")
+        # #1203gd: 503, not 401. A missing public key is OUR key, not the caller's token, and
+        # the frontend's global guard DELETES the stored token on any /api/ 401 that carried
+        # one -- so answering 401 here logs a valid session out over an infrastructure fault.
+        # 401 means "your credential is the problem"; 503 means "ours is".
+        raise HTTPException(status_code=503, detail="auth unavailable: signing key not loaded")
     try:
         claims = _pyjwt.decode(
             token, _PUBLIC_PEM, algorithms=[ALGORITHM],
@@ -78,13 +82,27 @@ def get_current_user(authorization: str = Header(default=None), db: Session = De
     sub = claims.get("sub")
     if sub is None:
         raise HTTPException(status_code=401, detail="invalid token subject")
+    # #1203gd: `int(sub)` and the lookup used to share one `try: ... except Exception: row = None`,
+    # and every outcome came back as 401 "unknown user" -- 495 times across 46 corpus runs. Three
+    # different causes wore that one answer: a non-numeric subject (the token), a genuinely absent
+    # row (the user), and ANY database failure (ours: a pool exhausted, a `users` table a lane
+    # renamed, a connection dropped). The third is the damaging one, because the frontend guard
+    # removes the stored token on a 401 that carried auth: a transient DB fault signed the user
+    # out, and the one signal that could tell the three apart was discarded before anyone saw it.
+    # Split by cause, and let an infrastructure failure say so instead of blaming the credential.
+    try:
+        _uid = int(sub)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="invalid token subject")
     # Load via raw SQL so this works whether or not the app defines an ORM User model.
     try:
         row = db.execute(
-            text("SELECT * FROM users WHERE id = :id"), {"id": int(sub)}
+            text("SELECT * FROM users WHERE id = :id"), {"id": _uid}
         ).mappings().first()
-    except Exception:
-        row = None
+    except Exception as _exc:
+        raise HTTPException(
+            status_code=503,
+            detail="user lookup failed: %s: %s" % (type(_exc).__name__, _exc))
     if not row:
         raise HTTPException(status_code=401, detail="unknown user")
     return _AuthUser(dict(row))
@@ -346,7 +364,8 @@ def _framework_jwt_sub(token):
     except Exception:
         _pem, _ALG = None, "RS256"
     if not _pem:
-        raise HTTPException(status_code=401, detail="auth unavailable")
+        # #1203gd: ours, not theirs -- see get_current_user above.
+        raise HTTPException(status_code=503, detail="auth unavailable: signing key not loaded")
     try:
         _claims = _pyjwt.decode(token, _pem, algorithms=[_ALG], options={"verify_aud": False})
     except Exception:
@@ -354,7 +373,10 @@ def _framework_jwt_sub(token):
     _sub = _claims.get("sub")
     if _sub is None:
         raise HTTPException(status_code=401, detail="invalid token subject")
-    return int(_sub)
+    try:
+        return int(_sub)          # #1203gd: a non-numeric subject is the TOKEN's problem...
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="invalid token subject")
 '''
 
 
