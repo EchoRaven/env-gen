@@ -1171,8 +1171,19 @@ def record_phase_timings_1203g8(project_dir, phases, total_sec) -> bool:
             return False
         out = root / "logs" / "validation_phase_timings_1203g8.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
+        # #1203gf: a phase entry is (name, sec) or (name, sec, steps). Unpacked by index rather
+        # than by width, so an older caller that still appends 2-tuples keeps working.
+        _ph = []
+        for _e in phases:
+            _n, _v = _e[0], _e[1]
+            _row = {"name": str(_n), "sec": round(float(_v), 2)}
+            _st = _e[2] if len(_e) > 2 else None
+            if _st:
+                _row["steps"] = [{"name": str(x["name"]), "sec": round(float(x["sec"]), 2)}
+                                 for x in _st]
+            _ph.append(_row)
         rec = {"at": time.time(), "total_sec": round(float(total_sec or 0.0), 2),
-               "phases": [{"name": str(n), "sec": round(float(v), 2)} for n, v in phases]}
+               "phases": _ph}
         with out.open("a", encoding="utf-8") as fh:
             fh.write(_json.dumps(rec, ensure_ascii=False) + "\n")
         return True
@@ -1686,6 +1697,27 @@ def run_smoke_validation(
     _phase_t0_1203g8 = [time.perf_counter()]
     _phase_start_1203g8 = time.perf_counter()
 
+    # #1203gf: docker_up is 94% of this function and was one undivided number.
+    # Measured over r165's 29 validations: docker_up = 5998s of run_validation's 6383s, median
+    # 79s, max 992s, six calls at or past 300s. `#1203g8` made that visible and stopped there --
+    # the phase does THREE things (`down -v`, build, `up`), and which of them spends the time
+    # decides what to do about it. `down -v` destroys the volume every time for a clean boot, so
+    # the `up` that follows re-initialises postgres and reloads the seed; a build is skipped when
+    # the source fingerprint is unchanged (#566l). Those have completely different remedies and
+    # the single total cannot tell them apart. Sub-steps, not extra `_add` calls: a phantom
+    # verdict among the 26 checks would be read as a check that can pass or fail.
+    _du_steps_1203gf: list = []
+
+    def _timed_1203gf(label: str, fn):
+        _t0 = time.perf_counter()
+        try:
+            return fn()
+        finally:
+            try:
+                _du_steps_1203gf.append((label, max(0.0, time.perf_counter() - _t0)))
+            except Exception:
+                pass
+
     def _add(name: str, ok: bool, detail: str = "", kind: str = "") -> None:
         # #1203e5: `kind` carries a STRUCTURED verdict about whose failure this is, beside the
         # prose. `chain_executor` already computes `kind == "environment_1202od"` -- "the steps
@@ -1702,7 +1734,13 @@ def run_smoke_validation(
             _sec1203g8 = max(0.0, _now1203g8 - _phase_t0_1203g8[0])
             _phase_t0_1203g8[0] = _now1203g8
             _rec["sec"] = round(_sec1203g8, 2)
-            _phase_timings_1203g8.append((name, _sec1203g8))
+            _steps1203gf = None
+            if name == "docker_up" and _du_steps_1203gf:
+                # #1203gf: attached on the FAILING record too -- a validation that bails at
+                # docker_up is the case that matters most, and that is where the 992s sat.
+                _steps1203gf = [{"name": _n, "sec": round(_v, 2)} for _n, _v in _du_steps_1203gf]
+                _rec["steps"] = _steps1203gf
+            _phase_timings_1203g8.append((name, _sec1203g8, _steps1203gf))
         except Exception:
             pass
         checks.append(_rec)
@@ -1848,7 +1886,8 @@ def run_smoke_validation(
                 localize_seed_external_images(_be_seed, _fe_dir)
         except Exception:
             pass
-        _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
+        _timed_1203gf("down_v", lambda: _compose(
+            compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120))
         # #566l: build SEPARATELY from up so a hung/flaky network install fails fast + retries
         # (classic layer cache = offline-capable for completed layers), and SKIP the rebuild
         # entirely when the app source is unchanged since the last SUCCESSFUL build. Root cause of
@@ -1858,24 +1897,26 @@ def run_smoke_validation(
         _need_build = ((not _SKIP_UNCHANGED_BUILD) or _fp is None
                        or _fp != _read_build_fingerprint(cwd))
         if _need_build:
-            _bok, _bdetail = _build_with_retry(compose_file, cwd)
+            _bok, _bdetail = _timed_1203gf("build", lambda: _build_with_retry(compose_file, cwd))
             if not _bok:
                 _add("docker_up", False, _bdetail)
                 return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
                              project_dir_1203g8=project_dir,
                              started_1203g8=_phase_start_1203g8)
             _write_build_fingerprint(cwd, _fp)
-        up, _ = _compose_capture(compose_file, "up", "-d", "--remove-orphans",
-                                 cwd=cwd, timeout=_UP_ONLY_TIMEOUT)
+        up, _ = _timed_1203gf("up", lambda: _compose_capture(
+            compose_file, "up", "-d", "--remove-orphans", cwd=cwd, timeout=_UP_ONLY_TIMEOUT))
         if up.returncode != 0 and not _need_build:
             # #566l safety net: we SKIPPED the build (source unchanged) but `up` failed — the
             # cached image may be missing/stale/pruned. Never ship stale: rebuild + retry up once
             # before giving up (so skip-when-unchanged can only ever save time, never mis-validate).
-            _bok, _bdetail = _build_with_retry(compose_file, cwd)
+            _bok, _bdetail = _timed_1203gf(
+                "build_retry", lambda: _build_with_retry(compose_file, cwd))
             if _bok:
                 _write_build_fingerprint(cwd, _fp)
-                up, _ = _compose_capture(compose_file, "up", "-d", "--remove-orphans",
-                                         cwd=cwd, timeout=_UP_ONLY_TIMEOUT)
+                up, _ = _timed_1203gf("up_retry", lambda: _compose_capture(
+                    compose_file, "up", "-d", "--remove-orphans",
+                    cwd=cwd, timeout=_UP_ONLY_TIMEOUT))
         if up.returncode != 0:
             # S1 (PROPOSAL #3): `docker compose up`'s OWN stderr is often just a
             # benign warning (e.g. "attribute `version` is obsolete") while the REAL
