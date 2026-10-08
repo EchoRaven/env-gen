@@ -1793,7 +1793,18 @@ def run_smoke_validation(
     # smoke lock (holding the lock while waiting would stall every other validation and gate).
     try:
         from .compose_mutex import wait_for_stack_leases_1202nx
-        wait_for_stack_leases_1202nx(project_dir, "api_smoke validation (fresh boot)", logger=_LOG)
+        # #1203gh: THE STALL. #1203gf/#1203gg timed six steps in this phase window and a 236s
+        # docker_up still had 195.5s with no owner -- `lock_wait` measured 0.0s, which RULED OUT
+        # the flock and left exactly one uninstrumented call: this one. It blocks until nobody
+        # holds a lease on the stack, and the holders are named in its own log line: "visual
+        # capture" and "test-user squad". api_smoke needs `down -v` for a clean boot; they are
+        # still using the stack; so it waits, up to ENVGEN_STACK_LEASE_WAIT_SEC (900s default).
+        # Counted against the stalls the sub-step data shows: r165 9 waits / 8 stalls, r166 8 / 7,
+        # r167 2 / 2 (196s and 656s). Those seconds were charged to "docker_up", which is 89-94%
+        # of run_validation, the pipeline's largest wall-clock item -- so the biggest cost in the
+        # pipeline read as "docker is slow" when it was the pipeline serialising on itself.
+        _timed_1203gf("lease_wait", lambda: wait_for_stack_leases_1202nx(
+            project_dir, "api_smoke validation (fresh boot)", logger=_LOG))
     except Exception:
         pass
     import fcntl as _fcntl

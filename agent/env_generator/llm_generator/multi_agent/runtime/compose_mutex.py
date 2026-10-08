@@ -286,6 +286,20 @@ def wait_for_stack_leases_1202nx(project_dir: Any, who: str, timeout_s: Any = No
     while True:
         holders = active_stack_leases_1202nx(project_dir)
         if not holders:
+            # #1203gh: it announced the START of the wait and never its LENGTH. The only line
+            # that carried a duration fired when the wait gave up at the cap -- which happened
+            # once in three runs -- so a wait of 196s or 656s left a log line saying it had
+            # begun and nothing saying it had cost anything. Attributing the pipeline's largest
+            # wall-clock item took reading a timing artifact instead, because this line, which
+            # knew it was waiting, never said for how long.
+            if announced:
+                try:
+                    import logging as _logging
+                    (logger or _logging.getLogger("compose_mutex")).warning(
+                        "#1202nx %s waited %.0fs for the stack lease and is proceeding"
+                        % (who, time.time() - start))
+                except Exception:
+                    pass
             return True
         waited = time.time() - start
         if not announced:
