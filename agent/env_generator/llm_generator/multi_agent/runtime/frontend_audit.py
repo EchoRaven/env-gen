@@ -3510,6 +3510,60 @@ def missing_static_assets_1203g9(app_root) -> "list":
                 if (pub / ref.lstrip("/")).exists():
                     continue
                 seen[ref] = f.name
-        return ["%s (referenced by %s)" % (r, n) for r, n in sorted(seen.items())]
+        return ["%s (referenced by %s)%s" % (r, n, _available_like_1203gi(pub, r))
+                for r, n in sorted(seen.items())]
     except Exception:
         return []
+
+
+# #1203gi: three is enough to prove the files exist AND to show the naming convention, which is
+# the whole point -- the lane invented `mara-market-dance.mp4` while the real ones are named
+# `khaby.lame__7660566666803154206.mp4`. Measured over the 21 corpus runs that have real files
+# of the missing type: the inventory is 35-78 files (median 63), and the convention is legible
+# from the first three in every one of them -- gmrun3's `accessible_24.svg, add_24.svg,
+# arrow_back_24.svg` already shows `name_24.svg`. A full listing of 78 would bury the reference
+# it is attached to, and #1034 requires the full count to sit beside the cut.
+_INVENTORY_SHOWN_1203GI = 3
+
+
+def _available_like_1203gi(pub, ref: str) -> str:
+    """`, but N real <ext> exist under <dir> (e.g. a, b, c)` -- or "" when there are none.
+
+    #1203gi: THE OTHER HALF, WHICH THE FRAMEWORK ALREADY HAS. This check reported the missing
+    reference and stopped, and the message ended "Add the file or stop referencing it" -- while
+    the real files of that very type were sitting under `public/`. Measured over the corpus:
+    of the 25 runs with a missing reference, 21 have real files of the SAME extension, 94
+    references in total, across three domains --
+
+        tiktok-r166      5 missing .mp4 beside 35 real ones (the lane invented
+                         `mara-market-dance.mp4`; the real names are
+                         `khaby.lame__7660566666803154206.mp4`)
+        googlemaps-gmrun3   18 missing .svg beside 78 real
+        tiktok-r146      7 missing .jpg beside 70, plus 2 missing .mp4 beside 35
+        instagram x6     3-7 missing .svg each, beside 60-63 real
+
+    So "add the file" was never the remedy: the file exists, under a different name, and the
+    lane could not guess the convention. Saying WHICH directory and three real names turns an
+    unactionable report into a one-step fix. Same shape as #1203ft/#1203fx: the fact was in
+    the framework's hand and only half of it was handed over.
+
+    Never raises; "" on any fault, so the caller's list is unchanged.
+    """
+    try:
+        from pathlib import Path as _P
+        ext = _P(str(ref)).suffix.lower()
+        if not ext:
+            return ""
+        hits = [q for q in _P(str(pub)).rglob("*" + ext) if q.is_file()]
+        if not hits:
+            return ""
+        # the directory holding the most of them is the convention the lane should follow
+        import collections as _c
+        best = _c.Counter(q.parent for q in hits).most_common(1)[0][0]
+        names = sorted(q.name for q in hits if q.parent == best)[:_INVENTORY_SHOWN_1203GI]
+        where = best.relative_to(_P(str(pub)).parent) if _P(str(pub)) in best.parents \
+            or best == _P(str(pub)) else best
+        return ", but %d real %s exist under %s (e.g. %s)" % (
+            len(hits), ext, where, ", ".join(names))
+    except Exception:
+        return ""
