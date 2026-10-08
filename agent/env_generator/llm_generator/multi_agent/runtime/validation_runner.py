@@ -1815,6 +1815,18 @@ def run_smoke_validation(
                 _time.sleep(2)
     except Exception:
         _lock_fh = None
+    # #1203gg: THE SILENT WAIT. This `while True: flock(LOCK_NB) / sleep(2)` loop can block for
+    # up to 600s and says nothing -- the only log line it has fires when it GIVES UP, and that
+    # line appears 0 times in r165 and r166. It also sits inside docker_up's phase window, so its
+    # seconds were charged to "docker_up" and looked like docker being slow.
+    # Measured: docker_up is 94% of run_validation (r165), and of docker_up's time, 74% (r165,
+    # 8 of 29 calls) / 50% (r166, 5 of 30) is in calls whose timed sub-steps account for almost
+    # none of it -- 208/219/270/728/870s each, ~110 minutes across the two runs. This is the
+    # first of the four candidates to be ruled in or out.
+    try:
+        _du_steps_1203gf.append(("lock_wait", max(0.0, _time.time() - _wait_start)))
+    except Exception:
+        pass
     # FIX #36-bis: if we could NOT acquire the lock within the wait window, another
     # validation has held it that whole time and is presumably mid `down -v`/`up`.
     # Proceeding here would run `down -v && up` CONCURRENTLY against the SAME compose
@@ -1835,7 +1847,8 @@ def run_smoke_validation(
         # a lane checkout window can transiently drop tracked public/assets/ files.
         try:
             from .frontend_scaffold import ensure_assets_staged_for_build
-            ensure_assets_staged_for_build(compose_file)
+            _timed_1203gf("stage_assets",
+                          lambda: ensure_assets_staged_for_build(compose_file))
         except Exception:
             pass
         # FIX #125 (run-43 M3, live): #119's param-vs-projection repair is wired into
@@ -1850,7 +1863,8 @@ def run_smoke_validation(
             from .backend_scaffold import repair_custom_routes_param_types_vs_projection
             _be = compose_file.parent.parent / "app" / "backend"
             if _be.is_dir():
-                repair_custom_routes_param_types_vs_projection(_be)
+                _timed_1203gf("repair_params",
+                              lambda: repair_custom_routes_param_types_vs_projection(_be))
         except Exception:
             pass
         # FIX #450 (run-37 M4): the deterministic validation build goes through THIS
@@ -1883,7 +1897,8 @@ def run_smoke_validation(
             _be_seed = compose_file.parent.parent / "app" / "backend"
             _fe_dir = compose_file.parent.parent / "app" / "frontend"
             if _be_seed.is_dir():
-                localize_seed_external_images(_be_seed, _fe_dir)
+                _timed_1203gf("localize_seed",
+                              lambda: localize_seed_external_images(_be_seed, _fe_dir))
         except Exception:
             pass
         _timed_1203gf("down_v", lambda: _compose(
