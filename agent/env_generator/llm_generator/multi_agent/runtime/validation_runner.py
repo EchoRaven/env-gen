@@ -1145,8 +1145,11 @@ def record_phase_timings_1203g8(project_dir, phases, total_sec) -> bool:
     What reaches disk today is thinner still: the persisted evidence for `validation:api_smoke`
     is `{check, source, summary}` -- a single line -- so even the 26 verdicts are not durable.
     This artifact is therefore the only place the breakdown can live, and it follows the
-    convention its neighbours use (`tool_timings_1202wl.json`,
-    `list_total_unreachable_1202w0.jsonl`): one JSON object per call, appended.
+    convention its neighbours use (`list_total_unreachable_1202w0.jsonl`): one JSON object per
+    call, appended. #1203ge: `tool_timings_1202wl` was cited here as a precedent for that
+    convention and it was not one -- it rewrote a single object, which is how eight agents came
+    to share one file and seven of them lose their numbers every run. It is now one file per
+    agent; this append-per-call artifact was already the shape worth copying.
 
     Written from `_finalize`, which every one of the eight return paths already goes through for
     #1202qe's reason -- "every return path after the snapshot" -- so a validation that bails at

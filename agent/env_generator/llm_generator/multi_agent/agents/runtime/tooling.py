@@ -26,6 +26,46 @@ _TOOL_INTENTS = (
 )
 
 
+
+def _agent_slug_1203ge(agent_id: str) -> str:
+    """A filesystem-safe stem for one agent's timing file.
+
+    Agent ids are human strings ("Backend Engineer Agent", "frontend"), and two of them must
+    not collapse onto one name -- that would reintroduce exactly the overwrite #1203ge removes.
+    So: keep word characters, collapse the rest to `-`, and never return an empty stem.
+    """
+    import re as _re
+    slug = _re.sub(r"[^0-9A-Za-z._-]+", "-", str(agent_id or "").strip()).strip("-.")
+    return slug or "unknown"
+
+
+def read_tool_timings_1203ge(run_dir) -> dict:
+    """Every agent's per-tool wall clock for one run, as {agent: {tool: {count,total_ms,max_ms}}}.
+
+    The counterpart to the per-agent write above: a reader that wants the run's tool cost should
+    not have to rediscover the directory layout (looking for it is what showed the overwrite).
+    Tolerates the pre-#1203ge single file so an older run directory still reads.
+    """
+    import json as _j
+    out: dict = {}
+    root = Path(str(run_dir)) / "logs"
+    d = root / "tool_timings_1202wl"
+    files = sorted(d.glob("*.json")) if d.is_dir() else []
+    legacy = root / "tool_timings_1202wl.json"
+    if legacy.is_file():
+        files = list(files) + [legacy]
+    for f in files:
+        try:
+            rec = _j.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        agent = str(rec.get("agent") or f.stem) or f.stem
+        tools = rec.get("tools")
+        if isinstance(tools, dict):
+            out[agent] = tools
+    return out
+
+
 def suggest_tools(tool_name: str, available) -> list:
     """Closest GRANTED tool names for an unknown ``tool_name``.
 
@@ -1450,6 +1490,7 @@ class AgentTooling:
 
     _FLUSH_EVERY_1202WL = 50
 
+
     def _record_tool_ms_1202wl(self, tool_name: str, duration_ms: Any) -> None:
         """Accumulate per-tool wall clock and flush the totals periodically. Never raises."""
         if duration_ms is None or isinstance(duration_ms, bool):
@@ -1490,7 +1531,19 @@ class AgentTooling:
                     or getattr(self, "workspace", None)
             if base is None:
                 return False
-            out = Path(str(base)) / "logs" / "tool_timings_1202wl.json"
+            # #1203ge: ONE FILE PER AGENT. This was a single `logs/tool_timings_1202wl.json`
+            # shared by all eight agents, so whichever one flushed last owned the file and the
+            # other seven runs' worth of per-tool wall clock was gone. The record even carried
+            # `"agent": <id>` -- it knew whose numbers it held, and overwrote the rest anyway.
+            # Measured: r164's surviving snapshot is `backend` (which uses lint/grep), r165's is
+            # `verifier` (which does not), so the only per-tool timing artifact a run leaves
+            # behind is a different agent each time and NO performance fix can be checked across
+            # runs. #1203g5/g6/g7 (lint cache, binary-skipping grep, container label cache) all
+            # landed with criteria this artifact cannot answer.
+            # A path per agent rather than a read-modify-write on one file: the agents run
+            # concurrently, so a shared file is a race as well as an overwrite.
+            out = (Path(str(base)) / "logs" / "tool_timings_1202wl"
+                   / ("%s.json" % _agent_slug_1203ge(getattr(self, "agent_id", "") or "unknown")))
             out.parent.mkdir(parents=True, exist_ok=True)
             ranked = sorted(agg.items(), key=lambda kv: -kv[1]["total_ms"])
             out.write_text(_j1202wl.dumps({

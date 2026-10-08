@@ -39,8 +39,9 @@ class _Host(AgentTooling):
         self.agent_id = "tester"
 
 
-def _artifact(tmp_path):
-    return tmp_path / "logs" / "tool_timings_1202wl.json"
+def _artifact(tmp_path, agent="tester"):
+    # #1203ge: one file per agent — the shared name let the last agent to flush own the file.
+    return tmp_path / "logs" / "tool_timings_1202wl" / ("%s.json" % agent)
 
 
 def test_nothing_is_written_before_the_first_flush(tmp_path):
@@ -111,7 +112,7 @@ def test_the_run_directory_wins_over_the_workspace(tmp_path):
     h.workspace = worktree
     for _ in range(h._FLUSH_EVERY_1202WL):
         h._record_tool_ms_1202wl("read", 1)
-    assert (run / "logs" / "tool_timings_1202wl.json").exists()
+    assert _artifact(run).exists()
     assert not (worktree / "logs").exists()
 
 
