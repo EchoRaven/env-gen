@@ -53,6 +53,37 @@ _ENDPOINTS = [
 ]
 
 
+def _code_only(src: str) -> str:
+    """*src* with its comments cut out and everything else left exactly where it was.
+
+    An "X is not in the rendered source" assertion is a claim about CODE, and a comment that
+    QUOTES the bad pattern — to explain why it is bad — falsifies it without any code
+    changing. That happened here: #1203gj's rationale in backend_skeleton.py quotes
+    ``return {"items": [], "total": 0}`` as the stub it exists to stop serving, and the
+    feed/explore assertion below went red on the explanation. Same shape as #1203e6, where
+    a comment of mine broke a different source assertion.
+
+    Rebuilt by BLANKING the comment spans in place, not by re-joining tokens: a first
+    version joined the token stream with newlines, which split `{"items": [], "total": 0}`
+    across lines so the pattern could never be found again and the assertion became
+    vacuous — green against a skeleton that really did emit the stub. Code, string literals
+    and layout are untouched, so every line is still examined as written.
+    """
+    import io
+    import tokenize
+    lines = src.splitlines(keepends=True)
+    try:
+        spans = [(t.start[0], t.start[1], t.end[1])
+                 for t in tokenize.generate_tokens(io.StringIO(src).readline)
+                 if t.type == tokenize.COMMENT]
+    except (tokenize.TokenError, IndentationError):
+        return src                      # unparseable: examine it whole rather than silently
+    for row, c0, c1 in sorted(spans, reverse=True):
+        ln = lines[row - 1]
+        lines[row - 1] = ln[:c0] + ln[c1:]
+    return "".join(lines)
+
+
 def test_models_spine_app_and_parse():
     src = render_models(_TABLES)
     ast.parse(src)
@@ -89,7 +120,7 @@ def test_every_model_has_exactly_one_primary_key():
 
 def test_pseudo_constraint_column_skipped():
     src = render_models(_TABLES)
-    assert "unique(follower_id" not in src  # the pseudo table-constraint is not a column
+    assert "unique(follower_id" not in _code_only(src)  # pseudo constraint not a column
 
 
 def test_skeleton_main_projects_all_handlers_static_first_with_auth():
@@ -111,7 +142,7 @@ def test_feed_explore_resolve_to_posts_model():
         [{"method": "GET", "path": "/api/feed"},
          {"method": "GET", "path": "/api/explore"}], _TABLES)
     ast.parse(src)
-    assert '{"items": [], "total": 0}' not in src     # no hardcoded empty handlers
+    assert '{"items": [], "total": 0}' not in _code_only(src)   # no empty stub handlers
     assert src.count("db.query(Post)") >= 2           # both query the posts model
 
 
@@ -127,7 +158,7 @@ def test_get_by_param_with_empty_columns_contract_does_not_500():
     ast.parse(src)
     assert ".isdigit()" in src                      # the guard exists
     assert "== int(_key)" in src                    # id compared as int, not str
-    assert '"id") == username' not in src           # the raw string compare is gone
+    assert '"id") == username' not in _code_only(src)   # the raw string compare is gone
 
 
 def test_get_me_returns_current_user_single_not_list():
@@ -175,9 +206,9 @@ def test_unresolved_param_get_is_item_shaped_or_404():
     # dead in production (always 404) until it was fixed to read the real keys.
     models = {"users": {"cls": "User", "cols": ["id", "username"]}}
     src = _generate_handler("GET", "/api/business_discovery/{username}", True, models, 1)
-    assert '"items"' not in src
+    assert '"items"' not in _code_only(src)
     assert "User.username == username" in src
     assert '"item"' in src and "404" in src
     src2 = _generate_handler("GET", "/api/mystery/{token}", True, models, 2)
-    assert '"items"' not in src2
+    assert '"items"' not in _code_only(src2)
     assert "404" in src2

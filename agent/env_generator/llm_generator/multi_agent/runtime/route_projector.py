@@ -3512,6 +3512,14 @@ def identical_projected_bodies_1156(backend_dir: Any) -> List[Tuple[str, ...]]:
     # projected route, so the lane's wins. Probed on the live stack: ?limit=5 -> 5 rows,
     # ?limit=37 -> 37. The projected body is dead code, and reporting it would send a
     # lane to fix an endpoint it had already implemented correctly.
+    #
+    # #1203gj: that live probe is sound for r14's shape and for the 2281 corpus endpoints
+    # whose projection `project_missing_routes` APPENDS below the include — but it was NOT
+    # the rule it reads as. `backend_skeleton` emits its projections ABOVE the include, and
+    # there the FIRST registration wins, so the projection served and the lane's handler was
+    # the dead one: 18 endpoints across 15 runs, 13 of them the feed. The skeleton now drops
+    # such a shadower at startup (`_fw_unshadow_lane_overrides_1203gj`), which is what makes
+    # the sentence above true for both emitters rather than just the one that was probed.
     _lane_routes: set = set()
     try:
         _cr = (Path(backend_dir) / "custom_routes.py").read_text(

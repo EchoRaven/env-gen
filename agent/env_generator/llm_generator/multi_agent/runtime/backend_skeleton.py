@@ -2398,6 +2398,99 @@ try:
                     "framework-route restore skipped: %s", _e1202ki)
             except Exception:
                 pass
+
+
+    # #1203gj: a lane route the framework DECIDED to keep must actually serve.
+    #
+    # `_custom_route_overrides_projected` returning True means "the LANE owns this path", and
+    # the drop above already removed the paths where projected wins. But winning is settled by
+    # ORDER, not by that predicate: FastAPI serves the FIRST route matching a request, and
+    # `include_router` runs HERE — so a projected `@app.get(...)` written ABOVE this line
+    # registers first and the kept lane route is dead code.
+    #
+    # TWO EMITTERS, ONE BELIEF. #1156 reasoned the other way in a comment that is still there
+    # — "include_router(_custom_router) runs at main.py:948, hundreds of lines before the
+    # projected route, so the lane's wins", probed live on netflix-local-r14 (?limit=5 -> 5
+    # rows, ?limit=37 -> 37) — and it is TRUE for the handlers `project_missing_routes`
+    # APPENDS below this line: 2281 such endpoints across 171 corpus runs, where the lane
+    # does win. It is FALSE for the ones `backend_skeleton` emits above it. MEASURED: 18
+    # endpoints across 15 runs where this very predicate said the lane wins and the lane
+    # lost, 13 of them the FEED (/api/videos/feed, /api/feed/for-you, /api/videos/foryou,
+    # /api/feed/videos) and tiktok-web-r167's /api/creators/suggested, whose projected
+    # shadower is `return {"items": [], "total": 0}` — an empty stub served to the product
+    # while the lane's DB-querying `get_suggested_creators` sat unreachable. The lane then
+    # gets a bug task, fixes its own handler, redeploys, and nothing changes; tiktok-web-r163
+    # filed that loop in its own words: "the claimed public endpoint contract fix did not
+    # reach the projected runtime ... must fix actual generated/runtime behavior".
+    #
+    # Runs at startup, registered after #1166's restore and #1202ki's fixed-surface re-insert
+    # so the table is final and the framework-owned auth/oauth surface is already back at the
+    # front. Removes the SHADOWER, never the lane route, and only when a `custom_routes`
+    # handler is still mounted to answer the request. Three things are deliberately left
+    # alone and SAID rather than silently skipped: a path the predicate gives to the
+    # projected handler (#528/#77 — a buggy lane CRUD handler must not 500-shadow the
+    # schema-safe read), a shadower on the framework's fixed surface, and a shadower that
+    # also serves a method the lane did not claim.
+    @app.on_event("startup")
+    async def _fw_unshadow_lane_overrides_1203gj():
+        """Drop a projected route that registered ahead of the lane route that owns it."""
+        try:
+            import logging as _l1203gj
+            _fixed_1203gj = {id(_r) for _r in _FW_FIXED_ROUTES_1202KI}
+            _lane_1203gj = {}
+            for _rt in app.router.routes:
+                _ep = getattr(_rt, "endpoint", None)
+                if getattr(_ep, "__module__", "") != "custom_routes":
+                    continue
+                for _mm in (getattr(_rt, "methods", None) or ()):
+                    _lane_1203gj.setdefault(
+                        (str(_mm).upper(), str(getattr(_rt, "path", ""))), _rt)
+            _drop_1203gj = []
+            _held_1203gj = []
+            for _key, _lane_rt in _lane_1203gj.items():
+                if not _custom_route_overrides_projected(_key[0], _key[1]):
+                    continue          # projected wins by design — not this hook's business
+                for _rt in app.router.routes:
+                    if _rt is _lane_rt:
+                        break         # the lane route itself: nothing ahead of it is left
+                    if str(getattr(_rt, "path", "")) != _key[1]:
+                        continue
+                    _ms = {str(_m).upper() for _m in (getattr(_rt, "methods", None) or ())}
+                    if _key[0] not in _ms:
+                        continue
+                    if id(_rt) in _fixed_1203gj:
+                        _held_1203gj.append("%s %s (framework fixed surface)" % _key)
+                        continue
+                    if _ms - {_key[0]}:
+                        _held_1203gj.append(
+                            "%s %s (shadower also serves %s, which the lane did not claim)"
+                            % (_key[0], _key[1], sorted(_ms - {_key[0]})))
+                        continue
+                    if not any(_rt is _d for _d in _drop_1203gj):
+                        _drop_1203gj.append(_rt)
+            if _drop_1203gj:
+                app.router.routes[:] = [
+                    _r for _r in app.router.routes
+                    if not any(_r is _d for _d in _drop_1203gj)]
+                _l1203gj.getLogger("custom_routes").warning(
+                    "unshadowed %d lane route(s): a projected handler had registered ahead "
+                    "of the custom_routes handler that owns the path, so FastAPI served the "
+                    "projection and every lane fix to its own handler was invisible at "
+                    "runtime. Dropped the projection: %s",
+                    len(_drop_1203gj),
+                    ["%s %s" % (sorted(getattr(_d, "methods", None) or ["?"])[0],
+                                getattr(_d, "path", "?")) for _d in _drop_1203gj])
+            if _held_1203gj:
+                _l1203gj.getLogger("custom_routes").warning(
+                    "left %d shadowing route(s) in place: %s",
+                    len(_held_1203gj), _held_1203gj)
+        except Exception as _e1203gj:    # never let the repair break startup
+            try:
+                import logging as _l4
+                _l4.getLogger("custom_routes").warning(
+                    "lane-override unshadow skipped: %s", _e1203gj)
+            except Exception:
+                pass
 except ImportError as _custom_imp:
     # ONLY "custom_routes does not exist" is benign. A NESTED broken import (the lane's
     # `import asyncpg` with the package missing) also lands here — and silently dropping

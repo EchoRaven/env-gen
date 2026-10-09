@@ -206,7 +206,14 @@ def duplicated_routes(backend_dir: Path) -> Set[Tuple[str, str]]:
     intra-module collisions FastAPI silently shadows (it mounts only the FIRST). A
     cross-module override (main.py's projected handler + a custom_routes.py override)
     is NOT flagged — only same-file duplicates, which are always a lane bug. See
-    route_projector._duplicate_routes / audit #6."""
+    route_projector._duplicate_routes / audit #6.
+
+    That exemption rests on the override actually overriding, which is an ORDER question the
+    word "override" hides: a skeleton-emitted projection registers before the include and
+    used to win (#1203gj — 18 endpoints over 15 runs served a projection, 13 of them the
+    feed, while the lane's handler sat unreachable). `_fw_unshadow_lane_overrides_1203gj`
+    drops the shadower at startup, so the exemption is sound again; if that hook is ever
+    removed, this one stops being safe with it."""
     dups: Set[Tuple[str, str]] = set()
     main_py = backend_dir / "main.py"
     if not main_py.exists():
