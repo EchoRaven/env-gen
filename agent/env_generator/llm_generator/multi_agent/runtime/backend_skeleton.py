@@ -3560,6 +3560,35 @@ def _seed_spread_1202tv(col: str, i: int, lo: int, hi: int) -> int:
     return int(lo) + (zlib.crc32(("%s\x1f%d" % (col or "", i)).encode("utf-8")) % span)
 
 
+def _counter_key_1203gn(col):
+    """The hash key for a seeded number: two spellings of ONE fact must land on one key.
+
+    #1203gn: every branch of `_seed_number` hashed the FULL column name, so a table declaring
+    both the bare noun and the `_count` mirror got two independent draws for the same fact --
+    `_seed_spread_1202tv("followers", 0, …)` is 1639 and `("followers_count", 0, …)` is 4571.
+    The delivered seeds show it: tiktok-web-r168 shipped
+    `{'followers': 4027, 'followers_count': 3962, 'likes': 2676, 'likes_count': 1691}`, so a
+    profile page reads 4027 in the header and 3962 in the stats row. 4 corpus runs (r134, r157,
+    r160, r168) declare both columns as integers and every one of their 10 user rows disagrees
+    with itself. #1202ru's own argument is this genre: "a profile page cannot have 74M
+    followers and zero total likes and still read as a real account".
+
+    The key is NOT a rule I invented -- it is #1202ru's convention: `followers_count` has stem
+    `follower`, and `followers` singularises to `follower`. MEASURED over every table in the
+    corpus: normalising collapses 15 column groups and all 15 name one fact (`like_count/likes`,
+    `view_count/views`, `replies/replies_count`, …); the only two with no integer column
+    (`genre/genres`, a duplicated `ordered`) never reach the numeric path. Nothing that should
+    differ collapses.
+
+    BRANCH SELECTION still uses the raw name -- `followers` and `followers_count` both contain
+    "follower" and already pick the same engagement band, and `rating`/`year`/`rank` must keep
+    reading their own spellings. Only the hash key is normalised.
+    """
+    from .material_prep import _counter_stem_1202ru, _singular_1202ru   # lazy: both ways do
+    text = str(col or "").lower()
+    return _counter_stem_1202ru(text) or _singular_1202ru(text)
+
+
 def _seed_number(col: str, i: int):
     """A BELIEVABLE deterministic number for a numeric column, by name. The old single
     formula gave 42–9842 for EVERYTHING, so a folder shipped ``unread_count=1773`` (outlook
@@ -3567,27 +3596,28 @@ def _seed_number(col: str, i: int):
     money/duration/year are shaped. Domain-agnostic; integers only (never floats — the
     column may be Integer and a float would coerce/truncate or error)."""
     n = (col or "").lower()
+    _k1203gn = _counter_key_1203gn(col)   # #1203gn: one fact, one number
     if "rating" in n:
         # Real rating distributions are J-shaped -- mostly 4s and 5s, a thin low tail.
-        return (5, 4, 5, 3, 5, 4, 2, 5, 4, 1, 5, 4)[_seed_spread_1202tv(col, i, 0, 11)]
+        return (5, 4, 5, 3, 5, 4, 2, 5, 4, 1, 5, 4)[_seed_spread_1202tv(_k1203gn, i, 0, 11)]
     if "year" in n:
-        return _seed_spread_1202tv(col, i, 2018, 2024)
+        return _seed_spread_1202tv(_k1203gn, i, 2018, 2024)
     if any(k in n for k in ("view", "like", "subscriber", "follower", "play", "stream",
                             "download", "impression", "share", "watch", "reach", "visit")):
-        return _seed_spread_1202tv(col, i, 120, 4100)       # engagement band, unchanged
+        return _seed_spread_1202tv(_k1203gn, i, 120, 4100)       # engagement band, unchanged
     if any(k in n for k in ("price", "amount", "cost", "revenue", "balance", "fee", "salary", "budget")):
         # Keep the retail convention (ends in 9) -- that reads as priced, not as generated --
         # while the leading digits vary. A round $1,000.00 is its own tell.
-        return _seed_spread_1202tv(col, i, 1, 24) * 10 + 9  # 19..249, irregular
+        return _seed_spread_1202tv(_k1203gn, i, 1, 24) * 10 + 9  # 19..249, irregular
     if any(k in n for k in ("duration", "seconds", "length", "runtime", "elapsed")):
-        return _seed_spread_1202tv(col, i, 30, 630)
+        return _seed_spread_1202tv(_k1203gn, i, 30, 630)
     if "score" in n:
-        return _seed_spread_1202tv(col, i, 0, 99)
+        return _seed_spread_1202tv(_k1203gn, i, 0, 99)
     if any(k in n for k in ("position", "rank", "order", "index", "priority", "page", "sort", "step")):
         # NOT spread: a rank/position column IS sequential in a real table, and scattering it
         # would make the list order contradict the column that states it.
         return i + 1                                        # 1,2,3…
-    return _seed_spread_1202tv(col, i, 3, 39)               # generic count/qty/total/unread
+    return _seed_spread_1202tv(_k1203gn, i, 3, 39)               # generic count/qty/total/unread
 _SEED_PERSON_NAME = _is_person_name  # alias kept for readability at call sites
 
 

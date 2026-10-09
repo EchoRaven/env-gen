@@ -112,14 +112,37 @@ def test_a_spawn_refusal_costs_one_goal_not_the_squad():
 
 
 def test_the_defaults_are_what_the_callers_get():
-    """#1202up's lesson about reachability: no caller overrides these, so the defaults ARE the
-    behaviour. If one starts passing its own, this assertion should be what notices."""
-    import subprocess
+    """#1202up's lesson about reachability — now asked of the WHOLE CHAIN, with ast.
 
-    out = subprocess.run(
-        ["grep", "-rn", "run_test_user_squad(", "--include=*.py", str(LLM_DIR)],
-        capture_output=True, text=True).stdout
-    for line in out.splitlines():
-        if "def run_test_user_squad" in line:
+    The first version of this grepped for `run_test_user_squad(` and asserted no matching LINE
+    mentioned the parameters. The real call wraps, and `max_concurrent=max_concurrent` sits
+    four lines below the opening paren, so the grep returned one line that could not contain
+    it and the assertion passed for a year while production ran a DIFFERENT value: this
+    helper's default was 6 and `run_squad_for_delivery` / `_run_squad_for_delivery_impl` both
+    defaulted to 4 (#1203gm). A line-scoped check cannot see a wrapped call; read the defaults
+    instead and require the whole chain to agree.
+    """
+    import ast
+
+    src = (LLM_DIR / "multi_agent" / "runtime" / "test_user_squad.py").read_text(
+        encoding="utf-8")
+    chain = ("run_squad_for_delivery", "_run_squad_for_delivery_impl", "run_test_user_squad")
+    seen = {}
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        assert "max_concurrent" not in line and "per_agent_timeout" not in line, line
+        if node.name not in chain:
+            continue
+        a = node.args
+        pairs = list(zip(a.kwonlyargs, a.kw_defaults))
+        pos = a.posonlyargs + a.args
+        if a.defaults:
+            pairs += list(zip(pos[len(pos) - len(a.defaults):], a.defaults))
+        for arg, d in pairs:
+            if arg.arg == "max_concurrent" and isinstance(d, ast.Constant):
+                seen[node.name] = d.value
+    assert set(seen) == set(chain), seen
+    assert len(set(seen.values())) == 1, (
+        "every hop must carry the SAME default, or the production entry point silently "
+        "overrides the one this file measured: %s" % seen)
+    assert seen["run_test_user_squad"] == CONCURRENCY, (seen, CONCURRENCY)

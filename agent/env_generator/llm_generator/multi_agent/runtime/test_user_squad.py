@@ -282,6 +282,63 @@ def _missing_write_goals(
     return goals
 
 
+def _cap_by_kind_1203go(ordered: Sequence[Mapping[str, Any]],
+                        max_goals: int) -> List[Dict[str, Any]]:
+    """Trim to *max_goals*, but give EVERY kind one slot before filling with more of the same.
+
+    #1203go: this was `[:max_goals]`, a pure prefix cut with no log. Goals are appended by
+    section and `mcp_parity`/`isolation` are the LAST two, so a contract with many pages cut
+    whole sections off the end. MEASURED over 33 corpus squad launches (21 of which hit the
+    cap): `mcp_parity` absent though `mcp_server/` exists in 7 of the 21 (33%), `isolation`
+    absent though the run is multi-tenant in 11 of the 21 (52%). The isolation goal is the one
+    that says "File a P0 bug on ANY cross-tenant leak", so half the full squads never ran a
+    cross-tenant check -- and nothing said so, in a file that already cites #1034's rule that a
+    truncated list must be honest about what it left out (it applies that rule to the squad
+    REPORT, not to the goal list).
+
+    r169 confirmed it twice in one run. M1 planned 1 api_crud + 9 page + 2 ui_crud, no
+    mcp_parity and no isolation. M2 was worse -- `modalities ['browser']` alone, i.e. api_crud,
+    api_smoke, mcp_parity and isolation ALL gone -- on a line that reads `mcp=True
+    multi_tenant=True`; failure replay had pushed even more page goals to the front. That is
+    also why #1203gk's repaired MCP assignment could not be exercised: the goal was never
+    dispatched.
+
+    Page goals are many and near-identical (9-10 is typical, and 45% of them time out anyway),
+    while `mcp_parity`, `isolation` and `api_smoke` are ONE each and not substitutable. So a
+    slot per kind first, then the original order fills the rest. Selection changes; ORDER does
+    not -- the result stays in the input's order, so `missing_write` keeps its place at the
+    front and the caller's replay-first sort still works. Under the cap this returns the list
+    unchanged, byte for byte.
+    """
+    ordered = list(ordered)
+    if len(ordered) <= max_goals:
+        return ordered
+    first_of_kind: Dict[Any, int] = {}
+    for i, g in enumerate(ordered):
+        first_of_kind.setdefault(g.get("kind"), i)
+    keep = set(list(first_of_kind.values())[:max_goals])
+    for i in range(len(ordered)):
+        if len(keep) >= max_goals:
+            break
+        keep.add(i)
+    return [g for i, g in enumerate(ordered) if i in keep]
+
+
+def _dropped_goals_1203go(ordered: Sequence[Mapping[str, Any]],
+                          kept: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """What the cap left out, so the caller can say it. #1034's rule, applied to the goals.
+
+    Compared by (kind, name), NOT by object identity: the caller re-plans without the cap to
+    get *ordered*, and `plan_test_user_goals` builds fresh dicts every call, so an identity
+    test would report every goal as dropped. (kind, name) is the pair the planner makes
+    unique -- `page_<slug>` per page, `api_<res>`/`ui_<res>` per resource, one `mcp_surface`,
+    one `tenant_isolation`.
+    """
+    kept_keys = {(g.get("kind"), g.get("name")) for g in kept}
+    return [{"name": g.get("name"), "kind": g.get("kind")}
+            for g in ordered if (g.get("kind"), g.get("name")) not in kept_keys]
+
+
 def plan_test_user_goals(
     *,
     business_eps: Optional[Sequence[Mapping[str, Any]]] = None,
@@ -476,7 +533,8 @@ def plan_test_user_goals(
     # Prepended (they are the loudest failures) and built SEPARATELY so they never perturb the
     # page-dedup above; when nothing is missing this is `[] + goals` → byte-identical output.
     missing_write = _missing_write_goals(business_eps, tables, feature_inventory, acc)
-    return (missing_write + goals)[:max_goals]
+    _ordered1203go = missing_write + goals
+    return _cap_by_kind_1203go(_ordered1203go, max_goals)
 
 
 def build_briefing(goal: Mapping[str, Any], *, ui_base: str, api_base: str,
@@ -711,6 +769,13 @@ def record_squad_outcome_1202wn(orch: Any, report: Any) -> bool:
                 "timed_out": int(report.get("timed_out") or 0),
                 "failed": int(report.get("failed") or 0),
                 "agent_count": len(rows),
+                # #1203go: what the goal cap left out, in the artifact rather than only in a
+                # run log that is not kept. The caller computes it and parks it here so this
+                # stays the single writer of the file.
+                "dropped_goals_1203go": [
+                    {"kind": str(d.get("kind") or "")[:24],
+                     "name": str(d.get("name") or "")[:60]}
+                    for d in (getattr(orch, "_squad_dropped_goals_1203go", None) or [])[:20]],
                 "agents": [{"goal": str(r.get("goal") or r.get("name") or "?")[:60],
                             "kind": str(r.get("kind") or "")[:24],
                             "completed": bool(r.get("completed")),
@@ -1254,8 +1319,29 @@ async def run_realism_probe_1202rt(orch: Any, version: str = "") -> Dict[str, An
     return report
 
 
+# #1203gm: THIS is the default the production path gets, and `run_test_user_squad`'s own
+# `max_concurrent = 6` never reaches it. `orchestrator.py` calls this with no concurrency
+# argument, both hops here defaulted to 4, and `#1202us` had MEASURED that six is what fits:
+# "12 goals in waves of SIX is two waves ... 2 x (300 + 7) + ~180s tail = ~794s < 900s escape".
+# At four it is THREE waves -- 3 x 307 + 180 = 1101s -- and `squad_release_decision` preempts
+# at 900s, so the third wave is cut and its agents are recorded "did not finish within 300s".
+#
+# The damage is not only the wasted wave. `_tu_squad_attempts` increments ONLY in the
+# orchestrator's 'defect' branch, which needs the squad to RUN TO COMPLETION; a squad that
+# never completes can never reach it, so the "900s / 3 attempts" budget has an attempts
+# dimension that is structurally unreachable and the only exit is the wall-clock escape.
+# MEASURED: the 'defect' branch last fired in r135, the day #1202us landed (63180d3e,
+# 2026-09-25); across r136-r169 it has fired ZERO times in 34 runs while the escape fired 270,
+# and all 53 releases in r152-r169 report `0 attempts`. BEFORE #1202us the timeout was 180s and
+# three waves DID fit (3 x 187 + 180 = 741s < 900s) -- so landing only half of it made
+# production strictly worse, which is `feedback_fixing_one_reader_is_worse_than_none`.
+#
+# r169 confirmed every step live: `wave 1: 2 completed / 4 spawned`, escapes at 957/1529/2613s
+# (M1) and 1472/2737/3377s (M2) all `0 attempts`, and 4 of 22 agents completing across the two
+# milestones. `max_active_per_parent` is 8 in dynamic_team_rules.yaml and
+# `E_PARENT_ACTIVE_CAP_REACHED` appears in zero run logs, so six is within the declared cap.
 async def run_squad_for_delivery(orch: Any, version: str = "",
-                                 *, max_concurrent: int = 4) -> Dict[str, Any]:
+                                 *, max_concurrent: int = 6) -> Dict[str, Any]:
     """#1202nx: the squad tests a RUNNING stack for minutes; hold the stack lease so a validation
     does not `down -v` it underneath (tiktok-r126: phantom "backend unreachable" P0s)."""
     from pathlib import Path as _P1202nx
@@ -1266,7 +1352,7 @@ async def run_squad_for_delivery(orch: Any, version: str = "",
 
 
 async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
-                                       *, max_concurrent: int = 4) -> Dict[str, Any]:
+                                       *, max_concurrent: int = 6) -> Dict[str, Any]:  # #1203gm
     """Orchestrator-facing entry point: gather inputs, plan modality goals, fan out the squad.
 
     Best-effort + never raises into delivery. Returns {ran, report?, goals?, reason?}. Env-gated
@@ -1284,6 +1370,34 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
             feature_inventory=inp.get("feature_inventory"))
         if not goals:
             return {"ran": False, "reason": "no goals planned (empty contract)"}
+        # #1203go: say what the cap left out. Re-planning WITHOUT the cap is how this knows;
+        # `plan_test_user_goals` is PURE, so the second call is free of side effects and the
+        # two lists are built identically. A log line alone would not survive the run (#947),
+        # so the names also ride into the squad artifact below.
+        _dropped1203go: List[Dict[str, Any]] = []
+        try:
+            _uncapped1203go = plan_test_user_goals(
+                business_eps=inp["business_eps"], ui_pages=inp["ui_pages"],
+                acceptance=inp["acceptance"], multi_tenant=inp["multi_tenant"],
+                mcp_present=inp["mcp_present"], tables=inp.get("tables"),
+                feature_inventory=inp.get("feature_inventory"),
+                max_goals=10 ** 6)
+            _dropped1203go = _dropped_goals_1203go(_uncapped1203go, goals)
+        except Exception as _exc1203go:       # never let bookkeeping sink the squad
+            if logger:
+                logger.debug("#1203go could not compute the dropped goals: %s", _exc1203go)
+        if _dropped1203go and logger:
+            logger.warning(
+                "TEST-USER SQUAD: the %d-goal cap left out %d goal(s) — %s. One slot per KIND "
+                "is reserved first, so the ones dropped here are extra goals of a kind already "
+                "covered; before #1203go a prefix cut took whole trailing sections instead "
+                "(mcp_parity in 33%% and isolation in 52%% of the capped launches).",
+                len(goals), len(_dropped1203go),
+                ["%s/%s" % (d.get("kind"), d.get("name")) for d in _dropped1203go])
+        try:
+            orch._squad_dropped_goals_1203go = _dropped1203go      # read by #1202wn's recorder
+        except Exception:
+            pass
         # Regression: re-test previously-FAILED goals first (design §3.5).
         proj = Path(getattr(orch, "output_dir", ".") or ".")
         ledger = FailureLedger(proj / "test_user_reports" / "failure_ledger.json")
