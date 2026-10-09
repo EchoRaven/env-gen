@@ -405,13 +405,58 @@ def plan_test_user_goals(
         })
 
     # --- MCP goal: completeness + parity ---
+    #
+    # #1203gk: this assignment used to open "Connect to the env's MCP server with a token",
+    # which the framework knows cannot be done. `mcp_server/<env>/start.sh` says so on its
+    # first line — "agentsuite-red pool runs this as a subprocess" — and
+    # `runhub.service._list_registryhub_mcp_servers` spells out the consequence: the server is
+    # NOT SUPPOSED TO BE RUNNING during a run, which is why 0 of 191 generated composes declare
+    # an mcp service and no MCP container has ever existed. So the goal demanded the impossible,
+    # and the test-user did the only thing an unachievable assignment allows: it reported
+    # failure. 73 MCP tasks across 28 runs.
+    #
+    # `mcp_client_tools`' #1202z6 hint already carries the right explanation and DID reach the
+    # agent (r165 once, r166 three times) — and the P0 was filed anyway, because a hint in a
+    # tool result cannot overrule the assignment the agent is measured against. r166 obeyed the
+    # hint's LETTER ("not a backend defect") and routed it elsewhere: "points to
+    # runtime/projection/compose surface, not backend custom_routes". The orchestrator then
+    # asked for MCP runtime ownership triage, a P0 told the lane to "make the MCP service
+    # available through compose on the expected port", the lane added one pointing at
+    # `mcp_server/app/Dockerfile` (the tree has it at the RUN ROOT, not under the compose
+    # context) — and docker_up broke for the WHOLE STACK. That chain cost r166 nine tasks, four
+    # of them cancelled, with release validation blocked behind a build error.
+    #
+    # So the fix belongs in the assignment, not in another hint: say nothing is listening, say
+    # how to start it (the framework's own documented procedure), and say that failing to
+    # exercise the surface is reported as NOT EXERCISED rather than as a lane defect. The one
+    # thing stated as a prohibition is the one that broke the stack. A server that refuses to
+    # START is still a real defect and step 3 keeps that reportable, so this removes a false
+    # blocker without masking a true one.
     if mcp_present:
         goals.append({
             "modality": "mcp", "kind": "mcp_parity", "name": "mcp_surface",
-            "goal": ("Connect to the env's MCP server with a token, list its tools and verify there "
-                     "is one per business endpoint (completeness), then call representative read + "
-                     "write tools and assert each result MIRRORS the equivalent HTTP API call "
-                     "(parity). Reject-on-no-auth too."),
+            "goal": ("Exercise the env's MCP surface. NOTHING IS LISTENING on the MCP port right "
+                     "now: the generated server is started by the DOWNSTREAM agent pool, not by "
+                     "this run, and no docker-compose service for it is expected — so start it "
+                     "yourself first (steps below). Then list its tools and verify there is one "
+                     "per business endpoint (completeness), call representative read + write tools "
+                     "and assert each result MIRRORS the equivalent HTTP API call (parity), and "
+                     "check reject-on-no-auth. A connection refused BEFORE you start it is "
+                     "EXPECTED and is not a defect in any lane. NEVER edit docker-compose to add "
+                     "an MCP service — the stack is not supposed to have one, and doing it breaks "
+                     "the build for every other check."),
+            "steps": [
+                "`ls mcp_server/` — one subdirectory (the env name) holding main.py and start.sh.",
+                "Start it in the background, pointing it at the API base in this briefing: "
+                "`cd mcp_server/<env> && API_BASE_URL='<the API base above>' PORT=8890 "
+                "sh start.sh &`. start.sh defaults API_BASE_URL to http://127.0.0.1:8080, which "
+                "is NOT your assigned base, so pass it explicitly.",
+                "Wait for http://127.0.0.1:8890 to accept connections, then connect with your "
+                "token and list tools. If start.sh ITSELF fails, that is a real defect — file it "
+                "with what start.sh printed. If it simply never comes up, report that the MCP "
+                "surface was NOT EXERCISED and why; do not file that against a lane.",
+                "Completeness, then parity against the HTTP API, then reject-on-no-auth.",
+            ],
             "acceptance": acc or None,
         })
 

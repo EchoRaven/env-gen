@@ -2413,10 +2413,16 @@ try:
     # projected route, so the lane's wins", probed live on netflix-local-r14 (?limit=5 -> 5
     # rows, ?limit=37 -> 37) — and it is TRUE for the handlers `project_missing_routes`
     # APPENDS below this line: 2281 such endpoints across 171 corpus runs, where the lane
-    # does win. It is FALSE for the ones `backend_skeleton` emits above it. MEASURED: 18
-    # endpoints across 15 runs where this very predicate said the lane wins and the lane
-    # lost, 13 of them the FEED (/api/videos/feed, /api/feed/for-you, /api/videos/foryou,
-    # /api/feed/videos) and tiktok-web-r167's /api/creators/suggested, whose projected
+    # does win. It is FALSE for the ones `backend_skeleton` emits above it. MEASURED by
+    # asking each run's OWN copy of this predicate: 38 endpoints across 27 runs where it said
+    # the lane wins and the lane lost. 11 are /health, where both handlers are trivially
+    # healthy and nothing is at stake, leaving 27 business endpoints across 19 runs — 15 of
+    # them in r150 or later, so this is current, not historical. 17 of the 27 are the FEED
+    # under four spellings (/api/videos/feed, /api/feed/for-you, /api/videos/foryou,
+    # /api/feed/videos); tiktok-web-r167 carries five at once (/api/feed, /api/explore/videos,
+    # /api/search, /api/creators/suggested, /api/live — the four that drew its "public
+    # contract" P1s, plus the feed) and r168 carries /api/feed. /api/creators/suggested is the
+    # one whose projected
     # shadower is `return {"items": [], "total": 0}` — an empty stub served to the product
     # while the lane's DB-querying `get_suggested_creators` sat unreachable. The lane then
     # gets a bug task, fixes its own handler, redeploys, and nothing changes; tiktok-web-r163

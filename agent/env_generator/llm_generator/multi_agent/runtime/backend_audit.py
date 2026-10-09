@@ -210,8 +210,8 @@ def duplicated_routes(backend_dir: Path) -> Set[Tuple[str, str]]:
 
     That exemption rests on the override actually overriding, which is an ORDER question the
     word "override" hides: a skeleton-emitted projection registers before the include and
-    used to win (#1203gj — 18 endpoints over 15 runs served a projection, 13 of them the
-    feed, while the lane's handler sat unreachable). `_fw_unshadow_lane_overrides_1203gj`
+    used to win (#1203gj — 27 business endpoints over 19 runs served a projection, 17 of them
+    the feed, while the lane's handler sat unreachable). `_fw_unshadow_lane_overrides_1203gj`
     drops the shadower at startup, so the exemption is sound again; if that hook is ever
     removed, this one stops being safe with it."""
     dups: Set[Tuple[str, str]] = set()

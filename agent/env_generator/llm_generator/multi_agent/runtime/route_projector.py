@@ -3517,7 +3517,9 @@ def identical_projected_bodies_1156(backend_dir: Any) -> List[Tuple[str, ...]]:
     # whose projection `project_missing_routes` APPENDS below the include — but it was NOT
     # the rule it reads as. `backend_skeleton` emits its projections ABOVE the include, and
     # there the FIRST registration wins, so the projection served and the lane's handler was
-    # the dead one: 18 endpoints across 15 runs, 13 of them the feed. The skeleton now drops
+    # the dead one: 38 endpoints across 27 runs by each run's own predicate, of which 27 (19
+    # runs, 15 of them r150+) are business endpoints rather than /health, and 17 are the feed.
+    # The skeleton now drops
     # such a shadower at startup (`_fw_unshadow_lane_overrides_1203gj`), which is what makes
     # the sentence above true for both emitters rather than just the one that was probed.
     _lane_routes: set = set()
