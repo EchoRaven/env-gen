@@ -712,11 +712,48 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                             _dpath = _up1126(_dest).path or "/"
                             if not _landed1126(_dpath, route, _aff):
                                 ok = False
-                                _note = (
-                                    f"login SUCCEEDED (token={bool(token)}) but landed on "
-                                    f"{_dpath!r}, which still shows a way to sign in — the user "
-                                    "is back on the signed-out page. Redirect to a route that "
-                                    "requires auth, not to '/'. (#1126b)")
+                                # #1203gp: NAME THE FAULT THIS FLOW ACTUALLY HAS. `ok` is
+                                # `bool(token) or moved`, so it is true in two cases that are
+                                # not successes, and both used to be reported as a redirect
+                                # problem. Split over the 16 corpus notes carrying #1126b:
+                                #   * 4 had `auth_requests == 0` — the form issued NOTHING and
+                                #     the token in storage was left by the signup flow that ran
+                                #     first in the same browser context (r169's login flow:
+                                #     `auth_requests: 0, auth_status: [], token_stored: true`);
+                                #   * 2 had a 2xx and NO token stored (r168's login:
+                                #     `auth_requests: 4, auth_status: [200], token_stored:
+                                #     false`), reported as "SUCCEEDED (token=False)";
+                                #   * 10 really did store a token after a request, and for
+                                #     those the landing complaint is right.
+                                # So 6 of 16 sent the reader at the redirect while the fault
+                                # was upstream. The mirror of #1203g1, where a note contradicted
+                                # the evidence printed beside it.
+                                #
+                                # The C-case wording is LEFT WORD FOR WORD: it is what catches
+                                # netflix-local-r3, whose LoginPage stores access_token and then
+                                # navigates to '/', a route App.jsx renders as the signed-OUT
+                                # page. `ok = bool(token) or moved` is also untouched — #1126b
+                                # says that `or` is deliberate, and this only changes wording.
+                                if not _auth_reqs and not _auth_failed:
+                                    _note = (
+                                        "the login form issued NO auth request, and the token "
+                                        "in storage was left by an earlier flow — so nothing "
+                                        f"here logged in and {_dpath!r} is simply where you "
+                                        "started. Wire the submit to the auth endpoint, then "
+                                        "re-check the landing. (#1126b/#1203gp)")
+                                elif not token:
+                                    _note = (
+                                        f"login returned {_auth_resps or 'no status'} but "
+                                        f"stored NO token, and {_dpath!r} still shows a way to "
+                                        "sign in — the request reached the API and the response "
+                                        "was dropped. Store the token, then re-check the "
+                                        "landing. (#1126b/#1203gp)")
+                                else:
+                                    _note = (
+                                        f"login SUCCEEDED (token={bool(token)}) but landed on "
+                                        f"{_dpath!r}, which still shows a way to sign in — the user "
+                                        "is back on the signed-out page. Redirect to a route that "
+                                        "requires auth, not to '/'. (#1126b)")
                         except Exception:
                             pass  # best-effort: a probe that throws must not fail a good login
                     if ok:
