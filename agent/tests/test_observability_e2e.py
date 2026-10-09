@@ -30,9 +30,31 @@ _WHY = "no .agent_logs/ with *.jsonl under generated/*/ or agent/ — a fresh cl
 class ObservabilityE2ETests(unittest.TestCase):
     @unittest.skipUnless(_HAVE_LOGS, _WHY)
     def test_aggregate_real_logs_produces_nontrivial_stats(self) -> None:
+        """#1203gr: snapshot the tree, and drop the half-written tail line.
+
+        "every LINE becomes an event" compares the aggregator's count against a second walk of
+        the same directory, which is only sound on COMPLETE lines. `_newest_real_logs` picks
+        the most recently written tree — the LIVE run's, when one is going — and an agent that
+        is mid-append leaves a final line with no newline on it. Python's file iteration yields
+        that partial line, the parser cannot read it, and the counts differ. Caught running the
+        suite during r170: 3422 events against 3430 lines, eight files each holding one
+        unterminated tail (file 401 complete lines, iteration yielding 402).
+
+        So copy, then truncate each file at its last newline. A test that fails only because a
+        run happens to be live is a test nobody can trust, and weakening the invariant to
+        "parses what is parseable" would have given up the thing #1203gc added.
+        """
         from multi_agent.runtime.observability.log_parser import aggregate_logs
-        stats = aggregate_logs(REAL_LOGS)
-        files = sorted(REAL_LOGS.rglob("*.jsonl"))
+        snap = Path(tempfile.mkdtemp(prefix="obs_snap_")) / ".agent_logs"
+        shutil.copytree(REAL_LOGS, snap)
+        self.addCleanup(shutil.rmtree, snap.parent, ignore_errors=True)
+        for f in snap.rglob("*.jsonl"):
+            raw = f.read_bytes()
+            cut = raw.rfind(b"\n")
+            if cut != -1 and cut != len(raw) - 1:
+                f.write_bytes(raw[:cut + 1])
+        stats = aggregate_logs(snap)
+        files = sorted(snap.rglob("*.jsonl"))
         # #1203gc: `> 0` was all this asserted, which a parser that read one file and dropped the
         # rest would satisfy. Two exact invariants hold instead, measured over r161-r164 (8 agent
         # dirs each; 33/21/20/33 files; 14997/9575/7836/18181 events): every agent DIRECTORY is

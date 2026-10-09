@@ -60,6 +60,10 @@ def test_the_or_in_the_ok_predicate_is_untouched():
 
 def test_the_three_branches_read_this_flows_own_evidence():
     """分支必须看 `_auth_reqs` / `token`, 而不是只看落点。"""
-    i = CODE.index("#1126b") if "#1126b" in CODE else CODE.index("1126b")
-    window = CODE[i:i + 3000]
+    # ★地标锚点, 不是字节窗口(#943 的棘轮抓到过我第一版)。起点必须是**分支的门控调用**
+    # `_landed1126(` —— 不能用 "1126b", 因为 `_code_only` 剥掉注释后第一个 "1126b"
+    # 落在 note 字符串里, 已经在三分支之后了。终点是紧随其后的 `if ok:`。
+    i = CODE.index("_landed1126(_dpath")
+    j = CODE.index("if ok:", i)
+    window = CODE[i:j]
     assert "_auth_reqs" in window, "A 类分支没有读本次流程的请求计数"

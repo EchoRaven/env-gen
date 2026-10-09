@@ -489,6 +489,18 @@ def plan_test_user_goals(
     # thing stated as a prohibition is the one that broke the stack. A server that refuses to
     # START is still a real defect and step 3 keeps that reportable, so this removes a false
     # blocker without masking a true one.
+    #
+    # #1203gq: NAME THE TOOL, not just the command. r170 confirmed the #1203gk half that
+    # matters -- the agent cited the briefing and did NOT file a lane defect, so the chain that
+    # broke r166's stack never started -- but it then stopped with "the provided tool surface
+    # for this run exposes no shell/background execution tool to start
+    # mcp_server/app/start.sh". That is FALSE: this persona carries the `runtime_full` bundle,
+    # which is ExecuteBashTool, RunBackgroundTool, GetProcessOutputTool, WaitForProcessTool,
+    # ListProcessesTool and more (`run_background`, `execute_bash`, …). A bare shell line asks
+    # the reader to infer that it has shell access, and this one inferred the opposite and gave
+    # up. So the step now names the tool it should call and says outright that it has it. The
+    # mirror of #1203fz, where copy named a tool that did not exist: here the copy named a
+    # COMMAND and left the tool unnamed.
     if mcp_present:
         goals.append({
             "modality": "mcp", "kind": "mcp_parity", "name": "mcp_surface",
@@ -498,16 +510,20 @@ def plan_test_user_goals(
                      "yourself first (steps below). Then list its tools and verify there is one "
                      "per business endpoint (completeness), call representative read + write tools "
                      "and assert each result MIRRORS the equivalent HTTP API call (parity), and "
-                     "check reject-on-no-auth. A connection refused BEFORE you start it is "
+                     "check reject-on-no-auth. You have the tools to start it "
+                     "(`run_background` / `execute_bash`), so a refusal is not a reason to "
+                     "stop. A connection refused BEFORE you start it is "
                      "EXPECTED and is not a defect in any lane. NEVER edit docker-compose to add "
                      "an MCP service — the stack is not supposed to have one, and doing it breaks "
                      "the build for every other check."),
             "steps": [
                 "`ls mcp_server/` — one subdirectory (the env name) holding main.py and start.sh.",
-                "Start it in the background, pointing it at the API base in this briefing: "
-                "`cd mcp_server/<env> && API_BASE_URL='<the API base above>' PORT=8890 "
-                "sh start.sh &`. start.sh defaults API_BASE_URL to http://127.0.0.1:8080, which "
-                "is NOT your assigned base, so pass it explicitly.",
+                "Start it with your `run_background` tool — you HAVE it (so do `execute_bash`, "
+                "`get_process_output`, `wait_for_process`, `list_processes`): "
+                "`run_background(command=\"API_BASE_URL='<the API base above>' PORT=8890 sh "
+                "start.sh\", cwd=\"mcp_server/<env>\")`. Pass API_BASE_URL explicitly — "
+                "start.sh defaults it to http://127.0.0.1:8080, which is NOT your assigned "
+                "base. Then `get_process_output` to see whether it came up.",
                 "Wait for http://127.0.0.1:8890 to accept connections, then connect with your "
                 "token and list tools. If start.sh ITSELF fails, that is a real defect — file it "
                 "with what start.sh printed. If it simply never comes up, report that the MCP "
