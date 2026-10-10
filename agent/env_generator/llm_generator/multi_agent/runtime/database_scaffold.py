@@ -921,6 +921,35 @@ _CONSTRAINT_MARKER_RE = re.compile(
 )
 _MARKER_COLUMN_LIST_RE = re.compile(r"^\s*\((.+)\)\s*$", re.DOTALL)
 
+# #1203gx: the THIRD spelling, and #997's class again -- `{"name": "unique",
+# "type": "comment_id,user_id"}`: the keyword is the WHOLE name, with no parens and no
+# dunders, and the column list sits in the type with no parens either. None of the four
+# predicates above match it, so it went down the ordinary column path and BOTH emitters
+# rendered it as a column: tiktok-web-r171's `01_init.sql` carries `"unique" TEXT` in
+# `comment_likes` and in `follows`, and its `models.py` carries `unique = Column(String)`
+# twice. Postgres accepts the quoted reserved word, so nothing crashed -- which is why this
+# one survived where #32 and #1031 aborted initdb. What it cost instead is silent: the
+# UNIQUE the contract asked for does not exist, so the delivered app accepts duplicate
+# likes and duplicate follows, and its follower counts are wrong by construction.
+#
+# The guard that keeps this from over-matching is the TYPE: it must be a list of at least
+# two bare identifiers. A column legitimately named `check` or `index` carries a SQL type
+# there (`boolean`, `integer`), never `a,b` -- and a single-column UNIQUE is declared with
+# the column's own `unique` flag, which #396 already promotes. Requiring the comma is what
+# makes "the name is a constraint keyword" safe to act on.
+#
+# #32's comment says "#997 predicted the list was not complete; it was right twice." It was
+# right three times. So before landing, this predicate was projected over every hub table
+# record on disk -- 211 runs, 2703 tables, 17268 column entries -- and it fires on exactly
+# the two r171 rows, renders both into real constraints, drops none, and re-classifies
+# nothing else. The same sweep found no fourth spelling already sitting in the corpus.
+# `test_1203gx_*` pins all three spellings, the negative controls that keep the TYPE guard
+# honest, and the fact that BOTH emitters read this one predicate.
+_CONSTRAINT_BARE_NAME_RE = re.compile(
+    r"^\s*(unique|primary[\s_]*key|foreign[\s_]*key|check|index)\s*$", re.IGNORECASE)
+_BARE_COLUMN_LIST_RE = re.compile(
+    r"^\s*\(?\s*[A-Za-z_][A-Za-z_0-9]*\s*(?:,\s*[A-Za-z_][A-Za-z_0-9]*\s*)+\)?\s*$")
+
 
 def _is_constraint_pseudo_column(col: Any) -> bool:
     """True if a 'column' entry is really a mis-modeled table constraint."""
@@ -932,6 +961,9 @@ def _is_constraint_pseudo_column(col: Any) -> bool:
     if cname.lower().startswith("constraint "):
         return True
     if _CONSTRAINT_MARKER_RE.match(cname):      # #1031: `__unique__` & friends
+        return True
+    if (_CONSTRAINT_BARE_NAME_RE.match(cname)    # #1203gx: bare `unique` + `"a,b"` type
+            and _BARE_COLUMN_LIST_RE.match(str(col.get("type") or ""))):
         return True
     return bool(_CONSTRAINT_NAME_RE.match(cname))
 
@@ -950,13 +982,19 @@ def _render_table_constraint(col: Dict[str, Any]) -> Optional[str]:
         # #1031: the marker spelling — keyword in the NAME, column list in the TYPE. RENDER it
         # rather than drop it: the contract asked for a real UNIQUE and we can honour it
         # exactly, where the keyword-in-name branch above would have.
-        mm = _CONSTRAINT_MARKER_RE.match(raw)
+        mm = _CONSTRAINT_MARKER_RE.match(raw) or _CONSTRAINT_BARE_NAME_RE.match(raw)
         if not mm:
             return None
-        lst = _MARKER_COLUMN_LIST_RE.match(str(col.get("type") or ""))
-        if not lst:
+        _ty = str(col.get("type") or "")
+        # #1031 wraps the list in parens; #1203gx's spelling does not. Accept both and
+        # HONOUR the constraint either way -- dropping it is what left r171's `follows`
+        # table accepting duplicate rows.
+        lst = _MARKER_COLUMN_LIST_RE.match(_ty)
+        cols_raw = lst.group(1) if lst else (
+            _ty if _BARE_COLUMN_LIST_RE.match(_ty) else None)
+        if cols_raw is None:
             return None
-        kw_raw, cols_raw = mm.group(1), lst.group(1)
+        kw_raw = mm.group(1)
     kw = re.sub(r"[\s_]+", " ", kw_raw.strip().upper())  # UNIQUE / PRIMARY KEY / ...
     cols = [c.strip().strip('"').strip("`").strip() for c in cols_raw.split(",")]
     cols = [c for c in cols if c]
