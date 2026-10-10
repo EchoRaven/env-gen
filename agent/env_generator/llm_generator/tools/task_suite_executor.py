@@ -137,7 +137,48 @@ This tool:
     ) -> ToolResult:
         suite_file = self.workspace.resolve(suite_path)
         if not suite_file.exists():
-            return ToolResult.fail(f"Task suite not found: {suite_path}")
+            # #1203hd: NAME THE PRODUCER. "not found" tells the caller what it asked for
+            # and never what makes one, so the agent re-asks or guesses another path.
+            #
+            # ★ CONDITIONAL, AND THE DENOMINATOR COMES FIRST. Time-sliced: the last
+            # `🔧 execute_task_suite` invocation in the corpus is 2026-09-24 and there
+            # have been ZERO since, so every figure below is HISTORICAL. The path is
+            # still reachable -- the tool is granted in four places in `agents_config`
+            # and r175 offered it in four tool deltas on 2026-10-10 -- agents simply
+            # stopped choosing it. So this is a correct, zero-risk message fix on a
+            # live-but-unexercised path: not firing is not failure, and it must not be
+            # counted as a current defect. The sweep that found it (ranking tools by
+            # ✅/❌ over the whole corpus) is NOT time-sliced, which is how a dormant
+            # path reads like a live one.
+            #
+            # MEASURED, all of it before 09-24: this tool was called 211 times, and
+            # `execute_task_suite`
+            # failed 167 of those -- 155 of them on this exact default, `tasks/tasks.yaml`,
+            # across 34 logs, plus 7 on invented paths (`tasks/isolation.yaml`,
+            # `validation/business_chains.yaml`, `.registry/verification_chains.yaml`, ...).
+            # Meanwhile `save_task_suite` -- the producer, one of the five
+            # `task_definition_tools`, granted to the verifier -- is called ZERO times, and so
+            # are its four siblings. Agents reach for the EXECUTOR 211 times and never once
+            # for the PRODUCER. Only 3 runs in the corpus (r71, r74, r92, all pre-r100) have
+            # ever had a `tasks/tasks.yaml`.
+            #
+            # ★ CONSEQUENCE, STATED RATHER THAN SLIPPED IN. `delivery_gate` gates three checks
+            # on `task_suite_exists`, and they have never fired in 298 logs: with no suite,
+            # `api_smoke_pass`/`ui_smoke_pass` are computed, written into `validation_runtime`
+            # and enforced by nobody (#1202ze measured 86 evaluations in 27 runs that read
+            # `ok: true` beside a FALSE smoke, 22 of them at the release cut). If suites start
+            # existing, that enforcement switches ON. This patch only makes the producer
+            # discoverable -- it does not create a suite -- but a reader seeing smoke checks
+            # begin to block should look here first.
+            _hint1203hd = (
+                " — nothing has saved a suite at that path. A task suite is CREATED by "
+                "`save_task_suite` (with `define_task` / `validate_task` alongside it); "
+                "none of those has been called in this run. Either call `save_task_suite` "
+                "first and then re-run this, or skip the suite and say the task-suite "
+                "matrix was not exercised. Do NOT guess other paths: this tool reads the "
+                "one you pass and nothing else writes one."
+            )
+            return ToolResult.fail(f"Task suite not found: {suite_path}{_hint1203hd}")
 
         try:
             raw = yaml.safe_load(suite_file.read_text(encoding="utf-8")) or {}

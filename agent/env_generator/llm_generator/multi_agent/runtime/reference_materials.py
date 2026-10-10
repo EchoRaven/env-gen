@@ -690,6 +690,17 @@ async def precompute_component_specs(
             logger.info("component decompose produced nothing for %s: %s",
                         Path(img).name, res.get("error") or "no components")
             continue
+        # #1203hc: a salvaged (truncated) reply yields a PARTIAL component spec. It is
+        # worth keeping -- the alternative was discarding every component in the reply --
+        # but the reader must be told, or `11/11 decomposed` reads as complete when one
+        # of the eleven is half a screen.
+        _trunc1203hc = res.get("truncated_1203hc")
+        if _trunc1203hc:
+            logger.warning(
+                "MATERIAL-PREP #1203hc: %s decomposed from a TRUNCATED vision reply -- %s. "
+                "Its component spec is partial; the frontend lane will build the "
+                "components that survived and has no spec for the rest.",
+                Path(img).name, _trunc1203hc)
         stem = Path(img).stem
         rel = Path("design") / "component_specs" / f"{stem}.json"
         try:

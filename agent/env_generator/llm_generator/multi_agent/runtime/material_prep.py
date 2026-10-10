@@ -296,6 +296,87 @@ def _sub_identity_1203b3(text, tokens):
     return out, hits
 
 
+def salvage_component_array_1203hc(text):
+    r"""Parse the component array, SALVAGING complete objects from a truncated reply.
+
+    The extractor was ``re.search(r"\[.*\]", text, re.DOTALL)``, which needs the
+    closing bracket. The vision call ran with ``max_tokens=3000``, and a
+    component-dense screen overruns it: the reply stops mid-array, there is no ``]``,
+    the regex matches nothing and EVERY complete component in the reply is discarded.
+
+    MEASURED over the corpus. `component decompose produced nothing for ...` appears
+    177 times and 91 of those say `no component JSON array in the vision response` --
+    the single largest cause. By screen: explore_grid 55, following_suggested_creators
+    15, friends_suggested_creators 14, live_discover 10 -- grids and card lists, i.e.
+    exactly the screens with the most components. 70 calls in the corpus report
+    `completion_tokens=3000` and 66 of them `finish=length`, and the per-run counts
+    line up one for one with the no-array errors (r166 2/2, r163 1/1, r161 1/1,
+    r169 0/0, r175 0/0). In r166 the capped response at 04:19:44 is followed on the
+    NEXT log line by `component decompose produced nothing for explore_grid.png`.
+
+    The cost is silent fidelity loss: `design/component_specs/<stem>.json` is the
+    frontend lane's per-component build spec with MEASURED colors, so the most
+    component-dense screen in the app is the one built without one. On disk, 22 of 59
+    recent runs are missing `explore_grid.json` while its reference image is present.
+
+    Returns ``(components, note)``. ``note`` is non-empty only when the reply was
+    truncated, and it says how many components were salvaged -- the shortfall is
+    reported, never hidden (#883).
+    """
+    import json
+    import re
+
+    body = text or ""
+    m = re.search(r"\[.*\]", body, re.DOTALL)
+    if m:
+        try:
+            comps = json.loads(m.group(0))
+            if isinstance(comps, list):
+                return comps, ""
+        except Exception:
+            pass
+    start = body.find("[")
+    if start < 0:
+        return [], ""
+    comps = []
+    depth = 0
+    obj_start = -1
+    in_str = False
+    esc = False
+    for i in range(start + 1, len(body)):
+        ch = body[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start >= 0:
+                try:
+                    one = json.loads(body[obj_start:i + 1])
+                except Exception:
+                    one = None
+                if isinstance(one, dict):
+                    comps.append(one)
+                obj_start = -1
+            elif depth < 0:
+                break
+    if not comps:
+        return [], ""
+    return comps, ("the vision reply was cut off before the array closed; %d complete "
+                   "component(s) were salvaged and any after them are missing" % len(comps))
+
+
 async def decompose_reference(image_path, llm, *, max_components: int = 24):
     """Decompose a reference screenshot into named UI components with MEASURED colors per
     component (PIPELINE.md §2-4 stage output — the per-component build spec the frontend lane
@@ -328,17 +409,26 @@ async def decompose_reference(image_path, llm, *, max_components: int = 24):
     ]
     try:
         client = getattr(llm, "_client", llm)
-        resp = await client.chat([Message.user_multimodal(parts)], temperature=0.0, max_tokens=3000)
+        # #1203hc: 3000 was not enough for the screens with the most components, and
+        # overrunning it discarded the WHOLE reply (see salvage_component_array_1203hc).
+        # 24 components with regions, roles and states do not fit in 3000 tokens; the
+        # budget now matches the contract, and the salvage below is the net for when
+        # even this overruns.
+        resp = await client.chat([Message.user_multimodal(parts)], temperature=0.0,
+                                 max_tokens=8000)
         text = getattr(resp, "content", "") or ""
+        _fin1203hc = str(getattr(resp, "finish_reason", "") or "")
     except Exception as exc:
         return {"error": f"vision call failed: {type(exc).__name__}: {exc}"}
-    m = re.search(r"\[.*\]", text, re.DOTALL)
-    if not m:
-        return {"error": "no component JSON array in the vision response", "raw": text[:200]}
-    try:
-        comps = json.loads(m.group(0))
-    except Exception as exc:
-        return {"error": f"component JSON parse failed: {exc}", "raw": m.group(0)[:200]}
+    comps, _note1203hc = salvage_component_array_1203hc(text)
+    if not comps:
+        # Say WHICH failure this is. `finish_reason` is the fact that separates "the
+        # model answered something else" from "the model was cut off", and the first
+        # version of this error named neither.
+        _why1203hc = (" (the reply was cut off at the token cap: finish_reason=length)"
+                      if _fin1203hc == "length" else "")
+        return {"error": "no component JSON array in the vision response" + _why1203hc,
+                "raw": text[:200], "finish_reason_1203hc": _fin1203hc}
     try:
         im = _open_rgb(str(image_path))
     except Exception as exc:
@@ -368,6 +458,10 @@ async def decompose_reference(image_path, llm, *, max_components: int = 24):
     # its own components, and a screen that is not must never depend on a branch.
     _scrubbed1203b3 = _scrub_operator_identity_1203b3(out)
     return {"components": out, "count": len(out),
+            # #1203hc: a salvaged reply is a PARTIAL spec, and the caller has to be able
+            # to say so. Silence here is how 22 of 59 runs shipped without
+            # explore_grid.json and nothing in any log named the shortfall.
+            **({"truncated_1203hc": _note1203hc} if _note1203hc else {}),
             **({"identity_scrubbed_1203b3": _scrubbed1203b3} if _scrubbed1203b3 else {})}
 
 
