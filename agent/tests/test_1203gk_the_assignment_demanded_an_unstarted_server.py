@@ -61,7 +61,16 @@ def test_the_briefing_tells_it_how_to_start_the_server():
     b = _briefing()
     assert "start.sh" in b, b
     assert "mcp_server/" in b
-    assert "PORT=8890" in b
+    # #1203h3: the literal port was pinned here and that turned out to be the defect.
+    # r174 10:45:34: the copy said `PORT=8890`, the agent did exactly that, and got
+    # `Port 8890 is already in use` -- twice over, because two MCP servers r173 left running
+    # still held 8890 and 8891. What this test should require is that the briefing makes the
+    # agent ACQUIRE a port, not that it names one.
+    assert "find_free_port" in b, b
+    assert "PORT=" in b, b                      # it still shows how to pass the port
+    import re as _re
+    assert not _re.search(r"PORT=\d", b), (
+        "the briefing hardcodes a port again; r174 measured what that costs")
     assert "API_BASE_URL" in b
 
 

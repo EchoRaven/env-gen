@@ -1633,6 +1633,14 @@ profiles:
         # _STICKY_STAGE_TOOL_CAP_1202ZC = 32.
         - run_background
         - get_process_output
+        # #1203h3: and the tool that picks the port. r174 10:45:34 is why: the copy below named
+        # PORT=8890, the agent called `run_background` exactly as told, and got
+        # "Port 8890 is already in use" -- then 8891, also in use. Two MCP servers left running
+        # by r173 (etime 5h38m and 2h13m, cwd `mcp_server/app`) were still holding them. A
+        # hardcoded port in copy that tells an agent what to run is #1203fz's class: it names
+        # something that may not be available. `find_free_port` is in this persona's pool and
+        # not in its deny list, so the menu was the only thing missing. 17 -> 18.
+        - find_free_port
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:

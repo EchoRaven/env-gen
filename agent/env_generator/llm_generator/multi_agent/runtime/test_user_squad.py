@@ -525,20 +525,25 @@ def plan_test_user_goals(
                      "per business endpoint (completeness), call representative read + write tools "
                      "and assert each result MIRRORS the equivalent HTTP API call (parity), and "
                      "check reject-on-no-auth. You have the tools to start it "
-                     "(`run_background`, then `get_process_output`), so a refusal is not a "
+                     "(`find_free_port`, `run_background`, then `get_process_output`), so a "
+                     "refusal is not a "
                      "reason to stop. A connection refused BEFORE you start it is "
                      "EXPECTED and is not a defect in any lane. NEVER edit docker-compose to add "
                      "an MCP service — the stack is not supposed to have one, and doing it breaks "
                      "the build for every other check."),
             "steps": [
                 "`ls mcp_server/` — one subdirectory (the env name) holding main.py and start.sh.",
-                "Start it with your `run_background` tool — you HAVE it (so does "
+                "Get a port FIRST with `find_free_port` — do NOT assume one. r174 followed "
+                "a hardcoded 8890 and got `Port 8890 is already in use`, then 8891 the same, "
+                "because servers an earlier run left running still hold them. Then start it "
+                "with your `run_background` tool — you HAVE it (so do `find_free_port` and "
                 "`get_process_output`): "
-                "`run_background(command=\"API_BASE_URL='<the API base above>' PORT=8890 sh "
-                "start.sh\", cwd=\"mcp_server/<env>\")`. Pass API_BASE_URL explicitly — "
-                "start.sh defaults it to http://127.0.0.1:8080, which is NOT your assigned "
-                "base. Then `get_process_output` to see whether it came up.",
-                "Wait for http://127.0.0.1:8890 to accept connections, then connect with your "
+                "`run_background(command=\"API_BASE_URL='<the API base above>' PORT=<the free "
+                "port> sh start.sh\", cwd=\"mcp_server/<env>\")`. Pass API_BASE_URL "
+                "explicitly — start.sh defaults it to http://127.0.0.1:8080, which is NOT your "
+                "assigned base. Then `get_process_output` to see whether it came up.",
+                "Wait for http://127.0.0.1:<the free port> to accept connections, then connect "
+                "with your "
                 "token and list tools. If start.sh ITSELF fails, that is a real defect — file it "
                 "with what start.sh printed. If it simply never comes up, report that the MCP "
                 "surface was NOT EXERCISED and why; do not file that against a lane.",

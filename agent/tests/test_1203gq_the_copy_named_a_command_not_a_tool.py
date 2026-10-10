@@ -163,6 +163,37 @@ def test_the_copy_names_nothing_this_persona_DENIES():
         "the briefing names tools this persona's deny_tools forbids: %s" % promised)
 
 
+def test_the_copy_does_not_HARDCODE_a_port():
+    """#1203h3: a fixed port in copy that tells an agent what to run is #1203fz's class.
+
+    r174 10:45:34 measured it: the copy said `PORT=8890`, the agent called `run_background`
+    exactly as told, and got `Port 8890 is already in use` -- then 8891, also in use, because
+    two MCP servers r173 had left running (etime 5h38m and 2h13m, cwd `mcp_server/app`) still
+    held them. The third attempt crashed. So the copy must tell the agent to ASK for a port.
+    """
+    b = _mcp_goal_text()
+    import re as _re
+    # Only an INSTRUCTION counts. The copy also documents start.sh's own wrong default
+    # ("start.sh defaults it to http://127.0.0.1:8080, which is NOT your assigned base") --
+    # that is a warning about a value to avoid, not a port to use, and flagging it was this
+    # test's first over-match.
+    hard = [m for m in _re.findall(r"PORT=(\d+)", b)]
+    waits = [m for m in _re.findall(r"connections[^.]{0,40}?127\.0\.0\.1:(\d{4,5})", b)]
+    assert not hard, "the briefing hardcodes PORT=%s; it must use find_free_port" % hard
+    assert not waits, "the briefing waits on a hardcoded port %s" % waits
+    assert "find_free_port" in b, b
+
+
+def test_the_port_tool_is_on_the_menu():
+    """Naming `find_free_port` is not enough -- it has to be offered that turn (#1203gs)."""
+    import yaml
+    cfg = yaml.safe_load(CONFIG)
+    allow = cfg["profiles"]["mcp_test_user"].get("stage_tool_allowlist") or {}
+    assert allow, "mcp_test_user lost its stage allowlist"
+    for stage, tools in allow.items():
+        assert "find_free_port" in tools, (stage, tools)
+
+
 def test_the_copy_does_not_promise_a_foreground_shell():
     """`execute_bash` blocks, so starting a long-lived server with it wedges the turn.
 

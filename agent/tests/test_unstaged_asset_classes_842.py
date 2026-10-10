@@ -82,7 +82,22 @@ def test_the_corpus_reports_exactly_one_class():
     # measured when only netflix runs were visible. The claim worth guarding is that
     # the check reports REAL classes and avatar remains the dominant one.
     assert "avatar" in seen, seen
-    assert seen <= {"avatar", "logo", "video"}, seen
+    # #1203h4 (2026-10-10): `backdrop` joined the set when instagram-core-r174 entered the
+    # corpus, and it is a FALSE POSITIVE of the same kind as `logo`. The checker compares a
+    # must_have's noun against the STAGED CATEGORIES, and `backdrops/` is a real one in the
+    # netflix family -- so "backdrop" is in its vocabulary. instagram's phrase is
+    # `dimmed page backdrop over the current page` (reference_spec screens[2].must_have[0]):
+    # a CSS treatment, not a file, and `design_system.json` carries it as the component
+    # `modal_backdrop_and_dialog`. There is nothing to stage, so the gap can never be closed
+    # by staging.
+    #
+    # Listed rather than fixed at the source, deliberately. The obvious repair -- exempt a
+    # noun that the design system also declares as a component id -- was MEASURED first and
+    # over-exempts: `video` appears among the component ids of both instagram-core-r174 and
+    # tiktok-web-r173, and `video` is in this very allowlist as a class the corpus reports.
+    # `avatar` does not, so the true positive would survive, but silencing `video` on a
+    # predicate I have not validated is the trade #823's withdrawn versions made.
+    assert seen <= {"avatar", "logo", "video", "backdrop"}, seen
 
 
 @pytest.mark.parametrize("bad", ["/nope", None, ""])
