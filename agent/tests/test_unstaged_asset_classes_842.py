@@ -91,12 +91,26 @@ def test_the_corpus_reports_exactly_one_class():
     # `modal_backdrop_and_dialog`. There is nothing to stage, so the gap can never be closed
     # by staging.
     #
-    # Listed rather than fixed at the source, deliberately. The obvious repair -- exempt a
-    # noun that the design system also declares as a component id -- was MEASURED first and
-    # over-exempts: `video` appears among the component ids of both instagram-core-r174 and
-    # tiktok-web-r173, and `video` is in this very allowlist as a class the corpus reports.
-    # `avatar` does not, so the true positive would survive, but silencing `video` on a
-    # predicate I have not validated is the trade #823's withdrawn versions made.
+    # #1203h4, measured further: `video` is a THIRD false positive of the same kind. The
+    # must_have that asks for it is instagram explore's "4-column image/video grid with 4px
+    # gap" -- a layout, not an asset -- and those runs stage no image files either, so if
+    # `video` were a real gap `image` would be one too and it is not in the vocabulary.
+    # 18 runs, all instagram, all `video (asked by explore)`.
+    #
+    # Listed rather than fixed at the source, and the obvious repair was measured TWICE before
+    # being rejected. "Exempt a noun the design system also declares as a component id" is
+    # wrong in BOTH directions, across the 157 reporting runs:
+    #     avatar  not a component id  32 runs   true positive, kept        ✓
+    #     avatar  IS a component id   30 runs   true positive, SILENCED    ✗
+    #     logo    not a component id  73 runs   false positive, still fires ✗
+    #     logo    IS a component id    3 runs   false positive, exempted   ✓
+    #     video   IS a component id   18 runs   false positive, exempted   ✓
+    #     backdrop IS a component id   1 run    false positive, exempted   ✓
+    # It would silence the real avatar gap in half the runs that have it (`avatar_row`,
+    # `story_avatar`) and leave the known `logo` false positive firing in 73. The separation
+    # that matters is not grammatical: `avatar` is real because each user NEEDS an image and
+    # #841 measured the lane faking one with a crop of a flyout panel, while backdrop/video
+    # name a treatment and a container. No cheap structural signal tells those apart.
     assert seen <= {"avatar", "logo", "video", "backdrop"}, seen
 
 

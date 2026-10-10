@@ -566,6 +566,20 @@ async def main():
     except Exception:
         pass
 
+    # #1203h3: and the PROCESSES. #1203gs let the MCP test-user actually start the server it
+    # is sent to test, and nothing stopped it: r173 ended with two still running, etime 5h38m
+    # and 2h13m, holding ports 8890 and 8891, and r174's agent then got `Port 8890 is already
+    # in use` twice before crashing. A previous run's leak broke the next run's ability to
+    # test MCP at all. Same place as the worktrees, same contract: give back what the run took.
+    try:
+        from multi_agent.runtime.worktree_reclaim import reclaim_run_processes_1203h3
+        _pr = reclaim_run_processes_1203h3(output_dir)
+        if _pr.get("stopped"):
+            print(f"  Processes: stopped {len(_pr['stopped'])} left running under this run"
+                  + (f" ({len(_pr['failed'])} refused)" if _pr.get("failed") else ""))
+    except Exception:
+        pass
+
     print("\n" + "=" * 60)
     print("GENERATION COMPLETE")
     print("=" * 60)

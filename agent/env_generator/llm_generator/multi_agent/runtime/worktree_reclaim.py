@@ -31,7 +31,9 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict
 
@@ -78,6 +80,115 @@ def _drop_build_junk_1202ay(worktree: Path) -> None:
                 continue
     except Exception:
         pass
+
+def _own_pid_chain_1203h3() -> set:
+    """This process and every ancestor, so a reclaim can never kill the run itself."""
+    chain, pid = set(), os.getpid()
+    for _ in range(64):
+        if pid <= 1 or pid in chain:
+            break
+        chain.add(pid)
+        try:
+            with open("/proc/%d/status" % pid, encoding="utf-8") as fh:
+                ppid = next((int(ln.split()[1]) for ln in fh
+                             if ln.startswith("PPid:")), 0)
+        except Exception:
+            break
+        pid = ppid
+    return chain
+
+
+def reclaim_run_processes_1203h3(output_dir: Any) -> Dict[str, Any]:
+    """Stop the long-lived processes this run started and never stopped. (#1203h3)
+
+    #1203gs let the MCP test-user actually start the server it is sent to test, and nothing
+    stops it afterwards. r173 ended with TWO of them still running -- etime 5h38m and 2h13m,
+    cwd `mcp_server/app` under its own output directory -- holding ports 8890 and 8891. r174's
+    agent then did exactly what the briefing said and got `Port 8890 is already in use`, twice
+    over, before crashing: a previous run's leak broke the next run's ability to test MCP at
+    all. The third instance today of one shape -- a fix lets work finish, and the resource it
+    takes has no counterpart (#1202as for worktrees, #1203gw for images, this for processes).
+
+    Attribution is by `/proc/<pid>/cwd` resolving UNDER this run's output directory, which is
+    the same choice #1203gw made for images: scope by something the run demonstrably owns
+    rather than by a name pattern or a port range. `ProcessManager` would have been the obvious
+    place, but it records no owner -- `start()` takes no agent id and `ProcessInfo` has no such
+    field -- so scoping there would have meant changing a singleton several tools share.
+
+    Never kills this process or any ancestor. SIGTERM first, SIGKILL only for what ignores it.
+    Never raises: this is cleanup, not a verdict.
+    """
+    summary: Dict[str, Any] = {"stopped": [], "failed": [], "skipped": ""}
+    try:
+        if os.environ.get("ENVGEN_KEEP_RUN_PROCESSES") == "1":
+            summary["skipped"] = "ENVGEN_KEEP_RUN_PROCESSES=1"
+            return summary
+        root = Path(output_dir).resolve()
+        if not root.is_dir():
+            summary["skipped"] = "no output dir"
+            return summary
+        mine = _own_pid_chain_1203h3()
+        victims = []
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid in mine:
+                continue
+            try:
+                cwd = (entry / "cwd").resolve()
+            except Exception:
+                continue           # vanished, or not ours to read
+            try:
+                cwd.relative_to(root)
+            except ValueError:
+                continue           # not under this run
+            try:
+                cmd = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(
+                    "utf-8", "replace").strip()
+            except Exception:
+                cmd = "?"
+            victims.append((pid, str(cwd), cmd[:120]))
+        if not victims:
+            summary["skipped"] = "no processes under %s" % root
+            return summary
+        for pid, cwd, cmd in victims:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except Exception as exc:
+                summary["failed"].append((pid, str(exc)[:80]))
+                continue
+            summary["stopped"].append({"pid": pid, "cwd": cwd, "cmd": cmd})
+        # One grace window for all of them, then SIGKILL whatever ignored SIGTERM.
+        if summary["stopped"]:
+            time.sleep(2.0)
+            for rec in summary["stopped"]:
+                try:
+                    os.kill(rec["pid"], 0)
+                except Exception:
+                    continue       # gone, as asked
+                try:
+                    os.kill(rec["pid"], signal.SIGKILL)
+                    rec["sigkill"] = True
+                except Exception:
+                    pass
+            # #1034: a count must not sit beside a silently truncated list. `join_capped`
+            # takes the printed total and declares what it left out -- the ratchet caught the
+            # first draft doing `len(...)` next to `[:6]`.
+            from .message_format import join_capped
+            logger.info(
+                "#1203h3 stopped %d process(es) this run left running under %s: %s",
+                len(summary["stopped"]), root,
+                join_capped(
+                    ["%s(%s)" % (r["pid"], r["cmd"].split()[0] if r["cmd"] else "?")
+                     for r in summary["stopped"]],
+                    len(summary["stopped"]), cap=6, sep=", "))
+    except Exception as exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("reclaim_run_processes_1203h3",
+                       "stopping the long-lived processes this run started", exc)
+    return summary
+
 
 def _only_untracked_1203gz(worktree: Any, root: Any) -> bool:
     """True iff this worktree's ONLY changes are untracked files. (#1203gz)
