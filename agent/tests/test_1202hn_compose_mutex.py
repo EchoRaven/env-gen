@@ -138,7 +138,17 @@ if __name__ == "__main__":
 
 class BothSpawnSitesTakeIt(unittest.TestCase):
     """A lock only one of the two racers takes is not a lock. Each site is driven for its own
-    argv style — `("up", "-d")` from validation_runner, a full docker argv from RunHub."""
+    argv style — `("up", "-d")` from validation_runner, a full docker argv from RunHub.
+
+    ★ #1203h7: TAKING THE LOCK WAS NEVER ENOUGH. This class checked that each site takes
+    *a* lock and stopped there, so it stayed green for months while the two sites keyed
+    their locks on different directories -- RunHub on `<env_root>`, validation_runner on
+    `<env_root>/docker` -- and excluded nobody. Measured on disk: 63 runs carry
+    `<run>/.compose.lock`, 66 carry `<run>/docker/.compose.lock`, and
+    instagram-core-r175 carries both, 37s apart, then reproduced r105's race verbatim.
+    The spy now records WHICH project each site named, and
+    `test_both_sites_name_the_same_project` compares them.
+    """
 
     def _record(self, module):
         from contextlib import nullcontext
@@ -146,12 +156,20 @@ class BothSpawnSitesTakeIt(unittest.TestCase):
         seen = []
         orig = cm.compose_mutex_1202hn
 
-        def spy(cwd, op="", timeout_s=300.0):
-            seen.append(str(op))
+        def spy(cwd, op="", timeout_s=300.0, compose_file=None):
+            # #1203h7: the project, not just the verb -- the verb was all this spy kept,
+            # which is why "both sites take it" could be true and useless at once.
+            seen.append({"op": str(op), "cwd": str(cwd),
+                         "compose_file": None if compose_file is None else str(compose_file)})
             return nullcontext(True)
 
         cm.compose_mutex_1202hn = spy
         return seen, (lambda: setattr(cm, "compose_mutex_1202hn", orig))
+
+    @staticmethod
+    def _lock_dirs(seen):
+        from multi_agent.runtime.compose_mutex import project_lock_dir_1203h7
+        return [project_lock_dir_1203h7(r["cwd"], r["compose_file"]) for r in seen]
 
     def test_validation_runner(self):
         import subprocess
@@ -165,6 +183,8 @@ class BothSpawnSitesTakeIt(unittest.TestCase):
                 vr._compose(Path(d) / "docker-compose.yml", "up", "-d",
                             cwd=Path(d), timeout=5)
                 self.assertTrue(seen, "the `up` spawn did not take the lock")
+                self.assertIsNotNone(seen[-1]["compose_file"],
+                                     "validation_runner took the lock without naming the project")
                 seen.clear()
                 vr._compose(Path(d) / "docker-compose.yml", "build", cwd=Path(d), timeout=5)
                 self.assertEqual(seen, [], "`build` must not hold the lock for up to 900s")
@@ -184,6 +204,8 @@ class BothSpawnSitesTakeIt(unittest.TestCase):
                 rc._default_runner(["docker", "compose", "-f", "x.yml", "up", "-d",
                                     "--remove-orphans"], cwd=d, timeout=5)
                 self.assertTrue(seen, "RunHub's spawn did not take the lock")
+                self.assertIsNotNone(seen[-1]["compose_file"],
+                                     "RunHub took the lock without naming the project")
                 seen.clear()
                 rc._default_runner(["docker", "compose", "-f", "x.yml", "build"],
                                    cwd=d, timeout=5)
@@ -191,3 +213,46 @@ class BothSpawnSitesTakeIt(unittest.TestCase):
         finally:
             subprocess.run = real
             restore()
+
+    def test_both_sites_name_the_same_project(self):
+        """★ THE TEST THAT WOULD HAVE CAUGHT #1203h7, driven through BOTH sites with the
+        cwds they really pass: RunHub gets the env root, validation_runner gets
+        `<env_root>/docker`, and the compose file is the framework-wide
+        `<env_root>/docker/docker-compose.yml`. One project, one lock directory."""
+        import subprocess
+        import tempfile
+        from multi_agent.runtime import validation_runner as vr
+        from multi_agent.runtime.hubs.runhub import compose as rc
+        real = subprocess.run
+        subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a[0] if a else [], 0, "", "")
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d) / "instagram-core-rTEST"
+                (root / "docker").mkdir(parents=True)
+                cf = root / "docker" / "docker-compose.yml"
+                cf.write_text("services: {}\n")
+
+                seen, restore = self._record(rc)
+                try:
+                    rc._default_runner(["docker", "compose", "-f", str(cf), "up", "-d",
+                                        "--remove-orphans"], cwd=str(root), timeout=5)
+                finally:
+                    restore()
+                runhub_dirs = self._lock_dirs(seen)
+
+                seen2, restore2 = self._record(vr)
+                try:
+                    vr._compose(cf, "up", "-d", "--remove-orphans",
+                                cwd=root / "docker", timeout=5)
+                finally:
+                    restore2()
+                validation_dirs = self._lock_dirs(seen2)
+
+                self.assertTrue(runhub_dirs and validation_dirs,
+                                "one of the two sites did not take the lock at all")
+                self.assertEqual(
+                    runhub_dirs, validation_dirs,
+                    "the two racers keyed their locks on different directories, which is "
+                    "#1203h7: RunHub=%s validation_runner=%s" % (runhub_dirs, validation_dirs))
+        finally:
+            subprocess.run = real

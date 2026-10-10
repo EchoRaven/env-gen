@@ -132,6 +132,71 @@ def _impl_artifact_expectation_668(rec) -> str:
               "the completion cannot change the artifact's status.")
 
 
+def _signature_help_1203h9(tool, exc, kwargs=None) -> str:
+    """The parameter names this tool accepts, when THIS call's kwargs did not fit `_run`.
+
+    The dispatcher below returned `str(e)` for every exception, so a wrong parameter name
+    reached the agent as a raw Python TypeError naming an internal class and a private
+    method: `RegistryHubRegisterEndpointTool._run() got an unexpected keyword argument
+    'provider_id'`. That says which name is wrong and never which names are right, so the
+    agent guesses again.
+
+    MEASURED over the corpus: 212 such results across 55 logs and 22 tool classes --
+    175 `got an unexpected keyword argument`, 37 `missing N required positional
+    argument`. The worst offenders are the registration tools (64 on
+    RegistryHubRegisterEndpointTool, 16 on RegistryHubRegisterTableTool), which is where a
+    wasted step costs the most: per #257 a run's cost is the prompt, re-sent every step.
+
+    ★ ADDITIVE, AND NOT A FALLBACK. The call still FAILS and the original exception text
+    is kept verbatim -- #1202z6's own rule, "the exception text is the evidence; the
+    explanation is additive". Nothing retries, nothing is coerced into a success.
+
+    ★ A TypeError from INSIDE `_run` is a real bug and must keep its traceback text
+    unadorned, so this returns "" unless the message names THIS tool's own `_run()` and
+    carries one of the three signature shapes. Checked against the corpus: no in-body
+    TypeError of those shapes appears in it.
+    """
+    try:
+        if not isinstance(exc, TypeError):
+            # Only a TypeError can be a call-shape failure; anything else came from the
+            # body by construction, because a body only runs once the arguments bound.
+            return ""
+        run_fn = getattr(tool, "_run", None)
+        if not callable(run_fn):
+            return ""
+        # ★ THE DECISION IS THE BINDING, NOT THE MESSAGE. The first version of this read
+        # `str(exc)` for `._run()` plus one of three phrase shapes -- and mutation testing
+        # showed BOTH of those guards were untested, because every fixture that reached
+        # them failed the other one too. Worse, the two cases are not separable by text:
+        # a tool whose body re-invokes its own `_run` badly raises a message identical to
+        # the caller's mistake. Binding THIS call's kwargs answers the actual question --
+        # did the arguments fit? -- so an in-body TypeError can never be dressed up as the
+        # caller's error no matter how its message reads.
+        import inspect as _inspect1203h9
+        try:
+            _inspect1203h9.signature(run_fn).bind(**(kwargs or {}))
+        except TypeError:
+            pass          # they did not fit: explain what would
+        else:
+            return ""     # they fit, so this exception came from the body
+        params = getattr(tool, "PARAMETERS", {}) or {}
+        props = list((params.get("properties") or {}).keys())
+        if not props:
+            return ""
+        required = set(params.get("required") or [])
+        shown = [f"`{p}`" + (" (required)" if p in required else "") for p in props]
+        from env_generator.llm_generator.multi_agent.runtime.message_format import (
+            join_capped)
+        listed = join_capped(shown, cap=12, sep=", ")
+        if not listed:
+            return ""
+        name = getattr(tool, "NAME", type(tool).__name__)
+        return (f" — {name} takes exactly these parameters: {listed}. "
+                "Re-call it with those names; no other key is accepted.")
+    except Exception:
+        return ""
+
+
 def _finalize_hub_tools(tool_classes):
     """Backfill abstract members for HubTool subclasses that define _run only."""
     import asyncio as _asyncio
@@ -144,7 +209,10 @@ def _finalize_hub_tools(tool_classes):
             result = await run_fn(**kwargs)
             return result if isinstance(result, ToolResult) else ToolResult(success=True, data=result)
         except Exception as e:
-            return ToolResult(success=False, error_message=str(e))
+            # #1203h9: say which names ARE accepted. Additive -- the exception text is
+            # the evidence and is kept verbatim.
+            return ToolResult(success=False,
+                              error_message=str(e) + _signature_help_1203h9(tool, e, kwargs))
 
     def _default_tool_definition(tool):
         return create_tool_param(

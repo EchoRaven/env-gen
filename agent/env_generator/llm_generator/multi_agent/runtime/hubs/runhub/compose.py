@@ -73,10 +73,15 @@ def _default_runner(args: List[str], cwd: Optional[str] = None, timeout: float =
     # recorded `aborted` with `No such container` — a delivery blocker
     # (`deliverability_no_successful_run`) over a stack that was actually healthy. Both
     # spawn sites take the same per-project lock; lifecycle verbs only.
-    from ...compose_mutex import compose_mutex_1202hn, is_lifecycle_op_1202hn
+    from ...compose_mutex import (compose_file_from_args_1203h7,
+                                  compose_mutex_1202hn, is_lifecycle_op_1202hn)
     from contextlib import nullcontext as _nullctx1202hn
+    # #1203h7: this runner's cwd is the ENV ROOT while validation_runner's is
+    # <env_root>/docker, so a cwd-keyed lock gave the same project two locks. The
+    # `-f` already in args names the project both of them drive.
     _guard1202hn = (compose_mutex_1202hn(cwd or ".", " ".join(str(a) for a in args),
-                                         timeout_s=float(timeout))
+                                         timeout_s=float(timeout),
+                                         compose_file=compose_file_from_args_1203h7(args))
                     if is_lifecycle_op_1202hn(args) else _nullctx1202hn())
     with _guard1202hn:
         cp = subprocess.run(

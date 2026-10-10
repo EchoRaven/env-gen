@@ -401,6 +401,23 @@ _ERR_MARKERS = (
     # different tool. esbuild says "Transform failed with N errors". None of them matched,
     # so a frontend build failure fell through to whatever line did.
     "failed to resolve", "could not resolve", "transform failed",
+    # #1203h8: the COMPOSE shapes. Measured over every `compose up FAILED` record in
+    # the corpus -- 119 of them -- NOT ONE matched any marker above, so all 119 fell
+    # to the tail branch, and a compose tail is container-progress chatter: 66% of
+    # those windows' characters are ` Container X  Created` lines, and in 25 of them
+    # the causal line survived only as a fragment (`Error respo`). The dominant
+    # causes are a port clash (48: `driver failed programming external connectivity
+    # ... Bind for 0.0.0.0:P failed: port is already allocated`), an exhausted
+    # address pool (22: `failed to create network ...: could not find an available,
+    # non-overlapping IPv4 address pool`), and the #1202hn race (7: `Error response
+    # from daemon: No such container`). None of them say `error:` with the colon
+    # `_ERR_MARKERS` wants, which is the same gap #1119b closed for `OCI runtime`
+    # and #1202iv for the bundlers, one tool over. Adding these turns 83 of the 119
+    # windows from nine progress lines into the one causal line; over-match checked
+    # against every progress line in the corpus: 0 hits.
+    "error response from daemon", "driver failed", "failed to create network",
+    "address pool", "already allocated", "port is already",
+    "dependency failed to start",
 )
 
 
@@ -440,6 +457,39 @@ _HINT_SEP_1202DF = " — "
 # module level would create a cycle, so the literal is shared by value and pinned by a test
 # that compares the two -- a copy nobody checks is how the two sides drift apart.
 _FW_NOTE_MARK_1203FG = " [fw-note: "
+
+
+def _join_hits_to_fit_1203hb(hits, cap, sep=" | "):
+    """Join the LAST matching lines that FIT, so the most causal one survives whole.
+
+    `_salient_error` joined `hits[-3:]` unconditionally and handed the result to
+    `_clip_keeping_guidance_1202df`, which -- absent a framework remediation clause --
+    keeps the FRONT. So three ~180-character compose errors (one per service, which is
+    what a port clash across database/backend/frontend produces) overflowed a 500 cap
+    and the cut landed inside the LAST hit, the one that localizes the fault.
+
+    That is the mechanism behind a shape I measured and could not explain for an hour:
+    25 of the corpus's 119 `compose up FAILED` records end mid-word, 24 of them at the
+    literal string `Error respo`. I first assumed an upstream truncation and ruled out
+    `ComposeResult`, `_coerce`, `_default_runner` (subprocess stderr is passed whole)
+    and the logger (same file's longest multi-line record is 2121 characters, with no
+    clustering). It was this join all along -- and #1203h8, by teaching the extractor
+    compose's vocabulary, moves 83 more records onto this path, so it had to be fixed
+    with it rather than after it.
+
+    Dropping an EARLIER hit is the right trade: `hits[-3:]` already says the last ones
+    matter most, and a whole cause beats three fragments. A single over-long hit still
+    goes to `_clip_keeping_guidance_1202df` untouched -- #1202df's netflix-r43 case,
+    where the remedy is appended past the cap, is its business and not this one's.
+    """
+    tail = list(hits[-3:])
+    try:
+        limit = max(1, int(cap))
+    except (TypeError, ValueError):
+        return sep.join(tail)
+    while len(tail) > 1 and len(sep.join(tail)) > limit:
+        tail = tail[1:]
+    return sep.join(tail)
 
 
 def _clip_keeping_guidance_1202df(out: str, cap: int) -> str:
@@ -535,19 +585,33 @@ def _salient_error(detail: Any, cap: int = 400) -> str:
         # what this function does when NOTHING matches -- gets its chance to carry the cause.
         hits = []
     if hits:
-        _out = " | ".join(hits[-3:])
+        _all1203hb = " | ".join(hits[-3:])
         # #987: a postgres error that says "at character N" needs at least N characters of
         # the STATEMENT to be readable at all. r160 reported `syntax error at or near "?" at
         # character 255` and then handed over 200 characters — the offending token is beyond
         # the cap BY CONSTRUCTION, so #973's captured STATEMENT arrived truncated to
         # `CREATE TABLE IF NOT EXISTS "titles" (`. Widen just enough to reach the offset,
         # bounded, and only when the error names one.
-        _m = _CHAR_OFFSET_987.search(_out)
+        #
+        # #1203hb: READ THE OFFSET OFF THE WHOLE JOIN, BEFORE ANY FITTING. The first
+        # version fitted first and searched the fitted text, which dropped #973's `ERROR:`
+        # half -- the half that CARRIES the offset -- so the cap never widened and the
+        # suite caught it (`test_the_offending_token_is_reachable`, 200 chars of
+        # STATEMENT and no error line at all).
+        _m = _CHAR_OFFSET_987.search(_all1203hb)
         if _m:
             try:
                 cap = max(cap, min(2000, int(_m.group(1)) + 120))
             except Exception:
                 pass
+            # And then STAND ASIDE. An offset means #987 owns this budget and #973 owns
+            # the pairing: `ERROR:` first, `STATEMENT:` second, and dropping either leaves
+            # a message that names a position in text nobody can see. #1203hb's premise --
+            # "the last hit is the most causal" -- is true for compose and false here.
+            return _clip_keeping_guidance_1202df(_all1203hb, cap)
+        # #1203hb: no offset, so fit the join to the cap by dropping EARLIER hits and the
+        # clip below cannot cut the end off the most causal one.
+        _out = _join_hits_to_fit_1203hb(hits, cap)
         return _clip_keeping_guidance_1202df(_out, cap)
     return text[-cap:].strip()
 

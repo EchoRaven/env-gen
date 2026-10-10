@@ -42,13 +42,33 @@ def test_r154s_cause_survives_instead_of_a_fragment():
     assert "remove (or rename)" in out or "already in use" in out, out
 
 
-def test_the_old_front_cut_would_have_lost_it():
-    """★ The counter-proof stated, not assumed — and on a fixture long enough to matter."""
-    assert len(R154) > 600, len(R154)
+# An unrecognised shape: #1203h8 taught the extractor compose's own error vocabulary, so
+# R154 above now matches a marker and its cause LEADS the output. The counter-proof moves
+# to a shape nobody has taught it yet, because that is where the double cut still bites.
+R154_UNTAUGHT = (" Container tiktok-web-r154-database-1  Creating\n" * 14
+                 + "the daemon said something no marker covers, and what localizes it is at "
+                   "the very end: stale-handle-0x5f3a")
+
+
+def test_the_old_front_cut_would_still_lose_an_untaught_cause():
+    """★ The counter-proof, re-pointed by #1203h8 — and on a fixture long enough to matter."""
+    assert len(R154_UNTAUGHT) > 600, len(R154_UNTAUGHT)
     import importlib
     fv = importlib.import_module("multi_agent.runtime.framework_validation")
-    old = fv._salient_error(R154, cap=600)[:200]
-    assert "remove (or rename)" not in old, old[-80:]
+    current = fv._salient_error(R154_UNTAUGHT, cap=600)
+    assert "stale-handle-0x5f3a" in current, current[-80:]
+    assert "stale-handle-0x5f3a" not in current[:200], current[:200][-80:]
+
+
+def test_r154s_cause_now_leads_the_output():
+    """★ #1203h8: the r154 shape no longer depends on the tail surviving, because
+    `error response from daemon` is a marker now. Its cause leads, so even the pre-#1203e9
+    front cut would keep it — which is the hazard removed rather than guarded."""
+    import importlib
+    fv = importlib.import_module("multi_agent.runtime.framework_validation")
+    out = fv._salient_error(R154, cap=600)
+    assert "remove (or rename)" in out, out
+    assert "Creating" not in out, out
 
 
 def test_a_marker_matching_detail_is_unchanged_in_spirit():

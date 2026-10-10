@@ -60,8 +60,29 @@ class ToolResult:
     
     @classmethod
     def fail(cls, error_message: str, **metadata) -> "ToolResult":
-        """Create failure result."""
-        return cls(success=False, error_message=error_message, metadata=metadata)
+        """Create failure result.
+
+        #1203ha: `data=` IS THE PAYLOAD, NOT METADATA. `**metadata` swallowed it, so
+        `ToolResult.fail(msg, data={...})` left `self.data` as None and buried the
+        payload in `self.metadata["data"]` -- which `__str__` never reads and which
+        nothing in the tree reads either (checked: zero consumers of
+        `metadata["data"]`). #674 exists precisely to stop a failed result dropping
+        `data` on the floor, and this construction walked straight past it.
+
+        MEASURED over the corpus, on the four call sites that pass `data=`:
+          353 `Docker compose validation failed: Found N issue(s)` across 93 logs --
+              `data["issues"]` names every issue and the agent saw the COUNT only.
+          181 `Query failed: ...` across 58 logs -- `data` carried `error_type` and a
+              computed `suggestion`, and the agent saw neither.
+        The other two (no working DB transport, connectivity test) have never fired, so
+        no claim is made for them; they are the same construction and are fixed with it.
+
+        Same shape as #748 and #1119, one layer down: the diagnosis exists at the moment
+        of failure and is kept from the party that has to act on it.
+        """
+        data = metadata.pop("data", None)
+        return cls(success=False, error_message=error_message, data=data,
+                   metadata=metadata)
     
     # #674: on FAILURE this returned the error line ALONE and dropped `data` on the floor —
     # and `data` is where tools put what actually went wrong. `test_api` reads the HTTP response

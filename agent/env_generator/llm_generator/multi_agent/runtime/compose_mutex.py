@@ -41,6 +41,53 @@ _LIFECYCLE_OPS_1202HN = frozenset({"up", "down", "stop", "start", "restart", "rm
 _LOCK_NAME_1202HN = ".compose.lock"
 
 
+# --- #1203h7: the lock must be keyed on the PROJECT, not on the caller's cwd ----
+def compose_file_from_args_1203h7(args: Any) -> Any:
+    """The ``-f <file>`` a caller is about to hand compose, or ``None``."""
+    try:
+        items = [str(a) for a in (args or [])]
+    except Exception:
+        return None
+    for i, a in enumerate(items):
+        if a in ("-f", "--file") and i + 1 < len(items):
+            return items[i + 1]
+    return None
+
+
+def project_lock_dir_1203h7(cwd: Any, compose_file: Any = None) -> Path:
+    """The ONE directory whose ``.compose.lock`` identifies this compose project.
+
+    #1202hn keyed the lock on the CALLER's cwd -- and its two callers pass
+    different ones for the same project. RunHub builds
+    ``ComposeLifecycle(cwd=<env_root>)`` (``service.py``'s ``_gd754``), while
+    ``validation_runner._compose`` is called with ``cwd=<env_root>/docker``. Both
+    then run ``-f <env_root>/docker/docker-compose.yml`` -- the framework-wide
+    convention ``_resolve_compose_file`` documents -- so they are ONE project
+    holding TWO locks and excluding nobody.
+
+    MEASURED on disk: 63 runs carry ``<run>/.compose.lock`` and 66 carry
+    ``<run>/docker/.compose.lock``; instagram-core-r175 carries BOTH, created 37
+    seconds apart. r175 then reproduced the exact race this module was written to
+    cure, at 12:27:22 -- ``Error response from daemon: No such container``, RunHub
+    recording ``aborted``, and the stack in fact healthy: five seconds later the
+    run read live seed counts off it, which is r105's signature verbatim.
+
+    The compose FILE is the project's identity -- ``record_lifecycle_1202kz``
+    directly below already keys on it -- so its resolved parent is the lock
+    directory. Absent a compose file the caller's cwd IS the project dir, which is
+    what compose itself assumes when ``-f`` is not passed.
+    """
+    if compose_file:
+        try:
+            return Path(str(compose_file)).resolve().parent
+        except Exception:
+            pass
+    try:
+        return Path(str(cwd)).resolve()
+    except Exception:
+        return Path(str(cwd))
+
+
 # #1202kz: what this PROCESS last did to a compose project, so a "not running" report can
 # tell a reader whether it is an anomaly or the expected consequence of our own teardown.
 #
@@ -96,7 +143,8 @@ def is_lifecycle_op_1202hn(args: Iterable[Any]) -> bool:
 
 
 @contextmanager
-def compose_mutex_1202hn(cwd: Any, op: str = "", timeout_s: float = 300.0) -> Iterator[bool]:
+def compose_mutex_1202hn(cwd: Any, op: str = "", timeout_s: float = 300.0,
+                         compose_file: Any = None) -> Iterator[bool]:
     """Hold the project's compose lock for the duration of the block.
 
     Yields True when the lock was actually held, False when the bounded wait expired and the
@@ -106,7 +154,9 @@ def compose_mutex_1202hn(cwd: Any, op: str = "", timeout_s: float = 300.0) -> It
     fd = None
     held = False
     try:
-        d = Path(str(cwd))
+        # #1203h7: the project's directory, not whichever cwd this caller happens
+        # to hold -- see project_lock_dir_1203h7.
+        d = project_lock_dir_1203h7(cwd, compose_file)
         d.mkdir(parents=True, exist_ok=True)
         fd = os.open(str(d / _LOCK_NAME_1202HN), os.O_CREAT | os.O_RDWR, 0o644)
         deadline = time.time() + max(0.0, float(timeout_s))

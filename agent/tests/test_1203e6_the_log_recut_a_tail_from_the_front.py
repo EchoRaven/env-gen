@@ -110,20 +110,49 @@ def test_r152s_no_such_container_cause_survives_the_selector():
     assert "No such container" in out, out[-200:]
 
 
-def test_a_front_slice_would_have_lost_both():
-    """★ The counter-proof stated rather than assumed: the pre-#1203e6 expression on the same
-    two inputs keeps neither cause. r152's stored field was exactly 500 characters, so the real
-    stderr was at least that long — the fixtures are padded to match, because on a SHORT stderr
-    the old slice happened to be harmless and would have proved nothing (#1202lq)."""
-    for text in (R152_NAME_CLASH, R152_NO_SUCH):
-        assert len(text) >= 500, (len(text), "fixture too short to reproduce the truncation")
-        old = _salient_error(text, cap=500)[:400]
-        assert "You have to remove" not in old and "No such container" not in old, old[-120:]
+# An unrecognised compose shape -- deliberately NOT matching any marker, so it still takes
+# the tail branch #1203e6 was written about. The r152 fixtures above no longer do: #1203h8
+# taught the extractor `error response from daemon`, so their cause now LEADS the output
+# and the old front slice would have kept it. That is the defect removed at its root rather
+# than guarded, but the double-slice must still not come back for shapes nobody has taught
+# this function yet -- which is every shape, right up until someone measures it.
+UNTAUGHT = (" Container tiktok-web-r152-database-1  Creating\n" * 14
+            + "the daemon said something nobody has written a marker for yet, and the part "
+              "that localizes it sits at the very end: stale-handle-0x5f3a")
 
 
-def test_error_response_from_daemon_is_not_a_marker_hit():
-    """Why these take the tail path at all: the marker is `error:`, with a colon."""
-    assert "error:" not in "Error response from daemon: Conflict.".lower()
+def test_a_front_slice_would_still_lose_an_untaught_cause():
+    """★ The counter-proof, re-pointed by #1203h8. The pre-#1203e6 expression cut the front
+    off a string that was already a tail, so on any shape that still reaches the tail branch
+    it throws away exactly the end that localizes the fault."""
+    assert len(UNTAUGHT) >= 500, (len(UNTAUGHT), "fixture too short to truncate")
+    current = _salient_error(UNTAUGHT, cap=500)
+    assert "stale-handle-0x5f3a" in current, current[-120:]
+    old = current[:400]
+    assert "stale-handle-0x5f3a" not in old, old[-120:]
+
+
+def test_the_r152_shapes_no_longer_need_the_tail_at_all():
+    """★ #1203h8 moved these two off the tail branch entirely: measured over the corpus, all
+    119 `compose up FAILED` records fell through to the tail, 66% of whose characters were
+    container-progress lines. Now the cause leads, so it survives ANY cap -- including the
+    pre-#1203e6 front slice, which is why the old counter-proof above had to move."""
+    for text, token in ((R152_NAME_CLASH, "You have to remove"),
+                        (R152_NO_SUCH, "No such container")):
+        out = _salient_error(text, cap=500)
+        assert token in out, out
+        assert "Creating" not in out, out
+
+
+def test_error_response_from_daemon_is_now_a_marker_hit():
+    """★ REVERSED by #1203h8. This used to record WHY these took the tail path -- the marker
+    was `error:`, with a colon, and compose never says it. That gap is the ticket: it is the
+    same one #1119b closed for `OCI runtime` and #1202iv for the bundlers."""
+    from multi_agent.runtime.framework_validation import _ERR_MARKERS
+    daemon = "Error response from daemon: Conflict.".lower()
+    assert "error:" not in daemon
+    assert any(m in daemon for m in _ERR_MARKERS), (
+        "compose's own error shape must match a marker")
 
 
 # ---------------------------------------------------------------- the two host faults

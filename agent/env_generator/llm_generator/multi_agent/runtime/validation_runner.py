@@ -235,7 +235,11 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
     # touch it. `build` is deliberately NOT serialized (see compose_mutex).
     from contextlib import nullcontext as _nullctx1202hn
     from .compose_mutex import compose_mutex_1202hn, is_lifecycle_op_1202hn
-    _guard1202hn = (compose_mutex_1202hn(cwd, _verb, timeout_s=float(timeout))
+    # #1203h7: key the lock on the compose PROJECT. This call's cwd is
+    # <env_root>/docker while RunHub's is <env_root>, so a cwd-keyed lock put the
+    # two racing callers in different namespaces and serialized nothing.
+    _guard1202hn = (compose_mutex_1202hn(cwd, _verb, timeout_s=float(timeout),
+                                         compose_file=compose_file)
                     if is_lifecycle_op_1202hn(args) else _nullctx1202hn())
     try:
         with _guard1202hn:
