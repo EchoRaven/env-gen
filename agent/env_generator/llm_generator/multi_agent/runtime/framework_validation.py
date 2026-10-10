@@ -339,11 +339,26 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
         _budget1203d5 = max(60, 300 // max(1, len(_fails1203d5)))
         _failed = [f"{c.get('name')}:{_salient_error(c.get('detail'), cap=_budget1203d5)}"
                    for c in _fails1203d5]
+        # #1203h1: this said "The failing run is recorded" and no such run exists.
+        # `RunValidationTool._record_runhub_run` returns early -- `if not report.get("passed"):
+        # return None` -- with a stated reason ("else the partial endpoint list could understate
+        # failures"), so a FAILING validation deliberately records nothing in RunHub. Measured
+        # over every run log on disk: 46 of these holds across 31 runs, and in 15 of those runs
+        # RunHub holds no failed run at all -- so a reader sent to look for one finds nothing
+        # roughly half the time, and cannot tell "not recorded" from "recorded and I missed it".
+        #
+        # The evidence IS durable, just not there: `_fresh_smoke_hold_reason_1202wc` below lands
+        # in `logs/delivery_hold.jsonl` as a `fresh_smoke` record carrying the failing check and
+        # its detail (r172's 04:03:27 entry has the chain name and the 401 that caused it). Name
+        # that, which is #1202tk's whole point -- "a run log is not kept" -- instead of naming an
+        # artifact this path is designed never to write. #1203fz's class: copy that names
+        # something that does not exist.
         orch._logger.error(
             "RELEASE HELD: the post-smoke backend edit FAILS a fresh api_smoke "
             "(%s) — NOT cutting a release that crashes on cold start (gmrun3 "
-            "class). The failing run is recorded; remediation routes to the lane. "
-            "A backend source change re-arms this check.",
+            "class). Recorded in logs/delivery_hold.jsonl as `fresh_smoke` (NOT as a "
+            "RunHub run — a failing validation deliberately records none); remediation "
+            "routes to the lane. A backend source change re-arms this check.",
             _failed or _salient_error(
                 getattr(res, "error_message", ""), cap=160) or "?")   # #1203d5
         orch._fresh_smoke_hold_reason_1202wc = (   # #1202wc
