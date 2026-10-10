@@ -686,6 +686,85 @@ def _settle_build_context_1203fk(
             prev = cur
 
 
+def _project_image_ids_1203gw(compose_file: Path, cwd: Path) -> list:
+    """This project's current service image IDs, read BEFORE `down -v`. (#1203gw)
+
+    `docker compose images -q` lists the images of EXISTING CONTAINERS, so it answers only
+    while the previous cycle's stack is still up -- measured: it returns nothing once the stack
+    is down. That is why this is called before `down -v` and not after.
+
+    Never raises and never blocks the validation: an empty list simply means nothing will be
+    pruned later, which is the pre-#1203gw behaviour.
+    """
+    try:
+        cp = _compose(compose_file, "images", "-q", cwd=cwd, timeout=60)
+        if cp.returncode != 0:
+            return []
+        return [ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip()]
+    except Exception as exc:
+        _LOG.debug("#1203gw could not read the project's image ids: %s", exc)
+        return []
+
+
+def _prune_orphaned_images_1203gw(before: list) -> None:
+    """Remove the images this build just orphaned -- and only those. (#1203gw)
+
+    MEASURED on r172, attributed by creation time against a baseline taken at launch: in 54
+    minutes the run produced 25 dangling images totalling 17.5GB, while the 34 that predated it
+    matched the pre-run baseline exactly. 15 builds -> about 1.7 images and 1.17GB per cycle
+    (one per built service), a rate near 19GB/hour. r171 ran 5h27m and `docker image prune -f`
+    reclaimed 88.29GB from it -- the same rate, independently.
+
+    That garbage is what stopped the pipeline. With root at 0 bytes free, Postgres initdb failed
+    with `pg_wal: No space left on device`; the framework classified it correctly as a HOST
+    fault, filed no application bug, and stopped for OPERATOR ACTION -- waiting on a human to
+    clear 88GB the run itself had produced. `down -v` removes volumes, not images, so nothing
+    in the cycle ever took these back.
+
+    Scoped by ID, deliberately. A global `docker image prune -f` would reach other users'
+    images on a shared host, and `--filter until=` removes the OLDER ones, which is the wrong
+    direction entirely. Taking the before/after difference of all dangling IDs would also catch
+    a concurrent build of someone else's. So: only an ID that WAS one of this project's service
+    images and IS now dangling, which is by construction this cycle's own leftover.
+    """
+    if not before:
+        return
+    # #961's ratchet caught the first draft hardcoding `docker`: resolve the runtime so a
+    # podman host works too. The container CLI has one resolver and this is not a second one.
+    from .container_runtime import runtime_bin
+    _rt1203gw = runtime_bin()
+    try:
+        cp = subprocess.run([_rt1203gw, "images", "-f", "dangling=true", "-q"],
+                            capture_output=True, text=True, timeout=60)
+        if cp.returncode != 0:
+            return
+        dangling = {ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip()}
+    except Exception as exc:
+        _LOG.debug("#1203gw could not list dangling images: %s", exc)
+        return
+    # Short IDs on both sides: `compose images -q` and `images -q` agree on width, but compare
+    # by prefix so a long-vs-short mismatch cannot silently match nothing.
+    victims = [b for b in before
+               if any(d == b or d.startswith(b) or b.startswith(d) for d in dangling)]
+    if not victims:
+        return
+    try:
+        cp = subprocess.run([_rt1203gw, "rmi", *victims],
+                            capture_output=True, text=True, timeout=120)
+        if cp.returncode != 0:
+            # An image another container still references is NOT ours to remove; say so rather
+            # than retrying harder. Cleanup is not a verdict.
+            _LOG.info("#1203gw left %d orphaned image(s) in place: %s",
+                      len(victims), ((cp.stderr or "").strip())[:200])
+            return
+    except Exception as exc:
+        _LOG.debug("#1203gw rmi failed: %s", exc)
+        return
+    _LOG.info("#1203gw reclaimed %d image(s) this build orphaned (%s) — the run's own "
+              "leftovers, scoped by id, nothing else touched.",
+              len(victims), ", ".join(v[:12] for v in victims))
+
+
 def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
     """#566l-a/b: `docker compose build` with a bounded timeout + RETRY. A retry resumes from
     the classic layer cache (completed layers = offline), so a transient registry blip recovers;
@@ -1912,6 +1991,9 @@ def run_smoke_validation(
                               lambda: localize_seed_external_images(_be_seed, _fe_dir))
         except Exception:
             pass
+        # #1203gw: read the project's image ids while the PREVIOUS cycle's stack is still up
+        # -- `compose images -q` goes empty once it is down, which is why this cannot wait.
+        _imgs_before_1203gw = _project_image_ids_1203gw(compose_file, cwd)
         _timed_1203gf("down_v", lambda: _compose(
             compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120))
         # #566l: build SEPARATELY from up so a hung/flaky network install fails fast + retries
@@ -1930,6 +2012,11 @@ def run_smoke_validation(
                              project_dir_1203g8=project_dir,
                              started_1203g8=_phase_start_1203g8)
             _write_build_fingerprint(cwd, _fp)
+            # #1203gw: only after a build that SUCCEEDED, and only when one ran at all -- #566l
+            # skips the rebuild when the source fingerprint is unchanged, and a skipped build
+            # orphans nothing.
+            _timed_1203gf("prune_orphans_1203gw",
+                          lambda: _prune_orphaned_images_1203gw(_imgs_before_1203gw))
         up, _ = _timed_1203gf("up", lambda: _compose_capture(
             compose_file, "up", "-d", "--remove-orphans", cwd=cwd, timeout=_UP_ONLY_TIMEOUT))
         if up.returncode != 0 and not _need_build:
