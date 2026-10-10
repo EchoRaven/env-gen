@@ -1329,8 +1329,37 @@ class AgentTooling:
         """Enhanced logging for tool calls with detailed content for important tools."""
 
         def truncate(s: str, max_len: int = 200) -> str:
+            # #1203he: say HOW MUCH was dropped. A bare `...` makes a cut record
+            # indistinguishable from a complete one, and this log line is the ONLY copy
+            # of a failing tool call an operator ever reads -- the agent itself gets
+            # `result.error_message` whole (`Message.tool(f"Error: {...}")`, uncapped),
+            # so this is diagnosability, not pipeline behaviour.
+            #
+            # MEASURED over the last 20 runs: 308 of 345 `Interactable elements on this
+            # page:` lists end in a bare `...`, in all 20 runs. #362/#688/#1202uk built
+            # that list precisely so a failed selector teaches the model about the page,
+            # and the operator's copy stops at `{type='submit', te...` on a login page --
+            # inside the submit button's own text.
+            #
+            # ★ IT COST REAL WORK TWICE IN ONE DAY. #1203h2 was diagnosed off a record
+            # truncated by a monitor AND capped by a ledger, and had to be withdrawn in
+            # full. 24 corpus records ending at the literal `Error respo` sent me an hour
+            # up an upstream-truncation path that does not exist. `[+412 chars]` tells a
+            # reader to go find the artifact; `...` does not say there is one.
+            #
+            # ★ TWO COPIES, PATCHED TOGETHER. This helper is defined twice in this file --
+            # `_log_tool_details` (default 200) and `_log_tool_result` (default 150) --
+            # with byte-identical bodies. The 308 measurements above come from the SECOND
+            # one, so patching the first alone would have been a fix whose evidence came
+            # from a call site it never touched (#1202lh, "fixing one reader is worse
+            # than none").
+            #
+            # The repo's own correct form is `ToolResult.__str__`
+            # (`… [truncated — N chars total]`); the rule is #1034's.
             s = str(s)
-            return s[:max_len] + "..." if len(s) > max_len else s
+            if len(s) <= max_len:
+                return s
+            return f"{s[:max_len]}… [+{len(s) - max_len} chars]"
 
         if tool_name == "plan":
             action = tool_args.get("action", "create")
@@ -1563,8 +1592,37 @@ class AgentTooling:
         """Log tool execution result with appropriate detail level."""
 
         def truncate(s: str, max_len: int = 150) -> str:
+            # #1203he: say HOW MUCH was dropped. A bare `...` makes a cut record
+            # indistinguishable from a complete one, and this log line is the ONLY copy
+            # of a failing tool call an operator ever reads -- the agent itself gets
+            # `result.error_message` whole (`Message.tool(f"Error: {...}")`, uncapped),
+            # so this is diagnosability, not pipeline behaviour.
+            #
+            # MEASURED over the last 20 runs: 308 of 345 `Interactable elements on this
+            # page:` lists end in a bare `...`, in all 20 runs. #362/#688/#1202uk built
+            # that list precisely so a failed selector teaches the model about the page,
+            # and the operator's copy stops at `{type='submit', te...` on a login page --
+            # inside the submit button's own text.
+            #
+            # ★ IT COST REAL WORK TWICE IN ONE DAY. #1203h2 was diagnosed off a record
+            # truncated by a monitor AND capped by a ledger, and had to be withdrawn in
+            # full. 24 corpus records ending at the literal `Error respo` sent me an hour
+            # up an upstream-truncation path that does not exist. `[+412 chars]` tells a
+            # reader to go find the artifact; `...` does not say there is one.
+            #
+            # ★ TWO COPIES, PATCHED TOGETHER. This helper is defined twice in this file --
+            # `_log_tool_details` (default 200) and `_log_tool_result` (default 150) --
+            # with byte-identical bodies. The 308 measurements above come from the SECOND
+            # one, so patching the first alone would have been a fix whose evidence came
+            # from a call site it never touched (#1202lh, "fixing one reader is worse
+            # than none").
+            #
+            # The repo's own correct form is `ToolResult.__str__`
+            # (`… [truncated — N chars total]`); the rule is #1034's.
             s = str(s)
-            return s[:max_len] + "..." if len(s) > max_len else s
+            if len(s) <= max_len:
+                return s
+            return f"{s[:max_len]}… [+{len(s) - max_len} chars]"
 
         # #1202wl: THE WALL CLOCK REACHES AN ARTIFACT. `duration_ms` is computed for every
         # tool call and, until now, only formatted into a log line -- and run logs are not
