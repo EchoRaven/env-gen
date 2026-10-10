@@ -138,3 +138,124 @@ def test_it_adds_no_retry_or_fallback():
             if isinstance(node, ast.Call):
                 name = getattr(node.func, "attr", "") or getattr(node.func, "id", "")
                 assert name != "ok", "a failed connect must not return ok()"
+
+
+# ---------------------------------------------------------------------- #1203hg
+# #1203h5 split the hint on "did any HTTP response come back". A 401 is one, so it took
+# the REAL-defect branch and told the caller to report a MISSING CREDENTIAL against
+# whoever owns the surface. Wrong next move, and the right one is in reach.
+#
+# OBSERVED on r176 at 15:21:31, the first run carrying #1203h5:
+#   mcp_connect FAILED (103ms): Failed to connect:
+#     Client error '401 Unauthorized' for url 'http://127.0.0.1:8800/mcp'
+# The URL is the single `/mcp` endpoint -- zero `/mcp/mcp/tools` in that run, where r175
+# had four -- so h5's dialect fix WORKED and peeled back a layer that was invisible while
+# every call 404'd before auth was ever reached. The agent had passed only `server_url`.
+#
+# A token would have verified: measured in r176, the generated MCP server wants
+# audience="app-api" + issuer=API_BASE_URL + that base's /.well-known/jwks.json, and the
+# generated backend signs with OAUTH_DEFAULT_AUDIENCE defaulting to the SAME "app-api"
+# and serves the JWKS. Corpus-wide all 145 runs with an mcp_server have a backend serving
+# it.
+#
+# ★ NO HARM IS CLAIMED. That r176 agent did NOT file the 401; its two bugs are real
+# defects reasoned out separately ("This is not an MCP missing-tool defect because the MCP
+# server projects only business endpoints"). One observation is not evidence of damage.
+# The justification is that the advice is wrong for this class and the correct action is
+# available.
+import httpx  # noqa: E402
+
+
+class _Resp:
+    def __init__(self, code):
+        self.status_code = code
+
+
+def _status_hint(monkeypatch, code):
+    def _boom(*a, **k):
+        raise httpx.HTTPStatusError(f"Client error '{code}' for url 'http://h:1/mcp'",
+                                    request=None, response=_Resp(code))
+    monkeypatch.setattr(MC, "get_mcp_client", _boom)
+    return _msg(MC.MCPConnectTool().execute(server_url="http://h:1/mcp"))
+
+
+def test_a_401_is_answered_with_a_token_not_a_bug_report():
+    """★ THE defect in this hint: a 401 is the server ANSWERING, and the caller can fix it."""
+    import pytest
+    mp = pytest.MonkeyPatch()
+    try:
+        m = _status_hint(mp, 401)
+    finally:
+        mp.undo()
+    assert "401" in m, m
+    assert "auth_token" in m, m
+    low = m.lower()
+    assert "not a defect" in low, m
+    assert "real defect, not the expected" not in low, m
+
+
+def test_a_403_takes_the_same_branch():
+    """Both of the credential refusals; a 403 on the MCP endpoint is the same situation."""
+    import pytest
+    mp = pytest.MonkeyPatch()
+    try:
+        m = _status_hint(mp, 403)
+    finally:
+        mp.undo()
+    assert "auth_token" in m, m
+
+
+def test_a_valid_token_still_refused_is_still_reportable():
+    """★ The branch must not become a blanket excuse -- that is exactly what #1202z6's
+    original blanket "this is expected" became once the server started running."""
+    import pytest
+    mp = pytest.MonkeyPatch()
+    try:
+        m = _status_hint(mp, 401)
+    finally:
+        mp.undo()
+    low = m.lower()
+    assert "valid" in low and "defect" in low, m
+    assert "do not disable" in low, m
+
+
+def test_a_404_still_takes_the_real_defect_branch():
+    """★ The contrast that makes the split meaningful: a 404 from a live server IS the
+    defect #1203h5 was about, and must not be softened into an auth hint."""
+    import pytest
+    mp = pytest.MonkeyPatch()
+    try:
+        m = _status_hint(mp, 404)
+    finally:
+        mp.undo()
+    low = m.lower()
+    assert "real defect" in low, m
+    assert "auth_token" not in m, m
+
+
+def test_the_status_comes_off_the_response_not_the_message():
+    """★ #1203h9's lesson, applied here: when two cases can read identically, ask the
+    mechanism. A 401 whose TEXT is absent must still take the credential branch."""
+    import pytest
+    mp = pytest.MonkeyPatch()
+    try:
+        def _boom(*a, **k):
+            raise httpx.HTTPStatusError("something opaque", request=None, response=_Resp(401))
+        mp.setattr(MC, "get_mcp_client", _boom)
+        m = _msg(MC.MCPConnectTool().execute(server_url="http://h:1/mcp"))
+    finally:
+        mp.undo()
+    assert "auth_token" in m, m
+
+
+def test_a_connection_refusal_is_unaffected():
+    """The nothing-is-listening branch keeps its own advice."""
+    import pytest
+    mp = pytest.MonkeyPatch()
+    try:
+        m = _msg(_connect(mp))
+    finally:
+        mp.undo()
+    assert "nothing is listening" in m.lower(), m
+    assert "auth_token" not in m, m
+

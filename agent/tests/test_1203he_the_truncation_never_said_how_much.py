@@ -159,10 +159,27 @@ def test_the_failure_log_still_caps_at_three_hundred():
 def test_the_agent_still_receives_the_message_whole():
     """★ THE CLAIM THAT MAKES THIS LOG-ONLY. If the agent-facing path ever starts
     truncating, this stops being diagnosability and becomes a defect — and the 308
-    measurements would have to be re-read as agent-visible."""
+    measurements would have to be re-read as agent-visible.
+
+    ★ The first version asserted the literal expression `f"Error: {result.error_message}"`,
+    and #1203hh replaced it with `str(result)` — so the test went red on a PREMISE CHANGE
+    rather than a regression. `str(result)` carries the whole `error_message` and appends
+    the bounded payload, so the premise still holds through a different expression. The
+    assertion now pins the premise itself: nothing on the agent path is truncated.
+    """
     step = Path(os.path.join(
         _AGENT,
         "env_generator/llm_generator/multi_agent/agents/runtime/step_pipeline/tooling.py"
     )).read_text(encoding="utf-8")
-    assert 'f"Error: {result.error_message}"' in step, (
+    # The agent's copy is built from the whole result, not a shortened one.
+    assert "Message.tool(str(result), tool_call_id)" in step, (
         "the agent-facing message is no longer handed over whole")
+    # And it never goes through this module's log-only shortener.
+    tree = ast.parse(step)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "tool"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "Message" and node.args):
+            seg = ast.get_source_segment(step, node.args[0]) or ""
+            assert "truncate" not in seg, seg

@@ -583,6 +583,70 @@ def plan_test_user_goals(
     return _cap_by_kind_1203go(_ordered1203go, max_goals)
 
 
+def record_briefing_1203hf(orch: Any, rec: Mapping[str, Any], briefing: str) -> bool:
+    """Persist the briefing a test-user was actually given. Never raises.
+
+    THE BRIEFING DECIDES WHAT EVERY TEST-USER DOES -- which MCP server to reach, which
+    tool to get a port with, what counts as a defect and what does not -- and it was
+    written NOWHERE. Measured three ways on 2026-10-10:
+
+      * the run log: `Get a port FIRST`, `Completeness, then parity`, `ls mcp_server/`,
+        `NEVER hand-edit`, `auth_token` -- 0 occurrences each
+      * `logs/test_user_squad_1202wn.jsonl`: keys are agent_count / agents / at /
+        completed / dropped_goals_1203go / failed / spawned / timed_out. No briefing,
+        no task text
+      * every artifact in the corpus: 0 files under `generated/*/logs/` or
+        `generated/*/shared/hubs/` contain any briefing phrase
+
+    So no question of the form "did this copy reach the agent / did changing it help"
+    could be answered after the fact -- and #1203h6, `_hint_1202z6` (landed three times
+    and the P0 kept being filed) and #1203gq (copy naming a tool absent from that turn's
+    list) are all exactly that question.
+
+    ★ IT COST ME A WRONG CONCLUSION THE SAME DAY. On r176 I searched the log for
+    #1203h6's text, found `auth_token` 0 times while `find_free_port` appeared 5 times,
+    and wrote down "the copy did not reach the briefing". Wrong: those 5 were all tool
+    PLUMBING (`tools_delta=+...`, the tool list, the invocation, token accounting), and
+    the positive control -- phrases that have been in the briefing for weeks -- was 0 as
+    well. "Absent from the log" is evidence only when something present would show up.
+
+    Deliberately a SEPARATE file from `test_user_squad_1202wn.jsonl`: that one is a small
+    greppable summary and whose docstring calls itself "the single writer of the file";
+    folding 3 KB of prose per agent into it would destroy what it is for.
+
+    Size is not a concern: measured 4474 characters for a 3-goal plan (the mcp_parity
+    briefing alone is 2937), so the 12-goal cap is ~12-18 KB against run directories of
+    380 MB to 2 GB.
+    """
+    try:
+        import json as _j1203hf
+        import time as _t1203hf
+        base = getattr(orch, "output_dir", None)
+        if base is None:
+            return False
+        out = Path(str(base)) / "logs" / "test_user_briefings_1203hf.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        text = str(briefing or "")
+        # A cap only so one pathological goal cannot write an unbounded line, and it
+        # declares what it dropped (#1034) rather than ending in a bare ellipsis (#1203he).
+        _CAP = 20000
+        if len(text) > _CAP:
+            text = text[:_CAP] + ("… [+%d chars]" % (len(text) - _CAP))
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j1203hf.dumps({
+                "at": _t1203hf.time(),
+                "agent_id": str((rec or {}).get("agent_id") or "")[:80],
+                "goal_kind": str((rec or {}).get("kind") or "")[:24],
+                "goal_name": str((rec or {}).get("name") or "")[:80],
+                "modality": str((rec or {}).get("modality") or "")[:16],
+                "tenant": str((rec or {}).get("tenant") or "")[:40],
+                "briefing": text,
+            }) + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def build_briefing(goal: Mapping[str, Any], *, ui_base: str, api_base: str,
                    identity: Optional[str] = None) -> str:
     """Render a goal into the full task briefing string passed to the agent (as task
@@ -720,6 +784,9 @@ async def run_test_user_squad(
             goal_b["tenant"] = f"tu_{idx+1}_{modality}"
         rec["tenant"] = goal_b.get("tenant")
         briefing = build_briefing(goal_b, ui_base=ui_base, api_base=api_base, identity=identity)
+        # #1203hf: write it down BEFORE the spawn, so a briefing survives even when the
+        # spawn fails -- "what was this agent told" is most needed exactly when it died.
+        record_briefing_1203hf(orch, rec, briefing)
         try:
             res = await spawn_service.spawn(AgentSpawnRequest(
                 agent_id=agent_id,

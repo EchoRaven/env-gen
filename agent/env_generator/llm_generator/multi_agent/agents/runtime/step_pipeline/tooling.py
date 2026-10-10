@@ -693,7 +693,27 @@ class AgentStepToolingMixin:
                 result = await self._execute_tool(tool_name, tool_args)
                 if not result.success:
                     messages.append(Message.assistant(tool_calls=[tool_call]))
-                    messages.append(Message.tool(f"Error: {result.error_message}", tool_call_id))
+                    # #1203hh: #674 BUILT THE MECHANISM AND NOTHING CALLED IT. `ToolResult.__str__`
+                    # renders a failure as `Error: <error_message>\n<data>` -- bounded at
+                    # `_FAILED_DATA_CHARS_674` = 8000 -- precisely so a failed tool's payload
+                    # reaches the agent. But every agent-facing site here read
+                    # `result.error_message` instead, which is that same string MINUS the data,
+                    # so `__str__` was never on the path: `grep` finds no caller of it in the
+                    # agents package. `str(result)` is byte-identical when `.data` is None.
+                    #
+                    # OBSERVED on r176 at 15:41:53, with #1203ha already in: `docker_validate
+                    # FAILED (18ms): Docker compose validation failed: Found 1 issue(s) in
+                    # docker-compose.yml` -- character for character what r175 said BEFORE ha,
+                    # and the verifier quoted it straight back ("failed with: \"...Found 1
+                    # issue(s)...\""), so the agent really did receive only the count. ha moved
+                    # the payload into `.data` correctly and the reader still looked elsewhere.
+                    #
+                    # The working precedent is `test_api`, which APPENDS to `error_message`
+                    # (`error_message=f"HTTP Error: {e.code}{hint}"`) -- which is why its body
+                    # and auth hints do reach the agent and why bare `HTTP Error: N` is now 0
+                    # in the corpus. Routing through `__str__` gets the same reach for EVERY
+                    # tool instead of one producer at a time.
+                    messages.append(Message.tool(str(result), tool_call_id))
                     continue
                 if hasattr(self, "clear_finish_step_reminders"):
                     self.clear_finish_step_reminders()
@@ -769,7 +789,9 @@ class AgentStepToolingMixin:
                         "milestone_reported": True,
                     }
                 messages.append(Message.assistant(tool_calls=[tool_call]))
-                messages.append(Message.tool(f"Error: {result.error_message}", tool_call_id))
+                # #1203hh: see the note above -- `str(result)` is `error_message` PLUS the
+                # bounded payload #674 meant the agent to see.
+                messages.append(Message.tool(str(result), tool_call_id))
                 continue
 
             import time as _time
@@ -872,7 +894,9 @@ class AgentStepToolingMixin:
                     self.memory.record_error(result.error_message or "", context=f"tool={tool_name}")
 
             messages.append(Message.assistant(tool_calls=[tool_call]))
-            result_str = result.data if result.success else f"Error: {result.error_message}"
+            # #1203hh: the success branch already hands over `.data`; the failure branch
+            # dropped it, which is the asymmetry #674 was written about.
+            result_str = result.data if result.success else str(result)
             if isinstance(result_str, dict):
                 result_str = json.dumps(result_str, indent=2)
             result_str = str(result_str)

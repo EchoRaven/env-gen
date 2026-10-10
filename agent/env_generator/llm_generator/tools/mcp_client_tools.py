@@ -440,6 +440,41 @@ Returns list of available tools on success.
             # defect branch.
             _refused_1203h5 = isinstance(
                 e, (httpx.ConnectError, httpx.ConnectTimeout, OSError))
+            # #1203hg: 401/403 IS AN ANSWER, NOT A DEFECT. #1203h5 split the hint on "did
+            # any HTTP response come back", and a 401 is one -- so it took the REAL-defect
+            # branch and told the caller to report a MISSING CREDENTIAL against whoever
+            # owns the surface. That is the wrong next move, and the right one is in reach.
+            #
+            # OBSERVED on r176 at 15:21:31, the first run with #1203h5 in it:
+            #   mcp_connect FAILED (103ms): Failed to connect:
+            #     Client error '401 Unauthorized' for url 'http://127.0.0.1:8800/mcp'
+            # The URL is the single `/mcp` endpoint (zero `/mcp/mcp/tools` in that run, where
+            # r175 had them), so h5's dialect fix WORKED and simply peeled back a layer that
+            # was invisible while every call 404'd before auth was ever reached. The agent
+            # had called `mcp_connect(server_url=...)` with no `auth_token`.
+            #
+            # And a token WOULD have verified: measured in r176, the generated MCP server
+            # wants `audience="app-api"` + `issuer=API_BASE_URL` + that base's
+            # `/.well-known/jwks.json`, and the generated backend signs with
+            # `OAUTH_DEFAULT_AUDIENCE` defaulting to the SAME `"app-api"` and serves the JWKS
+            # from `oauth_routes.py`. Corpus-wide: all 145 runs with an mcp_server have a
+            # backend serving `/.well-known/jwks.json`.
+            #
+            # ★ NO HARM IS CLAIMED. That r176 agent did NOT file the 401 -- its two bugs are
+            # real defects reasoned out separately ("This is not an MCP missing-tool defect
+            # because the MCP server projects only business endpoints"). One observation is
+            # not evidence of damage. The justification is that the advice is WRONG for this
+            # class and the correct action is available, nothing more.
+            #
+            # The status comes off the response, not the message text -- #1203h9's lesson:
+            # when two cases can read identically, ask the mechanism, not the string.
+            _status_1203hg = None
+            try:
+                _resp1203hg = getattr(e, "response", None)
+                if _resp1203hg is not None:
+                    _status_1203hg = int(getattr(_resp1203hg, "status_code", 0)) or None
+            except Exception:
+                _status_1203hg = None
             if _refused_1203h5:
                 _hint_1202z6 = (
                     " — NOTE: nothing is listening there. The generated MCP server "
@@ -452,6 +487,18 @@ Returns list of available tools on success.
                     "`mcp_server/<env>`, and connect to http://127.0.0.1:<that port> "
                     "— otherwise verify the endpoints the tools wrap and say the MCP "
                     "surface was not exercised."
+                )
+            elif _status_1203hg in (401, 403):
+                _hint_1202z6 = (
+                    " — NOTE: the server ANSWERED and asked for credentials, so this is "
+                    "not a defect and not the nothing-is-running case: it wants a token it "
+                    "can verify. Re-call with your access token, "
+                    "`mcp_connect(server_url=..., auth_token=\"<your access token>\")` — "
+                    "the generated MCP server verifies RS256 against the backend's "
+                    "`/.well-known/jwks.json`, which this app serves, so the token you "
+                    "already hold for the API is the one it wants. If a VALID token is "
+                    "still refused, THAT is the defect: report it with this message, and "
+                    "do NOT disable the server's auth to get past it."
                 )
             else:
                 _hint_1202z6 = (
