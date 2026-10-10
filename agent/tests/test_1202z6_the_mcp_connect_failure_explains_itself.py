@@ -63,8 +63,17 @@ def test_it_names_where_the_server_is_actually_started(monkeypatch):
     """Not merely "it is not running" — which is what the caller already knows."""
     m = _msg(_connect(monkeypatch))
     assert "start.sh" in m, m
-    assert "8890" in m, m
     assert "downstream" in m.lower(), m
+
+
+def test_it_names_no_fixed_port(monkeypatch):
+    """★ #1203h5 corrected this file's own anchor. These tests used to assert `8890`
+    was IN the hint — so they held the copy at a port the run does not control, which
+    is the #1203fz family (r174 followed a hardcoded 8890 straight into `Port 8890 is
+    already in use`). The port is per-run; the hint must say how to GET one."""
+    m = _msg(_connect(monkeypatch))
+    assert "8890" not in m, m
+    assert "find_free_port" in m, m
 
 
 def test_it_says_this_is_not_a_backend_defect(monkeypatch):
@@ -79,16 +88,24 @@ def test_it_offers_both_ways_forward(monkeypatch):
     exercised — the second matters because saying nothing is how 2379 tools came to be
     marked `implemented` without one ever being invoked."""
     m = _msg(_connect(monkeypatch))
-    assert "start.sh" in m and "127.0.0.1:8890" in m, m
+    assert "start.sh" in m and "127.0.0.1:<that port>" in m, m
     assert "not exercised" in m, m
 
 
-def test_a_404_gets_the_same_explanation(monkeypatch):
-    """The other observed failure: aiming at the backend's port, which answers but has no
-    /mcp route."""
+def test_a_404_does_not_get_the_nothing_is_listening_excuse(monkeypatch):
+    """★ #1203h5 REVERSED this test. It used to assert a 404 "gets the same
+    explanation" — and that blanket excuse is what made r175's agent treat a live
+    server's 404 as expected, then hand-edit the generated server into a REST shim to
+    make the call pass. A 404 means something ANSWERED: that is a real defect, and the
+    reader must be told so, not told to ignore it."""
     m = _msg(_connect(monkeypatch, exc=RuntimeError(
         "Client error '404 Not Found' for url 'http://localhost:8017/mcp/tools'")))
-    assert "404" in m and "8890" in m, m
+    assert "404" in m, m
+    low = m.lower()
+    assert "real defect" in low, m
+    assert "is expected" not in low, m
+    assert "do not file it as one" not in low, m
+    assert "hand-edit" in low, m
 
 
 def test_a_successful_connect_carries_no_hint(monkeypatch):

@@ -132,3 +132,61 @@ def test_no_mcp_goal_when_the_env_has_no_mcp_surface():
     goals = plan_test_user_goals(business_eps=eps, tables={}, ui_pages=[],
                                  feature_inventory={}, mcp_present=False, max_goals=24)
     assert not [g for g in goals if g.get("kind") == "mcp_parity"]
+
+
+# --------------------------------------------------------------------- #1203h6
+# r175 is what the omission cost. With #1203gs/#1203h3 the squad finally DID start
+# the server, and #1203h5's client finally spoke its protocol -- but in between,
+# the agent met a 404 from a LIVE server and answered it by HAND-EDITING
+# `mcp_server/app/main.py`, whose first line reads "do NOT hand-edit", into a
+# FastAPI shim serving `/mcp/tools` AND `/mcp/mcp/tools` and defaulted ON via
+# `MCP_COMPAT_HTTP`. That makes `mcp.run(transport="http")` dead code and ships a
+# surface speaking no MCP to the downstream pool. It reached the delivery tree
+# root, not just a worktree. The briefing already forbade the compose edit; it
+# said nothing about the file itself.
+def test_the_briefing_forbids_hand_editing_the_generated_server():
+    """★ The measured behaviour, not a hypothetical: an agent measured on making the
+    call pass will rewrite the thing being tested unless told not to."""
+    b = _briefing().lower()
+    assert "hand-edit" in b, b
+    assert "main.py" in b, b
+
+
+def test_it_says_which_outcome_is_preferable():
+    """A prohibition without the alternative just leaves the agent stuck. The copy has
+    to say that reporting an unexercised surface BEATS a gutted one."""
+    b = _briefing().lower()
+    assert "unexercised" in b or "not exercised" in b, b
+    assert "report" in b, b
+
+
+def test_a_401_is_answered_with_a_token_not_by_disabling_auth():
+    """★ The other way to make the call pass by breaking the deliverable. The generated
+    server verifies RS256 against the backend's JWKS -- measured: all 145 runs with an
+    mcp_server have a backend serving `/.well-known/jwks.json`, so a token IS
+    obtainable and `DISABLE_OAUTH=1` would be weakening a working surface."""
+    b = _briefing()
+    assert "401" in b, b
+    assert "auth_token" in b, b
+    low = b.lower()
+    assert "do not disable" in low, b
+    assert "disable_oauth" not in low, b
+
+
+def test_a_rejected_valid_token_stays_reportable():
+    """If the audience really does not line up, that must surface as a finding rather
+    than be worked around -- the #1203h5 lesson in one sentence.
+
+    ★ The first version of this test asserted both substrings were SOMEWHERE in the
+    briefing, and a mutation that deleted "real defect" from THIS sentence stayed green
+    because another sentence (start.sh failing) still carried the phrase. Two substrings
+    in one blob prove nothing about one clause, so it now pins them to the same span.
+    """
+    b = _briefing().lower()
+    # Anchored on the SENTENCE, not on a byte count: #943's ratchet rejected a
+    # `b[at:at + 140]` window here, and rightly -- the window would silently widen
+    # past the clause the moment the surrounding copy grew.
+    sentences = [frag for frag in b.replace("—", ".").split(".") if frag.strip()]
+    owning = [frag for frag in sentences if "still rejected" in frag]
+    assert owning, b
+    assert any("real defect" in frag for frag in owning), owning

@@ -530,7 +530,13 @@ def plan_test_user_goals(
                      "reason to stop. A connection refused BEFORE you start it is "
                      "EXPECTED and is not a defect in any lane. NEVER edit docker-compose to add "
                      "an MCP service — the stack is not supposed to have one, and doing it breaks "
-                     "the build for every other check."),
+                     "the build for every other check. NEVER hand-edit "
+                     "`mcp_server/<env>/main.py` either: its first line says do NOT "
+                     "hand-edit, and r175 answered a failing connect by replacing the "
+                     "FastMCP server there with a REST shim, defaulted ON, which left "
+                     "`mcp.run(transport=\"http\")` as dead code and shipped a surface "
+                     "speaking no MCP at all. An unexercised MCP surface is a far better "
+                     "outcome than a gutted one — report, do not rewrite."),
             "steps": [
                 "`ls mcp_server/` — one subdirectory (the env name) holding main.py and start.sh.",
                 "Get a port FIRST with `find_free_port` — do NOT assume one. r174 followed "
@@ -544,7 +550,12 @@ def plan_test_user_goals(
                 "assigned base. Then `get_process_output` to see whether it came up.",
                 "Wait for http://127.0.0.1:<the free port> to accept connections, then connect "
                 "with your "
-                "token and list tools. If start.sh ITSELF fails, that is a real defect — file it "
+                "token and list tools — `mcp_connect(server_url=\"http://127.0.0.1:<the "
+                "free port>\", auth_token=\"<your access token>\")`. A 401 there means the "
+                "server wants a token it can verify, so bring yours; if your own valid "
+                "token is still rejected, THAT is a real defect — report it with the "
+                "message, and do not disable the server's auth to get past it. "
+                "If start.sh ITSELF fails, that is a real defect — file it "
                 "with what start.sh printed. If it simply never comes up, report that the MCP "
                 "surface was NOT EXERCISED and why; do not file that against a lane.",
                 "Completeness, then parity against the HTTP API, then reject-on-no-auth.",
