@@ -941,6 +941,39 @@ async def run_browser_test_user(
     return _finalize_walkthrough(report)
 
 
+def auth_fault_owner_1203h0(*, ok_auth: bool, auth_status: Sequence[int]) -> str:
+    """Which lane can fix this auth failure: ``"backend"``, ``"frontend"`` or ``""``. (#1203h0)
+
+    This has NO behavioural effect today, and the honest reason is worth keeping: a draft of
+    #1203h0 also filed a second P0 against the backend, on the premise that the browser gate's
+    `assignee="frontend"` meant the lane that CAN fix a 4xx login never heard about it. The
+    premise was false and cheap to check, which is why it should have been checked first: over
+    the 627 browser-walkthrough tasks on disk, 49 (7%, 18 runs) do carry this verdict while
+    assigned to frontend -- and in all 18 of those runs the backend already held a task naming
+    the same 401, filed through business_chain remediation or a test-user's `bug_create`. r172's
+    workhub has four of them, including "POST /auth/login returns 401 for newly signed-up tenant
+    user, blocking authenticated API journey". A second task would have added noise, which is
+    the double-dispatch risk that draft's own notes had flagged.
+
+    What survives is the de-duplication: `auth_note_1203g1`'s `all(s >= 400)` branch CALLS this
+    instead of restating the condition, so the sentence it words and any future consumer of the
+    verdict cannot drift apart. `lifecycle`'s rule in this repo -- "Imported, not re-listed".
+
+    `""` when there is nothing to route: a passing auth step, or a shape this cannot name.
+    """
+    if ok_auth:
+        return ""
+    statuses = [int(s) for s in (auth_status or []) if isinstance(s, (int, float))]
+    if statuses and all(s >= 400 for s in statuses):
+        # The request reached the API and the API refused it. No edit to the form changes that.
+        return "backend"
+    if not statuses:
+        # Nothing was sent: the submit is not wired, which is the frontend's.
+        return "frontend"
+    # A 2xx that stored no token / did not navigate is post-login handling -- the frontend's.
+    return "frontend"
+
+
 def auth_note_1203g1(*, ok_auth: bool, token: Any, navigated: bool, landed: bool,
                      path: str, url: str, auth_status: Sequence[int]) -> str:
     """The auth step's NOTE, as a pure function of what the drive observed.
@@ -993,7 +1026,9 @@ def auth_note_1203g1(*, ok_auth: bool, token: Any, navigated: bool, landed: bool
     elif not auth_status:
         return (f"submit sent NO /auth request (token={bool(token)} "
                       f"url={url}) — the form is not wired to the API")
-    elif all(s >= 400 for s in auth_status):
+    elif auth_fault_owner_1203h0(ok_auth=ok_auth, auth_status=auth_status) == "backend":
+        # #1203h0: the SAME predicate the dispatcher routes on, called here rather than
+        # restated, so the sentence and the assignee cannot disagree.
         return (f"the form IS wired but /auth returned "
                       f"{sorted(set(auth_status))} — credentials / backend, "
                       f"NOT a wiring bug")
