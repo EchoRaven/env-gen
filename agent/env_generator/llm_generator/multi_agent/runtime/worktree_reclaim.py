@@ -79,6 +79,74 @@ def _drop_build_junk_1202ay(worktree: Path) -> None:
     except Exception:
         pass
 
+def reclaim_agent_worktree_1203gt(output_dir: Any, agent_id: str) -> Dict[str, Any]:
+    """Give back ONE short-lived agent's worktree, right after it is terminated. (#1203gt)
+
+    #1202as reclaims at the END of a run, which is the right time for a resident lane and far
+    too late for a test-user squad. The squad spawns twelve agents per milestone and terminates
+    each one as it finishes or times out, so by the last milestone a run is carrying every
+    squad's copies at once. r171 measured it: 29 worktrees / 12G, and /data fell from 13G to
+    7.5G of free space in 45 minutes. That filled the disk under the pipeline, Postgres initdb
+    failed with `pg_wal: No space left on device`, and the framework -- correctly -- stopped and
+    asked for OPERATOR ACTION. Reclaiming the copies by hand in two milestone batches took
+    worktrees from 12G to 2.0G with the run still live and unharmed.
+
+    This is a cost #1203gm's fix uncovered rather than created: before it, squad agents were
+    killed mid-flight and most never materialised a full checkout. Making them survive to
+    finish also made them survive to copy 394MB each.
+
+    Why reclaim here instead of never handing them a worktree at all: `path_routed_workspace`'s
+    own rule is that a path with no declared prefix stays in the agent's OWN worktree, so an
+    agent without one writes its stray files into the shared project base. The isolation is
+    worth keeping for the agent's lifetime; it is worth nothing after it is terminated.
+
+    Two observations, 46 worktrees, `kept` empty both times: a detect-only test-user never
+    modifies its copy. `--force` is still not used -- if one ever does have uncommitted work,
+    keeping it is the correct outcome. Never raises: this is cleanup, not a verdict.
+    """
+    summary: Dict[str, Any] = {"removed": [], "kept": [], "bytes_reclaimed": 0, "skipped": ""}
+    try:
+        if os.environ.get("ENVGEN_KEEP_WORKTREES") == "1":
+            summary["skipped"] = "ENVGEN_KEEP_WORKTREES=1"
+            return summary
+        aid = str(agent_id or "").strip()
+        if not aid or "/" in aid or aid in (".", ".."):
+            summary["skipped"] = "no usable agent id"
+            return summary
+
+        root = Path(output_dir).resolve()
+        entry = root / "worktrees" / aid
+        if not entry.is_dir():
+            summary["skipped"] = "no worktree for %s" % aid
+            return summary
+
+        size = _dir_bytes(entry)
+        _drop_build_junk_1202ay(entry)
+        try:
+            subprocess.run(["git", "worktree", "remove", str(entry)],
+                           cwd=str(root), capture_output=True, text=True, timeout=120,
+                           check=True)
+        except Exception as exc:
+            summary["kept"].append(aid)
+            logger.debug("#1203gt kept %s: %s", aid, exc)
+            return summary
+
+        summary["removed"].append(aid)
+        summary["bytes_reclaimed"] = size
+        try:
+            subprocess.run(["git", "worktree", "prune"], cwd=str(root),
+                           capture_output=True, timeout=60)
+        except Exception:
+            pass
+        logger.info("#1203gt reclaimed %s's worktree (%.0f MB) after termination.",
+                    aid, size / 1048576)
+    except Exception as exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("reclaim_agent_worktree_1203gt",
+                       "the post-termination reclamation of a spawned agent's worktree", exc)
+    return summary
+
+
 def reclaim_run_worktrees_1202as(output_dir: Any) -> Dict[str, Any]:
     """Remove the run's per-lane worktree checkouts. Never raises. (#1202as)
 

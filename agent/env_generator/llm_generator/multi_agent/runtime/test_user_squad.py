@@ -732,6 +732,59 @@ async def run_test_user_squad(
             await spawn_service.terminate(agent_id, wait=False)
         except Exception:
             pass
+        # #1203gt: hand the checkout back NOW, not at the end of the run. #1202as reclaims per
+        # LANE worktrees when the run finishes, which is far too late for a squad: twelve agents
+        # per milestone, each a full 394MB copy of `app/`, and every milestone's copies alive at
+        # once. r171 reached 29 worktrees / 12G and watched /data fall 13G -> 7.5G in 45
+        # minutes; the disk then filled under the pipeline, Postgres initdb failed on
+        # `pg_wal: No space left on device`, and the framework correctly stopped for OPERATOR
+        # ACTION. This is a cost #1203gm's fix uncovered, not one it created -- before it, these
+        # agents were killed mid-flight and mostly never materialised a checkout.
+        #
+        # It runs for the TIMED-OUT agents too, which is the half that matters most: r171's four
+        # squads timed out 26 of 48 agents, and those are exactly the ones that leave a copy
+        # behind. `reclaim_agent_worktree_1203gt` never raises and never uses --force, so a
+        # worktree with uncommitted work is KEPT; in 46 observed reclaims `kept` was empty both
+        # times, because a detect-only test-user does not modify its copy.
+        try:
+            from .worktree_reclaim import reclaim_agent_worktree_1203gt
+            _wt1203gt = reclaim_agent_worktree_1203gt(
+                getattr(orch, "output_dir", None), agent_id)
+            # #1203f6's rule, applied to this repair: say why it did NOT land, to someone who
+            # keeps it. `rec` is one of `record_squad_outcome_1202wn`'s per-agent rows, so this
+            # reaches `logs/test_user_squad_1202wn.jsonl` and survives the run. The ratchet
+            # caught the first draft reading only `kept` and dropping `skipped` on the floor.
+            #
+            # "no worktree for <id>" is NOT reported: that is the expected shape for an agent
+            # that never materialised a checkout (it died or finished before touching `app/`),
+            # it is the outcome this ticket WANTS, and recording it on most rows would bury the
+            # two that mean something. Every other reason is reported verbatim --
+            # ENVGEN_KEEP_WORKTREES=1 says an operator asked for the copies, and a kept copy
+            # says a detect-only test-user wrote into its own tree, which has not happened in
+            # 46 observed reclaims and would be worth knowing the first time it does.
+            if _wt1203gt.get("kept"):
+                rec["worktree_kept_1203gt"] = "uncommitted work in the agent's own copy"
+                if logger is not None:
+                    logger.warning(
+                        "#1203gt KEPT %s's worktree: git refused to remove it, so it has "
+                        "uncommitted work. A detect-only test-user is not supposed to write "
+                        "into its own copy -- 46 observed reclaims kept none. Worth a look.",
+                        agent_id)
+            elif (_wt1203gt.get("skipped")
+                  and not str(_wt1203gt.get("skipped")).startswith("no worktree for")):
+                rec["worktree_kept_1203gt"] = str(_wt1203gt.get("skipped"))
+                if logger is not None:
+                    logger.info("#1203gt did not reclaim %s's worktree: %s",
+                                agent_id, _wt1203gt.get("skipped"))
+        except Exception as _exc1203gt:
+            # `reclaim_agent_worktree_1203gt` never raises, so reaching here means the import
+            # or this block is broken. `pass` would make that permanently invisible: the first
+            # draft wrote `logger.warning(...)` with no module-level `logger` bound, and this
+            # very except would have swallowed the NameError on every agent forever while the
+            # disk kept filling. Say it once.
+            from .message_format import warn_once_1201
+            warn_once_1201("reclaim_agent_worktree_1203gt call site",
+                           "handing a terminated test-user's worktree back", _exc1203gt)
         return rec
 
     # Wave the gather so we respect the spawn/active caps (orchestrator parent cap is 8).
