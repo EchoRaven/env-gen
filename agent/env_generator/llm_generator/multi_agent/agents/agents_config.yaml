@@ -1610,6 +1610,29 @@ profiles:
         - glob
         - grep
         - list_generated_files
+        # #1203gs: the three tools that actually START the MCP server this persona is sent to
+        # test. The persona already carries `runtime_full`, the framework's own
+        # `build_profile_tool_audit` calls that bundle ACTIVE, and r171's registration log shows
+        # 118 tools with `'runtime': 9` in the pool -- but the pool is not the menu. The menu is
+        # this allowlist (step_pipeline/tooling.py: stage_allow -> candidate_names ->
+        # rank_tool_names), r171's every request for this persona read `tools=15`, exactly this
+        # list's length, and an agent told "you HAVE run_background" answered that it is "not in
+        # this session's tool namespace" -- which was literally true. #1203gq's copy named tools
+        # this list excluded, so I committed #1203fz's defect myself.
+        #
+        # Two tools, not four. `execute_bash` is deliberately NOT here: it blocks in the
+        # foreground, so starting a long-lived server with it wedges the turn.
+        # `wait_for_process` is not here either, and that one is not my choice --
+        # this persona's own `deny_tools` lists `wait` AND `wait_for_process`, so a detect-only
+        # test-user is forbidden to block on a wait. `test_tool_allowlist_cross_validator`
+        # caught the first draft of this entry for exactly that reason: allowlisting a denied
+        # tool is a DEAD entry, and naming it in the briefing would have been #1203fz's defect
+        # a second time -- copy promising a tool the reader cannot have.
+        # `run_background` starts the server, `get_process_output` shows whether it came up,
+        # and the connect step already retries. 15 -> 17, far under
+        # _STICKY_STAGE_TOOL_CAP_1202ZC = 32.
+        - run_background
+        - get_process_output
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:

@@ -2571,6 +2571,29 @@ class Orchestrator:
                         self._tu_squad_passed = False
                         self._tu_squad_deferred_since = None
                         self._tu_squad_attempts = 0
+                        # #1203gv: fj's two fields belong to this reset too. They did not exist
+                        # when it was written -- the `consume` branch that sets them had not run
+                        # since r135, so for 24 runs there was nothing to carry -- and #1203fj's
+                        # read at the escape made the number real without being added here.
+                        # `_squad_detail_1202uh` reads `_tu_squad_last_p0_1202ut` into
+                        # `delivery_hold.jsonl`'s `defects=`, which #1202ut calls "the one place
+                        # this number exists": r171 stamps `squad_launched_background ...
+                        # defects=4` at 14:13:45 AND again at 16:35:44, each the instant a new
+                        # milestone's squad launched, when that squad could not yet have produced
+                        # any number -- both 4s are the PREVIOUS milestone's verdict. Measured
+                        # over the 49 milestone-first launch records on disk: 8 carry a non-zero
+                        # count that structurally cannot be theirs, across r161, r165, r166,
+                        # r167, r169 and r171, every one of them post-fj.
+                        #
+                        # `_tu_squad_verdict_sig_1202rd` is the same assignment's other half and
+                        # gates `squad_relaunch_blocked_1202rd`, which holds the LAUNCH. That
+                        # guard has held 0 times in the whole corpus, so this half closes a
+                        # LATENT mis-hold, not a measured loss: at a milestone boundary the new
+                        # lanes have almost always written something, so the stale signature
+                        # reads as "the app changed" and launches anyway. Said plainly so the
+                        # next reader does not credit this line with more than it does.
+                        self._tu_squad_last_p0_1202ut = None
+                        self._tu_squad_verdict_sig_1202rd = None
                     # #532: the squad now runs as a single-flight BACKGROUND task; a
                     # leftover handle from the prior milestone must not be consumed by
                     # this one. Cancel any in-flight squad and drop the handle so the
@@ -6202,9 +6225,22 @@ class Orchestrator:
                 _now = time.time()
                 if getattr(self, "_tu_squad_deferred_since", None) is None:
                     self._tu_squad_deferred_since = _now
+                # #1203gu: fj's reader is pure and the handle is right here -- read it BEFORE
+                # the decision instead of only on the way out, so a verdict nobody has acted on
+                # can buy the one deferral it is owed. r171's M4 is the case: the verdict landed
+                # at 661s and the first tick to reach this gate came 7 seconds AFTER the 900s
+                # window closed, so the decision was never once taken with the verdict in hand.
+                # The release path below re-reads it; that read stays, because it must also run
+                # when this one returned None (the squad still in flight).
+                from .runtime.test_user_squad import (
+                    squad_verdict_in_hand_1203fj as _inhand1203gu)
+                _unacted1203gu = (
+                    _inhand1203gu(getattr(self, "_tu_squad_task", None)) is not None
+                    and (getattr(self, "_tu_squad_attempts", 0) or 0) == 0)
                 _tu_decision = squad_release_decision(
                     self._tu_squad_deferred_since,
-                    (getattr(self, "_tu_squad_attempts", 0) or 0), _now)
+                    (getattr(self, "_tu_squad_attempts", 0) or 0), _now,
+                    verdict_unacted=_unacted1203gu)
                 if _tu_decision == "defer":
                     # #532: run the squad in the BACKGROUND (single-flight) — NEVER inline.
                     # The squad is ~42min of work (12 browser agents in 3 sequential waves);

@@ -496,11 +496,25 @@ def plan_test_user_goals(
     # for this run exposes no shell/background execution tool to start
     # mcp_server/app/start.sh". That is FALSE: this persona carries the `runtime_full` bundle,
     # which is ExecuteBashTool, RunBackgroundTool, GetProcessOutputTool, WaitForProcessTool,
-    # ListProcessesTool and more (`run_background`, `execute_bash`, …). A bare shell line asks
-    # the reader to infer that it has shell access, and this one inferred the opposite and gave
-    # up. So the step now names the tool it should call and says outright that it has it. The
-    # mirror of #1203fz, where copy named a tool that did not exist: here the copy named a
-    # COMMAND and left the tool unnamed.
+    # ListProcessesTool and more. A bare shell line asks the reader to infer that it has shell
+    # access, and this one inferred the opposite and gave up. So the step now names the tool it
+    # should call and says outright that it has it. The mirror of #1203fz, where copy named a
+    # tool that did not exist: here the copy named a COMMAND and left the tool unnamed.
+    #
+    # #1203gs: naming the tool was necessary and not sufficient -- the POOL is not the MENU.
+    # r171 read `tools=15` on every request for this persona, exactly the length of
+    # `mcp_test_user.stage_tool_allowlist["implementation:action"]`, which listed no start tool
+    # at all; the agent's "no shell/background execution tool" was literally true of the turn it
+    # was in, and #1203gq's copy therefore named tools the allowlist excluded -- #1203fz's own
+    # defect, committed by its fix. gs adds `run_background`, `get_process_output` and
+    # `wait_for_process` to that allowlist, and this copy now names only those three.
+    # `execute_bash` is NOT promised: it blocks in the foreground, so using it to start a
+    # long-lived server wedges the turn. Neither is `wait_for_process`, which this persona's
+    # own `deny_tools` forbids (`wait`, `wait_for_process`) -- the allowlist cross-validator
+    # rejected the first draft that named it, which is this ticket's own lesson applied to
+    # itself. `test_1203gq_*` now asserts the copy names only tools the stage menu really
+    # offers AND none the persona denies -- the assertions that were missing when gq landed,
+    # because it checked the persona's BUNDLES instead of its menu.
     if mcp_present:
         goals.append({
             "modality": "mcp", "kind": "mcp_parity", "name": "mcp_surface",
@@ -511,15 +525,15 @@ def plan_test_user_goals(
                      "per business endpoint (completeness), call representative read + write tools "
                      "and assert each result MIRRORS the equivalent HTTP API call (parity), and "
                      "check reject-on-no-auth. You have the tools to start it "
-                     "(`run_background` / `execute_bash`), so a refusal is not a reason to "
-                     "stop. A connection refused BEFORE you start it is "
+                     "(`run_background`, then `get_process_output`), so a refusal is not a "
+                     "reason to stop. A connection refused BEFORE you start it is "
                      "EXPECTED and is not a defect in any lane. NEVER edit docker-compose to add "
                      "an MCP service — the stack is not supposed to have one, and doing it breaks "
                      "the build for every other check."),
             "steps": [
                 "`ls mcp_server/` — one subdirectory (the env name) holding main.py and start.sh.",
-                "Start it with your `run_background` tool — you HAVE it (so do `execute_bash`, "
-                "`get_process_output`, `wait_for_process`, `list_processes`): "
+                "Start it with your `run_background` tool — you HAVE it (so does "
+                "`get_process_output`): "
                 "`run_background(command=\"API_BASE_URL='<the API base above>' PORT=8890 sh "
                 "start.sh\", cwd=\"mcp_server/<env>\")`. Pass API_BASE_URL explicitly — "
                 "start.sh defaults it to http://127.0.0.1:8080, which is NOT your assigned "
@@ -978,7 +992,8 @@ def collect_test_user_bugs(orch: Any) -> Dict[str, Any]:
 
 
 def squad_release_decision(deferred_since: Optional[float], attempts: int, now: float,
-                           *, max_attempts: int = 3, wall_s: float = 900.0) -> str:
+                           *, max_attempts: int = 3, wall_s: float = 900.0,
+                           verdict_unacted: bool = False) -> str:
     """'defer' | 'release'. Called ONLY when test-user agents left open P0 defects.
 
     Mirrors the visual gate's bounded deferral (orchestrator._visual_release_decision): keep
@@ -992,6 +1007,47 @@ def squad_release_decision(deferred_since: Optional[float], attempts: int, now: 
     if (attempts or 0) >= max_attempts:
         return "release"
     if deferred_since is not None and (now - deferred_since) >= wall_s:
+        # #1203gu: SPEND ONE DEFERRAL ON A VERDICT NOBODY HAS ACTED ON.
+        #
+        # This wall-clock is anchored to the squad's LAUNCH (the orchestrator stamps
+        # `_tu_squad_deferred_since` on the first tick that reaches the gate), but the gate it
+        # guards sits 341 lines BELOW `_maybe_framework_deliver`'s `return  # not deliverable
+        # yet` on a non-empty failed-check set -- so while any OTHER delivery check is red this
+        # function is not called at all. The window can therefore expire entirely during a
+        # stretch in which this gate could not possibly have been the blocker, and the first
+        # tick that does reach it releases without ever reading the verdict: the `'defect'`
+        # branch that burns an attempt and defers sits BELOW the caller's `== "defer"`.
+        #
+        # r171 measured it twice, and `logs/delivery_hold.jsonl` counts the ticks.
+        # M3: squad launched 14:13:45, 4 open P0 reported 14:25:23 (inside the window), then
+        # TWENTY-SIX consecutive `gate_failed_checks` records (`business_chain_failing`, every
+        # 1-3 minutes) to 15:27:36 -- 26 delivery ticks that each returned above this gate. The
+        # first tick to reach it, 15:33:50, read 4804s and released; v1.2.0 shipped with those
+        # 4 P0 and nobody asked to fix them. M4 is sharper still: the verdict (2 open P0) landed
+        # at 661s, the ledger holds NOTHING between the launch stamp and 16:50:51, and that
+        # first tick came SEVEN SECONDS after the window closed -- so this function was never
+        # once called while a verdict was in hand and the window was still open.
+        #
+        # Over the 54 logs carrying #1203fj's wording: 16 escapes report `0 attempts` WITH a
+        # concrete verdict in hand, across 10 of the 12 most recent runs (r160-r163, r165-r169,
+        # r171), shipping 103 P0 defects un-acted-on. Of the 148 `0 attempts` escapes exactly
+        # ONE landed inside 900s -- if this gate were really the thing being waited on, they
+        # would cluster at 900s instead of a 2138s median.
+        #
+        # #1203fj deliberately left this decision alone and was right for its regime: it
+        # measured r130-r159, where the `'defect'` branch had not fired since r135 because
+        # #1202us landed only half (4 x 300s = 1101s > 900s, so the squad could never finish
+        # inside the window) -- "blocking would simply stop delivering" was measured in a world
+        # where the squad never answered in time. #1203gm landed the other half; r171's M1 and
+        # M2 each took `attempt 1` (669s / 795s) and then delivered with the delivery gate
+        # fully clear, which refutes it.
+        #
+        # The cost ceiling is structural, not empirical: the window has ALREADY expired, so
+        # after this one deferral `attempts` is 1 and the next call's elapsed time is only
+        # larger -- it releases. At most one repair cycle, never a deadlock, `max_attempts`
+        # untouched.
+        if verdict_unacted and (attempts or 0) == 0:
+            return "defer"
         return "release"
     return "defer"
 
