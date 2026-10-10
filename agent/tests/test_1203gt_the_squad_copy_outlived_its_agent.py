@@ -91,14 +91,33 @@ def test_it_never_raises_on_a_nonsense_root():
     assert _reclaim(None, "a") is not None
 
 
-def test_force_is_never_passed():
-    """Source-level: the one guarantee this module's docstring makes about data."""
-    body = RECLAIM.read_text(encoding="utf-8")
-    tree = ast.parse(body)
+def test_force_is_only_reachable_behind_the_untracked_only_gate():
+    """The guarantee, in its #1203gz shape: `--force` exists, and ONLY under that predicate.
+
+    This test used to assert `--force` is never passed at all. #1203gz narrowed the guarantee
+    rather than dropping it -- a copy holding only untracked build output is discarded, a copy
+    holding any tracked change is still KEPT -- so the assertion has to pin the narrower
+    property: every `--force` call site sits inside an `if` that consults
+    `_only_untracked_1203gz`. A mutation that forces unconditionally turns this red, which the
+    old "never force" version could not distinguish from the fix.
+    """
+    tree = ast.parse(RECLAIM.read_text(encoding="utf-8"))
     fn = next(n for n in ast.walk(tree)
               if isinstance(n, ast.FunctionDef) and n.name == "reclaim_agent_worktree_1203gt")
-    args = [ast.unparse(n) for n in ast.walk(fn) if isinstance(n, ast.Call)]
-    assert not any("--force" in a for a in args), args
+
+    def _forces(node):
+        return [c for c in ast.walk(node)
+                if isinstance(c, ast.Call) and "--force" in ast.unparse(c)]
+
+    all_forces = _forces(fn)
+    assert all_forces, "the #1203gz path is gone; if that is intended, restore the old test"
+    guarded = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If) and "_only_untracked_1203gz" in ast.unparse(node.test):
+            guarded.extend(_forces(node))
+    unguarded = len(all_forces) - len(guarded)
+    assert unguarded == 0, (
+        "%d `--force` call(s) are not behind the untracked-only predicate" % unguarded)
 
 
 def test_the_squad_reclaims_AFTER_it_terminates(tmp_path):
@@ -134,3 +153,64 @@ def test_the_reclaim_runs_for_timed_out_agents_too():
                 raise AssertionError(
                     "the reclaim sits inside a conditional (%s) — a timed-out agent would keep "
                     "its copy" % ast.unparse(node.test if isinstance(node, ast.If) else node))
+
+
+# --- #1203gz: git also refuses on untracked files, and that is what actually happened ---
+#
+# #1203gt predicted `kept` would stay empty (46 observed reclaims kept nothing). r172 refuted
+# it on the first run, for a reason that is #1203gs working: the MCP test-user now really
+# starts the server it is sent to test, `start.sh` runs `uv`, and the copy is left holding
+# `?? mcp_server/app/uv.lock` -- 393MB held until the end-of-run reclaim, for a build artifact.
+
+from env_generator.llm_generator.multi_agent.runtime.worktree_reclaim import (  # noqa: E402
+    _only_untracked_1203gz as _untracked_only,
+)
+
+
+def test_a_copy_holding_only_untracked_build_output_is_reclaimed(tmp_path):
+    """r172's exact case, reproduced: `?? mcp_server/app/uv.lock` and nothing else."""
+    root, wt = _repo_with_worktree(tmp_path, "mcp_test_user_2_mcp_surface")
+    (wt / "mcp_server" / "app").mkdir(parents=True)
+    (wt / "mcp_server" / "app" / "uv.lock").write_text("# generated\n", encoding="utf-8")
+    assert _untracked_only(wt, root), "an untracked-only copy must read as holding no work"
+    out = _reclaim(root, "mcp_test_user_2_mcp_surface")
+    assert out["removed"] == ["mcp_test_user_2_mcp_surface"], out
+    assert out.get("untracked_only_1203gz") is True, out
+    assert not wt.exists()
+
+
+def test_a_tracked_modification_is_still_KEPT(tmp_path):
+    """The no-force guarantee is unchanged for anything that could be real work."""
+    root, wt = _repo_with_worktree(tmp_path, "browser_test_user_1_x")
+    (wt / "app" / "main.py").write_text("x = 2  # a real edit\n", encoding="utf-8")
+    assert not _untracked_only(wt, root)
+    out = _reclaim(root, "browser_test_user_1_x")
+    assert out["kept"] == ["browser_test_user_1_x"], out
+    assert wt.is_dir()
+
+
+def test_a_MIXED_state_is_KEPT(tmp_path):
+    """One tracked edit beside any amount of build output means the copy holds work."""
+    root, wt = _repo_with_worktree(tmp_path, "api_test_user_3_x")
+    (wt / "app" / "main.py").write_text("x = 3\n", encoding="utf-8")
+    (wt / "uv.lock").write_text("# generated\n", encoding="utf-8")
+    assert not _untracked_only(wt, root)
+    out = _reclaim(root, "api_test_user_3_x")
+    assert out["kept"] == ["api_test_user_3_x"], out
+    assert wt.is_dir()
+
+
+def test_a_clean_copy_does_not_take_the_force_path(tmp_path):
+    """A clean copy is removed by the plain remove; `_only_untracked` must say False for it,
+    so an empty status can never be read as licence to force."""
+    root, wt = _repo_with_worktree(tmp_path, "clean_agent")
+    assert not _untracked_only(wt, root), "an empty status must not unlock --force"
+    out = _reclaim(root, "clean_agent")
+    assert out["removed"] == ["clean_agent"] and not out.get("untracked_only_1203gz")
+
+
+def test_an_unreadable_status_is_KEPT(tmp_path):
+    """Not a git worktree at all: the predicate must refuse, not guess."""
+    d = tmp_path / "not_a_repo"
+    d.mkdir()
+    assert not _untracked_only(d, tmp_path)

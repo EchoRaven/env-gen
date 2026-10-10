@@ -79,6 +79,32 @@ def _drop_build_junk_1202ay(worktree: Path) -> None:
     except Exception:
         pass
 
+def _only_untracked_1203gz(worktree: Any, root: Any) -> bool:
+    """True iff this worktree's ONLY changes are untracked files. (#1203gz)
+
+    `git status --porcelain` prefixes each line with a two-character status; `??` is untracked.
+    A copy holding nothing but `??` lines holds no edit to anything git is tracking, so it
+    holds no work -- the files in it were generated inside a copy that is about to be deleted.
+
+    Conservative on every uncertainty: an empty status means git had nothing to refuse over and
+    the caller should not be here, so return False and let the copy be KEPT; a non-zero exit, a
+    timeout or an unparseable line also returns False. The only answer that unlocks `--force`
+    is "every line I could read says untracked".
+    """
+    try:
+        res = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
+                             cwd=str(worktree), capture_output=True, text=True, timeout=60)
+        if res.returncode != 0:
+            return False
+        lines = [ln for ln in (res.stdout or "").splitlines() if ln.strip()]
+        if not lines:
+            return False
+        return all(ln.startswith("??") for ln in lines)
+    except Exception as exc:
+        logger.debug("#1203gz could not read status for %s: %s", worktree, exc)
+        return False
+
+
 def reclaim_agent_worktree_1203gt(output_dir: Any, agent_id: str) -> Dict[str, Any]:
     """Give back ONE short-lived agent's worktree, right after it is terminated. (#1203gt)
 
@@ -127,6 +153,37 @@ def reclaim_agent_worktree_1203gt(output_dir: Any, agent_id: str) -> Dict[str, A
                            cwd=str(root), capture_output=True, text=True, timeout=120,
                            check=True)
         except Exception as exc:
+            # #1203gz: git also refuses on UNTRACKED files, and that is what actually happens
+            # here. #1203gt predicted `kept` would stay empty, because 46 observed reclaims
+            # kept nothing -- and r172 refuted it on the first run, for a reason that is
+            # #1203gs working: the MCP test-user now really starts the server it is sent to
+            # test, `start.sh` runs `uv`, and the worktree is left holding
+            # `?? mcp_server/app/uv.lock`. A build artifact, not anyone's work, and it costs
+            # 393MB per agent until the end-of-run reclaim.
+            #
+            # So ask git what the changes ARE. Only when EVERY porcelain line is `??` -- no
+            # tracked modification, addition or deletion anywhere -- is the copy free of work,
+            # and only then is `--force` used, to discard files that a disposable copy
+            # generated and that #1202as would delete at the end of the run regardless. One
+            # tracked change, one mixed state, or an unreadable status, and the copy is KEPT
+            # exactly as before: the no-force guarantee is unchanged for anything that could
+            # be a lane's or an agent's real edit.
+            if _only_untracked_1203gz(entry, root):
+                try:
+                    subprocess.run(["git", "worktree", "remove", "--force", str(entry)],
+                                   cwd=str(root), capture_output=True, text=True, timeout=120,
+                                   check=True)
+                except Exception as exc2:
+                    summary["kept"].append(aid)
+                    logger.debug("#1203gz force-remove refused %s: %s", aid, exc2)
+                    return summary
+                summary["removed"].append(aid)
+                summary["bytes_reclaimed"] = size
+                summary["untracked_only_1203gz"] = True
+                logger.info(
+                    "#1203gz reclaimed %s's worktree (%.0f MB) after termination; git had "
+                    "refused because it held only UNTRACKED build output.", aid, size / 1048576)
+                return summary
             summary["kept"].append(aid)
             logger.debug("#1203gt kept %s: %s", aid, exc)
             return summary
