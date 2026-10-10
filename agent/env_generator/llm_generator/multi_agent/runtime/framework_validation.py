@@ -337,7 +337,9 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
         # The budget is shared and floored at the old 60, so with five or more failing checks
         # the ledger's own 400-character cap still clips the tail exactly as it did before.
         _budget1203d5 = max(60, 300 // max(1, len(_fails1203d5)))
-        _failed = [f"{c.get('name')}:{_salient_error(c.get('detail'), cap=_budget1203d5)}"
+        # #1203hi: a chain detail's information is at the FRONT, and the tail exit
+        # sliced it off in 8 of the 26 records on disk, across 7 runs.
+        _failed = [f"{c.get('name')}:{_keep_chain_head_1203hi(c.get('detail'), _budget1203d5)}"
                    for c in _fails1203d5]
         # #1203h1: this said "The failing run is recorded" and no such run exists.
         # `RunValidationTool._record_runhub_run` returns early -- `if not report.get("passed"):
@@ -550,6 +552,61 @@ def _clip_keeping_guidance_1202df(out: str, cap: int) -> str:
     if keep <= 0:
         return hint
     return (out[:keep].rstrip() + " " + hint)[:cap]
+
+
+def _keep_chain_head_1203hi(detail, cap: int) -> str:
+    """Keep the detail's leading ``[chain_name]`` in front of the salient tail.
+
+    `_salient_error`'s no-marker exit returns ``text[-cap:]`` -- the TAIL -- and that is
+    right for compose stderr, whose cause sits at the end (#182/#1119). It is WRONG for a
+    verification-chain detail, which puts the chain name, the endpoint, the status and the
+    step number at the START. #1203d5 widened this writer's budget from 60 to 300 and the
+    cuts moved rather than stopped.
+
+    MEASURED over every `RELEASE HELD ... FAILS a fresh api_smoke` record on disk -- 26
+    distinct ones -- 8 of them, across 7 runs, begin MID-WORD because the head was sliced
+    off:
+
+        r152  business_chain:rror: [Errno 104                 ("rror:" = tail of "Error:")
+        r165  business_chain:ndler.\n[explore_grid_...        ("ndler." = "handler.")
+        r168  business_chain:d} save failed at step ...
+        r171  business_chain:(source 937c44fa1dbc, built 162f852a0516) -- the container ...
+        r171  business_chain:p is what is wrong. Create the resource as THIS actor ...
+        r172  business_chain:handler under test; rebuild AND recreate the stack ...
+        r173  business_chain:d since the image was built (source 74832b760b9d, ...)
+        r176  business_chain:er. BUILD CURRENCY SAYS THE THIRD IS LIVE: app/ has changed ...
+
+    and the records that ARE readable show what the message should look like:
+    ``business_chain:[open_login_from_shell``, ``[tenant_control_lifecycle``,
+    ``[m2_search_discovery_flow`` -- they survived only because their detail was short
+    enough that the tail WAS the whole thing.
+
+    Reproduced directly: a 600-character detail starting
+    ``[home_feed_authenticated] GET /api/feed → 500 (expected [200]) at step 3 of 7``
+    comes back as ``ding to push it past the cap. ...`` -- chain, endpoint, status and step
+    all gone.
+
+    So keep the bracketed head, then the salient tail, with ``…`` between them so the
+    elision is visible (#1034: never a silent cut). `_salient_error`'s own contract is
+    untouched -- this is the one consumer whose information lives at the front.
+    """
+    text = str(detail or "")
+    if not text:
+        return ""
+    if len(text) <= cap:
+        return _salient_error(text, cap=cap)
+    head = ""
+    if text.startswith("["):
+        end = text.find("]")
+        if 0 < end < 120:
+            head = text[: end + 1]
+    if not head:
+        return _salient_error(text, cap=cap)
+    room = max(20, cap - len(head) - 3)
+    tail = _salient_error(text, cap=room)
+    if head in tail:
+        return tail
+    return f"{head} … {tail}"
 
 
 def _salient_error(detail: Any, cap: int = 400) -> str:
@@ -1917,7 +1974,9 @@ class FrameworkValidation:
                 # hides the real cause (r15: docker_up DB-init crash mis-read for
                 # 20min as an api.js build error).
                 _failed = [
-                    f"{c.get('name')}:{_salient_error(c.get('detail'), cap=200)}"
+                    # #1203hi: same head-cut as the RELEASE HELD writer, and worse at
+                    # cap=200. A chain detail's name/endpoint/step live at the FRONT.
+                    f"{c.get('name')}:{_keep_chain_head_1203hi(c.get('detail'), 200)}"
                     for c in ((data or {}).get("checks") or [])
                     if c.get("status") == "fail"
                 ]
@@ -2144,7 +2203,9 @@ class FrameworkValidation:
                             # root-surfacing message instead of limping to the wall-clock.
                             _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
                             _root_detail = "; ".join(
-                                "{}: {}".format(c.get("name"), _salient_error(c.get("detail")))
+                                # #1203hi: third writer of `name:detail`; same head-cut.
+                                "{}: {}".format(c.get("name"),
+                                                _keep_chain_head_1203hi(c.get("detail"), 400))
                                 for c in ((data or {}).get("checks") or [])
                                 if isinstance(c, dict) and c.get("status") == "fail"
                                 and c.get("detail")
