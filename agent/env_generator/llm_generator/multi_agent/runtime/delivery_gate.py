@@ -2838,8 +2838,69 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
         # ship a `__noop_*` route, a defect measured in 35 of 179 runs (38% of September's).
         # The other two paths a probe reaches from here — a probe CALLED BY THE FRONTEND and a
         # probe REGISTERED AS A TABLE — are real defects and still fire.
+        # #1203gy: and neither is the framework's FIXED SURFACE the lane's to build. #1203d1
+        # closed the `__`-probe half of this warning and left the rest open, because its own
+        # docstring cites #1203b5's measurement that "the control plane the lane must build"
+        # must not be skipped. That reading is contradicted by the code the framework ships:
+        # `main.py`'s `_FW_FIXED_PATHS_1202KI` snapshots /api/v1/reset, /api/v1/tenants,
+        # /api/v1/tenants/{tenant_id} and /api/v1/admin/init-tenant BEFORE lane code runs and
+        # puts back anything a lane removed, "because the fixed surface is not the lane's to
+        # replace". #1203fy settled it the same way for the implementation-progress nudge.
+        #
+        # Measured over every run log on disk, this warning names 66 endpoints and 56 of them
+        # are that control plane (`POST /api/v1/tenants` 29, `GET /api/v1/tenants` 21,
+        # `/api/v1/reset` 3, `DELETE /api/v1/tenants/:tenant_id` 3). #1203d1 recorded where it
+        # goes: "this warning reaches the lane through format_delivery_gate_report's resident
+        # tick -- which is how a lane comes to ship a `__noop_*` route". The same tick is how a
+        # lane comes to ship the control plane, and #1202ki counted the damage: 13 of 153 runs
+        # delete framework routes and re-register their own, "almost always the whole control
+        # plane the test harness drives", one of them verified by curl serving
+        # `401 {"detail":"missing bearer token"}` on an endpoint the framework declares public.
+        #
+        # `is_business` rather than a kind list, for the reason `lifecycle` states: "Six modules
+        # re-listed this surface and all six omitted the same three. Imported, not re-listed."
+        # It reads the kind from either shape AND carries a path net that "only ever REMOVES a
+        # framework-owned path from the business set, never adds one", so a business endpoint
+        # with no kind at all stays in this warning -- verified directly: `GET /api/videos`
+        # with no kind is business, `POST /api/v1/reset` with no kind is not.
+        #
+        # The kind lives on the hub record, and `api_spec` above projects only method+path, so
+        # the record is looked up here instead of re-deriving the verdict from the path alone --
+        # the #1203d8/#1203e5 lesson about a judgement flattened at the handoff.
+        _fw_owned1203gy = set()
+        try:
+            from .lifecycle import is_business as _isb1203gy
+            for _ep1203gy in hub_endpoints.values():
+                # The `deprecated` half cannot change today's answer: `api_spec` above applies
+                # the same filter, so a deprecated endpoint never reaches `declared_keys` and
+                # could not be reported missing anyway. It is here so the two filters stay the
+                # same pair -- a mutation dropping either is caught by
+                # `test_the_two_status_filters_stay_the_same_pair`, which exists because the
+                # obvious test for this ("a deprecated endpoint is not reported") passes
+                # whether or not this line is here.
+                if not isinstance(_ep1203gy, dict) or _ep1203gy.get("status") == "deprecated":
+                    continue
+                if _isb1203gy(_ep1203gy):
+                    continue
+                _m1203gy = str(_ep1203gy.get("method") or "").upper().strip()
+                _p1203gy = str(_ep1203gy.get("path") or "").strip()
+                if _m1203gy and _p1203gy:
+                    _fw_owned1203gy.add(
+                        _contract.param_agnostic("%s %s" % (_m1203gy, _p1203gy)))
+        except Exception as _e1203gy:
+            # The conservative direction is to report, as #1203d1 chose for its own import
+            # failure -- but silently reverting to "ask the lane to build the control plane"
+            # is the defect itself, so say that it happened.
+            from .message_format import warn_once_1201
+            warn_once_1201("delivery_gate.fixed_surface_1203gy",
+                           "the framework-fixed-surface exemption (#1203gy) could not be "
+                           "applied, so the control plane is reported as missing backend "
+                           "routes again and the lane may be asked to replace it",
+                           _e1203gy)
         missing_endpoints = sorted(e for k, e in declared_keys.items()
-                                   if k not in impl_keys and not _declared_probe_1203d1(e))
+                                   if k not in impl_keys
+                                   and not _declared_probe_1203d1(e)
+                                   and k not in _fw_owned1203gy)
         if missing_endpoints:
             warnings.append(
                 "Backend route coverage missing declared endpoints: "
