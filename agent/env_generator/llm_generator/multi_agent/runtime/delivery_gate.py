@@ -3509,6 +3509,52 @@ def enforce_completeness(output_dir, hubs, tables: Dict[str, Any],
     return completeness_results
 
 
+# #1203hl: the head #1202wi already measured, unchanged, so nothing it measured regresses.
+_PROSE_CAP_1203HL = 400
+# #1203hl: measured on the 687 distinct gate details on disk -- 100 characters of tail
+# recover every dedup verdict (167 of 167) and 43 further remediation sentences; 240 recover
+# nothing more, because the remaining misses sit mid-string where no tail can reach them.
+_PROSE_TAIL_1203HL = 100
+# Length of " ...[NNNN chars cut; the gate ledger has the rest]... ", so a detail that
+# head+tail+marker would reproduce in full is passed through whole instead of marked.
+_PROSE_MARK_LEN_1203HL = 50
+
+
+def _clip_prose_1203hl(text: str) -> str:
+    """#1203hl — KEEP THE TAIL, WHERE THE GATE PUTS ITS OWN CONCLUSION.
+
+    `_note1202wi` appended `text[:400]`: a silent head cut. `business_chain_failing` is the
+    check these ledgers rank FIRST by final gate record (29 runs, and the last red check in
+    r171, r176 and r177), and the ONLY check whose detail runs past 400 -- 320 of the 687
+    distinct details on disk, median 759 characters, longest 2161.
+
+    What the head cut dropped is not more evidence. It is the gate's VERDICT about the
+    evidence it had already gathered:
+
+        `⚠ 2 OF THE FAILING CHAINS ARE THE SAME ENDPOINT (#1202lb): DELETE
+         /api/users/therock/follow (2 chains) — the verifier re-authors the same surface
+         under new names, so these are FEWER PROBLEMS THAN ROWS: fixing one endpoint
+         clears every chain listed against it.`
+
+    A lane handed only the head reads "3 verification chain(s) have NOT passed" and sizes
+    the work at three; the gate had already derived that it is one endpoint. MEASURED over
+    those 687 details: that clause survived 22 times, and survives 167 of 167 with a tail;
+    the remediation sentence ("run_validation must show business_chain green (re-author the
+    broken step or fix the endpoint) before delivery") goes 546 -> 589 of 682. The 87 of 208
+    `⚠` clauses that already sat inside the head are untouched, because the head stays 400.
+
+    `blocker_prose` is the ONLY path this text has to a lane -- `_gate_blocker_prose_983`
+    into the remediation dispatcher. `business_chain["detail"]` is read downstream for its
+    `chains` list and for a count, never for its prose, so what the cut dropped was dropped
+    for good. And the cut was SILENT, which #1034 forbids: the marker now counts it."""
+    text = str(text or "")
+    if len(text) <= _PROSE_CAP_1203HL + _PROSE_TAIL_1203HL + _PROSE_MARK_LEN_1203HL:
+        return text
+    head, tail = text[:_PROSE_CAP_1203HL], text[-_PROSE_TAIL_1203HL:]
+    dropped = len(text) - len(head) - len(tail)
+    return "%s …[%d chars cut; the gate ledger has the rest]… %s" % (head, dropped, tail)
+
+
 def _merged_prose_1202wi(deliverability_prose, extra_prose):
     """`blocker_prose` for the whole verdict, not just its deliverability half.
 
@@ -3558,7 +3604,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         try:
             text = str(detail or "").strip()
             if text:
-                _prose1202wi.setdefault(str(check), []).append(text[:400])
+                _prose1202wi.setdefault(str(check), []).append(_clip_prose_1203hl(text))
         except Exception:
             pass
 

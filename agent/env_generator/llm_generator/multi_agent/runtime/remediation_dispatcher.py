@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from .message_format import join_capped  # #1034
 
 def _matchable_route_1202iy(route):
@@ -637,6 +637,125 @@ _NOTE_TAIL_1202WX = 90
 _NOTE_EVIDENCE_MARKS_1202WX = ('{"detail"', '"detail"', "{'detail'",
                                "THAT is the defect", "probably mis-authored")
 
+# #1203hk: A MARK IN THIS TUPLE ONLY WINS IF NOTHING EARLIER MATCHED, SO APPENDING #1203hj's
+# TWO VERDICTS BOUGHT LESS THAN IT LOOKED. MEASURED over all 42134 distinct step notes in
+# every chain registry on disk: of the 228 long notes carrying the framework's derived
+# "this step is NOT the root cause" clause, **51 across 11 runs lose it**, and in 45 of
+# those 51 a `{"detail"` from the step's OWN symptom sits earlier and takes the window. The
+# verdict is `NOT THE FIRST FAILURE in this chain — \`POST /api/sounds\` failed earlier
+# ({"detail":"a create needs at least one field"})`; what the window keeps instead is
+# "you sent video_id=1, and no such row exists" — a CONSEQUENCE of that earlier failure,
+# which sends the lane to the seed for a row the upstream step was supposed to create.
+# #1202qs records tiktok-r127 acting on exactly that kind of displaced reading.
+#
+# So appending a 4th mark cannot fix it (projected: 6 of 51). A DECISION is not one more
+# kind of evidence: it decides whether this lane should act on this step AT ALL, so it
+# cannot lose a precedence race to the symptom it is a verdict about. The rule below is
+# therefore a second pass, not a reordering — it fires only when the normal window has
+# already dropped the decision, which keeps #1202wx's 1116 other long notes byte-identical.
+# #1203hm: AND THE TWO VERDICTS IN `chain_executor` THAT SAY THE ENDPOINT IS RIGHT.
+# #1203hk gave a dropped verdict its own window; MEASURED afterwards over the 1169 long
+# step notes in every chain registry on disk, two more were still going:
+# `VERDICT_FIX_THE_CAPTURE_1203HM` kept 11 of 347 and `VERDICT_NOT_THE_ENDPOINT_1203HM`
+# 0 of 143. Both say the endpoint is right and the chain's captured id is wrong, and a
+# lane handed only the 404/422 plus the app's `{"detail"}` does the opposite -- it edits
+# the endpoint (#1202qs records that outcome).
+#
+# IMPORTED, NEVER RESTATED. #1032's rule, and its guard caught me copying the second one
+# in: a literal here would stop matching the day either sentence is reworded, silently,
+# and the verdict would go back to being dropped with nothing turning red. The import is
+# lazy because this module is reached from `chain_executor` (the #1052 note at
+# `_route_ran_note_1052_1202wx` does the same), and a failure to resolve them WARNS rather
+# than quietly shrinking the mark set -- two fewer marks is two verdicts lost.
+_NOTE_DECISION_MARKS_1203HK = ("NOT THE FIRST FAILURE in this chain",
+                               "THAT is the defect", "probably mis-authored")
+# #1203hm: projected over the 1169 long step notes in every chain registry on disk --
+# ONE window keeps `NOT THE FIRST FAILURE` 220 of 228 (the earliest lost mark wins, so the
+# new marks displace it), TWO keep it at 228 of 228 with the ladder sentence 347 of 347 and
+# the 404-body sentence 141 of 143, and THREE buy the last 2 for another 123 characters on
+# the longest line. The app's own `{"detail"}` stays at 651 of 651 at every setting.
+_NOTE_DECISION_WINDOWS_1203HM = 2
+_DECISION_MARKS_CACHE_1203HM: Optional[Tuple[str, ...]] = None
+
+
+def _decision_marks_1203hm() -> Tuple[str, ...]:
+    """#1203hm — this module's own marks plus the two `chain_executor` owns."""
+    global _DECISION_MARKS_CACHE_1203HM
+    if _DECISION_MARKS_CACHE_1203HM is not None:
+        return _DECISION_MARKS_CACHE_1203HM
+    marks = _NOTE_DECISION_MARKS_1203HK
+    try:
+        from .chain_executor import (VERDICT_FIX_THE_CAPTURE_1203HM,
+                                     VERDICT_NOT_THE_ENDPOINT_1203HM)
+        marks = marks + (VERDICT_FIX_THE_CAPTURE_1203HM, VERDICT_NOT_THE_ENDPOINT_1203HM)
+    except Exception as _exc1203hm:
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("remediation_dispatcher.decision_marks_1203hm",
+                           "the two chain_executor verdicts a step note must keep",
+                           _exc1203hm)
+        except Exception:
+            pass
+    _DECISION_MARKS_CACHE_1203HM = marks
+    return marks
+
+
+def _note_window_1202wx(text: str):
+    """#1203hk — the head/evidence split of #1202wx, as a value, so the decision pass can
+    reuse the head it computed instead of recomputing a shorter one.
+
+    Keeping the ORIGINAL head matters: in the straddle branch it was deliberately extended
+    past #_NOTE_HEAD_1202WX to hold a `{"detail"` whole, and projected over the corpus that
+    is the difference between 37 of the 51 notes keeping BOTH the detail and the decision
+    and all 51 keeping only the decision."""
+    at = -1
+    for mark in _NOTE_EVIDENCE_MARKS_1202WX:
+        at = text.find(mark)
+        if at >= 0:
+            break
+    if at < 0:
+        return text[:_NOTE_HEAD_1202WX], text[-_NOTE_TAIL_1202WX:]
+    if at + _NOTE_EVIDENCE_KEEP_1202WX <= _NOTE_HEAD_1202WX:
+        return text[:_NOTE_HEAD_1202WX], ""
+    if at <= _NOTE_HEAD_1202WX:
+        # The evidence STRADDLES the head boundary. Extending the head keeps it in one
+        # piece; slicing at the boundary chopped it mid-token (r102 kept `{"deta`).
+        return text[:at + _NOTE_EVIDENCE_KEEP_1202WX], ""
+    return text[:_NOTE_HEAD_1202WX], text[at:at + _NOTE_EVIDENCE_KEEP_1202WX]
+
+
+def _note_rescue_the_decision_1203hk(text: str, out: str) -> str:
+    """#1203hk — a dropped verdict gets its OWN window; it never takes the evidence's.
+
+    ★ My first version re-spent the evidence window on the decision, and #1202wx's and
+    #1203hj's own regression guards went red on it -- rightly. Both of them MEASURED that
+    the app's own `{"detail": ...}` is the most actionable fragment in their cases (40 of
+    106 long notes had lost it), and a patch about a DIFFERENT fragment has no standing to
+    trade that away. Projected over the corpus, that version dropped the detail in 14 of
+    the 51 notes it touched. So the decision is APPENDED after the evidence instead:
+
+        projected over every chain registry on disk before landing (#1203d9) --
+        42162 distinct notes, 51 change, and in all 51 the decision survives AND the
+        detail the note carried before survives. 42111 are byte-identical.
+
+    The 51 that change run 475 characters instead of 356. A step line is one of at most 8
+    in a task (#811), so #1202wx's ~2.5KB worst case becomes ~3.4KB, and only for tasks
+    whose steps carry a verdict. That is the price of not making a lane choose between the
+    app's words and the framework's reading of them."""
+    lost = [m for m in _decision_marks_1203hm() if m in text and m not in out]
+    if not lost:
+        return out
+    head, kept = _note_window_1202wx(text)
+    windows = [
+        text[text.find(m):text.find(m) + _NOTE_EVIDENCE_KEEP_1202WX]
+        for m in sorted(lost, key=text.find)[:_NOTE_DECISION_WINDOWS_1203HM]
+    ]
+    dropped = len(text) - len(head) - len(kept) - sum(len(w) for w in windows)
+    if dropped <= 0:
+        return text
+    return "%s%s …[%d chars cut; the full note is on the step record]… %s" % (
+        head, (" " + kept) if kept else "", dropped, " … ".join(windows))
+
 
 def _note_keeping_the_evidence_1202wx(note: str) -> str:
     """#1202wx — when a step note is too long, drop the middle, never the app's own words.
@@ -661,27 +780,15 @@ def _note_keeping_the_evidence_1202wx(note: str) -> str:
         text = str(note or "")
         if len(text) <= _NOTE_CAP_1202WX:
             return text
-        at = -1
-        for mark in _NOTE_EVIDENCE_MARKS_1202WX:
-            at = text.find(mark)
-            if at >= 0:
-                break
-        if at < 0:
-            head, kept = text[:_NOTE_HEAD_1202WX], text[-_NOTE_TAIL_1202WX:]
-        elif at + _NOTE_EVIDENCE_KEEP_1202WX <= _NOTE_HEAD_1202WX:
-            head, kept = text[:_NOTE_HEAD_1202WX], ""      # already whole inside the head
-        elif at <= _NOTE_HEAD_1202WX:
-            # The evidence STRADDLES the head boundary. Extending the head keeps it in one
-            # piece; slicing at the boundary chopped it mid-token (r102 kept `{"deta`).
-            head, kept = text[:at + _NOTE_EVIDENCE_KEEP_1202WX], ""
-        else:
-            head, kept = text[:_NOTE_HEAD_1202WX], text[at:at + _NOTE_EVIDENCE_KEEP_1202WX]
+        head, kept = _note_window_1202wx(text)
         dropped = len(text) - len(head) - len(kept)
         if dropped <= 0:
             return text
-        return "%s …[%d chars cut; the full note is on the step record]… %s" % (
+        out = "%s …[%d chars cut; the full note is on the step record]… %s" % (
             head, dropped, kept) if kept else (
             "%s …[%d chars cut; the full note is on the step record]" % (head, dropped))
+        # #1203hk: a derived verdict does not lose a precedence race to its own symptom.
+        return _note_rescue_the_decision_1203hk(text, out)
     except Exception:
         return str(note or "")[:_NOTE_CAP_1202WX]
 

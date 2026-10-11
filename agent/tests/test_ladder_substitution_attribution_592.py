@@ -89,7 +89,13 @@ def test_the_note_names_the_upstream_step_and_redirects_the_reader(src):
     assert "SUBSTITUTED" in window
     assert "save_failed_by_var[_v]" in window            # the step that failed to capture
     assert "UNRELATED id" in window
-    assert "fix that capture, not this endpoint" in window
+    # #1203hm named this sentence so `remediation_dispatcher` could recognise it without
+    # restating it (#1032). The redirect is still what this note must say, so assert the
+    # window builds it from the constant AND that the constant still says it.
+    from env_generator.llm_generator.multi_agent.runtime.chain_executor import (
+        VERDICT_FIX_THE_CAPTURE_1203HM)
+    assert "VERDICT_FIX_THE_CAPTURE_1203HM" in window, window[-300:]
+    assert VERDICT_FIX_THE_CAPTURE_1203HM == "fix that capture, not this endpoint"
 
 
 def test_the_substitution_is_machine_readable_in_the_record(src):

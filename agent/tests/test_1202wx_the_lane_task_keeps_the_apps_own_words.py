@@ -163,9 +163,16 @@ def test_evidence_straddling_the_head_boundary_is_not_chopped_in_half():
 def test_the_marker_is_searched_from_the_START_of_the_note():
     """★ The r102 bug: the search began at the head boundary, so evidence that began just
     BEFORE it was invisible -- the head emitted `{"deta` and the fallback took the tail."""
-    src = ast.unparse(next(
+    # #1203hk moved this loop into `_note_window_1202wx` so the decision pass could reuse
+    # the head it computes. Locate the function that OWNS the search instead of naming one,
+    # so the property survives the next move but a reintroduced offset still fails.
+    owners = [
         n for n in ast.walk(ast.parse(_read(_DISPATCH)))
-        if isinstance(n, ast.FunctionDef) and n.name == "_note_keeping_the_evidence_1202wx"))
+        if isinstance(n, ast.FunctionDef)
+        and "for mark in _NOTE_EVIDENCE_MARKS_1202WX:" in ast.unparse(n)
+    ]
+    assert len(owners) == 1, [n.name for n in owners]
+    src = ast.unparse(owners[0])
     assert "text.find(mark)" in src, (
         "the evidence search is offset again, so evidence straddling the head is missed: %s"
         % src)

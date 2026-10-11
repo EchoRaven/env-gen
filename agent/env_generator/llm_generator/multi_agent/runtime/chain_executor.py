@@ -382,6 +382,21 @@ def _sent_body_1202ew(body: Any) -> Any:
         return "<unserialisable %s>" % type(body).__name__
 
 
+# #1203hm: THE TWO SENTENCES IN THIS FILE THAT SAY THE ENDPOINT IS RIGHT, as constants,
+# because a second reader now has to recognise them. `remediation_dispatcher` keeps a
+# derived verdict that its window would otherwise drop (#1203hk), and MEASURED over the
+# 1169 long step notes in every chain registry on disk these two were still being lost:
+# the ladder sentence 11 of 347, the 404-body sentence 0 of 143. A lane handed only the
+# 404/422 and the app's `{"detail"}` does the OPPOSITE of what they say -- it edits the
+# endpoint (#1202qs records that outcome).
+#
+# Named, not copied: #1032's rule, which its own guard enforces -- a literal in the
+# dispatcher would stop matching the day either sentence is reworded, silently, and the
+# verdict would go back to being dropped with nothing turning red.
+VERDICT_FIX_THE_CAPTURE_1203HM = "fix that capture, not this endpoint"
+VERDICT_NOT_THE_ENDPOINT_1203HM = "not the endpoint (#1052)"
+
+
 def route_ran_note_1052(s: Any) -> str:
     """#1052's warning, at module level so BOTH readers of a broken step can say it.
 
@@ -404,7 +419,7 @@ def route_ran_note_1052(s: Any) -> str:
             return ""
         return (" ⚠ the route RAN: this 404 is the backend's referenced-row marker, not a "
                 "missing route — the id this step sent does not resolve. Fix the CHAIN's "
-                "captured id or the seed, not the endpoint (#1052).")
+                "captured id or the seed, " + VERDICT_NOT_THE_ENDPOINT_1203HM + ".")
     except Exception:
         return ""
 
@@ -4048,7 +4063,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     + (save_failed_why_1202hb.get(_v) or "response lacked the save path")
                     + ") — the ladder sent an UNRELATED id"
                     for _v in _ladder_filled) +
-                    " — fix that capture, not this endpoint. " + note)
+                    " — " + VERDICT_FIX_THE_CAPTURE_1203HM + ". " + note)
             # #1202id: a 404 whose id was NOT substituted by the ladder is a literal the
             # chain chose. Say whether the table is empty or merely lacks that row —
             # #592 already covers the substituted case, so this must not double up.
