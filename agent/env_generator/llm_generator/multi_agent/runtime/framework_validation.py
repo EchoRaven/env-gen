@@ -548,10 +548,57 @@ def _clip_keeping_guidance_1202df(out: str, cap: int) -> str:
         # the banner in front of it, and keep its TAIL: every hint in chain_executor
         # states the fault first and the instruction last.
         return hint[-cap:].strip()
-    keep = cap - len(hint) - 1
+    keep = cap - len(hint) - len(_ELISION_1203HO)
     if keep <= 0:
         return hint
-    return (out[:keep].rstrip() + " " + hint)[:cap]
+    return (_word_boundary_1203ho(out, keep) + _ELISION_1203HO + hint)[:cap]
+
+
+# #1203ho: THE JOIN ABOVE WAS BYTE-IDENTICAL TO THE TEXT IT CUT.
+#
+# `_clip_keeping_guidance_1202df` ended on `out[:keep].rstrip() + " " + hint`, and `hint`
+# starts at `_HINT_SEP_1202DF` -- " — " -- with its leading space stripped. So the join
+# emitted exactly one space before an em dash: the same three characters the sentence it
+# cut uses as its own separator. A reader cannot tell the difference, which is why this
+# survived while #1034 ("no count beside a silent truncation") and `_keep_chain_head_1203hi`
+# right below ("`…` between them so the elision is visible") were both already in this file.
+#
+# MEASURED over the 1255 long chain details on disk, at this writer's cap of 300: every one
+# is clipped, 1092 of them end in this join, and 783 of 1117 (70%) cut the head MID-WORD.
+# r178 06:12:47 is the live instance -- its RELEASE HELD reads
+# `TABLE \`videos\` HAS 35 LIVE ROW(S) (a seeded id is 1) — the tab — the id this step sent
+# does not resolve.` -- "the tab" is the front of "the table is populated", and nothing in
+# the line says so. The corpus has `DENIAL-PROB — `, `[BOTH a _p — `, `is a scop — `.
+#
+# Projected before landing (#1203d9): 1081 details change, all 1081 keep the hint whole and
+# stay inside the cap, and 1080 gain a visible elision. The other 174 are byte-identical.
+_ELISION_1203HO = " \u2026 "
+# #1203ho: how far back the head may be trimmed to end on a word. MEASURED on the same
+# 1088 details: the distance to the nearest boundary is 3 at the median, 8 at p90, 13 at
+# p99 and **19 at the maximum** -- so this bound never binds (0 of 1088 exceed it) and
+# exists only so a pathological detail cannot lose its head to this rule.
+_WORD_BACKTRACK_1203HO = 24
+
+
+def _word_boundary_1203ho(text: str, keep: int) -> str:
+    """#1203ho — end the kept head on a word, not inside one.
+
+    ★ Takes the WHOLE text and the cut index, not the head alone. A head cannot tell
+    "ended mid-word" from "ended exactly where a word ends" by looking at itself, and the
+    first version trimmed both -- it turned `a complete phrase` into `a complete`, losing
+    a word the cut had not touched. The question is whether the character the cut DROPPED
+    continues the word the head ends on, which only the source can answer."""
+    text = str(text or "")
+    head = text[:keep]
+    if keep >= len(text):
+        return head.rstrip()
+    if not head[-1:].isalnum() or not text[keep:keep + 1].isalnum():
+        return head.rstrip()          # the cut fell on a boundary already
+    for i in range(1, min(_WORD_BACKTRACK_1203HO, len(head)) + 1):
+        ch = head[-i]
+        if ch.isspace() or ch in "([{\"'`":
+            return head[:len(head) - i].rstrip()
+    return head.rstrip()              # one token longer than the bound: leave it whole
 
 
 def _keep_chain_head_1203hi(detail, cap: int) -> str:
