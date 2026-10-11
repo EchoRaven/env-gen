@@ -3525,13 +3525,31 @@ class Orchestrator:
                         # downgrade. It never writes anything but "delivered", and the
                         # loop head only ever marks a DIFFERENT index active. Best-effort:
                         # the ledger must never be able to fail the run it is recording.
-                        try:
-                            self.hubs.milestones.mark_status(
-                                _m_idx, "delivered", agent="orchestrator")
-                        except Exception as _ms_err:
+                        #
+                        # #1203hy: ...but only when a release for THIS milestone exists. The
+                        # event has a second setter -- the `deliver_project` tool, which does
+                        # not cut a release and no longer enforces the gates that would have
+                        # stopped it -- so without this the ledger records a delivery that
+                        # never shipped. See `_milestone_release_state_1203hy` for r171/r119
+                        # and for why an unreadable ledger must NOT be read as "no release".
+                        _rel1203hy = self._milestone_release_state_1203hy(
+                            str((_milestone or {}).get("version") or ""))
+                        if _rel1203hy == "no":
                             self._logger.warning(
-                                "Milestone %s delivered but the ledger was not updated: %s",
-                                _m_idx, _ms_err)
+                                "Milestone %s (v%s) signalled delivery but NO release was "
+                                "cut for it — leaving its status alone rather than recording "
+                                "a delivery that did not ship. The delivered event can be "
+                                "set by the deliver_project tool, which does not cut a "
+                                "release (#1203hy).",
+                                _m_idx, (_milestone or {}).get("version"))
+                        else:
+                            try:
+                                self.hubs.milestones.mark_status(
+                                    _m_idx, "delivered", agent="orchestrator")
+                            except Exception as _ms_err:
+                                self._logger.warning(
+                                    "Milestone %s delivered but the ledger was not updated: "
+                                    "%s", _m_idx, _ms_err)
                         self._write_run_budget(caps, loop_start, time.time() - loop_start, tick_count, "delivered")
                     # PROPOSAL #5 — a STUCK abort raises its OWN root-surfacing message
                     # (NOT the budget message, which would misleadingly tell the dev to raise
@@ -7086,6 +7104,66 @@ class Orchestrator:
     # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
         return self._budget.path()
+
+    def _milestone_release_state_1203hy(self, version: str) -> str:
+        """#1203hy: did THIS milestone's release actually get cut? "yes"/"no"/"unknown".
+
+        Three states, not two, and the third is the point. `#1125` marks the current
+        milestone `delivered` on `_project_delivered_event`, and that event has TWO setters:
+        `_maybe_framework_deliver`, which cuts the release first (`create_release` at its
+        line ~6797, `_project_delivered = True` ~70 lines later), and the `deliver_project`
+        TOOL, whose own docstring says it "just sets `_project_delivered_event` -- it does
+        not cut a release". The tool gates on the confirmation string and a retro policy;
+        the four gates that would have stopped it (coverage / visual / seed / runhub) were
+        deleted in 2026-05-30 as dead code that read a `hub_registry` attribute production
+        never set, and the deletion comment flags re-wiring them as a follow-up never done.
+
+        So an orchestrator LLM calling `deliver_project` with the delivery gate RED sets the
+        event, and the ledger records a milestone as delivered while nothing shipped.
+
+        tiktok-r171: `deliver_project` at 17:22:46, run over at 17:27, `milestones.json`
+        reading ['delivered','delivered','delivered','delivered'] against release tags
+        ['1.0.0','1.1.0','1.2.0'] -- no v1.3.0 anywhere, and `terminal_reason` saying "the
+        loop exited with the app not delivered ... the delivery gate declined". r119 is the
+        same shape one milestone earlier. Across every run holding a milestones.json, 15 of
+        105 carry a `delivered` with no matching tag; 13 of those are an era with no release
+        ledger at all, leaving these two.
+
+        It is not cosmetic for the same reason #1125 was not: a reader asking which
+        milestones shipped gets the wrong answer. It cost me that answer today -- I counted
+        r171 as a full 4/4 delivery off this flag and had to retract it to 3 of 4.
+
+        "unknown" exists so this can never REINTRODUCE #1125. A ledger that cannot be read
+        is not evidence that nothing shipped, and treating it as "no" would silently restore
+        the bug #1125 measured on 68 of 69 runs. Only a ledger that reads cleanly and does
+        not hold the tag answers "no".
+        """
+        try:
+            rel = self.hubs.codehub.stores.releases.value()
+        except Exception as e:
+            self._logger.debug("#1203hy release ledger unreadable (%s); not second-guessing "
+                               "the delivered marking", e)
+            return "unknown"
+        if not isinstance(rel, dict):
+            return "unknown"
+        want = str(version or "").strip()
+        if not want:
+            return "unknown"            # nothing to compare the ledger against
+        try:
+            for k, v in rel.items():
+                # The `_meta` skip is DEFENSIVE ONLY and verified so, exactly as #1202jg
+                # records of its own copy: a mutation dropping it survives every test,
+                # because requiring `tag` already excludes `_meta` (which carries a
+                # `version` and never a `tag`). Requiring `tag` is the load-bearing half --
+                # widening it to `version or tag` also survived alone, and the two together
+                # would let the store's own revision counter answer "yes".
+                if k == "_meta" or not isinstance(v, dict):
+                    continue
+                if str(v.get("tag") or "").strip() == want:
+                    return "yes"
+        except Exception:
+            return "unknown"
+        return "no"
 
     def _released_1202jg(self) -> bool:
         """Did this run cut a real release? Read from the release ledger, not a flag.
