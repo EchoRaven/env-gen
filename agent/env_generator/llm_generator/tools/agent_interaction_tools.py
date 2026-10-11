@@ -658,6 +658,39 @@ Args:
             }
         )
 
+    # #1203hz: EVERY OUTCOME OF THIS TOOL IS UNOBSERVABLE, AND IT IS THE TOOL THAT ENDS
+    # THE RUN.
+    #
+    # `deliver_project` has four rejection paths -- the self-asserted checklist, GUARD 1
+    # (not the final milestone), GUARD 2 (the live endpoint/business_chain/deliverability
+    # re-check) and GUARD 2c (the visual deferral) -- and each returns a
+    # `ToolResult(success=False, error_message=...)`. That string goes back to the calling
+    # LLM and NOWHERE else: nothing writes it to the run log. The only thing the log gets is
+    # `🚀 DELIVER_PROJECT`, emitted by the tool DISPATCHER (tooling.py) BEFORE execute runs,
+    # so it records that the tool was CALLED and says nothing about what it answered.
+    #
+    # Measured over 198 run logs: 911 `🚀 DELIVER_PROJECT` lines across 78 runs, and ZERO
+    # occurrences of any of the four refusal texts. That is not evidence the guards never
+    # fire -- it is the absence of any evidence either way, and it made a real question
+    # unanswerable. Six runs died on `RuntimeError: Delivery gate failed`; two of them
+    # (r119, r171) died on `business_chain_failing`, which is PRECISELY the check GUARD 2
+    # evaluates. Whether GUARD 2 passed it four minutes earlier (a race) or never ran at all
+    # (it has four silent fail-open paths, each producing an empty blocker list that is
+    # indistinguishable from "clear") cannot be told from anything on disk. I read the
+    # absence of refusals as "no refusals happened" while working on #1203hy and had to
+    # retract it.
+    #
+    # Purely observational: the ToolResults are unchanged, including every word of their
+    # error_message, because the LLM reads those and tests anchor on them.
+    def _say_1203hz(self, outcome: str, detail: str = "") -> None:
+        try:
+            import logging as _lg1203hz
+            _lg1203hz.getLogger(__name__).warning(
+                "#1203hz deliver_project %s%s", outcome,
+                (" — " + str(detail)[:400]) if detail else "")
+        except Exception:
+            pass
+
     def execute(self, confirmation: str, delivery_summary: str,
                 checklist: Optional[dict] = None) -> ToolResult:
         # PR 6 review (2026-05-30) deleted five gate blocks that
@@ -692,6 +725,7 @@ Args:
 
         # Verify confirmation
         if confirmation != "CONFIRMED":
+            self._say_1203hz("REFUSED", "confirmation was %r, not CONFIRMED" % (confirmation,))
             return ToolResult(
                 success=False,
                 error_message=f"Confirmation must be exactly 'CONFIRMED', got '{confirmation}'. "
@@ -725,6 +759,7 @@ Args:
                 failed_checks.append(check)
         
         if failed_checks:
+            self._say_1203hz("REFUSED", "self-asserted checklist failed: %s" % (failed_checks,))
             return ToolResult(
                 success=False,
                 error_message=f"Cannot deliver project. Failed checks: {failed_checks}. "
@@ -742,6 +777,7 @@ Args:
             _prog = getattr(self.agent, "_milestone_progress", None) if self.agent else None
             _prog_s = (f" (currently milestone {_prog[0]} of {_prog[1]})"
                        if isinstance(_prog, (tuple, list)) and len(_prog) == 2 else "")
+            self._say_1203hz("REFUSED by GUARD 1", "not the final milestone%s" % _prog_s)
             return ToolResult(
                 success=False,
                 error_message=(
@@ -808,6 +844,8 @@ Args:
                     except Exception:
                         pass
                     if _blockers:
+                        self._say_1203hz("REFUSED by GUARD 2",
+                                         "live gate not clear: " + "; ".join(_blockers))
                         return ToolResult(
                             success=False,
                             error_message=(
@@ -840,6 +878,8 @@ Args:
             except Exception:
                 _vf_defer = False
             if _vf_defer:
+                self._say_1203hz("DEFERRED by GUARD 2c",
+                                 "final milestone's visual fidelity gate still converging")
                 return ToolResult(
                     success=False,
                     error_message=(
@@ -854,6 +894,10 @@ Args:
                     ),
                 )
 
+        # #1203hz: the one outcome that ENDS THE RUN -- say so where it can be read
+        # afterwards, beside the four refusals above.
+        self._say_1203hz("ACCEPTED", "every guard passed; the delivered event is being set, "
+                                     "which exits the coordination loop")
         # Set delivered flag
         self._delivered = True
         
