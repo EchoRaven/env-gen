@@ -125,6 +125,37 @@ def _blocking_instances_1202lo(row) -> int:
         n += len((row.get("business_chain") or {}).get("chains") or [])
         n += len(row.get("incomplete_required_tasks") or [])
         n += int((row.get("unresolved_bugs") or {}).get("open_p0_bug_count") or 0)
+        # #1203i1: THE DELIVERABILITY FAMILY COUNTS ITS INSTANCES IN `failed_checks` ITSELF,
+        # AND #228 THROWS THEM AWAY WITH A set().
+        #
+        # The four families above each publish their own instance list. The deliverability
+        # checks publish none -- their report is the `deliverability` key, which the ledger
+        # TRUNCATES (71 of 120 sampled rows hold `{_truncated_948, head}` instead of
+        # `blockers`). What they do publish, in EVERY row, is one `failed_checks` ENTRY PER
+        # BLOCKER, repeating the same token: netflix-r45's list runs
+        #
+        #     25 entries -> 17 -> 12 -> 7      (19 then 13 then 12 then 7 unwired pages)
+        #
+        # while `_cur_failed_set = set(map(str, _failed))` in the orchestrator collapses each
+        # of those to a set of size ONE. Nineteen pages wired down to seven is the "visible
+        # convergence, not livelock" #228 asks about, and the set test cannot see any of it --
+        # the #1138 shape one level up, with the data already on disk.
+        #
+        # Measured over 9886 gate rows: 844 (8.5%) carry a repeated token, 2934 repeated
+        # instances in all. Replaying this signal over every run's ledger, the count falls
+        # strictly on 191 occasions across 83 runs.
+        #
+        # Only the REPEATS are added, never `len(failed_checks)`: the four families above are
+        # already counted by their own lists, and adding the set size again would mix "how
+        # many kinds" into a number that means "how many things". Verified free of double
+        # counting rather than assumed -- of those 2934 repeated instances, 0 fall on a token
+        # belonging to the four families; every one is a `deliverability_*` token
+        # (`ui_page_unwired` 2129, `placeholder_stub_handler` 280, `guard_tampering` 277,
+        # `dead_nav_link` 242). A row with no repeats adds 0, so every run without this shape
+        # keeps its previous behaviour exactly.
+        _fc1203i1 = row.get("failed_checks")
+        if isinstance(_fc1203i1, list):
+            n += len(_fc1203i1) - len({str(_x) for _x in _fc1203i1})
     except Exception:
         return 0
     return n
