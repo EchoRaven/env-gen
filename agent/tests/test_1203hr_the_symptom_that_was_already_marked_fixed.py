@@ -148,3 +148,93 @@ def test_the_note_says_what_to_check_not_just_that_it_recurred():
     i = src.index("ALREADY MARKED FIXED ONCE IN THIS RUN")
     note = src[i:src.index("#1203hr\"", i)]
     assert "read" in note and "edited" in note, note
+
+
+# ------------- #1203hs: the same key, reachable 4x more often --------------------------
+#
+# #1203hr keys on the (path, status) a TITLE names. MEASURED over the 1980 bug tasks in every
+# `workhub_tasks.json` since r150: that shape is in 121 of them (6%), while
+# `bug_artifacts.affected_endpoint` -- handed straight to `bug_create`, and PARSED by the
+# framework per its own schema -- is set on 966 (49%), with 848 carrying the endpoint and no
+# title key at all. 538 of the 966 also yield a status code. Projected: 80 recurrences the
+# title key cannot see, e.g. `POST /api/posts registered implemented …` ->
+# `business_chain fails because POST /api/posts …`.
+
+from env_generator.llm_generator.tools.bug_tools import _symptom_key_1203hs
+
+
+def test_a_title_key_still_wins_when_there_is_one():
+    k = _symptom_key_1203hs("GET /api/feed/foryou returns 500 during api_smoke",
+                            {"affected_endpoint": "GET /api/other"})
+    assert k == ("/api/feed/foryou", "500"), k
+
+
+def test_the_endpoint_supplies_the_path_when_the_title_does_not():
+    k = _symptom_key_1203hs("Tenant initialization endpoint returns 404 despite registration",
+                            {"affected_endpoint": "POST /api/v1/admin/init-tenant"})
+    assert k == ("POST /api/v1/admin/init-tenant", "404"), k
+
+
+def test_actual_supplies_the_code_when_the_title_does_not():
+    k = _symptom_key_1203hs("Home feed calls a protected endpoint while logged out",
+                            {"affected_endpoint": "GET /api/feed", "actual": "401 Unauthorized"})
+    assert k == ("GET /api/feed", "401"), k
+
+
+def test_expected_is_never_a_code_source():
+    """★ `expected: 401` means "it should 401 and does not" — the code is the DEMAND, not
+    the symptom. Mixing it with an `actual` code would group "returns 401" with "should
+    return 401", which are opposite problems."""
+    k = _symptom_key_1203hs("GET /api/me allows unauthenticated access",
+                            {"affected_endpoint": "GET /api/me", "expected": "401"})
+    assert k is None, k
+
+
+def test_a_numeric_segment_in_the_endpoint_is_normalised():
+    a = _symptom_key_1203hs("broken", {"affected_endpoint": "GET /api/videos/35", "actual": "404"})
+    b = _symptom_key_1203hs("broken", {"affected_endpoint": "GET /api/videos/2", "actual": "404"})
+    assert a == b == ("GET /api/videos/{}", "404"), (a, b)
+
+
+def test_no_endpoint_and_no_title_key_is_still_no_key():
+    assert _symptom_key_1203hs("Frontend build fails", {}) is None
+    assert _symptom_key_1203hs("Frontend build fails", None) is None
+    assert _symptom_key_1203hs("Frontend build fails",
+                               {"affected_endpoint": "GET /api/x"}) is None
+
+
+def test_a_code_without_an_endpoint_is_not_a_key():
+    """★ Found by mutation: a fixture with no code at all cannot tell a missing endpoint
+    from a substituted one — both paths return None for want of a code. The discriminating
+    case has a CODE and no endpoint, where a stand-in endpoint would invent a key that
+    groups unrelated bugs."""
+    assert _symptom_key_1203hs("npm run build exits 500 lines of output", {}) is None
+    assert _symptom_key_1203hs("worker crashed, 503 restarts queued",
+                               {"affected_files": ["app/worker.py"]}) is None
+    assert _symptom_key_1203hs("build fails", {"actual": "500"}) is None
+
+
+def test_the_lookup_compares_stored_artifacts_too():
+    """A stored task's key must be computed the same way, from its own artifacts."""
+    hub = _WH({"t1": {"title": "Tenant init endpoint returns 404", "status": "completed",
+                      "assignee": "backend", "completed_at": 100.0,
+                      "metadata": {"bug_artifacts":
+                                   {"affected_endpoint": "POST /api/v1/admin/init-tenant"}}}})
+    got = prior_fix_claim_1203hr(
+        hub, "Declared tenant init endpoint still 404s",
+        {"affected_endpoint": "POST /api/v1/admin/init-tenant", "actual": "404"})
+    assert got is not None and got[0] == "t1", got
+
+
+def test_the_create_path_passes_the_artifacts():
+    import ast
+    import inspect
+    from env_generator.llm_generator.tools import bug_tools as _bt
+    tree = ast.parse(inspect.getsource(_bt))
+    runs = [n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "_run"]
+    hit = [n for n in runs if "prior_fix_claim_1203hr" in ast.unparse(n)]
+    assert len(hit) == 1
+    body = ast.unparse(hit[0])
+    assert "prior_fix_claim_1203hr(getattr(self._hubs, 'workhub', None), title, bug_artifacts)" \
+        in body.replace("\n", " ").replace("  ", " ") or "bug_artifacts)" in body, body[-400:]

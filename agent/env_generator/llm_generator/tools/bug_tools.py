@@ -60,13 +60,51 @@ def _symptom_key_1203hr(title):
     return (_re1203hr.sub(r"/\d+", "/{}", mp.group(1)), mc.group(1))
 
 
-def prior_fix_claim_1203hr(workhub, title):
+_RECUR_CODE_SOURCES_1203HS = ("title", "actual")
+
+
+def _symptom_key_1203hs(title, artifacts):
+    """#1203hs — the same key, but reachable 4x more often.
+
+    #1203hr keys on the (path, status) a TITLE names. MEASURED over the 1980 bug tasks in
+    every `workhub_tasks.json` since r150: that shape is in **121 of them (6%)**, while
+    `bug_artifacts.affected_endpoint` -- which `bug_create` is handed directly and which the
+    schema says is PARSED, not just read -- is set on **966 (49%)**, and **848 have the
+    endpoint and no title key at all**. Of the 966, 538 also yield a status code.
+
+    `expected` is deliberately NOT a code source. `expected: 401` means "it should 401 and
+    does not" -- the code is the DEMAND, not the symptom -- and mixing it with an `actual`
+    code would group "returns 401" with "should return 401", which are opposite problems.
+    Title first, then `actual`; 484 of the 1980 get a key this way.
+
+    Projected before landing (#1203d9): 80 recurrences across the corpus that #1203hr's key
+    cannot see, and the pairs are the ones it exists for -- `POST /api/posts registered
+    implemented ...` -> `business_chain fails because POST /api/posts ...`, `Tenant
+    initialization endpoint returns 404 ...` -> `Declared tenant init endpoint returns 404
+    ...`. Their titles differ too much for a title key to match."""
+    k = _symptom_key_1203hr(title)
+    if k is not None:
+        return k
+    if not isinstance(artifacts, dict):
+        return None
+    ep = artifacts.get("affected_endpoint")
+    if not ep:
+        return None
+    for src in _RECUR_CODE_SOURCES_1203HS:
+        text = title if src == "title" else artifacts.get(src)
+        mc = _RECUR_CODE_1203HR.search(str(text or ""))
+        if mc:
+            return (_re1203hr.sub(r"/\d+", "/{}", str(ep)), mc.group(1))
+    return None
+
+
+def prior_fix_claim_1203hr(workhub, title, artifacts=None):
     """#1203hr — the most recent COMPLETED task for this exact symptom, or None.
 
     Returns ``(task_id, assignee, completed_at)``. Never raises: a bug report must be
     filed even when this lookup cannot run."""
     try:
-        key = _symptom_key_1203hr(title)
+        key = _symptom_key_1203hs(title, artifacts)
         if key is None:
             return None
         tasks = (workhub.stores.tasks.value() or {})
@@ -79,7 +117,8 @@ def prior_fix_claim_1203hr(workhub, title):
             md = t.get("metadata") or {}
             if str(md.get("source") or "") in _RECUR_SKIP_SOURCES_1203HR:
                 continue
-            if _symptom_key_1203hr(t.get("title")) != key:
+            if _symptom_key_1203hs(
+                    t.get("title"), (t.get("metadata") or {}).get("bug_artifacts")) != key:
                 continue
             when = t.get("completed_at") or t.get("_updated_at") or 0
             if best is None or (when or 0) > (best[2] or 0):
@@ -224,7 +263,8 @@ class BugCreateTool(HubTool):
         # in the body, where the lane reads, and in `parent_bug_id`, which has asked for
         # it all along. See the module note above for the 325 measured recurrences and
         # what the r178 abort cost.
-        _prior1203hr = prior_fix_claim_1203hr(getattr(self._hubs, "workhub", None), title)
+        _prior1203hr = prior_fix_claim_1203hr(
+            getattr(self._hubs, "workhub", None), title, bug_artifacts)
         if _prior1203hr:
             _pid, _asg, _when = _prior1203hr
             try:
