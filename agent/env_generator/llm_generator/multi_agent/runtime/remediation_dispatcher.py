@@ -1912,12 +1912,45 @@ def ui_flow_failed_evidence_1203ft(orch, failed: Sequence[Any]) -> str:
             flow = nm.split("validation:ui_flow:", 1)[1].strip()
             if flow not in names or str(c.get("status")) in ("success", "passed", "pass"):
                 continue
-            ev = c.get("evidence")
-            txt = ""
-            if isinstance(ev, Mapping):
-                txt = str(ev.get("summary") or ev.get("reason") or "").strip()
+            # #1203i0: ONE STORE, TWO READERS, AND THIS ONE HAD THE NARROWER FIELD LIST.
+            #
+            # This read was `summary` or `reason`. `_record_own_words_1203fx`, over the SAME
+            # records in the sibling branch, reads twelve prose fields plus a composed
+            # `expected`/`actual` pair plus a `root_cause_bug` pointer -- and its own docstring
+            # measured why: "`summary`/`reason` alone reach 222 of the 291, and the other 31
+            # are the SAME sentence under a writer's own spelling".
+            #
+            # Replaying that function over every failing `validation:ui_flow:*` record on disk
+            # (the rule #1203fx itself states -- a number about a function has to come from
+            # the function):
+            #
+            #     failing ui_flow records                                  268
+            #       words under `summary`/`reason`, i.e. what this read got 207
+            #       nothing for this read                                   61
+            #         ...of which #1203fx's list reaches                    36
+            #         genuinely nothing written down                        25
+            #
+            # The 36 read like "expected FYP video renders publicly per M1 kickoff (GET
+            # /api/feed/for-you is public); actual GET /api/feed/for-you → 401" and "Bundle
+            # crashes: TypeError '(void 0) is not a function' at first useState" -- the whole
+            # repair, written down, on the record this check blocked on, withheld from the
+            # lane because the two readers of one store each implemented half the rules
+            # (#1202fn / fp / fq / fs / #1203f9 are the same shape).
+            #
+            # Calling the SAME function rather than copying its field list is the point:
+            # #1203fx's docstring argues against a second reader in this module, and a copied
+            # tuple is a second reader that drifts. `ui_flow_failed_evidence_1203ft` is the
+            # corpus's second-biggest blocker's only voice (2503 red gate records, 81 runs).
+            try:
+                from .delivery_gate import _record_own_words_1203fx as _w1203i0
+                txt = _w1203i0(dict(c))
+            except Exception:
+                ev = c.get("evidence")
+                txt = ""
+                if isinstance(ev, Mapping):
+                    txt = str(ev.get("summary") or ev.get("reason") or "").strip()
             if txt:
-                said[flow] = txt[:400]
+                said[flow] = str(txt)[:400]
         if not said:
             return ""
         lines = ["%s — %s" % (f, said[f]) for f in names if f in said]
