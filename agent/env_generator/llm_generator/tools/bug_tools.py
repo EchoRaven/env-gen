@@ -24,6 +24,70 @@ from multi_agent.runtime import bug_schema
 from ._base import ToolResult
 from .hub_tools import HubTool, _finalize_hub_tools
 
+import re as _re1203hr
+
+# #1203hr: THE FRAMEWORK ASKS THE FILER TO DECLARE A RECURRENCE IT CANNOT SEE, AND KNOWS
+# THE ANSWER ITSELF.
+#
+# `parent_bug_id` has said "Set if this is a recurrence of an earlier bug" since this tool
+# existed. MEASURED over every `workhub_tasks.json` on disk, grouping tasks by the
+# (path, status) their TITLE names and excluding `registryhub_breaking_change` (whose churn
+# is a separate, already-measured story): 325 times a task was filed for a symptom an
+# EARLIER task had already been marked `completed` for. `parent_bug_id` was set on 23 of
+# them, and on **0 of the 6 in r170+** -- where the new task carried neither the field nor
+# any mention of the earlier one in its title or body.
+#
+# r178 is what that costs. `GET /api/feed/foryou returns 500 during api_smoke and
+# business_chain validation` was completed by backend at 1791714717; `GET /api/feed/foryou
+# returns 500 during api_smoke` was filed 3813 seconds later, completed 57 seconds after
+# that, and the run aborted on that same symptom after 33 coordination ticks having spent
+# $339.72 and delivered nothing. In the hour between, the backend called `test_api` 80
+# times and made ONE write, to a different file than the traceback named.
+#
+# The filer cannot know this; the hub can. So the hub says it.
+_RECUR_PATH_1203HR = _re1203hr.compile(r"(/api/[\w/{}\-\.]+)")
+_RECUR_CODE_1203HR = _re1203hr.compile(r"\b(4\d\d|5\d\d)\b")
+_RECUR_SKIP_SOURCES_1203HR = ("registryhub_breaking_change",)
+
+
+def _symptom_key_1203hr(title):
+    """(normalised path, status code) a title names, or None."""
+    t = str(title or "")
+    mp = _RECUR_PATH_1203HR.search(t)
+    mc = _RECUR_CODE_1203HR.search(t)
+    if not (mp and mc):
+        return None
+    return (_re1203hr.sub(r"/\d+", "/{}", mp.group(1)), mc.group(1))
+
+
+def prior_fix_claim_1203hr(workhub, title):
+    """#1203hr — the most recent COMPLETED task for this exact symptom, or None.
+
+    Returns ``(task_id, assignee, completed_at)``. Never raises: a bug report must be
+    filed even when this lookup cannot run."""
+    try:
+        key = _symptom_key_1203hr(title)
+        if key is None:
+            return None
+        tasks = (workhub.stores.tasks.value() or {})
+        best = None
+        for tid, t in tasks.items():
+            if tid == "_meta" or not isinstance(t, dict):
+                continue
+            if str(t.get("status") or "").lower() != "completed":
+                continue
+            md = t.get("metadata") or {}
+            if str(md.get("source") or "") in _RECUR_SKIP_SOURCES_1203HR:
+                continue
+            if _symptom_key_1203hr(t.get("title")) != key:
+                continue
+            when = t.get("completed_at") or t.get("_updated_at") or 0
+            if best is None or (when or 0) > (best[2] or 0):
+                best = (tid, t.get("assignee"), when)
+        return best
+    except Exception:
+        return None
+
 
 # Re-exported for the schema parity scanner — both sides reference
 # the same constants so they cannot drift.
@@ -156,6 +220,27 @@ class BugCreateTool(HubTool):
             # wake no one. A triage owner may reassign; nobody cannot. Cost is small and
             # measured: 114 bugs over 27 runs, median 2 per run.
             _owner = _TRIAGE_OWNER_626
+        # #1203hr: if this exact symptom was already marked FIXED in this run, say so --
+        # in the body, where the lane reads, and in `parent_bug_id`, which has asked for
+        # it all along. See the module note above for the 325 measured recurrences and
+        # what the r178 abort cost.
+        _prior1203hr = prior_fix_claim_1203hr(getattr(self._hubs, "workhub", None), title)
+        if _prior1203hr:
+            _pid, _asg, _when = _prior1203hr
+            try:
+                import time as _t1203hr
+                _ago = int(max(0, _t1203hr.time() - float(_when or 0)))
+                _agos = ("%dm%ds ago" % (_ago // 60, _ago % 60)) if _ago < 86400 else "earlier"
+            except Exception:
+                _agos = "earlier"
+            description = (str(description or "").rstrip() + (
+                "\n\nALREADY MARKED FIXED ONCE IN THIS RUN: task %s (%s) was completed %s "
+                "for this same symptom and it is back. Do not re-file the diagnosis — read "
+                "that task's result, then check whether the file the traceback names was "
+                "actually edited. #1203hr" % (_pid, _asg or "unassigned", _agos))).strip()
+            if not parent_bug_id:
+                parent_bug_id = _pid
+
         task = self._hubs.workhub.create_task(
             title=title,
             description=description,
