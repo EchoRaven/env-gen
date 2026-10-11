@@ -29,10 +29,28 @@ import sys
 _AGENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_AGENT, "env_generator", "llm_generator"))
 
+import pytest  # noqa: E402
+
 from multi_agent.runtime.chain_executor import (  # noqa: E402
     _is_cross_user_denial,
     normalize_steps,
 )
+from multi_agent.runtime.message_format import (  # noqa: E402
+    reset_state_memo_1202ad,
+)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_memo_1203i2():
+    """#1203i2 routed this announcement through `state_changed_1202ad`, so the same chain is
+    reported ONCE per process -- 14791 lines carrying 2 distinct messages became 2. Each test
+    here asserts about a fresh process, and the helper publishes
+    `reset_state_memo_1202ad` for exactly that ("For tests and new runs"). Without this, the
+    second test to use a given chain reads an empty caplog and the file would be asserting
+    the memo rather than the announcement."""
+    reset_state_memo_1202ad("chain_executor.isolation_suppressed_1202wj")
+    yield
+    reset_state_memo_1202ad("chain_executor.isolation_suppressed_1202wj")
 
 _REGISTER = {"method": "POST", "path": "/auth/register", "expect": [200, 201],
              "save": {"tokenA": "access_token"}}

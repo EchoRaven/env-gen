@@ -1440,12 +1440,73 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
                 _first1202wj = next(
                     ("%s %s" % (str(s.get("method", "GET")).upper(), s.get("path"))
                      for s in out if isinstance(s, Mapping) and s.get("path")), "?")
-                __import__("logging").getLogger(__name__).warning(
-                    "#1202wj a chain starting %s counts as isolation-covered on a TOKENLESS "
-                    "denial only: no step asks whether one user may reach another's row, and "
-                    "the cross-user probe is suppressed because a 401 was found. Nothing in "
-                    "this chain would catch a backend that hands any valid token full "
-                    "access.", _first1202wj)
+                # #1203i2: SAY THE STATE, NOT A HEARTBEAT.
+                #
+                # This was a bare `logging.warning` on a path that runs per chain per
+                # augmentation, and it became the loudest line in the framework: 14791 lines
+                # across the last 13 runs -- twice `FIX #150`'s dispatch-full warning, the
+                # next loudest -- carrying **2 distinct messages in total**. r171 alone
+                # printed the identical sentence 3320 times.
+                #
+                # `#1202ad` exists for exactly this and its own comment lists the five prior
+                # instances it was written for: #1202n (r26, 134 lines / 2 states), #1202p
+                # (416 / 4), #1202v (213 / 1), #1202ab (280 / 9), #1202ac (117 / 1). This one
+                # is larger than all five together by an order of magnitude.
+                #
+                # The cost is not only bytes. Ranking the framework's warnings by volume is a
+                # diagnostic instrument -- it is how #1203i2 itself was found -- and this line
+                # dominated that ranking at 2x the next while saying one thing.
+                #
+                # BOTH `site` AND `state` ARE WHAT GETS PRINTED, and the first draft of this
+                # was wrong about that. It keyed the site on the first step and put
+                # `(first, len(out))` in the state, reasoning that a chain re-authored into a
+                # different shape is "news again" -- #1202ad's state-vs-heartbeat rule. A
+                # mutation round killed it: chains SHARING a first step (which is the normal
+                # case here, because `normalize_steps` canonicalises the register path) share
+                # the site key, so their differing step counts evict each other and a rotation
+                # of such chains reports every pass -- rebuilding the heartbeat this patch
+                # exists to remove. r171's rotation is how it reached 3320 lines.
+                #
+                # The fix is to stop pretending the line carries more than it does. It prints
+                # the first step and nothing else: r171's 3320 lines held ONE distinct
+                # message. So the state IS the first step, there is nothing further to move,
+                # and a chain re-authored into a different shape has no different sentence to
+                # say.
+                #
+                # WHY the printed identity is a near-constant, measured: `_first1202wj` reads
+                # the first step of `out` AT THIS POINT, and `normalize_steps` has already
+                # prepended the framework's own auth step. Five chains whose real first steps
+                # are `/auth/register`, `/api/v1/auth/register`, `/auth/signup`,
+                # `/api/auth/login` and `/api/accounts` all print "POST /auth/register". That
+                # is the entire explanation for 14791 lines holding 2 distinct messages, and
+                # it is why deduplicating on it loses nothing: the sentence was already
+                # identical for every chain.
+                #
+                # Naming the chain properly is a change to the MESSAGE and needs the chain's
+                # name plumbed into `normalize_steps`, whose signature takes `steps` alone --
+                # a separate patch across its callers. Recorded here rather than left for the
+                # next reader to re-derive. The sentence itself is unchanged.
+                # The identity lives in `site` and the state is a CONSTANT marker, with no
+                # second copy of the identity in it. The first two drafts had both, and a
+                # mutation flattening the site survived each time -- behaviour-identical,
+                # because site and state carried the same thing. With the state constant, a
+                # flattened site collapses every chain into one line and the mutation is
+                # discriminable. The initial `= True` is gone for the same reason: the
+                # `except` below assigns it, so the initializer was dead.
+                try:
+                    from .message_format import state_changed_1202ad
+                    _say1203i2 = state_changed_1202ad(
+                        "chain_executor.isolation_suppressed_1202wj:%s" % _first1202wj,
+                        "suppressed")
+                except Exception:
+                    _say1203i2 = True       # a memo failure must never silence the report
+                if _say1203i2:
+                    __import__("logging").getLogger(__name__).warning(
+                        "#1202wj a chain starting %s counts as isolation-covered on a TOKENLESS "
+                        "denial only: no step asks whether one user may reach another's row, and "
+                        "the cross-user probe is suppressed because a 401 was found. Nothing in "
+                        "this chain would catch a backend that hands any valid token full "
+                        "access.", _first1202wj)
             except Exception:
                 pass
         if not _has_denial:
