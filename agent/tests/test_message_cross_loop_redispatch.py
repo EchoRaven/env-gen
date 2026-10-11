@@ -46,11 +46,18 @@ def test_cross_loop_call_redispatches_and_never_touches_queue():
 def test_no_home_loop_falls_through_to_original_path():
     """Before run_loop captures the home loop (_home_loop is None), behaviour is
     unchanged — the guard must not swallow the message."""
-    reached = {"put": 0}
+    # #1203ht: name WHICH queue received it. The old assertion counted puts across both
+    # and read 2, which stopped being the behaviour once the priority queue took
+    # urgent/high only — while the property this test exists for (the guard must not
+    # SWALLOW the message) is about the dispatch path and the inbox.
+    reached = {"priority": 0, "dispatch": 0}
 
     class Queue:
+        def __init__(self, name):
+            self.name = name
+
         async def put(self, _m):
-            reached["put"] += 1
+            reached[self.name] += 1
 
     class Tracker:
         def mark_delivered(self, *a, **k): pass
@@ -61,8 +68,8 @@ def test_no_home_loop_falls_through_to_original_path():
     agent = AgentMessaging.__new__(AgentMessaging)
     agent.agent_id = "t"
     agent._home_loop = None  # not yet captured
-    agent._priority_queue = Queue()
-    agent._message_queue = Queue()
+    agent._priority_queue = Queue("priority")
+    agent._message_queue = Queue("dispatch")
     agent._logger = logging.getLogger("t")
     agent._message_tracker = Tracker()
     agent._subscription_inbox = []
@@ -88,4 +95,8 @@ def test_no_home_loop_falls_through_to_original_path():
         metadata = {"msg_type": "status"}
 
     asyncio.run(agent.receive_message(Msg()))
-    assert reached["put"] == 2  # both queues received it (priority + message)
+    # The guard did NOT swallow it: the dispatch copy and the inbox both have it.
+    assert reached["dispatch"] == 1, reached
+    assert len(agent._subscription_inbox) == 1, agent._subscription_inbox
+    # A NORMAL message no longer enters the urgent-only priority queue (#1203ht).
+    assert reached["priority"] == 0, reached

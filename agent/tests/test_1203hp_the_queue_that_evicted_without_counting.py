@@ -125,8 +125,15 @@ def test_the_priority_queue_still_has_no_ordinary_consumer():
 
 def test_the_warning_no_longer_claims_the_priority_copy_is_kept():
     src = inspect.getsource(_msg)
-    i = src.index("dispatch queue FULL")
-    block = src[i:src.index("async def", i)]
+    # Anchor on the warning's own tail, not on "dispatch queue FULL": #1203ht's comment in
+    # `receive_message` quotes that phrase in its measured table, and an index() for it
+    # lands there instead. A locator must name something only the subject says.
+    i = src.index("instead of parking the sender (FIX #150)")
+    start = src.rindex("except asyncio.QueueFull", 0, i)
+    # Landmark end, not a width (#943): the warning is the last statement of that except
+    # block, so the next `def` at module indentation closes it.
+    end = src.index("\n    async def ", i)
+    block = src[start:end]
     assert "inbox + priority-queue copies kept" not in block, block
     assert "URGENT/HIGH" in block, block
 

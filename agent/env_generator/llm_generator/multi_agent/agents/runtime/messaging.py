@@ -119,7 +119,31 @@ class AgentMessaging:
                 self._interrupt_messages.append(inbox_msg)
                 self._logger.info(f"[{self.agent_id}] Queued interrupt: {msg_type} from {inbox_msg['from']}")
 
-        await self._priority_queue.put(message)
+        # #1203ht: THIS QUEUE IS URGENT-ONLY, SO ONLY URGENT/HIGH GO IN.
+        #
+        # #1203hp established the audit: the only reads are `get_if_urgent`, which pops
+        # `priority <= 1`, and `from_message` maps URGENT->0, HIGH->1, NORMAL->2, LOW->3.
+        # `get()` has no caller anywhere in the framework. So a NORMAL or LOW copy put here
+        # can never be retrieved by anyone -- it occupies one of 100 slots until a later
+        # `put` evicts it.
+        #
+        # #1203hp's counter then measured what that costs. r179, one run, to completion:
+        #
+        #     dispatch queue FULL           3310
+        #     of those, an eviction too     2881   (87%)
+        #     evictions across 16 agents    2844   (orchestrator 338, each test-user 180-210)
+        #
+        # 2844 silent discards per run, every one of them a copy nothing would ever read,
+        # plus a `sort()` over 100 items each time. Not putting them in is behaviour-
+        # identical for every consumer -- there is no consumer -- and it retires the drop
+        # instead of counting it, which is the standing rule about fallbacks that hide
+        # something: better that the discard cannot happen than that it be logged.
+        #
+        # ★ AND IT UPGRADES #1203hp's COUNTER. With only urgent/high in the heap, a nonzero
+        # `evicted` means an URGENT or HIGH message was thrown away -- a real alarm rather
+        # than noise. That number was 2844 and should now be 0.
+        if message.header.priority in (MessagePriority.URGENT, MessagePriority.HIGH):
+            await self._priority_queue.put(message)
         await self._enqueue_for_dispatch(message)
         await self._maybe_schedule_resident_message_wakeup(message, inbox_msg)
 
