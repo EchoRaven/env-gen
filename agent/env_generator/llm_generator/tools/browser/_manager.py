@@ -25,10 +25,34 @@ class BrowserState:
     current_url: str = ""
 
 
+import time as _time1203hn
+
+
 # #1198: how many times the shared driver may be rebuilt in one process. A death is a flake
 # worth one retry; repeated deaths are a crash loop, and relaunching into it would burn the
 # run's remaining ticks re-dying instead of reporting.
 _MAX_RELAUNCH_1198 = 5
+# #1203hn: and the count is of CONSECUTIVE deaths, because #1198's own distinction --
+# "a flake, not a crash loop" -- is about deaths that come one on top of another, while the
+# lifetime count it actually kept punishes a run for doing browser work.
+#
+# MEASURED over every log on disk: 78 rebuilds across 42 runs, and the dominant cause is
+# the Playwright driver exhausting Node's heap -- 36 occurrences across 29 runs, the most
+# recent being r171, r173, r177 and r178. Those are not crash loops: the driver's own GC
+# report gives its uptime at death, and the MINIMUM over all 36 is **693 seconds**, median
+# 4588 (76 minutes), longest 10479. It died because it had been working, and every one of
+# those rebuilds succeeded.
+#
+# Of the 35 gaps between consecutive rebuilds, 10 are under 60 seconds -- those are the
+# crash loops #1198 is for. Projected (#1203d9) over the corpus with the reset below: the
+# lifetime peak of 5 (r119, r120 and r171 all reached the cap, r171 with three heap deaths)
+# becomes a consecutive peak of 3, no run reaches the cap, and the 10 rapid rebuilds still
+# count toward it -- r127 and r164 still peak at 3. So the guard keeps every case it was
+# built for and stops firing on throughput.
+#
+# r171 is the one that spent it: 5 of 5, one death short of losing every browser gate for
+# the rest of a run that delivered 5 releases.
+_RELAUNCH_RESET_AFTER_SEC_1203HN = 60.0
 
 
 # #1202y: the error text a dead driver produces, whichever tool trips over it first.
@@ -219,6 +243,14 @@ class BrowserManager:
         # #1198: a dead driver is not a started browser. Rebuild it, bounded, so a crash
         # costs one retry instead of every remaining UI gate in the run.
         if self.state.browser is not None and not await self._driver_is_live_1198():
+            # #1203hn: a death more than _RELAUNCH_RESET_AFTER_SEC_1203HN after the last
+            # rebuild is a fresh incident, not the next beat of a crash loop.
+            _now1203hn = _time1203hn.monotonic()
+            _last1203hn = getattr(self, "_last_relaunch_at_1203hn", None)
+            if _last1203hn is not None and (
+                    _now1203hn - _last1203hn) > _RELAUNCH_RESET_AFTER_SEC_1203HN:
+                self._relaunch_count_1198 = 0
+            self._last_relaunch_at_1203hn = _now1203hn
             self._relaunch_count_1198 = getattr(self, "_relaunch_count_1198", 0) + 1
             if self._relaunch_count_1198 > _MAX_RELAUNCH_1198:
                 self._logger.error(

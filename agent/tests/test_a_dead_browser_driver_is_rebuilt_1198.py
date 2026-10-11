@@ -206,3 +206,124 @@ def test_discarding_a_driver_whose_handles_raise_is_survivable(monkeypatch, tmp_
     asyncio.run(m._discard_dead_driver_1198())
     assert m.state.browser is None
     assert m.state.page is None
+
+
+# ------------------------------- #1203hn: the count is of CONSECUTIVE deaths ------------
+#
+# #1198's own distinction is "a flake, not a crash loop", but the count it kept was for the
+# whole process, so a run was penalised for doing browser work. MEASURED over every log on
+# disk: 78 rebuilds across 42 runs, dominated by the Playwright driver exhausting Node's
+# heap -- 36 occurrences across 29 runs, and the driver's own GC report gives its uptime at
+# death: MINIMUM 693 seconds, median 4588, longest 10479. Of the 35 gaps between consecutive
+# rebuilds, 10 are under 60 seconds; those are the crash loops. r119, r120 and r171 all
+# reached the cap, r171 one death short of losing every browser gate in a run that cut 5
+# releases. Projected with the reset: consecutive peak 3, no run reaches the cap.
+
+
+class _Clock1203hn:
+    def __init__(self):
+        self.t = 1000.0
+
+    def monotonic(self):
+        return self.t
+
+    def advance(self, s):
+        self.t += s
+
+
+def _kill(m):
+    m.state.browser = _FakeBrowser(alive=False)
+    m.state.page = _FakePage(alive=False)
+    m.state.context = _FakeContext(alive=False)
+
+
+def _install_clock_1203hn(monkeypatch):
+    clock = _Clock1203hn()
+    monkeypatch.setattr(bm, "_time1203hn", clock)
+    return clock
+
+
+def test_deaths_spaced_further_apart_than_the_reset_never_reach_the_cap(monkeypatch, tmp_path):
+    """The r171 case: three heap deaths, each after an hour of work, are three incidents."""
+    _install_fake(monkeypatch)
+    clock = _install_clock_1203hn(monkeypatch)
+    m = _manager(tmp_path)
+    for _ in range(bm._MAX_RELAUNCH_1198 * 3):
+        clock.advance(bm._RELAUNCH_RESET_AFTER_SEC_1203HN + 1)
+        _kill(m)
+        assert asyncio.run(m.ensure_browser()) is True
+    assert m._relaunch_count_1198 == 1, m._relaunch_count_1198
+
+
+def test_a_crash_loop_inside_the_window_still_stops(monkeypatch, tmp_path):
+    """The guard must keep every case it was built for."""
+    _install_fake(monkeypatch)
+    clock = _install_clock_1203hn(monkeypatch)
+    m = _manager(tmp_path)
+    for _ in range(bm._MAX_RELAUNCH_1198):
+        clock.advance(bm._RELAUNCH_RESET_AFTER_SEC_1203HN / 10.0)
+        _kill(m)
+        assert asyncio.run(m.ensure_browser()) is True
+    clock.advance(bm._RELAUNCH_RESET_AFTER_SEC_1203HN / 10.0)
+    _kill(m)
+    assert asyncio.run(m.ensure_browser()) is False
+
+
+def test_one_long_gap_does_not_forgive_a_loop_that_follows_it(monkeypatch, tmp_path):
+    """The reset compares against the LAST rebuild, not the first: a quiet hour then a loop
+    is still a loop."""
+    _install_fake(monkeypatch)
+    clock = _install_clock_1203hn(monkeypatch)
+    m = _manager(tmp_path)
+    clock.advance(3600)
+    _kill(m)
+    assert asyncio.run(m.ensure_browser()) is True
+    for _ in range(bm._MAX_RELAUNCH_1198 - 1):
+        clock.advance(1.0)
+        _kill(m)
+        assert asyncio.run(m.ensure_browser()) is True
+    clock.advance(1.0)
+    _kill(m)
+    assert asyncio.run(m.ensure_browser()) is False
+
+
+def test_a_gap_exactly_at_the_threshold_is_still_the_same_incident(monkeypatch, tmp_path):
+    """`>` not `>=`: the boundary belongs to the loop, so the guard stays the stricter one."""
+    _install_fake(monkeypatch)
+    clock = _install_clock_1203hn(monkeypatch)
+    m = _manager(tmp_path)
+    for _ in range(bm._MAX_RELAUNCH_1198):
+        clock.advance(bm._RELAUNCH_RESET_AFTER_SEC_1203HN)
+        _kill(m)
+        assert asyncio.run(m.ensure_browser()) is True
+    clock.advance(bm._RELAUNCH_RESET_AFTER_SEC_1203HN)
+    _kill(m)
+    assert asyncio.run(m.ensure_browser()) is False
+
+
+def test_the_reset_reads_the_constant(monkeypatch, tmp_path):
+    """Structural: a hardcoded 60 would pass every assertion above. Move the constant and
+    the behaviour must move with it."""
+    import inspect
+    src = inspect.getsource(bm.BrowserManager.ensure_browser)
+    assert "_RELAUNCH_RESET_AFTER_SEC_1203HN" in src, src[:400]
+
+    _install_fake(monkeypatch)
+    clock = _install_clock_1203hn(monkeypatch)
+    monkeypatch.setattr(bm, "_RELAUNCH_RESET_AFTER_SEC_1203HN", 5.0)
+    m = _manager(tmp_path)
+    for _ in range(bm._MAX_RELAUNCH_1198 * 2):
+        clock.advance(6.0)                      # > the moved threshold
+        _kill(m)
+        assert asyncio.run(m.ensure_browser()) is True
+    assert m._relaunch_count_1198 == 1
+
+
+def test_the_first_death_of_a_process_is_not_a_reset_candidate(monkeypatch, tmp_path):
+    """No previous rebuild to compare against; the count must start at 1, not 0."""
+    _install_fake(monkeypatch)
+    _install_clock_1203hn(monkeypatch)
+    m = _manager(tmp_path)
+    _kill(m)
+    assert asyncio.run(m.ensure_browser()) is True
+    assert m._relaunch_count_1198 == 1
