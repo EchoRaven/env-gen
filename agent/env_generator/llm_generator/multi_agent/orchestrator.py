@@ -3812,7 +3812,10 @@ class Orchestrator:
                 self.progress.emit(
                     EventType.GENERATION_COMPLETE,
                     f"Done in {duration:.1f}s",
-                    {"success": success},
+                    # #1203hq: `duration` was in the MESSAGE and not in the DATA, and both
+                    # renderers read it from the data with a default of 0 -- so every one of
+                    # these lines printed "0.0 seconds" for runs that took hours.
+                    {"success": success, "duration": duration},
                 )
             except Exception as finalize_err:
                 self._logger.error(f"Finalization bookkeeping failed: {finalize_err}")

@@ -352,14 +352,41 @@ class ConsoleListener:
             print(self._color("   " + "=" * 56, "bold"))
             
         elif event.type == EventType.GENERATION_COMPLETE:
-            duration = event.data.get("duration", 0)
-            files = event.data.get("total_files", 0)
+            # #1203hq: THIS BANNER CONGRATULATED 89 OF THE 93 RUNS THAT PRINTED IT, AND 89
+            # OF THEM HAD `Status: FAILED` TWO LINES LOWER.
+            #
+            # The emitter has always passed `success` (orchestrator.py, the finalize block)
+            # and this branch never read it, so a run that aborted without delivery ended on
+            # `🎉 Generation Complete!` in green. r178 is the live one: stuck_abort after 33
+            # ticks, $339.72, 10253.7s, and the tail of its log reads
+            #
+            #     🎉 ====  Generation Complete!   📁 0 files generated   ⏱️  0.0 seconds
+            #
+            # All three statements false. The zeros are the second half of the defect:
+            # `total_files` is never passed by any emitter and `duration` was passed only
+            # inside the message string, so `.get(..., 0)` printed a confident 0 for both.
+            # A number we do not have is not reported as zero (#1034's rule, and the
+            # standing one about fallbacks that hide the truth).
+            _ok1203hq = event.data.get("success")
+            duration = event.data.get("duration")
+            files = event.data.get("total_files")
             print()
-            print(self._color("🎉 " + "=" * 56, "green"))
-            print(self._color(f"   Generation Complete!", "green"))
-            print(f"   📁 {files} files generated")
-            print(f"   ⏱️  {duration:.1f} seconds")
-            print(self._color("   " + "=" * 56, "green"))
+            if _ok1203hq is False:
+                print(self._color("💥 " + "=" * 56, "red"))
+                print(self._color("   Generation FAILED — see Status below", "red"))
+            else:
+                print(self._color("🎉 " + "=" * 56, "green"))
+                print(self._color(f"   Generation Complete!", "green"))
+            if files is not None:
+                print(f"   📁 {files} files generated")
+            if duration is not None:
+                # A banner must never be the thing that ends a run.
+                try:
+                    print(f"   ⏱️  {float(duration):.1f} seconds")
+                except (TypeError, ValueError):
+                    print(f"   ⏱️  {duration} (unparseable duration)")
+            print(self._color("   " + "=" * 56,
+                              "red" if _ok1203hq is False else "green"))
             
         elif event.type == EventType.GENERATION_ERROR:
             error = event.data.get("error") or event.message or "Unknown error"
@@ -537,9 +564,21 @@ class RealTimeTextLogger:
             name = event.data.get("name", "unknown")
             line = f"\n{'#'*60}\n# GENERATION START: {name}\n{'#'*60}\n\n"
         elif event.type == EventType.GENERATION_COMPLETE:
-            duration = event.data.get("duration", 0)
-            files = event.data.get("total_files", 0)
-            line = f"\n{'#'*60}\n# COMPLETE! {files} files in {duration:.1f}s\n{'#'*60}\n"
+            # #1203hq: same event, same two omissions — see ConsoleListener above.
+            _ok1203hq = event.data.get("success")
+            duration = event.data.get("duration")
+            files = event.data.get("total_files")
+            _what = "FAILED" if _ok1203hq is False else "COMPLETE!"
+            _bits = []
+            if files is not None:
+                _bits.append(f"{files} files")
+            if duration is not None:
+                try:
+                    _bits.append(f"{float(duration):.1f}s")
+                except (TypeError, ValueError):
+                    _bits.append(f"{duration} (unparseable)")
+            _tail = (" " + " in ".join(_bits)) if _bits else ""
+            line = f"\n{'#'*60}\n# {_what}{_tail}\n{'#'*60}\n"
         elif event.type == EventType.GENERATION_ERROR:
             error = event.data.get("error") or event.message or "Unknown"
             line = f"\n[{timestamp}] *** ERROR ***: {error}\n"
