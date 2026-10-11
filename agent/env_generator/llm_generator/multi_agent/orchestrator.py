@@ -4948,6 +4948,58 @@ class Orchestrator:
                 pass
         return shrank
 
+    def _ui_pages_retired_1203hv(self, gate) -> bool:
+        """#1203hv: did a page that was failing last tick stop failing, COUNT unchanged?
+
+        #1138 reads `ui_evidence_failed_records` -- a COUNT -- and the same gate dict carries
+        `ui_evidence_failed_pages`, the identities (delivery_gate.py writes both from
+        `_breadth739`). A count cannot tell "the same page is still broken" from "that page
+        was fixed and a different one surfaced", so the livelock #1138 fixed at the check-set
+        level reappears one level down whenever the count is flat. Measured on the full
+        corpus of `#1017 validation_ui_evidence_failed` evaluations:
+
+            count shrank (what #1138 already sees)        74
+            page set turned over, count flat              41   across 28 runs
+            nothing changed                             1454
+
+        and SEVEN runs have turnover with zero shrinks, i.e. #1138's signal never fired once
+        while convergence was happening. r169 is the clearest: `login_modal` -> `ui_smoke`
+        -> `signup-modal`, three distinct records repaired, the count reading 1 throughout.
+        r180 did it live (`login_modal` x3 -> `/friends` x29).
+
+        This is the rule recorded as "a global count cannot test a per-item property", and
+        it only feeds #228's EXISTING grace, which keeps every one of its own bounds --
+        `max_failed=2`, `max_grace=2` x `grace_s=900`. It cannot add an unbudgeted extension.
+
+        A retirement is credited only when the set did not GROW. prev={A} -> cur={B,C}
+        retires A but leaves more broken than before, which is not the "visibly converging"
+        #228 asks about; the two runs this rule is drawn from are flat at one page.
+        """
+        try:
+            if not isinstance(gate, dict) or "ui_evidence_failed_pages" not in gate:
+                return False
+            cur = frozenset(str(p) for p in (gate["ui_evidence_failed_pages"] or []))
+        except Exception:
+            return False
+        prev = getattr(self, "_fwdeliver_prev_ui_pages_1203hv", None)
+        self._fwdeliver_prev_ui_pages_1203hv = cur
+        # ABSENCE IS NOT AN EMPTY SET -- #1138's own rule, one field over. A gate result
+        # whose page list is missing or empty says "unknown here", and reading it as "every
+        # page retired" would buy a grace out of nothing.
+        if not prev or not cur:
+            return False
+        retired = prev - cur
+        if not retired or len(cur) > len(prev):
+            return False
+        try:
+            self._logger.info(
+                "#1203hv ui-evidence pages retired %s (now failing %s) with the record "
+                "count flat -- counting that as convergence for the no-deliver grace.",
+                sorted(retired), sorted(cur))
+        except Exception:
+            pass
+        return True
+
     def _publish_run_ports_1134b(self) -> None:
         """Set ENVGEN_RUN_HTTP_PORTS from this run's own compose. Best-effort, never raises.
 
@@ -5672,6 +5724,13 @@ class Orchestrator:
                 # for. It only feeds the EXISTING grace, which keeps all of its own bounds
                 # (small failing set, recent shrink, bounded number of extensions).
                 if self._ui_depth_shrank_1138(gate):
+                    self._fwdeliver_last_shrink_ts = _now2
+                # #1203hv: ...and the same hold where the COUNT is flat because one page was
+                # repaired and another surfaced. Its own `if`, like #228's and #1138's above,
+                # so each signal keeps its own previous observation and one cannot mask the
+                # other. 41 such turnovers on this corpus against 74 shrinks, and seven runs
+                # where this is the only convergence signal there is.
+                if self._ui_pages_retired_1203hv(gate):
                     self._fwdeliver_last_shrink_ts = _now2
                 if _cur_failed_set:
                     self._fwdeliver_prev_failed = _cur_failed_set
