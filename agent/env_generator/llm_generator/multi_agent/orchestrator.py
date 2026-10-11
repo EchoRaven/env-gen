@@ -5000,6 +5000,80 @@ class Orchestrator:
             pass
         return True
 
+    def _chain_depth_converged_1203hx(self, gate) -> bool:
+        """#1203hx: are the FAILING CHAINS coming down, with the check name flat?
+
+        `business_chain_failing` is the third check to hit the shape #1138 fixed for
+        ui-evidence and #1202ls for task instances, and the only one with NO depth signal of
+        any kind. #228's grace asks whether the failing CHECK SET shrank; a run held by this
+        check alone has a set of size one, so it cannot. Underneath, the chains converge.
+
+        Both no-convergence aborts on this check, from the chain registry's own snapshots:
+
+            r178, aborted 07:57:26   06:33 14 failing -> 07:01 ONE -> 07:15 ZERO
+            r179, aborted 13:31:08   12:49  2 failing -> 13:16 ZERO
+
+        Both reached ZERO failing chains before aborting on this check, and both were granted
+        EXACTLY ZERO grace (`CONVERGING-GRACE` appears nowhere in either log). Across the
+        corpus the snapshots hold 33 count-shrinks and 6 identity turnovers nothing can see.
+
+        WHAT THIS WOULD AND WOULD NOT HAVE CHANGED, from running the predicate over those
+        snapshot sequences rather than reasoning about them. r179: the last credit lands
+        13:16:46, 862s before the abort, and `convergence_grace(failed_count=1,
+        last_shrink_age_s=862, grace_used=0)` returns 900s -- the grace fires. r178: its last
+        credit on the snapshot timeline is 07:15:25, 2521s before the abort, OUTSIDE the 1800s
+        recency window, so that one returns 0. Snapshots are 15-30 minutes apart while the
+        gate evaluates every tick, so what the per-tick signal would have seen in r178's last
+        42 minutes is not knowable from disk -- the 07:55:14 snapshot shows a chain had
+        re-broken by then. One demonstrated save, one unknown; claiming two would be reading
+        the instrument's resolution as the system's behaviour.
+
+        Nothing new is published for this. `business_chain_blockers` already returns
+        `{"reason": ..., "detail": ..., "chains": <the failing names>}` and the gate already
+        carries the whole result as `gate["business_chain"]`; the consumer appended `reason`
+        to `failed_checks`, passed `detail` to a note, and left `chains` unread -- the fact in
+        hand, spent only on the label. Same shape as #1203hw and #1203fx.
+
+        Count AND identity in one helper, unlike the #1138/#1203hv pair that grew apart: the
+        count is `len()` of the same list, so there is nothing to keep in step. It feeds only
+        #228's existing grace, whose `max_failed`, `max_grace` and recency bounds all still
+        apply.
+        """
+        try:
+            bc = (gate or {}).get("business_chain") if isinstance(gate, dict) else None
+            if not isinstance(bc, dict) or "chains" not in bc:
+                return False
+            cur = frozenset(str(c) for c in (bc["chains"] or []))
+        except Exception:
+            return False
+        prev = getattr(self, "_fwdeliver_prev_chains_1203hx", None)
+        self._fwdeliver_prev_chains_1203hx = cur
+        # ABSENCE IS NOT ZERO (#1138's rule). A gate with no `chains` key says "this check is
+        # not the one blocking", not "every chain passes", and is returned above without
+        # touching the previous observation -- so the next real reading still has something to
+        # compare against.
+        if prev is None or not prev:
+            return False
+        # The two cases are disjoint ON PURPOSE. A first version wrote the second as
+        # `bool(prev - cur) and len(cur) <= len(prev)`, and a mutation reversing that
+        # difference to `cur - prev` passed every test -- correctly, because with the
+        # size guard and `shrank` beside it the two directions agree in every reachable
+        # case, so the distinction was unobservable and had no business reading as a rule.
+        # What `shrank` does not already cover is exactly a SAME-SIZE set that changed:
+        # one chain repaired, the next surfaced (6 such turnovers on the corpus).
+        shrank = len(cur) < len(prev)
+        turned_over = len(cur) == len(prev) and cur != prev
+        if not (shrank or turned_over):
+            return False
+        try:
+            self._logger.info(
+                "#1203hx business chains failing %d -> %d (retired %s) — counting that as "
+                "convergence for the no-deliver grace.",
+                len(prev), len(cur), sorted(prev - cur)[:4] or "nothing")
+        except Exception:
+            pass
+        return True
+
     def _publish_run_ports_1134b(self) -> None:
         """Set ENVGEN_RUN_HTTP_PORTS from this run's own compose. Best-effort, never raises.
 
@@ -5731,6 +5805,13 @@ class Orchestrator:
                 # other. 41 such turnovers on this corpus against 74 shrinks, and seven runs
                 # where this is the only convergence signal there is.
                 if self._ui_pages_retired_1203hv(gate):
+                    self._fwdeliver_last_shrink_ts = _now2
+                # #1203hx: the same hold for `business_chain_failing`, which had no depth
+                # signal at all. r178 and r179 are the two no-convergence aborts on it, and
+                # both had their failing-chain count fall TO ZERO inside the grace's recency
+                # window (42 and 14 minutes before the abort) while being granted no grace.
+                # Its own `if`, for the same reason as the two above.
+                if self._chain_depth_converged_1203hx(gate):
                     self._fwdeliver_last_shrink_ts = _now2
                 if _cur_failed_set:
                     self._fwdeliver_prev_failed = _cur_failed_set
