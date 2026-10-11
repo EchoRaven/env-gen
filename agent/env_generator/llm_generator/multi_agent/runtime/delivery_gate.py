@@ -828,6 +828,65 @@ def _ui_evidence_breadth_739(validation_results: Any,
         #
         # The KIND stays in the key, so `ui_smoke:login` never merges into `ui_flow:login`.
         _key = str(r.get("name") or r.get("task_id") or id(r))
+        # #1203hw: A RECORD THAT NAMES NO PAGE IN ITS NAME STILL NAMES ONE IN ITS METADATA.
+        #
+        # #1202fq's rule is "supersede by the PAGE, not by the spelling", and it rekeys via
+        # `metadata.url`. A record whose NAME has no page segment at all defeats both that and
+        # #1203f9's canonicalisation (which needs three segments), so it keys as the bare
+        # `validation:<kind>` -- a key no per-page pass can ever match, and #757's retirement
+        # is unreachable for it.
+        #
+        # r180, live and to the minute. `validation:ui_smoke` recorded FAILURE at 14:52:37:
+        #
+        #     summary  "/friends route failed UI smoke because rendered avatar assets
+        #               returned 404."
+        #     metadata {"check": "ui_smoke", "route": "/friends"}
+        #     no `url` anywhere on the record
+        #
+        # The verifier walked /friends, found it clean and recorded
+        # `validation:ui_smoke:/friends` SUCCESS at 15:01:35. Two keys, so the pass retired
+        # nothing: the gate named /friends for another EIGHT evaluations over 18.5 minutes and
+        # dispatched a SECOND remediation for it, which re-walked the same page and wrote
+        # "zero console/network errors" again. #757 calls this exact outcome out -- "that is
+        # not a gate, it is a latch".
+        #
+        # The page was in hand the whole time: line ~919 already reads `metadata.route` to
+        # LABEL the failure, which is how /friends got into `pages_failed` at all. The fact
+        # reached the label and not the key -- the same shape as #1203fx's `_blob`, which was
+        # "in hand all along and spent only on a substring match".
+        #
+        # Reach, measured both ways. On disk 9 runs hold a bare failure record whose metadata
+        # names a page, and 1 (r180) also holds a later pass for that page+kind -- an
+        # undercount by construction, because `check_main_validation:ui_smoke` is ONE store
+        # slot that each write overwrites, so no intermediate state survives. From the logs,
+        # which do see them: 16 gate evaluations across 2 runs (r117 8, r180 8) name a page
+        # that was already recorded success with no failure since.
+        #
+        # Narrow on purpose: only a name with no page segment is rekeyed, so a record that
+        # names its own flow keeps its own key, and the KIND stays in the key for the same
+        # reason it does below. Projected over r180's real records before landing: the keys go
+        # 9 -> 8 and /friends leaves `pages_failed`, which is what the 18.5 minutes bought.
+        #
+        # THE WRITER SIDE, MEASURED AND DELIBERATELY NOT CHANGED. `codehub_record_check`'s own
+        # description prescribes the bare name -- "'validation:api_smoke',
+        # 'validation:ui_smoke', 'validation:ui_flow:<flow_name>'" -- giving `ui_flow` a page
+        # placeholder and `ui_smoke` none, because a bare `ui_smoke` IS a legitimate
+        # repo-level claim (#1177: "r14 delivered with zero of them and r13 with a single
+        # global `validation:ui_smoke`"). The defect is not the name, it is a repo-level
+        # record carrying a per-page claim in its metadata, and the fix belongs where the
+        # claim is READ -- guard the value, not just the entry path. #1177 covers the dual
+        # case (a per-page `ui_smoke:<page>` record `run_validation` cannot rewrite) and
+        # found that teaching the writer was the part that needed care there too.
+        try:
+            _p1203hw = _key.split(":")
+            if len(_p1203hw) == 2 and _p1203hw[0] == "validation" and _p1203hw[1]:
+                _m1203hw = r.get("metadata") or {}
+                _pg1203hw = (_m1203hw.get("route") or _m1203hw.get("page")
+                             or _m1203hw.get("flow"))
+                if _pg1203hw:
+                    _key = "validation:%s:%s" % (_p1203hw[1], _pg1203hw)
+        except Exception:
+            pass
         try:
             from .flow_coverage import _flow_key as _fk1203f9
             _p1203f9 = _key.split(":", 2)
