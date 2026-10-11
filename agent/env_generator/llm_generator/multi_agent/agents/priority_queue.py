@@ -52,14 +52,39 @@ class PriorityMessageQueue:
         self._lock = asyncio.Lock()
         self._not_empty = asyncio.Event()
         self._maxsize = maxsize
+        # #1203hp: how many messages this queue has silently thrown away.
+        self.evicted = 0
     
     async def put(self, message: BaseMessage) -> None:
-        """Add message to queue with priority."""
+        """Add message to queue with priority.
+
+        #1203hp: THE EVICTION BELOW IS THE ONLY DROP IN THE MESSAGE PATH THAT COUNTS
+        NOTHING. `FIX #150` drops the ordinary-dispatch copy of a message when the bounded
+        dispatch queue fills and says so LOUDLY -- 125022 warnings across 157 run logs on
+        disk, r173 alone 2955 -- on the stated grounds that "the message already reached
+        `_subscription_inbox`, the priority queue, and the interrupt channel for urgent
+        types". Two of those three are urgent-only:
+
+            every use of `_priority_queue` in the framework is `put` (messaging.py:122,
+            for EVERY message), `get_if_urgent` (messaging.py:587, which pops only
+            `priority <= 1`), and this constructor. `get()` has NO caller.
+
+        So an ORDINARY message's priority-queue copy is never read, this heap fills with
+        copies nothing will ever take, and from then on every `put` evicts one -- with no
+        counter, no log line and no way to know afterwards that it happened. #1034's rule
+        is that a truncation says how much went; a dropped message is the same thing one
+        level up. Urgent delivery is unaffected (the heap's minimum is the most urgent, so
+        `get_if_urgent` still sees it, and the eviction takes the LOWEST priority).
+
+        `evicted` is therefore a counter, not a fix: it makes the frequency observable for
+        the first time. Whether the eviction should instead be a drop-on-arrival for
+        ordinary messages depends on that number, which nothing has ever measured."""
         async with self._lock:
             if len(self._heap) >= self._maxsize:
                 self._heap.sort()
                 self._heap.pop()
-            
+                self.evicted += 1
+
             heapq.heappush(self._heap, PrioritizedMessage.from_message(message))
             self._not_empty.set()
     

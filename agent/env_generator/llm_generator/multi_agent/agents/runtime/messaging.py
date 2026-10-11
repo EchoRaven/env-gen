@@ -465,7 +465,18 @@ class AgentMessaging:
         queue, and the interrupt channel for urgent types — the bounded queue
         only feeds ordinary _main_loop dispatch, and a 100-deep backlog means
         that dispatch is already dead. Drop THAT copy loudly instead of
-        cascading the stall into every sender."""
+        cascading the stall into every sender.
+
+        #1203hp: TWO OF THOSE THREE CHANNELS ARE URGENT-ONLY, so for an ORDINARY
+        message the surviving copy is `_subscription_inbox` alone. Every use of
+        `_priority_queue` in the framework is this `put`, `get_if_urgent` (which
+        pops only `priority <= 1`) and its constructor — `get()` has no caller —
+        and `_interrupt_messages` is likewise filled only for URGENT/HIGH. The
+        priority-queue copy of an ordinary message is therefore never read, that
+        heap fills with copies nothing will take, and from then on each `put`
+        evicts one. `PriorityMessageQueue.evicted` counts those; this warning
+        carries the count because the two saturations share a cause and a reader
+        already looks here."""
         _put_nowait = getattr(self._message_queue, "put_nowait", None)
         if _put_nowait is None:
             # duck-typed queue without a non-blocking put (test doubles) —
@@ -475,11 +486,18 @@ class AgentMessaging:
         try:
             _put_nowait(message)
         except asyncio.QueueFull:
+            # #1203hp: name the ONE channel that still carries an ordinary message, and
+            # carry the priority queue's own silent-eviction count, which nothing else
+            # reports anywhere.
+            _ev1203hp = getattr(getattr(self, "_priority_queue", None), "evicted", None)
             self._logger.warning(
                 f"[{self.agent_id}] dispatch queue FULL "
                 f"({self._message_queue.maxsize} pending) — dropping the "
-                "ordinary-dispatch copy (inbox + priority-queue copies kept) "
-                "instead of parking the sender (FIX #150)")
+                "ordinary-dispatch copy (the inbox copy is what still carries an "
+                "ordinary message; the priority-queue and interrupt copies are read "
+                "only for URGENT/HIGH) instead of parking the sender (FIX #150)"
+                + (f"; priority-queue evicted={_ev1203hp} so far (#1203hp)"
+                   if _ev1203hp else ""))
 
     async def _pickup_undelivered_inbox_events(self) -> int:
         """Drain cross-process events from the on-disk inbox.
