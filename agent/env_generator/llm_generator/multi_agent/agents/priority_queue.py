@@ -55,8 +55,31 @@ class PriorityMessageQueue:
         # #1203hp: how many messages this queue has silently thrown away.
         self.evicted = 0
     
-    async def put(self, message: BaseMessage) -> None:
-        """Add message to queue with priority.
+    async def put(self, message: BaseMessage) -> Optional[BaseMessage]:
+        """Add message to queue with priority; return what this put threw away.
+
+        #1203hu: THE RETURN VALUE EXISTS BECAUSE THE COUNTER ALONE REACHED NOBODY.
+        `self.evicted` (below) is incremented here, silently, and its ONLY readout in
+        the framework is inside messaging.py's handler for a DIFFERENT queue filling
+        up (the `asyncio.QueueFull` of the ordinary dispatch queue, `FIX #150`). Those
+        two conditions are independent, so on r180 -- the first run after #1203ht made
+        this heap urgent-only -- the arithmetic came out:
+
+            agents that received URGENT/HIGH      5  (backend debugger frontend
+                                                      orchestrator verifier)
+            agents that ever hit dispatch-FULL    3  (frontend 259, backend 211,
+                                                      verifier 128)
+
+        The debugger and the orchestrator can throw an URGENT message away and no line
+        is ever printed -- not because the eviction is rare there but because the only
+        thing that prints the number is another queue's failure. frontend's count was
+        observable only by that coincidence, and reached 24.
+
+        Returning the evicted message lets the ONE caller -- which has the agent id and
+        the logger, and which this class deliberately does not -- say what was lost at
+        the moment it is lost. Post-#1203ht the heap holds only priority 0 and 1, and
+        `pop()` after `sort()` takes the LEAST urgent, so every return value here is a
+        HIGH (or, in an all-URGENT heap, an URGENT) message that nothing will read.
 
         #1203hp: THE EVICTION BELOW IS THE ONLY DROP IN THE MESSAGE PATH THAT COUNTS
         NOTHING. `FIX #150` drops the ordinary-dispatch copy of a message when the bounded
@@ -80,13 +103,15 @@ class PriorityMessageQueue:
         the first time. Whether the eviction should instead be a drop-on-arrival for
         ordinary messages depends on that number, which nothing has ever measured."""
         async with self._lock:
+            thrown_away = None
             if len(self._heap) >= self._maxsize:
                 self._heap.sort()
-                self._heap.pop()
+                thrown_away = self._heap.pop().message
                 self.evicted += 1
 
             heapq.heappush(self._heap, PrioritizedMessage.from_message(message))
             self._not_empty.set()
+        return thrown_away
     
     async def get(self, timeout: Optional[float] = None) -> Optional[BaseMessage]:
         """Get highest priority message."""

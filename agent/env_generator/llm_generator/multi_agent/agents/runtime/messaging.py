@@ -142,10 +142,53 @@ class AgentMessaging:
         # ★ AND IT UPGRADES #1203hp's COUNTER. With only urgent/high in the heap, a nonzero
         # `evicted` means an URGENT or HIGH message was thrown away -- a real alarm rather
         # than noise. That number was 2844 and should now be 0.
+        #
+        # #1203hu: IT WAS NOT 0, AND THE ALARM ONLY RANG BY COINCIDENCE. r180 is the first
+        # run on the code above; frontend reached `evicted=24`. But the only readout of
+        # that counter is in `_enqueue_for_dispatch`'s QueueFull handler below -- a
+        # DIFFERENT queue -- so of the five agents that receive URGENT/HIGH here, the two
+        # that never filled their dispatch queue (debugger, orchestrator) could throw an
+        # URGENT message away in complete silence. `put` now hands back what it evicted so
+        # the loss is reported where it happens, by the object that knows which agent it
+        # happened to.
         if message.header.priority in (MessagePriority.URGENT, MessagePriority.HIGH):
-            await self._priority_queue.put(message)
+            thrown_away = await self._priority_queue.put(message)
+            if thrown_away is not None:
+                self._log_evicted_urgent_1203hu(thrown_away, msg_type)
         await self._enqueue_for_dispatch(message)
         await self._maybe_schedule_resident_message_wakeup(message, inbox_msg)
+
+    def _log_evicted_urgent_1203hu(self, thrown_away, arriving_type: str) -> None:
+        """Report an URGENT/HIGH message the priority heap had to throw away.
+
+        #1203hu. Separate from the `FIX #150` warning on purpose: that one fires when the
+        ordinary DISPATCH queue is full and is about a copy nothing urgent depends on,
+        while this one fires when the urgent heap is full and the discarded copy is the
+        only one `_check_and_handle_urgent` would ever have popped. Naming the surviving
+        path is the point -- `_interrupt_messages` holds a copy for exactly three types
+        (see the ``issue``/``task_ready``/``question`` branch above), so for anything else
+        the inbox is all that is left and the message is no longer urgent to anybody.
+        """
+        lost_type = ""
+        lost_from = ""
+        lost_priority = "?"
+        try:
+            lost_type = str((thrown_away.metadata or {}).get("msg_type", "")).lower()
+            lost_from = str(thrown_away.header.source_agent_id)
+            lost_priority = thrown_away.header.priority.name
+        except Exception as e:
+            self._logger.debug(f"[{self.agent_id}] evicted-message describe failed: {e}")
+        still_urgent = lost_type in ("issue", "task_ready", "question")
+        self._logger.warning(
+            f"[{self.agent_id}] urgent queue FULL ({self._priority_queue.qsize()} held) — "
+            f"threw away a {lost_priority} {lost_type or 'message'} from "
+            f"{lost_from or 'unknown'} to admit an arriving {arriving_type or 'message'}; "
+            + ("the interrupt channel still holds a copy"
+               if still_urgent else
+               "NOTHING urgent still holds it — only the inbox copy, which is seen only "
+               "if this agent runs check_inbox")
+            + f"; {self._priority_queue.evicted} evicted so far (#1203hu)"
+        )
 
     def get_inbox_messages(self, limit: int = 10, clear: bool = True) -> List[Dict]:
         """Get messages from inbox."""

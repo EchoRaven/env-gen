@@ -106,7 +106,12 @@ _SRC_ROOT = pathlib.Path(_msg.__file__).resolve().parents[3]
 def test_the_priority_queue_still_has_no_ordinary_consumer():
     """★ THE PREMISE, pinned. The whole reason an ordinary message's priority-queue copy
     is dead is that nothing calls `get()`. If a caller appears, #1203hp's reasoning -- and
-    the wording of the #150 warning -- has to be revisited."""
+    the wording of the #150 warning -- has to be revisited.
+
+    The set is exhaustive rather than a `"get" not in methods` check so that ANY new call
+    stops here and gets read. `qsize` joined it with #1203hu, which reports the size of the
+    heap in the eviction warning: it is a read, it removes nothing, and it leaves the
+    premise -- `get_if_urgent` is the only consumer -- untouched."""
     callers = []
     for p in _SRC_ROOT.rglob("*.py"):
         if "/tests/" in str(p) or p.name.startswith("test_"):
@@ -120,7 +125,7 @@ def test_the_priority_queue_still_has_no_ordinary_consumer():
         for m in re.finditer(r"_priority_queue\.(\w+)\s*\(", src):
             callers.append((p.name, m.group(1)))
     methods = sorted({c[1] for c in callers})
-    assert methods == ["get_if_urgent", "put"], callers
+    assert methods == ["get_if_urgent", "put", "qsize"], callers
 
 
 def test_the_warning_no_longer_claims_the_priority_copy_is_kept():
