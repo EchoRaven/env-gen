@@ -609,7 +609,33 @@ _NOTE_EVIDENCE_KEEP_1202WX = 120
 # Half the head, since with no app words to anchor on there is nothing measured to preserve.
 _NOTE_TAIL_1202WX = 90
 # What the app itself said, in the shapes the generated backends use.
-_NOTE_EVIDENCE_MARKS_1202WX = ('{"detail"', '"detail"', "{'detail'")
+#
+# #1203hj: AND THE FRAMEWORK'S OWN VERDICT, WHICH IS THE ACTIONABLE HALF WHEN THE APP
+# ANSWERED 2xx AND SO SAID NOTHING QUOTABLE. `chain_executor` derives, for a denial probe
+# that got a success, WHICH SIDE IS WRONG -- and the two answers point OPPOSITE ways:
+#
+#   ①  "...and THAT is the defect: the probe is right. Set auth_required=True on this
+#       endpoint and let the projected handler get its guard. Do NOT weaken the probe."
+#   ②  "CONTRACT SAYS PUBLIC: ... so the projected handler carries no guard and a 2xx is
+#       what it is BUILT to answer -- this probe is probably mis-authored. If the endpoint
+#       really must deny, change the CONTRACT first; the handler follows it."
+#
+# MEASURED over every `workhub_tasks.json` written since 2026-10-01: the annotation reaches
+# a lane **86 times**, and the verdict reaches it **2** -- ① zero times, ② twice. The lane
+# is handed the contradiction and left to guess which way to resolve it, which is strictly
+# worse than silence: #1202qs records tiktok-r127 doing exactly that, registering the feed
+# `auth_required=true` to match a probe that was wrong, after which the frontend was told
+# auth had been added and fed logged-out visitors hard-coded videos.
+#
+# APPENDED, NOT PREPENDED, DELIBERATELY. The loop below takes the FIRST mark that matches,
+# so order is precedence. #1202wx measured that the app's own `{"detail": ...}` is the most
+# actionable fragment in ITS cases (40 of 106 long notes lost it), and that stays true.
+# Measured on the 62 annotation fragments on disk: 13 (20%) carry a `detail` mark and keep
+# today's behaviour exactly; the other 49 (79%) carry no app words at all -- the probe got a
+# 2xx -- and today fall back to a blind 90-character tail that has never once contained the
+# verdict. So appending covers 79% with zero change to anything #1202wx measured.
+_NOTE_EVIDENCE_MARKS_1202WX = ('{"detail"', '"detail"', "{'detail'",
+                               "THAT is the defect", "probably mis-authored")
 
 
 def _note_keeping_the_evidence_1202wx(note: str) -> str:
