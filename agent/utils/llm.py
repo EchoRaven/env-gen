@@ -1108,7 +1108,16 @@ _LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unre
               # Same channel as #1202wr for the same reason it gave: run_budget writes
               # `llm_usage()` wholesale, so these reach run_budget.json with no new wiring
               # and are carried across resumes by the code that already carries the dollars.
-              "retry_by_error": {}, "retry_sec_by_error": {}}
+              "retry_by_error": {}, "retry_sec_by_error": {},
+              # #1203ih: #1203id's counters, declared HERE rather than created on first
+              # write. tiktok-web-r185 showed why: 92 retries recorded and
+              # `failed_no_retry` simply ABSENT from run_budget.json, which a reader cannot
+              # tell apart from "this build has no such mechanism". The mechanism runs on
+              # every call, so zero call-ending failures is a MEASURED zero and must say so
+              # — the opposite of #947's "don't print an unmeasured count as zero", and the
+              # same hole #1202vp guards ("the reader can only ever see None").
+              "failed_no_retry": 0, "failed_no_retry_sec": 0.0,
+              "failed_no_retry_by_error": {}}
 
 
 def record_llm_retry_1202wr(elapsed_sec: Any = 0.0, error_type: Any = None) -> None:

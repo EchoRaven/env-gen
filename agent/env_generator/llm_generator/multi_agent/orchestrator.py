@@ -6013,6 +6013,17 @@ class Orchestrator:
                     await RemediationDispatcher(self).dispatch_never_matching_filters_1148()
                 except Exception as _nmf_exc:
                     self._logger.error("#1148 dispatch failed: %s", _nmf_exc)
+                # #1203ii: same place, same reason, for #1203ie's finding. #1203ie put the
+                # unreachable-`total` endpoints in the gate result on #1139's terms, and
+                # #1148's own docstring is the warning about stopping there — #1139 did, and
+                # "NOTHING reads that key ... the evidence exists, the party who can act on it
+                # is never told." Its own try, so one dispatch failing cannot swallow the
+                # other (#1201).
+                try:
+                    from .runtime.remediation_dispatcher import RemediationDispatcher as _RD1203ii
+                    await _RD1203ii(self).dispatch_list_totals_unreachable_1203ii()
+                except Exception as _ltu_exc:
+                    self._logger.error("#1203ii dispatch failed: %s", _ltu_exc)
                 # FEEDBACK LOOP (2026-06-13): an unwired-ui-pages block (declared
                 # pages whose routes aren't in App.jsx) HARD-blocks delivery but,
                 # unlike GATE-C1 / frontend_navigable / visual, routed NOWHERE —

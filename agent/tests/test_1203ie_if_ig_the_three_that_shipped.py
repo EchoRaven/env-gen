@@ -206,3 +206,72 @@ def test_the_reconcile_cannot_fire_without_a_release():
     assert '== "yes"' in code
     assert '!= "no"' not in code, (
         "'not no' would also accept `unknown`, which hy deliberately leaves alone")
+
+
+# ---------------------------------------------------------------- #1203ii
+def test_the_evidence_has_a_consumer_not_just_a_key():
+    """★ #1203ii — THE HALF I ALMOST SHIPPED WITHOUT.
+
+    #1203ie copies #1139: put the finding in the gate result. #1148's docstring is the
+    warning about stopping there, about #1139 itself:
+
+        "#1139 detects it and stops there — the finding is placed in the gate result
+         (`never_matching_filters`) and NOTHING reads that key. It is #1041's shape
+         exactly: the evidence exists, the party who can act on it is never told."
+
+    So a gate-result key with no reader is the very family this session spent its time on.
+    Pinned over the AST: the dispatcher must exist, must call #1203ie's reader, must create a
+    task, and must be AWAITED from the orchestrator — `#706b` is on record that a hook present
+    at one of two call sites reads as correct in unit tests and never runs.
+    """
+    import ast
+    import pathlib
+
+    rd = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(rd)
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == "dispatch_list_totals_unreachable_1203ii"), None)
+    assert fn is not None, "#1203ie's finding has no dispatcher — nothing reads the key"
+    # Pinned on the IMPORT node, not on `ast.dump(fn)`: the dump includes the docstring,
+    # which names the reader while explaining it — swapping the import for #1139's reader
+    # left this green as a mutation. Fourth time this round an assertion read my own prose.
+    imported = {a.name for n in ast.walk(fn) if isinstance(n, ast.ImportFrom)
+                for a in n.names}
+    assert "list_totals_unreachable_1203ie" in imported, (
+        "the dispatcher does not import #1203ie's reader (found: %s), so it cannot be "
+        "about this finding" % sorted(imported))
+    calls = {n.func.attr for n in ast.walk(fn)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    assert "create_task" in calls, "the dispatcher tells nobody"
+
+    orch = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/multi_agent/orchestrator.py"
+    ).read_text(encoding="utf-8")
+    otree = ast.parse(orch)
+    awaited = [n for n in ast.walk(otree)
+               if isinstance(n, ast.Await)
+               and isinstance(n.value, ast.Call)
+               and isinstance(n.value.func, ast.Attribute)
+               and n.value.func.attr == "dispatch_list_totals_unreachable_1203ii"]
+    assert awaited, (
+        "the dispatcher is never awaited from the orchestrator — defined and unreachable, "
+        "which is exactly the shape #1041/#1148 describe")
+
+
+def test_the_dispatch_is_a_task_and_never_a_blocking_check():
+    """#1148's reasoning, carried over: "a task is worked, a check is a wall, and a new wall
+    cannot be validated without a run"; #1023 adds that false blocks have been paid for
+    repeatedly. Blocking this would have blocked all 24 runs that carry the finding."""
+    import pathlib
+    rd = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py"
+    ).read_text(encoding="utf-8")
+    blk = rd.split("async def dispatch_list_totals_unreachable_1203ii")[1]
+    blk = blk.split("async def dispatch_never_matching_filters_1148")[0]
+    code = "\n".join(ln for ln in blk.splitlines() if not ln.strip().startswith("#"))
+    assert "failed_checks" not in code, "the dispatch turned the finding into a blocker"
+    assert 'priority="P1"' in code, "severity changed without the docstring's reasoning"
+    assert 'assignee="backend"' in code, "the owner of a handler's `total` is the backend"

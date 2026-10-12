@@ -2763,6 +2763,86 @@ class RemediationDispatcher:
         except Exception as exc:
             orch._logger.error("page-build dispatch failed: %s", exc)
 
+    async def dispatch_list_totals_unreachable_1203ii(self) -> None:
+        """#1203ii: tell the backend its `total` contradicts its own cursor.
+
+        #1203ie placed the finding in the gate result (`list_totals_unreachable_1203ie`) on
+        #1139's terms. #1148's docstring is the warning about stopping there: #1139 did
+        exactly that and "NOTHING reads that key. It is #1041's shape exactly: the evidence
+        exists, the party who can act on it is never told." I copied #1139's half and would
+        have shipped the same gap, so this is the other half.
+
+        The finding itself is old and durable: `#1202w0` has measured it since r142 -- 24 runs
+        across two domains, 10 distinct endpoints, dominated by the feed -- and it never
+        self-resolves. tiktok-web-r184's release-v1.1.0 ships two. tiktok-web-r185, live, is
+        carrying `/api/videos/feed total=5 is not the collection size: the same response
+        offers next_cursor=..., so more rows exist than `total` admits`.
+
+        And it does not respond to being explained: #1203i9 put the definition of `total` into
+        the lane's contract ("the size of the WHOLE COLLECTION ... NOT `len(items)`") and r184
+        received that text and shipped `{"items": items, "total": len(items), "next_cursor":
+        next_cursor}` anyway. A reader of prose did not change; a task in the queue is a
+        different instrument.
+
+        A TASK, not a gate check -- #1148's reasoning carries over unchanged: "a task is
+        worked, a check is a wall, and a new wall cannot be validated without a run", and
+        #1023 adds that this codebase "has paid for false blocks repeatedly". Blocking this
+        would have blocked all 24 runs that carry it.
+
+        P1, not #1148's P0: that one is an endpoint that can NEVER return data; this is a
+        pagination contract that contradicts itself, so the rows exist and a client following
+        the cursor can still reach them -- it is the client trusting `total` that stops early.
+        Serious, not absolute.
+
+        The rows are STRINGS, verified by reading tiktok-web-r185's live artifact rather than
+        assumed -- #1148 records that guessing row field names was "the fourth field-name miss
+        of this session's lineage", so this one was checked against a real one first.
+        """
+        try:
+            orch = self._orch
+            out_dir = getattr(orch, "output_dir", None)
+            if not out_dir:
+                return
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_ltu1203ii_dispatched", None) == milestone:
+                return
+            from .delivery_gate import list_totals_unreachable_1203ie as _ltu
+            rows = [str(r).strip() for r in (_ltu(out_dir) or []) if str(r).strip()]
+            if not rows:
+                return
+            _shown = join_capped(["- " + r for r in rows], total=len(rows), cap=8)
+            orch.hubs.workhub.create_task(
+                title=("Fix %d list endpoint(s) whose `total` its own cursor contradicts"
+                       % len(rows))[:180],
+                description=(
+                    "These endpoints report a `total` that is smaller than what their own "
+                    "`next_cursor` implies, so a client that trusts `total` stops early and "
+                    "the rest of the data is unreachable through the app:\n"
+                    + _shown + "\n\n"
+                    "`total` is the size of the WHOLE COLLECTION the endpoint can page "
+                    "through -- NOT `len(items)` and NOT the page size. Count it with a "
+                    "COUNT query over the same filters the page uses (the framework's own "
+                    "projected handlers do this with `query.count()`); do not compute it "
+                    "from the rows you just sliced.\n\n"
+                    "This is not theoretical: tiktok-web-r184 shipped release 1.1.0 with two "
+                    "endpoints in exactly this state, and the same finding has recurred in 24 "
+                    "runs since r142 without ever fixing itself."),
+                assignee="backend",
+                agent="orchestrator",
+                priority="P1",
+            )
+            orch._ltu1203ii_dispatched = milestone
+            orch._logger.warning(
+                "#1203ii dispatched a backend task for %d endpoint(s) whose `total` "
+                "contradicts their own cursor: %s", len(rows), _shown)
+        except Exception as _e1203ii:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "dispatch_list_totals_unreachable_1203ii",
+                "the #1203ie remediation dispatch — the finding stays in the gate result "
+                "with nobody told, which is the #1041 shape this exists to close",
+                _e1203ii)
+
     async def dispatch_never_matching_filters_1148(self) -> None:
         """#1148: tell the backend about a filter no seeded row can satisfy.
 

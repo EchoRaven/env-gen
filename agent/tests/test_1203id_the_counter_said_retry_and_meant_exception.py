@@ -143,3 +143,46 @@ def test_the_recorder_is_not_called_above_the_guards():
             "enclosing conditions were %r" % (tests,))
         return
     raise AssertionError("record_llm_retry_1202wr is no longer called at all")
+
+
+def test_the_counters_are_declared_not_created_on_first_write():
+    """#1203ih: a MEASURED zero has to say zero.
+
+    tiktok-web-r185 ran with #1203id live and its run_budget.json carried
+    `retries: 92` beside no `failed_no_retry` key at all — created only on first write, so a
+    run where nothing ended without a retry is indistinguishable from a build that has no
+    such mechanism. That is #1202vp's hole ("the reader can only ever see None"), and it is
+    the mirror of #947: do not print an UNMEASURED count as zero, but this one is measured on
+    every call, so it must not hide.
+
+    Asserted over the AST of the `_LLM_USAGE` literal, NOT over `llm_usage()`: this file's
+    autouse `_reset` fixture writes these very keys before every test, so a runtime check
+    passes even with the declaration deleted — I removed it as a mutation and all seven tests
+    stayed green. A test my own fixture makes unfalsifiable proves nothing.
+    """
+    import ast
+    import pathlib
+
+    # the module's own file, via the import — `_AGENT` is a name from the OTHER test file
+    # and does not exist here. Third time today I reached for a name without checking it
+    # exists (the others: #1203i8's `locals().get("safe_messages")` and #1203ig's
+    # `self._current_milestone_index`), so: resolve it from the imported module.
+    import utils.llm as _l
+    tree = ast.parse(pathlib.Path(_l.__file__).read_text(encoding="utf-8"))
+    declared = None
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "_LLM_USAGE" for t in node.targets)
+                and isinstance(node.value, ast.Dict)):
+            declared = node.value
+            break
+    assert declared is not None, "the _LLM_USAGE initializer literal is gone"
+    lit = {k.value: v for k, v in zip(declared.keys, declared.values)
+           if isinstance(k, ast.Constant)}
+    for k in ("failed_no_retry", "failed_no_retry_sec", "failed_no_retry_by_error",
+              "retries", "retry_sec"):
+        assert k in lit, "%s is created on first write, not declared" % k
+    # declared with the right zero-value TYPE, so a reader can sum/merge without a guard
+    assert isinstance(ast.literal_eval(lit["failed_no_retry"]), int)
+    assert isinstance(ast.literal_eval(lit["failed_no_retry_sec"]), float)
+    assert ast.literal_eval(lit["failed_no_retry_by_error"]) == {}
