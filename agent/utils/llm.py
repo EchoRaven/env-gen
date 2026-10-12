@@ -1801,6 +1801,51 @@ def _is_timeout_error_1036(error: Exception) -> bool:
     return "call exceeded" in str(error).lower()
 
 
+_UNCHANGED_PAYLOAD_400_MARKERS_1203I8 = (
+    # The provider's own code, and the sentence it ships with it. Both appear in all
+    # 1184 of these in the corpus; either alone is enough to identify the condition.
+    "image_parse_error",
+    "unsupported image",
+)
+
+
+def _is_unchanged_payload_400_1203i8(error: Exception) -> bool:
+    """True when the provider has rejected the payload for a reason that CANNOT change
+    on a re-send of that same payload -- so retrying it is pure waste.
+
+    #1203i8. Distinct from `_is_terminal_llm_error`, which means "the account is done,
+    abort the run". This means "this call is done, stop re-sending it" -- the run is
+    healthy and every other call still works.
+
+    Measured: 1184 of the 1190 HTTP 400s in the whole corpus are
+    `image_parse_error` ("You uploaded an unsupported image"), and every one of them was
+    retried as a transient error. In tiktok-web-r183 the backend agent's conversation
+    acquired one at 22:21:24 and then failed 40 consecutive LLM-layer attempt-triples --
+    3 attempts x 3 agent-level tries = 9 identical re-sends per call -- for 4.5 minutes,
+    120 retries and 122.8s of sleep, with a 100% failure rate and no successes.
+
+    That it is the PAYLOAD and not the image is established: all 11 reference PNGs were
+    written at 22:16:21, were never rewritten, decode cleanly, carry a declared media type
+    that matches their magic bytes, sit under the per-image cap after the framework's own
+    `_fit_image_b64`, and the same 8.5MB of base64 was accepted by the same endpoint on
+    replay. The frontend agent viewed the same files in the same minutes and its calls
+    succeeded. So nothing about re-sending it was ever going to help, and nothing about
+    the images needs to be guessed at to know that.
+
+    The framework already owns the rung that WOULD make the retry different --
+    `_prune_stale_images_for_reroll` drops all but the newest inline image -- but it is
+    reachable only from the Gemini path (it speaks `types.Part` and is called under
+    `generate_content`), and #1062 recorded that it fires 0 times against 12,487 re-rolls
+    because Gemini's MALFORMED storms are in the TEXT-ONLY lanes. The one error that
+    literally names an image arrives on the OpenAI path, which has no prune at all. This
+    does not build a second prune on a guess about what the provider would accept: it
+    stops paying for the re-send, and says what the payload held so the next reader does
+    not have to re-derive it from a log.
+    """
+    s = str(error).lower()
+    return any(m in s for m in _UNCHANGED_PAYLOAD_400_MARKERS_1203I8)
+
+
 def _is_terminal_llm_error(error: Exception) -> bool:
     """True for an UNRECOVERABLE provider error — spend/budget/quota exhaustion or a hard auth
     rejection (401/403). A 429 rate limit is transient and explicitly NOT terminal."""
@@ -2130,6 +2175,27 @@ class BaseLLMClient(ABC):
                     self._logger.error(
                         f"[LLM] TERMINAL provider error — not retrying, run should abort: "
                         f"[{error_type}] {error_msg}")
+                    raise
+
+                # #1203i8: a 400 the payload cannot talk its way out of. Checked AFTER
+                # the terminal test above (a terminal error must still latch its reason)
+                # and BEFORE every backoff rung below, because those rungs all end in
+                # re-sending the identical payload.
+                #
+                # This loop is the GENERIC wrapper — four call sites hand it a closure and
+                # it never sees the messages, so it must not describe the payload it is
+                # declining to re-send. The shape is already recorded, by the one owner of
+                # that number, on this call's `[LLM Request]` line (`nontext:N`); point
+                # there instead of counting a payload this scope does not hold. The first
+                # draft of this line read `locals().get("safe_messages")` and would have
+                # printed "an uncountable number of" on every single occurrence.
+                if _is_unchanged_payload_400_1203i8(e):
+                    self._logger.error(
+                        "[LLM] #1203i8 UNCHANGED-PAYLOAD 400 — not retrying after %d of "
+                        "%d attempt(s): re-sending this payload byte-for-byte cannot "
+                        "change the verdict. See the `nontext:` field on this call's "
+                        "[LLM Request] line for what it carried. [%s] %s",
+                        attempt + 1, total_attempts, error_type, error_msg)
                     raise
 
                 is_rate_limit = self._is_rate_limit_error(e)

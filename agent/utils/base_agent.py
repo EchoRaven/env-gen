@@ -463,6 +463,37 @@ class BaseAgent(ABC):
                 last_error = e
                 self._metrics.total_retries += 1
                 
+                # #1203i8: this loop is the OTHER half of the re-send multiplier. The LLM
+                # layer now declines to retry a 400 the payload cannot talk its way out of,
+                # but it raises into this wrapper, which calls `func` again with the SAME
+                # conversation — so a 3-attempt LLM budget under this loop's tries sent one
+                # doomed payload nine times. Measured in tiktok-web-r183: the backend
+                # agent's history acquired an unparseable image at 22:21:24 and the pair
+                # kept re-sending it until 22:25:54 — 120 retries, 122.8s of sleep, 0
+                # successes — and when the budget ran out the agent had lost its kickoff
+                # contribution, which the substance gate then reported as the agent having
+                # "no substantive endpoint + data-model/table decisions".
+                #
+                # Installed HERE and not in `call_tool_with_retry` below: that twin retries
+                # a TOOL, and no provider 400 can reach it. #665/#582 recorded the opposite
+                # mistake about these same loops (a rule installed in one of two that both
+                # needed it), so the choice is deliberate rather than an oversight.
+                #
+                # Imported locally, as `_blank_error_origin` already is below, because it is
+                # only needed on an already-failing path; guarded so a packaging change
+                # degrades to the old retry behaviour instead of raising from here.
+                try:
+                    from utils.llm import _is_unchanged_payload_400_1203i8 as _unch1203i8
+                except Exception:
+                    _unch1203i8 = None
+                if _unch1203i8 is not None and _unch1203i8(e):
+                    self._logger.error(
+                        "#1203i8 UNCHANGED-PAYLOAD 400 after %d/%d try(ies) — not calling "
+                        "again with the same conversation; it cannot become valid by "
+                        "repetition. [%s] %s",
+                        attempt + 1, max_tries, type(e).__name__, str(e)[:200])
+                    raise
+
                 if attempt < max_tries - 1:
                     wait_time = min(
                         self._retry_config["max_wait"],
