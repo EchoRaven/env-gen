@@ -906,6 +906,40 @@ class AgentStepToolingMixin:
             elif result_str.strip() == "None":
                 result_str = f"Tool {tool_name} completed successfully (no output)."
 
+            # #1203ia: the OTHER half of #1203hh. That fix routed the FAILURE branch through
+            # `ToolResult.__str__`, which is what calls `_with_notices_1116` -- the method
+            # whose whole docstring is "Append framework notices so the CALLER sees them, not
+            # only a log reader". The success branch still reads `.data`, so `__str__` is not
+            # on its path and every notice attached to a SUCCEEDING call is dropped here.
+            #
+            # Three producers can fire on success, and each is written to change what the
+            # agent does next:
+            #   * `foreign_target_notice_1134(..., answered=True)` -- "Whatever answered is a
+            #     DIFFERENT service on this host ... do not file it as a defect."
+            #   * `hub_tools` name-resolution -- "%r is a name, not an id ... Address
+            #     documents by id", on a lookup that SUCCEEDED (`ToolResult(data=_doc)`).
+            #   * `dropped_args_message_1116` -- #1116 exists because "the WARNING above goes
+            #     to a log no agent reads"; on a call that otherwise succeeds, the agent is
+            #     left assuming its argument landed.
+            #
+            # Honest about the size: `dropped unaccepted argument` is 11 occurrences corpus-
+            # wide and 0 in the last six runs, and the name-resolution notice is educational.
+            # This is not landed on today's volume -- it is landed because the channel is
+            # DESIGNED to reach the agent, half of it silently does not, and every notice
+            # added from here on would inherit that. A notice nobody receives is the thing
+            # #1116 was created to stop.
+            #
+            # Appending to the finished string rather than switching to `str(result)`:
+            # `.data` is pretty-printed with `json.dumps(indent=2)` just above, and
+            # `str(result)` would hand the model a Python repr of the same dict instead --
+            # changing the shape of EVERY successful tool result to fix a notice. Reuses
+            # `_with_notices_1116` so the appending itself keeps one owner.
+            if result.success:
+                try:
+                    result_str = result._with_notices_1116(result_str)
+                except Exception:
+                    pass
+
             # NO compression / NO cap (user decision 2026-06-24): the FULL tool result
             # reaches the agent — truncated tool output is a correctness hazard (the
             # agent acts on a partial view). This was the DOMINANT truncation: the live
