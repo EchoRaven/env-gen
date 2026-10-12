@@ -546,6 +546,14 @@ _AGENT_NOTES = """# Agent Notes — conventions for this workspace (machine-auth
 
 ## Contract & response shapes (FIXED — code to them exactly)
 - single resource -> {"item": {...all columns...}}; list -> {"items": [...], "total": N};
+  `N` is the size of the WHOLE COLLECTION the endpoint lists, after its filters -- NOT
+  `len(items)` and NOT the page size. If the read is paginated (a `limit`/`offset` pair,
+  or a `next_cursor` in the response), `total` still counts every row a caller could
+  reach by paging to the end, so `total` > `len(items)` is normal and correct. Returning
+  `total == len(items)` while also offering a `next_cursor` is a contradiction: it claims
+  the caller has seen everything while handing them a pointer to more, and the rows past
+  the first page become unreachable through the app. Count the collection (e.g.
+  `query.count()`), then slice the page.
   created (POST) -> {"item": {...new row with id...}}; deleted -> {"item": {"id": ..., "deleted": true}};
   error -> {"detail": "..."} with the HTTP status.
 - Every /api/ route requires `Authorization: Bearer <token>`; missing/invalid -> 401.
