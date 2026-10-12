@@ -13170,6 +13170,59 @@ export default api
 
 _ROUTES_MARKER = "// @framework-managed-routes"
 
+
+def auth_route_is_served_by_lane_1203ic(frontend_root, component: str) -> str:
+    """The App.jsx path when `component` is what ACTUALLY serves its route, else ``""``.
+
+    #1203ic. `#1203fh` tells the lane "the page file (if any) is not routed" for every
+    ui_page it drops off the auth routes. That sentence is only true while the framework
+    still owns App.jsx: the rewrite is guarded by
+    `(not existing.strip()) or (_ROUTES_MARKER in existing) or ("</Routes>" not in existing)`,
+    so once the lane has taken App.jsx over -- dropped the marker and kept a real
+    `</Routes>` -- the projection stops writing it back, and `scaffold_missing_local_pages`
+    only fills MISSING files (`if target.exists(): continue`, with #488's stub-fill
+    "guarded so a REAL page is NEVER clobbered"). The lane's auth page is then exactly
+    what React Router renders.
+
+    Measured over the five most recent tiktok runs (r170, r177, r181, r182, r183): the
+    marker is absent in 5/5, `<Route path="/login" element={<LoginPage` is present in 5/5,
+    and `pages/LoginPage.jsx` is lane-authored in 5/5 (124-565 bytes, importing the lane's
+    own `components/` and `services/api`). So the sentence was false every time it fired,
+    and it fires 17-70 times per run.
+
+    What that costs is on record in r183, which died on
+    `2 critical UI flow(s) failed: login_page, signup_page` after `7 consecutive cycles
+    with NO source/contract/chain change`: told its page was not routed, the lane did not
+    fix the file serving /login. It added `preventDefault` `switchAuthRoute` anchors to its
+    own `components/TikTokUI.jsx`, a capture-phase `forceAuthRouteSwitch` in App.jsx, and a
+    `route-switch-sentinel` anchor -- three workarounds aimed away from the live page.
+
+    Returns the App.jsx path (so the caller can name it) rather than a bool, because the
+    only consumer is a sentence that has to say WHERE. Pure + best-effort: any failure
+    returns "", which keeps #1203fh's original wording -- the conservative direction, since
+    that wording is correct whenever the framework does still own the routes.
+    """
+    try:
+        from pathlib import Path as _P1203ic
+        if not frontend_root or not component:
+            return ""
+        app = _P1203ic(str(frontend_root)) / "src" / "App.jsx"
+        if not app.is_file():
+            return ""
+        text = app.read_text(encoding="utf-8", errors="ignore")
+        # the three conditions under which the projection REWRITES App.jsx -- i.e. the
+        # cases where #1203fh's "not routed" really does hold. Read from the same
+        # expression the writer uses so the two cannot drift.
+        if (not text.strip()) or (_ROUTES_MARKER in text) or ("</Routes>" not in text):
+            return ""
+        # `element={<LoginPage` / `element={<LoginPage/>` / `element={<LoginPage />}`
+        if ("element={<%s" % component) not in text:
+            return ""
+        return str(app)
+    except Exception:
+        return ""
+
+
 _BASELINE_APP_JSX = """// @framework-managed-routes
 import React, { useState } from 'react'
 import { register, login, logout } from './services/api.js'

@@ -201,15 +201,20 @@ class TheComputedHalfReachesARecipient(unittest.TestCase):
                     and isinstance(node.args[0].value, str)
                     and node.args[0].value.startswith("#1203fh")):
                 warnings.append(node)
-        self.assertEqual(len(warnings), 1, "expected exactly one #1203fh warning")
+        # #1203ic split this into two branches -- the lane-owned-App.jsx wording and the
+        # framework-owned one -- so the count is no longer 1. The property this test exists
+        # to protect is not "there is one call", it is "whatever is emitted carries the
+        # DATA"; assert that of EVERY branch, which is strictly more than before.
+        self.assertTrue(warnings, "the #1203fh warning is gone entirely")
+        for call in warnings:
+            rendered = {ast.dump(a) for a in call.args[1:]}
+            # the count AND the names, each as its own interpolated argument
+            self.assertTrue(
+                any("'len'" in d and "_authtaken1203fh" in d for d in rendered),
+                "a #1203fh warning does not interpolate how many records were dropped")
+            self.assertTrue(any("_shown1203fh" in d for d in rendered),
+                            "a #1203fh warning does not interpolate WHICH records were dropped")
         call = warnings[0]
-        rendered = {ast.dump(a) for a in call.args[1:]}
-        # the count AND the names, each as its own interpolated argument
-        self.assertTrue(
-            any("'len'" in d and "_authtaken1203fh" in d for d in rendered),
-            "the warning does not interpolate how many records were dropped")
-        self.assertTrue(any("_shown1203fh" in d for d in rendered),
-                        "the warning does not interpolate WHICH records were dropped")
         # ... and the VALUE that reaches it went through join_capped, so a truncated list
         # says how much it cut (#1034) instead of silently showing the first few.
         #

@@ -2460,11 +2460,54 @@ volumes:
                     _shown1203fh = _jc1203fh(_authtaken1203fh, len(_authtaken1203fh), cap=4)
                 except Exception:
                     _shown1203fh = ", ".join(map(str, _authtaken1203fh[:4]))
-                orch._logger.warning(
-                    "#1203fh the framework owns /login + /signup, so %d lane ui_page "
-                    "registration(s) were dropped from this projection: %s -- the page "
-                    "file (if any) is not routed and the registry record still says it is",
-                    len(_authtaken1203fh), _shown1203fh)
+                # #1203ic: "the page file (if any) is not routed" is only true while the
+                # framework still owns App.jsx. Once the lane has taken it over -- dropped
+                # `@framework-managed-routes` and kept a real `</Routes>` -- the projection
+                # stops rewriting App.jsx and only fills MISSING page files, so the lane's
+                # auth page is exactly what React Router renders. Measured over r170, r177,
+                # r181, r182 and r183: marker absent 5/5, `element={<LoginPage` present
+                # 5/5, `pages/LoginPage.jsx` lane-authored 5/5. The sentence was false every
+                # time it fired, and it fires 17-70 times per run.
+                #
+                # r183 shows the cost: told its page was not routed, the lane did not fix
+                # the file serving /login -- it put `preventDefault` `switchAuthRoute`
+                # anchors in its own components/TikTokUI.jsx, a capture-phase
+                # `forceAuthRouteSwitch` in App.jsx and a `route-switch-sentinel` anchor,
+                # then died on `2 critical UI flow(s) failed: login_page, signup_page` after
+                # `7 consecutive cycles with NO source/contract/chain change`.
+                #
+                # The DROP is not changed -- #1203fh's own note says "The drop is right; it
+                # was silent". Only the claim about routing is computed instead of asserted.
+                # The components are the ones `_ensure_framework_auth_pages` forces, so they
+                # are known here without parsing the dropped lines.
+                _served1203ic = []
+                try:
+                    from .frontend_scaffold import auth_route_is_served_by_lane_1203ic
+                    for _c1203ic in ("LoginPage", "SignupPage"):
+                        if auth_route_is_served_by_lane_1203ic(fe, _c1203ic):
+                            _served1203ic.append(_c1203ic)
+                except Exception as _e1203ic:
+                    from .message_format import warn_once_1201
+                    warn_once_1201("auth_route_served_1203ic",
+                                   "the #1203ic routing check — #1203fh keeps its original "
+                                   "wording, which is correct while the framework owns "
+                                   "App.jsx", _e1203ic)
+                if _served1203ic:
+                    orch._logger.warning(
+                        "#1203fh the framework owns /login + /signup, so %d lane ui_page "
+                        "registration(s) were dropped from this projection: %s -- the "
+                        "REGISTRY record is gone, but src/App.jsx is yours (no "
+                        "@framework-managed-routes marker) and still routes %s, so your "
+                        "page file IS what serves this route. Fix it there -- and in the "
+                        "components it imports -- not by re-pointing App.jsx (#1203ic)",
+                        len(_authtaken1203fh), _shown1203fh,
+                        ", ".join(_served1203ic))
+                else:
+                    orch._logger.warning(
+                        "#1203fh the framework owns /login + /signup, so %d lane ui_page "
+                        "registration(s) were dropped from this projection: %s -- the page "
+                        "file (if any) is not routed and the registry record still says it is",
+                        len(_authtaken1203fh), _shown1203fh)
             # #440: recover the lane's HIGH-FIDELITY nav (e.g. NetflixTopNav) into the
             # projector pages — the lane authors a rich nav/header component but leaves
             # it ORPHANED while the projector's generic inline nav ships. Safe no-op
