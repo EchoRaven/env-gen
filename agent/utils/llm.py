@@ -1117,6 +1117,20 @@ def record_llm_retry_1202wr(elapsed_sec: Any = 0.0, error_type: Any = None) -> N
     #1203g4: `error_type` is optional so an older caller keeps working, and an absent type is
     bucketed under "unknown" rather than dropped -- a retry that cannot name its error is
     exactly the state this counter exists to end, so it must be visible as such.
+
+    #1203id: THE CALL SITE DID NOT HONOUR THAT FIRST SENTENCE. It sat at the top of the
+    `except` block, above every guard that ends the call WITHOUT retrying, so `retries`
+    counted exceptions caught rather than attempts re-sent. It always over-counted by the
+    exhausted final attempt of each failing call; #1203i8 made it total, because an
+    unchanged-payload 400 now raises immediately. tiktok-web-r184's first 20 minutes:
+    `retries: 61`, `retry_by_error: {"BadRequestError": 61}`, `retry_sec_by_error:
+    {"BadRequestError": 43.86}` -- against `Attempt N failed` 0, `All N attempts failed` 0
+    and agent-level `Retry` 0. Not one of those 61 was retried.
+
+    It is not a harmless label: I read this field for r183 and reported "120 retries" when
+    the re-sends were 65. The counter is now incremented only where a retry actually
+    follows, and a failure that ends the call lands in `failed_no_retry` instead -- the time
+    is real and still attributable, it just is not retry time.
     """
     try:
         _LLM_USAGE["retries"] = int(_LLM_USAGE.get("retries") or 0) + 1
@@ -1130,6 +1144,28 @@ def record_llm_retry_1202wr(elapsed_sec: Any = 0.0, error_type: Any = None) -> N
             _n[_k] = int(_n.get(_k) or 0) + 1
         if isinstance(_t, dict):
             _t[_k] = round(float(_t.get(_k) or 0.0) + _sec, 2)
+    except Exception:
+        pass
+
+
+def record_llm_failed_no_retry_1203id(elapsed_sec: Any = 0.0, error_type: Any = None) -> None:
+    """One failed attempt that ends the call — terminal (#326), unchanged-payload (#1203i8),
+    or the exhausted final attempt. Never raises.
+
+    Separate keys rather than folding into `retries`: the seconds are real and a run that
+    cannot say where its wall clock went cannot be made cheaper (#1202cr), but calling them
+    retry time is what #1203id is fixing. Additive — existing readers of `retries` /
+    `retry_sec` keep their meaning, which is now the honest one.
+    """
+    try:
+        _LLM_USAGE["failed_no_retry"] = int(_LLM_USAGE.get("failed_no_retry") or 0) + 1
+        _sec = max(0.0, float(elapsed_sec or 0.0))
+        _LLM_USAGE["failed_no_retry_sec"] = round(
+            float(_LLM_USAGE.get("failed_no_retry_sec") or 0.0) + _sec, 2)
+        _k = str(error_type or "unknown").strip() or "unknown"
+        _n = _LLM_USAGE.setdefault("failed_no_retry_by_error", {})
+        if isinstance(_n, dict):
+            _n[_k] = int(_n.get(_k) or 0) + 1
     except Exception:
         pass
 
@@ -2152,7 +2188,9 @@ class BaseLLMClient(ABC):
                 elapsed = (datetime.now() - attempt_start).total_seconds()
                 # #1203g4: the type is already in hand one line below (`error_type`); passing
                 # it here is what makes 8.9% of the corpus's wall clock attributable.
-                record_llm_retry_1202wr(elapsed, type(e).__name__)   # #1202wr / #1203g4
+                # #1203id: recorded BELOW, only where a retry actually follows. This line
+                # used to sit here, above every guard that ends the call without retrying,
+                # so `retries` counted exceptions caught rather than attempts re-sent.
                 last_error = e
                 error_type = type(e).__name__
                 error_msg = str(e)[:200]  # Truncate long errors
@@ -2171,6 +2209,7 @@ class BaseLLMClient(ABC):
                 # unrecoverable — do NOT burn retries, and latch a reason the run loop can poll
                 # to abort. Latch BEFORE re-raising so a caught exception still surfaces it.
                 if _is_terminal_llm_error(e):
+                    record_llm_failed_no_retry_1203id(elapsed, type(e).__name__)   # #1203id
                     _TERMINAL_LLM_ERROR["reason"] = f"[{error_type}] {error_msg}"
                     self._logger.error(
                         f"[LLM] TERMINAL provider error — not retrying, run should abort: "
@@ -2190,6 +2229,7 @@ class BaseLLMClient(ABC):
                 # draft of this line read `locals().get("safe_messages")` and would have
                 # printed "an uncountable number of" on every single occurrence.
                 if _is_unchanged_payload_400_1203i8(e):
+                    record_llm_failed_no_retry_1203id(elapsed, type(e).__name__)   # #1203id
                     self._logger.error(
                         "[LLM] #1203i8 UNCHANGED-PAYLOAD 400 — not retrying after %d of "
                         "%d attempt(s): re-sending this payload byte-for-byte cannot "
@@ -2214,6 +2254,12 @@ class BaseLLMClient(ABC):
                         f"final attempt — extending retries to {total_attempts}")
 
                 if attempt < total_attempts - 1:
+                    # #1203id: a retry is now certain — this is the one place that can say
+                    # so, which is what `record_llm_retry_1202wr`'s first sentence promises.
+                    # `type(e).__name__` rather than the `error_type` local: #1203g4 pins
+                    # over the AST that the type is read off the EXCEPTION at the call site,
+                    # and routing it through a local defeats that check for no gain.
+                    record_llm_retry_1202wr(elapsed, type(e).__name__)   # #1202wr / #1203g4
                     if is_rate_limit:
                         # For rate limits, use longer delays
                         retry_after = self._extract_retry_after(e)
@@ -2250,6 +2296,8 @@ class BaseLLMClient(ABC):
                     
                     await asyncio.sleep(delay)
                 else:
+                    # #1203id: the budget is spent, so this failure ends the call too.
+                    record_llm_failed_no_retry_1203id(elapsed, type(e).__name__)
                     self._logger.error(f"[LLM] All {total_attempts} attempts failed. Last error: [{error_type}] {error_msg}")
                 
                 attempt += 1
