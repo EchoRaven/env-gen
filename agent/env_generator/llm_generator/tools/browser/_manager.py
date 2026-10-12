@@ -298,6 +298,39 @@ class BrowserManager:
                 
                 return True
             except Exception as e:
+                # #1203ib: MEASURED, SEEN, DELIBERATELY NOT CLASSIFIED (2026-10-12).
+                #
+                # A launch failure here can be the HOST's rather than the app's -- the two
+                # causes in the corpus are `ENOSPC: no space left on device` (25, tiktok-r183)
+                # and `Executable doesn't exist at ~/.cache/ms-playwright` (179, r24+r25).
+                # Neither says anything about the product, and the framework already owns the
+                # principle: #1202de's `_boot_failure_result_1202de` routes a host-caused boot
+                # failure to `capture_unavailable` ("A host fault is not a verdict about the
+                # app"), and `"no space left on device"` is already a token in
+                # `_COMPOSE_FATAL_1202DC`. That classifier has three callers and ALL THREE are
+                # on the compose/docker_up path; this path has none, so an unlaunchable browser
+                # does reach the gate as a page verdict. r183 04:43-04:45 is the whole chain on
+                # record: ENOSPC -> `browser_navigate FAILED` -> `validation_ui_evidence_failed
+                # on 3 record(s)` -> `GATE-CHECK remediation dispatched to verifier`.
+                #
+                # It is NOT wired up, because the premise for a behaviour change does not hold:
+                #   * r183's three failing ui_evidence records were all PASSING again once the
+                #     disk was reclaimed (38 ui-ish checks, 0 failing at the end), so the cost
+                #     was wasted lane work during a host outage, not a wrong verdict shipped.
+                #   * that outage was an operator accident (the root filesystem was filled from
+                #     outside this run), i.e. a denominator of one.
+                #   * r24/r25 are 2026-07 runs on a different framework generation; their 553
+                #     launch failures cannot support a decision about today's gate.
+                # Routing a host fault into `capture_unavailable` ALSO refunds the attempt, so
+                # getting the predicate wrong here buys an app a free pass at the gate -- the
+                # expensive direction. Classifying on this evidence would be writing a rule for
+                # a world the corpus does not show.
+                #
+                # WHAT WOULD CHANGE IT: one run where a host-caused browser failure reaches a
+                # FINAL gate verdict (a failing ui_evidence/ui_flow record still failing at the
+                # last gate snapshot) without the host fault being named. Then classify here and
+                # give the browser path its own token set -- do NOT widen
+                # `_COMPOSE_FATAL_1202DC`, which would silently change the compose path too.
                 self._logger.error(f"Failed to start browser: {e}")
                 return False
         return True
