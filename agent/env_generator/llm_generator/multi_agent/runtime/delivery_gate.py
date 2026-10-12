@@ -1408,6 +1408,109 @@ from .. import delivery as _contract
 from .message_format import join_capped  # #1034
 
 
+def _business_half_1203i7(counts: Any) -> str:
+    """#1203i7: ` [business X/Y implemented; Z fixed framework surface]`, or "" if unmeasured.
+
+    Silent when `#1203i7`'s counts are absent, because a count that could not be measured
+    must not be printed as zero -- and silent when there is no framework surface to explain,
+    so the line is unchanged for the runs where the mixed total was already honest.
+    """
+    try:
+        if not isinstance(counts, dict):
+            return ""
+        _b = counts.get("business_endpoints")
+        _bi = counts.get("implemented_business_endpoints")
+        if _b is None or _bi is None:
+            return ""
+        _fixed = int(counts.get("endpoints") or 0) - int(_b)
+        if _fixed <= 0:
+            return ""
+        _unimpl = counts.get("unimplemented_framework_endpoints")
+        _tail = ""
+        if _unimpl:
+            _n = int(_unimpl)
+            _tail = (" — %d of them %s not `implemented` and %s NOT lane work"
+                     % (_n, "is" if _n == 1 else "are", "is" if _n == 1 else "are"))
+        return (" [of those, %d/%d BUSINESS endpoints implemented; the other %d are the "
+                "framework's auth/oauth/.well-known/tenant surface%s]"
+                % (_bi, _b, _fixed, _tail))
+    except Exception as _e1203i7r:
+        # #1202ah's ratchet caught the first draft returning "" out of a swallowed
+        # exception: a crashed renderer then reads exactly like "there was nothing to add",
+        # which is the same failure this patch exists to fix one level up. Returning "" is
+        # still right -- the line must not be broken by its own annotation -- so the silence
+        # is announced instead.
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("delivery_gate.business_half_1203i7",
+                           "the business half printed beside the endpoint count", _e1203i7r)
+        except Exception:
+            pass        # the announcement is best-effort; the report must never fail on it
+        return ""
+
+
+def _business_endpoint_counts_1203i7(endpoints: Any) -> Dict[str, int]:
+    """#1203i7: the BUSINESS half of the endpoint count, beside the mixed total.
+
+    `hub counts: endpoints=N (implemented=M)` mixes the lane's work with the framework's own
+    fixed contract surface -- auth, oauth, the `/.well-known/` discovery documents and the
+    tenant control surface -- which `registryhub` registers as `defined` and the framework
+    serves itself. `defined -> implemented` is not even a legal endpoint transition
+    (`ENDPOINT_STATES`), so those records stay `defined` for the life of the run BY DESIGN.
+
+    No gate is misled: `all_business_endpoints_implemented` goes through
+    `business_endpoints()`, which already excludes that surface. The reader who IS misled is
+    whoever reads the printed count -- and this report is handed to lanes as remediation
+    context, the cost #1202by's comment names three screens up ("a contradiction that burns
+    lane attention on a discrepancy that does not exist").
+
+    Measured over the last 14 runs, mixed total vs business-only:
+
+        r173   44 (27 implemented)  ->  business 24/24 = 100%   mixed understates by 17
+        r174   22 ( 0 implemented)  ->  business  5/0           by 17
+        r182   40 (27 implemented)  ->  business 21/21 = 100%   by 13
+        the other 11 runs                                       by 0-4
+
+    So a lane reading r182's line saw 13 unimplemented endpoints, every one of them framework
+    infrastructure it does not own and cannot implement. All four full-delivery runs in this
+    era (r173 / r175 / r177 / r182) are at 100% of business endpoints; the mixed number hid
+    that and invited exactly the wrong comparison -- I made it myself, reading r182 as "68%
+    implemented" against r177's "98%" when both are 100% on the half that is the lane's work.
+
+    Additive: the existing keys are untouched, so every other reader is unaffected. Returns
+    {} when the registry cannot be read, because a count that could not be measured must not
+    be printed as zero (#1202by's own rule).
+    """
+    try:
+        from .lifecycle import business_endpoints as _biz1203i7
+        _biz = _biz1203i7(endpoints or {})
+        _bizids = {id(e) for e in _biz}
+        _nonbiz = [v for v in (endpoints or {}).values()
+                   if isinstance(v, dict) and id(v) not in _bizids]
+        return {
+            "business_endpoints": len(_biz),
+            "implemented_business_endpoints": len(
+                [e for e in _biz if str((e or {}).get("status")) == "implemented"]),
+            # The number that READS as missing work: non-business and not implemented.
+            # Measured on r182: 19 non-business, of which 13 `defined` and 6 `implemented`
+            # (`/health` plus five auth paths a lane really did implement, which the
+            # path-based auth net in #1202vl excludes from BUSINESS). So "the rest stays
+            # `defined`" would have been wrong about 6 of the 19 -- the first draft of this
+            # said exactly that, and the A/B over real registries caught it.
+            "unimplemented_framework_endpoints": len(
+                [v for v in _nonbiz if str(v.get("status")) != "implemented"]),
+        }
+    except Exception as _e1203i7:
+        try:
+            from .message_format import warn_once_1201   # local, like every other site here
+            warn_once_1201("delivery_gate.business_endpoint_counts_1203i7",
+                           "the business half of the endpoint count in the gate report",
+                           _e1203i7)
+        except Exception:
+            pass        # the announcement is best-effort; the gate must never fail on it
+        return {}
+
+
 _CHECKLIST_GENERIC_1203I6 = (
     "Run and record verification/build checks until checklist is ready for delivery.")
 
@@ -1609,7 +1712,8 @@ def format_delivery_gate_report(gate: Dict[str, Any]) -> str:
         return (
             "Delivery gate passed.\n"
             f"- Endpoints: {counts.get('endpoints', 0)} "
-            f"(implemented/tested: {counts.get('implemented_endpoints', 0)})\n"
+            f"(implemented/tested: {counts.get('implemented_endpoints', 0)})"
+            + _business_half_1203i7(counts) + "\n"
             f"- Tables: {counts.get('tables', 0)} "
             f"(implemented/tested: {counts.get('implemented_tables', 0)})\n"
             f"- Pages: {counts.get('pages', 0)}"
@@ -1693,7 +1797,11 @@ def format_delivery_gate_report(gate: Dict[str, Any]) -> str:
     lines.append(
         "- hub counts: "
         f"endpoints={counts.get('endpoints', 0)} "
-        f"(implemented={counts.get('implemented_endpoints', 0)}), "
+        f"(implemented={counts.get('implemented_endpoints', 0)})"
+        # #1203i7: the mixed total includes the framework's own fixed surface, which stays
+        # `defined` by design — say the lane's half so it is not read as missing work.
+        + _business_half_1203i7(counts)
+        + ", "
         f"tables={counts.get('tables', 0)} "
         f"(implemented={counts.get('implemented_tables', 0)}), "
         f"pages={counts.get('pages', 0)}"
@@ -4498,13 +4606,13 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "noncanonical_response_keys": noncanonical_response_keys,
         "business_chain": business_chain_block,
         "completeness": completeness_results,  # #557 reported (not-yet-blocking)
-        "hub_counts": {
+        "hub_counts": dict({
             "endpoints": len(endpoints),
             "tables": len(tables),
             "pages": len(pages),
             "implemented_endpoints": implemented_endpoints,
             "implemented_tables": implemented_tables,
-        },
+        }, **_business_endpoint_counts_1203i7(endpoints)),
         "verification": checklist,
         "contract_alignment": contract_report,
         "semantic_hub_drift": semantic_drift,
