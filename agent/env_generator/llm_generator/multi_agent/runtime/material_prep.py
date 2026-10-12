@@ -27,6 +27,36 @@ from typing import Any, Dict, List, Optional, Tuple
 Region = Tuple[float, float, float, float]  # (x0,y0,x1,y1) as 0..1 fractions
 
 
+def _say_once_1203i4(site: str, item: Any) -> bool:
+    """#1203i4: True the first time `site` reports `item`. Never raises, never silences.
+
+    These two #1202vz warnings printed 319 identical lines in r180 alone -- the seed
+    localiser revisits the same unfilled FK column on every pass. The item (table.column
+    plus the reason) goes in the site key and the state is a constant marker, because what
+    differs between these reports is WHICH column, never a value whose movement is news.
+    A memo failure returns True: losing the dedup is acceptable, losing the report is not.
+
+    Deliberately a second copy rather than an import from `heal_pipeline`, which carries
+    the same four-line helper: that module imports this one's siblings and a back-import
+    would close a cycle. The shared part -- the memo itself -- IS shared, in #1202ad.
+    """
+    try:
+        from .message_format import state_changed_1202ad
+        return bool(state_changed_1202ad("%s:%s" % (site, item), "said"))
+    except Exception as _e1203i4:
+        # #1202be's ratchet caught the first draft: returning True out of a swallowed
+        # exception makes a crashed memo read like a real "this is new". Returning False
+        # would be worse -- it would SILENCE the report -- so the affirmative stays and the
+        # failure is announced instead, with the framework's own helper for exactly that.
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("material_prep._say_once_1203i4",
+                           "the report memo for these warnings (they will repeat)", _e1203i4)
+        except Exception:
+            pass        # the announcement is itself best-effort; the contract is NEVER RAISE
+        return True
+
+
 def _hex(rgb) -> str:
     r, g, b = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
     return f"#{r:02x}{g:02x}{b:02x}"
@@ -1748,11 +1778,14 @@ def resolve_dataset_fks_1202vz(dataset, schema) -> Dict[str, List]:
                             "one undeclared `_id` column whose every value is a `%s` id (%s)",
                             table, col, target, len(drows), _alt, target, _why)
                         continue
-                    _LOG_1202VZ.warning(
-                        "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, and "
-                        "%s. It stays NULL, so any join over it drops every one of these %d "
-                        "rows -- which is how a feed serves a fraction of its own `total`.",
-                        table, col, target, _why, len(drows))
+                    if _say_once_1203i4("material_prep.fk_unfilled_1202vz",
+                                        "%s.%s|%s" % (table, col, _why)):
+                        _LOG_1202VZ.warning(
+                            "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, "
+                            "and %s. It stays NULL, so any join over it drops every one of "
+                            "these %d rows -- which is how a feed serves a fraction of its own "
+                            "`total`.",
+                            table, col, target, _why, len(drows))
                     continue
                 best, best_hits = None, 0
                 for tcol in sorted({k for t in trows for k in t}):
@@ -1775,13 +1808,15 @@ def resolve_dataset_fks_1202vz(dataset, schema) -> Dict[str, List]:
                     if hits > best_hits:
                         best, best_hits = idx, hits
                 if best is None or best_hits < len(drows) * _FK_MATCH_FLOOR_1202VZ:
-                    _LOG_1202VZ.warning(
-                        "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, and "
-                        "the rows' `%s` does not identify a `%s` row (%d of %d matched; an "
-                        "ambiguous natural key is refused outright). It stays NULL, so any "
-                        "join over it drops every one of these %d rows -- which is how a feed "
-                        "serves a fraction of its own `total`.",
-                        table, col, target, base, target, best_hits, len(drows), len(drows))
+                    if _say_once_1203i4("material_prep.fk_ambiguous_1202vz",
+                                        "%s.%s|%s" % (table, col, base)):
+                        _LOG_1202VZ.warning(
+                            "#1202vz %s.%s is a declared FK to `%s` that NO dataset row fills, "
+                            "and the rows' `%s` does not identify a `%s` row (%d of %d matched; "
+                            "an ambiguous natural key is refused outright). It stays NULL, so "
+                            "any join over it drops every one of these %d rows -- which is how "
+                            "a feed serves a fraction of its own `total`.",
+                            table, col, target, base, target, best_hits, len(drows), len(drows))
                     continue
                 for r in drows:
                     v = best.get(str(r.get(base)))

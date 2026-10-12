@@ -26,6 +26,41 @@ from typing import Any, List
 from .message_format import join_capped  # #1034
 
 
+def _say_once_1203i4(site: str, item: Any) -> bool:
+    """#1203i4: True the first time `site` reports `item`. Never raises, never silences.
+
+    Four of the framework's loudest remaining warnings were heartbeats -- a line per tick
+    for a state that had not moved -- after #1203i2 and #1203i3 took the top two. Measured
+    over the last 13 runs:
+
+        handler FK-alias repair DECLINED      1680 lines, 3-8 distinct/run, 35-63 repeats
+        Pre-validation merge: nothing...       558 lines, 2 distinct/run,   29-45 repeats
+        Framework delivery writes COMMITTED    433 lines, ONE distinct,     45-52 repeats
+        #1202vz declared FK no row fills       319 lines in one run, ONE distinct
+
+    2990 lines saying four things. `#1202ad`'s `state_changed_1202ad` is the framework's
+    own helper for this; the state here is a constant marker and the ITEM goes in the site
+    key, because what varies between these reports is which model/lane/column they are
+    about, never a value whose movement is news. A memo failure returns True: losing the
+    dedup is acceptable, losing the report is not.
+    """
+    try:
+        from .message_format import state_changed_1202ad
+        return bool(state_changed_1202ad("%s:%s" % (site, item), "said"))
+    except Exception as _e1203i4:
+        # #1202be's ratchet caught the first draft: returning True out of a swallowed
+        # exception makes a crashed memo read like a real "this is new". Returning False
+        # would be worse -- it would SILENCE the report -- so the affirmative stays and the
+        # failure is announced instead, with the framework's own helper for exactly that.
+        try:
+            from .message_format import warn_once_1201
+            warn_once_1201("heal_pipeline._say_once_1203i4",
+                           "the report memo for these warnings (they will repeat)", _e1203i4)
+        except Exception:
+            pass        # the announcement is itself best-effort; the contract is NEVER RAISE
+        return True
+
+
 def _write_py_995(path, text, *, what: str = ""):
     """#995 guard, imported defensively.
 
@@ -1847,11 +1882,16 @@ class HealPipeline:
             # #784: a model the repair REFUSED to guess on. Silence here used to mean both
             # "nothing was broken" and "something was broken and I picked an actor at random".
             for amb in (res.get("ambiguous") or []):
-                orch._logger.warning(
-                    "handler FK-alias repair DECLINED (ambiguous owner): %s carries more than "
-                    "one owner-ish FK, so a broken reference cannot be resolved to an actor "
-                    "without guessing. Left as an AttributeError 500 on purpose — a loud failure "
-                    "beats a silent wrong-owner query.", amb)
+                # #1203i4: the refusal is a STATE of that model, not a per-heal event. 1680
+                # lines across 11 runs, 3-8 distinct per run, each repeated 35-63 times --
+                # the heal pipeline runs every tick and re-declines the same tables. `site`
+                # carries the model so one table cannot silence another; see #1202ad.
+                if _say_once_1203i4("heal.fk_alias_declined_784", amb):
+                    orch._logger.warning(
+                        "handler FK-alias repair DECLINED (ambiguous owner): %s carries more "
+                        "than one owner-ish FK, so a broken reference cannot be resolved to an "
+                        "actor without guessing. Left as an AttributeError 500 on purpose — a "
+                        "loud failure beats a silent wrong-owner query.", amb)
             # #974: a narrowing DEDUCTION is not a guess, but it is still an owner-scoping
             # decision — it must be as visible as the refusal above, or the next person
             # debugging a too-empty list has no way to know the framework chose the actor.
@@ -2871,7 +2911,12 @@ class HealPipeline:
                         lane=lane, kind="conflict_resolved", paths=_superseded)
                 except Exception:
                     pass
-            if ok and info and "nothing to merge" not in str(info):
+            if (ok and info and "nothing to merge" not in str(info)
+                    # #1203i4: 558 lines across 13 runs, 2 distinct per run, each repeated
+                    # 29-45 times. The merge runs per pre-validation and keeps reporting the
+                    # same outcome for the same lane; `site` carries both so a different lane
+                    # or a different outcome is still news.
+                    and _say_once_1203i4("heal.prevalidation_merge", "%s|%s" % (lane, info))):
                 orch._logger.warning(
                     "🔀 Pre-validation merge agent/%s → integration: %s "
                     "(surfaced committed code the lane had not finish-merged).",
@@ -3142,7 +3187,9 @@ class HealPipeline:
                 ["commit", "-m",
                  "framework delivery: backend skeleton + frontend infra + projections"],
                 cwd=repo)
-            if rc == 0:
+            if rc == 0 and _say_once_1203i4("heal.delivery_writes_committed", "done"):
+                # #1203i4: 433 lines across 13 runs, ONE distinct message, 45-52 repeats per
+                # run. It says the same thing every time the framework commits its own writes.
                 orch._logger.warning(
                     "Framework delivery writes COMMITTED to integration so the "
                     "release snapshot ships them (skeleton/infra/projections).")
