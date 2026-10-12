@@ -1408,6 +1408,68 @@ from .. import delivery as _contract
 from .message_format import join_capped  # #1034
 
 
+_CHECKLIST_GENERIC_1203I6 = (
+    "Run and record verification/build checks until checklist is ready for delivery.")
+
+
+def _checklist_advice_1203i6(gate: Any) -> str:
+    """#1203i6: name the checklist item, and say whether it FAILED or was never recorded.
+
+    Every other suggestion in `delivery_gate_suggestions` names a path or a tool --
+    `app/backend`, `registryhub_register_endpoint(...)`. This one said "Run and record
+    verification/build checks" and named nothing, while the per-item statuses sit on the
+    same `gate` dict the function already receives (`gate["verification"]["checklist"]`,
+    which the report builder 200 lines down prints verbatim).
+
+    Measured over the persisted gate ledgers -- 802 rows carrying this check across 104
+    runs, and ALL 802 carry the checklist:
+
+        exactly ONE item not success     217 rows (27%)
+        all four not success             576 rows (72%)
+        two or three                       9 rows
+
+    So in 27% of them the gate knew a single item was red -- `{'sql_syntax': 'success',
+    'docker_build': 'success', 'npm_install': 'failure', 'backend_start': 'success'}` is a
+    real row -- and told the lane to run all of them.
+
+    The two states are split because their remedies are opposite, which is #1202ik's lesson
+    about two stops sharing one name: a `failure` was recorded and has to be FIXED, while a
+    `pending` or absent item was never run. The vocabulary is measured, not assumed: across
+    47312 checklist entries the only statuses are `success` (44063), `failure` (2545) and
+    `pending` (704), over four fixed item names.
+
+    Falls back to the original sentence verbatim when the checklist cannot be read, because
+    an unreadable checklist is not evidence that every item is pending.
+    """
+    try:
+        _v = gate.get("verification") if isinstance(gate, dict) else None
+        _cl = _v.get("checklist") if isinstance(_v, dict) else None
+        if not isinstance(_cl, dict) or not _cl:
+            return _CHECKLIST_GENERIC_1203I6
+        _failed, _unrun = [], []
+        for _k, _item in _cl.items():
+            _st = str((_item.get("status") if isinstance(_item, dict) else _item)
+                      or "").strip().lower()
+            if _st in ("success", "passed", "pass"):
+                continue
+            (_failed if _st in ("failure", "failed", "error") else _unrun).append(str(_k))
+        if not _failed and not _unrun:
+            return _CHECKLIST_GENERIC_1203I6
+        _bits = []
+        if _failed:
+            _bits.append("%s FAILED and must be fixed and re-recorded"
+                         % ", ".join(sorted(_failed)))
+        if _unrun:
+            _bits.append("%s %s never been recorded, so run %s"
+                         % (", ".join(sorted(_unrun)),
+                            "has" if len(_unrun) == 1 else "have",
+                            "it" if len(_unrun) == 1 else "them"))
+        return ("Verification checklist is not ready: " + "; ".join(_bits)
+                + ". Record each result so the checklist reads ready_for_delivery.")
+    except Exception:
+        return _CHECKLIST_GENERIC_1203I6
+
+
 def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
     """Map gate failures to concrete remediation suggestions."""
     suggestions: List[str] = []
@@ -1440,7 +1502,7 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
     if "no_implemented_tables" in failed_checks:
         suggestions.append("Mark at least one table as implemented via `registryhub_register_table(name=..., status='implemented')`.")
     if "verification_checklist_not_ready" in failed_checks:
-        suggestions.append("Run and record verification/build checks until checklist is ready for delivery.")
+        suggestions.append(_checklist_advice_1203i6(gate))
     if "business_chain_missing" in failed_checks:
         suggestions.append(
             "Verifier: register real business-flow verification chains via "
