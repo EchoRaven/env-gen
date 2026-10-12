@@ -3704,6 +3704,60 @@ class Orchestrator:
                         self._write_preview_config(_ver)
                         self._logger.warning(
                             "FINAL DELIVERY: gate clear → cut release v%s", _ver)
+                        # #1203ig: RECONCILE THE MILESTONE NOW THAT THE RELEASE EXISTS.
+                        #
+                        # #1203hy is right to refuse a `delivered` status when no release has
+                        # been cut — the `deliver_project` tool can set the event without
+                        # shipping anything. But the two can happen in the other order, and
+                        # then hy's refusal becomes permanent: tiktok-web-r184
+                        #
+                        #   11:11:07  Milestone 4 (v1.3.0) signalled delivery but NO release
+                        #             was cut for it — leaving its status alone …
+                        #   11:11:12  FINAL DELIVERY: gate clear → cut release v1.3.0
+                        #
+                        # Five seconds. The release shipped; nothing came back to the ledger,
+                        # so `milestones.json` ended with M4 `active` beside a real 1.3.0 tag.
+                        # The run delivered 4 of 4 and its own ledger said 3 — I read it as
+                        # 3/4 myself before checking the tags. hy traded a false positive for
+                        # a false negative.
+                        #
+                        # Re-asks hy's OWN question rather than assuming (#1032: one owner for
+                        # that predicate). It can only move a milestone to `delivered` when a
+                        # release for that version demonstrably exists, so the unsafe
+                        # direction — recording a delivery that never shipped, which is the
+                        # whole point of hy — stays closed. `unknown` (an unreadable ledger)
+                        # is left alone for hy's documented reason.
+                        #
+                        # Denominator is one run: hy landed 2026-10-11, so only r182-r184
+                        # could hit this window and only r184 did. Landed anyway because the
+                        # failure is a ledger that misreports what shipped, and every judgement
+                        # about a run starts from that ledger.
+                        # `_m_idx` / `_milestone` are the loop's own locals (assigned at the
+                        # top of this `run`), and `mark_status(ref, ...)` takes the same ref
+                        # #1203hy's branch passes. The first draft of this reached for
+                        # `self._current_milestone_index` and `self._m_idx`, NEITHER of which
+                        # exists — the reconcile would have been inert at every call. Same
+                        # mistake as the `locals().get("safe_messages")` draft of #1203i8:
+                        # check the scope, do not assume the name.
+                        try:
+                            if self._milestone_release_state_1203hy(str(_ver)) == "yes":
+                                _st1203ig = str((_milestone or {}).get("status") or "")
+                                if _st1203ig != "delivered":
+                                    self.hubs.milestones.mark_status(
+                                        _m_idx, "delivered", agent="orchestrator")
+                                    self._logger.warning(
+                                        "#1203ig milestone %s reconciled to delivered: "
+                                        "release v%s exists now, and #1203hy had correctly "
+                                        "refused the status earlier because it did not. "
+                                        "Without this the ledger under-reports what the run "
+                                        "shipped (r184 ended 4-of-4 and said 3).",
+                                        _m_idx, _ver)
+                        except Exception as _e1203ig:
+                            from .runtime.message_format import warn_once_1201
+                            warn_once_1201(
+                                "milestone_reconcile_1203ig",
+                                "the #1203ig post-release milestone reconcile — the ledger "
+                                "may under-report a milestone that did ship", _e1203ig)
                         # #706b: THE OTHER RELEASE PATH. #706 hooked the api_smoke-validated cut
                         # further down this file and missed this one, which is the path r147
                         # actually took — its release notes read "Final delivery: delivery gate

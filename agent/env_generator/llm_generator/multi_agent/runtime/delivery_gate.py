@@ -467,6 +467,93 @@ def reset_said_845() -> None:
     later one."""
     _SAID_845.clear()
 
+def list_totals_unreachable_1203ie(project_dir: Any) -> List[str]:
+    """#1203ie: the endpoints whose `total` their own pagination cannot reach.
+
+    `#1202w0` measures this during smoke validation and its own words state the cost -- "A
+    client that follows `next_cursor` stops early and the rest of the data is unreachable
+    through the app". It logs the finding and writes
+    `logs/list_total_unreachable_1202w0.jsonl`, and `record_list_total_unreachable_1202w0`'s
+    docstring says why that artifact exists: "the next runs' files are the evidence for
+    whether it earns a gate check."
+
+    THE EVIDENCE IS IN. Across the artifacts on disk: 24 runs carry it, spanning r142 to
+    r184 and TWO domains (instagram-core-r176 as well as tiktok); only 10 distinct endpoints
+    are ever flagged, dominated by the feed (`/api/videos/feed` 224, `/api/feed/foryou` 177,
+    `/api/feed` 147); and it never self-resolves -- r183 and r184 both shipped it.
+    tiktok-web-r184's `release-v1.1.0` ships two of them.
+
+    It also does not respond to being explained. #1203i9 put the definition of `total` into
+    `_AGENT_NOTES` ("the size of the WHOLE COLLECTION ... NOT `len(items)`"); r184 received
+    that text and shipped `{"items": items, "total": len(items), "next_cursor": next_cursor}`
+    anyway, at two endpoints.
+
+    So it is published HERE, next to #1139, on exactly #1139's terms: "Evidence for the
+    orchestrator, which reads this result every tick and can file the fix; never a
+    failed_check." NOT added to `failed_checks`, because #1023's reason stands -- "a new
+    blocking check cannot be validated without a full run, and this codebase has paid for
+    false blocks repeatedly (#504, r81)" -- and because blocking on it would have blocked all
+    24 of those runs.
+
+    Reads the LAST record in the artifact (validation appends one per pass, so the newest is
+    the current state) rather than the union, which would keep naming endpoints a lane has
+    since fixed. Pure/best-effort: any failure returns [].
+    """
+    try:
+        import json as _j1203ie
+        from pathlib import Path as _P1203ie
+        if not project_dir:
+            return []
+        f = (_P1203ie(str(project_dir)) / "logs"
+             / "list_total_unreachable_1202w0.jsonl")
+        if not f.is_file():
+            return []
+        # NOT named `last`: this module already uses that name for a `last_result` mapping,
+        # and #1202vp's AST collects every `last.get("k")` in the file as a key some reader
+        # demands of `last_result` — it tracks aliases module-wide, not per scope. Shadowing
+        # the name made this function's `endpoints` read look like a chain-recorder contract
+        # it has nothing to do with, and that ambiguity is worth avoiding for a human reader
+        # too.
+        _last1203ie = None
+        for ln in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                rec = _j1203ie.loads(ln)
+            except Exception:
+                continue
+            if isinstance(rec, dict):
+                _last1203ie = rec
+        if not isinstance(_last1203ie, dict):
+            return []
+        eps = _last1203ie.get("endpoints")
+        if not isinstance(eps, list):
+            return []
+        return [str(e) for e in eps if str(e).strip()]
+    except Exception as _exc1203ie:
+        # #1202ah: an empty return from a swallowed gate exception reads downstream as "no
+        # endpoint is unreachable", i.e. a crashed check reporting a pass. Say it happened.
+        # This is the same ratchet that caught `_business_half_1203i7` earlier today, for the
+        # same reason, and the answer is the same: announce, do not raise the ceiling.
+        # Local import, as every other `warn_once_1201` site in this file does (it is not
+        # module-level here). Caught by #940's unbound-name ratchet, which is the right
+        # place to catch it: a NameError raised INSIDE an except handler would turn this
+        # best-effort read into a crash.
+        #
+        # Nested guard because the import itself can fail and this function must never
+        # raise — the same hole my own #1203i4 test found in `_say_once_1203i4` today.
+        try:
+            from .message_format import warn_once_1201 as _woi1203ie
+            _woi1203ie("list_totals_unreachable_1203ie",
+                       "the #1202w0 evidence read — the gate result will carry no "
+                       "unreachable-total endpoints even if validation found some",
+                       _exc1203ie)
+        except Exception:
+            pass
+        return []
+
+
 def never_matching_filters_1139(project_dir: Any) -> List[Dict[str, str]]:
     """#1139: route filters that CANNOT match a single seeded row.
 
@@ -4585,6 +4672,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # #1139: filters that can never match a seeded row. Evidence for the orchestrator,
         # which reads this result every tick and can file the fix; never a failed_check.
         "never_matching_filters": never_matching_filters_1139(output_dir),
+        # #1203ie: list endpoints whose `total` their own cursor cannot reach -- "the rest of
+        # the data is unreachable through the app" (#1202w0's words). Same terms as #1139:
+        # evidence the orchestrator can file a fix from, never a failed_check, because #1023's
+        # reason stands and blocking would have blocked all 24 runs that carry it. #1202w0 had
+        # measured it since r142 and published it only to a log line and an artifact, and
+        # #1203i9 proved the contract prose does not move the lane -- r184 received the
+        # corrected `_AGENT_NOTES` and still shipped two of these in release-v1.1.0.
+        "list_totals_unreachable_1203ie": list_totals_unreachable_1203ie(output_dir),
         # #983: {check_token: [the blocker prose it was derived from, …]} so a remediation
         # can name the instance for checks that have no bespoke branch.
         "blocker_prose": _merged_prose_1202wi(deliverability_blocker_prose, _prose1202wi),

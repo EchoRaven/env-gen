@@ -1845,6 +1845,87 @@ _UNCHANGED_PAYLOAD_400_MARKERS_1203I8 = (
 )
 
 
+def _nontext_shape_1203if(messages: Any) -> str:
+    """`msg<i>:<type>x<n>` for every message carrying non-text parts, plus the total.
+
+    #1203if. When the provider refuses a payload "because of an image", the only aggregate
+    on record is `nontext:N` on the `[LLM Request]` line — a count with no types and no
+    positions. That is why six investigations into `image_parse_error` all had to ASSUME the
+    non-text parts were images: nothing recorded what they actually were. If a non-image part
+    (`input_audio`, a tool result shaped wrong) is being sent where an image is expected, this
+    is the line that says so. Pure/best-effort: never raises.
+    """
+    try:
+        out = []
+        total = 0
+        for i, m in enumerate(messages or []):
+            content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+            if not isinstance(content, (list, tuple)):
+                continue
+            kinds: Dict[str, int] = {}
+            for part in content:
+                t = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+                t = str(t or "?")
+                if t == "text":
+                    continue
+                kinds[t] = int(kinds.get(t) or 0) + 1
+                total += 1
+            if kinds:
+                out.append("msg%d:%s" % (
+                    i, ",".join("%sx%d" % (k, v) for k, v in sorted(kinds.items()))))
+        if not out:
+            return "no non-text part in %d message(s)" % len(messages or [])
+        return "%d non-text part(s) — %s" % (total, "; ".join(out[:12]))
+    except Exception:
+        return "(census unavailable)"
+
+
+def _strip_inline_images_1203if(messages: Any):
+    """Return (messages, n) with every `image_url` part replaced by a text placeholder.
+
+    #1203if. Mirrors what `_prune_stale_images_for_reroll` (FIX #187) does on the Gemini
+    path — that one keeps the newest image; this drops them all, because the payload here is
+    rejected outright rather than merely large, and keeping one would leave the thing under
+    suspicion in place. The placeholder keeps the positional context the model had, exactly
+    as #187's does.
+
+    Never mutates the caller's list: `_retry_with_backoff` may still hold it, and the
+    original exception is re-raised on failure, so the un-pruned payload must stay intact.
+    Returns (original, 0) when there is nothing to drop or anything goes wrong.
+    """
+    try:
+        if not isinstance(messages, (list, tuple)):
+            return messages, 0
+        out = []
+        n = 0
+        for m in messages:
+            content = m.get("content") if isinstance(m, dict) else None
+            if not isinstance(m, dict) or not isinstance(content, (list, tuple)):
+                out.append(m)
+                continue
+            parts = []
+            changed = False
+            for part in content:
+                t = part.get("type") if isinstance(part, dict) else None
+                if t == "image_url":
+                    parts.append({"type": "text", "text":
+                                  "[inline image dropped — the provider refused to parse "
+                                  "this payload with it (#1203if)]"})
+                    n += 1
+                    changed = True
+                    continue
+                parts.append(part)
+            if changed:
+                _m = dict(m)
+                _m["content"] = parts
+                out.append(_m)
+            else:
+                out.append(m)
+        return (out, n) if n else (messages, 0)
+    except Exception:
+        return messages, 0
+
+
 def _is_unchanged_payload_400_1203i8(error: Exception) -> bool:
     """True when the provider has rejected the payload for a reason that CANNOT change
     on a re-send of that same payload -- so retrying it is pure waste.
@@ -2903,7 +2984,64 @@ class OpenAIClient(BaseLLMClient):
                     "OpenAI rejected the prompt as invalid_prompt (policy filter). "
                     "This usually indicates the prompt contains sensitive data or other policy-triggering content."
                 ) from e
-            raise
+            # #1203if: an unchanged-payload 400 (#1203i8) kills the whole CONVERSATION, not
+            # one call. i8 stopped paying for the 9x re-send and said so; it did not get the
+            # agent working again. tiktok-web-r184's frontend lost 49 consecutive calls across
+            # FOUR phases on one poisoned history — deliver 13, run_checks 12, edit_code 12,
+            # communicate 12, plus 11 skipped planning rounds — and 221 of its requests
+            # carried `nontext:11`.
+            #
+            # THE CAUSE IS NOT KNOWN, and this does not pretend otherwise. Six candidates were
+            # eliminated: every reference PNG loads (33 in r184, 11 in r183); all 4415 entries
+            # of the shared compression cache load; the files predate the read by five minutes
+            # and never change; the same 11 images replayed through this framework's own
+            # compress+fit were ACCEPTED by this endpoint; so were they with a 90k system
+            # prompt and 13 tools alongside; and the condenser had been DECLINED at every step
+            # before the first 400. So no rule is written about which image is at fault.
+            #
+            # What IS known is that the payload carrying images fails and a payload without
+            # them is accepted. So: drop the inline images ONCE and re-send. Bounded by
+            # construction — one extra call, only on a conversation that is otherwise losing
+            # every call, and the original exception is re-raised unchanged if it fails, so the
+            # worst case is exactly today's behaviour plus one attempt.
+            #
+            # This is a DEGRADATION, not a fallback that hides a failure: it says what it
+            # dropped, at ERROR level, and #40 is why that matters ("a hard TypeError here cost
+            # the frontend its ONLY look at the reference designs"). Losing the pictures beats
+            # losing the agent.
+            if _is_unchanged_payload_400_1203i8(e):
+                _shape1203if = _nontext_shape_1203if(request_params.get("messages"))
+                self._logger.error(
+                    "[LLM] #1203if payload the provider will not parse — part census: %s. "
+                    "Retrying ONCE with every inline image replaced by a text placeholder; "
+                    "if that also fails the original error stands.", _shape1203if)
+                _pruned1203if, _n1203if = _strip_inline_images_1203if(
+                    request_params.get("messages"))
+                if _n1203if:
+                    _rp1203if = dict(request_params)
+                    _rp1203if["messages"] = _pruned1203if
+                    try:
+                        _resp1203if = await client.chat.completions.create(**_rp1203if)
+                    except Exception as _e1203if:
+                        self._logger.error(
+                            "[LLM] #1203if the image-free retry ALSO failed (%s) — the images "
+                            "were not the whole story; original error stands.",
+                            type(_e1203if).__name__)
+                        raise e from _e1203if
+                    self._logger.error(
+                        "[LLM] #1203if RECOVERED by dropping %d inline image(s). This "
+                        "conversation continues WITHOUT them, so anything that depended on "
+                        "seeing the reference screenshots is degraded until it views them "
+                        "again (#40).", _n1203if)
+                    response = _resp1203if
+                else:
+                    self._logger.error(
+                        "[LLM] #1203if nothing to drop: the payload carries no inline image "
+                        "part, so the rejection is NOT about an image this call sent. That is "
+                        "new information — the six eliminated causes all assumed images.")
+                    raise
+            else:
+                raise
         latency = (datetime.now() - start_time).total_seconds()
         
         choice = response.choices[0]
