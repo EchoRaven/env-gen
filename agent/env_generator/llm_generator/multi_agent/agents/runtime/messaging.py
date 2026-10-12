@@ -557,14 +557,47 @@ class AgentMessaging:
             # carry the priority queue's own silent-eviction count, which nothing else
             # reports anywhere.
             _ev1203hp = getattr(getattr(self, "_priority_queue", None), "evicted", None)
-            self._logger.warning(
-                f"[{self.agent_id}] dispatch queue FULL "
-                f"({self._message_queue.maxsize} pending) — dropping the "
-                "ordinary-dispatch copy (the inbox copy is what still carries an "
-                "ordinary message; the priority-queue and interrupt copies are read "
-                "only for URGENT/HIGH) instead of parking the sender (FIX #150)"
-                + (f"; priority-queue evicted={_ev1203hp} so far (#1203hp)"
-                   if _ev1203hp else ""))
+            # #1203i3: SAY THE SATURATION ONCE PER ORDER OF MAGNITUDE, NOT ONCE PER DROP.
+            #
+            # With #1203i2 taking the previous record, this is the loudest line in the
+            # framework: 17620 lines across the last 13 runs. Deduplicated per run it is
+            #
+            #     r173 2955 / 1 distinct     r171 2879 / 1     r177 1983 / 1
+            #     r175 1698 / 1              r176 1252 / 1     r181  864 / 1
+            #     r179 3310 / 318            r180 1024 / 27
+            #
+            # -- the identical sentence one to three thousand times. The two outliers are
+            # MINE: #1203hp appended `evicted=N` and #1203hu kept it, so once that counter
+            # starts moving every line differs. A monotonically incrementing serial number
+            # makes a heartbeat pass #1202ad's "a count that moves is news" test while
+            # saying nothing new, and r179's 318 distinct lines are what that looks like.
+            #
+            # What IS news is the ORDER OF MAGNITUDE. `len(str(n))` reports at the 1st, 10th,
+            # 100th and 1000th drop -- four lines per agent instead of 2955 -- and
+            # "saturated, 1000 drops so far" is a different fact from "saturated, 1 drop so
+            # far" in a way that the 999 lines between them are not.
+            #
+            # The count stays IN the message, so nothing is lost: it is the memo state that
+            # is bucketed, not the number reported. Per-agent `site`, because one lane
+            # saturating says nothing about another.
+            self._drops_1203i3 = int(getattr(self, "_drops_1203i3", 0)) + 1
+            try:
+                from ...runtime.message_format import state_changed_1202ad
+                _say1203i3 = state_changed_1202ad(
+                    "messaging.dispatch_full_150:%s" % self.agent_id,
+                    len(str(self._drops_1203i3)))
+            except Exception:
+                _say1203i3 = True       # a memo failure must never silence the report
+            if _say1203i3:
+                self._logger.warning(
+                    f"[{self.agent_id}] dispatch queue FULL "
+                    f"({self._message_queue.maxsize} pending) — dropping the "
+                    "ordinary-dispatch copy (the inbox copy is what still carries an "
+                    "ordinary message; the priority-queue and interrupt copies are read "
+                    "only for URGENT/HIGH) instead of parking the sender (FIX #150)"
+                    + f"; {self._drops_1203i3} such drop(s) so far (#1203i3)"
+                    + (f"; priority-queue evicted={_ev1203hp} so far (#1203hp)"
+                       if _ev1203hp else ""))
 
     async def _pickup_undelivered_inbox_events(self) -> int:
         """Drain cross-process events from the on-disk inbox.
