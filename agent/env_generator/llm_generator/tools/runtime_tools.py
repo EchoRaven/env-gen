@@ -2424,9 +2424,25 @@ def _stale_image_note_1202qs(hubs) -> str:
             from multi_agent.runtime.chain_executor import build_currency_1202ex
         if (build_currency_1202ex(base) or {}).get("verdict") != "changed":
             return ""
+        # #1203i5: NAME THE ACTION THIS READER CAN TAKE. The advice above is written for a
+        # reader who changes code -- and 341 of the 439 notes this emitted across the last 13
+        # runs went to DETECT-ONLY test-users (browser 167, api 151, mcp 23), whose whole job
+        # is to FILE, not to edit. They called `run_validation` exactly ZERO times in those
+        # 13 runs, while the verifier -- which received 16 of these notes -- called it 71
+        # times. `run_validation` IS in their tool pool (`verification_tools` carries
+        # `RunValidationTool`, and the api_test_user profile takes that bundle), so this is
+        # not #1203gq's missing-tool shape: it is copy that tells a filer what an editor
+        # should do. 43 of the 341 are followed within 120 log lines by that same test-user
+        # filing a bug.
+        #
+        # The sibling note three functions up already has the right wording for this
+        # audience -- #1202qz: "re-check before filing it as a defect" -- and this note,
+        # whose audience is 78% filers, used the editor-facing half alone. Both halves now
+        # ride, because the note reaches both kinds of reader.
         return (" — NOTE: app/ has changed since the running image was built, so this response may "
-                "come from the OLD code. Re-run validation (it rebuilds) before changing code or "
-                "the contract to match what you just saw.")
+                "come from the OLD code. Re-run validation (it rebuilds) and re-check before "
+                "filing this as a defect, and before changing code or the contract to match "
+                "what you just saw.")
     except Exception:
         return ""
 
