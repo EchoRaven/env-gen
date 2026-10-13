@@ -130,3 +130,33 @@ def test_a_complete_single_page_list_is_clean():
     # and with the key absent entirely, not merely null
     assert detect("http://x", "/api/settings", None,
                   json.dumps({"items": [{"id": 1}], "total": 1})) == ""
+
+
+def test_the_falsification_is_recorded_where_the_text_lives():
+    """#1203i9 did not work online, and that has to be readable HERE.
+
+    r184 received this file's `total` definition — `WHOLE COLLECTION` is in its
+    `design/agent_notes.md` — and shipped `{"items": items, "total": len(items),
+    "next_cursor": next_cursor}` at two endpoints anyway, in release-v1.1.0. Offending
+    endpoints per run: r182 0, r183 1, r184 2 (the run WITH the text).
+
+    What worked was routing the finding to a TASK (#1203ie publishes it in the gate result,
+    #1203ii dispatches a backend task): r186 ended with zero offending endpoints and the task
+    completed. The note below #1203i9's marker stays because it is true and free, but a reader
+    must not mistake its presence for the defect being handled — which is exactly what I would
+    have done without this.
+    """
+    import pathlib
+    src = pathlib.Path(
+        _ROOT, "env_generator/llm_generator/multi_agent/runtime/reference_materials.py"
+    ).read_text(encoding="utf-8") if "_ROOT" in globals() else None
+    if src is None:
+        import os
+        src = pathlib.Path(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "env_generator/llm_generator/multi_agent/runtime/reference_materials.py"
+        ).read_text(encoding="utf-8")
+    assert "#1203i9 WAS FALSIFIED ONLINE" in src, (
+        "the falsification note is gone; a reader will take the paragraph as a fix")
+    assert "#1203ii" in src, "the note does not name what actually worked"
+    assert "WEAK LEVERAGE" in src

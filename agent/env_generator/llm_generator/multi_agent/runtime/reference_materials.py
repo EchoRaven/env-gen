@@ -542,6 +542,25 @@ def spec_summary_for_requirements(spec: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# #1203i9 WAS FALSIFIED ONLINE, AND THE NOTE BELOW IS KEPT ANYWAY.
+#
+# #1203i9 added the `total` definition further down (". . . the size of the WHOLE COLLECTION
+# . . . NOT `len(items)`") because 628 `#1202w0` findings showed lanes shipping
+# `total == len(items)` beside a `next_cursor`. It did not work. tiktok-web-r184 RECEIVED
+# that text -- `WHOLE COLLECTION` is present in its `design/agent_notes.md` -- and shipped
+# `{"items": items, "total": len(items), "next_cursor": next_cursor}` at two endpoints
+# anyway, in release-v1.1.0. Offending endpoints per run: r182 0, r183 1, r184 2 (the run
+# WITH the text).
+#
+# What did work was giving the finding a TASK: #1203ie publishes it in the gate result and
+# #1203ii dispatches a backend task from it. tiktok-web-r186 ran with those and ended with
+# ZERO offending endpoints, the task marked completed, and the handler computing a real
+# count.
+#
+# So: PROSE IN THIS FILE HAS WEAK LEVERAGE ON LANE BEHAVIOUR. Before adding a paragraph here
+# to fix a measured defect, check whether the finding can instead reach the lane as a task --
+# same conclusion #1203gq reached for `_hint_1202z6`. The paragraph stays because it is TRUE
+# and costs nothing; it is simply not evidence that the defect is handled.
 _AGENT_NOTES = """# Agent Notes — conventions for this workspace (machine-authored, read first)
 
 ## Contract & response shapes (FIXED — code to them exactly)
