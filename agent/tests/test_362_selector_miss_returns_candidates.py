@@ -27,6 +27,30 @@ from __future__ import annotations
 import asyncio
 import sys
 import unittest
+
+
+def _non_docstring_strings_362(fn):
+    """Every string constant in `fn` EXCEPT its own docstring.
+
+    #1203il's renderer quotes the literal `Fill failed: Page.fill: Timeout 5000ms exceeded.`
+    inside its docstring to explain what the agent used to see. A search for the function that
+    BUILDS that message then matched the renderer itself — the fifth time in one session that
+    an assertion read my own prose instead of the code. Skip the docstring and the match is
+    about behaviour again.
+    """
+    import ast
+    body = list(getattr(fn, "body", []) or [])
+    doc = None
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        doc = body[0].value
+    out = []
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and node is not doc):
+            out.append(node.value)
+    return out
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,17 +135,38 @@ class TheFailurePathsUseIt(unittest.TestCase):
         from tools.browser import interaction
         return Path(interaction.__file__).read_text()
 
+    def _probe_is_called_in_the_handler_building(self, failure_literal):
+        """True when the probe is called inside the same function that builds `failure_literal`.
+
+        Walked over the AST rather than a +/-600-byte window around the literal. The window
+        version broke when #1203il added a docstring above `_candidates_hint_688` — the call
+        had not moved at all, the prose between them had grown — which is exactly what #943
+        forbids ("no fixed byte windows in tests, use landmark anchors"). A function-scoped
+        check cannot be fooled by a comment and still fails if the call is removed.
+        """
+        import ast
+        tree = ast.parse(self._src())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not any(failure_literal in c
+                       for c in _non_docstring_strings_362(fn)):
+                continue
+            called = {c.func.id for c in ast.walk(fn)
+                      if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+            if "describe_interactive_candidates" in called:
+                return True
+        return False
+
     def test_fill_failure_attaches_candidates(self):
-        src = self._src()
-        idx = src.index("Fill failed:")
-        self.assertIn("describe_interactive_candidates",
-                      src[max(0, idx - 600):idx + 200])
+        self.assertTrue(
+            self._probe_is_called_in_the_handler_building("Fill failed:"),
+            "the fill failure path no longer asks what IS on the page")
 
     def test_click_failure_attaches_candidates(self):
-        src = self._src()
-        idx = src.index("Click failed after")
-        self.assertIn("describe_interactive_candidates",
-                      src[max(0, idx - 600):idx + 400])
+        self.assertTrue(
+            self._probe_is_called_in_the_handler_building("Click failed after"),
+            "the click failure path no longer asks what IS on the page")
 
 
 if __name__ == "__main__":

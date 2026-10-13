@@ -92,8 +92,36 @@ def test_a_real_candidate_list_is_unchanged():
     assert hint("{tag='input'}") == " Interactable elements on this page: {tag='input'}"
 
 
-def test_a_failed_probe_still_adds_nothing():
-    assert hint("") == ""
+def test_a_failed_probe_says_it_could_not_look():
+    """#1203il REPLACED this assertion, and the reason matters.
+
+    It used to read `assert hint("") == ""` — a bare snapshot of the implementation with no
+    stated reason. The reason THIS file gives for leaving the probe's `""` untouched is
+    specific: "claiming 'the page is empty' when we failed to look would be worse than saying
+    nothing." That forbids one particular false claim; it does not require silence.
+
+    And silence had a measured cost. Over r182-r185, 186 browser_fill/browser_click failures:
+    152 carried the candidate list, 8 said the page is empty, and 26 said NOTHING at all
+    (r182 5/33, r183 7/46, r184 6/28, r185 8/79). Those 26 read to the agent exactly like a
+    framework with no #362 — `Fill failed: Page.fill: Timeout 5000ms exceeded.` and nothing
+    else — so it goes on guessing selectors, the loop #362 exists to end.
+
+    So the rendering now names the real condition (the page could not be inspected, this
+    failure is NOT evidence about the selector) while still never claiming the page is empty —
+    which `test_a_failed_probe_never_claims_the_page_is_empty` below pins.
+    """
+    out = hint("")
+    assert out.strip(), "the could-not-look case is silent again"
+    assert "could not be inspected" in out
+    assert "NO evidence" in out
+
+
+def test_a_failed_probe_never_claims_the_page_is_empty():
+    """This file's own rule, kept: the one thing the could-not-look rendering must not do."""
+    out = hint("")
+    assert "NO interactable elements" not in out
+    assert "blank" not in out
+    assert out != hint(EMPTY)
 
 
 def test_the_three_renderings_are_distinct():
@@ -102,12 +130,49 @@ def test_the_three_renderings_are_distinct():
 
 # --- both call sites use it -----------------------------------------------------------------
 
+def _non_docstring_strings(fn):
+    """Every string constant in `fn` EXCEPT its own docstring.
+
+    #1203il's renderer quotes the literal `Fill failed: Page.fill: Timeout 5000ms exceeded.`
+    inside its docstring to explain what the agent used to see. A search for the function that
+    BUILDS that message then matched the renderer itself — the fifth time in one session that
+    an assertion read my own prose instead of the code. Skip the docstring and the match is
+    about behaviour again.
+    """
+    import ast
+    body = list(getattr(fn, "body", []) or [])
+    doc = None
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        doc = body[0].value
+    out = []
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and node is not doc):
+            out.append(node.value)
+    return out
+
+
 def test_fill_uses_the_shared_renderer():
+    """Function-scoped, not a 400-byte window before the literal: #1203il grew the renderer's
+    docstring and the window stopped reaching the call it was looking for, though the call had
+    not moved (#943 — use landmark/structural anchors, never byte windows)."""
+    import ast
     import inspect
     from env_generator.llm_generator.tools.browser import interaction as ix
-    src = inspect.getsource(ix)
-    i = src.index("Fill failed:")
-    assert "_candidates_hint_688(_cands)" in src[max(0, i - 400):i]
+    tree = ast.parse(inspect.getsource(ix))
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any("Fill failed:" in c for c in _non_docstring_strings(fn)):
+            continue
+        called = {c.func.id for c in ast.walk(fn)
+                  if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+        assert "_candidates_hint_688" in called, (
+            "the fill failure builds its hint without the shared renderer")
+        return
+    raise AssertionError("no function builds the 'Fill failed:' message any more")
 
 
 def test_click_uses_the_shared_renderer():

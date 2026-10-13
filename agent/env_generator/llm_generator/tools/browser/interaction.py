@@ -38,12 +38,38 @@ _CANDIDATE_ATTRS = ("name", "id", "placeholder", "aria-label", "type", "data-tes
 
 
 def _candidates_hint_688(cands: str) -> str:
-    """Render #362's candidate list, keeping "empty page" distinct from "could not look"."""
+    """Render #362's candidate list, keeping "empty page" distinct from "could not look".
+
+    #1203il: THE THIRD CASE WAS RENDERED AS SILENCE. #688's own note above
+    `_EMPTY_PAGE_688` says `""` "still means 'could not look'" and that "callers must render
+    these two differently" — and this one did render them differently, by saying nothing at
+    all for the probe that could not run. To the agent that is indistinguishable from a
+    framework with no #362 at all: it sees `Fill failed: Page.fill: Timeout 5000ms exceeded.`
+    and goes on guessing selectors, which is the exact loop #362 was built to end (r91: 52
+    identical browser_fill failures on `input[name='username']` in one verifier).
+
+    Measured over r182-r185: 186 browser_fill/browser_click failures, 152 carrying the
+    candidate list and 8 saying the page is empty — and 26 saying NOTHING. Per run: r182
+    5/33, r183 7/46, r184 6/28, r185 8/79.
+
+    `describe_interactive_candidates` is right to keep returning `""` there — "saying 'the
+    page is empty' when we failed to look would be worse than saying nothing" — so the fix
+    belongs here, in the rendering, not in the probe. The two ways it happens are `page is
+    None` and `query_selector_all` raising, which is a page that closed, navigated, or is
+    being torn down mid-interaction; that is a different next step from a wrong selector,
+    so it has to be said.
+    """
     if cands == _EMPTY_PAGE_688:
         return (" This page has NO interactable elements at all — it is blank or never "
                 "hydrated, so no selector can match. Do not try another selector: check that "
                 "the route rendered (navigate again and read the content) before interacting.")
-    return f" Interactable elements on this page: {cands}" if cands else ""
+    if not cands:
+        return (" NOTE: the page could not be inspected, so this failure carries NO evidence "
+                "about your selector — do not conclude from it that the selector is wrong or "
+                "right. The page was gone or unreadable when we looked (closed, navigating, "
+                "or being torn down). Re-open/navigate to the route, confirm it rendered, "
+                "then retry the same locator once before changing it (#1203il).")
+    return f" Interactable elements on this page: {cands}"
 
 
 # #688: the sentinel for "the probe RAN and the page offers nothing", as distinct from "" which
