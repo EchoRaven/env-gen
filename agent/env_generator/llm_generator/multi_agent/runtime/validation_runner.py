@@ -2475,7 +2475,19 @@ def run_smoke_validation(
                 # and NOT ONE of them mentioned it". So the lane reading a remediation task
                 # was NOT in the dark; I overestimated this patch before checking.
                 #
-                # What this adds is the SECOND exit: the validation report's own
+                # CORRECTED TWICE. The first correction found the gate's copy
+                # (`_build_currency_caveat_1202vn`). r187 then showed a THIRD: `test_api`'s
+                # own 401 hint carries `_stale_image_note_1202qs`, which says the same thing
+                # in the same words —
+                #     "NOTE: app/ has changed since the running image was built, so this
+                #      response may come from the OLD code. Re-run validation (it rebuilds)
+                #      and re-check before filing this as a defect"
+                # So this fact already had TWO emitters before #1203ik, not one, and the
+                # agent hitting a stale endpoint was being told directly. Twice I assumed a
+                # gap and twice the framework had it covered; the honest scope of #1203ik is
+                # therefore narrow.
+                #
+                # What this adds is a THIRD exit: the validation report's own
                 # `business_chain` check, which `framework_validation` and the run log read
                 # and which carries no caveat of its own. One fact, two emitters, and the
                 # gate's copy does not reach this one — so both say it, in their own words.

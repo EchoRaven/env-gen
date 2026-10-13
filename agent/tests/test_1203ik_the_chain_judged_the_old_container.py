@@ -221,3 +221,29 @@ def test_the_gate_keeps_its_own_copy_of_this_fact():
     assert called, (
         "the caveat is defined but never CALLED, so the business_chain blocker no longer "
         "carries it — #1203ik only covers the validation report")
+
+
+def test_test_api_is_the_third_emitter_of_this_fact():
+    """★ SCOPE, corrected a SECOND time. r187 revealed a third emitter.
+
+    The first correction found the delivery gate's copy (`_build_currency_caveat_1202vn`).
+    Then r187's single 401 turned out to carry `_stale_image_note_1202qs` from `test_api`,
+    saying the same thing in the same words:
+
+        "NOTE: app/ has changed since the running image was built, so this response may come
+         from the OLD code. Re-run validation (it rebuilds) and re-check before filing this
+         as a defect"
+
+    So this fact had TWO emitters before #1203ik, not one, and an agent hitting a stale
+    endpoint was being told directly. Twice I assumed a gap and twice the framework had it
+    covered. Pinned so the next reader sees all three and does not re-derive the scope a
+    third time; #1203ik's honest contribution is the validation report alone.
+    """
+    import pathlib
+    rt = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/tools/runtime_tools.py"
+    ).read_text(encoding="utf-8")
+    assert "_stale_image_note_1202qs" in rt, (
+        "test_api's stale-image note is gone — it was one of three emitters of this fact, "
+        "and #1203ik covers only the validation report")
+    assert "def _stale_image_note_1202qs" in rt or "_stale_image_note_1202qs(" in rt
