@@ -58,14 +58,35 @@ def test_the_source_line_is_bounded():
 
 
 def test_only_an_EMPTY_message_is_replaced():
-    """A normal exception keeps its own message — the call site guards on `.strip()`."""
+    """A normal exception keeps its own message — the call site guards on `.strip()`.
+
+    Ordered by AST line number, not by `str.index` on a source literal. The literal version
+    pinned `error_msg = str(e)[:200]`, so #1203im replacing that cut with
+    `_error_msg_1203im(e)` raised ValueError ("substring not found") although the property —
+    assign, then guard on `.strip()`, then substitute — was untouched. What matters is the
+    ORDER of the three statements, so assert that directly.
+    """
+    import ast
     import inspect
     from utils import llm
     src = inspect.getsource(llm)
-    i_call = src.index("error_msg = _blank_error_origin(e)")
-    i_guard = src.rindex("if not error_msg.strip():", 0, i_call)
-    i_assign = src.rindex("error_msg = str(e)[:200]", 0, i_guard)
-    assert i_assign < i_guard < i_call, (i_assign, i_guard, i_call)
+    tree = ast.parse(src)
+
+    assigns, guards, calls = [], [], []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "error_msg" for t in node.targets):
+            seg = ast.get_source_segment(src, node.value) or ""
+            (calls if "_blank_error_origin" in seg else assigns).append(node.lineno)
+        if isinstance(node, ast.If):
+            if "not error_msg.strip()" in (ast.get_source_segment(src, node.test) or ""):
+                guards.append(node.lineno)
+
+    assert assigns, "error_msg is never given the exception's own message"
+    assert guards, "the empty-message guard on error_msg.strip() is gone"
+    assert calls, "_blank_error_origin is no longer the substitute"
+    first_assign, guard, call = min(assigns), min(guards), min(calls)
+    assert first_assign < guard < call, (first_assign, guard, call)
 
 
 if __name__ == "__main__":  # pragma: no cover

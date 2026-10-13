@@ -1120,6 +1120,51 @@ _LLM_USAGE = {"calls": 0, "prompt": 0, "cached": 0, "completion": 0, "cache_unre
               "failed_no_retry_by_error": {}}
 
 
+def _error_msg_1203im(err: Any, cap: int = 200) -> str:
+    """`str(err)` capped at `cap`, with the provider's CLASSIFYING fields kept.
+
+    #1203im: `str(e)[:200]` cut 429 bodies in exactly the wrong place. Measured over
+    r183-r186: all 271 logged 429s are exactly 200 characters long and every one of them
+    stops at
+
+        ... 'type': 'insufficient_quo
+
+    which splits `insufficient_quota` in half — the one token that says whether a 429 is
+    throttling or an exhausted balance. #1159 and #1174 both turn on that distinction, and
+    `_is_terminal_llm_error` reads the exception object so the DECISION was never affected;
+    what was affected is every human and every later analysis reading the log.
+
+    I was the measurable victim: grepping these logs for `insufficient_quota` returned 0,
+    so I concluded the framework was retrying an exhausted balance as a throttle and spent a
+    full investigation before finding #1159/#1174 already handle it. The 400s were never
+    truncated (193-221 chars, `code: 'image_parse_error'` intact), which is why the same bug
+    never showed up there.
+
+    Appends only what the cut REMOVED, so a message that already fits is returned byte for
+    byte and nothing gets noisier (#1202vx: the explanation must not spend the evidence
+    budget). Pure, never raises.
+    """
+    try:
+        s = str(err)
+    except Exception:
+        return ""
+    if len(s) <= cap:
+        return s
+    head = s[:cap]
+    kept = []
+    for field in ("type", "code"):
+        import re as _re1203im
+        m = _re1203im.search(r"'%s': '([^']{1,60})'" % field, s)
+        if not m:
+            continue
+        if m.group(0) in head:
+            continue            # already survived the cut
+        kept.append("%s=%s" % (field, m.group(1)))
+    if not kept:
+        return head
+    return "%s …[%s]" % (head, " ".join(kept))
+
+
 def record_llm_retry_1202wr(elapsed_sec: Any = 0.0, error_type: Any = None) -> None:
     """One failed attempt that will be retried, and the seconds it burned. Never raises.
 
@@ -2283,7 +2328,11 @@ class BaseLLMClient(ABC):
                 # so `retries` counted exceptions caught rather than attempts re-sent.
                 last_error = e
                 error_type = type(e).__name__
-                error_msg = str(e)[:200]  # Truncate long errors
+                # #1203im: keep the provider's classifying fields when the cut lands on
+                # them. All 271 logged 429s across r183-r186 were cut at
+                # `'type': 'insufficient_quo`, hiding the one token that says throttle vs
+                # exhausted balance.
+                error_msg = _error_msg_1203im(e)
                 if not error_msg.strip():
                     # #582: a bare exception (classically `assert x` with no message) logged as
                     # "[AssertionError] " and nothing else — 2313 such 3-attempt failure groups
