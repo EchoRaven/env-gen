@@ -122,3 +122,80 @@ def test_the_bisect_never_replaces_the_recovered_response():
     assert "_calls1203io < 12" in code, "the probe loop is uncapped"
     assert "_is_unchanged_payload_400_1203i8(_e1203io)" in code, (
         "a DIFFERENT error must stop the bisect rather than be read as a culprit signal")
+
+
+# ---------------------------------------------------------------- forensics
+from utils.llm import _image_part_forensics_1203io as forensics  # noqa: E402
+
+
+def _one(url):
+    return [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}]
+
+
+def test_a_truncated_base64_is_named_as_such():
+    """★ The question the bisect exists to enable. Planting a truncated base64 into r184's
+    real screenshots and sending them to the real endpoint reproduces `image_parse_error`
+    while every file on disk is valid — so "was this part's base64 cut?" is the next
+    question, and it must be answered without logging the payload."""
+    import base64
+    good = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 400).decode()
+    out = forensics(_one("data:image/png;base64," + good[: len(good) // 3] + "QUJD"), (0, 0))
+    assert "b64_len=" in out
+    assert "b64_tail=" in out
+    # it is cut mid-image: either it fails to decode, or decodes but will not open
+    assert "decodes=NO" in out or "opens=NO" in out, out
+
+
+def test_a_valid_image_reports_clean():
+    import base64
+    import io as _io
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (4, 3), (1, 2, 3)).save(buf, format="PNG")
+    url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    out = forensics(_one(url), (0, 0))
+    assert "decodes=yes" in out and "opens=yes size=4x3" in out, out
+
+
+def test_it_never_logs_the_payload():
+    """★ A forensics line that dumps 700KB of base64 is unusable and may leak. Measurements
+    only — and the tail is bounded to a few characters."""
+    import base64
+    big = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"y" * 5000).decode()
+    out = forensics(_one("data:image/png;base64," + big), (0, 0))
+    assert len(out) < 300, len(out)
+    assert big[:64] not in out, "the payload itself is in the log line"
+
+
+@pytest.mark.parametrize("bad", [
+    [], [{"role": "user"}], [{"role": "user", "content": []}],
+    [{"role": "user", "content": [{"type": "text", "text": "x"}]}],
+])
+def test_forensics_never_raises(bad):
+    assert isinstance(forensics(bad, (0, 0)), str)
+
+
+def test_a_url_that_is_not_a_data_uri_says_so():
+    out = forensics(_one("https://example.com/a.png"), (0, 0))
+    assert "no data URI" in out
+
+
+def test_the_bisect_actually_calls_the_forensics():
+    """★ THE GUARD M3 needed. Replacing the forensics call with `""` left all 20 other
+    tests green, because they exercise the helper and never its caller — the same hole
+    #1203ii was written about ("evidence in a key nothing reads"). Pinned on the AST so the
+    bisect cannot name a part and then stay silent about what is wrong with it."""
+    import ast
+    import pathlib
+    src = pathlib.Path(_AGENT, "utils/llm.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == "_image_part_forensics_1203io"]
+    assert calls, (
+        "the bisect localises an image part and never says what is measurably wrong with "
+        "it — the one question it exists to enable")
+    # and it must be fed the SAME payload the bisect ran over, not a rebuilt one
+    seg = " ".join(ast.get_source_segment(src, c) or "" for c in calls)
+    assert "request_params" in seg, (
+        "the forensics is not reading the payload that was actually sent")

@@ -1934,6 +1934,49 @@ def _nontext_shape_1203if(messages: Any) -> str:
         return "(census unavailable)"
 
 
+def _image_part_forensics_1203io(messages: Any, where) -> str:
+    """What is measurably wrong with the image part at `where` — never its bytes.
+
+    #1203io. Once the bisect names a part, the next question is always the same: is its
+    base64 TRUNCATED? That question now has a reason to be asked. Planting a truncated
+    base64 into r184's real screenshots and sending them to the real endpoint reproduces
+    `image_parse_error` exactly, while the files on disk are all valid — so a payload whose
+    base64 was cut in transit or in assembly is a cause that MATCHES the evidence, unlike
+    the six that were eliminated.
+
+    The encoder itself is clean (`base64.b64encode(f.read()).decode()`, no cap), so the cut
+    is not there and this is what will say where it IS: length, the tail (a truncated base64
+    ends mid-quantum), whether it decodes, and whether the decoded bytes open as an image.
+    Logs no payload — only measurements.
+    """
+    try:
+        import base64 as _b64
+        i, j = where
+        part = (messages[i].get("content") or [])[j]
+        url = str(((part or {}).get("image_url") or {}).get("url") or "")
+        if "," not in url:
+            return "no data URI (url starts %r)" % url[:40]
+        head, b64 = url.split(",", 1)
+        out = ["mime=%s" % head[:40], "b64_len=%d" % len(b64),
+               "b64_tail=%r" % b64[-12:], "len%%4=%d" % (len(b64) % 4)]
+        try:
+            raw = _b64.b64decode(b64, validate=True)
+            out.append("decodes=yes bytes=%d" % len(raw))
+            try:
+                from PIL import Image as _Img
+                import io as _io
+                with _Img.open(_io.BytesIO(raw)) as im:
+                    im.load()
+                out.append("opens=yes size=%dx%d" % im.size)
+            except Exception as _e:
+                out.append("opens=NO (%s: %s)" % (type(_e).__name__, str(_e)[:60]))
+        except Exception as _e:
+            out.append("decodes=NO (%s: %s)" % (type(_e).__name__, str(_e)[:60]))
+        return "; ".join(out)
+    except Exception as _e:
+        return "(forensics unavailable: %s)" % type(_e).__name__
+
+
 def _image_part_index_1203io(messages: Any):
     """`[(msg_index, part_index)]` for every inline image part, in wire order.
 
@@ -3199,8 +3242,11 @@ class OpenAIClient(BaseLLMClient):
                                     "messages[%d].content[%d] after %d probe(s). THIS IS THE "
                                     "FACT SIX ELIMINATIONS COULD NOT GET — the provider's 400 "
                                     "names no part (`'param': None`) and the file validates "
-                                    "on its own. Dump that exact part to settle what is wrong "
-                                    "with it.", _m1203io, _p1203io, _calls1203io)
+                                    "on its own. What is measurably wrong with that part "
+                                    "follows: %s", _m1203io, _p1203io, _calls1203io,
+                                    _image_part_forensics_1203io(
+                                        request_params.get("messages"),
+                                        (_m1203io, _p1203io)))
                             else:
                                 self._logger.error(
                                     "[LLM] #1203io bisect did not isolate one image after %d "
