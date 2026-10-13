@@ -75,17 +75,34 @@ def test_the_detail_puts_the_stack_before_the_code():
     rebuild-first rather than let the reader treat a stale verdict as a code defect."""
     blk = _ik_block()
     assert "STACK FIRST, THEN CODE" in blk
-    assert "REBUILD AND\n" in blk or "REBUILD AND " in blk
-    assert "re-run the validation" in blk
+    assert "do not edit code to satisfy it" in blk, (
+        "the one conclusion the owner's detail does NOT draw must be stated")
+    # ★ and it must NOT restate what the owner already says. Driving this with r186's real
+    # verdict showed the first wording repeating "app/ has changed" twice and "rebuild and
+    # recreate" three times — #1202vx: the explanation must not spend the evidence budget.
+    code = _ik_code()
+    assert "app/ has changed" not in code, "the note restates the owner's own detail"
+    assert "REBUILD AND RECREATE" not in code, (
+        "the owner's detail already ends in 'rebuild AND recreate the stack'")
+    # ★ and the quoted sentence must be terminated. build_currency_1202ex's `changed` detail
+    # ends "...before trusting these results" with NO period, so quoting it inline ran two
+    # sentences together. The unit fixture ended in a period and hid it; a real run's verdict
+    # showed it.
+    assert 'endswith((".", "!", "?"))' in code, (
+        "the quoted verdict is not terminated, so it runs into the next sentence")
     # ★ and the original detail must REACH the message — this annotates, it does not
     # replace. Asserting only that `_business_chain_detail(` is called left a mutation
     # green that formatted the note with an empty body: the call existed, its result was
     # dropped. Pin the interpolation itself.
     code = _ik_code()
     assert "_business_chain_detail(" in code
-    assert "% (_stale1203ik, _detail1203ik)" in code, (
+    # Bound to the LAST interpolated argument, not to the first one's name: the first is the
+    # terminated copy of the owner's verdict and was renamed once already. What must hold is
+    # that the real failure text still reaches the message.
+    assert ", _detail1203ik)" in code, (
         "the annotated detail does not interpolate the real failure text, so the steps "
         "that actually broke would not be reported")
+    assert "_stale1203ik" in code, "the note no longer quotes the owner's verdict"
 
 
 def test_the_kind_is_its_own_and_not_the_transport_one():

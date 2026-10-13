@@ -2509,13 +2509,26 @@ def run_smoke_validation(
                 _detail1203ik = _business_chain_detail(
                     _unmounted_lines_1202rc(_chain) + _chain["broken"], _chain_salient)
                 if _stale1203ik:
+                    # The owner's `detail` ALREADY says what changed, with both
+                    # fingerprints, and already ends in "rebuild AND recreate the stack
+                    # before trusting these results". Driving this with a real run's
+                    # verdict (tiktok-web-r186) showed my first wording repeating all of
+                    # that ahead of it — "app/ has changed..." twice and "rebuild and
+                    # recreate" three times — which is #1202vx's rule (the explanation must
+                    # not spend the evidence budget) broken by my own note. The unit tests
+                    # used a short fixture, so only real data showed it. So: quote the
+                    # owner once and add ONLY the conclusion it does not draw.
+                    # The owner's sentence ends "...before trusting these results" with no
+                    # terminator, so quoting it inline ran two sentences together —
+                    # "...these results Until that is done...". Found by rendering it with a
+                    # real run's verdict; the fixture in the unit test ended in a period and
+                    # hid it.
+                    _lead1203ik = (_stale1203ik if _stale1203ik.endswith((".", "!", "?"))
+                                   else _stale1203ik + ".")
                     _detail1203ik = (
-                        "STACK FIRST, THEN CODE — app/ has changed since the running image "
-                        "was built, so these steps may have exercised the OLD handler and "
-                        "this verdict is not yet about the source on disk (%s). REBUILD AND "
-                        "RECREATE the stack, re-run the validation, and only treat what "
-                        "still fails as a code defect (#1202ex/#1203ik).\n\n%s"
-                        % (_stale1203ik, _detail1203ik))
+                        "STACK FIRST, THEN CODE — %s Until that is done this verdict is not "
+                        "about the source on disk, so do not edit code to satisfy it "
+                        "(#1203ik).\n\n%s" % (_lead1203ik, _detail1203ik))
                 _add("business_chain", False, _detail1203ik,
                      kind="stale_image_1203ik" if _stale1203ik else "")
             elif _chain.get("environment_1202od"):
