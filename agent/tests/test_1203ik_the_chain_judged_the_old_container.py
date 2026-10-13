@@ -163,3 +163,29 @@ def test_the_branch_is_reachable_in_the_broken_chain_path():
             assert isinstance(node.args[1], ast.Constant) and node.args[1].value is False
             found = True
     assert found, "no _add('business_chain', False, ..., kind=stale_image_1203ik) call exists"
+
+
+def test_the_stale_kind_is_not_mistaken_for_an_exoneration():
+    """★ A stale image must NOT clear the tick the way #1202od does.
+
+    `_not_the_apps_1203e5` exonerates a whole failing tick when every failure is "not the
+    app's", and it recognises exactly `environment_1202od` — the chains never REACHED the
+    app, so nothing was judged. A stale image is a different kind: the chains DID reach the
+    app and DID judge code, just an older copy. A failure on the old handler may still be
+    present in the new source, so clearing it wholesale would whitewash real defects.
+
+    Pinned because the tempting "fix" for #1203ik's kind having no consumer is to add it to
+    that helper, and that would be the wrong consumer. The right one is a rebuild+recreate
+    before the next validation — not an exoneration, and not a retry (which is #1202od's
+    remedy and would re-run against the same container).
+    """
+    import pathlib
+    fv = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/multi_agent/runtime/framework_validation.py"
+    ).read_text(encoding="utf-8")
+    start = fv.index("def _not_the_apps_1203e5")
+    body = fv[start:start + 600]
+    assert "environment_1202od" in body, "the exoneration helper changed shape"
+    assert "stale_image_1203ik" not in body, (
+        "a stale image is being exonerated like an unreachable app — a failure judged on "
+        "the old handler may still exist in the new source")

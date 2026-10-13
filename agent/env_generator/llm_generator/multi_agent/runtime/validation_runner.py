@@ -2529,6 +2529,22 @@ def run_smoke_validation(
                         "STACK FIRST, THEN CODE — %s Until that is done this verdict is not "
                         "about the source on disk, so do not edit code to satisfy it "
                         "(#1203ik).\n\n%s" % (_lead1203ik, _detail1203ik))
+                # The kind is DELIBERATELY not one `_not_the_apps_1203e5` exonerates.
+                # That helper clears a whole failing tick when every failure is "not the
+                # app's", and it recognises `environment_1202od` — the chains never REACHED
+                # the app, so nothing was judged. A stale image is different in kind: the
+                # chains did reach the app and did judge code, just an older copy of it. A
+                # failure on the old handler may well still be present in the new source, so
+                # exonerating it wholesale would whitewash real defects, which is the
+                # opposite of what #1023 warns about in the other direction.
+                #
+                # So this field carries the verdict's SHAPE (#1203e5: "say it in a field, not
+                # only in English") and has no programmatic consumer yet, on purpose. The
+                # right consumer, when one is built, is a rebuild+recreate before the next
+                # validation — NOT an exoneration and NOT a retry (which is
+                # `environment_1202od`'s remedy and would re-run against the same old
+                # container). That decision changes what the orchestrator does on a failing
+                # tick, so it needs a run to validate and is not being taken blind here.
                 _add("business_chain", False, _detail1203ik,
                      kind="stale_image_1203ik" if _stale1203ik else "")
             elif _chain.get("environment_1202od"):
