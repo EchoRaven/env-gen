@@ -1934,6 +1934,67 @@ def _nontext_shape_1203if(messages: Any) -> str:
         return "(census unavailable)"
 
 
+def _image_part_index_1203io(messages: Any):
+    """`[(msg_index, part_index)]` for every inline image part, in wire order.
+
+    #1203io. `#1203if` drops them ALL and retries once; when that retry SUCCEEDS it has
+    proven the images were the cause but not WHICH one. The provider cannot say — its 400
+    carries `'param': None` and 193 characters that name no part — and every image on disk
+    validates on its own, which is why six separate eliminations found nothing. A bisect over
+    this index is the only thing that can produce the missing fact.
+    """
+    try:
+        out = []
+        for i, m in enumerate(messages or []):
+            content = m.get("content") if isinstance(m, dict) else None
+            if not isinstance(content, (list, tuple)):
+                continue
+            for j, part in enumerate(content):
+                t = part.get("type") if isinstance(part, dict) else None
+                if t == "image_url":
+                    out.append((i, j))
+        return out
+    except Exception:
+        return []
+
+
+def _keep_only_image_parts_1203io(messages: Any, keep):
+    """A copy of `messages` holding ONLY the image parts whose (msg, part) is in `keep`.
+
+    #1203io. Every other image becomes the same placeholder `_strip_inline_images_1203if`
+    uses, so each probe differs from the proven-good payload by exactly the images under
+    test. Never mutates the caller's list — the recovered response was built from it and the
+    original exception may still be re-raised.
+    """
+    try:
+        keep = set(keep or ())
+        out = []
+        for i, m in enumerate(messages or []):
+            content = m.get("content") if isinstance(m, dict) else None
+            if not isinstance(m, dict) or not isinstance(content, (list, tuple)):
+                out.append(m)
+                continue
+            parts, changed = [], False
+            for j, part in enumerate(content):
+                t = part.get("type") if isinstance(part, dict) else None
+                if t == "image_url" and (i, j) not in keep:
+                    parts.append({"type": "text", "text":
+                                  "[inline image dropped — bisecting which one the "
+                                  "provider cannot parse (#1203io)]"})
+                    changed = True
+                    continue
+                parts.append(part)
+            if changed:
+                _m = dict(m)
+                _m["content"] = parts
+                out.append(_m)
+            else:
+                out.append(m)
+        return out
+    except Exception:
+        return messages
+
+
 def _strip_inline_images_1203if(messages: Any):
     """Return (messages, n) with every `image_url` part replaced by a text placeholder.
 
@@ -3092,6 +3153,66 @@ class OpenAIClient(BaseLLMClient):
                         "seeing the reference screenshots is degraded until it views them "
                         "again (#40).", _n1203if)
                     response = _resp1203if
+                    # #1203io: THE RETRY SUCCEEDING IS A PROOF, SO SPEND A LITTLE TO USE IT.
+                    #
+                    # The images were the cause — the same conversation was refused with
+                    # them and accepted without. WHICH image is the fact six eliminations
+                    # could not get: the provider's 400 is 193 characters with `'param':
+                    # None`, and every reference PNG loads on its own (33 in r184, 11 in
+                    # r183), as does every one of the 4415 compression-cache entries.
+                    #
+                    # So bisect. Each probe re-sends the proven-good payload with ONE HALF of
+                    # the images restored, which differs from it by exactly the images under
+                    # test. ceil(log2(n)) + 1 calls — 5 for r184's 11 images — against a
+                    # conversation that had been losing EVERY call (49 across four phases in
+                    # r184), so the ratio is not close.
+                    #
+                    # Diagnosis only: `response` is already the recovered one and is NEVER
+                    # replaced here, so a bisect that fails or raises changes nothing the
+                    # caller sees. Guarded end to end for that reason, and capped so a
+                    # pathological payload cannot spin.
+                    try:
+                        _idx1203io = _image_part_index_1203io(
+                            request_params.get("messages"))
+                        if len(_idx1203io) >= 2:
+                            _lo1203io = list(_idx1203io)
+                            _calls1203io = 0
+                            while len(_lo1203io) > 1 and _calls1203io < 12:
+                                _half1203io = _lo1203io[:max(1, len(_lo1203io) // 2)]
+                                _rp1203io = dict(request_params)
+                                _rp1203io["messages"] = _keep_only_image_parts_1203io(
+                                    request_params.get("messages"), _half1203io)
+                                _calls1203io += 1
+                                try:
+                                    await client.chat.completions.create(**_rp1203io)
+                                except Exception as _e1203io:
+                                    if not _is_unchanged_payload_400_1203i8(_e1203io):
+                                        raise           # a different error: stop, say nothing
+                                    _lo1203io = _half1203io          # culprit is in this half
+                                    continue
+                                # this half is FINE, so the culprit is in the other one
+                                _lo1203io = _lo1203io[len(_half1203io):]
+                            if len(_lo1203io) == 1:
+                                _m1203io, _p1203io = _lo1203io[0]
+                                self._logger.error(
+                                    "[LLM] #1203io BISECTED the unparseable image to "
+                                    "messages[%d].content[%d] after %d probe(s). THIS IS THE "
+                                    "FACT SIX ELIMINATIONS COULD NOT GET — the provider's 400 "
+                                    "names no part (`'param': None`) and the file validates "
+                                    "on its own. Dump that exact part to settle what is wrong "
+                                    "with it.", _m1203io, _p1203io, _calls1203io)
+                            else:
+                                self._logger.error(
+                                    "[LLM] #1203io bisect did not isolate one image after %d "
+                                    "probe(s) (%d candidate(s) left). That is itself new: no "
+                                    "single image is at fault, so the rejection is about the "
+                                    "SET or its total — which no single-file check could have "
+                                    "shown.", _calls1203io, len(_lo1203io))
+                    except Exception as _e1203io2:
+                        self._logger.error(
+                            "[LLM] #1203io bisect abandoned (%s) — the recovered response "
+                            "above still stands; only the which-image diagnosis is missing.",
+                            type(_e1203io2).__name__)
                 else:
                     self._logger.error(
                         "[LLM] #1203if nothing to drop: the payload carries no inline image "
