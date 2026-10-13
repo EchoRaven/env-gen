@@ -2447,6 +2447,37 @@ def _stale_image_note_1202qs(hubs) -> str:
         return ""
 
 
+# #1203ij: the terminal path segments that MINT or REFRESH credentials.
+#
+# Mirrors the list the framework itself generates into every app's auth middleware
+# (`backend_scaffold.py`, #235: "An auth ENTRY point (mints/refreshes credentials, terminal
+# segment below) is public by construction"). It is a template string there, not an importable
+# predicate, so it is restated here and `test_1203ij_*` asserts the two never drift — #1032's
+# rule is that a literal duplicated without a guard fails silently on the day someone edits
+# one copy.
+_AUTH_ENTRY_TERMINALS_1203ij = (
+    "login", "register", "signup", "signin", "token", "refresh", "logout")
+
+
+def _is_auth_entry_endpoint_1203ij(url: Any) -> str:
+    """`POST /auth/login`-style path when this URL is an auth ENTRY point, else ``""``.
+
+    Keyed on the terminal segment, not on a `/auth/` prefix: the call this exists for is a
+    bare `POST /auth/login`, and r25 shipped `/api/auth/signup` — #235 records that a literal
+    whitelist walled that synonym and cost a 108-minute livelock. Never raises; an unparseable
+    URL simply is not an auth entry point, which leaves the old behaviour in place.
+    """
+    try:
+        from urllib.parse import urlsplit as _us1203ij
+        path = _us1203ij(str(url or "")).path or ""
+        seg = path.rstrip("/").rsplit("/", 1)[-1].lower()
+        if seg in _AUTH_ENTRY_TERMINALS_1203ij:
+            return path.rstrip("/") or path
+        return ""
+    except Exception:
+        return ""
+
+
 def _contract_says_public_1202qp(hubs, method, url):
     """'GET /api/x' when the live contract registers this request's endpoint auth_required=false,
     else None. Matches {param} templates; never raises."""
@@ -2650,8 +2681,48 @@ To test them, get a token first, then pass it as a header:
                     _stale_1202qs = _stale_image_note_1202qs(self._hubs)
                     if _stale_1202qs:
                         hint += _stale_1202qs
-                    _public_1202qp = _contract_says_public_1202qp(self._hubs, method, url)
-                    if _public_1202qp:
+                    # #1203ij: AN AUTH ENTRY POINT'S 401 MEANS BAD CREDENTIALS, NOT
+                    # ENFORCEMENT. The branch above keys on "401/403 with no Authorization
+                    # header", which cannot tell apart the two things a 401 can mean:
+                    #   (a) this endpoint is protected and you sent no token;
+                    #   (b) this endpoint VERIFIES credentials and the ones you sent are wrong.
+                    # For /auth/login the answer is always (b) — it needs no token, so it can
+                    # never reject one for being absent. Proven on the framework's own stack,
+                    # not inferred: the enforcement middleware only guards paths starting
+                    # `/api/` (and exempts the `/api/auth/<login|register|…>` terminals), so a
+                    # bare `POST /auth/login` never reaches it; the handler's signature is
+                    # `async def auth_login(request: Request)` with no auth dependency; and its
+                    # only 401 is `if not user: {"detail": "invalid credentials"}`.
+                    #
+                    # So the message below told the agent to "Find why auth is enforced: a
+                    # stale image (re-run validation to rebuild)" about an endpoint where
+                    # nothing is enforced — pointing it at an expensive rebuild for a problem
+                    # that does not exist, while the real next step (register a user first,
+                    # then log in with those credentials) went unsaid. 102 times across four
+                    # runs: r182 57, r183 23, r184 6, r185 16.
+                    #
+                    # #1202qp's own case is untouched: tiktok-r127's `GET /api/videos/feed`
+                    # registered public and answering 401 is (a), and a feed is not an auth
+                    # entry point, so it still gets the contract-disagreement message.
+                    _authentry_1203ij = _is_auth_entry_endpoint_1203ij(url)
+                    _public_1202qp = (
+                        None if _authentry_1203ij
+                        else _contract_says_public_1202qp(self._hubs, method, url))
+                    if _authentry_1203ij:
+                        hint = (
+                            f" — {_authentry_1203ij} is an AUTH ENTRY POINT: its job is to "
+                            "verify credentials, and it requires no token, so this 401 means "
+                            "THE CREDENTIALS WERE REJECTED — not that auth is enforced here. "
+                            "Do NOT re-run validation or hunt a stale image for it. Create the "
+                            "user first (POST your register/signup endpoint), then log in with "
+                            "exactly those credentials; mind the body shape the contract "
+                            "declares (identifier vs email vs username) and send the same "
+                            "X-Tenant-Id you registered with."
+                        )
+                        if "invalid credentials" in (content or "") or "invalid_client" in (content or ""):
+                            # the framework's own literals, so this is the server agreeing
+                            hint += " The response body confirms it: " + str(content)[:120]
+                    elif _public_1202qp:
                         hint = (
                             f" — the CONTRACT declares {_public_1202qp} PUBLIC (auth_required=false), "
                             "yet the running app rejected a tokenless request: the served app "
