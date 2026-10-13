@@ -189,3 +189,35 @@ def test_the_stale_kind_is_not_mistaken_for_an_exoneration():
     assert "stale_image_1203ik" not in body, (
         "a stale image is being exonerated like an unreachable app — a failure judged on "
         "the old handler may still exist in the new source")
+
+
+def test_the_gate_keeps_its_own_copy_of_this_fact():
+    """★ SCOPE. The delivery gate said this first, and #1203ik is the SECOND exit.
+
+    `_build_currency_caveat_1202vn` appends the same fact to the `business_chain_failing`
+    blocker, for the identical reason ("tiktok-r136 ... the warning fired 36 times into the
+    log while 43 gate snapshots carried a `business_chain_failing` detail and NOT ONE of them
+    mentioned it"). I overestimated #1203ik before reading that — the lane reading a
+    remediation task was not in the dark.
+
+    Pinned so the overlap stays visible: if #1202vn's copy is ever removed, this reddens and
+    whoever removed it learns that #1203ik does NOT cover the blocker path.
+    """
+    import pathlib
+    dg = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/multi_agent/runtime/delivery_gate.py"
+    ).read_text(encoding="utf-8")
+    assert "def _build_currency_caveat_1202vn" in dg, (
+        "#1202vn's caveat is gone — #1203ik only covers the validation report, NOT the "
+        "delivery-gate blocker the lane's remediation is built from")
+    # Pinned on the CALL via AST, not a substring: `def
+    # _build_currency_caveat_1202vn(authored) -> str:` contains the same text, so deleting
+    # the call left this green as a mutation — the assertion was reading the definition.
+    import ast
+    tree = ast.parse(dg)
+    called = [n for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+              and n.func.id == "_build_currency_caveat_1202vn"]
+    assert called, (
+        "the caveat is defined but never CALLED, so the business_chain blocker no longer "
+        "carries it — #1203ik only covers the validation report")

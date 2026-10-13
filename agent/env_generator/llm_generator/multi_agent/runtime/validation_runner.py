@@ -2467,6 +2467,22 @@ def run_smoke_validation(
                         _chain_salient = ""
                 # #1203ik: SAY THAT THESE STEPS MAY HAVE JUDGED THE OLD CODE.
                 #
+                # SCOPE, corrected after reading the other half (2026-10-13): the DELIVERY
+                # GATE already says this. `_build_currency_caveat_1202vn` appends the same
+                # fact to the `business_chain_failing` blocker detail, and #1202vn exists for
+                # the identical reason — "tiktok-r136, live: the warning fired 36 times into
+                # the log while 43 gate snapshots carried a `business_chain_failing` detail
+                # and NOT ONE of them mentioned it". So the lane reading a remediation task
+                # was NOT in the dark; I overestimated this patch before checking.
+                #
+                # What this adds is the SECOND exit: the validation report's own
+                # `business_chain` check, which `framework_validation` and the run log read
+                # and which carries no caveat of its own. One fact, two emitters, and the
+                # gate's copy does not reach this one — so both say it, in their own words.
+                # If a future reader is deciding whether this is redundant: the test
+                # `test_the_stale_kind_is_not_mistaken_for_an_exoneration` pins the part that
+                # is NOT duplicated (the structured kind), and #1202vn owns the blocker copy.
+                #
                 # `build_currency_1202ex` already compares the source on disk against the
                 # image the stack is running, and `chain_executor` logs the answer one line
                 # before it runs the chains:
