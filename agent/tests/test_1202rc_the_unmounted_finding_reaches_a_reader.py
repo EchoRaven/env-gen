@@ -91,13 +91,59 @@ def test_a_clean_run_adds_no_line():
 
 
 def test_both_validation_branches_call_it():
-    src = (ROOT / "env_generator" / "llm_generator" / "multi_agent" / "runtime"
-           / "validation_runner.py").read_text(encoding="utf-8")
-    # landmark slices, not byte windows (#943): each branch runs to the next branch keyword
-    fail = src[src.index('_add("business_chain", False,'):src.index('elif _chain.get(')]
-    ok = src[src.index('elif _chain.get('):src.index("except Exception as _chain_exc")]
-    assert "_unmounted_lines_1202rc(" in fail, "the failing branch does not carry it"
-    assert "_unmounted_lines_1202rc(" in ok, "the PASSING branch does not carry it"
+    """Both the failing and the passing `business_chain` verdict must carry the unmounted
+    lines.
+
+    Tracked over the AST of the ENCLOSING BRANCH, not a source slice ending at the next
+    branch keyword. The slice version read only from `_add(...)` onward, so when #1203ik
+    moved the detail construction one line ABOVE the call — `_detail1203ik =
+    _business_chain_detail(_unmounted_lines_1202rc(_chain) + ...)` — the finding was still
+    carried and this went red anyway. A test that fails on a refactor which preserves the
+    property is measuring the wrong thing; walking the branch body catches the real
+    regression (the branch not carrying it at all) and nothing else.
+    """
+    import ast
+    path = (ROOT / "env_generator" / "llm_generator" / "multi_agent" / "runtime"
+            / "validation_runner.py")
+    src = path.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+
+    def _branch_carrying(add_value, must_mention):
+        """The `if`/`elif` body holding an `_add("business_chain", <value>)` whose branch also
+        mentions `must_mention`.
+
+        `must_mention` is what separates the THREE verdicts, not two: besides the broken
+        chain and the passing one there is #1202od's "the app was unreachable", which is also
+        `False` and legitimately carries no unmounted lines. Selecting "the smallest matching
+        branch" picked that one and read as a regression — the detector was wrong, not the
+        code.
+        """
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.If):
+                continue
+            for branch in (node.body, node.orelse):
+                txt = "\n".join(ast.dump(x) for x in branch)
+                if must_mention not in txt:
+                    continue
+                for stmt in branch:
+                    for c in ast.walk(stmt):
+                        if (isinstance(c, ast.Call)
+                                and isinstance(c.func, ast.Name) and c.func.id == "_add"
+                                and len(c.args) >= 2
+                                and isinstance(c.args[0], ast.Constant)
+                                and c.args[0].value == "business_chain"
+                                and isinstance(c.args[1], ast.Constant)
+                                and c.args[1].value is add_value):
+                            return txt
+        return None
+
+    # the broken-chain verdict is the one built from `_business_chain_detail`
+    fail = _branch_carrying(False, "_business_chain_detail")
+    ok = _branch_carrying(True, "total_steps")
+    assert fail, "no failing business_chain verdict found at all"
+    assert ok, "no passing business_chain verdict found at all"
+    assert "_unmounted_lines_1202rc" in fail, "the failing branch does not carry it"
+    assert "_unmounted_lines_1202rc" in ok, "the PASSING branch does not carry it"
 
 
 def test_the_count_and_the_list_agree():

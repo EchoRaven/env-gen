@@ -1,0 +1,148 @@
+"""#1203ik — the chains said the verdict could not be trusted, then handed it to the gate.
+
+`build_currency_1202ex` compares the source on disk against the image the stack is running,
+and `chain_executor` logs the answer one line BEFORE running the chains:
+
+    #1202ex: chains are about to judge an app whose image may not be the source on disk --
+    app/ has changed since the image was built (source fa236080a838, built 593a8566a717) --
+    the container may predate the handler under test; rebuild AND recreate the stack before
+    trusting these results
+
+It says the results cannot be trusted and then the next statement is
+`results = [execute_chain(...) for ch in chains]`. 31-47 times per run across r182-r185, and
+both directions cost: a chain that FAILS on stale code sends remediation to fix a defect the
+new source may no longer have, and one that PASSES on stale code clears the gate for code
+nobody tested.
+
+Same shape as #1202od one branch down — "not a pass (nothing was verified) and not the lanes'
+failure — say which it is, so the retry is the remedy" — but a DIFFERENT remedy, hence a
+different kind: a transport failure is retried, a stale image must be rebuilt AND recreated.
+Reusing `environment_1202od` would tell the agent to retry against the same old container
+forever.
+
+The check still reports False. The steps did fail; what changes is that the detail the
+remediation task is built from now names the stack as a suspect before the code.
+"""
+import ast
+import os
+import pathlib
+import sys
+
+_AGENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _AGENT)
+
+VR = pathlib.Path(
+    _AGENT, "env_generator/llm_generator/multi_agent/runtime/validation_runner.py")
+
+
+def _ik_block() -> str:
+    """Between landmarks, not a byte window (#943)."""
+    src = VR.read_text(encoding="utf-8")
+    start = src.index("#1203ik: SAY THAT THESE STEPS MAY HAVE JUDGED THE OLD CODE")
+    end = src.index("elif _chain.get(\"environment_1202od\")", start)
+    return src[start:end]
+
+
+def _ik_code() -> str:
+    return "\n".join(ln for ln in _ik_block().splitlines()
+                     if not ln.strip().startswith("#"))
+
+
+def test_the_currency_verdict_is_read_from_its_owner():
+    """#1032: one owner for the predicate. The answer must come from
+    `build_currency_1202ex`, not from a second comparison invented here."""
+    code = _ik_code()
+    assert "build_currency_1202ex" in code
+    assert '"changed"' in code, "the verdict compared against must be the owner's own value"
+
+
+def test_the_field_names_match_what_the_owner_returns():
+    """★ #1148 records that guessing a row's field names was "the fourth field-name miss of
+    this session's lineage". `build_currency_1202ex` documents
+    `{"verdict": ..., "detail": str}` — assert against the owner, so a rename there fails
+    here instead of silently rendering an empty note."""
+    ce = pathlib.Path(
+        _AGENT, "env_generator/llm_generator/multi_agent/runtime/chain_executor.py"
+    ).read_text(encoding="utf-8")
+    assert 'return {"verdict": "changed",' in ce, (
+        "build_currency_1202ex's return shape moved; #1203ik reads .get('verdict')/.get('detail')")
+    code = _ik_code()
+    assert '.get("verdict")' in code and '.get("detail")' in code
+
+
+def test_the_detail_puts_the_stack_before_the_code():
+    """The whole point: the remediation task is built from this detail, so it has to say
+    rebuild-first rather than let the reader treat a stale verdict as a code defect."""
+    blk = _ik_block()
+    assert "STACK FIRST, THEN CODE" in blk
+    assert "REBUILD AND\n" in blk or "REBUILD AND " in blk
+    assert "re-run the validation" in blk
+    # ★ and the original detail must REACH the message — this annotates, it does not
+    # replace. Asserting only that `_business_chain_detail(` is called left a mutation
+    # green that formatted the note with an empty body: the call existed, its result was
+    # dropped. Pin the interpolation itself.
+    code = _ik_code()
+    assert "_business_chain_detail(" in code
+    assert "% (_stale1203ik, _detail1203ik)" in code, (
+        "the annotated detail does not interpolate the real failure text, so the steps "
+        "that actually broke would not be reported")
+
+
+def test_the_kind_is_its_own_and_not_the_transport_one():
+    """★ Reusing #1202od's kind would prescribe the WRONG remedy: retry against the same
+    stale container. The remedies differ, so the kinds must."""
+    code = _ik_code()
+    assert 'kind="stale_image_1203ik"' in code
+    assert "environment_1202od" not in code, (
+        "the stale-image branch borrowed the transport kind, whose remedy is a retry")
+
+
+def test_the_check_still_fails_and_is_not_whitewashed():
+    """A stale image does not make a failing chain pass. #1023's lesson runs the other way
+    too: this must not become a free pass at the gate."""
+    code = _ik_code()
+    assert '_add("business_chain", False' in code
+    assert '_add("business_chain", True' not in code
+
+
+def test_the_annotation_only_applies_when_the_image_is_stale():
+    """A `current` or `unknown` verdict must leave the detail and the kind exactly as they
+    were — `unknown` especially, since #1202ex's own helper returns it when there is no
+    compose file or no fingerprint to compare, and that is not evidence of staleness."""
+    code = _ik_code()
+    assert 'if _stale1203ik:' in code
+    assert 'kind="stale_image_1203ik" if _stale1203ik else ""' in code
+
+
+def test_a_failure_in_the_probe_is_announced_not_swallowed():
+    """#1202ah: an empty default from a swallowed exception reads downstream as "the image
+    is fine", i.e. a crashed probe reporting a pass."""
+    # On the CODE, not the block: a `warn_once_1201` mentioned in a comment would satisfy
+    # a raw-text assertion. (The first attempt at mutating this away used a regex that
+    # silently matched nothing — a mutation script that fails is not a mutation caught.)
+    code = _ik_code()
+    assert "warn_once_1201" in code
+    assert "except Exception as _e1203ik:" in code, (
+        "the probe's exception is no longer bound, so nothing can be announced")
+
+
+def test_the_branch_is_reachable_in_the_broken_chain_path():
+    """Pinned over the AST: the annotation has to sit on the branch that reports a BROKEN
+    chain, which is the one that builds remediation — not somewhere unreachable."""
+    src = VR.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    found = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Name) and node.func.id == "_add"):
+            continue
+        if not (node.args and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value == "business_chain"):
+            continue
+        kw = {k.arg: ast.get_source_segment(src, k.value) or "" for k in node.keywords}
+        if "stale_image_1203ik" in (kw.get("kind") or ""):
+            # it must be the False (failing) call
+            assert isinstance(node.args[1], ast.Constant) and node.args[1].value is False
+            found = True
+    assert found, "no _add('business_chain', False, ..., kind=stale_image_1203ik) call exists"

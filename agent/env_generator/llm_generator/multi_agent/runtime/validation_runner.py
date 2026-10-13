@@ -2465,9 +2465,59 @@ def run_smoke_validation(
                             _backend_logs_tail(compose_file, cwd))
                     except Exception:
                         _chain_salient = ""
-                _add("business_chain", False,
-                     _business_chain_detail(
-                         _unmounted_lines_1202rc(_chain) + _chain["broken"], _chain_salient))
+                # #1203ik: SAY THAT THESE STEPS MAY HAVE JUDGED THE OLD CODE.
+                #
+                # `build_currency_1202ex` already compares the source on disk against the
+                # image the stack is running, and `chain_executor` logs the answer one line
+                # before it runs the chains:
+                #
+                #   #1202ex: chains are about to judge an app whose image may not be the
+                #   source on disk -- app/ has changed since the image was built (source
+                #   fa236080a838, built 593a8566a717) -- the container may predate the
+                #   handler under test; rebuild AND recreate the stack before trusting
+                #   these results
+                #
+                # It says the results cannot be trusted and then hands them to the gate
+                # anyway: 31-47 times per run across r182-r185. Both directions cost. A
+                # chain that fails on stale code sends remediation to fix a defect the new
+                # source may no longer have; a chain that passes on stale code clears the
+                # gate for code nobody tested.
+                #
+                # Same shape as #1202od one branch down -- "not a pass (nothing was
+                # verified) and not the lanes' failure -- say which it is, so the retry is
+                # the remedy" -- but a DIFFERENT remedy, so a different kind: a transport
+                # failure is retried, a stale image has to be rebuilt and recreated. Reusing
+                # `environment_1202od` would tell the agent to retry against the same old
+                # container forever.
+                #
+                # Still `False`: the steps did fail, and this does not whitewash them. What
+                # changes is that the failure now names the stack as a suspect before the
+                # code, in the detail the remediation task is built from.
+                _stale1203ik = ""
+                try:
+                    from .chain_executor import build_currency_1202ex as _bc1203ik
+                    _cur1203ik = _bc1203ik(project_dir) or {}
+                    if str(_cur1203ik.get("verdict") or "") == "changed":
+                        _stale1203ik = str(_cur1203ik.get("detail") or "").strip()
+                except Exception as _e1203ik:
+                    from .message_format import warn_once_1201
+                    warn_once_1201(
+                        "chain_stale_image_1203ik",
+                        "the #1202ex image-currency check on the chain verdict — a failure "
+                        "judged on a stale container will read as the code's",
+                        _e1203ik)
+                _detail1203ik = _business_chain_detail(
+                    _unmounted_lines_1202rc(_chain) + _chain["broken"], _chain_salient)
+                if _stale1203ik:
+                    _detail1203ik = (
+                        "STACK FIRST, THEN CODE — app/ has changed since the running image "
+                        "was built, so these steps may have exercised the OLD handler and "
+                        "this verdict is not yet about the source on disk (%s). REBUILD AND "
+                        "RECREATE the stack, re-run the validation, and only treat what "
+                        "still fails as a code defect (#1202ex/#1203ik).\n\n%s"
+                        % (_stale1203ik, _detail1203ik))
+                _add("business_chain", False, _detail1203ik,
+                     kind="stale_image_1203ik" if _stale1203ik else "")
             elif _chain.get("environment_1202od"):
                 # #1202od: the steps never reached the app. Not a pass (nothing was verified)
                 # and not the lanes' failure — say which it is, so the retry is the remedy.
