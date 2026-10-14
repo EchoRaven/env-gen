@@ -10393,8 +10393,16 @@ def repair_dead_nav_links(frontend_dir, reference_routes=None) -> Dict[str, obje
                         repaired.append(f"{rel}: {ch}")
                 except Exception:
                     pass
-    except Exception:
-        pass
+    except Exception as _e1203js:
+        # #1203js: 105 lines guarded by a bare `pass`, and the very next line reports "repaired
+        # nothing" -- so a crash inside the dead-nav repair was indistinguishable from "there
+        # was nothing to repair". #1201's ratchet could not see this block at all: its scan
+        # stopped 80 lines in, which is how a 105-line body sat here while thirteen shorter
+        # ones were catalogued.
+        from .message_format import warn_once_1201
+        warn_once_1201("frontend_scaffold.repair_dead_nav_links",
+                       "dead-nav link repair did not run; its result reads as 'nothing to "
+                       "repair'", _e1203js)
     return {"repaired": repaired}
 
 

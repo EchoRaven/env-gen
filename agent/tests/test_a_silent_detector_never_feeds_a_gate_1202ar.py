@@ -17,6 +17,10 @@ aggregation. The intersection is EMPTY, and this keeps it empty.
 Validated in the direction that matters: the aggregation scan finds all 15 real callsites,
 including `_auth_override_blockers_1202s`, so an empty intersection is a real result and not a
 regex that matches nothing.
+
+#1203jr: both sides are now validated. Only the aggregation side was, and an intersection is
+empty for two reasons -- nothing qualifies, or one operand died. The silent side is pinned by
+a measured floor (67 across 31 files today; the biggest single module supplies 8).
 """
 
 import ast
@@ -107,6 +111,36 @@ def test_the_aggregation_scan_is_live():
     assert "_auth_override_blockers_1202s" in feeds, (
         "the aggregation scan no longer sees a callsite known to exist "
         "(deliverability.py wires _auth_override_blockers_1202s into blockers)")
+
+
+def test_the_silent_scan_is_live_1203jr():
+    """Guard the OTHER guard: `both == []` is the whole claim, and it has two operands.
+
+    #1202ar validated the aggregation side in both directions -- a floor and a callsite known
+    to exist -- and left the silent side with no assertion at all. The emptiness of an
+    INTERSECTION is evidence only while both sides are alive: let
+    `_silently_returns_empty_list` collapse to {} (the announcement regex broadens to match
+    every function, the handler walk stops seeing `except`, someone else writes the shared
+    cache key) and `test_no_silent_detector_decides_a_gate` passes having looked at nothing.
+    That is this file's own subject -- a check that cannot tell "found none" from "did not
+    run" -- one level up, in the test that pins it.
+
+    The floors are measured, not picked. Today: 67 functions across 31 files (the docstring's
+    50 was 2026-09-02, so this class grows). The largest single module supplies 8, so 20
+    cannot be reached by one module's worth of hits, and 10 distinct files cannot be reached
+    by one module at all. Both are far under the real count, because this ratchet INVITES
+    bringing functions under an announcement and a floor that bites on progress gets raised
+    by whoever is in a hurry.
+    """
+    silent = _silently_returns_empty_list()
+    assert len(silent) >= 20, (
+        "the silent-return scan found only %d functions; the largest single module supplies 8, "
+        "so this is a broken scan rather than a cleaned-up tree -- and it makes "
+        "test_no_silent_detector_decides_a_gate pass vacuously" % len(silent))
+    files = {p for p in silent.values()}
+    assert len(files) >= 10, (
+        "the scan reached only %d file(s), so rglob or the source filter is broken: %s"
+        % (len(files), sorted(files)[:5]))
 
 
 def test_no_silent_detector_decides_a_gate():

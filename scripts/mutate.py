@@ -18,6 +18,19 @@ check that cannot tell "looked and found nothing" from "never looked" reports a 
 a pass. #826's own header says it too — "a check that lives in a habit is not a check" —
 and mutation discipline has lived in a habit here for every patch so far.
 
+A third shape this tool CANNOT verdict, and the reason to read every MISSED twice (2026-10-14,
+#1203jr): a mutation that applies cleanly, compiles, and changes nothing. Mine was
+
+    _ANNOUNCES = re.compile(r"" or r"warn_once_1201|...")
+
+and `"" or X` is X, so the regex was untouched and the run printed MISSED against a test that
+in fact bites. NOT APPLIED catches an anchor that never matched; nothing catches a patch whose
+semantics are null, and no checker can -- that is undecidable in general. So: before believing
+a MISSED, ask what the mutant's behaviour actually is, not what the label says it should be.
+Here the honest check was to run the same mutation against the one test that predates the fix
+(3/3 MISSED) and against the file with it (3/3 CAUGHT); a verdict that flips with the test
+selection is evidence, a verdict read off one run is not.
+
 Four verdicts, never blurred:
 
     CAUGHT       the mutant made the test fail. The test has falsifying power here.
