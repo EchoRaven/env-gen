@@ -132,11 +132,46 @@ class TestItStaysQuietAndSafe:
 
 class TestItIsWiredIntoTheTick:
 
-    def test_the_orchestrator_calls_it_beside_the_gate_dispatch(self):
+    def test_the_orchestrator_calls_it_where_a_green_gate_still_reaches_it(self):
+        """#1203j0: this asserted a POSITION and its message asserted a BEHAVIOUR.
+
+        It required the call to sit in the text between `dispatch_gate_level_checks(` and
+        `FEEDBACK LOOP`, and said why: "it must run even when every gate check is green —
+        that is r8's case". That window was INSIDE `if gate.get("failed_checks"):`, so the
+        test was pinning the one placement that guarantees the opposite of its own message.
+        Measured before it moved: 67 gate records across 7 runs carry a non-empty
+        `never_matching_filters` with a green gate, and tiktok-web-r183 delivered with one.
+
+        The claim is the same; it is asked of the tree now. #943's rule about byte windows
+        has a sharper form here — a window between two real landmarks can still span a
+        region whose CONTROL FLOW is wrong.
+        """
+        import ast
         src = pathlib.Path(
             "env_generator/llm_generator/multi_agent/orchestrator.py"
         ).read_text(encoding="utf-8")
-        i = src.index("dispatch_gate_level_checks(")
-        j = src.index("FEEDBACK LOOP", i)
-        assert "dispatch_never_matching_filters_1148()" in src[i:j], \
-            "it must run even when every gate check is green — that is r8's case"
+        fn = next(n for n in ast.walk(ast.parse(src))
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and n.name == "_maybe_framework_deliver")
+        calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+                 and "dispatch_never_matching_filters_1148" in ast.unparse(n)]
+        assert calls, "the dispatch is not in the deliver path at all"
+
+        def _enclosing_ifs(lineno):
+            chain = []
+
+            def walk(node):
+                for child in ast.iter_child_nodes(node):
+                    lo = getattr(child, "lineno", None)
+                    hi = getattr(child, "end_lineno", None)
+                    if lo and hi and lo <= lineno <= hi:
+                        chain.append(child)
+                        walk(child)
+
+            walk(fn)
+            return [ast.unparse(c.test) for c in chain if isinstance(c, ast.If)]
+
+        for call in calls:
+            conds = _enclosing_ifs(call.lineno)
+            assert not any("failed_checks" in c for c in conds), \
+                "it must run even when every gate check is green — that is r8's case: %s" % conds

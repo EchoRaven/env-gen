@@ -5596,6 +5596,43 @@ class Orchestrator:
             ):
                 return  # nothing to deliver yet
             gate = self._validate_delivery_gate()
+            # #1203j0: THESE TWO DISPATCHES WERE INSIDE `if gate.get("failed_checks")`,
+            # which is the one condition under which they are not needed.
+            #
+            # Both findings are deliberately NON-BLOCKING -- #1139 "reports rather than
+            # blocks", and #1203ie publishes beside it on the same terms -- so each can be
+            # present while every check is green, which is exactly when a run delivers.
+            # #1148's own comment says so in as many words: netflix-local-r8 DELIVERED with
+            # one, "so it has to reach the backend EVEN WHEN EVERY CHECK IS GREEN". It was
+            # then placed under a branch that runs only when some check is red.
+            #
+            # Measured over the 12633 gate records on this machine:
+            #   never_matching_filters     non-empty with a green gate:  67 records, 7 runs
+            #   list_totals_unreachable    non-empty with a green gate:  67 records, 3 runs
+            # tiktok-web-r183 is in the first group and DELIVERED carrying
+            # `media_url IS NOT NULL` with no seeded row -- its workhub (501 tasks) has no
+            # "Seed a column the queries filter on" task, because this line never ran.
+            # The second group is r185/r186/r187, so #1203ii inherited the bug it was written
+            # to avoid: I copied the call site together with its gate.
+            #
+            # Safe to hoist, by the gate's own rule: `incomplete_required_tasks` counts only
+            # "structural kickoff kinds" and says ad-hoc remediation tasks "are deliberately
+            # excluded here so this gate never double-blocks them". Filing one at a green gate
+            # therefore cannot block the release it is about. Both dispatchers keep their own
+            # per-milestone re-fire guards (`_nmf1148_dispatched`, `_ltu1203ii_dispatched`),
+            # so running every tick cannot storm, and neither reads `gate` -- each re-reads
+            # its own artifact -- so nothing here depends on the branch it left.
+            try:
+                from .runtime.remediation_dispatcher import RemediationDispatcher
+                await RemediationDispatcher(self).dispatch_never_matching_filters_1148()
+            except Exception as _nmf_exc:
+                self._logger.error("#1148 dispatch failed: %s", _nmf_exc)
+            # Its own try, so one dispatch failing cannot swallow the other (#1201).
+            try:
+                from .runtime.remediation_dispatcher import RemediationDispatcher as _RD1203ii
+                await _RD1203ii(self).dispatch_list_totals_unreachable_1203ii()
+            except Exception as _ltu_exc:
+                self._logger.error("#1203ii dispatch failed: %s", _ltu_exc)
             if gate.get("failed_checks"):
                 # #1202kn: "attempt refunded, will retry next tick" — THERE WAS NO NEXT TICK.
                 #
@@ -6002,28 +6039,6 @@ class Orchestrator:
                         gate.get("failed_checks"))
                 except Exception as _gc_exc:
                     self._logger.error("gate-level check dispatch failed: %s", _gc_exc)
-                # #1148: the same tick, for a finding that is NOT a failed check. #1139
-                # detects a filter no seeded row can satisfy and leaves it in the gate result,
-                # where nothing reads it — #1041's shape. netflix-local-r8 DELIVERED with one
-                # (`/api/titles/top10` filtering `top10_rank IS NOT NULL`, never seeded), so it
-                # has to reach the backend even when every check is green. A task, not a check:
-                # #1139 reports rather than blocks and that stays true.
-                try:
-                    from .runtime.remediation_dispatcher import RemediationDispatcher
-                    await RemediationDispatcher(self).dispatch_never_matching_filters_1148()
-                except Exception as _nmf_exc:
-                    self._logger.error("#1148 dispatch failed: %s", _nmf_exc)
-                # #1203ii: same place, same reason, for #1203ie's finding. #1203ie put the
-                # unreachable-`total` endpoints in the gate result on #1139's terms, and
-                # #1148's own docstring is the warning about stopping there — #1139 did, and
-                # "NOTHING reads that key ... the evidence exists, the party who can act on it
-                # is never told." Its own try, so one dispatch failing cannot swallow the
-                # other (#1201).
-                try:
-                    from .runtime.remediation_dispatcher import RemediationDispatcher as _RD1203ii
-                    await _RD1203ii(self).dispatch_list_totals_unreachable_1203ii()
-                except Exception as _ltu_exc:
-                    self._logger.error("#1203ii dispatch failed: %s", _ltu_exc)
                 # FEEDBACK LOOP (2026-06-13): an unwired-ui-pages block (declared
                 # pages whose routes aren't in App.jsx) HARD-blocks delivery but,
                 # unlike GATE-C1 / frontend_navigable / visual, routed NOWHERE —
