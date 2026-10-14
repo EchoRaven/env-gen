@@ -1274,6 +1274,30 @@ def squad_gate_enabled(env: Mapping[str, Any]) -> bool:
     return str(env.get("ENVGEN_TESTUSER_SQUAD", "1")).strip().lower() in ("1", "true", "yes", "on")
 
 
+def squad_coverage_1203kj(report: Any) -> str:
+    """How much of the plan a squad verdict covers, as a phrase for the verdict line.
+
+    #1203kj — the verdict reported defects, by-modality and by-source and never how many
+    agents finished, so "verdict=PASS: 0 open P0" read the same over 12 of 12 goals as over
+    3 of 10. The number was already in hand: `squad_gate_outcome` consumes
+    `report["completed"]` (that is #1202ur's point, after a PASS with ZERO completions) and
+    every wave line prints it.
+
+    "coverage unknown" rather than a guessed 0 when the counts are absent or not integers:
+    #1202tn's rule that a fault-tolerant helper's zero may not be used as a fact, and an
+    older/restored report shape carries no counts at all.
+    """
+    if not isinstance(report, Mapping):
+        return "coverage unknown (no spawn/completion count in this report)"
+    done = report.get("completed")
+    spawned = report.get("spawned")
+    if (isinstance(done, int) and not isinstance(done, bool)
+            and isinstance(spawned, int) and not isinstance(spawned, bool)
+            and spawned > 0):
+        return "%d/%d agents finished" % (done, spawned)
+    return "coverage unknown (no spawn/completion count in this report)"
+
+
 def squad_gate_outcome(*, ran: bool, p0: int, completed: Optional[int] = None) -> str:
     """#179: classify a squad result into the delivery-gate action.
 
@@ -1704,9 +1728,28 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
         bugs["p0"] = sum(by_source.values()) if by_source else bugs.get("p0", 0)
         verdict = "PASS" if bugs.get("p0", 0) == 0 else "DEFECTS"
         if logger:
-            logger.warning("TEST-USER SQUAD (v%s) verdict=%s: %d open P0 (%d from test-users) / "
-                           "%d P1 %s by-source=%s",
-                           version, verdict, bugs.get("p0", 0), bugs.get("p0_test_user", 0),
+            # #1203kj: SAY HOW MUCH OF THE PLAN THIS VERDICT COVERS.
+            #
+            # The line reported defects, by-modality and by-source and never how many agents
+            # actually finished — so "verdict=PASS: 0 open P0" reads the same over 12 of 12
+            # goals as over 3 of 10. The number is already in hand: `squad_gate_outcome`
+            # consumes `report["completed"]` (that is #1202ur's whole point, after a PASS with
+            # ZERO completions), and the wave lines print it; only the verdict omitted it.
+            #
+            # MEASURED over the corpus's squad runs: completion improved a lot since #1202ur
+            # wrote "0-6 of 12, median ~2, never above 6" — modern runs median 7/12 with zero
+            # runs at 0, and r187 finished 12/12. But r180 passed on 3/10, and r184/r181/r176
+            # on 4/12, and none of those lines said so.
+            #
+            # A note, not a threshold: #1202ur already routes the zero case to `retry`, and
+            # raising the bar to a RATIO would defer deliveries on a judgement this patch has
+            # no evidence for. Saying the denominator costs nothing and is what a reader of a
+            # PASS actually needs.
+            _cov1203kj = squad_coverage_1203kj(report)
+            logger.warning("TEST-USER SQUAD (v%s) verdict=%s over %s: %d open P0 "
+                           "(%d from test-users) / %d P1 %s by-source=%s",
+                           version, verdict, _cov1203kj, bugs.get("p0", 0),
+                           bugs.get("p0_test_user", 0),
                            bugs.get("p1", 0), bugs.get("by_modality") or "", by_source or {})
         return {"ran": True, "report": report, "goals": goals, "modalities": modalities,
                 "bugs": bugs, "verdict": verdict}
