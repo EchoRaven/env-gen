@@ -807,7 +807,21 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                     # commonest ui_flow failure (93 of 270). Measured over the 173 runs with an
                     # auth page: those whose auth source calls `setMode(`/`setStep(`/`setStage(`
                     # emit that note in 49 of 89 runs (55%), against 24 of 84 (29%) for the
-                    # ones that do not. Nearly twice the rate, on a strict predicate.
+                    # ones that do not.
+                    #
+                    # THAT POOLED PAIR OVERSTATES IT, and the correction belongs here rather
+                    # than in my memory of it. Split by domain, which is the obvious confound
+                    # because multi-step auth is not evenly distributed:
+                    #
+                    #     tiktok    multi 23/53 = 43%   single 20/54 = 37%   (+6 points)
+                    #     netflix   multi 26/33 = 79%   single  4/7 = 57%    (+22, n=7)
+                    #
+                    # netflix fails this note more at BOTH levels and is almost entirely
+                    # multi-step, so most of the pooled gap is composition. The effect that
+                    # survives is +6 points on the only comparison with real power on both
+                    # sides. It still points the same way in both domains, which is why the
+                    # counts below are worth having -- but "nearly twice the rate" was mine,
+                    # pooled, and wrong.
                     #
                     # That is a correlate without a mechanism, and I falsified two candidates
                     # for it from the corpus alone: email-first forms with no password field

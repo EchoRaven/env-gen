@@ -172,6 +172,17 @@ def test_the_measurement_is_recorded():
     assert "49 of 89" in flat and "24 of 84" in flat
 
 
+def test_the_pooled_number_is_corrected_where_it_is_stated():
+    """55% against 29% is pooled, and multi-step auth is not evenly spread across domains.
+    Split, it is +6 points on tiktok (the only comparison with power on both sides) and +22
+    on netflix with n=7 — most of the pooled gap is composition. The split has to sit beside
+    the pooled pair, or the next reader acts on a number I already knew was confounded."""
+    flat = " ".join(SRC.replace("#", " ").split())
+    assert "OVERSTATES IT" in flat
+    assert "23/53" in flat and "20/54" in flat, "the within-domain split is gone"
+    assert "composition" in flat
+
+
 def test_the_two_dead_candidates_are_recorded():
     """So the next reader does not spend the corpus on them again."""
     flat = " ".join(SRC.replace("#", " ").split())
