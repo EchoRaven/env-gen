@@ -654,6 +654,50 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                 browser = await pw.chromium.launch(args=["--no-sandbox"])
             page = await (await browser.new_context(
                 viewport={"width": 1380, "height": 900})).new_page()
+            # #1203je: WAIT FOR THE FRONTEND, LIKE THE OTHER BROWSER WALK ALREADY DOES.
+            #
+            # `test_user_runner._wait_frontend_ready` exists for exactly this and its
+            # docstring names the harm: "the delivery flow restarts the compose stack per
+            # milestone, so the browser walk can fire while the FRONTEND container is DOWN /
+            # rebuilding -> every goto raises net::ERR_CONNECTION_REFUSED -> ... a FALSE
+            # 'unusable' that escape-ships a HEALTHY app (outlook run-28 v1.2.0, live)".
+            # There are TWO browser walks and only that one called it.
+            #
+            # This is the LARGEST ui_flow failure cause in the corpus. Ranking the failing
+            # `ui_flows` notes since 2026-09-15 by normalised text: `Page.goto:
+            # net::ERR_CONNECTION_REFUSED at .../login` is first with 32 records across 25
+            # runs, ahead of "submit sent NO /auth request" (28 / 22 runs) and the #1126b
+            # landing check (17 / 9). It then reaches the lane as `UI login: Error: ...` in
+            # `broken`, which makes the verdict ISSUES -- a verdict about the APP.
+            #
+            # IT IS NOT A PORT BUG, which was the first thing to rule out, because #1136 and
+            # #1203ia are both that shape. For every run in the modern era carrying one of
+            # these notes the port in the note EQUALS the host port `frontend` publishes in
+            # that run's own compose (r176 8053:3000, r126 8006:3000, r127/r129/r130/r131
+            # 8009:3000). Nothing was listening. And in 34 of those 52 reports the API half
+            # had already walked (`api_steps > 0`), so the stack was up and the FRONTEND
+            # specifically was not.
+            #
+            # The API half of this very function, 25 lines below where it is called, already
+            # waits up to 240s on `/health` and says so instead of blaming the app ("if it
+            # never comes up, say THAT instead of misdiagnosing the app"). This is the same
+            # rule for the other half, and it reuses the owner rather than restating it
+            # (#1032) -- including its calibrated budget, and #159's distinction between
+            # "never served" and "served but not mounted": only NEVER SERVED skips, because
+            # a served-but-blank app is a real defect this walk must still catch.
+            try:
+                from .test_user_runner import _wait_frontend_ready as _wfr_1203je
+            except Exception as _imp1203je:          # #802 / #1203iu: never leave it unbound
+                _wfr_1203je = None
+            if _wfr_1203je is not None and not await _wfr_1203je(page, frontend_base):
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
+                return {"ran": False, "reason": (
+                    "frontend at %s never served within the readiness budget — the "
+                    "container is down or still building, so no flow was driven. This is "
+                    "NOT a verdict about the app (#1203je)." % frontend_base)}
             for route, label in (("/signup", "signup"), ("/login", "login")):
                 try:
                     await page.goto(frontend_base + route,
@@ -1198,6 +1242,13 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
                     "supported a create at this point, so the contract-derived journey "
                     "had nothing to drive; api_smoke covers the reads. Not a verdict "
                     "about the app")
+    # #1203je: the other half. Named separately because the two have nothing in common:
+    # an empty API journey is a CONTRACT fact about this milestone, while a UI walk that
+    # did not run is an ENVIRONMENT fact about this moment.
+    if summary.get("ui_walk_ran_1203je") is False:
+        bits.append("UI WALK DID NOT RUN (%s) -- no browser flow was driven, so the UI "
+                    "contributed no evidence either way. Not a verdict about the app"
+                    % (str(summary.get("ui_walk_reason_1203je") or "reason not recorded")))
     # #1035's lesson: the cause slot must never render empty.
     return "; ".join(bits) or (
         "no cause recorded — the verdict was not PASS but nothing was flagged broken, "
@@ -1292,6 +1343,22 @@ def run_test_user_validation(
         _uifl = report.get("ui_flows") or {}
         _ui_broken = [f"UI {f['flow']}: {f.get('note')}"
                       for f in _uifl.get("flows", []) if not f.get("ok")]
+        # #1203je: DID THE UI WALK CONTRIBUTE EVIDENCE AT ALL?
+        #
+        # `_ui_broken` is derived from `flows`, so a walk that never ran leaves it empty and
+        # looks exactly like a walk that passed. That mattered little while `ran: False`
+        # meant only "playwright unavailable" / "no frontend port" -- 2 reports in the whole
+        # corpus, both July, and BOTH recorded PASS. #1203je makes it common: the 32
+        # ERR_CONNECTION_REFUSED records across 25 runs become `ran: False` instead of flow
+        # failures, so without this the fix would trade a FALSE ISSUES for a FALSE PASS --
+        # #1202xc's shape, which I withdrew for exactly that.
+        #
+        # `ran` alone is the signal because it is faithful: over all 263 reports with a
+        # `ui_flows` object, `ran: True` carries exactly 2 flows every time and `ran: False`
+        # carries 0 every time. A `flows`-is-empty clause would be a rule for a world the
+        # corpus does not show. Default True for an object that predates the key, so old
+        # shapes are not retro-judged.
+        _ui_ran_1203je = bool(_uifl.get("ran", True))
         # #1203c6: KEEP THE API-ONLY COUNT BEFORE THE REBINDING. `broken` becomes
         # API + UI on the next line, and `api_failed` below used to read it -- so a run
         # whose API was entirely green reported one or two API failures (118 of 198
@@ -1305,7 +1372,7 @@ def run_test_user_validation(
             verdict = "ISSUES"
         elif missing or not report["mcp"].get("complete", False):
             verdict = "PARTIAL"
-        elif not steps:
+        elif not steps or not _ui_ran_1203je:
             # #1203jc: A PASS MUST NOT BE A CLAIM ABOUT A JOURNEY THAT NEVER RAN.
             #
             # `broken` and `missing` are both derived FROM `steps`, so an empty journey
@@ -1338,6 +1405,10 @@ def run_test_user_validation(
             "api_passed": len(passed),
             "api_failed": _api_broken_1203c6,          # #1203c6: API only
             "ui_flows_failed_1203c6": _ui_broken_1203c6,
+            # #1203je: published because `describe_non_pass_1038` takes the SUMMARY, not
+            # the report, and a cause slot that cannot see the reason prints nothing.
+            "ui_walk_ran_1203je": _ui_ran_1203je,
+            "ui_walk_reason_1203je": str(_uifl.get("reason") or "")[:200],
             "api_missing": len(missing),
             "mcp_complete": report["mcp"].get("complete", False),
             "broken": broken,
