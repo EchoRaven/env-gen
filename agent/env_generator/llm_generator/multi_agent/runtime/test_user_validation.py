@@ -1188,6 +1188,16 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
         note = mcp.get("note")
         bits.append("MCP surface INCOMPLETE (%s/%s tools%s)" % (
             mcp.get("tools_found"), mcp.get("tools_expected"), f"; {note}" if note else ""))
+    # #1203jc: say that the API half was never exercised, on EVERY report where it was
+    # not -- including the ones that already name a UI or MCP finding. A reader deciding
+    # whether the app works needs to know the journey contributed no evidence either way;
+    # without it the ladder's own fallback below would answer "no cause recorded (report a
+    # framework defect)" for `NOT_WALKED`, whose cause is known and is not a defect.
+    if summary.get("api_steps") == 0:
+        bits.append("API JOURNEY NOT WALKED (0 of 0 steps) -- no business collection "
+                    "supported a create at this point, so the contract-derived journey "
+                    "had nothing to drive; api_smoke covers the reads. Not a verdict "
+                    "about the app")
     # #1035's lesson: the cause slot must never render empty.
     return "; ".join(bits) or (
         "no cause recorded — the verdict was not PASS but nothing was flagged broken, "
@@ -1295,6 +1305,32 @@ def run_test_user_validation(
             verdict = "ISSUES"
         elif missing or not report["mcp"].get("complete", False):
             verdict = "PARTIAL"
+        elif not steps:
+            # #1203jc: A PASS MUST NOT BE A CLAIM ABOUT A JOURNEY THAT NEVER RAN.
+            #
+            # `broken` and `missing` are both derived FROM `steps`, so an empty journey
+            # empties both and the ladder fell through to its strongest claim. Measured
+            # over the 263 persisted reports: 121 walked 0 steps, and 33 of those were
+            # recorded PASS -- 33 of the 42 PASS verdicts in the whole corpus, 79%. The
+            # log sentence those produce reads "PASS -- 0/0 API journey steps OK + MCP
+            # surface complete", which asserts the journey was OK.
+            #
+            # 0 steps is LEGITIMATE and is not what is being fixed. `_api_crud_journey`
+            # drives a create->list->read->update->delete from each collection that
+            # supports create, so a read-heavy early milestone has nothing to start from
+            # (api_smoke probes every registered endpoint separately and covers the
+            # reads). tiktok-web-r185 is the whole timeline: its first business
+            # collection POST (`/api/notifications`) was registered at 18:48:58 and the
+            # v1.0.0 and v1.1.0 walks ran at 17:51 and 18:29 -- before one existed. The
+            # three `/api/v1/*` collections that DID exist are `is_business() == False`.
+            # So the journey behaved correctly and only the verdict lied.
+            #
+            # Placed LAST so it changes exactly the false PASS and nothing else: a real
+            # finding still wins. r185 is the case that matters -- its UI signup failure
+            # keeps ISSUES even though the API journey walked nothing, because an empty
+            # journey is an absence of evidence and never a reason to downgrade evidence
+            # somebody did collect.
+            verdict = "NOT_WALKED"
         else:
             verdict = "PASS"
         report["summary"] = {  # NOTE (#1038): `describe_non_pass_1038` below formats this
