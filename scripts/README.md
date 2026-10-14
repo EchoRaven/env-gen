@@ -118,6 +118,46 @@ export ENVGEN_LLM_KEY='LLM|<id>|<secret>'                            # 覆盖 OP
 
 Claude on Vertex **要求** `max_tokens`；生成器按模型名解析（`claude-5-fable-vertex-genai` → 8192），也可 `--max-tokens` 显式指定。
 
+## `mutate.py` — 跑证伪变异，且**绝不**把工具自己的失败当成结论
+
+每个守卫都要靠「删掉它→测试变红」来验证。这个流程此前每次都手写,而在 2026-10-14 它
+**失败了两次,两次都看起来像发现**:
+
+* 一条 `sed` 因为引号从没匹配上,**什么都没改**,而手写脚本打印
+  `MISSED <- M4 ...` —— 我据此以为「测试太弱」,去改测试;用 python 加上计数断言重跑同一条
+  变异,它其实 CAUGHT。
+* 一条把 `try:` 换成 `if False:` 的变异留下孤立的 `except`,pytest **收集**就失败了 ——
+  一个语法错误的 mutant 同样被打印成 `MISSED`。
+
+所以这里有**四个判决,互不混淆**:
+
+    CAUGHT       mutant 编译了、跑了,测试变红 → 这条测试在这里有证伪力
+    MISSED       mutant 编译了、跑了,测试仍然绿 → 真缺口
+    NOT APPLIED  锚点没有**恰好出现一次** → 什么都没测(不是关于测试的证据)
+    BROKEN       mutant 编译不过,或测试模块收集不了 → 什么都没测
+
+只有全部 CAUGHT 才 exit 0。另外它**拒绝在 baseline 是红的时候开工** —— 对着一个失败的测试
+文件,每条变异都会读成 CAUGHT,那是同一种虚假安慰升了一级。
+
+```bash
+cat > /tmp/spec.json <<'EOF'
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1203jg_the_top_blocker_said_nothing.py",
+ "mutations": [
+   {"label": "the reason is dropped, only page names kept",
+    "find": "why.append(\"%s: %s\" % (page, summary or \"no summary recorded\"))",
+    "replace": "why.append(page)"}]}
+EOF
+scripts/mutate.py /tmp/spec.json      # 或 ... | scripts/mutate.py -
+```
+
+`file` 相对仓库根(也接受绝对路径);`test` 相对 `agent/`,所以从 `suite.sh` 输出里
+复制的路径可以直接用。每条变异之后都会恢复文件,结束时按 sha256 校验,并在没恢复时 exit 3。
+
+★ 它用 **pytest 的退出码**分类,不是子串匹配输出:第一版找 `"error during collection"`,
+而它自己的测试会把这个字符串当**数据**喂进来,于是一条真 CAUGHT 被报成 BROKEN ——
+判据匹配到了 payload 而不是状态。用这个工具变异它自己的时候发现的(#1203ji)。
+
 ## `verify_shipped_fixes.py` — 一个 run 跑完后，逐条回答「我发的修复到底生效了没有」
 
 2026-09-29 有六个行为变更和两个仪器落地，**一个都没有线上验证过**——provider 余额归零，
