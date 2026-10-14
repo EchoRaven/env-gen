@@ -122,3 +122,41 @@ def test_the_call_site_uses_it():
     seg = " ".join(ast.get_source_segment(src, a.value) or "" for a in assigns)
     assert "_error_msg_1203im" in seg, "the retry site still cuts the body blindly"
     assert "str(e)[:200]" not in seg, "the blind cut came back"
+
+
+def test_it_never_raises_because_it_runs_on_an_error_path():
+    """★ Called at the TOP of an `except` block, so anything it raises turns a handled
+    failure into a crash. The first version guarded only `str(err)` and left `import re`,
+    the `re.search` calls and the slicing outside — found by auditing my own additions for
+    never-raise safety (all of them run on error paths).
+
+    And the fallback is the PLAIN CUT, never "" — losing the provider's whole message would
+    be worse than losing the rescued field.
+    """
+    class _Hostile:
+        def __str__(self):
+            raise RuntimeError("no str")
+
+    class _Weird:
+        def __init__(self): self.n = 0
+        def __str__(self):
+            # first call succeeds (long), later calls raise
+            self.n += 1
+            if self.n > 1:
+                raise RuntimeError("str is unstable")
+            return "Error code: 400 - {'error': {'code': 'x'}}" + "y" * 400
+
+    assert msg(_Hostile()) == ""
+    out = msg(_Weird())
+    assert isinstance(out, str) and out, "a usable message must still come back"
+
+    # the guard must cover the whole body, not just str()
+    import ast
+    import inspect
+    import utils.llm as _l
+    fn = next(n for n in ast.walk(ast.parse(inspect.getsource(_l._error_msg_1203im)))
+              if isinstance(n, ast.FunctionDef))
+    stmts = [s for s in fn.body
+             if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))]
+    assert len(stmts) == 1 and isinstance(stmts[0], ast.Try), (
+        "the body is not wholly guarded; something on this error path can raise")

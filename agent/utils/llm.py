@@ -1144,25 +1144,36 @@ def _error_msg_1203im(err: Any, cap: int = 200) -> str:
     byte and nothing gets noisier (#1202vx: the explanation must not spend the evidence
     budget). Pure, never raises.
     """
+    # The WHOLE body is guarded, not just `str(err)`. This is called at the TOP of an
+    # `except` block, so anything it raises converts a failure that was being handled into
+    # a crash — and the first version left `import re`, the `re.search` calls and the
+    # slicing outside the guard. Found by auditing my own additions for never-raise safety
+    # (every one of them runs on an error path).
     try:
-        s = str(err)
-    except Exception:
-        return ""
-    if len(s) <= cap:
-        return s
-    head = s[:cap]
-    kept = []
-    for field in ("type", "code"):
         import re as _re1203im
-        m = _re1203im.search(r"'%s': '([^']{1,60})'" % field, s)
-        if not m:
-            continue
-        if m.group(0) in head:
-            continue            # already survived the cut
-        kept.append("%s=%s" % (field, m.group(1)))
-    if not kept:
-        return head
-    return "%s …[%s]" % (head, " ".join(kept))
+        s = str(err)
+        if len(s) <= cap:
+            return s
+        head = s[:cap]
+        kept = []
+        for field in ("type", "code"):
+            m = _re1203im.search(r"'%s': '([^']{1,60})'" % field, s)
+            if not m:
+                continue
+            if m.group(0) in head:
+                continue            # already survived the cut
+            kept.append("%s=%s" % (field, m.group(1)))
+        if not kept:
+            return head
+        return "%s …[%s]" % (head, " ".join(kept))
+    except Exception:
+        # Last resort: the plain cut, which is what this replaced. Never the empty string —
+        # losing the provider's message entirely would be worse than losing the rescued
+        # field.
+        try:
+            return str(err)[:cap]
+        except Exception:
+            return ""
 
 
 def record_llm_retry_1202wr(elapsed_sec: Any = 0.0, error_type: Any = None) -> None:
