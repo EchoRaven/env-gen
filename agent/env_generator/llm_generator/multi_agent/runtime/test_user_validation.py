@@ -522,12 +522,32 @@ def _api_test_user(base: str, api_paths: set,
             #
             # Say so in the note rather than silently reclassifying: `missing` still fails the
             # step, and a genuinely absent endpoint reads exactly as before.
-            if status == 405 and _declared_endpoint(method, path):
+            # #1203kh: EXTENDED TO 404, on #614's OWN STANDARD now that its evidence exists.
+            #
+            # #614 scoped this to 405 deliberately and said why: "for 404s there is no chain
+            # evidence, and the timestamp on its own cannot carry the claim" — and its control
+            # is what kills the timestamp argument, since `main.py` is newer than the report in
+            # 96% of runs REGARDLESS of verdict. That reasoning is still right, so this does
+            # not use timestamps either.
+            #
+            # The chain evidence it asked for is now there, and it is unanimous. Every `missing`
+            # entry in the modern era's final test-user reports is a 404 on a DECLARED endpoint,
+            # and for all 7 of them (r187/r184 POST /api/videos, r176 PATCH+DELETE
+            # /api/feed/post-card/{post_id}, r171 PUT /api/messages/conversations/{id}, r168 GET
+            # /api/comments/{comment_id}, r165 POST /api/live-streams) the verification chains
+            # later got a 2xx on the very same method+path — 201/200 — which is exactly the
+            # proof shape #614 used for its own 405 case (r131/r120/r114/r101).
+            #
+            # Still a NOTE and not a reclassification, for #614's reason: `missing` still fails
+            # the step, an UNDECLARED 404 reads exactly as before, and the probe does not claim
+            # the endpoint works — only that the contract has it and this moment is not the
+            # whole story.
+            if status in (404, 405) and _declared_endpoint(method, path):
                 note = ((note + " | ") if note else "") + (
-                    "NOTE: this endpoint IS in the contract — a 405 means it is not being "
+                    "NOTE: this endpoint IS in the contract — a %d means it is not being "
                     "served right now, most often because the projected handler had not been "
                     "emitted when this smoke ran. Re-check against the CURRENT backend before "
-                    "dispatching it as a missing feature.")
+                    "dispatching it as a missing feature." % status)
         elif check:
             ok, note = check(_json(res))
             if not ok:
