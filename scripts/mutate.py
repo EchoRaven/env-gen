@@ -87,13 +87,51 @@ def _run_test(test_rel):
     return None, tail                          # could not run them: no evidence at all
 
 
-def _compiles(path):
+def _py_ok(path):
     try:
         py_compile.compile(path, cfile=os.path.join(tempfile.gettempdir(), "_mut.pyc"),
                            doraise=True)
         return True
     except Exception:
         return False
+
+
+def _sh_ok(path):
+    return subprocess.run(["bash", "-n", path], capture_output=True).returncode == 0
+
+
+def _syntax_checker(path):
+    """The syntax checker for THIS target, or None when there is no checker for its language.
+
+    #1203jq: the first version hard-wired py_compile, so the first shell target it was ever
+    pointed at (`scripts/reclaim_generated.sh`) reported all four mutations BROKEN — "the
+    mutant does not compile" — when every mutant was valid bash. A Python compiler's verdict
+    on a bash file is not evidence about the mutant, and BROKEN is the verdict this tool
+    invented precisely so a harness failure would stop looking like a finding. It told the
+    truth (nothing was tested) while naming the wrong cause, which is the next best thing to
+    a lie in a tool whose whole job is keeping those two apart.
+
+    Returning None rather than True for an unknown language is the point: `True` would let a
+    syntactically broken mutant run and come back MISSED, i.e. a harness failure reported as
+    a gap in the test — the one outcome this file exists to make impossible. #1202qm/#1202qn:
+    a fallback that masks a failure is worse than no fallback, so main() refuses to start.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".py":
+        return _py_ok
+    if ext in (".sh", ".bash"):
+        return _sh_ok
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as fh:
+            first = fh.readline()
+    except Exception:
+        return None
+    if first.startswith("#!"):
+        if "python" in first:
+            return _py_ok
+        if "bash" in first or "sh" in first:
+            return _sh_ok
+    return None
 
 
 def main(argv):
@@ -106,6 +144,11 @@ def main(argv):
     muts = spec["mutations"] or []
     if not os.path.exists(target):
         print("NOT APPLIED: %s does not exist" % spec["file"])
+        return 2
+    syntax_ok = _syntax_checker(target)
+    if syntax_ok is None:
+        print("refusing to mutate %s: no syntax checker for this language, so a broken "
+              "mutant would run and report MISSED (#1203jq)." % spec["file"])
         return 2
 
     before = _sha(target)
@@ -135,7 +178,7 @@ def main(argv):
             with open(target, "w", encoding="utf-8") as fh:
                 fh.write(src.replace(m["find"], m["replace"]))
             try:
-                if not _compiles(target):
+                if not syntax_ok(target):
                     results.append((BROKEN, label, "the mutant does not compile"))
                     continue
                 ok, tail = _run_test(test_rel)

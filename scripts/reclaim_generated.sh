@@ -24,6 +24,18 @@
 #   scripts/reclaim_generated.sh            # preview only (default KEEP_N=20)
 #   KEEP_N=30 scripts/reclaim_generated.sh  # preview a gentler cut
 #   APPLY=1 scripts/reclaim_generated.sh    # actually delete
+#
+# #1203jp: CITE_ROOTS is the keep set's reach, and it takes absolute paths. Evidence pointers
+# also live OUTSIDE this repo -- the session memory under
+# ~/.claude/projects/*/memory cites a specific run in 13 non-archive entries -- so when those
+# matter, add that directory and the keep set grows with it:
+#
+#   CITE_ROOTS="agent/env_generator agent/tests scripts $HOME/.claude/projects/*/memory" \
+#     scripts/reclaim_generated.sh
+#
+# Measured 2026-10-14: the default keeps 100 / frees ~64 GB; adding the memory directory keeps
+# 116 / frees ~47 GB. The 17 GB is what honouring every out-of-repo citation costs, stated here
+# because a keep set that silently drops them is the version that looks cheaper.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 GEN="$(pwd -P)/generated"
@@ -66,10 +78,27 @@ for k in $KEEP_ALWAYS; do echo "$k" >> "$keep_file"; done
 # comment that justifies them (#1203ir cites gmrun4, #1148 cites netflix-local-r8, #1203it
 # cites instagram-core-r176, ...), and deleting one makes its comment unverifiable — the
 # reader is told to go look at something that is no longer there.
-grep -rhoE "[a-z][a-z0-9]*(-[a-zA-Z0-9.]+)*-r[0-9]+|[a-z]+-core-di\.SUCCESS-[A-Za-z0-9-]+|gmrun[0-9]+" \
-     agent/env_generator agent/tests 2>/dev/null \
-  | sort -u \
-  | while read -r cited; do [ -d "$GEN/$cited" ] && echo "$cited"; done >> "$keep_file"
+#
+# #1203jp: `scripts` is on this list because the citation that matters MOST lives there.
+# `scripts/verify_shipped_fixes.py --self-test` runs against generated/tiktok-web-r140 and
+# exits 2 without it, so deleting r140 silently disarms the one check that catches a fix
+# verifier CONFIRMING on a pre-fix run. The first version of this script scanned agent/ only,
+# and r140 survived a 129-run preview purely because agent/ happens to name it too — luck,
+# not design. The keep set IS this script's whole safety argument, so it has to cover every
+# place the repo says "go look at that run", and a root is cheap to add while a deleted
+# evidence tree is not recoverable.
+CITE_ROOTS=${CITE_ROOTS:-"agent/env_generator agent/tests scripts"}
+# Counted in THIS shell, not in a `| while` subshell, so the total can be printed below:
+# a protection nobody can see the size of is one nobody will notice losing.
+cited_n=0
+while read -r cited; do
+  [ -n "$cited" ] && [ -d "$GEN/$cited" ] || continue
+  echo "$cited" >> "$keep_file"
+  cited_n=$((cited_n + 1))
+done <<CITED
+$(grep -rhoE "[a-z][a-z0-9]*(-[a-zA-Z0-9.]+)*-r[0-9]+|[a-z]+-core-di\.SUCCESS-[A-Za-z0-9-]+|gmrun[0-9]+" \
+       $CITE_ROOTS 2>/dev/null | sort -u)
+CITED
 
 ls -d "$GEN"/tiktok-web-r* 2>/dev/null \
   | sed 's#.*/##' \
@@ -88,6 +117,7 @@ freed=$(cd "$GEN" && du -sk $(cat "$to_del") 2>/dev/null | awk '{s+=$1} END {pri
 echo "KEEP_N=$KEEP_N  keeping $(wc -l < "$keep_file") run(s), removing $(wc -l < "$to_del")"
 echo "would free ~${freed} GB"
 echo "kept always: $KEEP_ALWAYS"
+echo "kept by citation: $cited_n run(s) named in $CITE_ROOTS"
 echo
 if [ "${APPLY:-0}" != "1" ]; then
   echo "--- PREVIEW (first 15 of $(wc -l < "$to_del")) ---"
