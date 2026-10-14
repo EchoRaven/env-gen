@@ -7571,19 +7571,33 @@ class Orchestrator:
                 _tags1203jh = sorted(k for k in ((_rs1203jh.value() or {}) if _rs1203jh
                                                  else {}) if not str(k).startswith("_"))
                 if _tags1203jh:
-                    _shipped1203jh = (" It DID ship %d release(s) (%s) -- `usage.status` "
-                                      "reads `delivered` for that reason (#1202jg), so this "
-                                      "sentence is about the PROJECT, not about nothing "
-                                      "having been cut." % (len(_tags1203jh),
-                                                            ", ".join(_tags1203jh[:6])))
+                    # #1203jhb: SHORT, AND BEFORE THE BITS, BECAUSE THE FIELD IS CAPPED.
+                    #
+                    # `run_budget` writes `str(reason)[:_REASON_CAP_1202EB]` with the cap at
+                    # 400, and the first version of this clause was appended LAST at 184
+                    # characters. The generic branch fits (133 + 184 = 317); the branch that
+                    # actually fires does not -- a realistic `bits` payload (failure set +
+                    # stuck blocker + decline count, as r171 recorded) is 294, so 294 + 184
+                    # = 478 and the 78 characters over the cap are cut off the END, which is
+                    # exactly this clause. An explanation appended after the evidence loses
+                    # to the cap: #1202vx measured that for the gate's blocker sentences and
+                    # #1203d5 for the hold ledger's 60-character slice.
+                    #
+                    # So the FACT is short (~72 chars) and goes immediately after the lead,
+                    # and the explanation is a ticket pointer rather than a sentence. What
+                    # the cap now cuts is the tail of `bits` -- which it already cut before
+                    # this clause existed, since 294 of the 400 were already spent there.
+                    _shipped1203jh = (" SHIPPED: %s (#1202jg: `status`=delivered means "
+                                      "this, not that the run finished)."
+                                      % ", ".join(_tags1203jh[:4]))
             except Exception:
                 _shipped1203jh = ""
             if not bits:
                 return ("the coordination loop exited without a delivery, an abort or a cap, "
                         "and no framework-validation failure was on record when it stopped"
                         + _shipped1203jh)
-            return ("no abort and no cap -- the loop exited with the app not delivered. "
-                    + "; ".join(bits) + _shipped1203jh)
+            return ("no abort and no cap -- the loop exited with the app not delivered."
+                    + _shipped1203jh + " " + "; ".join(bits))
         except Exception:
             return "the loop exited without a delivery; the stop state could not be read"
 
