@@ -630,6 +630,56 @@ def login_401_cause_1203kf(label: Any, flows: Any) -> str:
             "— fix signup first; this login cannot pass until it does")
 
 
+def mcp_shortfall_cause_1203kg(server_mtime: Any, business_eps: Any) -> "tuple[bool, str]":
+    """Is a short MCP tool count a STALE PROJECTION or a real gap? ``(stale, sentence)``.
+
+    #1203kg — #616 made the "no mcp_server/ yet" branch say that absence can be a timing
+    verdict. The branch three lines below it, which compares COUNTS, kept hedging nothing at
+    all: it reports `N tool(s) for M endpoint(s)` and leaves the reader to assume a gap.
+
+    MEASURED over the modern era's final reports: 17 of 36 read INCOMPLETE, and in **14** of
+    them the delivered `mcp_server/<env>/main.py` is NEWER than the report (by 6 to 106
+    minutes) and its final tool count MEETS the count the report demanded — r169 reported 9
+    tools for 23 endpoints and ships 23. In 16 of the 17, business endpoints were still being
+    registered AFTER the report was written. The verdict was measuring a server against a
+    registry that had moved on, and it feeds PARTIAL at delivery.
+
+    Three are real and must stay distinguishable: r180 ships 6 tools for 32 endpoints with a
+    server file 92 minutes OLDER than its own report, and r156/r152 have no server file at all.
+
+    The question is decidable from data in hand, which is why this says rather than hedges:
+    an endpoint registered AFTER the server file was written cannot have a tool in it. The
+    verdict itself is untouched — `complete` stays False, because the probe must not claim a
+    surface it did not see (the rule #616 states for its own branch).
+    """
+    try:
+        _mt = float(server_mtime or 0.0)
+    except (TypeError, ValueError):
+        return False, ""
+    if _mt <= 0:
+        return False, ""
+    newer = []
+    for ep in (business_eps or []):
+        if not isinstance(ep, Mapping):
+            continue
+        try:
+            _at = float(ep.get("_updated_at") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if _at > _mt:
+            newer.append(str(ep.get("path") or "?"))
+    if not newer:
+        return False, (" — the server file is NEWER than every endpoint it is counted "
+                       "against, so this is a real gap in the projection, not a stale read")
+    _n = len(newer)
+    return True, (" — but %d of those endpoint(s) were registered AFTER this server file was "
+                  "written (%s%s), so no projection could have covered them yet; the framework "
+                  "re-projects (write_mcp_server), and %d of the corpus's 17 INCOMPLETE reports "
+                  "ship a server that later met the count. Re-check the tree before treating "
+                  "this as a gap."
+                  % (_n, ", ".join(sorted(newer)[:3]), " …" if _n > 3 else "", 14))
+
+
 def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> Dict[str, Any]:
     """Verify the env's MCP server is complete (a tool per endpoint) + importable."""
     out: Dict[str, Any] = {"server_found": False, "tools_expected": len(business_eps),
@@ -669,9 +719,18 @@ def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> 
         out["tools_found"] = tools
         out["counted_by_1203c7"] = _how1203c7
         out["complete"] = tools >= len(business_eps) and tools > 0
-        out["note"] = (f"{tools} MCP tool(s) for {len(business_eps)} endpoint(s)"
-                       if out["complete"] else
-                       f"MCP surface INCOMPLETE: {tools} tool(s) for {len(business_eps)} endpoint(s)")
+        if out["complete"]:
+            out["note"] = f"{tools} MCP tool(s) for {len(business_eps)} endpoint(s)"
+        else:
+            # #1203kg: say WHICH kind of shortfall this is. The verdict is unchanged.
+            # `mains[0].stat()`, not `os.path.getmtime`: this module does not import `os`,
+            # and a NameError here would be swallowed by the enclosing except and REPLACE the
+            # real note with "mcp check error" — the silent-degradation shape (#1201).
+            _st1203kg, _why1203kg = mcp_shortfall_cause_1203kg(
+                mains[0].stat().st_mtime, business_eps)
+            out["stale_projection_1203kg"] = _st1203kg
+            out["note"] = (f"MCP surface INCOMPLETE: {tools} tool(s) for "
+                           f"{len(business_eps)} endpoint(s){_why1203kg}")
     except Exception as exc:
         out["note"] = f"mcp check error: {type(exc).__name__}: {exc}"
     return out
