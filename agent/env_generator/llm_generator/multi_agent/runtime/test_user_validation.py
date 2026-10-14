@@ -315,6 +315,62 @@ def _resource_label(base_col: str) -> str:
     return seg or "resource"
 
 
+def owner_attribution_1203ke(payload: Any, res: Any) -> "tuple[bool, str]":
+    """Is a created row attributed to the caller? ``(ok, note)``.
+
+    #1203ke — two changes, and the extraction is the smaller one. It used to be a closure, so
+    nothing could execute it; it lives here now for the reason #1202dp gives for
+    `describe_non_pass_1038`, that a predicate a test cannot run is a predicate nobody checks.
+
+    THE JUDGEMENT: ask whether the row IS attributed, not whether the FIRST owner-shaped name
+    present happens to be filled. The old loop returned on the first of the four, and
+    `author_id` precedes `user_id` — while the projector defaults exactly ONE owner column
+    (`valid.setdefault("user_id", _fw_owner_val(...))`). So a comments table carrying both is
+    created attributed via `user_id` with `author_id` null, and this said "create not
+    attributed to the user" of a row that is.
+
+    MEASURED over the modern era: 188 projected POST handlers, 185 project a single
+    owner-shaped column, 3 project both — r168 `/api/comments`, r180
+    `/api/videos/{video_id}/comments`, r175 `/api/posts/{post_id}/comments`. All three default
+    `user_id` only, so all three false-fail, and the verdict they land in is the
+    DELIVERY-time test-user report (`broken` -> ISSUES).
+
+    THE PROJECTOR IS NOT THE SIDE TO FIX: defaulting every owner-shaped column to the caller
+    would write wrong data where they mean different people — a notification's `user_id` is
+    the recipient and its `author_id` the actor — and nothing in a response can tell those
+    apart.
+
+    NOT A MASK, and the reason is a sibling assertion. If the app's reads scope by the null
+    column, the created row is invisible to its creator, which is exactly what
+    `_created_appears` reports ("created feed (id=36) is ABSENT from the feed", r186). The
+    real failure keeps its reader; only the false sentence goes.
+    """
+    obj = payload
+    if isinstance(payload, dict):
+        for k in ("item", "data", "result"):
+            if isinstance(payload.get(k), dict):
+                obj = payload[k]
+                break
+    if isinstance(obj, dict):
+        _own = ("author_id", "user_id", "owner_id", "created_by")
+        present = [k for k in _own if k in obj]
+        attributed = [k for k in present if obj[k] not in (None, "")]
+        if present and not attributed:
+            return False, ("created %s has null %s — create not attributed to the user"
+                           % (res, ", ".join(present)))
+        if attributed:
+            note = ", ".join("%s=%s" % (k, obj[k]) for k in attributed)
+            nulls = [k for k in present if k not in attributed]
+            if nulls:
+                # Said rather than dropped: harmless for attribution, and still worth a
+                # reader's eye if the app's reads scope by that column.
+                note += (" (%s null; attribution holds, and `_created_appears` is what "
+                         "decides whether a read scoped by it can see the row)"
+                         % ", ".join(nulls))
+            return True, note
+    return True, "created"
+
+
 def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: Optional[str],
                       rec, *, skip_bases=frozenset(), max_resources: int = 6) -> None:
     """Contract-derived, domain-agnostic CRUD journey (PIPELINE_HANDOFF §5/§8.4).
@@ -383,19 +439,7 @@ def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: O
         cres = _http("POST", base + base_col, token=token, body=_post_body)
 
         def _owner_ck(payload, _res=res):
-            obj = payload
-            if isinstance(payload, dict):
-                for k in ("item", "data", "result"):
-                    if isinstance(payload.get(k), dict):
-                        obj = payload[k]
-                        break
-            if isinstance(obj, dict):
-                for k in ("author_id", "user_id", "owner_id", "created_by"):
-                    if k in obj:
-                        if obj[k] in (None, ""):
-                            return False, f"created {_res} has null {k} — create not attributed to the user"
-                        return True, f"{k}={obj[k]}"
-            return True, "created"
+            return owner_attribution_1203ke(payload, _res)
 
         rec(f"create {res}", "POST", base_col, cres, _owner_ck)
         new_id = _first_id(_json(cres))
