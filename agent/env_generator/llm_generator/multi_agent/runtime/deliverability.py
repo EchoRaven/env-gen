@@ -465,6 +465,34 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
     # reporting option either, so a defect measured in 32 of 45 runs has never once been said
     # out loud.
     #
+    # #1203ir (2026-10-13): THAT WAS TRUE OF r146-ERA FRONTENDS AND IS NOT TRUE NOW.
+    # `_PAGE_FETCH_RE_615` matches `'/api/...'` STRING LITERALS in the page source, and the
+    # frontend the framework projects today routes every call through `services/api.js` named
+    # exports, so the literals live in the service and not in the page. Measured over the 205
+    # runs with a `pages/` tree on this machine: 143 of them (70%) have NOT ONE page containing
+    # an /api/ literal, so `duplicate_route_content_groups` cannot return a group for them at
+    # any threshold. Of the last 14 tiktok runs, 12 are at zero and the other 2 have a single
+    # such page, which can never reach the two routes a group needs. r185 DELIVERED `/discover`
+    # -> DiscoverPage -> `return <LiveDiscoverPage />` beside `/live` -> LiveDiscoverPage — two
+    # nav destinations, one rendering — and this detector was silent, as were the gate and
+    # `design/duplicate_routes_959.json`, which r185 never wrote.
+    #
+    # This is the lesson `#1202vk` already wrote down one file away ("the check built to catch
+    # an understated page was blind to the shape the framework itself generates"), unapplied
+    # here. The obvious repair — resolve the named exports — was BUILT AND PROJECTED OVER THE
+    # CORPUS BEFORE LANDING (#1203d9) and declined: it reports 126 groups across 70 runs, and
+    # the largest are false. r173 groups ExploreGrid/FriendsSuggestedCreators/LoginPage on
+    # `/api/me` and r170 groups LoginModal/LoginPage/Settings on `/api/auth/me` — session
+    # endpoints every page calls. #615's predicate is SET EQUALITY, which means nothing unless
+    # the sets are COMPLETE; a partial resolution degrades a page to whatever it could resolve
+    # and makes unrelated pages match. A partial resolution is worse than none, because `_f708`
+    # below FILES A TASK: the cost of flooding is 126 false tasks, not log noise.
+    #
+    # So the measurement is recorded and the detector left alone. Fixing it needs either a
+    # COMPLETE per-page endpoint resolution (named exports + service objects + helpers handed
+    # to hooks + nested components) or a predicate that does not need completeness at all —
+    # comparing what the two routes actually RENDER, which is the question #615 is asking.
+    #
     # It still happens. Running the detector over r146's DELIVERED frontend finds one group:
     # /browse, /browse/browse-by-languages, /browse/games and /browse/latest all fetch the
     # bare unparameterised /api/titles, so four nav destinations render identical content.
