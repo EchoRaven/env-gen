@@ -4238,6 +4238,35 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                  "note": note}
         if expect:
             entry["expect"] = list(expect)  # #188: the broken line shows intent
+        # #1203ka: the record said WHAT was asked and never WHO asked it.
+        #
+        # `token` above is `variables.get(step["auth"]) if step["auth"] else None`, so the
+        # actor is decided per step and then thrown away. Two steps that differ ONLY by actor
+        # land in this store as the same request. instagram-core-r174's `login_light` is the
+        # shape: step 5 `GET /api/me` expect [401] and step 6 `GET /api/me` expect [200], both
+        # `ok: true`, and nothing between them says one went out tokenless. The distinction is
+        # not implicit — `normalize_steps` MAKES it: #266's auto-bearer sets `auth="token"` on
+        # an /api/ path, and #91 then POPS it back off for a pure-{401} probe, exactly so the
+        # probe really goes anonymous. That decision is load-bearing and it was not recorded.
+        #
+        # MEASURED (2026-10-14, 199 runs): replaying `unsatisfiable_expectation_pairs` — the
+        # framework's OWN predicate, keyed on `_request_identity`, which reads `auth` — over
+        # these records flags 660 pairs (147 of them in 24 modern runs, r150 through r187). Over
+        # the AUTHORED chains in the same files it flags ZERO. Every one of the 660 is false:
+        # all 1320 steps carry `ok: true`, which is impossible for one request answering twice.
+        # The predicate is right and the record was lying to it by omission.
+        #
+        # Same convention as the authored step, deliberately: present means that actor, ABSENT
+        # means anonymous (`test_235_auth_bootstrap_synonyms` pins that reading for the
+        # normalized step). Copying it makes `_request_identity` mean the same thing on a
+        # result as it does on a declaration, which is what makes a record re-judgeable at all.
+        #
+        # SCOPE, stated rather than implied: this changes no verdict. `ok`, `kind`, `broken`
+        # and every gate reading them are untouched; the authored chains the registration-time
+        # checks actually run on were already clean. It is a record-truthfulness fix, and the
+        # reader it was wrong for is whoever audits these files later — which today was me.
+        if step.get("auth"):
+            entry["auth"] = str(step.get("auth"))
         if not ok:
             # #1202ew: what went out, so the dispute is settleable. Failing steps only.
             entry["sent_body"] = _sent_body_1202ew(body)
