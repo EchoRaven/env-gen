@@ -7480,11 +7480,49 @@ class Orchestrator:
                             "re-VALIDATION, not a re-authored chain" % len(_authored))
                 except Exception:
                     pass
+            # #1203jh: SAY WHAT THE RUN DID SHIP, because both sentences below are about
+            # the PROJECT and the reader is holding a ledger about MILESTONES.
+            #
+            # `_generic_stop_reason_1202je` is only called for `not success`, so "the loop
+            # exited without a delivery" is true of the project. Beside it,
+            # `usage.status` reads `delivered` the moment ONE release was cut -- #1202jg's
+            # definition, not a bug -- and `codehub_releases.json` lists the tags. Measured
+            # over the 65 modern runs with a ledger: 8 carry this exact sentence and ALL
+            # EIGHT cut releases (r146 cut two), so the field contradicts the two records
+            # next to it in every instance it has ever had.
+            #
+            # That contradiction has a cost on record: I misread `delivered` twice in this
+            # project, which is why `feedback_delivered_means_cut_a_release_not_finished`
+            # exists and why answering "how did this run end" currently takes three files.
+            # One clause makes this one self-consistent.
+            #
+            # DENOMINATOR, HONESTLY: the last run to take this branch was tiktok-web-r160
+            # (2026-10-05); the twenty runs since all hit a cap, a stuck-abort or recorded
+            # no reason at all. So this is not expected to fire soon. It is landed anyway
+            # because it changes a sentence a human reads and nothing else -- no verdict, no
+            # gate, no behaviour -- and the next reader of it should not have to cross-check
+            # two more files to learn that something shipped. The same reasoning #1203ig
+            # used for the milestone ledger, which under-reported what r184 delivered.
+            _shipped1203jh = ""
+            try:
+                _ch1203jh = getattr(getattr(self, "hubs", None), "codehub", None)
+                _rs1203jh = getattr(getattr(_ch1203jh, "stores", None), "releases", None)
+                _tags1203jh = sorted(k for k in ((_rs1203jh.value() or {}) if _rs1203jh
+                                                 else {}) if not str(k).startswith("_"))
+                if _tags1203jh:
+                    _shipped1203jh = (" It DID ship %d release(s) (%s) -- `usage.status` "
+                                      "reads `delivered` for that reason (#1202jg), so this "
+                                      "sentence is about the PROJECT, not about nothing "
+                                      "having been cut." % (len(_tags1203jh),
+                                                            ", ".join(_tags1203jh[:6])))
+            except Exception:
+                _shipped1203jh = ""
             if not bits:
                 return ("the coordination loop exited without a delivery, an abort or a cap, "
-                        "and no framework-validation failure was on record when it stopped")
+                        "and no framework-validation failure was on record when it stopped"
+                        + _shipped1203jh)
             return ("no abort and no cap -- the loop exited with the app not delivered. "
-                    + "; ".join(bits))
+                    + "; ".join(bits) + _shipped1203jh)
         except Exception:
             return "the loop exited without a delivery; the stop state could not be read"
 
