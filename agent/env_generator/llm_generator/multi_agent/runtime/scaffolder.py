@@ -2382,6 +2382,46 @@ volumes:
                 from .message_format import warn_once_1201 as _w1202bg
                 _w1202bg("noop_handler_findings_1202bg",
                          "the no-op handler report (#1202bg)", _e1202bg)
+            # #1203kd: the OTHER half of the same requirement. #1202bg covers "it renders and
+            # does nothing"; this covers "it renders and looks nothing like the design" in the
+            # one form a scan can decide — a text character standing in for an icon.
+            #
+            # Why a task and not a gate: the visual judge already scores `iconography`, and
+            # over 251 PASSING screens it is the weakest of seven dimensions (mean 0.577, min
+            # 0.22) with 67 of them below 0.50 across 26 runs. That score sits inside a
+            # HOLISTIC bar, so it can be terrible on a screen that passes — and tightening the
+            # bar is the most expensive change available here (visual_fidelity's own comment:
+            # "70 of the 94 non-completed corpus runs die at this gate"). A deterministic
+            # finding that files a task costs no extra round, and it is the mechanism that
+            # demonstrably works for the sibling: 38 of 39 modern runs deliver zero no-op
+            # handlers. Measured blast radius: 32 of 39 modern runs would report.
+            try:
+                from .frontend_audit import glyph_icon_findings_1203kd
+                from .message_format import join_capped as _jc1203kd
+                _gi1203kd = glyph_icon_findings_1203kd(fe / "src")
+                if _gi1203kd:
+                    from .message_format import state_changed_1202ad as _sc1203kd
+                    if _sc1203kd("task:glyph_icons", tuple(sorted(map(str, _gi1203kd)))):
+                        orch.hubs.workhub.create_task(
+                            title=("Replace %d text character(s) used as icons with real icons"
+                                   % len(_gi1203kd))[:180],
+                            description=(
+                                "These are text characters doing an icon's job, in a frontend "
+                                "that imports no icon library — a `\u2337` where a QR code "
+                                "belongs, a bullet for a brand mark, a caret for a chevron: "
+                                "%s.\n\nUse a real icon set instead. `import { Heart, Search } "
+                                "from 'lucide-react'` resolves with no package.json edit — the "
+                                "framework owns that file and auto-adds the import from its "
+                                "curated set. Keep a character only where it IS the content "
+                                "(a rating star beside a number), never where the design shows "
+                                "an icon."
+                                % _jc1203kd(_gi1203kd, total=len(_gi1203kd), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P1",
+                            kind="fidelity")
+            except Exception as _e1203kd:
+                from .message_format import warn_once_1201 as _w1203kd
+                _w1203kd("glyph_icon_findings_1203kd",
+                         "the scan for text characters used as icons (#1203kd)", _e1203kd)
             try:
                 from .frontend_scaffold import reconcile_ui_page_apis_1199
                 _rec1199 = reconcile_ui_page_apis_1199(fe, ui_pages, registryhub)

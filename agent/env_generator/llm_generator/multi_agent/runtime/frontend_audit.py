@@ -3081,6 +3081,99 @@ def noop_handler_findings_1202bg(frontend_src: Any, limit: int = 12) -> List[str
 
 
 # ---------------------------------------------------------------------------
+# #1203kd — a text character standing in for an icon.
+# ---------------------------------------------------------------------------
+_GLYPH_1203KD = (
+    "[\u2190-\u21FF\u2300-\u23FF\u25A0-\u27BF\u2B00-\u2BFF\U0001F300-\U0001FAFF]")
+
+# A glyph that is the ENTIRE content of an element or of an icon-ish prop. Deliberately NOT
+# "a glyph anywhere": one inside a sentence is copy, and copy is not this check's business.
+_GLYPH_ICON_1203KD = re.compile(
+    r">\s*(" + _GLYPH_1203KD + r"{1,3})\s*<"
+    r"|>\s*\{\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]\s*\}\s*<"
+    r"|=\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]"
+    r"|(?:icon|symbol|glyph)\s*[:=]\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]", re.I)
+
+# An icon library the code actually IMPORTS (not merely one listed in package.json: r164
+# declares lucide-react and imports it nowhere, with 29 glyphs in its source).
+_ICON_LIB_1203KD = re.compile(
+    r"""from\s+['\"](lucide-react|react-icons[^'\"]*|@heroicons/[^'\"]*"""
+    r"""|@tabler/icons[^'\"]*|phosphor-react|react-feather"""
+    r"""|@mui/icons-material[^'\"]*)['\"]""")
+
+
+def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
+    """Text characters used as icons in a frontend that imports no icon library. (#1203kd)
+
+    The user's standing requirement is two-sided — a UI needs real behaviour AND icons that
+    look like icons. The behaviour half has a DETERMINISTIC check that files a task (#1202bg)
+    and it works: 38 of 39 modern runs deliver zero no-op handlers. The icon half had only the
+    visual judge's `iconography` score, which is prose inside a holistic bar — measured over
+    251 PASSING screens it is the weakest dimension of seven (mean 0.577, min 0.22) and 67 of
+    them (27%, across 26 runs) sit below 0.50 while the screen passes. A score that cannot
+    fail a screen cannot force a change; a task can. This is #1202bg's shape for the other
+    half.
+
+    What it finds, from the runs' own source:
+
+        LoginPage.jsx: <span>⌗</span>{signup ? 'Use phone or email' : 'Use QR code'}
+        LoginPage.jsx: <button className="auth-option" ...><span>●</span>Continue with …
+
+    — a `⌗` standing in for a QR code and a bullet for a brand mark, which is independently
+    what the judge saw ("missing or incorrect nav icons, including bullet-like red dots and
+    simplified mismatched symbols", r185).
+
+    GATED ON THE PROJECT, not the occurrence: returns [] as soon as any file imports a real
+    icon library, because a project that has one made a deliberate choice about the glyph that
+    is left. Measured: 32 of 39 modern runs would report (glyphs, no import), 6 import one,
+    1 is clean.
+
+    The repair is cheap and that is why the task names it: a bare `import { Heart } from
+    'lucide-react'` resolves, because the framework auto-adds it from
+    `_COMMON_FRONTEND_LIBS` (`lucide-react: ^0.408.0`). Checked rather than assumed — the
+    corpus has 33 `failed to resolve import "lucide-react"` build failures and every one is
+    r147 or older, none modern.
+
+    Never raises. The `is_dir()` fast path is kept for readability and to match #1202bg's
+    shape, and it is a SEMANTIC NO-OP rather than a guard: mutation shows that removing it
+    changes neither the return value nor #1201's warning, because `Path.rglob` on a missing
+    directory yields nothing instead of raising (checked on this interpreter, 3.11). Said here
+    so the next reader does not spend a round trying to pin it.
+    """
+    out: List[str] = []
+    try:
+        root = Path(frontend_src)
+        if not root.is_dir():
+            return out
+        files = [f for f in sorted(root.rglob("*"))
+                 if f.suffix in (".jsx", ".tsx", ".js", ".ts")
+                 and "node_modules" not in f.parts]
+        texts = []
+        for f in files:
+            try:
+                texts.append((f, f.read_text(encoding="utf-8", errors="replace")))
+            except Exception:
+                continue
+        if any(_ICON_LIB_1203KD.search(t) for _f, t in texts):
+            return out
+        for f, text in texts:
+            for m in _GLYPH_ICON_1203KD.finditer(text):
+                line = text[:m.start()].count("\n") + 1
+                _frag = " ".join(
+                    text.split("\n")[line - 1].strip().split())
+                # #1034: declare the cut rather than showing a slice as the whole line.
+                out.append("%s:%d: %s" % (
+                    f.name, line, _frag[:90] + ("…" if len(_frag) > 90 else "")))
+                if len(out) >= limit:
+                    return out
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201("glyph_icon_findings_1203kd",
+                       "the scan for text characters used as icons (#1203kd)", _exc)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # #1202cj — an authenticated page that shares nothing with its siblings.
 # ---------------------------------------------------------------------------
 _AUTH_ROUTE_1202CJ = re.compile(r"element=\{<RequireAuth>\s*<(\w+)")
