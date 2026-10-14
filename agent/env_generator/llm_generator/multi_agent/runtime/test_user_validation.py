@@ -658,7 +658,14 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                 try:
                     await page.goto(frontend_base + route,
                                     wait_until="networkidle", timeout=20000)
-                    async def _fill_visible_inputs():
+                    async def _fill_visible_inputs() -> int:
+                        """Fill every visible input; return how many were filled (#1203ix).
+
+                        The count is the only way to see a MULTI-STEP form from out here: a
+                        form that reveals its password field on the second round reports 1
+                        then 2, and one that never advances reports 1, 1, 1.
+                        """
+                        _filled_1203ix = 0
                         for inp in await page.locator("input").all():
                             try:
                                 if not await inp.is_visible():
@@ -694,16 +701,23 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                             # that happens to say "name" or "mobile" on a typed field.
                             if typ in _TYPED_INPUT_VALUES_1203ip:
                                 await inp.fill(_TYPED_INPUT_VALUES_1203ip[typ])
+                                _filled_1203ix += 1
                             elif "email" in ph or typ == "email" or "mobile" in ph:
                                 await inp.fill(f"uiflow{sfx}@t.io")
+                                _filled_1203ix += 1
                             elif "pass" in ph or typ == "password":
                                 await inp.fill("UiFlow123!x")
+                                _filled_1203ix += 1
                             elif "user" in ph:
                                 await inp.fill(f"uiflow{sfx}")
+                                _filled_1203ix += 1
                             elif "name" in ph:
                                 await inp.fill("Ui Flow")
+                                _filled_1203ix += 1
                             else:
                                 await inp.fill(f"uiflow{sfx}")
+                                _filled_1203ix += 1
+                        return _filled_1203ix
 
                     # Up to 3 fill+submit rounds so a legitimate MULTI-STEP auth form is not
                     # mis-reported as "form not wired". Netflix-style email-first login
@@ -786,8 +800,30 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         page.on("pageerror", _on_pageerror_1203iu)
                     except Exception:
                         pass
+                    # #1203ix: HOW MANY ROUNDS RAN, AND WHAT EACH ONE COULD SEE.
+                    #
+                    # The loop below exists because a multi-step auth form advances without
+                    # calling the API, and "submit sent NO /auth request" is the corpus's
+                    # commonest ui_flow failure (93 of 270). Measured over the 173 runs with an
+                    # auth page: those whose auth source calls `setMode(`/`setStep(`/`setStage(`
+                    # emit that note in 49 of 89 runs (55%), against 24 of 84 (29%) for the
+                    # ones that do not. Nearly twice the rate, on a strict predicate.
+                    #
+                    # That is a correlate without a mechanism, and I falsified two candidates
+                    # for it from the corpus alone: email-first forms with no password field
+                    # (41% against 42%) and pages whose first button is a dismiss control
+                    # (n=6). Telling the remaining stories apart needs to know what the loop
+                    # SAW, and nothing recorded it: a form that reveals its password on round
+                    # two reads 1 then 2, one that never advances reads 1, 1, 1, and one whose
+                    # primary control could not be clicked reads a single entry.
+                    #
+                    # Record-only on purpose. #1203iw has just settled what this note says,
+                    # and four tickets' tests locate that branch by its wording; these counts
+                    # are for the next investigation, not for the lane, so they go where
+                    # #1203a6 put the requests — beside the verdict, in the record.
+                    _fill_rounds_1203ix: list = []
                     for _round in range(3):
-                        await _fill_visible_inputs()
+                        _fill_rounds_1203ix.append(await _fill_visible_inputs())
                         # #1202py: a comma selector matches in DOCUMENT order, so `.first` of
                         # "button[type=submit], form button, button" was whichever button came
                         # first on the page — on tiktok-r126's login that is a nav or "Use QR
@@ -988,6 +1024,8 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         # #1203iu: persisted whether or not the note used it, so a verdict
                         # written without a page error is as auditable as one written with.
                         "page_errors": _page_errors_1203iu[:3],
+                        # #1203ix: one entry per round that ran, holding the inputs it filled.
+                        "fill_rounds": _fill_rounds_1203ix,
                         "note": _note})
                 except Exception as exc:
                     out["flows"].append({"flow": label, "ok": False,
