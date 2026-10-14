@@ -3885,6 +3885,43 @@ def _merged_prose_1202wi(deliverability_prose, extra_prose):
     return out
 
 
+def _ui_evidence_prose_1203jg(validation_results: Any, breadth: Any) -> str:
+    """What `validation_ui_evidence_failed` is ABOUT, as one line of prose. (#1203jg)
+
+    A separate function so a test can EXECUTE it against the records the corpus really
+    holds, which is the only way to know a lookup like this matches anything — the shape
+    #1202dp uses here for the same reason. Returns "" when there is nothing to say.
+
+    Pages come from `_ui_evidence_breadth_739`; the reason comes from the failing record's
+    own `evidence.summary`. The page name is read the way records carry it
+    (`evidence.metadata.page`, else the `validation:ui_*:<page>` suffix) because that
+    helper documents writers naming a page inconsistently. A page whose record has no
+    summary still contributes its name, so this is never emptier than the page list alone.
+    """
+    breadth = breadth if isinstance(breadth, dict) else {}
+    pages = [str(x) for x in (breadth.get("pages_failed") or [])]
+    if not pages:
+        return ""
+    why: List[str] = []
+    for page in pages[:8]:
+        summary = ""
+        for rec in (validation_results or []):
+            if not isinstance(rec, dict) or str(rec.get("status") or "") != "failure":
+                continue
+            ev = rec.get("evidence")
+            ev = ev if isinstance(ev, dict) else {}
+            md = ev.get("metadata")
+            md = md if isinstance(md, dict) else {}
+            if (str(md.get("page") or "") == page
+                    or str(rec.get("name") or "").endswith(":" + page)):
+                summary = str(ev.get("summary") or "").strip()
+                if summary:
+                    break
+        why.append("%s: %s" % (page, summary or "no summary recorded"))
+    return "%d failed UI record(s); %s" % (
+        int(breadth.get("failed_records") or 0), " | ".join(why))
+
+
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                            scaffold_design_readme, get_validation_results,
                            get_validation_summary,
@@ -4176,6 +4213,56 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 # this batch has been removing everywhere else.
                 logger.warning("#1017 could not name the failed UI records: %s: %s",
                                type(_e).__name__, _e)
+        # #1203jg: #1202wi FIXED FIVE CHECKS AND SKIPPED THE BIGGEST ONE.
+        #
+        # `blocker_prose` is how a failed check tells a lane WHAT it is about: the
+        # orchestrator copies it to `_gate_blocker_prose_983` and the remediation dispatcher
+        # reads it per check name. #1202wi added `_note1202wi` for exactly this and wired
+        # `contract_alignment_failed`, `verification_checklist_not_ready`,
+        # `unresolved_failed_tasks`, `incomplete_required_tasks`,
+        # `business_response_key_noncanonical` and the `business_chain_*` reasons. By its own
+        # measurement the largest class was `validation_ui_evidence_failed` at 1001
+        # occurrences -- against business_chain_failing's 368 -- and that is the one left out.
+        #
+        # MEASURED NOW, over every modern run whose FINAL gate record carries a failed check:
+        # `validation_ui_evidence_failed` holds the final gate in 13 of the 63 runs with a
+        # ledger, more than any other check, and in 13 of those 13 it carries NO prose. Six
+        # (r128-r137) could not even name a page; `ui_evidence_failed_pages` fixed that from
+        # r154 on, so r170 says `['login_page','signup_page']` -- but never WHY, and the why
+        # is what decides whether a lane has anything to fix.
+        #
+        # It is in reach and it is specific. The failing records are already in
+        # `validation_results` here, and their own summaries read, verbatim:
+        #     r170 login_page   "flow failed: /api/auth/me produced a 401 console/network
+        #                        error during the flow."
+        #     r181 fyp_feed_logged_out
+        #                       "rendered, but failed due to browser console/network error:
+        #                        GET /auth/me returned 401 during public shell hydration."
+        # Both say the page RENDERED and name an anonymous 401 -- the correct answer from a
+        # guarded endpoint (#1203jf), not a defect. A lane handed "login_page, signup_page
+        # failed" goes looking for a broken login form; handed those sentences it sees there
+        # is nothing to fix on the page at all. That detour is the one this fix removes, and
+        # the #1017 warning right above already assembled the names for the LOGGER and
+        # nowhere else -- #947's rule, which is what #1202wi exists to enforce.
+        #
+        # The page name is read the way the records actually carry it (`metadata.page`, else
+        # the `validation:ui_*:<page>` suffix), not re-derived: `_ui_evidence_breadth_739`
+        # documents that writers name a page inconsistently, and its return shape is left
+        # alone because it has many readers and a long history. A page with no summary still
+        # contributes its name, so the prose is never emptier than the list it replaces.
+        #
+        # `dict`, not `Mapping`: this module imports only Any/Dict/List/Optional from typing,
+        # so `Mapping` here would raise NameError into the except below and silently leave the
+        # prose empty -- a fix that looks landed and never fires (#1203iu's shape, found by
+        # checking the import rather than assuming it, which is this file's own convention:
+        # 64 isinstance(..., dict) sites in this file and no Mapping ones).
+        try:
+            _p1203jg = _ui_evidence_prose_1203jg(validation_results, _breadth739)
+            if _p1203jg:
+                _note1202wi("validation_ui_evidence_failed", _p1203jg)
+        except Exception as _e1203jg:       # prose is not the verdict (#1202wi's own rule)
+            if logger:
+                logger.debug("#1203jg could not build the ui-evidence prose: %s", _e1203jg)
         failed_checks.append("validation_ui_evidence_failed")
     # #1154: say when a UI record was discounted as unreachable-origin rather than product
     # evidence. Discounting silently would be the #691/#790 mistake — a correct decision that
