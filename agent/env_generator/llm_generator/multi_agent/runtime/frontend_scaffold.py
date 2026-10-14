@@ -2663,6 +2663,57 @@ def _resolve_local_module(importer: Path, rel: str):
     return None
 
 
+_IMPORT_STMT_1203JV = re.compile(r"^[ \t]*import\s+([^;'\"]+?)\s+from\s*['\"]", re.M)
+
+
+def _import_bound_1203jv(src: str, name: str) -> bool:
+    """Is `name` a LOCAL binding in `src` created by an import?
+
+    #1203jv: the third way a name can already exist in a module, and the repair below knew
+    only two. tiktok-web-r186's frontend failed `npm run build` ELEVEN times on one line --
+    `"Link" is not exported by "src/components/TikTokComponents.jsx"` -- while that module's
+    line 2 read `import { Link, useNavigate } from '../lib/router.jsx';`. So `Link` was not
+    exported, was not declared with const/let/var/function/class, and did not "appear
+    nowhere", which is every branch this repair had: it fell through all of them and wrote
+    nothing, eleven times, silently. The run delivered 1 of its 4 milestones.
+
+    The `as` direction matters and is why this parses rather than greps. `{ a as n }` binds
+    n; `{ n as b }` binds b and NOT n; `import n from` and `import * as n from` bind n.
+    A grep for the word would re-export a name the module does not have.
+
+    KNOWN EXPOSURE, measured and deliberately not armoured: an import at the start of a line
+    INSIDE a `/* ... */` block would read as a binding here, and `export { n };` against a
+    commented-out import is itself a build error. Across 4,000 generated .jsx files the corpus
+    has ZERO of those; the sibling branch (a declaration inside a block comment) has one, so
+    stripping comments would be a change to both branches for a shape neither has met. A
+    `//`-commented import is already excluded, because the anchor is `^[ \t]*import`.
+    """
+    try:
+        for clause in _IMPORT_STMT_1203JV.findall(src or ""):
+            head, _, rest = clause.partition("{")
+            for part in head.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if part.startswith("*"):
+                    m = re.match(r"\*\s+as\s+([A-Za-z_$][\w$]*)$", part)
+                    if m and m.group(1) == name:
+                        return True
+                elif part == name:
+                    return True
+            if rest:
+                for spec in rest.split("}")[0].split(","):
+                    spec = spec.strip()
+                    if not spec:
+                        continue
+                    local = re.split(r"\s+as\s+", spec)[-1].strip()
+                    if local == name:
+                        return True
+    except Exception:
+        return False
+    return False
+
+
 def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
     """Build-integrity: a NAMED import from a LOCAL module that EXISTS but doesn't
     export that name HARD-fails the Rollup/Vite build ('X is not exported by Y' →
@@ -2717,10 +2768,26 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                     if re.search(r"\b(?:const|let|var|function|class)\s+"
                                  + re.escape(n) + r"\b", tgt_src):
                         to_reexport.setdefault(target, set()).add(n)
+                    # #1203jv: BOUND BY AN IMPORT in the target — re-export it. Same
+                    # treatment as a declared binding and for the same reason: the
+                    # binding exists, so `export { n }` is valid and cannot collide,
+                    # while a stub would be a duplicate declaration. This is the branch
+                    # r186 fell through eleven times on `Link`.
+                    elif _import_bound_1203jv(tgt_src, n):
+                        to_reexport.setdefault(target, set()).add(n)
                     # appears NOWHERE → safe to stub (conservative; a parser miss
                     # can never cause a duplicate-declaration build break)
                     elif not re.search(r"\b" + re.escape(n) + r"\b", tgt_src):
                         to_add.setdefault(target, set()).add(n)
+                    else:
+                        # #1203jv: NO BRANCH MATCHED, and the build breaker stands. The
+                        # old code reached this point by falling off the `elif` chain and
+                        # said nothing at all, so eleven identical build failures carried
+                        # no hint of why the repair kept declining. Staying conservative
+                        # is right — something named `n` is in that file and a stub could
+                        # collide — but staying SILENT is what cost the run.
+                        result.setdefault("unrepairable_1203jv", []).append(
+                            (target.name, n))
         for target, names in to_add.items():
             try:
                 tgt_src = target.read_text(encoding="utf-8", errors="ignore")
@@ -2772,10 +2839,15 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
             except OSError:
                 continue
             exported = _exported_names(tgt_src)
+            # #1203jv: the same two ways a binding can exist, re-checked here against the
+            # file as it is NOW. The filter used to name only declarations, so widening the
+            # collection above without widening this would have collected `Link` and then
+            # dropped it again one loop later.
             reexp = sorted(
                 n for n in names if n not in exported
-                and re.search(r"\b(?:const|let|var|function|class)\s+"
-                              + re.escape(n) + r"\b", tgt_src))
+                and (re.search(r"\b(?:const|let|var|function|class)\s+"
+                               + re.escape(n) + r"\b", tgt_src)
+                     or _import_bound_1203jv(tgt_src, n)))
             if not reexp:
                 continue
             lines = ["", "// auto-reconciled missing exports (re-export existing local bindings)."]

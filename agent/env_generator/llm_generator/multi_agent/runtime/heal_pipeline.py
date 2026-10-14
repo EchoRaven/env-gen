@@ -2235,7 +2235,19 @@ class HealPipeline:
                                   "visual_mismatches", "fake_map_pages")
                     for _p in (report.get(_k) or [])]
                 if not _pages_1202st and not report.get("auth_ok"):
-                    _pages_1202st = ["login"]   # the walk broke before any page was reached
+                    # #1203jv: this used to read "the walk broke before any page was
+                    # reached", and that is false for every instance the corpus holds. I
+                    # spent an hour on the sentence before measuring it. The dispatch line
+                    # below prints every signal, so the branch is countable: 543 dispatches,
+                    # 12 of them with auth_ok False and all other signals empty, and
+                    # `pages=0` NEVER occurs -- the lowest is 4, and those 12 each sit beside
+                    # a line reading pages=10..12 with blank/console_errors/login_wall all
+                    # empty and real data found. So the real trigger is the opposite of the
+                    # old comment: every page WAS walked and every page was CLEAN, and only
+                    # the auth steps failed. A P0 naming "login" is then exactly right.
+                    # (A walk that genuinely could not run is already turned into ran=False
+                    # and skipped upstream by #27's and #46's readiness gates.)
+                    _pages_1202st = ["login"]
                 from .remediation_dispatcher import _instanced_gate_title_1202ss
                 orch.hubs.workhub.create_task(
                     title=_instanced_gate_title_1202ss(
@@ -2625,6 +2637,26 @@ class HealPipeline:
                 orch._logger.warning(
                     "#1203f2 frontend build-breaker STANDS: %s still does not export %s - "
                     "the repair's write did not land", _uw[0], _uw[1])
+            # #1203jv: the two outcomes this caller used to drop on the floor.
+            #
+            # `reexported` is a repair that LANDED and that nobody could see -- the caller
+            # read `repaired` and `unwritten` only, so a re-export left no trace in the run.
+            # `unrepairable_1203jv` is worse: no branch of the repair matched, the Rollup
+            # break stands, and before this it was not even a key. tiktok-web-r186 failed
+            # `npm run build` eleven times on `"Link" is not exported by
+            # TikTokComponents.jsx` -- a name that module IMPORTS on line 2 -- and the
+            # eleven failures carried no hint that the repair had looked and declined.
+            if _me.get("reexported"):
+                orch._logger.warning(
+                    "#1203jv frontend exports RE-EXPORTED (the binding already existed, "
+                    "declared or imported): %s", _me.get("reexported"))
+            for _ur in (_me.get("unrepairable_1203jv") or [])[:4]:
+                orch._logger.warning(
+                    "#1203jv frontend build-breaker STANDS and no repair applies: %s does "
+                    "not export %s, yet that name DOES appear in the file without being a "
+                    "declaration or an import binding - so a stub could collide and the "
+                    "repair declined. Rollup will hard-fail the frontend build until the "
+                    "lane exports it or stops importing it.", _ur[0], _ur[1])
             # Build-integrity: a page doing `import { X } from './Comp'` against a
             # default-only Comp HARD-fails the Rollup build (live: NotesListPage
             # imported { NavBar } from a default-export NavBar.jsx → docker_up FAIL).
