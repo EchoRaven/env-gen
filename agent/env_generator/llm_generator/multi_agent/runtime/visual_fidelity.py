@@ -5790,11 +5790,38 @@ def _component_file_938(project_dir: Any, route: Any) -> Optional[str]:
         return None
 
 
+def _unshot_blocking_1203kc(screens: Any) -> List[str]:
+    """Names of screens that DRAG the blocking average while having no photograph to judge.
+
+    #1203kc — one owner for "this round took no shot of a screen that counts" (#1032), used
+    by BOTH halves of #1203kb's question: the drop that must not be blamed on the lane, and
+    the gain that must not be credited to it.
+
+    `capture_missing` is the field #768 writes when the harness never photographed the route
+    ("a hard 0.00 that COUNTED"); `capture_error` is #935's exception for the same event on
+    paths that record the cause without the flag. Either one means there is nothing to judge.
+
+    ADVISORY and BLANK screens are excluded, because the blocking average excludes them too
+    (the caller's `_lb`): a screen that cannot move the number cannot explain a move in it.
+    35 of 146 corpus screens are advisory, so including them was a reachable over-count.
+    """
+    out: List[str] = []
+    for s in (screens or []):
+        if not isinstance(s, Mapping):
+            continue
+        if s.get("advisory") or s.get("blank") is True:
+            continue
+        if s.get("capture_missing") or s.get("capture_error"):
+            out.append(str(s.get("name") or "?"))
+    return sorted(set(out))
+
+
 def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                      latched: Optional[set] = None,
                      prev_live: Optional[float] = None,
                      this_live: Optional[float] = None,
-                     round_no: Optional[int] = None) -> str:
+                     round_no: Optional[int] = None,
+                     prev_unshot: Optional[List[str]] = None) -> str:
     """Actionable task body for the frontend lane from a failed gate result —
     per screen: missing components first, then the judge's per-dimension notes
     (weakest dimension first), then the ordered deviations.
@@ -5862,19 +5889,23 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     # which is exactly when the number cannot be attributed. With every screen captured the
     # text below is byte-identical to before.
     #
-    # THE MIRROR CASE IS REAL AND OUT OF REACH HERE, so it is said rather than left looking
-    # overlooked. When the PREVIOUS round had the uncaptured screens, its average was the
-    # depressed one, and this round's "Your last round helped … keep going in the same
-    # direction" credits the lane for the harness recovering. Measured by pairing each run's
-    # consecutive visual tasks: 22 cases, 3 of them modern (r159, r162, r166) — e.g.
-    # netflix-r34 round 3→4 reported 0.03 → 0.48. It is not fixed here because this function
-    # receives `prev_live` as a NUMBER and never sees the previous round's screens, so the
-    # fact needed to detect it does not exist at this call site; plumbing it is a change to
-    # what the gate carries between rounds, not to this sentence. The asymmetry is also
-    # deliberate on harm: "keep going" wastes a round, "revert that round" destroys work.
-    _unshot_1203kb = sorted({
-        str(s.get("name") or "?") for s in (result.get("screens") or [])
-        if isinstance(s, Mapping) and (s.get("capture_missing") or s.get("capture_error"))})
+    # #1203kc CORRECTS THIS COMMENT. It used to say the mirror case was "out of reach here
+    # because this function receives `prev_live` as a NUMBER and never sees the previous
+    # round's screens". The second half is true and the conclusion was not: the CALLER
+    # computes `_this_live` from `screens` and stores it as `_prev_live_average` on the same
+    # line, so it is holding the screens at the moment it remembers the number. Keeping one
+    # more fact from that same list is the same action, not a new mechanism — so `prev_unshot`
+    # is plumbed and the "helped" branch below uses it. The claim was checkable in two tool
+    # calls and I committed it instead of checking; a false sentence in the framework is its
+    # own defect (#1203j2), not a documentation style.
+    #
+    # #1203kc also NARROWS the predicate. `_unshot_1203kb` counted every screen, but the
+    # blocking average excludes `advisory` and `blank` ones (see the caller's `_lb`), so one
+    # of those cannot have moved the number — and excusing a drop it could not have caused
+    # would trade the false accusation for a MISSED regression, which is the exact direction
+    # this patch's own mutation test guards. 35 of 146 corpus screens are advisory, so the
+    # over-count was reachable, not theoretical.
+    _unshot_1203kb = _unshot_blocking_1203kc(result.get("screens"))
     _head = ""
     if isinstance(prev_live, (int, float)) and isinstance(this_live, (int, float)):
         _d = this_live - prev_live
@@ -5894,6 +5925,22 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                      f"{prev_live:.2f} → {this_live:.2f} ({_d:+.2f}). Before changing anything "
                      f"else, look at what that round touched and consider reverting it — the "
                      f"screens listed below are scored on the CURRENT code.\n\n")
+        elif _d > 0.01 and prev_unshot:
+            # #1203kc: the MIRROR of #1203kb. The PREVIOUS round held the unphotographed
+            # screens, so ITS average was the depressed one and this gain is partly the
+            # harness recovering. Measured by pairing each run's consecutive visual tasks:
+            # 22 cases, 3 modern (r159, r162, r166) — netflix-r34 reported 0.03 → 0.48 across
+            # a round whose predecessor lost three shots. "Keep going in the same direction"
+            # on that is a false confirmation, and the lane has no other feedback channel.
+            # Still not an exoneration in reverse: the gain is reported with both numbers and
+            # the lane is told what to compare against, not told to discard the round.
+            _n1203kc = len(prev_unshot)
+            _head = (f"{_r}blocking average {prev_live:.2f} → {this_live:.2f} ({_d:+.2f}) — "
+                     f"but {_n1203kc} screen(s) took NO photograph in the PREVIOUS round "
+                     f"({', '.join(prev_unshot[:4])}{' …' if _n1203kc > 4 else ''}), and an "
+                     f"unphotographed screen counts as 0.00 (#768), so that round's average "
+                     f"was depressed by the harness. Part of this gain is that recovering. "
+                     f"Treat the screens below as the signal, not the delta.\n\n")
         elif _d > 0.01:
             _head = (f"{_r}Your last round helped: blocking average {prev_live:.2f} → "
                      f"{this_live:.2f} ({_d:+.2f}). Keep going in the same direction.\n\n")
@@ -6996,6 +7043,22 @@ class VisualFidelityGate:
     # latches) — a wrapper hands them eight lines and every one of those assertions
     # evaporates. The guarantee is identical either way: one try/finally around the only
     # caller covers all eight of this method's return paths.
+    def _remember_unshot_1203kc(self, screens: Any) -> Optional[List[str]]:
+        """Swap in THIS round's unphotographed screens; return the PREVIOUS round's.
+
+        #1203kc — a seam, because the fact lives across rounds while every other input to
+        `remediation_text` is computed inside one. `None` on the first round (no previous
+        round existed) rather than `[]`, so a reader can tell "none were lost" from "there
+        was nothing to lose" (#771b's distinction).
+
+        Extracted rather than left inline because a mutation that made the caller forget
+        (`= []`) survived every test of the text: the branch it feeds could never fire in
+        production and nothing would have gone red. The store IS the behaviour here.
+        """
+        prev = getattr(self, "_prev_unshot_1203kc", None)
+        self._prev_unshot_1203kc = _unshot_blocking_1203kc(screens)
+        return prev
+
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
         running frontend on the routes the reference images depict, has the
@@ -7417,6 +7480,11 @@ class VisualFidelityGate:
                 _this_live = None
             _prev_live = getattr(self, "_prev_live_average", None)
             self._prev_live_average = _this_live
+            # #1203kc: remember the same round's UNPHOTOGRAPHED screens beside its average.
+            # `screens` is in hand right here, so keeping one more fact from it costs a field.
+            # Read on the NEXT round to stop "your last round helped" crediting the lane for
+            # the harness recovering (22 corpus cases, 3 modern).
+            _prev_unshot = self._remember_unshot_1203kc(screens)
             try:
                 _vt = orch.hubs.workhub.create_task(
                     title=(f"UI does not match reference designs (visual gate, "
@@ -7425,7 +7493,8 @@ class VisualFidelityGate:
                     description=remediation_text(result, getattr(orch, "output_dir", None),
                                                  latched=self._passed_screens,
                                                  prev_live=_prev_live, this_live=_this_live,
-                                                 round_no=self._remediation_round),
+                                                 round_no=self._remediation_round,
+                                                 prev_unshot=_prev_unshot),
                     assignee="frontend",
                     agent="orchestrator",
                     priority="P1",
