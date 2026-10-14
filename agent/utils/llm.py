@@ -1814,35 +1814,131 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
     # A budget cap reuses the TERMINAL latch rather than opening a second abort path:
     # #1159 classifies, #1161 stops the lanes, #326 ends the run. One mechanism, and it
     # is the one already verified on live runs (r17: 2h50m -> 272s).
+    # #1203jt: THE CAP DECISION IS NOT GUARDED BY THE SAME `except` AS ITS EMBELLISHMENTS.
+    #
+    # This whole block used to sit inside one `try: ... except Exception: return`, so an
+    # exception anywhere in it -- in the #1202hw advisory line, in either overshoot probe,
+    # in `llm_usage()` -- silently skipped the CAP CHECK for that call and said nothing.
+    # Driven locally: make one collaborator raise and the latch never closes; 20 calls later
+    # the run has spent 6.8x its cap with no line anywhere. The cap is the only thing between
+    # a loop and real money, and it failed open.
+    #
+    # HONESTLY: the shape is demonstrated, the reachability is NOT. Every collaborator in the
+    # block below hardens itself -- `_price_env_1163` and `_overshoot_1183` catch
+    # TypeError/ValueError, `converging_1202cz` and `_warn_if_cap_cannot_finish_1202hw` swallow
+    # everything, `delivering_1183` is a dict read -- so no live path is known to raise here.
+    # This is defence in depth on the one guard standing between a loop and real money, and it
+    # changes nothing on the happy path.
+    #
+    # It is NOT an explanation of the corpus overshoots, and I withdrew that claim after
+    # checking it: r155 ($351.08/$300 cap), r167 ($283.61/$250), r161 ($364.97/$350) and r164
+    # ($404.11/$400) all latched past their cap carrying NO overshoot clause, which says
+    # `_shoot` was 1.0 at latch. Two candidate explanations both died. The #1183 x1.25 grace
+    # cannot be it: each of those four landed BELOW cap x 1.25, and r163/r165 -- which really
+    # did take the grace -- say so in the reason and land on exactly 1.25x. "The gate went red
+    # and the threshold dropped back" cannot be it either: r161's log has the orchestrator
+    # reporting a GREEN delivery gate at 14:35:02 and the latch at 14:35:40. So something
+    # spent $15-$51 past an in-force threshold and the artifacts do not say what.
+    #
+    # Which is why the message below now carries the threshold that was actually in force and
+    # names the gap when it is bigger than one call: the next occurrence will explain itself
+    # instead of costing another hour of archaeology.
+    #
+    # So: the embellishments keep their guard and default to the STOP-EARLIER side, the
+    # comparison runs outside it, and a failure in either announces itself once.
     try:
         cap = _price_env_1163("ENVGEN_MAX_SPEND_USD")
+    except Exception as _e1203jt:
+        _warn_cap_check_1203jt("reading ENVGEN_MAX_SPEND_USD", _e1203jt, enforced=False)
+        return
+    if not (cap > 0) or _TERMINAL_LLM_ERROR["reason"]:
+        return
+    _shoot = 1.0
+    _why = ""
+    try:
         _warn_if_cap_cannot_finish_1202hw(cap)
-        if cap > 0 and not _TERMINAL_LLM_ERROR["reason"]:
-            u = llm_usage()
-            # #1183: once the gate has passed there is nothing left to protect — stopping
-            # here loses the whole run to save the tail of it. Bounded, and stated.
-            _shoot = _overshoot_1183() if delivering_1183() else 1.0
-            _why = "delivery overshoot applied; the gate had passed"
-            # #1202cz: one bounded grace for a run the gate says is still improving.
-            # Checked only where #1183's stronger claim does not already apply, and
-            # latched so it is granted once rather than at every call past the ceiling.
-            if _shoot <= 1.0 and converging_1202cz():
-                _shoot = _converging_overshoot_1202cz()
-                if _shoot > 1.0:
-                    _CONVERGING_1202CZ["granted"] = True
-                    _why = ("converging overshoot applied; the visual gate reported "
-                            "plateau 0 and a score above round one")
-            if u["priced"] and u["usd"] >= cap * _shoot:
-                _extra = ("" if _shoot <= 1.0 else
-                          " (%s, x%.2f)" % (_why, _shoot))
-                _TERMINAL_LLM_ERROR["reason"] = (
-                    "[BudgetExceeded] run spend $%.2f reached ENVGEN_MAX_SPEND_USD=$%.2f%s "
-                    "after %d calls (uncached-in %d, cached-in %d, out %d)"
-                    % (u["usd"], cap, _extra, u["calls"], u["uncached"], u["cached"],
-                       u["completion"]))
-    except Exception:
+        # #1183: once the gate has passed there is nothing left to protect — stopping
+        # here loses the whole run to save the tail of it. Bounded, and stated.
+        _shoot = _overshoot_1183() if delivering_1183() else 1.0
+        _why = "delivery overshoot applied; the gate had passed"
+        # #1202cz: one bounded grace for a run the gate says is still improving.
+        # Checked only where #1183's stronger claim does not already apply, and
+        # latched so it is granted once rather than at every call past the ceiling.
+        if _shoot <= 1.0 and converging_1202cz():
+            _shoot = _converging_overshoot_1202cz()
+            if _shoot > 1.0:
+                _CONVERGING_1202CZ["granted"] = True
+                _why = ("converging overshoot applied; the visual gate reported "
+                        "plateau 0 and a score above round one")
+    except Exception as _e1203jt:
+        # 1.0 is the conservative value: no grace, stop at the number the operator set.
+        # A grace nobody can compute is not a grace that should be granted silently.
+        _shoot, _why = 1.0, ""
+        _warn_cap_check_1203jt("computing the overshoot allowance", _e1203jt,
+                               enforced=True)
+    try:
+        u = llm_usage()
+        _threshold = cap * _shoot
+        if u["priced"] and u["usd"] >= _threshold:
+            _extra = ("" if _shoot <= 1.0 else
+                      " (%s, x%.2f)" % (_why, _shoot))
+            # #1203jt: the threshold that was ACTUALLY in force, plus the gap when the latch
+            # landed further past it than one call can explain. Four corpus runs latched
+            # $15-$51 over a cap while reporting no grace, and the reason as written could not
+            # distinguish "the last call was expensive" from "the check did not fire for a
+            # stretch". The per-call average is the right yardstick because it is measured from
+            # this very run rather than picked: a tail overshoot is at most about one call.
+            _per_call = (u["usd"] / u["calls"]) if u["calls"] else 0.0
+            _gap = u["usd"] - _threshold
+            _late = ("" if _gap <= max(3.0 * _per_call, 0.01) else
+                     " — latched $%.2f PAST the $%.2f threshold, which is %.0fx the $%.4f "
+                     "average call, so the check did not fire on every call before this one "
+                     "(#1203jt)"
+                     % (_gap, _threshold, (_gap / _per_call) if _per_call else 0.0, _per_call))
+            _TERMINAL_LLM_ERROR["reason"] = (
+                "[BudgetExceeded] run spend $%.2f reached ENVGEN_MAX_SPEND_USD=$%.2f%s "
+                "(threshold in force $%.2f)%s after %d calls "
+                "(uncached-in %d, cached-in %d, out %d)"
+                % (u["usd"], cap, _extra, _threshold, _late, u["calls"], u["uncached"],
+                   u["cached"], u["completion"]))
+    except Exception as _e1203jt:
+        _warn_cap_check_1203jt("comparing spend against the cap", _e1203jt,
+                               enforced=False)
         return
 
+
+
+_CAP_CHECK_WARNED_1203JT: Dict[str, Any] = {}
+
+
+def _warn_cap_check_1203jt(step: str, exc: Any, *, enforced: bool) -> None:
+    """Say, once per step, that part of the SPEND CAP check failed -- and what that costs.
+
+    #1203jt: `warn_once_1201` is the repo's name for this shape but lives under
+    `multi_agent/runtime`, which this module must not import; the once-per-key latch is the
+    part that matters and is four lines.
+
+    `enforced` is not decoration. Two of the three callers still compare spend against the
+    cap after their failure -- they only lose the overshoot GRACE -- and one does not compare
+    at all. Telling an operator "the cap is not being enforced" when it is would be the same
+    defect this patch exists to fix, one level out: a sentence that claims more than the code
+    does. So the consequence is written per step, from the step itself.
+    """
+    try:
+        if step in _CAP_CHECK_WARNED_1203JT:
+            return
+        _CAP_CHECK_WARNED_1203JT[step] = True
+        _cost = ("the cap is STILL enforced, at the operator's number with no overshoot "
+                 "grace, so a converging or delivering run may stop earlier than intended"
+                 if enforced else
+                 "the cap is NOT enforced on this call and the run keeps spending -- watch "
+                 "run_budget.json's llm.usd against ENVGEN_MAX_SPEND_USD and stop the run "
+                 "by hand if it passes")
+        logging.getLogger("LLM.budget").error(
+            "#1203jt the spend cap check failed while %s: %s: %s. Consequence: %s.",
+            step, type(exc).__name__, exc, _cost)
+    except Exception:
+        return
 
 # #1202hw: A CAP BELOW THE COST OF FINISHING BUYS A TRUNCATED RUN, NOT A CHEAP ONE.
 #

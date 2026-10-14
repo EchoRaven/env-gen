@@ -106,10 +106,42 @@ def test_it_is_actually_wired_into_the_guard():
     assert "_warn_if_cap_cannot_finish_1202hw" in names
 
 
-def test_the_warning_does_not_gate_the_cap_itself():
-    """It must not be able to stop the guard from latching."""
-    import inspect
-    src = inspect.getsource(L._record_usage_1163)
-    i = src.index("_warn_if_cap_cannot_finish_1202hw")
-    j = src.index('if cap > 0 and not _TERMINAL_LLM_ERROR["reason"]:')
-    assert i < j, "the warning must sit before, and outside, the enforcement branch"
+def test_the_warning_does_not_gate_the_cap_itself(monkeypatch):
+    """It must not be able to stop the guard from latching -- asserted by MAKING IT FAIL.
+
+    #1203jt rewrote this. It used to compare two `src.index(...)` offsets inside
+    `_record_usage_1163` and require the advisory to appear before
+    `if cap > 0 and not _TERMINAL_LLM_ERROR["reason"]:`. That is a source-order proxy for a
+    behavioural claim, and it broke on a restructure that serves the claim STRICTLY BETTER:
+    the enforcement branch became an early return, so the literal vanished and the test went
+    red while the property it names got stronger. Worse, the old shape was green for the whole
+    period in which the advisory COULD stop the latch -- it sat before the branch and inside
+    the same `try`, so raising from it skipped the enforcement entirely.
+
+    So this now does the only thing that settles it: make the advisory raise, and require the
+    latch to close anyway.
+    """
+    monkeypatch.setenv("ENVGEN_MAX_SPEND_USD", "10")
+    monkeypatch.setenv("ENVGEN_PRICE_IN_PER_M", "5.5")
+    monkeypatch.setenv("ENVGEN_PRICE_CACHED_PER_M", "0.55")
+    monkeypatch.setenv("ENVGEN_PRICE_OUT_PER_M", "33")
+    for k, v in list(L._LLM_USAGE.items()):
+        if isinstance(v, int):
+            monkeypatch.setitem(L._LLM_USAGE, k, 0)
+    monkeypatch.setitem(L._TERMINAL_LLM_ERROR, "reason", None)
+    L._CAP_CHECK_WARNED_1203JT.clear()
+    monkeypatch.setattr(L, "delivering_1183", lambda *a, **k: False, raising=False)
+    monkeypatch.setattr(L, "converging_1202cz", lambda *a, **k: False, raising=False)
+
+    def boom(*a, **k):
+        raise RuntimeError("the advisory is advisory")
+    monkeypatch.setattr(L, "_warn_if_cap_cannot_finish_1202hw", boom, raising=False)
+
+    for _ in range(25):
+        L._record_usage_1163(500_000, 0, 20_000)
+        if L._TERMINAL_LLM_ERROR["reason"]:
+            break
+    assert L._TERMINAL_LLM_ERROR["reason"], (
+        "the #1202hw advisory raising stopped the spend cap from latching; $%.2f spent against "
+        "a $10 cap" % L.llm_usage()["usd"])
+    assert L.llm_usage()["usd"] < 11.0, L.llm_usage()["usd"]
