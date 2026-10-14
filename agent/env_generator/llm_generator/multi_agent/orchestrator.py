@@ -3789,6 +3789,63 @@ class Orchestrator:
                             self._logger.warning(
                                 "framework delivery: integration -> main promotion raised: %s",
                                 _promo6b)
+                        # #1203ja: WALK THE RELEASE THE USER ACTUALLY BOOTS.
+                        #
+                        # `create_release` has exactly TWO call sites. The other one
+                        # (`_maybe_framework_deliver`) runs the test-user walk TWICE — the
+                        # #1202nm blocking pre-release gate and the post-release safety net —
+                        # plus #155's `ensure_fresh_smoke_before_cut`. This site, which cuts the
+                        # run's HIGHEST tag, had none of them, so the artifact a user boots is
+                        # the one release nobody ever walked.
+                        #
+                        # Measured over every run on this machine with a stdout log and at least
+                        # one release (60): 8 took this path ("FINAL DELIVERY: gate clear") and
+                        # all 8 ship a final tag with no `test_user_reports/<tag>.json`; of the
+                        # 50 that did not, all 50 have one. The 8 include tiktok-web r173, r177,
+                        # r184 and r185 — the four best runs here, each recorded as a full
+                        # delivery. r185 is the shape: 3 of 3 milestones delivered, gate clear,
+                        # and 1.2.0 — what ships — never walked, while 1.0.0 and 1.1.0 were.
+                        #
+                        # The app IS up at this point, so the walk runs instead of self-skipping:
+                        # the visual gate measured THIS tag live just above (r185's 1.2.0 carries
+                        # `visual_blocking_average_live` 0.6167).
+                        #
+                        # DELIBERATELY NOT A GATE. `_maybe_framework_deliver` can hold a cut
+                        # because its loop retries on the next tick; here the run is ending, so a
+                        # hold would delete the run's last milestone from the ledger (r184 would
+                        # read 3-of-4) to report a defect no one can act on any more. The
+                        # decision to ship is left exactly as it was; what changes is that the
+                        # shipped tag now has a recorded walk instead of silence. `#1202qe`
+                        # isolation inside the walk puts the seeded data back, and the walk
+                        # health-pre-checks, never boots and never raises into delivery.
+                        #
+                        # Idempotent on the REPORT, not on a flag: tiktok-web-r108 took this path
+                        # and HAS its final report, because the deferring pass's #1202nm
+                        # pre-release walk had already written it. Re-walking there would
+                        # overwrite a gate-relevant record with a post-shutdown one.
+                        #
+                        # THIRD TIME AT THIS PAIR OF SITES. #706 hooked main-promotion at the
+                        # other site only (#706b fixed it here) and #1203hy's status refusal had
+                        # the same asymmetry (#1203ig). #706b records that only a live run found
+                        # it, because the unit tests asserted the hook was present and it was —
+                        # at the site the run did not use. `test_1203ja_*` therefore asserts the
+                        # two sites carry the SAME post-cut hooks, so a fourth miss reddens a
+                        # test instead of waiting for a run.
+                        try:
+                            _rep_1203ja = (Path(self.output_dir) / "test_user_reports"
+                                           / ("%s.json" % _ver))
+                            _walked_1203ja = _rep_1203ja.exists()
+                        except Exception:
+                            _walked_1203ja = True      # cannot tell → do not overwrite
+                        if not _walked_1203ja:
+                            try:
+                                import asyncio as _tu_async_1203ja
+                                await _tu_async_1203ja.to_thread(
+                                    self._run_test_user_validation, str(_ver))
+                            except Exception as _tu_err_1203ja:
+                                self._logger.debug(
+                                    "#1203ja final-release test-user walk did not dispatch: %s",
+                                    _tu_err_1203ja)
                 except Exception as _fin_rel_err:  # best-effort observability
                     self._logger.warning("final-gate release cut failed: %s", _fin_rel_err)
                 phases_completed = ["requirements", "kickoff", "code", "docker", "testing"]
