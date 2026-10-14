@@ -2846,6 +2846,36 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
     # i.e. an unauth or cross-user/cross-tenant access that MUST be refused. Routed to the
     # verifier via _GATE_OWNER["business_chain_isolation"]. Env-gated (default-off) until the
     # drive fix is validated end-to-end, then enable by default.
+    #
+    # #1203jj: MEASURED, SEEN, DELIBERATELY STILL PARKED -- and the trigger above cannot be
+    # evaluated, which is the part worth fixing.
+    #
+    # "until the drive fix is validated end-to-end" names nothing locatable: `drive fix`
+    # appears in no other file in this tree, so no reader can tell whether the precondition
+    # has been met. A park is only honest when its trigger is checkable -- #1203ib's park on
+    # the browser-launch classifier states one I could measure ("one run where a host-caused
+    # browser failure reaches a FINAL gate verdict") and the answer was zero. This one sends
+    # the next reader looking for a referent that is not there.
+    #
+    # So here is the number instead. The predicate below is `expect` ∩ {401, 403} over the
+    # authored chains; run the same predicate over `registryhub_verification_chains.json`
+    # for every modern run on this machine (64 with chains): 63 ALREADY have at least one
+    # denial-asserting chain. The single exception is tiktok-web-r131 -- 17 chains, zero
+    # denial steps -- which is precisely the "pure 2xx happy-path sweep" this gate exists to
+    # catch, so it is a TRUE positive, not a cost.
+    #
+    # Enabling by default therefore changes nothing in 63 of 64 runs, and in the 64th it
+    # routes to the verifier (`_GATE_OWNER["business_chain_isolation"]`) rather than dead-
+    # ending -- one remediation cycle, not a lost release. That is the whole decision, and
+    # it is a behaviour change to the delivery path, so it is NOT being flipped here on an
+    # offline measurement: #1203jd is this session's one delivery-path change and it is
+    # itself unverified live. Flip it in a session that can watch a run.
+    #
+    # WHAT WOULD MAKE IT WRONG TO FLIP: a run whose chains legitimately cannot assert a
+    # denial -- an app with no per-user or per-tenant resource at all. None of the 64 is
+    # that app, but the corpus is one product family wide, so a mail/docs/video contract
+    # could be. The check is per-run, so such a run would need the env var off, not the
+    # gate removed.
     import os as _os
     if _os.environ.get("ENVGEN_ISOLATION_GATE", "0").lower() in ("1", "true", "yes", "on"):
         _denial = {401, 403}
