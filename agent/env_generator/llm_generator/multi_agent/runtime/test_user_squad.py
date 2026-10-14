@@ -1243,6 +1243,28 @@ class FailureLedger:
         return sorted((dict(g) for g in planned_goals),
                       key=lambda g: (0 if self._key(g) in open_keys else 1, str(g.get("name"))))
 
+    def replay_split_1203ki(self, planned_goals: Sequence[Mapping[str, Any]]
+                            ) -> "tuple[List[str], List[str]]":
+        """``(being_replayed, carried_but_not_planned)`` for this cycle's goal list.
+
+        #1203ki — `open_failures()` is every unpassed key the ledger holds, from every cycle,
+        and the caller logged its LENGTH as "replaying N prior failure(s) first". But
+        `order_replay_first` can only move goals that are IN the plan, so the number described
+        something it could not do: 6 of the corpus's 192 squad-spawn lines claim to replay MORE
+        failures than there are agents — "spawning 12 agents across modalities ['browser'] …
+        replaying 14 prior failure(s) first". The extras are other cycles' modalities still
+        sitting in the ledger (`api::`, `mcp::`) while this cycle planned browser goals only.
+
+        The second half is not noise, which is why it is returned rather than filtered away: a
+        goal that failed before and is NOT in this cycle's plan is a failure nobody will
+        re-test, and that is worth a reader's attention in its own right (#1034 — a count must
+        describe the list beside it, and a list that was cut must say so).
+        """
+        planned = {self._key(g) for g in (planned_goals or []) if isinstance(g, Mapping)}
+        open_keys = self.open_failures()
+        return ([k for k in open_keys if k in planned],
+                [k for k in open_keys if k not in planned])
+
 
 def squad_gate_enabled(env: Mapping[str, Any]) -> bool:
     """#179: the test-user squad runs on delivery by DEFAULT (validated live on gmrun13, where it
@@ -1609,14 +1631,29 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
         # Regression: re-test previously-FAILED goals first (design §3.5).
         proj = Path(getattr(orch, "output_dir", ".") or ".")
         ledger = FailureLedger(proj / "test_user_reports" / "failure_ledger.json")
+        # #1203ki: split BEFORE reordering — `order_replay_first` returns the plan, so after
+        # it the ledger keys that are not in the plan are invisible.
+        #
+        # Imported here, not at module scope: this module has no `message_format` import and
+        # adding one at the top would be a wider change than the line needs. Own try is not
+        # required because the whole spawn block below is already inside one — but the NAME
+        # has to exist, which is the mistake this patch nearly shipped twice today (a
+        # NameError inside a guarded block becomes a silent degradation, #1201).
+        from .message_format import join_capped as _jc1203ki
+        _replay1203ki, _carried1203ki = ledger.replay_split_1203ki(goals)
         goals = ledger.order_replay_first(goals)
         modalities = sorted({g["modality"] for g in goals})
         if logger:
             logger.warning(
                 "TEST-USER SQUAD (v%s): spawning %d agents across modalities %s "
-                "(api=%s ui=%s mcp=%s multi_tenant=%s); replaying %d prior failure(s) first",
+                "(api=%s ui=%s mcp=%s multi_tenant=%s); replaying %d prior failure(s) first%s",
                 version, len(goals), modalities, inp["api_base"], inp["ui_base"],
-                inp["mcp_present"], inp["multi_tenant"], len(ledger.open_failures()))
+                inp["mcp_present"], inp["multi_tenant"], len(_replay1203ki),
+                ("; %d prior failure(s) are NOT in this cycle's plan and will not be re-tested"
+                 " (%s)" % (len(_carried1203ki),
+                            _jc1203ki(sorted(_carried1203ki),
+                                               total=len(_carried1203ki), cap=4))
+                 if _carried1203ki else ""))
         # #1202qe: the squad's agents register accounts and create rows as real users; the
         # seeded state comes back when the squad finishes (see verification_isolation).
         from .verification_isolation import isolated_verification_1202qe
