@@ -844,7 +844,239 @@ def check_1203a9(run):
                 + "\nThe run predates #1203a9, or the override regressed.")
 
 
-CHECKS = [check_1203a3, check_1203a5, check_1203a6, check_1203a7,
+# ── 2026-10-14 session: #1203ja .. #1203jk ──────────────────────────────────────
+#
+# Thirteen changes landed with ZERO live verification (the $1000 authorisation was spent
+# before any of them existed), and the predictions for them were prose in memory. That is
+# the friction this file's own header names: "the first thing that happens when credits
+# return is me re-deriving which file to open".
+#
+# ★ EVERY CHECK BELOW IS GATED ON `_has_1014_1203ja`, and that is what makes the
+# `--self-test` meaningful for them. The marker is `summary.ui_walk_ran_1203je`, a field
+# that did not exist before 2026-10-14, so a run that predates the batch answers NOT
+# MEASURED instead of confirming on an artifact it happens to share.
+
+def _reports_1203ja(run: Path) -> list:
+    """Every per-version test-user report, newest version last. [] when there are none."""
+    d = run / "test_user_reports"
+    out = []
+    try:
+        for f in sorted(d.glob("*.json")):
+            if not re.match(r"^\d+\.\d+\.\d+$", f.stem):
+                continue
+            try:
+                out.append((f.stem, json.loads(f.read_text(encoding="utf-8"))))
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return sorted(out, key=lambda kv: tuple(int(x) for x in kv[0].split(".")))
+
+
+def _has_1014_1203ja(run: Path) -> bool:
+    """Did this run execute the 2026-10-14 code at all?
+
+    Keyed on a field that batch ADDED (`ui_walk_ran_1203je`). Without this gate the checks
+    below would confirm on pre-fix runs that happen to carry the same artifacts, which is
+    exactly what `--self-test` exists to catch.
+    """
+    for _v, rep in _reports_1203ja(run):
+        if isinstance(rep.get("summary"), dict) and \
+                "ui_walk_ran_1203je" in rep["summary"]:
+            return True
+    return False
+
+
+def _releases_1203ja(run: Path) -> list:
+    h = _hub(run, "codehub_releases.json")
+    tags = [k for k in h if not str(k).startswith("_")]
+    try:
+        return sorted(tags, key=lambda v: tuple(int(x) for x in v.split(".")))
+    except Exception:
+        return sorted(tags)
+
+
+def check_1203ja(run):
+    """#1203ja: the release the user actually boots is no longer the one nobody walked."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203ja", UNMEASURED, "this run predates the 2026-10-14 batch")
+    tags = _releases_1203ja(run)
+    if not tags:
+        return _say("#1203ja", UNMEASURED, "no release was cut, so there is no final tag")
+    have = {v for v, _ in _reports_1203ja(run)}
+    if tags[-1] in have:
+        return _say("#1203ja", CONFIRMED,
+                    "the final tag v%s has a test-user report (%d release(s) cut)"
+                    % (tags[-1], len(tags)))
+    return _say("#1203ja", FALSIFIED,
+                "the final tag v%s has NO test-user report" % tags[-1],
+                "reports present: %s — look for '#1203ja final-release test-user walk did "
+                "not dispatch' in the run log" % ", ".join(sorted(have)))
+
+
+def check_1203jc(run):
+    """#1203jc/#1203je: an unwalked journey or UI is no longer recorded as PASS."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203jc", UNMEASURED, "this run predates the 2026-10-14 batch")
+    bad, nw = [], 0
+    for v, rep in _reports_1203ja(run):
+        s = rep.get("summary") or {}
+        steps = int(s.get("api_steps") or 0)
+        ui_ran = bool(s.get("ui_walk_ran_1203je", True))
+        if s.get("verdict") == "PASS" and (steps == 0 or not ui_ran):
+            bad.append("v%s (api_steps=%d, ui_ran=%s)" % (v, steps, ui_ran))
+        if s.get("verdict") == "NOT_WALKED":
+            nw += 1
+    if bad:
+        return _say("#1203jc", FALSIFIED,
+                    "%d report(s) say PASS with nothing walked" % len(bad),
+                    "; ".join(bad))
+    return _say("#1203jc", CONFIRMED,
+                "no PASS without evidence (%d NOT_WALKED verdict(s) recorded)" % nw)
+
+
+def check_1203je(run):
+    """#1203je: the frontend is waited for, so a dead container is not a page verdict."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203je", UNMEASURED, "this run predates the 2026-10-14 batch")
+    refused, skipped = [], 0
+    for v, rep in _reports_1203ja(run):
+        uf = rep.get("ui_flows") or {}
+        if not uf.get("ran", True):
+            skipped += 1
+            continue
+        for fl in (uf.get("flows") or []):
+            if "ERR_CONNECTION_REFUSED" in str(fl.get("note") or ""):
+                refused.append("v%s %s" % (v, fl.get("flow")))
+    if refused:
+        return _say("#1203je", FALSIFIED,
+                    "%d flow(s) still record ERR_CONNECTION_REFUSED" % len(refused),
+                    ", ".join(refused[:6]))
+    return _say("#1203je", CONFIRMED,
+                "no flow blames the app for an unreachable frontend "
+                "(%d walk(s) skipped on readiness)" % skipped)
+
+
+def check_1203jd(run):
+    """#1203jd: FIX #155's pre-cut smoke now guards the final cut too.
+
+    A hold here is the guard WORKING, but whether the tree was really broken is a judgement
+    only a reader can make — so a triggered hold is reported, never scored.
+    """
+    if not _has_1014_1203ja(run):
+        return _say("#1203jd", UNMEASURED, "this run predates the 2026-10-14 batch")
+    holds = [h for h in _jsonl(run, "delivery_hold.jsonl")
+             if "fresh_smoke_final_1203jd" in json.dumps(h)]
+    if not holds:
+        return _say("#1203jd", CONFIRMED,
+                    "the final-cut fresh smoke held nothing (the common case)")
+    return _say("#1203jd", UNMEASURED,
+                "the final cut was HELD %d time(s) — read these before trusting them"
+                % len(holds),
+                "\n".join(str(h.get("detail") or h)[:200] for h in holds[:3])
+                + "\nIf the tree was fine this is a FALSE hold: set "
+                  "ENVGEN_FRESH_SMOKE_GATE=0 and re-run.")
+
+
+def check_1203jg(run):
+    """#1203jg: the top blocker now says which pages failed and why."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203jg", UNMEASURED, "this run predates the 2026-10-14 batch")
+    recs = _jsonl(run, "delivery_gate.jsonl")
+    last = None
+    for r in recs:
+        if "failed_checks" in r:
+            last = r
+    if not last:
+        return _say("#1203jg", UNMEASURED, "no gate record carries failed_checks")
+    if "validation_ui_evidence_failed" not in (last.get("failed_checks") or []):
+        return _say("#1203jg", UNMEASURED,
+                    "the final gate did not fail on validation_ui_evidence_failed")
+    prose = (last.get("blocker_prose") or {}).get("validation_ui_evidence_failed")
+    if not prose:
+        return _say("#1203jg", FALSIFIED,
+                    "the top blocker fired and still carries NO prose")
+    txt = " ".join(prose) if isinstance(prose, list) else str(prose)
+    if "no summary recorded" in txt and ":" in txt:
+        return _say("#1203jg", UNMEASURED,
+                    "prose present but every page says 'no summary recorded'",
+                    txt[:240] + "  (the lookup matched nothing — check the record shape)")
+    return _say("#1203jg", CONFIRMED, "the top blocker names its pages AND their reasons",
+                txt[:240])
+
+
+def check_1203jf(run):
+    """#1203jf: the count of ui failures whose ONLY stated cause is an anonymous 401."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203jf", UNMEASURED, "this run predates the 2026-10-14 batch")
+    h = _hub(run, "codehub_checks.json")
+    n = tot = 0
+    for k, v in h.items():
+        if not isinstance(v, dict) or not str(v.get("name") or "").startswith("validation:ui_"):
+            continue
+        if str(v.get("status")) != "failure":
+            continue
+        tot += 1
+        blob = json.dumps(v.get("evidence") or {}).lower()
+        if re.search(r"/(api/)?auth/me", blob) and ("401" in blob or "403" in blob):
+            n += 1
+    if not tot:
+        return _say("#1203jf", UNMEASURED, "this run recorded no failing ui_* checks")
+    return _say("#1203jf", CONFIRMED if n == 0 else UNMEASURED,
+                "%d of %d failing ui_* records blame an anonymous /auth/me 401" % (n, tot),
+                "" if n == 0 else
+                "prose alone moves agents weakly (#1203i9) — if this has not dropped, the "
+                "deterministic detector in #1203jf's comment is the next step.")
+
+
+def check_1203jh(run):
+    """#1203jh/#1203jhb: the stop reason names what shipped, inside the 400-char cap."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203jh", UNMEASURED, "this run predates the 2026-10-14 batch")
+    reason = str(((_budget(run).get("usage") or {}).get("terminal_reason")) or "")
+    if "exited without a delivery" not in reason and "no abort and no cap" not in reason:
+        return _say("#1203jh", UNMEASURED,
+                    "this run did not end on the generic stop reason")
+    tags = _releases_1203ja(run)
+    if not tags:
+        return _say("#1203jh", CONFIRMED if "SHIPPED:" not in reason else FALSIFIED,
+                    "nothing shipped and the reason %s claim one"
+                    % ("does not" if "SHIPPED:" not in reason else "DOES"))
+    if "SHIPPED:" in reason and tags[-1] in reason:
+        return _say("#1203jh", CONFIRMED,
+                    "the stop reason names the tags it shipped, uncut (%d chars)"
+                    % len(reason))
+    return _say("#1203jh", FALSIFIED,
+                "%d release(s) shipped and the reason does not say so intact" % len(tags),
+                "reason (%d chars): %s" % (len(reason), reason[-160:]))
+
+
+def check_1203jk(run):
+    """#1203jk: the final tag's report carries EVIDENCE, not just existence."""
+    if not _has_1014_1203ja(run):
+        return _say("#1203jk", UNMEASURED, "this run predates the 2026-10-14 batch")
+    tags = _releases_1203ja(run)
+    reps = dict(_reports_1203ja(run))
+    if not tags or tags[-1] not in reps:
+        return _say("#1203jk", UNMEASURED,
+                    "no final-tag report to judge (see #1203ja above)")
+    rep = reps[tags[-1]]
+    s = rep.get("summary") or {}
+    uf = rep.get("ui_flows") or {}
+    steps = int(s.get("api_steps") or 0)
+    walked_ui = bool(uf.get("ran", True)) and bool(uf.get("flows"))
+    if steps > 0 or walked_ui:
+        return _say("#1203jk", CONFIRMED,
+                    "the final tag's report measured something (api_steps=%d, ui=%s)"
+                    % (steps, walked_ui))
+    return _say("#1203jk", FALSIFIED,
+                "the final tag's report measured NOTHING and was still kept",
+                "api_steps=0 and the UI walk did not run — #1203jk should have re-walked it")
+
+
+CHECKS = [check_1203ja, check_1203jc, check_1203je, check_1203jd,
+          check_1203jg, check_1203jf, check_1203jh, check_1203jk,
+          check_1203a3, check_1203a5, check_1203a6, check_1203a7,
           check_1203a8, check_1203a9,
           check_1202zt, check_1202zn, check_1202zq, check_1202zr,
           check_1202zc, check_1202za, check_1202zb, check_1202ze, check_1202zf,
