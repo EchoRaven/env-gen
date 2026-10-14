@@ -71,13 +71,36 @@ def test_the_unwired_branch_still_exists():
     assert "not wired to the API" in _SRC
 
 
+def _branch_index_saying(text):
+    """The index of the branch whose BODY writes `text`.
+
+    The selectors below used to pick the unwired branch by a substring of its CONDITION
+    (`"not _auth_resps" in t` and not the other two names). #1203iu then inserted
+    `not _auth_resps and _page_errors_1203iu`, which satisfies that description and comes
+    first — so the selector silently started pointing at the new branch and this file's
+    behavioural test failed against a condition it was never written for. A branch is
+    identified by what it SAYS now, which no insertion can steal.
+    """
+    node, i = _note_branches(), 0
+    while isinstance(node, ast.If):
+        if text in ast.unparse(ast.Module(body=list(node.body), type_ignores=[])):
+            return i
+        i += 1
+        node = node.orelse[0] if (len(node.orelse) == 1
+                                  and isinstance(node.orelse[0], ast.If)) else None
+    raise AssertionError("no branch says %r" % text)
+
+
+def _unwired_cond():
+    return _branch_tests()[_branch_index_saying("not wired to the API")]
+
+
 def test_a_request_with_no_response_is_judged_before_unwired():
     """★ The ordering IS the fix. If the new branch came after `not _auth_resps`, it would be
     unreachable and the note would be unchanged."""
     tests = _branch_tests()
     idx_new = [i for i, t in enumerate(tests) if "_auth_reqs" in t or "_auth_failed" in t]
-    idx_old = [i for i, t in enumerate(tests)
-               if "not _auth_resps" in t and "_auth_reqs" not in t and "_auth_failed" not in t]
+    idx_old = [_branch_index_saying("not wired to the API")]
     assert idx_new and idx_old, tests
     assert min(idx_new) < min(idx_old), (
         "the request-aware branch sits AFTER the unwired branch, so it never runs: %s" % tests)
@@ -85,7 +108,11 @@ def test_a_request_with_no_response_is_judged_before_unwired():
 
 def _eval_branch(expr, **env):
     """Evaluate one branch condition with controlled locals — BEHAVIOUR, not position."""
-    base = {"_auth_resps": [], "_auth_reqs": [], "_auth_failed": [], "ok": False}
+    # #1203iu added a term to the chain (the page errors it now captures). Defaulting it to
+    # "the page threw nothing" is what keeps every case below meaning what it meant; a test
+    # that wants the new branch passes it explicitly.
+    base = {"_auth_resps": [], "_auth_reqs": [], "_auth_failed": [], "ok": False,
+            "_page_errors_1203iu": []}
     base.update(env)
     return bool(eval(expr, {}, base))
 
@@ -104,8 +131,7 @@ def test_the_unwired_branch_still_fires_when_nothing_was_sent():
     """The other direction, also behavioural: a genuinely dead form must still be named."""
     tests = _branch_tests()
     new = [t for t in tests if "_auth_reqs" in t or "_auth_failed" in t][0]
-    old = [t for t in tests
-           if "not _auth_resps" in t and "_auth_reqs" not in t and "_auth_failed" not in t][0]
+    old = _unwired_cond()
     assert _eval_branch(new) is False, "the request-aware branch swallows the unwired case"
     assert _eval_branch(old) is True, old
 

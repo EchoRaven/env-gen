@@ -100,6 +100,45 @@ def _authorization_sent_1202uq(response) -> bool:
         return False
 
 
+def page_error_fields_1202br(error) -> Dict[str, str]:
+    """A Playwright pageerror, read the way a lane can act on.
+
+    #1203iu lifted this out of `BrowserManager._on_page_error` so a SECOND reader cannot
+    re-learn its scar (#1032). `test_user_validation`'s auth-flow probe is that second
+    reader: it attached no pageerror listener at all, so a submit handler that threw was
+    reported as "submit sent NO /auth request -- the form is not wired to the API".
+
+    The scar, in #1202br's own words: `str(error)` yields only a minified location, and
+    netflix-r33 recorded exactly that as the evidence for two blocking UI flows --
+    "Error at http://localhost:8053/assets/index--TCHSJCV.js:49:360" -- which names no
+    source a lane can open. `.message` is the one it can search for. Each attribute is read
+    defensively: a reader that raises here would lose the error entirely, which is worse
+    than a vague one.
+    """
+    def _attr(name):
+        try:
+            v = getattr(error, name, None)
+            return str(v) if v else ""
+        except Exception:
+            return ""
+
+    msg, kind, stack = _attr("message"), _attr("name"), _attr("stack")
+    try:
+        text = str(error)
+    except Exception:
+        text = ""
+    if msg and msg not in text:
+        text = f"{kind or 'Error'}: {msg} — {text}" if kind else f"{msg} — {text}"
+    return {
+        "text": text,
+        "message": msg,
+        "error_name": kind,
+        # Bounded: a bundled stack is long and repetitive, and the frames that name
+        # the lane's own files are at the top.
+        "stack": "\n".join(stack.splitlines()[:6]) if stack else "",
+    }
+
+
 class BrowserManager:
     """Manages browser lifecycle and state"""
     
@@ -413,25 +452,15 @@ class BrowserManager:
         a lane can search its own source for. Each is read defensively: a handler that
         raises here would lose the error entirely, which is worse than a vague one.
         """
-        def _attr(name):
-            try:
-                v = getattr(error, name, None)
-                return str(v) if v else ""
-            except Exception:
-                return ""
-
-        msg, kind, stack = _attr("message"), _attr("name"), _attr("stack")
-        text = str(error)
-        if msg and msg not in text:
-            text = f"{kind or 'Error'}: {msg} — {text}" if kind else f"{msg} — {text}"
+        # #1203iu: the reading moved to `page_error_fields_1202br` above, unchanged, so the
+        # auth-flow probe can use the same one. The record this appends is byte-identical.
+        _f = page_error_fields_1202br(error)
         self.state.console_logs.append({
             "type": "error",
-            "text": text,
-            "message": msg,
-            "error_name": kind,
-            # Bounded: a bundled stack is long and repetitive, and the frames that name
-            # the lane's own files are at the top.
-            "stack": "\n".join(stack.splitlines()[:6]) if stack else "",
+            "text": _f["text"],
+            "message": _f["message"],
+            "error_name": _f["error_name"],
+            "stack": _f["stack"],
             "location": "page",
         })
     

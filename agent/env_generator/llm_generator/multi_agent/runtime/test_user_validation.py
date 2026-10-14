@@ -617,6 +617,26 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
     from .test_user_runner import (
         _AUTH_OBSERVED_PREFIXES_1203G1 as _AUTH_SURFACE_1203it)
 
+    # #1203iu: AND NOBODY WAS LISTENING FOR THE PAGE THROWING.
+    # This probe attaches response / request / requestfailed and nothing else. A submit
+    # handler that raises fires no request, stores no token and navigates nowhere -- which
+    # is read three branches below as "submit sent NO /auth request -- the form is not
+    # wired to the API". The JS error that actually stopped it is never recorded, so none
+    # of those verdicts can be checked afterwards.
+    #
+    # This is #1203a6's argument one step further. Its words, about the same ladder: "NONE
+    # of the 378 can be audited, because the record kept neither the URL nor whether a
+    # request was even attempted. Playwright hands both facts over; nothing was asking for
+    # them." Playwright hands the page errors over too.
+    #
+    # The reading is `page_error_fields_1202br`, lifted out of the browser manager rather
+    # than written a third time (#1032): `str(error)` alone yields a minified bundle
+    # location that names no source a lane can open, and #1202br paid for that lesson on
+    # netflix-r33. Imported above the probe's own `try` so an ImportError is loud --
+    # #1203it's note explains why that placement is not cosmetic, and #802 checks that this
+    # very import resolves.
+    from ...tools.browser._manager import page_error_fields_1202br
+
     def _is_auth_url_1203it(_u) -> bool:
         """Does this URL belong to the auth surface the framework serves?"""
         _s = str(_u or "")
@@ -716,6 +736,25 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                     # Playwright hands both facts over; nothing was asking for them.
                     _auth_reqs: list = []
                     _auth_failed: list = []
+                    # #1203iu: what the page threw, if anything, while this flow ran.
+                    #
+                    # Bound INSIDE the route loop, like the three lists above it, and that is
+                    # what keeps it correct: the loop attaches its listeners per route and
+                    # never detaches them, so by `/login` the `/signup` handlers are still
+                    # live -- but they close over the `/signup` lists, which nothing reads
+                    # again. Hoisting this list out of the loop (the tidy-up that `#1203is`
+                    # warns about for `sfx`, in the opposite direction) would let the signup
+                    # flow's errors be reported against the login flow. A test pins it here.
+                    _page_errors_1203iu: list = []
+
+                    def _on_pageerror_1203iu(_e):
+                        try:
+                            _f = page_error_fields_1202br(_e)
+                            _msg = _f.get("message") or _f.get("text") or ""
+                            if _msg:
+                                _page_errors_1203iu.append(_msg[:200])
+                        except Exception:
+                            pass
 
                     def _on_resp(_r):
                         try:
@@ -744,6 +783,7 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         page.on("response", _on_resp)
                         page.on("request", _on_req_1203a6)
                         page.on("requestfailed", _on_reqfail_1203a6)
+                        page.on("pageerror", _on_pageerror_1203iu)
                     except Exception:
                         pass
                     for _round in range(3):
@@ -876,6 +916,17 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                                  "which says nothing about the form. Check the stack is up before "
                                  "re-probing; do not add an api call to this page."
                                  % (len(_auth_reqs) or len(_auth_failed), _why))
+                    elif not _auth_resps and _page_errors_1203iu:
+                        # #1203iu: EVIDENCE BEFORE THE GUESS. The branch below asserts a
+                        # mechanism ("button has no handler"); counted against their own
+                        # frontends, 71 of the 73 runs that produced it have both a submit
+                        # handler and an auth call on an auth page. That claim is NOT removed
+                        # here -- removing it would be another guess -- it is simply no longer
+                        # reached when the page itself said what went wrong.
+                        _note = ("submit sent NO /auth request, and the page threw first: "
+                                 "%s. The handler did not reach its api call; fix that error "
+                                 "and re-probe. This says nothing about the wiring."
+                                 % _page_errors_1203iu[0])
                     elif not _auth_resps:
                         _note = ("submit sent NO /auth request — the form is not wired to the API "
                                  "(button has no handler / submit does nothing)")
@@ -897,6 +948,9 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         "url": str(getattr(page, "url", "") or (frontend_base + route)),
                         "auth_requests": len(_auth_reqs),
                         "auth_failed": _auth_failed[:3],
+                        # #1203iu: persisted whether or not the note used it, so a verdict
+                        # written without a page error is as auditable as one written with.
+                        "page_errors": _page_errors_1203iu[:3],
                         "note": _note})
                 except Exception as exc:
                     out["flows"].append({"flow": label, "ok": False,

@@ -71,13 +71,43 @@ def _branch_tests(node):
         return out
 
 
+def _branch_bodies(node):
+    """Every branch body of the chain, in the same order `_branch_tests` returns conditions."""
+    out, cur = [], node
+    while True:
+        out.append(cur.body)
+        if len(cur.orelse) == 1 and isinstance(cur.orelse[0], ast.If):
+            cur = cur.orelse[0]
+            continue
+        out.append(cur.orelse)
+        return out
+
+
+def _index_saying(text):
+    """The index of the branch whose note contains `text`.
+
+    #1203iu inserted an evidence-gated branch into this chain, which shifted every index
+    after it and reddened a test that hardcoded one. A branch is identified by WHAT IT SAYS
+    now, so the next insertion cannot move a test's meaning — the same reason #1203a6's
+    sibling test evaluates conditions instead of counting positions.
+    """
+    for i, body in enumerate(_branch_bodies(_chain())):
+        if text in ast.unparse(ast.Module(body=list(body), type_ignores=[])):
+            return i
+    raise AssertionError("no branch says %r" % text)
+
+
 def _first_true(env):
     """Index of the first branch whose condition holds under `env` — the branch that runs."""
     tests = _branch_tests(_chain())
+    # #1203iu added a term to the chain; default it to "the page threw nothing" so every env
+    # in this module keeps meaning what it meant.
+    base = {"_page_errors_1203iu": []}
+    base.update(env)
     for i, t in enumerate(tests):
         if t is None:
             return i
-        if eval(compile(ast.Expression(t), "<t>", "eval"), {}, dict(env)):
+        if eval(compile(ast.Expression(t), "<t>", "eval"), {}, dict(base)):
             return i
     raise AssertionError("unreachable")
 
@@ -128,8 +158,10 @@ def test_the_unreachable_backend_branch_is_unaffected():
 
 
 def test_the_unwired_branch_is_unaffected():
+    """With nothing sent and nothing thrown, the unwired branch is still the one that runs.
+    Located by its text, not by the number 3 it used to sit at (see `_index_saying`)."""
     env = {"ok": False, "_note": "", "_auth_resps": [], "_auth_reqs": [], "_auth_failed": []}
-    assert _first_true(env) == 3
+    assert _first_true(env) == _index_saying("not wired to the API")
 
 
 def test_a_passing_flow_still_clears_the_note():

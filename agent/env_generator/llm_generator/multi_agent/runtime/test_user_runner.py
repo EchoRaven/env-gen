@@ -92,6 +92,46 @@ from .lifecycle import FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl as _FW_AUTH_1203G1
 
 _AUTH_OBSERVED_PREFIXES_1203G1 = tuple(
     _p for _p in _FW_AUTH_1203G1 if "well-known" not in _p)
+# #1203iu: THIS WALK LISTENED FOR console.error AND NOT FOR AN UNCAUGHT THROW.
+# `page.on("console", ...)` below keeps `m.type == "error"`, which a `console.error` call
+# produces and an uncaught exception does NOT. So a submit handler that raised was invisible
+# here, exactly as it was in `test_user_validation` -- and both modules then report the auth
+# flow with the ladder's "submit sent NO /auth request" reading. Of the framework's five
+# browser-driving paths, `_manager` (#1202br) and `visual_fidelity` (#740) listened; these two
+# did not, and this is the third rule today where these two probes differed from each other
+# (#1203ip's unfillable types, #1203it's watched auth surface, now this).
+#
+# The entry goes into the SAME list the console errors go to, which is what `_manager` does
+# with its own page errors (`console_logs` + `"location": "page"`); the prefix keeps the
+# source legible. `page_error_fields_1202br` is that module's reading, imported rather than
+# re-written (#1032) -- `str(error)` alone is a minified bundle location, which is the scar
+# #1202br paid for on netflix-r33.
+
+
+def _page_error_entry_1203iu(error) -> str:
+    """An uncaught page exception, formatted for the list console errors already use.
+
+    The import is LAZY and deliberately so: 17 test modules import this file as
+    `multi_agent.runtime.test_user_runner`, which makes `multi_agent` the top-level package,
+    and a module-level `from ...tools...` is then "beyond top-level package" -- I landed that
+    spelling and it broke all 17 at collection. No absolute spelling works in BOTH rooting
+    contexts (the suite also imports this tree as `env_generator.llm_generator.*`), which is
+    why the framework reaches sideways from inside functions here.
+
+    It sits ABOVE the `try` on purpose. An ImportError must not become
+    "[page error] (unreadable)": that is #1203g1's scar (a guarded import silently left a
+    hand-written copy in use) and the one #1203it's note describes (a guarded import would
+    have silently left none). #802 parametrises over every lazy import in this tree and checks
+    it resolves, so this one has a standing test without a new one being written.
+    """
+    from ...tools.browser._manager import page_error_fields_1202br
+    try:
+        _f = page_error_fields_1202br(error)
+        return ("[page error] " + (_f.get("message") or _f.get("text") or ""))[:400]
+    except Exception:
+        return "[page error] (unreadable)"
+
+
 # A URL still on an auth route means the flow did not get the user into the app.
 _AUTH_ROUTE_SEGS = ("/login", "/signup", "/signin", "/register")
 
@@ -646,6 +686,8 @@ async def run_browser_test_user(
                 page.on("console",
                         lambda m: cerr.append(_console_entry_1202ea(m))
                         if m.type == "error" else None)  # #1202ea: keep the location
+                # #1203iu: an uncaught throw is not a console error; see the note above.
+                page.on("pageerror", lambda e: cerr.append(_page_error_entry_1203iu(e)))
                 report["ran"] = True
 
                 # READINESS GATE (#27): don't test a frontend that's mid container-restart —
