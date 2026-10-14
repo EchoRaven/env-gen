@@ -263,11 +263,18 @@ def test_the_error_branch_fires_only_when_the_page_threw():
     assert bool(eval(cond, {}, answered)) is False, cond
 
 
-def test_the_unwired_guess_is_not_deleted():
-    """Demoted by evidence, not removed on another guess — #612's and #1203a6's tests still
-    need to find it, and a form that really has no handler still reads correctly."""
+def test_the_unwired_claim_is_still_locatable():
+    """Demoted by evidence, not removed on another guess: #612's, #1203a6's, #1203b6's and
+    #1203g1's tests all locate that branch by this phrase.
+
+    A first version of this also asserted "button has no handler", the mechanism the branch
+    used to name. #1203iw measured that mechanism (71 of 73 of the runs emitting the note
+    have a handler) and demoted it, and this assertion then passed only because MY OWN
+    COMMENT above still quoted the words — a test reading its author's prose rather than the
+    code, which is the trap this session kept finding. The phrase that other tickets depend
+    on is what is asserted; the mechanism is #1203iw's business and its own test's.
+    """
     assert "the form is not wired to the API" in VSRC
-    assert "button has no handler" in VSRC
 
 
 def test_the_note_names_the_error_it_found():

@@ -1089,8 +1089,18 @@ def auth_note_1203g1(*, ok_auth: bool, token: Any, navigated: bool, landed: bool
             f"a pre-existing token WITHOUT submitting the form, so a token "
             f"already in storage produces exactly this reading.")
     elif not auth_status:
+        # #1203iw: the same demotion as `test_user_validation`'s branch, for the same reason
+        # (#612: report the observation, not a guess at its cause). 71 of the 73 runs that
+        # emitted this note have a submit handler AND an auth call on an auth page; 172 of 173
+        # runs have a handler at all. Spelled out rather than shared through a constant,
+        # because #1203g1's test requires every ladder phrase to be BUILT INSIDE this
+        # function; a test asserts this reading and the other one agree check by check.
         return (f"submit sent NO /auth request (token={bool(token)} "
-                      f"url={url}) — the form is not wired to the API")
+                      f"url={url}) — no call to the auth surface was seen. "
+                      f"Check, in this order: (1) was the submit disabled, or did "
+                      f"client-side validation reject the typed values; (2) does the "
+                      f"handler reach its api call; (3) only then, whether the form "
+                      f"is not wired to the API at all")
     elif auth_fault_owner_1203h0(ok_auth=ok_auth, auth_status=auth_status) == "backend":
         # #1203h0: the SAME predicate the dispatcher routes on, called here rather than
         # restated, so the sentence and the assignee cannot disagree.

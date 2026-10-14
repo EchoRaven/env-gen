@@ -917,19 +917,56 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                                  "re-probing; do not add an api call to this page."
                                  % (len(_auth_reqs) or len(_auth_failed), _why))
                     elif not _auth_resps and _page_errors_1203iu:
-                        # #1203iu: EVIDENCE BEFORE THE GUESS. The branch below asserts a
-                        # mechanism ("button has no handler"); counted against their own
-                        # frontends, 71 of the 73 runs that produced it have both a submit
-                        # handler and an auth call on an auth page. That claim is NOT removed
-                        # here -- removing it would be another guess -- it is simply no longer
-                        # reached when the page itself said what went wrong.
+                        # #1203iu: EVIDENCE BEFORE THE GUESS. When the page said what went
+                        # wrong, that is the note, and the branch below is not reached at all.
+                        #
+                        # #1203iu left that branch asserting a mechanism on the grounds that
+                        # removing it would be another guess. #1203iw then measured the
+                        # mechanism -- 71 of the 73 runs that emitted it have a submit handler
+                        # AND an auth call on an auth page -- and demoted it to the last of
+                        # three numbered checks. So THIS branch is the one that still names a
+                        # cause, and it only does so because the page named it.
                         _note = ("submit sent NO /auth request, and the page threw first: "
                                  "%s. The handler did not reach its api call; fix that error "
                                  "and re-probe. This says nothing about the wiring."
                                  % _page_errors_1203iu[0])
                     elif not _auth_resps:
-                        _note = ("submit sent NO /auth request — the form is not wired to the API "
-                                 "(button has no handler / submit does nothing)")
+                        # #1203iw: REPORT THE OBSERVATION, NOT A GUESS AT ITS CAUSE.
+                        # Those are #612's words, and this is the one branch it left a guess
+                        # in. #612 removed "the form is not wired to the API" from the other
+                        # branches after checking the SERVER side -- `POST /auth/login`
+                        # answered 200 in all 12 runs it had -- and kept it here, because
+                        # "no request was seen" looked like evidence for it.
+                        #
+                        # The PAGE side says otherwise. Counting every run that emitted this
+                        # note against its own frontend source: 71 of 73 have BOTH a submit
+                        # handler and an auth call in a file whose name is auth-like, and 172
+                        # of the corpus's 173 runs have a submit handler on an auth page at
+                        # all -- the single run that has none never emitted this note. So the
+                        # parenthetical named a mechanism that is absent in 71 of the 73
+                        # cases it was written about, and #612 already recorded what that
+                        # costs: "it lands in the failure ledger and sends the frontend lane
+                        # to re-wire a form that is already wired."
+                        #
+                        # DEMOTED, NOT DELETED. The claim is the last thing to check rather
+                        # than the stated cause, so a form that really has no handler still
+                        # reads correctly at (3) -- and #612's, #1203a6's, #1203b6's and
+                        # #1203g1's tests all locate this branch by that phrase, which is
+                        # another reason deleting it would be the wrong shape of fix.
+                        # #1203it and #1203iu are two reasons "no request seen" happens with
+                        # the form wired: the listeners were watching `/auth/` while the app
+                        # logged in through `/oauth/authorize`, and nothing listened for the
+                        # page throwing at all.
+                        #
+                        # The counts stay in this comment and out of the note: the note is
+                        # capped before it is read (#1202vx), so prose inside it would spend
+                        # the budget the evidence needs.
+                        _note = ("submit sent NO /auth request — no call to the auth surface "
+                                 "was seen after the click. Check, in this order: (1) was the "
+                                 "submit disabled, or did client-side validation reject the "
+                                 "typed values; (2) does the handler reach its api call; "
+                                 "(3) only then, whether the form is not wired to the API "
+                                 "at all")
                     elif all(s >= 400 for s in _auth_resps):
                         _note = (f"the form IS wired but /auth returned {sorted(set(_auth_resps))} "
                                  f"(login user not registered / bad credentials / backend error) — "
