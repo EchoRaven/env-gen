@@ -1313,7 +1313,53 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             "the api client targets an ABSOLUTE/wrong origin instead of a same-origin "
             "RELATIVE path (so it bypasses the nginx proxy / hits the wrong port and every "
             "call incl. login fails). Use relative '/api', '/auth' URLs and restore auth on "
-            "load via the canonical /api/auth/me. Fix this FIRST — it blocks delivery.")
+            "load via the canonical /api/auth/me — but ONLY when a token is stored: calling "
+            "it anonymously answers 401 on every public page, which is correct of the API "
+            "and still gets the page recorded as a UI failure. Conversely never gate a "
+            "PUBLIC endpoint on a token, or a logged-out visitor sees invented data instead "
+            "of real rows (#1202qn). The rule is the ENDPOINT's auth, not whether a token "
+            "happens to exist. Fix this FIRST — it blocks delivery.")
+            # #1203jf: THE SENTENCE ABOVE ASKED FOR HALF A RULE AND THE OTHER HALF BLOCKS.
+            #
+            # "restore auth on load via /api/auth/me" carried no condition, and a frontend
+            # that follows it literally probes a protected endpoint on every page load. The
+            # API answers 401 — correctly; `backend_scaffold` deliberately keeps
+            # `/api/auth/me` guarded — and the verifier then records the page as a failed
+            # ui_flow for the resulting console/network error.
+            #
+            # That is the TOP final-gate blocker's commonest nameable cause.
+            # `validation_ui_evidence_failed` holds the final gate in 13 of the 63 modern
+            # runs with a ledger, more than any other check, and 15 of its failure records
+            # across 7 runs (r135, r136, r150, r170, r181 in the current era) say only this.
+            # Read them: tiktok-web-r170's TERMINAL blocker was
+            # `ui_evidence_failed_pages=['login_page','signup_page']`, and both records say
+            # nothing else --
+            #     login_page  "flow failed: /api/auth/me produced a 401 console/network
+            #                  error during the flow."
+            #     signup_page "/api/auth/me returned 401 during logged-out signup flow."
+            # and r181 failed four pages the same way, one of them named
+            # `fyp_feed_logged_out`, where an anonymous 401 is the only possible answer.
+            # Every one of those records says the page RENDERED.
+            #
+            # BOTH HALVES ARE SAID BECAUSE THE FRAMEWORK ALREADY PUNISHES BOTH. #1202qn
+            # flags the opposite reflex -- tiktok-r127's `if(!getToken())return
+            # fallbackVideos` before `request('/api/videos/feed')`, where "a logged-out
+            # visitor never reached the API, so no request failed and no console error was
+            # ever logged; only the invented feed showed". A lane told only "don't call it
+            # anonymously" lands there instead. The rule that satisfies both is the
+            # endpoint's own auth requirement, which is the one thing neither half said.
+            #
+            # LEVERAGE, HONESTLY: this is prose, and #1203i9 measured that prose alone moves
+            # agent behaviour weakly -- a contract text reached r184's `agent_notes` and the
+            # lane still wrote the thing it forbade. It is landed because the sentence was
+            # INCOMPLETE in a way that produces a terminal blocker, not because it is
+            # expected to end the class. The deterministic form -- a detector for "a call
+            # site reaches a protected endpoint with no token gate" -- needs to know
+            # statically which endpoints are guarded AND whether the call is gated; regex
+            # over lane JSX is how #1202td's ratchet got its blind spot, so it is not being
+            # invented here on 2 runs of evidence. Next run: re-read
+            # `codehub_checks.json` for `validation:ui_*` failures whose only stated cause
+            # is an anonymous 401, and see whether the count moved.
     for s in report.get("steps", []):
         lines.append(f"  [{'OK' if s['ok'] else 'FAIL'}] {s['step']}" + (f" — {s['note']}" if s.get('note') else ""))
     for p in report.get("pages", []):
