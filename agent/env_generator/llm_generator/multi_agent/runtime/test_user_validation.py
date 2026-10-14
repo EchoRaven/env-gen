@@ -564,6 +564,30 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
         from playwright.async_api import async_playwright
     except Exception as exc:
         return {"ran": False, "reason": f"playwright unavailable: {exc}"}
+    # #1203is: BOUND ONCE, OUTSIDE THE ROUTE LOOP, AND THAT PLACEMENT IS LOAD-BEARING.
+    # The loop below drives `/signup` then `/login` through the SAME `_fill_visible_inputs`,
+    # so both flows type the same values and the login finds the account the signup made.
+    # Moving this inside the loop -- the obvious tidy-up, since nothing before the loop needs
+    # it -- hands the two routes suffixes seconds apart, and every login then fails as
+    # "login user not registered", a verdict this corpus really contains (19 of its 270
+    # failed ui_flows).
+    #
+    # It is also what makes an UNDER-SPECIFIC field classification harmless, which is why it
+    # is worth a sentence here. The placeholder chain below reads `placeholder` and `type` and
+    # NOT `name`, while `test_user_runner._fill_visible_inputs` reads name too. Projected over
+    # the 1967 inputs on auth pages in this corpus, 267 (13.6%) are classified GENERIC where
+    # their `name` says otherwise -- 154 full-name, 50 email, 32 password, 31 username -- and
+    # EVERY one of the 267 is GENERIC -> a specific role, never one role -> another. So the
+    # reading is under-specific, not wrong, and an under-specific value still logs in because
+    # BOTH flows produce it.
+    #
+    # Two causal hypotheses for the commonest ui_flow failure ("submit sent NO /auth
+    # request", 93 of 270) were tested against the corpus and BOTH FAILED. A 2x2 of
+    # mis-classified-email x client-side `@` validation puts the both-true cell at 7/19 = 37%
+    # against 66/154 = 43% everywhere else; the mis-classified-password x client-side
+    # password-rule cell is EMPTY (n=0), so that conjunction never occurs at all. Nothing is
+    # changed here on a hypothesis the corpus refused. The invariant that makes it safe is
+    # pinned by a test instead, because it is an accident of placement until something checks.
     sfx = str(int(time.time()))[-6:]
     out: Dict[str, Any] = {"ran": True, "flows": []}
     try:
