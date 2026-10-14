@@ -2334,6 +2334,31 @@ try:
         app.include_router(_custom_router)
 
 
+    # #1203jy: THE THREE `on_event("startup")` HOOKS BELOW ARE DEPRECATED AND STAY THAT WAY.
+    #
+    # FastAPI deprecates `on_event` in favour of a `lifespan` context manager, and the suite
+    # has reported it for a long time -- all 14 of its warnings are this one line, three from
+    # the projected `main.py` and the rest from the repo's own app. Measured before deciding:
+    #
+    #   * every generated backend carries exactly 3 of them (r185-r188), and the generated
+    #     `pyproject.toml` floats `fastapi>=0.115` with no upper bound;
+    #   * the warning has ZERO downstream consequence today -- nothing in this package reads
+    #     the app's stderr for "warning" (visual_fidelity says so explicitly), and the string
+    #     "on_event is deprecated" appears 0 times in r184/r185/r186's run logs.
+    #
+    # The obvious fix is WRONG. Starlette treats `lifespan=` as mutually exclusive with
+    # `on_startup`, so converting these three would silently disable any `@app.on_event(
+    # "startup")` the LANE registers in custom_routes -- and #1202ki's docstring two hooks
+    # down depends on exactly those running first. Order is load-bearing here: #1166 restores
+    # dropped lane routes, #1202ki then restores the fixed surface in front of them, and
+    # #1203gj then unshadows lane overrides. A lifespan rewrite has to reproduce that order
+    # AND give the lane its own slot, which is a change to every generated app's startup path
+    # for a warning that costs nothing today.
+    #
+    # What would change the answer: FastAPI announcing a removal version. Then all three move
+    # into one `lifespan`, in this order, with an explicit hand-off that runs the lane's
+    # collected `app.router.on_startup` first -- and the generated pyproject gains the upper
+    # bound it does not have.
     @app.on_event("startup")
     async def _fw_restore_unserved_dropped_1166():
         """Re-register a dropped lane route that nothing else ended up serving."""
