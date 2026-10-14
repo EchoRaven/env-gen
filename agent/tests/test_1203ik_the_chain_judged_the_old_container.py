@@ -179,12 +179,24 @@ def test_the_stale_kind_is_not_mistaken_for_an_exoneration():
     before the next validation — not an exoneration, and not a retry (which is #1202od's
     remedy and would re-run against the same container).
     """
+    # Over the AST, not `fv[start:start + 600]`. My first version used that window — the
+    # exact pattern I corrected four times elsewhere this session (#1202rc, #362, #688,
+    # #582): growing that helper's comments would push its code out of the window and the
+    # absence assertion would pass for the wrong reason, which is the worst way for a guard
+    # to fail. Found by auditing my own tests for what I had been criticising.
+    import ast
     import pathlib
     fv = pathlib.Path(
         _AGENT, "env_generator/llm_generator/multi_agent/runtime/framework_validation.py"
     ).read_text(encoding="utf-8")
-    start = fv.index("def _not_the_apps_1203e5")
-    body = fv[start:start + 600]
+    fn = next((n for n in ast.walk(ast.parse(fv))
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == "_not_the_apps_1203e5"), None)
+    assert fn is not None, "the exoneration helper is gone"
+    body = "\n".join(
+        c.value for n in ast.walk(fn)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        for c in [n])
     assert "environment_1202od" in body, "the exoneration helper changed shape"
     assert "stale_image_1203ik" not in body, (
         "a stale image is being exonerated like an unreachable app — a failure judged on "
