@@ -2000,6 +2000,24 @@ def _image_part_forensics_1203io(messages: Any, where) -> str:
         return "(forensics unavailable: %s)" % type(_e).__name__
 
 
+# #1203io: BISECT ONCE PER PROCESS, and say when it is skipped.
+#
+# Each bisect costs ceil(log2(n)) + 1 extra image-bearing calls. That is cheap against ONE
+# poisoned conversation, and ruinous per occurrence: tiktok-web-r117 logged 1024
+# `image_parse_error`s, which would be ~4-5k extra calls — a 4x amplification, which is the
+# same shape as the 9x re-send #1203i8 exists to remove. I built that in while fixing it.
+#
+# The diagnostic value lands on the FIRST bisect: it names the part and dumps the forensics
+# that six eliminations could not get. Later occurrences repeat it at full price. So this
+# runs once, and the skip is LOGGED rather than silent — a quiet skip is the thing this
+# session kept finding.
+class _SkipBisect1203io(Exception):
+    """Internal: leave the bisect block without touching the recovered response."""
+
+
+_IO_BISECTED_1203io: Dict[str, Any] = {"done": False}
+
+
 def _image_part_index_1203io(messages: Any):
     """`[(msg_index, part_index)]` for every inline image part, in wire order.
 
@@ -3238,9 +3256,18 @@ class OpenAIClient(BaseLLMClient):
                     # caller sees. Guarded end to end for that reason, and capped so a
                     # pathological payload cannot spin.
                     try:
+                        if _IO_BISECTED_1203io.get("done"):
+                            self._logger.error(
+                                "[LLM] #1203io bisect SKIPPED — already localised one "
+                                "unparseable image in this process, and each bisect costs "
+                                "ceil(log2(n))+1 extra image calls (r117 logged 1024 of "
+                                "these 400s). The earlier BISECTED line above holds the "
+                                "forensics; #1203if still recovered this call.")
+                            raise _SkipBisect1203io()
                         _idx1203io = _image_part_index_1203io(
                             request_params.get("messages"))
                         if len(_idx1203io) >= 2:
+                            _IO_BISECTED_1203io["done"] = True
                             _lo1203io = list(_idx1203io)
                             _calls1203io = 0
                             while len(_lo1203io) > 1 and _calls1203io < 12:
@@ -3277,6 +3304,8 @@ class OpenAIClient(BaseLLMClient):
                                     "single image is at fault, so the rejection is about the "
                                     "SET or its total — which no single-file check could have "
                                     "shown.", _calls1203io, len(_lo1203io))
+                    except _SkipBisect1203io:
+                        pass            # already said why, above
                     except Exception as _e1203io2:
                         self._logger.error(
                             "[LLM] #1203io bisect abandoned (%s) — the recovered response "

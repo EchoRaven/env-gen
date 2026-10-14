@@ -199,3 +199,43 @@ def test_the_bisect_actually_calls_the_forensics():
     seg = " ".join(ast.get_source_segment(src, c) or "" for c in calls)
     assert "request_params" in seg, (
         "the forensics is not reading the payload that was actually sent")
+
+
+def test_the_bisect_runs_once_per_process_and_says_when_it_skips():
+    """★ THE COST GUARD, found by auditing my own patch for amplification.
+
+    Each bisect costs ceil(log2(n)) + 1 extra image-bearing calls. Cheap against ONE
+    poisoned conversation; ruinous per occurrence — tiktok-web-r117 logged 1024
+    `image_parse_error`s, which unguarded would be ~4-5k extra calls. That is a 4x
+    amplification, the same shape as the 9x re-send #1203i8 exists to remove, and I built it
+    in while fixing that.
+
+    The diagnostic lands on the FIRST bisect (it names the part and dumps the forensics six
+    eliminations could not get); later occurrences repeat it at full price. So: once per
+    process, and the skip is LOGGED — a silent skip is exactly what this session kept
+    finding wrong elsewhere.
+    """
+    import ast
+    import pathlib
+    import utils.llm as _l
+
+    assert hasattr(_l, "_IO_BISECTED_1203io"), "the once-per-process latch is gone"
+    assert _l._IO_BISECTED_1203io.get("done") in (True, False)
+
+    src = pathlib.Path(_AGENT, "utils/llm.py").read_text(encoding="utf-8")
+    start = src.index("#1203io: THE RETRY SUCCEEDING IS A PROOF")
+    end = src.index("latency = (datetime.now() - start_time)", start)
+    block = src[start:end]
+    code = "\n".join(l for l in block.splitlines() if not l.strip().startswith("#"))
+
+    assert '_IO_BISECTED_1203io.get("done")' in code, (
+        "the latch is never consulted, so every occurrence pays for a bisect")
+    assert '_IO_BISECTED_1203io["done"] = True' in code, (
+        "the latch is never set, so it can never skip")
+    assert "bisect SKIPPED" in block, (
+        "the skip is silent — say it, the way #1203if says what it dropped")
+    # the skip must not disturb the recovered response
+    assert "_SkipBisect1203io" in code
+    tree = ast.parse(src)
+    assert any(isinstance(n, ast.ClassDef) and n.name == "_SkipBisect1203io"
+               for n in ast.walk(tree)), "the sentinel exception is not defined"
