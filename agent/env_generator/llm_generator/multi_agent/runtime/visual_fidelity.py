@@ -5836,11 +5836,60 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                       "below (#129 keeps a passed screen out of it), so whatever broke them was "
                       "a side effect — most often a shared component. Check that first.\n\n")
 
+    # #1203kb: DO NOT ORDER A REVERT ON A DROP THE HARNESS CAUSED.
+    #
+    # #768 is explicit that a screen the harness never photographed "scored a hard 0.00 that
+    # COUNTED", and #935 names the exception. That zero lands in the blocking average, so
+    # #619's delta below reads it as the lane's regression and the FIRST LINE of the task
+    # tells the lane to "consider reverting" the round that caused it. The same task then
+    # says, further down, "produced NO capture this pass — ... This is not a verdict on the
+    # page". One task, two contradictory claims, and the accusation is the one in first
+    # position.
+    #
+    # MEASURED (2026-10-14, whole corpus): of 511 visual remediation tasks, 82 carry the
+    # regression accusation and 34 of those ALSO report a screen that took no photograph that
+    # pass — r181 0.36 → 0.00 on ONE uncaptured screen, r162 0.14 → 0.00, netflix-r21
+    # 0.74 → 0.07 with three. Three are modern (r181/r162/r159); the shape is rarer now
+    # because captures are more reliable, not because it was fixed.
+    #
+    # The cost of being wrong here is not a wasted sentence: "revert the round that touched
+    # this" is an INSTRUCTION, and the round it points at may have been correct work.
+    #
+    # Deliberately NOT an exoneration (#1203e5's limit, and the user's rule that a guard must
+    # not excuse more than it was written for): the drop is still reported with both numbers,
+    # the screens are still listed, and the lane is still told to look. What is withheld is
+    # the revert ORDER, and only while a screen in this round has no photograph to judge —
+    # which is exactly when the number cannot be attributed. With every screen captured the
+    # text below is byte-identical to before.
+    #
+    # THE MIRROR CASE IS REAL AND OUT OF REACH HERE, so it is said rather than left looking
+    # overlooked. When the PREVIOUS round had the uncaptured screens, its average was the
+    # depressed one, and this round's "Your last round helped … keep going in the same
+    # direction" credits the lane for the harness recovering. Measured by pairing each run's
+    # consecutive visual tasks: 22 cases, 3 of them modern (r159, r162, r166) — e.g.
+    # netflix-r34 round 3→4 reported 0.03 → 0.48. It is not fixed here because this function
+    # receives `prev_live` as a NUMBER and never sees the previous round's screens, so the
+    # fact needed to detect it does not exist at this call site; plumbing it is a change to
+    # what the gate carries between rounds, not to this sentence. The asymmetry is also
+    # deliberate on harm: "keep going" wastes a round, "revert that round" destroys work.
+    _unshot_1203kb = sorted({
+        str(s.get("name") or "?") for s in (result.get("screens") or [])
+        if isinstance(s, Mapping) and (s.get("capture_missing") or s.get("capture_error"))})
     _head = ""
     if isinstance(prev_live, (int, float)) and isinstance(this_live, (int, float)):
         _d = this_live - prev_live
         _r = f"Round {round_no}. " if round_no else ""
-        if _d < -0.01:
+        if _d < -0.01 and _unshot_1203kb:
+            _n1203kb = len(_unshot_1203kb)
+            _head = (f"{_r}⚠ the blocking average went {prev_live:.2f} → {this_live:.2f} "
+                     f"({_d:+.2f}) — but {_n1203kb} screen(s) took NO photograph this pass "
+                     f"({', '.join(_unshot_1203kb[:4])}"
+                     f"{' …' if _n1203kb > 4 else ''}), and an unphotographed screen counts as "
+                     f"0.00 (#768). So part of that drop is the harness, not your code: do NOT "
+                     f"revert anything on this number. Fix what the screens below actually say, "
+                     f"and judge the direction on a round where every screen was captured — the "
+                     f"screens listed are scored on the CURRENT code.\n\n")
+        elif _d < -0.01:
             _head = (f"{_r}⚠ YOUR LAST ROUND MADE THIS WORSE: the blocking average went "
                      f"{prev_live:.2f} → {this_live:.2f} ({_d:+.2f}). Before changing anything "
                      f"else, look at what that round touched and consider reverting it — the "
