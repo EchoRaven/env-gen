@@ -561,6 +561,26 @@ def spec_summary_for_requirements(spec: Mapping[str, Any]) -> str:
 # to fix a measured defect, check whether the finding can instead reach the lane as a task --
 # same conclusion #1203gq reached for `_hint_1202z6`. The paragraph stays because it is TRUE
 # and costs nothing; it is simply not evidence that the defect is handled.
+# #1203j2: THE AUTH SENTENCE BELOW USED TO BE ABSOLUTE, AND IT WAS FALSE ABOUT THIS
+# FRAMEWORK'S OWN OUTPUT.
+#
+# It read "Every /api/ route requires `Authorization: Bearer <token>`". Counted over the
+# backends in `generated/`: the projector emits 3231 `/api/` handlers and 766 of them -- 24%,
+# across 142 runs -- take no `user=Depends(get_current_user)`. They are `/api/genres`,
+# `/api/search`, `/api/browse`, `/api/feed/for-you`: reads a logged-OUT visitor must see, and
+# the projector decides it from the contract (`auth_required: false` wins; otherwise writes
+# and personalised reads demand an actor, and only the token-minting prefixes stay anonymous).
+#
+# A lane that believes the absolute version either puts a token behind a catalog no logged-out
+# visitor can then reach, or reads the gate accepting a public handler as the gate being
+# wrong. #1203ic is the same shape and it cost r183 its run: the framework told a lane "the
+# page file is not routed" about a file that WAS routed, and the lane went and broke something
+# else instead.
+#
+# This is a FALSEHOOD REMOVED, not an explanation added. #1203i9 measured what adding prose
+# buys -- r184 received the `total` definition in this very block and shipped the violation
+# anyway -- and that result is about persuasion. Stating something untrue is a different
+# defect, and the measurement above is what makes it one.
 _AGENT_NOTES = """# Agent Notes — conventions for this workspace (machine-authored, read first)
 
 ## Contract & response shapes (FIXED — code to them exactly)
@@ -575,7 +595,11 @@ _AGENT_NOTES = """# Agent Notes — conventions for this workspace (machine-auth
   `query.count()`), then slice the page.
   created (POST) -> {"item": {...new row with id...}}; deleted -> {"item": {"id": ..., "deleted": true}};
   error -> {"detail": "..."} with the HTTP status.
-- Every /api/ route requires `Authorization: Bearer <token>`; missing/invalid -> 401.
+- An /api/ route requires `Authorization: Bearer <token>` UNLESS its registration declares
+  `auth_required: false`; where auth is required, missing/invalid -> 401. Declare the reads a
+  logged-OUT visitor must see (a public feed, a catalog, a search) as `auth_required: false`
+  and leave the rest to the default: the projector already requires a token for writes and
+  for personalised reads, and stays anonymous only on the token-minting routes themselves.
   POST /auth/register | /auth/login -> {"access_token": ...}.
 - The backend app (models/handlers/auth/Dockerfile) is REGENERATED from the registered
   contract (registryhub_register_endpoint / registryhub_register_table). Spend effort on the
