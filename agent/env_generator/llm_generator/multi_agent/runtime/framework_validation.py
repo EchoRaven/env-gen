@@ -191,6 +191,15 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
     """Cut-time guard: ``True`` → proceed to create_release, ``False`` → hold this
     tick. Called AFTER _commit_framework_delivery (the tree is final). Best-effort:
     any internal fault returns True — infra must never block delivery."""
+    # #1203jd: SAY WHICH KIND OF HOLD, so a caller does not have to parse the prose.
+    # The post-loop final cut (#1203jd) must treat "the app was never tested" differently
+    # from "the app was tested and failed": it has no next tick to retry on, so a host
+    # fault there may not cost the release while an app fault must. Reset first -- a value
+    # left over from an earlier tick would answer a question about this one.
+    try:
+        orch._fresh_smoke_hold_kind_1203jd = ""
+    except Exception:
+        pass
     try:
         if os.environ.get("ENVGEN_FRESH_SMOKE_GATE", "1").lower() in (
                 "0", "false", "no", "off"):
@@ -232,6 +241,7 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
                     "pre-cut fresh api_smoke could not run: HOST FAULT (%s) -- OPERATOR "
                     "ACTION required; the app was NOT tested and this tree is NOT recorded "
                     "as failing; retrying in %ds" % (_hf_was, int(HOSTFAULT_RETRY_S_1203D5)))
+                orch._fresh_smoke_hold_kind_1203jd = "host"      # #1203jd
                 return False
         if decision == "hold":
             orch._logger.warning(
@@ -245,6 +255,7 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
             orch._fresh_smoke_hold_reason_1202wc = (
                 "backend still matches the tree that FAILED the pre-cut fresh api_smoke; "
                 "waiting for a lane fix, not re-booting an unchanged tree")
+            orch._fresh_smoke_hold_kind_1203jd = "app"           # #1203jd
             return False
         orch._logger.warning(
             "PRE-CUT FRESH SMOKE: backend source changed AFTER the last passing "
@@ -317,6 +328,7 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
                 "pre-cut fresh api_smoke could not run: HOST FAULT (%s) -- OPERATOR ACTION "
                 "required; the app was NOT tested and this tree is NOT recorded as failing; "
                 "retrying in %ds" % (_hf1203d5, int(HOSTFAULT_RETRY_S_1203D5)))
+            orch._fresh_smoke_hold_kind_1203jd = "host"          # #1203jd
             return False
         # #1203d5: this tree WAS tested and it is the app's. Drop any host-fault park taken on
         # the same signature, so the two latches can never both claim it -- the ordering above
@@ -368,6 +380,7 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
             % (len(_failed),
                ", ".join(_failed) or _salient_error(                    # #1203d5
                    getattr(res, "error_message", ""), cap=160) or "?"))
+        orch._fresh_smoke_hold_kind_1203jd = "app"                      # #1203jd
         return False
     except Exception as _exc:
         try:

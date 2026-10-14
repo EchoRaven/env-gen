@@ -99,6 +99,59 @@ def test_both_release_sites_promote_integration_to_main():
     assert not missing, "%s cuts a release without promoting integration -> main" % missing
 
 
+def _class_methods():
+    """Every method of the orchestrator class, by name."""
+    out = {}
+    for n in ast.walk(_tree()):
+        if isinstance(n, ast.ClassDef):
+            for st in n.body:
+                if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    out[st.name] = st
+    return out
+
+
+def _reachable(fn, depth=1):
+    """`_referenced`, following `self.<method>` calls `depth` levels — but never into
+    another release site.
+
+    #1203jd put the pre-cut fresh smoke behind `self._final_fresh_smoke_ok_1203jd` rather
+    than inline, so a direct-reference check would read the guard as ABSENT at a site that
+    reaches it. One level of expansion asks the property instead of asking where the call
+    happens to be written.
+
+    ★ THE EXCLUSION IS THE WHOLE TEST. `run` calls `_maybe_framework_deliver`, so a plain
+    one-level expansion pulled in that site's symbols and the check passed for `run` no
+    matter what `run` itself did — the mutation that deletes the final cut's guard call
+    stayed GREEN until this exclusion went in. "Site A has a guard because it calls site
+    B" is not what is being asked: each site must reach it on its own.
+    """
+    seen = set(_referenced(fn))
+    if depth <= 0:
+        return seen
+    methods = _class_methods()
+    others = {name for name, f in _release_sites().items() if f is not fn}
+    for sub in ast.walk(fn):
+        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute):
+            if sub.func.attr in others:
+                continue
+            tgt = methods.get(sub.func.attr)
+            if tgt is not None and tgt is not fn:
+                seen |= _reachable(tgt, depth - 1)
+    return seen
+
+
+def test_both_release_sites_reach_the_pre_cut_fresh_smoke():
+    """#155/#1203jd, the third concern asked per site. gmrun3's broken middleware landed
+    2min before a cut and shipped unvalidated; the final cut had no such guard, and for
+    r185/r184/r177/r173 real lane work merged inside the 1-6 minute window between the
+    last clean smoke and the cut."""
+    missing = [name for name, fn in _release_sites().items()
+               if "ensure_fresh_smoke_before_cut" not in _reachable(fn)]
+    assert not missing, (
+        "%s cuts a release without any pre-cut fresh api_smoke — the tag can ship lane "
+        "code no smoke ever validated (#1203jd)" % missing)
+
+
 def _final_walk_dispatch():
     """The `to_thread(self._run_test_user_validation, ...)` call inside `run`."""
     run = _functions()["run"]

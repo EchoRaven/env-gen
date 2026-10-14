@@ -3696,7 +3696,12 @@ class Orchestrator:
                         _already = bool(_rs and _ver in (_rs.value() or {}))
                     except Exception:
                         _already = False
-                    if _ch is not None and hasattr(_ch, "create_release") and not _already:
+                    _cut_ok_1203jd = (_ch is not None
+                                      and hasattr(_ch, "create_release") and not _already)
+                    # #1203jd: FIX #155's GUARD, AT THE OTHER CUT. See the method.
+                    if _cut_ok_1203jd:
+                        _cut_ok_1203jd = await self._final_fresh_smoke_ok_1203jd(str(_ver))
+                    if _cut_ok_1203jd:
                         _ch.create_release(
                             tag=_ver, source="integration",
                             notes="Final delivery: delivery gate fully clear.",
@@ -5006,6 +5011,88 @@ class Orchestrator:
         # Returns the browser test-user report (auth_ok/blank_pages/…) so the delivery
         # flow can use it as a PRE-RELEASE gate; None when it could not run.
         return HealPipeline(self).run_test_user_validation(version)
+
+    async def _final_fresh_smoke_ok_1203jd(self, version: str) -> bool:
+        """May the POST-LOOP FINAL release be cut? FIX #155's guard, at the other site.
+
+        #1203jd. `create_release` has two call sites. `_maybe_framework_deliver` runs
+        #155's `ensure_fresh_smoke_before_cut` before its cut — "if the committed backend
+        differs from what the last passing api_smoke validated, run ONE fresh smoke on the
+        exact release tree and HOLD the cut on failure" — because gmrun3's broken
+        custom_routes middleware landed 2min before a cut and shipped unvalidated, and the
+        delivered archive 500'd on every request. The post-loop final cut, which ships the
+        run's HIGHEST tag, never called it. Third asymmetry at this pair of sites after
+        #706/#706b and #1203hy/#1203ig; #1203ja was the fourth and added the per-site
+        ratchet that now covers this one too.
+
+        THE WINDOW IS REAL, not theoretical. For each of the four most recent runs that
+        took this path I measured the last CLEAN RunHub smoke before the final cut and then
+        asked git what landed in between:
+
+            r185  smoke 19:00:23  cut 19:05:46  (5 min)  backend→integration 19:04:33,
+                                                         frontend→integration 19:03:02
+            r184  smoke 11:09:58  cut 11:11:12  (1 min)  fix(frontend) nav fidelity 11:11:02
+            r177  smoke 01:21:36  cut 01:27:16  (6 min)  SIX lane merges, incl.
+                                                         "complete signup flow to
+                                                         authenticated feed" 01:26:01
+            r173  smoke 09:54:54  cut 09:55:52  (1 min)  frontend→integration 09:55:44
+
+        Four of four. Every one of those final tags carries lane code no api_smoke ever
+        saw, which is exactly #155's hazard.
+
+        CHEAP IN THE COMMON CASE: the guard compares `tree_signature_1203f0` against the
+        signature that last passed, and returns immediately when they match. It only boots
+        anything when the tree actually changed — i.e. in the window above.
+
+        A HOST FAULT MAY NOT COST THIS RELEASE. The per-milestone site can return False and
+        wait, because its loop retries on the next tick and #1203d5 parks the host fault on
+        a timer. Here the run is ENDING: False is permanent, so "the app was never tested"
+        must not be treated like "the app was tested and failed". The guard now says which
+        (`_fresh_smoke_hold_kind_1203jd`, set at all four of its False exits and reset on
+        entry) rather than making this caller parse its prose — a literal would silently
+        stop matching the day the wording changes (#1032).
+
+        AN APP FAULT DOES HOLD, and that is the deliberate part. A hold costs the ledger one
+        milestone (r184 would read 3-of-4) and the user still has the previous tag, which
+        WAS validated, plus the on-disk integration tree the FINAL FLUSH assembles. Cutting
+        instead would hand them a tag labelled "delivery gate fully clear" whose exact tree
+        has just been tested and failed. `decision == "hold"` is only ever reached after the
+        smoke actually ran, so this is never a guess about an untested tree.
+        """
+        try:
+            from .runtime.framework_validation import ensure_fresh_smoke_before_cut
+        except Exception as _imp1203jd:          # #802: a lazy import that cannot resolve
+            self._logger.debug("#1203jd fresh-smoke guard unavailable: %s", _imp1203jd)
+            return True
+        try:
+            if await ensure_fresh_smoke_before_cut(self):
+                return True
+        except Exception as _exc1203jd:
+            # Matches the guard's own rule — "any internal fault returns True, infra must
+            # never block delivery" — so a framework fault cannot cost a release the
+            # objective gate has already declared clear.
+            self._logger.warning(
+                "#1203jd pre-cut fresh api_smoke raised (%s) — cutting v%s anyway.",
+                _exc1203jd, version)
+            return True
+        _why1203jd = str(getattr(self, "_fresh_smoke_hold_reason_1202wc", "") or "")
+        if str(getattr(self, "_fresh_smoke_hold_kind_1203jd", "") or "") == "host":
+            self._logger.error(
+                "#1203jd FINAL RELEASE v%s: the pre-cut fresh api_smoke could not RUN (%s). "
+                "Cutting anyway — this cut has no next tick to retry on, and infra never "
+                "blocks delivery. The tag therefore ships a tree api_smoke did not see; "
+                "OPERATOR ACTION is what clears the fault.", version, _why1203jd)
+            return True
+        _note_delivery_hold_1202tk(                                      # #1202tk
+            self, "fresh_smoke_final_1203jd",
+            _why1203jd or ("the pre-cut fresh api_smoke did not pass on the final release "
+                           "tree (#1203jd)"))
+        self._logger.error(
+            "#1203jd FINAL RELEASE v%s NOT CUT: the exact tree this tag would ship FAILED a "
+            "fresh api_smoke (%s). The previous release remains the validated deliverable "
+            "and the FINAL FLUSH still assembles integration on disk. Set "
+            "ENVGEN_FRESH_SMOKE_GATE=0 to cut without this check.", version, _why1203jd)
+        return False
 
     def _scaffold_frontend_baseline(self) -> None:
         self._scaffolder.scaffold_frontend_baseline()
