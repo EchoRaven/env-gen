@@ -3836,12 +3836,7 @@ class Orchestrator:
                         # at the site the run did not use. `test_1203ja_*` therefore asserts the
                         # two sites carry the SAME post-cut hooks, so a fourth miss reddens a
                         # test instead of waiting for a run.
-                        try:
-                            _rep_1203ja = (Path(self.output_dir) / "test_user_reports"
-                                           / ("%s.json" % _ver))
-                            _walked_1203ja = _rep_1203ja.exists()
-                        except Exception:
-                            _walked_1203ja = True      # cannot tell → do not overwrite
+                        _walked_1203ja = self._final_report_has_evidence_1203jk(str(_ver))
                         if not _walked_1203ja:
                             try:
                                 import asyncio as _tu_async_1203ja
@@ -5011,6 +5006,72 @@ class Orchestrator:
         # Returns the browser test-user report (auth_ok/blank_pages/…) so the delivery
         # flow can use it as a PRE-RELEASE gate; None when it could not run.
         return HealPipeline(self).run_test_user_validation(version)
+
+    def _final_report_has_evidence_1203jk(self, version: str) -> bool:
+        """Does a test-user report for `version` already carry EVIDENCE? (#1203jk)
+
+        #1203ja skips the final-release walk when a report for the tag exists, so it cannot
+        overwrite the one the #1202nm pre-release gate wrote (tiktok-web-r108 took the final
+        path and HAS that report; replacing a gate-relevant record with a post-shutdown one
+        is the harm). "Exists" was the right proxy when a report always meant a walk.
+
+        #1203je BROKE THAT PROXY, and projecting it over the corpus is what shows it:
+        a frontend that never served now yields `ui_flows.ran == False` with no flows,
+        instead of flow failures. Over the 263 persisted reports, "no evidence at all"
+        (`api_steps == 0` AND the UI walk did not run) occurs twice, both July, both from
+        "no frontend port". But of the 52 reports carrying the ERR_CONNECTION_REFUSED
+        records #1203je replaces, 18 already have `api_steps == 0` -- so that shape goes
+        from twice-ever to roughly 18 across 25 runs, and every one of them would make the
+        final cut skip its walk on the strength of a report that measured NOTHING. The
+        frontend being down earlier is exactly when the final cut -- where the visual gate
+        has just measured the app LIVE -- is worth walking.
+
+        So the question is evidence, not existence. A report with a walked journey or a
+        walked UI is still never overwritten; one with neither costs nothing to replace.
+        Unreadable or absent → treat as evidence present, i.e. do not walk: the failure
+        modes of guessing wrong are asymmetric, and #1203ja's own rule was to fail closed.
+
+        Extracted so a test can EXECUTE it against real report shapes (#1202dp), because a
+        predicate over a file this one reads by hand is the kind that matches nothing.
+        """
+        try:
+            import json as _json1203jk
+            _p = Path(self.output_dir) / "test_user_reports" / ("%s.json" % version)
+            if not _p.exists():
+                return False                     # nothing there → walk
+            with open(_p, encoding="utf-8") as _fh:
+                _rep = _json1203jk.load(_fh)
+            if not isinstance(_rep, dict):
+                # #1203jk: parses, but is not a report. THIS GUARD IS FOR THE CAUSE, NOT
+                # THE VERDICT, and the mutation that deletes it is the reason that sentence
+                # is accurate: without it `_rep.get("summary")` raises AttributeError, the
+                # handler below catches it and still fails closed — so the ANSWER was never
+                # wrong. What was wrong is the message: it would say "could not read the
+                # existing report", of a report that read fine and simply is not one. Naming
+                # the wrong cause is the defect this project removes most often, so the
+                # guard stays and the test asserts the MESSAGE, not just the bool.
+                return True
+            _summ = _rep.get("summary")
+            _summ = _summ if isinstance(_summ, dict) else {}
+            if int(_summ.get("api_steps") or 0) > 0:
+                return True
+            _uifl = _rep.get("ui_flows")
+            _uifl = _uifl if isinstance(_uifl, dict) else {}
+            if _uifl.get("ran", True) and (_uifl.get("flows") or []):
+                return True
+            return False                         # a report that measured nothing
+        except Exception as _e1203jk:
+            # #1202be's ratchet caught this at `debug` and was RIGHT to: returning True here
+            # means "do NOT walk the final release", so a read that fails every run costs
+            # the walk #1203ja exists to add and leaves no line anywhere — exactly the
+            # `_frontend_rendered` shape that ticket fixed. `warning`, and it can fire at
+            # most once per run (one final cut), so there is nothing to rate-limit.
+            self._logger.warning(
+                "#1203jk could not read the existing test-user report for v%s (%s) — NOT "
+                "re-walking, because overwriting a report this code cannot read is the "
+                "worse direction. The final release therefore keeps whatever report is "
+                "already there.", version, _e1203jk)
+            return True
 
     async def _final_fresh_smoke_ok_1203jd(self, version: str) -> bool:
         """May the POST-LOOP FINAL release be cut? FIX #155's guard, at the other site.

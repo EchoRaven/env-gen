@@ -23,8 +23,13 @@ fourth miss reddens a test instead of waiting for a live run to expose it.
 """
 import ast
 import os
+import pathlib
+import sys
 
 _AGENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_AGENT, "env_generator", "llm_generator"))
+
+import multi_agent.orchestrator as ORCH_MOD  # noqa: E402
 _ORCH = os.path.join(_AGENT, "env_generator", "llm_generator", "multi_agent",
                      "orchestrator.py")
 
@@ -189,23 +194,29 @@ def test_the_final_walk_is_skipped_when_a_report_already_exists():
 
 
 def test_an_unreadable_report_path_does_not_rewalk():
-    """Fail CLOSED. If the report path cannot be read we do not know whether the
-    pre-release walk already produced one, and overwriting it is the harm — so the
-    handler must assume walked, not unwalked."""
-    run = _functions()["run"]
-    handlers = [h for h in ast.walk(run) if isinstance(h, ast.ExceptHandler)
-                and any(isinstance(s, ast.Assign)
-                        and getattr(s.targets[0], "id", "") == "_walked_1203ja"
-                        for s in ast.walk(h))]
-    assert handlers, "nothing sets `_walked_1203ja` on the failure path"
-    vals = []
-    for h in handlers:
-        for s in ast.walk(h):
-            if isinstance(s, ast.Assign) and getattr(s.targets[0], "id", "") == "_walked_1203ja":
-                vals.append(getattr(s.value, "value", None))
-    assert vals and all(v is True for v in vals), (
-        "the unreadable case assumes NOT walked (%s) and would overwrite an existing "
-        "report" % vals)
+    """Fail CLOSED, and now asked by EXECUTION rather than by source shape.
+
+    #1203jk moved this decision out of `run` and into
+    `_final_report_has_evidence_1203jk`, because "a report exists" stopped meaning "a walk
+    happened" once #1203je began writing `ui_flows.ran == False`. The property is the same:
+    if we cannot tell whether the pre-release walk already produced a report, overwriting it
+    is the harm — so an unreadable path must read as "has evidence", i.e. do not walk.
+    """
+    import types
+
+    class _Log:
+        def debug(self, *a, **k):
+            pass
+
+        def warning(self, *a, **k):
+            pass
+
+    o = types.SimpleNamespace(output_dir=pathlib.Path("/nonexistent-1203jk"), _logger=_Log())
+    # absent report -> nothing to lose -> walk
+    assert ORCH_MOD.Orchestrator._final_report_has_evidence_1203jk(o, "1.3.0") is False
+    # a path that cannot even be built -> fail closed -> do not walk
+    o.output_dir = None
+    assert ORCH_MOD.Orchestrator._final_report_has_evidence_1203jk(o, "1.3.0") is True
 
 
 def test_the_final_walk_is_not_a_gate():
