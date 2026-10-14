@@ -186,3 +186,25 @@ def test_the_counters_are_declared_not_created_on_first_write():
     assert isinstance(ast.literal_eval(lit["failed_no_retry"]), int)
     assert isinstance(ast.literal_eval(lit["failed_no_retry_sec"]), float)
     assert ast.literal_eval(lit["failed_no_retry_by_error"]) == {}
+
+
+def test_the_ledger_is_named_as_the_consumer():
+    """★ Self-audit: these keys have NO code reader, and that has to be stated.
+
+    I spent this session finding evidence placed in keys nothing reads (#1203ii's whole
+    reason), so the same standard applies to keys I add. `failed_no_retry*` rides
+    `llm_usage()` into `run_budget.json` and its reader is whoever audits the ledger —
+    #947's "a measurement that exists only in a log line is not a measurement". The
+    docstring now says so AND cites the audit that used it (the #1203id before/after across
+    r182-r187), so a future reader does not have to re-derive whether it is dead weight.
+    """
+    import inspect
+    import utils.llm as _l
+    doc = inspect.getdoc(_l.record_llm_failed_no_retry_1203id) or ""
+    assert "WHO READS THESE" in doc, "the consumer of these keys is undocumented"
+    assert "run_budget.json" in doc, "the docstring does not name where the keys land"
+    assert "#947" in doc, "the rule that justifies persisting them is not cited"
+    # and the evidence that it was actually used
+    assert "r186" in doc and "r187" in doc, (
+        "no evidence cited that these keys were actually read — that is what separates a "
+        "ledger field from a dumb key")

@@ -59,7 +59,19 @@ class ObservabilityE2ETests(unittest.TestCase):
         # rest would satisfy. Two exact invariants hold instead, measured over r161-r164 (8 agent
         # dirs each; 33/21/20/33 files; 14997/9575/7836/18181 events): every agent DIRECTORY is
         # counted, and every LINE becomes an event. Both are tree-independent.
-        self.assertEqual(stats.total_agents, len({f.parent for f in files}),
+        # #1203ip: the expectation must be the DIRECTORY count, which is what the comment
+        # above says and what `aggregate_logs` reports. `{f.parent for f in files}` is the
+        # count of directories that HAVE a .jsonl, and those two are identical only while
+        # every agent directory is non-empty — true for r161-r164, and true for every run
+        # that reaches its natural end. A run stopped early leaves a directory that was
+        # created and never written: tiktok-web-r188 hit its $12 budget cap after nine
+        # minutes with `Debugger Agent/` holding 0 files, so the aggregator reported 5 and
+        # this read 4 and called it "an agent directory was dropped" — the opposite of what
+        # happened. Counting the directories keeps #1203gc's invariant ("every agent
+        # DIRECTORY is counted") and stops an early-stopped run from reading as a parser bug.
+        _agent_dirs = {d for d in snap.rglob("*") if d.is_dir()} | {
+            d for d in snap.iterdir() if d.is_dir()}
+        self.assertEqual(stats.total_agents, len(_agent_dirs),
                          "an agent directory was dropped")
         lines = sum(sum(1 for _ in f.open(encoding="utf-8", errors="ignore")) for f in files)
         self.assertEqual(stats.total_events, lines, "events and log lines disagree")

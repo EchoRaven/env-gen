@@ -1210,6 +1210,18 @@ def record_llm_failed_no_retry_1203id(elapsed_sec: Any = 0.0, error_type: Any = 
     cannot say where its wall clock went cannot be made cheaper (#1202cr), but calling them
     retry time is what #1203id is fixing. Additive — existing readers of `retries` /
     `retry_sec` keep their meaning, which is now the honest one.
+
+    WHO READS THESE. No code does, and that is the design, not an oversight — the keys ride
+    `llm_usage()` into `run_budget.json`, exactly as #1202wr's pair does, and the reader is
+    whoever audits the ledger. #947's rule is the reason they exist at all: "a measurement
+    that exists only in a log line is not a measurement", and a run log is not kept.
+
+    Already used that way, which is the evidence this is not a dumb key: on 2026-10-13 these
+    keys settled #1203id across the corpus. Ledger `retries` against the log's real re-sends
+    read -7 / +39 / +56 / -3 for r182-r185 (before #1203id) and 0 / 0 for r186 / r187 (after),
+    and r187's `failed_no_retry_by_error = {"BadRequestError": 72}` is what showed the 72
+    unchanged-payload 400s ending calls rather than being retried. Neither fact was visible
+    from `retries` alone.
     """
     try:
         _LLM_USAGE["failed_no_retry"] = int(_LLM_USAGE.get("failed_no_retry") or 0) + 1
