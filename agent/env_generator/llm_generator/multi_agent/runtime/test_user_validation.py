@@ -592,6 +592,44 @@ def _count_mcp_tools_1203c7(src: str):
     return n, "counted %d @<obj>.tool decorator(s) by AST" % n
 
 
+def login_401_cause_1203kf(label: Any, flows: Any) -> str:
+    """Which of the three causes a 4xx login actually is, from evidence this walk already has.
+
+    #1203kf — the note used to hedge "login user not registered / bad credentials / backend
+    error": three causes with three different owners, in 6 of the modern corpus's remaining
+    `broken` items. The route loop drives `/signup` BEFORE `/login`, so the signup result is
+    already in `flows` when the login note is written.
+
+    The inference rests on #1203is: `_sfx` is bound ONCE, OUTSIDE the route loop, precisely so
+    both flows type the same values — which is what lets "signup registered this account" say
+    anything about this login. If that binding moves inside the loop this narrowing becomes
+    wrong, and #1203is already records that moving it makes every login read "not registered".
+
+    It reads signup's `auth_status`, NOT its `ok`: #1203iz measured that `ok` is
+    `bool(token) or moved`, so a signup that merely navigated counts as passed while no
+    account exists. A 2xx in its own status list is the one piece of evidence that the auth
+    surface ACCEPTED a registration.
+
+    Module level so a test can execute it (#1202dp), and because the caller is an async
+    playwright walk no test can drive.
+    """
+    su = next((f for f in (flows or [])
+               if isinstance(f, Mapping) and f.get("flow") == "signup"), None)
+    sust = [s for s in ((su or {}).get("auth_status") or []) if isinstance(s, int)]
+    if label != "login" or su is None:
+        return "login user not registered / bad credentials / backend error"
+    if any(200 <= s < 300 for s in sust):
+        return ("signup in THIS walk registered the same values (/auth returned %s there), so "
+                "'not registered' is excluded — this is the credentials or the backend"
+                % sorted(set(sust)))
+    if sust:
+        return ("signup in THIS walk also failed (/auth returned %s there), so the account most "
+                "likely never existed — fix signup first; this login cannot pass until it does"
+                % sorted(set(sust)))
+    return ("signup in THIS walk sent no auth request at all, so the account was never created "
+            "— fix signup first; this login cannot pass until it does")
+
+
 def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> Dict[str, Any]:
     """Verify the env's MCP server is complete (a tool per endpoint) + importable."""
     out: Dict[str, Any] = {"server_found": False, "tools_expected": len(business_eps),
@@ -1147,9 +1185,29 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                                  "(3) only then, whether the form is not wired to the API "
                                  "at all")
                     elif all(s >= 400 for s in _auth_resps):
+                        # #1203kf: this walk already knows which of the three it is.
+                        #
+                        # The hedge "login user not registered / bad credentials / backend
+                        # error" is three causes with three different owners, and the loop
+                        # above drives `/signup` BEFORE `/login`, so the signup result is
+                        # sitting in `out["flows"]` when this line runs. 6 of the modern
+                        # corpus's remaining `broken` items are this sentence.
+                        #
+                        # The inference rests on #1203is: `_sfx` is bound ONCE, OUTSIDE the
+                        # route loop, precisely so both flows type the same values — which is
+                        # what makes "signup registered this account" say anything about this
+                        # login. If that binding ever moves inside the loop, this narrowing
+                        # becomes wrong, and #1203is's comment already records that moving it
+                        # makes every login read "not registered".
+                        #
+                        # It reads signup's `auth_status`, NOT its `ok`. #1203iz measured that
+                        # `ok` is `bool(token) or moved`, so a signup that merely navigated
+                        # counts as passed while no account exists — the one piece of evidence
+                        # that the auth surface ACCEPTED a registration is a 2xx in its own
+                        # status list.
+                        _why1203kf = login_401_cause_1203kf(label, out["flows"])
                         _note = (f"the form IS wired but /auth returned {sorted(set(_auth_resps))} "
-                                 f"(login user not registered / bad credentials / backend error) — "
-                                 f"not a wiring bug")
+                                 f"({_why1203kf}) — not a wiring bug")
                     else:
                         _note = (f"/auth returned {sorted(set(_auth_resps))} but no token was stored "
                                  f"and no navigation — response shape or post-login handling issue")
