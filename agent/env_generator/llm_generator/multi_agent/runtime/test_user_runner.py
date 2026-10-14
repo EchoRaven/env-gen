@@ -31,6 +31,15 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
+# #1203ip: both input-shape rules live in `test_user_validation` beside #670 that
+# first wrote one of them. That module imports THIS one lazily, inside functions,
+# so a module-level import here cannot form a cycle (asserted by a test that
+# imports the pair in both orders).
+from .test_user_validation import (
+    _TYPED_INPUT_VALUES_1203ip,
+    _UNFILLABLE_INPUT_TYPES_670,
+)
+
 try:   # #646: one viewport for the whole pipeline (see _bootstrap for why)
     from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
 except Exception:  # pragma: no cover — import-shape safety only
@@ -433,9 +442,23 @@ async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
     for inp in inputs:
         try:
             typ = ((await inp.get_attribute("type")) or "").lower()
-            if typ in ("hidden", "checkbox", "radio", "submit", "button"):
+            # #1203ip: ONE owner for both rules (#1032 — two copies of one rule drift).
+            # This site's own literal set was a strict SUBSET of #670's: it omitted
+            # reset/image/file/range/color, so #670 — written after a checkbox throw
+            # aborted a whole login flow — only ever covered one of the two emitters
+            # that fill a form by heuristics. Nothing here re-states either rule.
+            if typ in _UNFILLABLE_INPUT_TYPES_670:
                 continue
             if (await inp.input_value()):  # already filled (don't clobber a prior step)
+                continue
+            # #1203ip: a typed input, filled with a value of its own type. The harm at
+            # THIS site is milder than at `test_user_validation`, because the per-input
+            # `except` below swallows the Malformed throw — but it swallows the FILL
+            # too: the field stays empty and `filled` is not counted, so a step whose
+            # only input is a date reads back as "nothing to fill".
+            if typ in _TYPED_INPUT_VALUES_1203ip:
+                await inp.fill(_TYPED_INPUT_VALUES_1203ip[typ])
+                filled += 1
                 continue
             blob = (((await inp.get_attribute("placeholder")) or "") + " "
                     + ((await inp.get_attribute("name")) or "")).lower()

@@ -216,6 +216,36 @@ _UNFILLABLE_INPUT_TYPES_670 = frozenset({
 })
 
 
+# #1203ip: the THIRD category of input. #670 split visible inputs into the ones
+# `fill()` REFUSES outright (skipped above) and the ones it fills with text (the
+# `else` in `_fill_visible_inputs`) — but `fill()` ACCEPTS these and then validates
+# the VALUE, so the generic `uiflow<sfx>` string raises
+#     Locator.fill: Error: Malformed value
+# and, exactly like #670's checkbox, the throw escaped the per-input guard and
+# aborted the WHOLE flow, so the run reported a UI signup failure. The app was fine.
+#
+# Measured over the 361 test-user reports on this machine: 11 ui_flow failures across
+# 6 runs (r92, r140, r164, r178, r184, r185) carry this error. EVERY one is
+# `flow=signup` and EVERY one resolved to an `input[type=date]`; r185's was the 5th
+# input of a name/username/email/password/birthdate form, matching its
+# `locator("input").nth(4)`. r184 and r185 are the two most recent complete runs, so
+# this is live, not historical.
+#
+# Skipping them (what #670 does for range/color) is the WRONG treatment here: a signup
+# form asks for a birthdate because it wants one, and a probe that leaves the field
+# empty stops exercising the thing it exists to exercise. Fill each with a value of
+# its own type instead. The date is ~30 years back so an age gate cannot reject it.
+# Generic HTML input types, no product vocabulary — same discipline as #670 above.
+_TYPED_INPUT_VALUES_1203ip = {
+    "date": "1994-01-01",
+    "datetime-local": "1994-01-01T09:00",
+    "month": "1994-01",
+    "week": "1994-W02",
+    "time": "09:00",
+    "number": "21",
+}
+
+
 def _register_or_login(base: str, email: str, name: str) -> Optional[str]:
     """Register a test user (or log in if they already exist) → access token."""
     pw = "TestUser!2024"
@@ -580,7 +610,15 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                             # PASSWORD field is unfillable still fails exactly as before.
                             if typ in _UNFILLABLE_INPUT_TYPES_670:
                                 continue
-                            if "email" in ph or typ == "email" or "mobile" in ph:
+                            # #1203ip: TYPE decides before PLACEHOLDER. r185's field is
+                            # `placeholder="Birthdate" type="date"` — the chain below reads
+                            # placeholders, and "birthdate" matches none of them, so the field
+                            # fell to the generic text `else` and threw. Asking the type first
+                            # is also the only order that cannot be defeated by a placeholder
+                            # that happens to say "name" or "mobile" on a typed field.
+                            if typ in _TYPED_INPUT_VALUES_1203ip:
+                                await inp.fill(_TYPED_INPUT_VALUES_1203ip[typ])
+                            elif "email" in ph or typ == "email" or "mobile" in ph:
                                 await inp.fill(f"uiflow{sfx}@t.io")
                             elif "pass" in ph or typ == "password":
                                 await inp.fill("UiFlow123!x")
