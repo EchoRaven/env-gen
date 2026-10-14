@@ -217,6 +217,11 @@ class TestTheEmittedHandler(unittest.TestCase):
             def limit(self, n):
                 return self
 
+            def count(self):
+                # #1203j1: the emitted handler now counts the collection instead of
+                # reporting the page, so the fake has to answer a count as well.
+                return len(self.all())
+
             def all(self):
                 rows = self.m._rows
                 for kind, col, val in self.f:
@@ -279,6 +284,11 @@ class TestTheEmittedHandler(unittest.TestCase):
 
             def limit(self, n):
                 return self
+
+            def count(self):
+                # #1203j1: the emitted handler now counts the collection instead of
+                # reporting the page, so the fake has to answer a count as well.
+                return len(self.all())
 
             def all(self):
                 rows = self.m._rows

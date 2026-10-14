@@ -133,12 +133,22 @@ def test_an_absent_filter_does_not_narrow_the_query(tmp_path):
     assert not any(k == "filter" for k, _v in log), log
 
 
-def test_a_read_with_no_declared_params_is_byte_identical_to_before(tmp_path):
+def test_a_read_with_no_declared_params_is_unchanged_except_for_its_total(tmp_path):
+    """#1202os's point stands: declaring no filters leaves this handler alone.
+
+    It used to assert `'"total": len(rows)' in body`, which pinned a defect — `len(rows)` is
+    capped by the `.limit(100)` on the line above, so it reports the PAGE, and the contract
+    this projector hands the lane says `total` is the whole collection. #1203j1 changed that
+    one expression in the five branches #1202os did not reach; the rows line, the signature
+    and the absence of filters are what this test was really protecting, and they are
+    asserted unchanged.
+    """
     src = _project(tmp_path, [{"method": "GET", "path": "/api/videos", "auth_required": False}])
     _fn, sig, body = _handler(src, "/api/videos")
     assert "Query(" not in sig, sig
     assert "db.query(Video).limit(100).all()" in body, body
-    assert '"total": len(rows)' in body, body
+    assert '"total": len(rows)' not in body, body
+    assert '"total": db.query(Video).count()' in body, body
 
 
 def test_a_declared_field_that_is_not_a_column_is_not_invented(tmp_path):

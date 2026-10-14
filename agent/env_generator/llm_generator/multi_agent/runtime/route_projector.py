@@ -2125,7 +2125,13 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "    if parent is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
             f'    rows = db.query({cls}).filter(getattr({cls}, "{scope_fk}") == parent.id).limit(100).all()',
-            f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], "total": len(rows)}}',
+            # #1203j1: `len(rows)` is capped by the `.limit(100)` on the line above, so it is
+            # the PAGE size, not the collection's. The contract this projector hands the lane
+            # says `total` is "the size of the WHOLE COLLECTION", and #1202os already serves
+            # it that way one branch down with `query.count()` — this is the same fact, from
+            # the same filter, for the branches #1202os left alone.
+            f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], '
+            f'"total": db.query({cls}).filter(getattr({cls}, "{scope_fk}") == parent.id).count()}}',
         ]
     elif cls and m == "GET" and not _ends_in_param(path) and parent_ctx:
         # NESTED COLLECTION, no direct child→parent FK (scope_fk is None): the link is
@@ -2148,10 +2154,15 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             body_lines.append(
                 f'    rows = db.query({cls}).join({_acls}, getattr({_acls}, "{_a_ccol}") == getattr({cls}, "id")).filter(getattr({_acls}, "{_a_pcol}") == parent.id).limit(100).all()'
             )
+            # #1203j1: the same join and filter, counted without the page limit.
+            _total1203j1 = (f'db.query({cls}).join({_acls}, getattr({_acls}, "{_a_ccol}") '
+                            f'== getattr({cls}, "id")).filter(getattr({_acls}, "{_a_pcol}") '
+                            f'== parent.id).count()')
         else:
             body_lines.append(f"    rows = db.query({cls}).limit(100).all()")
+            _total1203j1 = f"db.query({cls}).count()"
         body_lines.append(
-            f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], "total": len(rows)}}'
+            f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], "total": {_total1203j1}}}'
         )
     elif cls and m == "GET" and _ends_in_param(path) and last_param and _is_id_param(last_param):
         # GET item by id
@@ -2387,7 +2398,9 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                                        actor_fold_ok_1202ot=_actor_fold_ok_1202ot), cols)
             body_lines += _prep1202fh
             body_lines.append(
-                f"    return {{\"items\": [{_item1202fh} for r in rows], \"total\": len(rows)}}"
+                f"    return {{\"items\": [{_item1202fh} for r in rows], "
+                f"\"total\": db.query({cls}).filter(getattr({cls}, \"{read_owner_fk}\") "
+                f"== _fw_owner_val({cls}, \"{read_owner_fk}\", user)).count()}}"
             )
         else:
             # #1202ip: a PUBLIC list gets the same batched fold as the owner-scoped one.
@@ -2406,13 +2419,18 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 body_lines = [
                     f'    rows = db.query({cls}).filter(getattr({cls}, "{_rcol}").isnot(None)).order_by({_ord}).limit({_rlim}).all()',
                 ] + _prep1202ip + [
-                    f"    return {{\"items\": [{_item1202ip} for r in rows], \"total\": len(rows)}}",
+                    # #1203j1: same filter, no ordering and no page limit — a count needs
+                    # neither, and the collection is what `total` names.
+                    f"    return {{\"items\": [{_item1202ip} for r in rows], "
+                    f"\"total\": db.query({cls}).filter(getattr({cls}, "
+                    f"\"{_rcol}\").isnot(None)).count()}}",
                 ]
             else:
                 body_lines = [
                     f"    rows = db.query({cls}).limit(100).all()",
                 ] + _prep1202ip + [
-                    f"    return {{\"items\": [{_item1202ip} for r in rows], \"total\": len(rows)}}",
+                    f"    return {{\"items\": [{_item1202ip} for r in rows], "
+                    f"\"total\": db.query({cls}).count()}}",
                 ]
     elif cls and m in ("POST", "PUT", "PATCH"):
         # DB mutations are wrapped: a relational create the projector can't fully
