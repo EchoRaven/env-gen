@@ -809,9 +809,9 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                     # emit that note in 49 of 89 runs (55%), against 24 of 84 (29%) for the
                     # ones that do not.
                     #
-                    # THAT POOLED PAIR OVERSTATES IT, and the correction belongs here rather
-                    # than in my memory of it. Split by domain, which is the obvious confound
-                    # because multi-step auth is not evenly distributed:
+                    # #1203iy: THAT POOLED PAIR OVERSTATES IT, and the correction belongs
+                    # here rather than in my memory of it. Split by domain, which is the
+                    # obvious confound because multi-step auth is not evenly distributed:
                     #
                     #     tiktok    multi 23/53 = 43%   single 20/54 = 37%   (+6 points)
                     #     netflix   multi 26/33 = 79%   single  4/7 = 57%    (+22, n=7)

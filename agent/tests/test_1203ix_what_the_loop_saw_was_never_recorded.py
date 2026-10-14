@@ -183,6 +183,17 @@ def test_the_pooled_number_is_corrected_where_it_is_stated():
     assert "composition" in flat
 
 
+def test_the_correction_carries_its_own_ticket_number():
+    """#1203iy corrected #1203ix's pooled figure, and it wrote the correction INTO this
+    block — so for a while the number in its commit message resolved to nothing in the
+    tree. A marker that cannot be found by its own number is a dangling reference, which
+    is the same defect as two tickets sharing one number: the next reader goes looking and
+    comes back empty."""
+    assert "#1203iy" in SRC, "the domain-split correction has no ticket marker"
+    i = SRC.index("#1203iy")
+    assert "OVERSTATES IT" in SRC[i:i + 400], SRC[i:i + 120]
+
+
 def test_the_two_dead_candidates_are_recorded():
     """So the next reader does not spend the corpus on them again."""
     flat = " ".join(SRC.replace("#", " ").split())
