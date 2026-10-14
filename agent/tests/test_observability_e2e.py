@@ -59,7 +59,7 @@ class ObservabilityE2ETests(unittest.TestCase):
         # rest would satisfy. Two exact invariants hold instead, measured over r161-r164 (8 agent
         # dirs each; 33/21/20/33 files; 14997/9575/7836/18181 events): every agent DIRECTORY is
         # counted, and every LINE becomes an event. Both are tree-independent.
-        # #1203ip: the expectation must be the DIRECTORY count, which is what the comment
+        # #1203iv: the expectation must be the DIRECTORY count, which is what the comment
         # above says and what `aggregate_logs` reports. `{f.parent for f in files}` is the
         # count of directories that HAVE a .jsonl, and those two are identical only while
         # every agent directory is non-empty — true for r161-r164, and true for every run
@@ -69,6 +69,13 @@ class ObservabilityE2ETests(unittest.TestCase):
         # this read 4 and called it "an agent directory was dropped" — the opposite of what
         # happened. Counting the directories keeps #1203gc's invariant ("every agent
         # DIRECTORY is counted") and stops an early-stopped run from reading as a parser bug.
+        #
+        # RENUMBERED from #1203ip, which was taken the same day by the typed-input fix in
+        # `test_user_validation`/`test_user_runner`. That one is referenced from two source
+        # modules and from #1203it's and #1203iu's notes, so it keeps the number; commit
+        # 1c78f34b's message still says #1203ip and this line is its forwarding address.
+        # A marker in this tree means "go read that ticket's reasoning", so two defects
+        # answering to one name send the next reader to the wrong argument.
         _agent_dirs = {d for d in snap.rglob("*") if d.is_dir()} | {
             d for d in snap.iterdir() if d.is_dir()}
         self.assertEqual(stats.total_agents, len(_agent_dirs),
