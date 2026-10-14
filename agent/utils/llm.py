@@ -1535,11 +1535,63 @@ def _converging_overshoot_1202cz() -> float:
 
 
 
-def _price_env_1163(name: str) -> float:
+_MONEY_ENV_BAD_1203JU: Dict[str, Any] = {}
+
+
+def _money_env_1203ju(name: str):
+    """Parse a money env var into ``(value, raw, ok)``. ``ok`` is False only on a BAD value.
+
+    #1203ju: `_price_env_1163` returned 0.0 for "unset" and for "unparseable" alike, and for
+    `ENVGEN_MAX_SPEND_USD` a 0 means NO CAP. So a plausible operator typo silently removed the
+    only guard between a loop and real money. Driven locally against a $10 cap, 20 calls of
+    $3.41 each:
+
+        "650"  -> 650.0   enforced          "$650"       -> 0.0   NEVER latches
+        " 650 "-> 650.0   enforced          "650.00 USD" -> 0.0   NEVER latches
+        "650." -> 650.0   enforced          "650,00"     -> 0.0   NEVER latches
+
+    The same collapse hits the PRICES: an unparseable rate makes `priced` False, so the cap
+    cannot fire at all and `run_budget.json` reports $0.00 for a run that spent money.
+
+    Underscores are rejected rather than parsed. `float("6_50")` is 650.0 because Python allows
+    digit grouping in literals, so someone typing "6_50" for six-fifty gets a cap a hundred
+    times larger -- in the dangerous direction. No operator writing an amount means that.
+
+    An empty or missing value stays 0.0 with ok=True: "no cap" and "price it later" are both
+    legitimate and in use (`llm_usage` prices a run after the fact on purpose).
+    """
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return 0.0, raw, True
+    if "_" in raw:
+        return 0.0, raw, False
     try:
-        return float(os.environ.get(name, "") or 0.0)
+        return float(raw), raw, True
     except (TypeError, ValueError):
-        return 0.0
+        return 0.0, raw, False
+
+
+def _warn_money_env_1203ju(name: str, raw: str) -> None:
+    """Say, once per variable, that a money setting was given and could not be read."""
+    try:
+        if name in _MONEY_ENV_BAD_1203JU:
+            return
+        _MONEY_ENV_BAD_1203JU[name] = raw
+        logging.getLogger("LLM.budget").error(
+            "#1203ju %s is set to %r, which is not a number this reads. Give it bare digits "
+            "with an optional decimal point and nothing else -- no currency symbol, no "
+            "thousands separator, no unit, no underscore. Treated as UNSET, which for "
+            "ENVGEN_MAX_SPEND_USD means the run has NO SPEND CAP, and for a price means the "
+            "ledger reports $0.00 and the cap cannot fire at all.", name, raw)
+    except Exception:
+        return
+
+
+def _price_env_1163(name: str) -> float:
+    value, raw, ok = _money_env_1203ju(name)
+    if not ok:
+        _warn_money_env_1203ju(name, raw)
+    return value
 
 
 def llm_usage() -> Dict[str, Any]:
@@ -1847,9 +1899,25 @@ def _record_usage_1163(prompt_tokens: Any, cached_tokens: Any, completion_tokens
     # So: the embellishments keep their guard and default to the STOP-EARLIER side, the
     # comparison runs outside it, and a failure in either announces itself once.
     try:
-        cap = _price_env_1163("ENVGEN_MAX_SPEND_USD")
+        cap, _raw1203ju, _ok1203ju = _money_env_1203ju("ENVGEN_MAX_SPEND_USD")
     except Exception as _e1203jt:
         _warn_cap_check_1203jt("reading ENVGEN_MAX_SPEND_USD", _e1203jt, enforced=False)
+        return
+    if not _ok1203ju:
+        # #1203ju: the operator asked for a bound and the system cannot read it. Warning and
+        # carrying on means running UNCAPPED behind a cap they believe is in force, which is
+        # the one outcome worth refusing -- a cap is cheap to retype and an uncapped run is
+        # not cheap to discover. The message carries both markers the #1180 predicate keys on,
+        # so this still classifies as "this run's OWN ceiling stopped it, the provider is fine"
+        # rather than sending the next reader to check the API key.
+        _warn_money_env_1203ju("ENVGEN_MAX_SPEND_USD", _raw1203ju)
+        if not _TERMINAL_LLM_ERROR["reason"]:
+            _TERMINAL_LLM_ERROR["reason"] = (
+                "[BudgetExceeded] ENVGEN_MAX_SPEND_USD is set to %r, which is not a number "
+                "this can enforce -- refusing to run UNCAPPED behind a cap you asked for. "
+                "Write bare digits with an optional decimal point (650 or 650.50) and "
+                "relaunch, or unset the variable to run with no cap deliberately (#1203ju)."
+                % _raw1203ju)
         return
     if not (cap > 0) or _TERMINAL_LLM_ERROR["reason"]:
         return
