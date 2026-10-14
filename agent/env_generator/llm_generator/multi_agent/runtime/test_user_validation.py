@@ -1040,6 +1040,36 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         "page_errors": _page_errors_1203iu[:3],
                         # #1203ix: one entry per round that ran, holding the inputs it filled.
                         "fill_rounds": _fill_rounds_1203ix,
+                        # #1203iz: THIS FLOW PASSED AND NOBODY LOGGED IN.
+                        #
+                        # `ok` is `bool(token) or moved`, and #1126b left that `or` deliberately
+                        # untouched -- it withdraws success only when the LANDING contradicts
+                        # it. A flow can therefore pass on navigation alone, and the record
+                        # already proves one did: tiktok-web-r177, the run with the best
+                        # delivery in the corpus (4 of 4 milestones, every closing gate green),
+                        # has three such records --
+                        #     signup  reqs=0  status=[]  token_stored=false  url=.../ 
+                        #     login   reqs=0  status=[]  token_stored=false  url=.../
+                        # Zero auth requests, no token, and the destination is the site root,
+                        # which shows no login affordance -- so #1126b's landing check sees
+                        # nothing wrong and the zero-request fact is never consulted. #1203gp
+                        # counted four `auth_requests == 0` cases but only in the branch where
+                        # the landing check had ALREADY withdrawn `ok`.
+                        #
+                        # Measured over the 522 ui_flow records: 252 passed, 26 of them with no
+                        # token, and 22 of those 26 show no auth request either -- though 19 of
+                        # the 26 predate #1203a6 and have no `auth_requests` field at all, so
+                        # three records in one run is what is actually PROVEN today.
+                        #
+                        # RECORDED, NOT ACTED ON, and the reason is a real one: an app that
+                        # logs in through a path outside the watched surface and sets an
+                        # httpOnly cookie looks exactly like this from here, and withdrawing
+                        # `ok` would turn its success into a false failure. #1126b's `or` is
+                        # deliberate; this flag is what makes the class countable in the next
+                        # runs instead of invisible, which is what #1203ix did for the rounds.
+                        "passed_without_auth_1203iz": bool(
+                            ok and not token and not _auth_resps
+                            and not _auth_reqs and not _auth_failed),
                         "note": _note})
                 except Exception as exc:
                     out["flows"].append({"flow": label, "ok": False,
