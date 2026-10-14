@@ -590,6 +590,38 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
     # pinned by a test instead, because it is an accident of placement until something checks.
     sfx = str(int(time.time()))[-6:]
     out: Dict[str, Any] = {"ran": True, "flows": []}
+
+    # #1203it: ONE OWNER FOR THE WATCHED SURFACE, AND THIS ONE IS A LIVE MISS.
+    # All three listeners below tested `"/auth/" in url` -- the literal #1203g1
+    # removed from `test_user_runner`, because it matches neither `/oauth/token`
+    # (the framework's OWN OAuth2 token endpoint) nor `/api/oauth/*`. `lifecycle`
+    # says of this exact constant that "six modules re-listed this surface and
+    # all six omitted the same three"; this module was a seventh, and re-listed
+    # it THREE times.
+    #
+    # #1203g1 could call its own fix drift-closing, because it measured 0
+    # frontends calling /oauth/. THAT IS NO LONGER TRUE. instagram-core-r176's
+    # `pages/LoginPage.jsx` logs in with
+    #     window.location.assign(`/oauth/authorize?client_id=instagram-web...`)
+    # and its login flow is recorded as "the login form issued NO auth request,
+    # and the token in storage was left by an earlier flow". The form issued one;
+    # these listeners could not see where it went. The app was fine.
+    #
+    # Imported from the runner's already-derived tuple rather than re-filtering
+    # `FRAMEWORK_AUTH_SURFACE_PREFIXES_1202vl` here, so the "drop well-known"
+    # rule has no second copy either (#1032). The import is LAZY because
+    # `test_user_runner` imports THIS module at module level (#1203ip) and a
+    # module-level import back would be a cycle. It is NOT wrapped: #1203g1's
+    # own scar is a guarded import that silently left a hand-written copy in use,
+    # so an ImportError here must be loud.
+    from .test_user_runner import (
+        _AUTH_OBSERVED_PREFIXES_1203G1 as _AUTH_SURFACE_1203it)
+
+    def _is_auth_url_1203it(_u) -> bool:
+        """Does this URL belong to the auth surface the framework serves?"""
+        _s = str(_u or "")
+        return any(_seg in _s for _seg in _AUTH_SURFACE_1203it)
+
     try:
         async with async_playwright() as pw:
             try:
@@ -687,21 +719,21 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
 
                     def _on_resp(_r):
                         try:
-                            if "/auth/" in _r.url:
+                            if _is_auth_url_1203it(_r.url):
                                 _auth_resps.append(int(_r.status))
                         except Exception:
                             pass
 
                     def _on_req_1203a6(_q):
                         try:
-                            if "/auth/" in _q.url:
+                            if _is_auth_url_1203it(_q.url):
                                 _auth_reqs.append(str(_q.url))
                         except Exception:
                             pass
 
                     def _on_reqfail_1203a6(_q):
                         try:
-                            if "/auth/" in _q.url:
+                            if _is_auth_url_1203it(_q.url):
                                 _f = getattr(_q, "failure", None)
                                 _auth_failed.append("%s (%s)" % (
                                     _q.url, (_f if isinstance(_f, str) else

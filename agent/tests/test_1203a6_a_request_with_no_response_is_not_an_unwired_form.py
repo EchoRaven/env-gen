@@ -129,13 +129,27 @@ def test_requests_and_failures_are_actually_recorded():
 
 
 def test_the_listeners_filter_to_auth_urls():
-    """Recording every request would make the branch fire on any page with any traffic."""
+    """Recording every request would make the branch fire on any page with any traffic.
+
+    #1203it moved the filter off the `"/auth/"` LITERAL this test used to match: that literal
+    sees neither `/oauth/token` nor `/api/oauth/*`, and instagram-core-r176 logs in through
+    `/oauth/authorize`, so its login was recorded as having issued no auth request at all.
+    The intent here is unchanged and is what is asserted -- each listener must still DECIDE on
+    the url rather than record everything -- but the anchor is now the call in the `if`, not a
+    spelling of the surface (#943: the AST is the anchor). `test_1203it_*` owns the question of
+    WHICH surface that call resolves to.
+    """
     tree = ast.parse(_SRC)
+    seen = 0
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name in (
                 "_on_req_1203a6", "_on_reqfail_1203a6"):
-            # ast.unparse normalises quotes, so match the TEXT, not a quoted spelling.
-            assert "/auth/" in ast.unparse(node), node.name
+            seen += 1
+            tests = [ast.unparse(n.test) for n in ast.walk(node) if isinstance(n, ast.If)]
+            assert tests, "%s records unconditionally" % node.name
+            assert any("_is_auth_url_1203it" in s for s in tests), (node.name, tests)
+            assert any("url" in s for s in tests), (node.name, tests)
+    assert seen == 2, seen
     names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert {"_on_req_1203a6", "_on_reqfail_1203a6"} <= names, sorted(names)
 
