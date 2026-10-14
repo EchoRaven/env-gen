@@ -50,6 +50,28 @@ def _isolation_block():
     raise AssertionError("the isolation gate block is gone")
 
 
+def _park_comment_1203jj(src):
+    """The #1203jj comment block, as text.
+
+    Landmark-anchored (#943): start at the line carrying the marker, stop at the first line
+    that is not a comment. No byte count, so rewording the park cannot move what this reads.
+
+    ★ The first attempt walked UP from the `ENVGEN_ISOLATION_GATE` read instead, and
+    stopped dead on the `import os as _os` that sits between the comment and the branch —
+    returning an almost empty window. A landmark has to be the thing you want, not a thing
+    near it.
+    """
+    lines = src.splitlines()
+    start = next(n for n, l in enumerate(lines)
+                 if "#1203jj" in l and l.strip().startswith("#"))
+    out = []
+    for l in lines[start:]:
+        if not l.strip().startswith("#"):
+            break
+        out.append(l)
+    return "\n".join(out)
+
+
 def test_the_gate_is_still_parked():
     """★ THE RATCHET. Flipping the default is the decision the measurement above is FOR,
     and it must not happen in a session that cannot watch a run. If this is red because you
@@ -68,8 +90,11 @@ def test_the_park_states_a_trigger_that_can_be_evaluated():
     drive fix") names nothing in the tree; the replacement is a number and a named
     exception, both re-derivable."""
     src = inspect.getsource(DG)
-    i = src.index("ENVGEN_ISOLATION_GATE")
-    window = src[max(0, i - 2600):i]
+    # ★ The first version was `src[max(0, i - 2600):i]`. #943's ratchet did not catch it —
+    # its pattern sees the forward `[i:i + N]` form and not the backward one — but the rule
+    # is the same and the drift is the same, so this anchors on the block instead. The
+    # blind spot is recorded in #1203jn's commit rather than silently relied on.
+    window = _park_comment_1203jj(src)
     assert "#1203jj" in window, "the measurement is no longer beside the park"
     assert "63" in window and "tiktok-web-r131" in window, (
         "the park no longer carries a re-derivable number and the run it came from")

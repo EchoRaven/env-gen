@@ -1353,13 +1353,34 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             # agent behaviour weakly -- a contract text reached r184's `agent_notes` and the
             # lane still wrote the thing it forbade. It is landed because the sentence was
             # INCOMPLETE in a way that produces a terminal blocker, not because it is
-            # expected to end the class. The deterministic form -- a detector for "a call
-            # site reaches a protected endpoint with no token gate" -- needs to know
-            # statically which endpoints are guarded AND whether the call is gated; regex
-            # over lane JSX is how #1202td's ratchet got its blind spot, so it is not being
-            # invented here on 2 runs of evidence. Next run: re-read
-            # `codehub_checks.json` for `validation:ui_*` failures whose only stated cause
-            # is an anonymous 401, and see whether the count moved.
+            # expected to end the class. Next run: re-read `codehub_checks.json` for
+            # `validation:ui_*` failures whose only stated cause is an anonymous 401 and see
+            # whether the count moved (`scripts/verify_shipped_fixes.py` does it, #1203jm).
+            #
+            # #1203jn: WHY THE DETERMINISTIC FORM IS NOT BUILDABLE TODAY, named precisely so
+            # the next reader does not re-derive it. The right question is NOT "is this call
+            # token-gated" -- that needs control flow through lane JSX, which is how
+            # #1202td's ratchet got its blind spot. It is the contract-level one: "does a
+            # page a LOGGED-OUT visitor can reach call a protected endpoint?" Two of the
+            # three inputs already exist -- `frontend_audit._effective_page_apis_1202vg`
+            # gives a page's APIs and `route_projector.resolve_endpoint_auth` gives an
+            # endpoint's auth.
+            #
+            # THE THIRD DOES NOT. `registryhub_ui_pages.json` records no page-level auth at
+            # all: over tiktok-web-r185's 15 registered pages, ZERO carry `auth_required`,
+            # `requires_auth`, `public` or any equivalent (keys are apis_used, component,
+            # components, kind, metadata, name, path, route, status). So "reachable logged
+            # out" cannot be answered from the contract, and inferring it from names
+            # (`login_page`, `*_logged_out`) would be product vocabulary -- the kind of
+            # predicate this file refuses in #670 and #1203ip.
+            #
+            # So the blocker is a MISSING CONTRACT FIELD, not a missing parser. Adding
+            # page-level auth touches the scaffolder, the projector and every lane that
+            # registers a page, and nothing offline can validate that -- but a reader who
+            # wants the detector now knows it is one field away rather than one heuristic
+            # away. #1202qr already states the rule this would enforce, in the right words
+            # ("a logged-out screen must not call a per-user read"), and exempts `/me`
+            # paths by design, which is why the r170/r181 cases fall outside it.
     for s in report.get("steps", []):
         lines.append(f"  [{'OK' if s['ok'] else 'FAIL'}] {s['step']}" + (f" — {s['note']}" if s.get('note') else ""))
     for p in report.get("pages", []):

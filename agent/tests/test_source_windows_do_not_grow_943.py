@@ -72,7 +72,16 @@ def _fixed_windows():
 # with the call deleted, because #102's own comment inside that branch spells the method name.
 # A landmark anchor is not automatically a stronger assertion than the window it replaced —
 # counter-prove it by deleting the mechanism.
-_CEILING_BACKWARD_1202LK = 29
+# #1203jn: TIGHTENED 29 -> 24, because a ceiling that keeps its slack hands the next
+# window out for free. #1202lk set this at 29 after removing two, so lowering it on
+# improvement is this ratchet's own practice; five more have gone since without the number
+# following, the latest being `test_1203jj`'s own `src[max(0, i - 2600):i]`, which I wrote
+# and then re-anchored on the comment block it meant. Measured now, not estimated: 24.
+#
+# ★ The FORWARD ceiling is at 57 and the count is 57 — exactly why adding one in
+# `test_1203jn` turned three tests red. That is the ratchet working: it is cheaper to be
+# stopped here than to discover a byte window drifted six months from now.
+_CEILING_BACKWARD_1202LK = 24
 
 
 def _backward_windows():
