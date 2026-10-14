@@ -2252,8 +2252,25 @@ class GeneratorMemory(AgentMemory):
         
         # Auto-extract knowledge from task
         if self._files_created:
+            # #1203jx: a COUNT beside a CUT list, in the channel an agent reads back later.
+            # This said "Task created 12 files: a, b, c, d, e" and the next reader has no way
+            # to know seven are missing -- #1034's exact harm, and the only unmarked instance
+            # left in the tree (`commit_gate` and `hub_pulse` both append their own "...").
+            # The import is function-local because `join_capped` lives two packages over and
+            # a module-level relative import of that depth has broken collection here before.
+            try:
+                from ..multi_agent.runtime.message_format import join_capped as _jc1203jx
+                _files_1203jx = _jc1203jx(list(self._files_created),
+                                          len(self._files_created), cap=5)
+            except Exception:
+                # NO second implementation of the remainder rule here. A duplicate would be a
+                # second owner for #1034 (#1032) and could rot silently -- a mutation that
+                # deleted its marker survived, because nothing in the suite reaches a failed
+                # import. If the helper is unreachable, say the count and show NO list: a
+                # list that is not rendered cannot be a cut one.
+                _files_1203jx = "(names unavailable)"
             self.add_knowledge(
-                f"Task created {len(self._files_created)} files: {', '.join(list(self._files_created)[:5])}",
+                f"Task created {len(self._files_created)} files: {_files_1203jx}",
                 category="progress",
                 importance=0.6
             )

@@ -45,6 +45,24 @@ from .communication_tools import (
 from typing import Optional
 
 
+def _jc1203jx(items, total, cap=6):
+    """`join_capped` for this module: a COUNT of every issue beside a CUT list of them.
+
+    #1203jx: three sites here said `Found 23 issues: <five of them>` to the agent that has to
+    fix them, with nothing saying eighteen were withheld — #1034's harm in the channel where
+    it costs the most. The import is function-local because `message_format` lives two
+    packages over and a module-level relative import of that depth has broken collection in
+    this tree before; the wrapper keeps that detail in one place instead of three.
+    """
+    try:
+        from ..multi_agent.runtime.message_format import join_capped as _jc
+        return _jc(items, total, cap=cap)
+    except Exception:
+        # No second implementation of the remainder rule (#1032). Without the helper, show
+        # the count and no list: a list that is not rendered cannot be a cut one.
+        return "(details unavailable)"
+
+
 # ===== Grep Tool =====
 
 def _binary_note_1203g6(n: int) -> str:
@@ -578,7 +596,8 @@ Returns errors with line numbers and suggestions.
                     pass
             
             if errors:
-                error_summary = "; ".join([f"L{e['line']}: [{e['code']}] {e['msg']}" for e in errors[:5]])
+                error_summary = _jc1203jx([f"L{e['line']}: [{e['code']}] {e['msg']}" for e in errors[:5]],
+                                          len(errors), cap=5)
                 return ToolResult(
                     success=False,
                     data={"errors": errors, "tool": "ruff"},
@@ -724,7 +743,8 @@ export default [
                             )
                 
                 if errors:
-                    error_summary = "; ".join([f"L{e['line']}: {e['msg']}" for e in errors[:5]])
+                    error_summary = _jc1203jx([f"L{e['line']}: {e['msg']}" for e in errors[:5]],
+                                              len(errors), cap=5)
                     return ToolResult(
                         success=False,
                         data={"errors": errors, "tool": "eslint"},
@@ -779,7 +799,8 @@ export default [
                         pass
                 
                 if errors:
-                    error_summary = "; ".join([f"L{e['line']}: [{e['code']}] {e['msg']}" for e in errors[:5]])
+                    error_summary = _jc1203jx([f"L{e['line']}: [{e['code']}] {e['msg']}" for e in errors[:5]],
+                                          len(errors), cap=5)
                     return ToolResult(
                         success=False,
                         data={"errors": errors, "tool": "sqlfluff"},

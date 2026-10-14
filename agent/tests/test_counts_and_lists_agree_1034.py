@@ -160,6 +160,260 @@ def test_future_imports_stay_first_everywhere_in_runtime():
 
 
 # --- every site is converted, and no new one may appear ----------------------------------
+#
+# #1203jx: the second half of that heading was a CLAIM, not a check. `_CONVERTED` asserts
+# `join_capped(` appears at least N times per module, which pins the conversions in place and
+# can never notice a NEW site that says "12 files" and then lists 5. Same shape as #1203js's
+# `_KNOWN`: a sentence promising a property no assertion implemented.
+#
+# The predicate is the HARM, not the shape. A truncating slice is everywhere (88 sites in the
+# tree) and almost all of them are harmless -- `''.join(p[:1].upper() + p[1:])` capitalises,
+# `' '.join(sys.argv[:6])` is a log line. What #1034 is about is a COUNT of the whole
+# collection standing beside a CUT rendering of it in the SAME sentence, with nothing saying
+# what was cut. Scoped that way the tree holds three, and two of them append their own "...":
+#
+#     commit_gate.py:144       {len(files)} file(s): {', '.join(files[:5])}{'...' if >5}   marked
+#     hub_pulse.py:775         same shape                                                 marked
+#     generator_memory.py      "Task created {len(x)} files: {', '.join(list(x)[:5])}"     UNMARKED
+#
+# The third is fixed (#1203jx), so the unmarked count is ZERO and this keeps it there. The
+# whole llm_generator package is scanned, not `runtime/` -- the one real violation lived in
+# `memory/`, which every earlier reach here excluded.
+import ast as _ast1203jx
+
+_MARKERS_1203JX = ("more not shown", "join_capped", "...", "\u2026", "more)", "and more")
+
+
+def _own_nodes_1203jx(scope):
+    """Nodes belonging to THIS scope, not descending into nested functions or classes.
+
+    #1203jx: `ast.walk` has no notion of scope, so the module-level pass walked straight
+    into every function body and attributed one function's truncated variable to another
+    function's f-string. My own scope test caught it; the live tree would not have, because
+    both halves rarely sit in the same module.
+    """
+    out, stack = [], list(_ast1203jx.iter_child_nodes(scope))
+    while stack:
+        n = stack.pop()
+        if isinstance(n, (_ast1203jx.FunctionDef, _ast1203jx.AsyncFunctionDef,
+                          _ast1203jx.ClassDef)):
+            continue
+        out.append(n)
+        stack.extend(_ast1203jx.iter_child_nodes(n))
+    return out
+
+
+def _count_beside_cut_list_1203jx(tree, ignore_markers=False):
+    """f-strings carrying BOTH len(<whole>) and a joined, truncated rendering, unmarked."""
+    def _has_len(node):
+        return any(isinstance(c, _ast1203jx.Call)
+                   and getattr(c.func, "id", None) == "len"
+                   for c in _ast1203jx.walk(node))
+
+    def _joined_trunc(node):
+        for c in _ast1203jx.walk(node):
+            if not (isinstance(c, _ast1203jx.Call)
+                    and isinstance(c.func, _ast1203jx.Attribute)
+                    and c.func.attr == "join" and c.args):
+                continue
+            for sub in _ast1203jx.walk(c.args[0]):
+                if (isinstance(sub, _ast1203jx.Subscript)
+                        and isinstance(sub.slice, _ast1203jx.Slice)
+                        and sub.slice.lower is None and sub.slice.upper is not None
+                        and isinstance(sub.slice.upper, _ast1203jx.Constant)
+                        and isinstance(sub.slice.upper.value, int)):
+                    return True
+        return False
+
+    out = []
+    # #1203jx: the harm comes in two shapes and the first version saw only one.
+    #
+    #   inline        f"{len(x)} file(s): {', '.join(x[:5])}"
+    #   cross-stmt    s = ', '.join(x[:5])  ...  f"{len(x)} file(s): {s}"
+    #
+    # The second is not a corner case -- it is what the FIX looks like, so a ratchet blind to
+    # it cannot protect the sites just repaired. `code_tools` carried three of them
+    # ("Found 23 issues: <five of them>", returned to the agent that has to fix them) and
+    # `remediation_dispatcher` one. A mutation that reverted a repaired site to the split form
+    # survived the inline-only detector; that is how this was found.
+    scopes = [x for x in _ast1203jx.walk(tree)
+              if isinstance(x, (_ast1203jx.FunctionDef, _ast1203jx.AsyncFunctionDef))]
+    scopes.append(tree)
+    seen = set()
+    for scope in scopes:
+        cut_vars = {}
+        for st in _own_nodes_1203jx(scope):
+            if isinstance(st, _ast1203jx.Assign) and _joined_trunc(st.value):
+                for t in st.targets:
+                    if isinstance(t, _ast1203jx.Name):
+                        cut_vars[t.id] = _ast1203jx.unparse(st)
+        for n in _own_nodes_1203jx(scope):
+            if not isinstance(n, _ast1203jx.JoinedStr) or not _has_len(n):
+                continue
+            txt = _ast1203jx.unparse(n)
+            via = sorted({c.id for c in _ast1203jx.walk(n)
+                          if isinstance(c, _ast1203jx.Name) and c.id in cut_vars})
+            if not (_joined_trunc(n) or via):
+                continue
+            # The remainder may be declared where the list is BUILT, not where it is
+            # interpolated, so both texts are consulted.
+            whole = txt + "".join(cut_vars[v] for v in via)
+            if not ignore_markers and any(m in whole for m in _MARKERS_1203JX):
+                continue
+            key = (getattr(n, "lineno", "?"), txt)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((key[0], " ".join(txt.split())[:110]))
+    return out
+
+
+# runtime -> multi_agent -> llm_generator. One level higher is `env_generator`, which
+# my first version used and which made the reach assertion below fail with the paths
+# prefixed `llm_generator/` -- the test caught my own off-by-one.
+_PKG_1203JX = os.path.abspath(os.path.join(_RUNTIME, "..", ".."))
+
+
+def _scan_pkg_1203jx(ignore_markers=False):
+    """Returns (findings, files_visited). The second value is not decoration.
+
+    #1203jx: the first version returned findings alone, and the live answer is ZERO -- so a
+    mutation that made the walk iterate `[]`, and another that narrowed the root back to
+    `runtime/` (where the one real violation was NOT), both left every test green. A ceiling
+    of zero is evidence only while the scan is known to have looked, and the REACH is part of
+    the claim here because `memory/` is the package this ratchet used to exclude.
+    """
+    found, visited = [], []
+    for dirpath, _dirs, files in os.walk(_PKG_1203JX):
+        if os.sep + "tests" in dirpath:
+            continue
+        for fn in sorted(files):
+            if not fn.endswith(".py"):
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                # #1202eu: a handle per FILE, closed per file. This walk opens every .py in
+                # the package, and a bare `open(...).read()` here is that ratchet's exact
+                # subject -- it caught this on the first full run after I wrote it.
+                with open(path, encoding="utf-8", errors="ignore") as _fh1203jx:
+                    tree = _ast1203jx.parse(_fh1203jx.read())
+            except Exception:
+                continue
+            visited.append(os.path.relpath(path, _PKG_1203JX))
+            for lineno, txt in _count_beside_cut_list_1203jx(
+                    tree, ignore_markers=ignore_markers):
+                found.append("%s:%s  %s" % (fn, lineno, txt))
+    return found, visited
+
+
+def test_the_scan_looked_and_reached_memory_1203jx():
+    """Non-vacuity AND reach, in one assertion each.
+
+    The marked-site check is a positive control on the REAL tree: with markers ignored the
+    detector must still find `commit_gate` and `hub_pulse`, which carry their own "...". If
+    it finds neither, the zero above means "did not look".
+    """
+    _found, visited = _scan_pkg_1203jx()
+    assert len(visited) >= 100, "the scan parsed only %d file(s); it did not look" % len(visited)
+    for must in (os.path.join("memory", "generator_memory.py"),
+                 os.path.join("multi_agent", "runtime", "delivery_gate.py")):
+        assert must in visited, (
+            "the scan does not reach %s — the only real violation this ratchet ever found "
+            "lived in memory/, which a runtime-only root excludes" % must)
+    marked, _v = _scan_pkg_1203jx(ignore_markers=True)
+    names = {m.split(":")[0] for m in marked}
+    assert {"commit_gate.py", "hub_pulse.py"} <= names, (
+        "the detector no longer fires on the real tree's known count-beside-cut-list sites "
+        "(markers ignored): %s" % sorted(names))
+
+
+def test_the_detector_sees_an_unmarked_site_1203jx():
+    """Positive control: zero below must mean "none left", not "the scan broke".
+
+    Without this, every mutation of the predicate reads green, because the live answer is
+    already zero -- the trap #1203js was built to close one level up.
+    """
+    src = ('x = [1, 2, 3]\n'
+           'msg = f"{len(x)} thing(s): {chr(44).join(str(i) for i in x[:2])}"\n')
+    hits = _count_beside_cut_list_1203jx(_ast1203jx.parse(src))
+    assert hits, "the detector no longer recognises a count beside a cut list"
+
+
+def test_the_detector_accepts_a_declared_remainder_1203jx():
+    """And the marked form must NOT be flagged, or the ceiling is unreachable by design."""
+    # The marker has to survive `ast.unparse`, so it is a LITERAL here. My first fixture
+    # built it with chr(46) * 3 to dodge the quoting, and unparse rendered the call rather
+    # than the dots -- the test failed on the fixture, not on the detector.
+    src = "\n".join([
+        "x = [1, 2, 3]",
+        "msg = f'{len(x)} thing(s): " + '{", ".join(str(i) for i in x[:2])}'
+        + "{\"...\" if len(x) > 2 else \"\"}'",
+    ]) + "\n"
+    assert "..." in src, src
+    assert _count_beside_cut_list_1203jx(_ast1203jx.parse(src)) == [], src
+
+
+def test_the_detector_sees_the_cross_statement_shape_1203jx():
+    """Positive control for the shape the FIX takes.
+
+    Repairing a site moves the list-building out of the f-string, so an inline-only detector
+    stops protecting exactly the code it just caused. The live count for this shape is zero
+    (four sites were repaired), which is why it needs a fixture rather than a re-run.
+    """
+    src = ("def f(errors):\n"
+           "    s = '; '.join(str(e) for e in errors[:5])\n"
+           "    return f'Found {len(errors)} issues: {s}'\n")
+    hits = _count_beside_cut_list_1203jx(_ast1203jx.parse(src))
+    assert hits, "a count beside a list cut in an earlier statement is not seen"
+
+
+def test_the_cross_statement_remainder_may_be_declared_at_the_build_1203jx():
+    """The marker can sit where the list is BUILT, not where it is interpolated.
+
+    The first version of this test used `join_capped(...)` in the assignment and passed
+    VACUOUSLY: `join_capped` is a plain call, not `.join(`, so the shape was never detected
+    and the `== []` held for the wrong reason. A mutation that dropped the build-site text
+    from the marker check survived it. The assignment below carries a REAL truncating join,
+    so the only thing keeping it off the list is the marker.
+    """
+    marked = ("def f(errors):\n"
+              "    s = '; '.join(str(e) for e in errors[:5])"
+              " + ' (+%d more not shown)' % (len(errors) - 5)\n"
+              "    return f'Found {len(errors)} issues: {s}'\n")
+    bare = ("def f(errors):\n"
+            "    s = '; '.join(str(e) for e in errors[:5])\n"
+            "    return f'Found {len(errors)} issues: {s}'\n")
+    # Non-vacuity first: without the marker the SAME shape must be flagged, otherwise this
+    # test would pass because nothing was detected rather than because the marker was found.
+    assert _count_beside_cut_list_1203jx(_ast1203jx.parse(bare)), "the fixture is not detectable"
+    assert _count_beside_cut_list_1203jx(_ast1203jx.parse(marked)) == []
+
+
+def test_a_cut_variable_from_another_function_is_not_attributed_1203jx():
+    """Scope matters: a same-named local elsewhere must not implicate this f-string."""
+    src = ("def build(errors):\n"
+           "    s = '; '.join(str(e) for e in errors[:5])\n"
+           "    return s\n"
+           "def report(errors, s):\n"
+           "    return f'Found {len(errors)} issues: {s}'\n")
+    hits = _count_beside_cut_list_1203jx(_ast1203jx.parse(src))
+    assert all("report" not in h[1] for h in hits), hits
+    assert len(hits) == 0, hits
+
+
+def test_a_hash_prefix_is_not_a_cut_list_1203jx():
+    """`hexdigest()[:8]` is a slice and not a truncated list; the first predicate flagged it."""
+    src = 'msg = f"{h.hexdigest()[:8]}:{len(lines)}L"\n'
+    assert _count_beside_cut_list_1203jx(_ast1203jx.parse(src)) == []
+
+
+def test_no_count_stands_beside_an_unmarked_cut_list_1203jx():
+    found, _visited = _scan_pkg_1203jx()
+    assert found == [], (
+        "a count of the whole collection stands beside a CUT rendering of it with nothing "
+        "saying what was cut — use join_capped (#1034):\n  " + "\n  ".join(found))
+
+
 
 _CONVERTED = {
     "deliverability.py": 2, "delivery_gate.py": 8, "design_prep.py": 1,
@@ -171,7 +425,15 @@ _CONVERTED = {
 
 @pytest.mark.parametrize("mod,n", sorted(_CONVERTED.items()))
 def test_each_module_uses_the_helper(mod, n):
-    src = open(os.path.join(_RUNTIME, mod), encoding="utf-8").read()
+    # #1203jx: closed, not because this leaks much -- it is one file per parametrised call,
+    # ten in all, nowhere near the 1,593 handles #1202eu was written for -- but because it is
+    # the ONLY inhabitant of that ratchet's blind spot. Its regex is
+    # `open\([^)]*\)\.read\(\)`, which a nested call in the arguments hides
+    # (`open(os.path.join(a, b), ...)`). Measured across every test file with a tree loop: one
+    # site, this one. Widening the regex for a single non-harmful instance would be the
+    # "same shape, different harm" mistake; emptying the blind spot costs three lines.
+    with open(os.path.join(_RUNTIME, mod), encoding="utf-8") as _fh1203jx:
+        src = _fh1203jx.read()
     got = src.count("join_capped(")
     assert got >= n, f"{mod}: expected >= {n} join_capped call(s), found {got}"
 
@@ -332,3 +594,25 @@ def test_the_two_scan_corrections_are_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_the_lint_helper_shows_no_list_when_it_cannot_cap_1203jx(monkeypatch):
+    """`code_tools._jc1203jx`'s unreachable-helper branch, driven rather than assumed.
+
+    #1203jx: three lint summaries there said "Found 23 issues: <five of them>" to the agent
+    that has to fix them. The wrapper imports `join_capped` lazily because `message_format`
+    lives two packages over, and its `except` must NOT re-implement the remainder rule -- a
+    second owner would rot (#1032). It shows the count and NO list instead, because a list
+    that is not rendered cannot be a cut one. Nothing in the suite reaches a failed import,
+    so a mutation that made this branch render a cut list survived; this breaks the import on
+    purpose.
+    """
+    import sys
+    from env_generator.llm_generator.tools import code_tools
+
+    assert "more not shown" in code_tools._jc1203jx([str(i) for i in range(5)], 23, cap=5)
+    monkeypatch.setitem(
+        sys.modules, "env_generator.llm_generator.multi_agent.runtime.message_format", None)
+    out = code_tools._jc1203jx([str(i) for i in range(5)], 23, cap=5)
+    assert out == "(details unavailable)", out
+    assert "0; 1" not in out, "the fallback rendered a cut list: %r" % out

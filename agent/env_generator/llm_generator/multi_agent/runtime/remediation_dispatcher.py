@@ -2644,7 +2644,12 @@ class RemediationDispatcher:
                         f"`<Route path=\"{route}\" element={{<{comp}/>}} />` to "
                         f"app/frontend/src/App.jsx (and author the component if missing, "
                         f"calling [{apis}]).")
-            page_list = "\n".join(lines) or "\n".join("  - " + str(b) for b in blockers[:15])
+            # #1203jx: the FALLBACK branch cut `blockers` to 15 while the sentence below
+            # says `{len(blockers)} declared ui_page(s)`. The primary branch is built
+            # from `lines` and is already whole; only this one needed the remainder.
+            page_list = "\n".join(lines) or join_capped(
+                ["  - " + str(b) for b in blockers[:15]], len(blockers), cap=15,
+                sep="\n")
             _verb = "are placeholder STUBS / unwired" if n_stub else "are unwired"
             task = orch.hubs.workhub.create_task(
                 title="Make the declared pages deliverable: fill stubs + wire routes (blocks delivery)",
