@@ -21,6 +21,32 @@ export PYTHON=/path/to/venv/bin/python # 装了本仓库依赖 + playwright 的 
 铁律：**两 run 不并发**（脚本有守卫）；**run 活着时不要 `docker compose up/down`**；**每个 run 端口随机**——
 runtime-verify 时从 `generated/tiktok-web-r<N>/docker/docker-compose.yml` 的 `ports:` 读真实端口。
 
+## `reclaim_generated.sh` — 从 `generated/` 回收磁盘（默认只预览）
+
+2026-10-13:`/data` 满了(剩 3.4G),而单个 run 要约 6G。不先腾空间就会撞 ENOSPC,
+而 `#1203ib` 记过**满盘会被误判成「app 的问题」**,等于烧掉一整轮预算去追一个不在 app 里的缺陷。
+
+```bash
+./scripts/reclaim_generated.sh             # 预览(默认 KEEP_N=20), 不删任何东西
+KEEP_N=30 ./scripts/reclaim_generated.sh   # 预览更保守的切法
+APPLY=1 ./scripts/reclaim_generated.sh     # 真的删
+```
+
+三道安全保证,都是按构造成立的:
+
+1. **只动本仓库的 `generated/`** —— 路径写死,不是参数。`/data` 是**多用户共享盘**
+   (`datasets/`、`relm/`、`sota/`、`yiran/`,以及 `/data/common` 下十几个其他用户),
+   那些都不是我们该清的。
+2. **保留被源码引用的 run** —— 好几张票的注释点名了具体 run 作为证据
+   (`#1203ir` 引 gmrun4、`#1148` 引 netflix-local-r8、`#1203it` 引 instagram-core-r176…),
+   删掉它就让那条注释**不可复核**。实测有 **90 个** run 被引用,全部自动保留。
+3. **活 run 期间拒绝执行** —— 判据是 run 自己台账里的 `usage.pid` + `kill -0`,
+   **不是** `pgrep -f`:后者会匹配到检查者自己的命令行,本脚本第一版就因此误判(铁律记在
+   `feedback_pgrep_pattern_matches_itself`)。
+
+另外保留最近 `KEEP_N` 个 tiktok run,以及 r184–r188(2026-10-13 那批补丁的证据来源)。
+配合 `disk_headroom.py`(它看根盘/docker)一起用。
+
 ## design 素材（`design_inputs/tiktok/`）
 
 生成器需要 `design_inputs/tiktok/{references,assets,docs,dataset}`。**这批素材 ~200MB（图片/视频），
