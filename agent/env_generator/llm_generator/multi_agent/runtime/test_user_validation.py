@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .validation_runner import _backend_host_port, _http  # reuse the boot/HTTP helpers
+from .message_format import join_capped  # #1203jw/#1034: a count beside a cut list
 
 
 class _EnvUnavailable(Exception):
@@ -178,10 +179,50 @@ def _created_appears(payload: Any, res_label: str, new_id: Any,
         # means not-persisted OR the read is scoped to a different owner than the write (created
         # under uid A, read as uid B); a list of OTHER ids means a scope/owner mismatch, not a lost
         # write. (netflix r125: profiles created id=26/28/29 reported ABSENT — need this to tell apart.)
-        _seen = [it.get("id") for it in (items or []) if isinstance(it, dict)][:8]
+        _ids_1203jw = [it.get("id") for it in (items or []) if isinstance(it, dict)]
+        # #1203jw: #1034's helper, because this is a COUNT beside a TRUNCATED list. The old
+        # `[:8]` printed `list has 100 row(s), ids=[eight of them]` with no remainder, and
+        # that is why r125's two findings cannot be judged today: 10 rows, 6 ids shown, no
+        # marker. join_capped is the owner of "say what you cut" in this repo.
+        _seen = join_capped(_ids_1203jw, len(_ids_1203jw), cap=8)
+        # #1203jw: THE THIRD CAUSE. This sentence used to name exactly two -- a lost write or
+        # an owner-scoped read -- and assert them. A bounded list WINDOW is the third, and the
+        # corpus has it: netflix/tiktok r149 reported `created comments (id=296) is ABSENT`
+        # against an ASCENDING list of 100 rows starting at id 1, so the row was almost
+        # certainly on a later page, and the finding went to the lane as a persistence defect.
+        # (r186's is the opposite and stays a real finding: ids 35,34,33,32,31 are DESCENDING,
+        # so a created id=36 belongs at the HEAD of that window and is genuinely missing.)
+        #
+        # `total` decides it when the payload carries it, which the framework's own list
+        # contract requires (#1202os/#1203j1: total is the COLLECTION size, not the page's).
+        # The verdict stays False either way -- turning it into a pass would let a genuinely
+        # lost write through on any paginated list, which is #1202xc's "traded one silence
+        # for another". What changes is that the prose stops naming only causes that are
+        # wrong here, so the lane is not sent to fix persistence that works.
+        _cause_1203jw = ("the write did not persist, or the read is scoped to a different "
+                         "owner than the write")
+        try:
+            _total_1203jw = payload.get("total") if isinstance(payload, Mapping) else None
+            _n_1203jw = len(items or [])
+            if _total_1203jw is not None and int(_total_1203jw) > _n_1203jw:
+                _cause_1203jw = (
+                    f"the list is a WINDOW (total={int(_total_1203jw)} but {_n_1203jw} "
+                    f"returned), so absence from it does not show the write was lost — read "
+                    f"the row by id, or sort newest-first, before concluding")
+            elif (_n_1203jw >= 2 and _ids_1203jw
+                  and all(isinstance(i, (int, str)) and str(i).isdigit() for i in _ids_1203jw)
+                  and all(int(i) < int(new_id) for i in _ids_1203jw)
+                  and all(int(_ids_1203jw[k]) <= int(_ids_1203jw[k + 1])
+                          for k in range(len(_ids_1203jw) - 1))):
+                _cause_1203jw = (
+                    "every id returned is lower than this one and the page is ASCENDING, so "
+                    "the row may be past the window rather than lost — read it by id, or "
+                    "sort newest-first, before concluding; failing that, the write did not "
+                    "persist or the read is owner-scoped")
+        except (TypeError, ValueError, AttributeError):
+            pass
         return False, (f"created {res_label} (id={new_id}) is ABSENT from the {res_label} list "
-                       f"(list has {len(items or [])} row(s), ids={_seen}) — the write did not "
-                       f"persist, or the read is scoped to a different owner than the write")
+                       f"(list has {len(items or [])} row(s), ids={_seen}) — {_cause_1203jw}")
     if state_fields:
         mism = [f"{k}: wrote {v!r}, read back {found.get(k)!r}"
                 for k, v in state_fields.items() if _write_lost(v, found.get(k))]
