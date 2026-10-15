@@ -80,7 +80,18 @@ def main(argv):
     say("l6", "FALSIFIED" if bad else "CONFIRMED",
         "%d staged svg(s) an <img> cannot decode: %s" % (len(bad), bad[:3] or "none"))
 
-    broken = logtext.lower().count("broken image") + logtext.lower().count("broken-image")
+    # #1203mp: counted over the WHOLE log, so ONE early mention condemned a run whose
+    # staging fix then worked -- the #1203l4 shape, found by auditing my own criteria for
+    # the two signatures that burned me on r189 (re-implementing shipped logic, and asking
+    # about the APP by counting log lines a run never retracts). `l6` above already answers
+    # the artifact question deterministically; this half only adds "and the browser saw
+    # none", which is a claim about the END of the run. Slice to the last staging pass.
+    _tail_l6 = logtext
+    _last_stage = max(
+        (logtext.rfind(_m) for _m in ("material_prep: staged", "Design-Prep")), default=-1)
+    if _last_stage >= 0:
+        _tail_l6 = logtext[_last_stage:]
+    broken = _tail_l6.lower().count("broken image") + _tail_l6.lower().count("broken-image")
     say("l6-effect", "CONFIRMED" if broken == 0 else "FALSIFIED",
         "'broken image' mentions in the log: %d" % broken)
 
@@ -119,10 +130,27 @@ def main(argv):
     say("ky", "CONFIRMED" if crops else "FALSIFIED", "component crops on disk: %d" % len(crops))
 
     # --- #1203kz -----------------------------------------------------------------------
-    m = re.search(r"(\d+) carrying verbatim copy", logtext)
-    if not m:
-        say("kz", "N-A", "the completion-pass line is not in the log provided")
+    # #1203mp: this took re.SEARCH -- the FIRST completion pass in the log -- and design-prep
+    # can run several, with the early ones naturally at 0 before the analyst has written
+    # anything. A criterion that reads the first pass judges a run on its opening state. Ask
+    # the DELIVERED document first (the thing the claim is actually about) and fall back to
+    # the LAST log line, never the first.
+    _comps_kz = []
+    for _sc_kz in (ds.get("screens") or []):
+        if isinstance(_sc_kz, dict):
+            _comps_kz.extend(c for c in (_sc_kz.get("components") or [])
+                             if isinstance(c, dict))
+    _comps_kz.extend(c for c in (ds.get("components") or []) if isinstance(c, dict))
+    if _comps_kz:
+        _withcopy_kz = [c for c in _comps_kz
+                        if isinstance(c.get("copy"), str) and c["copy"].strip()]
+        say("kz", "CONFIRMED" if _withcopy_kz else "FALSIFIED",
+            "components in the DELIVERED design_system.json carrying verbatim copy: %d/%d"
+            % (len(_withcopy_kz), len(_comps_kz)))
+    elif not re.findall(r"(\d+) carrying verbatim copy", logtext):
+        say("kz", "N-A", "no delivered components and no completion-pass line")
     else:
+        m = re.match(r"(\d+)", re.findall(r"(\d+) carrying verbatim copy", logtext)[-1])
         say("kz", "CONFIRMED" if int(m.group(1)) > 0 else "FALSIFIED",
             "components carrying verbatim copy: %s" % m.group(1))
 
