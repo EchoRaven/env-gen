@@ -428,8 +428,12 @@ def _bundle_codehub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             # #695: codehub_list_prs and codehub_suggest_reviewers NOT surfaced either —
             # the same argument #35 makes two comments above, applied to the two PR tools it
             # left behind. In commit-only mode a PR cannot be opened, so listing PRs can only
-            # ever return an empty list: `codehub_pull_requests` sits at _meta.version 1 —
-            # created, never written — in 146 of 146 runs. `codehub_suggest_reviewers` is PR-
+            # ever return an empty list: `codehub_pull_requests` holds ZERO records in 227 of
+            # 227 kept runs. (#1203kr corrects the evidence this line used to give, "_meta
+            # .version 1 in 146 of 146": the version counts TOUCHES, because
+            # `ensure_codehub_document` bumps it — see #1203kq — so the old corpus's mode is
+            # 3, not 1, and only 5 old runs sit at 1. The record count is the stable fact and
+            # the conclusion is unchanged.) `codehub_suggest_reviewers` is PR-
             # bound in its own parameter descriptions ("The branch being submitted as a PR",
             # "endpoint IDs touched by this PR"), so it advises on an artifact that cannot
             # exist.

@@ -91,9 +91,19 @@ def test_the_tool_classes_still_exist(cls):
 # --- provenance -----------------------------------------------------------------------------------
 
 def test_the_store_evidence_is_recorded():
+    """#1203kr changed WHICH measurement this comment cites, not what it concludes.
+
+    It used to pin `_meta.version 1 … 146 of 146`, and that number was read off an instrument
+    #1203kq showed counts TOUCHES: `ensure_codehub_document` bumps the version, so the old
+    corpus's mode is 3 and only 5 old runs sit at 1. The record count is the stable fact —
+    ZERO in 227 of 227 — and this test moved with it rather than keeping a figure the
+    evidence no longer supports.
+    """
     flat = " ".join(_bundle_src().replace("#", " ").split())
-    assert "_meta.version 1" in flat
-    assert "146 of 146 runs" in flat
+    assert "ZERO records in 227 of 227 kept runs" in flat, flat[:400]
+    assert "_meta.version 1 in 146 of 146" not in flat, (
+        "the superseded evidence must be gone, not kept beside the correction")
+    assert "1203kq" in flat, "and it must point at why the version cannot carry it"
 
 
 def test_the_catalogue_cost_is_recorded():

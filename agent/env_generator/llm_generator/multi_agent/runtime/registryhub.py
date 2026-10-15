@@ -538,8 +538,15 @@ class RegistryHub:
     the docstring implying they carry data.
 
     #1202jh: the same measurement, run over the OTHER four hubs, which #693 did not cover.
-    Across the same 150 run directories, nine stores sit at the initialisation baseline
-    (`_meta.version` 11, written once by `ensure_*_document`) with ZERO records, ever:
+    Across the same 150 run directories, nine stores hold ZERO records, ever:
+
+    #1203kr: that line used to call `_meta.version` 11 "the initialisation baseline". There is
+    no stable baseline — the version counts how many times `ensure_*_document` TOUCHED the
+    file (#1203kq), so it varies with the run: for `codehub_pull_requests` across 227 kept
+    runs the old corpus's mode is 3 (129 runs), with 5 at 20, 4 at 16 and 11 in only TWO,
+    while 36 of the 39 modern runs sit at 1. ZERO RECORDS is what holds in 227 of 227, and it
+    is the claim below that matters.
+
 
         codehub    review_threads, repos, pull_requests, code_reviews
         workhub    decisions, reactions, acceptance_criteria, databases, workspaces
