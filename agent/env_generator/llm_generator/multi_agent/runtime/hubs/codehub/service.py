@@ -82,12 +82,23 @@ class CodeHub:
     """GitHub/GitLab-like collaboration kernel for agent code work.
 
     #697: commit-and-check, not GitHub. The comparison invites a reader to expect the PR half,
-    and by write count (see #693 for why `_meta.version` is the right instrument) it does not
-    exist. Across 146 runs:
+    and it does not exist. Across 146 runs:
 
         live            checks v11821, branches v115, commits v58, releases v4
         never written   pull_requests, review_threads, code_reviews, repos
-                        — all at version 1 in 146 of 146
+
+    #1203kq CORRECTS THE INSTRUMENT, not the conclusion. #697 read "all at version 1 in 146 of
+    146" off `_meta.version`, citing #693 for why that is a write count. It is not one here:
+    `ensure_codehub_document` bumps the version when it touches a document, so a store can sit
+    above 1 while holding nothing. Re-measured over 227 run directories, the four "never
+    written" stores show version > 1 in 186 of them — and IDENTICALLY, which is the tell, since
+    four unrelated stores cannot be written in lockstep. In the modern era `code_reviews` is
+    version 2, 3 and 6 in three runs with ZERO records and `last_modified_by:
+    ensure_codehub_document` in every one.
+
+    So the claim holds on the right instrument: across 39 modern runs these stores contain 0
+    records. COUNT THE RECORDS, not the version — and #693's reasoning stays valid only for
+    stores nothing else touches.
 
     For pull_requests this is deliberate and already documented at the bundle: `#35` withholds
     `codehub_open_pr` because "the pipeline is commit-only (committed work auto-integrates via
