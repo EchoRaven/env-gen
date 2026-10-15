@@ -1285,9 +1285,20 @@ def goal_agent_finished_1203kk(goal: Any, mates: Any) -> bool:
 
     MEASURED over the modern era's 35 squad ledgers (407 agent rows): 176 agents did not
     finish and every one of them TIMED OUT — `spawned 183 = completed 105 + timed_out 78 +
-    failed 0`, each row reading "did not finish within 300s". Of those, **140 across 34 of the
-    35 runs** sat in a modality where a sibling did finish, which is exactly what the fallback
-    masked (r181 6, r178 6, r177 6, r185 5, r184 5, r180 5 — mostly `page_*` browser goals).
+    failed 0`, each row reading "did not finish within 300s". 140 of those, across 34 of the
+    35 runs, sat in a modality where a sibling did finish (r181 6, r178 6, r177 6, r185 5,
+    r184 5, r180 5 — mostly `page_*` browser goals).
+
+    THE 140 IS THE CONDITION, NOT THE OUTCOME, and conflating them overstated this patch.
+    `passed` is `completed and mod_p0 == 0`, so a modality with ANY open P0 fails all of its
+    goals regardless of completion — and that clause already catches most of the 140. Joining
+    each run's final ledger against its own squad rows: of 65 goals recorded `passed: True`,
+    exactly **3** had their own agent time out (`tenant_isolation` in r176 and r162,
+    `api_smoke` in r173, all with `last_defects: 0`). Those 3 are what this changes.
+
+    Still worth changing at that size: the ones it catches are precisely the goals whose
+    modality was otherwise CLEAN, so nothing else was going to mark them for a replay, and
+    "a flow nobody tested is recorded as fine" is the claim being removed.
 
     The fallback was not load-bearing for name mismatches, which is the reason it could have
     existed: the agent row is built as `{"name": str(goal.get("name") or f"goal_{idx+1}")}`
