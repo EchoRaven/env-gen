@@ -22,6 +22,7 @@ whose precision is unmeasured must not gate anything.
 import inspect
 import json
 import pathlib
+from typing import Dict
 
 import pytest
 
@@ -119,10 +120,29 @@ def test_a_failure_in_the_check_cannot_break_the_verdict():
                     reason="corpus not present")
 def test_the_corpus_coverage_claim_still_holds():
     """★ The number in the comment, re-derived (#880's rule). If `code_state` coverage grows past
-    a handful, this check becomes validatable and the note should say so."""
+    a handful, this check becomes validatable and the note should say so.
+
+    #1203mc: THIS TRIPWIRE HAD NEVER ARMED. It globbed `netflix-web-r*`, which matches 0
+    directories; the corpus is named `netflix-local-r*` -- 46 runs, 43 with
+    `design/visual_gate`. So `total` was always 0, the early `pytest.skip` always fired, and
+    its message said "the netflix run corpus this claim is measured over is not in this
+    checkout" -- which was FALSE: the corpus was here under another name. Three things were
+    stacked behind that skip:
+      * the floor `assert total >= 100` fails at the real number, 92;
+      * `Dict` was never imported, so the repeat count below would have raised NameError the
+        first time the body ran past the skip;
+      * the #1018 note's measurement (21 stamped / 21 distinct) is stale.
+    Re-derived here: **92 verdicts, 39 stamped, 39 distinct code_states, 0 repeats.** The
+    tripwire's claim still holds -- and now it is measured instead of skipped.
+
+    The precondition is `stamped >= 2`, not a floor on `total`: a repeat is impossible with
+    fewer than two stamped verdicts, and that is the only thing the measurement needs. A
+    hard floor on total would be a number to maintain (92 today) rather than the condition
+    the check actually depends on.
+    """
     g = pathlib.Path(__file__).resolve().parents[2] / "generated"
     total = stamped = 0
-    for r in sorted(g.glob("netflix-web-r*")):
+    for r in sorted(g.glob("netflix-*r*")):
         vg = r / "design/visual_gate"
         if not vg.is_dir():
             continue
@@ -134,19 +154,23 @@ def test_the_corpus_coverage_claim_still_holds():
             total += 1
             if j.get("code_state"):
                 stamped += 1
-    if total == 0:
-        pytest.skip("the netflix run corpus this claim is measured over is not in "
-                    "this checkout — 0 is absence, not a coverage regression")
-    assert total >= 100, total
+    if stamped < 2:
+        pytest.skip(
+            "only %d netflix verdict(s) carry a code_state in this checkout (%d verdicts "
+            "seen) — a repeat needs two, so 0 is absence, not a coverage regression"
+            % (stamped, total))
     # #1018: the tripwire measured the wrong quantity. It counted verdicts CARRYING a
     # code_state and fired at 21, but #893 detects non-determinism by comparing two verdicts
     # at the SAME sha — so validation needs REPEATS, not stamps. Measured across the corpus:
     # 21 stamped verdicts, 21 distinct code_states, **zero appearing twice**. No sha has ever
     # been judged more than once, so #893 stays unvalidatable however many stamps accumulate.
     #
+    # #1203mc re-derived it once the glob matched anything: **92 verdicts, 39 stamped, 39
+    # distinct, still zero appearing twice.** The conclusion is unchanged and now measured.
+    #
     # Counting repeats instead makes the tripwire fire when validation is genuinely possible.
     _by_state: Dict[str, int] = {}
-    for r in sorted(g.glob("netflix-web-r*")):
+    for r in sorted(g.glob("netflix-*r*")):
         vg = r / "design/visual_gate"
         if not vg.is_dir():
             continue

@@ -146,16 +146,16 @@ def test_the_falsification_is_recorded_where_the_text_lives():
     must not mistake its presence for the defect being handled — which is exactly what I would
     have done without this.
     """
+    # #1203mc: the first branch read a `_ROOT` this module never defines, guarded by
+    # `"_ROOT" in globals()` -- so it could never run and the fallback always did. Dropped,
+    # because `scripts/undefined_names.py` is only usable as a tripwire from a clean
+    # baseline, and this was the last candidate in 2588 files.
+    import os
     import pathlib
     src = pathlib.Path(
-        _ROOT, "env_generator/llm_generator/multi_agent/runtime/reference_materials.py"
-    ).read_text(encoding="utf-8") if "_ROOT" in globals() else None
-    if src is None:
-        import os
-        src = pathlib.Path(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "env_generator/llm_generator/multi_agent/runtime/reference_materials.py"
-        ).read_text(encoding="utf-8")
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "env_generator/llm_generator/multi_agent/runtime/reference_materials.py"
+    ).read_text(encoding="utf-8")
     assert "#1203i9 WAS FALSIFIED ONLINE" in src, (
         "the falsification note is gone; a reader will take the paragraph as a fix")
     assert "#1203ii" in src, "the note does not name what actually worked"
