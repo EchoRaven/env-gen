@@ -585,9 +585,27 @@ _SCREEN_TOOL = [{
                         # #778: the literal words on the component, transcribed. Without a slot
                         # the model has nowhere to put them — 84% of 9152 text components across
                         # 53 runs carry a DESCRIPTION ("static", "collapsed, default value")
-                        # instead of the string, and `copy` is the most frequent scoring floor on
-                        # `login`, which blocks 73% of runs. The 15% that do quote are burying it
-                        # in build_notes prose, which is the tell that the slot was missing.
+                        # instead of the string. The 15% that do quote are burying it in
+                        # build_notes prose, which is the tell that the slot was missing.
+                        #
+                        # #1203l5: this comment used to continue "and `copy` is the most
+                        # frequent scoring floor on `login`, which blocks 73% of runs". Re-run
+                        # on the visual gate's own verdicts, restricted to that exact universe
+                        # -- 92 scored login/signup screens -- `copy` is the floor on ONE of
+                        # them (1%), last of six; iconography is the floor on 44 (48%) and
+                        # components on 22 (24%). Restored more exactly still -- #778's own
+                        # universe, the r99+ runs with a scored login screen, 49 of them --
+                        # `copy` is the floor on ZERO, against iconography 37 and components 9.
+                        #
+                        # ONE READING I COULD NOT TEST: #778 may have scored INTERMEDIATE
+                        # verdicts rather than final ones. Only the final `verdict.json`
+                        # survives per run; `visual_gate/history/` holds PNGs and no JSON. So
+                        # this contradicts the claim against every verdict on disk, which is
+                        # not the same as proving how it was reached. The slot is
+                        # still worth having (84% describing rather than quoting is measured,
+                        # and #797 reads this field) but it does not buy `copy` points, and
+                        # the sentence pointed me at the wrong dimension while I landed
+                        # #1203kz.
                         "copy": {"type": "string"},
                         # #1202ri: the data-bearing counterpart of `copy`. Without a schema
                         # slot the analyst's answer is discarded at the join and the rule

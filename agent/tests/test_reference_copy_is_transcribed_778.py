@@ -128,18 +128,48 @@ def test_the_projection_risk_is_recorded_where_it_bites():
 
 # --- provenance ----------------------------------------------------------------------------------------
 
+def _schema_comment_1203l5() -> str:
+    """The contiguous comment run that precedes the `copy` schema key, whitespace-normalised.
+
+    #1203l5 replaced two fixed 700-byte windows here. They were the shape #943 forbids and
+    they proved it: adding a correction above the key pushed the text these tests pin out of
+    the window, and both went red on a change that kept every property they describe. A
+    comment BLOCK is a landmark, and normalising lets the assertions survive re-wrapping.
+    """
+    src = _src()
+    lines = src[:src.index('"copy": {"type": "string"}')].split("\n")
+    out = []
+    for ln in reversed(lines):
+        if ln.lstrip().startswith("#"):
+            out.append(ln.lstrip().lstrip("#"))
+        elif out:
+            break
+    return " ".join(" ".join(reversed(out)).split())
+
+
 def test_the_measurement_is_recorded_in_the_schema_comment():
-    s = _src()
-    i = s.index('"copy": {"type": "string"}')
-    blk = s[max(0, i - 700):i]
+    blk = _schema_comment_1203l5()
     assert "84% of 9152 text components" in blk
-    assert "blocks 73% of runs" in blk
+
+
+def test_the_floor_claim_is_now_quoted_as_corrected_not_asserted():
+    """#1203l5: this used to assert "blocks 73% of runs" as the schema comment's own claim.
+    It is not reproducible against the verdicts on disk -- over #778's own universe, the 49
+    r99+ runs with a scored login screen, `copy` is the floor on ZERO of them, against
+    iconography 37 and components 9. The sentence stays in the file as a QUOTED correction,
+    so what this pins is that it is no longer asserted."""
+    blk = _schema_comment_1203l5()
+    assert "blocks 73% of runs" in blk, (
+        "the quote was removed entirely, so the correction lost its subject")
+    assert "1203l5" in blk, blk[:300]
+    import re as _re
+    outside = _re.sub(r'"[^"]*"', " ", blk)
+    assert "blocks 73% of runs" not in outside, outside[:300]
+    assert "most frequent scoring floor" not in outside, outside[:300]
 
 
 def test_the_15_percent_tell_is_recorded():
-    s = _src()
-    i = s.index('"copy": {"type": "string"}')
-    blk = s[max(0, i - 700):i]
+    blk = _schema_comment_1203l5()
     assert "burying it" in blk and "the slot was missing" in blk
 
 

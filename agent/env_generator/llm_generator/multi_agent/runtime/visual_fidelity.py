@@ -6225,9 +6225,29 @@ def _copy_lines_797(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[s
     """#797: the VERBATIM reference text for this screen's components.
 
     #778 measured 9152 text components across the corpus and 84% of their notes DESCRIBED the
-    text rather than quoting it, which is why `ui_copy` keeps scoring as a floor; #786 added the
-    transcription to the design-prep schema and named it in the kickoff prompt. Same #796 gap:
-    the repair round never saw it. Empty when no component carries `copy`."""
+    text rather than quoting it; #786 added the transcription to the design-prep schema and
+    named it in the kickoff prompt. Same #796 gap: the repair round never saw it. Empty when
+    no component carries `copy`."""
+    # #1203l5 CORRECTS the sentence that used to sit in the line above. It read "which is
+    # why `ui_copy` keeps scoring as a floor", and the visual gate's own verdicts on disk
+    # say otherwise, in every era and under both readings of "floor":
+    #
+    #   mean score, 302 modern screens:  iconography .52  components .56  layout .63
+    #                                    style .71  typography .74  copy .77  color .79
+    #   times a dimension is the LOWEST on its screen, 1119 screens scored on 5+ dims:
+    #                                    iconography 41%  components 40%  layout 8%
+    #                                    copy 6%  typography 3%  style 2%  color 2%
+    #
+    # `copy` is 4th of 7 by that count and 6th of 7 by mean; in the modern era it is the
+    # floor on 3 screens. The floors are iconography and components. #778's narrower form
+    # of the claim is corrected where it is written, in design_prep's schema comment.
+    #
+    # This block stays, and so does #1203kz which fills the field it reads: a page whose
+    # reference text is quoted verbatim beats one whose notes describe it, and 84%
+    # describing rather than quoting is still measured. What is gone is the claim about
+    # WHICH dimension that costs, because it pointed effort at the wrong one -- it is the
+    # sentence I repeated in #1203kz's own commit message before measuring it.
+
     if ds is None:
         return []
     try:
