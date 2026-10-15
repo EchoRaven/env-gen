@@ -369,9 +369,116 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
                     "#1202cn this is a HOST failure, not the app's: %s. No lane can fix "
                     "it and remediation will not converge — the operator has to clear it "
                     "before this run can validate anything.", _host)
+            elif True:
+                # #1203ml: the third rung. Wording did not match and the disk is fine, which
+                # is exactly where r189 landed and then rebuilt four times with nothing in
+                # the log naming the cause. Separate branch and separate wording on purpose:
+                # an oversized context is NOT a host fault the operator must clear, it is a
+                # condition of what design-prep staged, and a retry often succeeds.
+                # The run root, derived from what IS in scope here: this function takes
+                # `compose_file` and `cwd` and nothing else. My first draft reached for
+                # `orch`/`project_dir` — neither exists in `_compose` — and the `except
+                # Exception: pass` three lines down would have swallowed the NameError into
+                # silence, which is the fourth time this week I have reached for a name that
+                # was not there inside a try. Caught by reading the enclosing signature
+                # instead of trusting it. `<run>/docker/docker-compose.yml` → `<run>`.
+                _ctx1203ml = oversized_build_context_1203ml(
+                    Path(compose_file).resolve().parent.parent, _full)
+                if _ctx1203ml:
+                    _LOG.error(
+                        "#1203ml the build context, not the app: %s", _ctx1203ml)
         except Exception:
             pass
     return cp
+
+
+_TAR_STREAM_BROKE_1203ML = (
+    "archive/tar: missed writing",
+    "can't close tar writer",
+    "error processing tar file",
+    "unexpected eof",
+)
+
+
+def oversized_build_context_1203ml(project_dir, text, floor_mb: float = 200.0):
+    """#1203ml — did the build send docker a context too big to survive? MEASURED.
+
+    The third rung of the ladder at the call site. `_HOST_LEVEL_1202CN` matches the daemon's
+    wording; `#1202hr` measures the disk when no wording matches. r189 fell past both: root
+    had 61G free, so #1202hr correctly said nothing, and the failure went unexplained while
+    the lane rebuilt four times.
+
+    What it actually was: `app/frontend` is a **393 MB** build context of which **391 MB is
+    `public/assets/real_videos`**, and docker tars the whole context before the first
+    instruction runs. The transcript ends exactly as #1203fe describes --
+    `archive/tar: missed writing 2982288 bytes` repeated over 82 files, then
+    `Can't close tar writer`, then `Error processing tar file(exit status 1): unexpected EOF`
+    -- the receiving end going away mid-stream rather than a file shrinking (the first named
+    file's mtime predates the run by 11 hours and it is 32 KB, so it cannot have missed
+    writing 2.98 MB; that byte count is the tar writer's pending total after it broke).
+
+    MEASURED over the corpus, by context rather than by wording:
+
+        context with >100MB of staged media    29 runs    24 hit this failure (83%)
+        context with <=100MB                    3 runs     0 (0%)
+
+    Not deterministic -- r187 and r188 carry the same 391 MB and built clean -- which fits a
+    load-dependent daemon-side drop rather than a size limit. So this ANNOTATES, it never
+    aborts: #1202cn's own note applies, aborting on a transient is worse than a wasted retry.
+
+    It speaks only when the transcript shows the tar/EOF shape, because a large context that
+    built fine is not news (#647: no wider than its evidence). Returns None when it cannot
+    tell -- no project dir, no readable tree, nothing over the floor -- since "could not
+    tell" is not a verdict in either direction (#883).
+
+    NOT a fix, and the obvious fix is wrong: `.dockerignore` excludes from the CONTEXT, so a
+    later `COPY` cannot get the files back, and bind-mounting `public/assets` over
+    `/usr/share/nginx/html/assets` hides vite's own hashed output (`index-<hash>.js` lands in
+    `dist/assets/` too) and serves a blank page. A real fix mounts the specific media
+    subdirectory, whose name varies by product, and has to be verified against a built image.
+    """
+    import os as _os1203ml
+    from pathlib import Path as _P1203ml
+    try:
+        _t = str(text or "").lower()
+        if not any(_m in _t for _m in _TAR_STREAM_BROKE_1203ML):
+            return None
+        _app = _P1203ml(str(project_dir)) / "app"
+        if not _app.is_dir():
+            return None
+        _worst = None
+        for _svc in sorted(_app.iterdir()):
+            if not _svc.is_dir():
+                continue
+            _tot = 0
+            _by_dir = {}
+            for _root, _dirs, _files in _os1203ml.walk(_svc):
+                for _f in _files:
+                    _p = _os1203ml.path.join(_root, _f)
+                    try:
+                        _sz = _os1203ml.path.getsize(_p)
+                    except OSError:
+                        continue
+                    _tot += _sz
+                    _rel = _os1203ml.path.relpath(_root, _svc).split(_os1203ml.sep)
+                    _key = _os1203ml.sep.join(_rel[:3]) if _rel and _rel[0] != "." else "."
+                    _by_dir[_key] = _by_dir.get(_key, 0) + _sz
+            if _worst is None or _tot > _worst[1]:
+                _biggest = max(_by_dir.items(), key=lambda kv: kv[1]) if _by_dir else (".", 0)
+                _worst = (_svc.name, _tot, _biggest)
+        if _worst is None or _worst[1] < floor_mb * (1024 ** 2):
+            return None
+        _name, _tot, (_dir, _dsz) = _worst
+        return (
+            "the `%s` build context is %.0f MB and %.0f MB of it is `%s` — docker tars the "
+            "whole context before the first instruction, and this transcript is that tar "
+            "stream breaking, not a file shrinking. Corpus: 24 of 29 runs with a >100MB "
+            "media context hit this, 0 of 3 without; it is load-dependent, so a retry may "
+            "well succeed (#1203ml). The staged media is not a lane defect and no lane can "
+            "fix it."
+            % (_name, _tot / (1024 ** 2), _dsz / (1024 ** 2), _dir))
+    except Exception:
+        return None
 
 
 def low_docker_disk_1202hr(usage=None, root=None, floor_gb: float = 10.0):
