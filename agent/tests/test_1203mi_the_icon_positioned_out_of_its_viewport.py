@@ -214,3 +214,61 @@ class TheStagingRunAppliesBothRepairs(unittest.TestCase):
     def test_a_clean_file_is_staged_byte_for_byte(self):
         staged = self._stage(PLAIN)
         self.assertEqual(staged, PLAIN, "a file needing no repair was rewritten")
+
+
+class TheGuardIsNoWiderNorNarrowerThanPosition(unittest.TestCase):
+    """Self-audit of #1203mi the day it landed, kept as regressions.
+
+    Two failure directions, and the corpus cannot exercise either (all three affected files
+    spell it `position:` lowercase with no sibling `background-position`), so they are pinned
+    by construction instead:
+
+      * WRONG REMOVAL -- `background-position` is a different property and a legitimate one.
+        A naive `"position" in decl` test would eat it, and the icon would lose its framing
+        with nothing in the log to say so.
+      * MISSED REMOVAL -- scraped inline styles are whatever the page shipped, so casing and
+        padding are not ours to assume.
+
+    The quoting assumption IS checked against real data rather than assumed: of 4177 staged
+    SVGs with a root tag, 392 carry a double-quoted root `style` and ZERO carry a
+    single-quoted one, and none has an unbalanced quote that would truncate
+    `_SVG_ROOT_1203L6`'s match. Same assumption #1203l6 already makes with the same regex.
+    """
+
+    def _style(self, text):
+        import re
+        m = re.search(r'style="([^"]*)"', text)
+        return m.group(1) if m else None
+
+    def test_background_position_is_a_different_property_and_survives(self):
+        src = ('<svg xmlns="http://www.w3.org/2000/svg" '
+               'style="background-position: center; fill:red" viewBox="0 0 2 2">'
+               '<path d="M0,0 H2"/></svg>')
+        self.assertFalse(MP.svg_root_is_positioned_1203mi(src),
+                         "`background-position` read as `position` — the guard is too wide")
+        self.assertEqual(MP.strip_root_position_1203mi(src), src)
+
+    def test_background_position_survives_beside_a_real_position(self):
+        src = ('<svg xmlns="x" style="position:absolute; background-position: center; '
+               'fill:red" viewBox="0 0 2 2"><path d="M0,0 H2"/></svg>')
+        out = MP.strip_root_position_1203mi(src)
+        self.assertIn("background-position: center", out,
+                      "removing `position` also ate `background-position`")
+        self.assertIn("fill:red", out)
+        self.assertNotIn("position:absolute", out.replace(" ", ""))
+
+    def test_casing_and_padding_are_not_ours_to_assume(self):
+        for style in ("POSITION: ABSOLUTE; fill:red",
+                      " Position : absolute ; fill:red",
+                      "position:absolute;fill:red"):
+            src = '<svg xmlns="x" style="%s" viewBox="0 0 2 2"><path/></svg>' % style
+            self.assertTrue(MP.svg_root_is_positioned_1203mi(src), style)
+            out = MP.strip_root_position_1203mi(src)
+            self.assertIn("fill:red", out, style)
+            self.assertNotIn("osition:", self._style(out) or "", style)
+
+    def test_empty_declarations_do_not_leave_a_stray_semicolon_or_attribute(self):
+        src = '<svg xmlns="x" style="position:absolute; ;" viewBox="0 0 2 2"><path/></svg>'
+        out = MP.strip_root_position_1203mi(src)
+        self.assertIsNone(self._style(out), "an empty style attribute was left behind")
+        self.assertIn('viewBox="0 0 2 2"', out)

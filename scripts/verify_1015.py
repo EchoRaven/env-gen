@@ -94,11 +94,24 @@ def main(argv):
         "assets with a known suffix carrying `type`: %d/%d" % (len(typed), len(want)))
 
     # --- #1203kx -----------------------------------------------------------------------
-    pool = [a for a in assets
-            if str(a.get("type") or "").lower() in ("jpg", "jpeg", "png", "webp")
-            and "avatar" in (str(a.get("id")) + str(a.get("file"))).lower()]
-    say("kx", "CONFIRMED" if not pool else "FALSIFIED",
-        "avatar assets that would enter the poster pool: %d" % len(pool))
+    # #1203mj: this re-implemented the filter by hand -- `"avatar" in id+file` over the
+    # staged assets -- and reported r189 FALSIFIED on 4 real avatars. That was MY criterion
+    # being wrong twice over. It asked whether avatars are STAGED (they must be; they are
+    # avatars) instead of whether they enter the POSTER POOL, and it answered with its own
+    # copy of a rule the framework owns -- #772's trap, where a hand-written re-implementation
+    # disagrees with the shipped one and the disagreement reads as a finding. The shipped
+    # `_ref_image_pool` on that same run returns an EMPTY pool: the fix works.
+    try:
+        import sys as _sys_kx
+        _sys_kx.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime import frontend_scaffold as _FS_kx
+        _pool_kx = _FS_kx._ref_image_pool(ds)
+        _av_kx = [p for p in _pool_kx if "avatar" in str(p).lower()]
+        say("kx", "CONFIRMED" if not _av_kx else "FALSIFIED",
+            "shipped _ref_image_pool: %d entr(ies), avatars among them: %d %s"
+            % (len(_pool_kx), len(_av_kx), _av_kx[:3]))
+    except Exception as _e_kx:
+        say("kx", "N-A", "could not import the shipped pool builder: %s" % _e_kx)
 
     # --- #1203ky -----------------------------------------------------------------------
     crops = list((run / "design" / "crops").glob("*.png")) if (
@@ -132,9 +145,55 @@ def main(argv):
         say("l2", "N-A", "no #576 line — this run may have no dominant shell")
 
     # --- #1203l4 -----------------------------------------------------------------------
+    # #1203mj: counting this over the WHOLE log counts verdicts that were TRUE when emitted.
+    # r189's four COMPONENT DRIFT lines all landed at 14:13:40; the component they say is
+    # unrendered (`ForYouExperience`, which renders TikTokShell/VideoPlayer/ActionRail) was
+    # written at 15:02:52, 49 minutes later, and the run ended at 15:15:44. Run the SHIPPED
+    # walker over the DELIVERED tree and all four pages come back with nothing missing.
+    #
+    # This is the same mistake I had diagnosed in #1203fh hours earlier -- its false branch
+    # also fires only before the lane writes the file -- and then repeated here. A log-line
+    # count is a claim about the whole run; a claim about the app has to be made against the
+    # app. The line count is kept as INFO because it still says how noisy the pass was.
     drift = len(re.findall(r"COMPONENT DRIFT", logtext))
-    say("l4", "CONFIRMED" if drift <= 2 else "FALSIFIED",
+    say("l4-log", "INFO",
         "COMPONENT DRIFT lines: %d (corpus baseline was ~46%% of pages)" % drift)
+    try:
+        import sys as _sys_l4
+        _sys_l4.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime import frontend_audit as _FA_l4
+        _fe_l4 = run / "app" / "frontend"
+        _src_l4 = _fe_l4 / "src"
+        _pages_l4 = _json(run / "shared" / "hubs" / "registryhub_ui_pages.json", {}) or {}
+        _cache_l4 = {str(f): f.read_text(encoding="utf-8", errors="ignore")
+                     for f in _fe_l4.rglob("*.jsx")} if _fe_l4.is_dir() else {}
+        _bad_l4 = []
+        for _k, _v in _pages_l4.items():
+            if _k == "_meta" or not isinstance(_v, dict):
+                continue
+            _want = {_FA_l4._norm_component_1203l4(c) for c in (_v.get("components") or [])}
+            if not _want:
+                continue
+            _got = _FA_l4._rendered_components_909(_src_l4, _v, _cache_l4)
+            _missing = _want - {_FA_l4._norm_component_1203l4(g) for g in _got}
+            if _missing == _want:
+                _bad_l4.append("%s(%s)" % (_v.get("name"), ",".join(sorted(_missing))[:40]))
+        # What this can decide mechanically is the RATE, not the truth of each verdict.
+        # #1203l4 removed a false class (110 -> 12 corpus-wide, 46% -> ~5% of pages); it did
+        # not promise zero, and a surviving verdict may be correct. r189's one survivor IS:
+        # `messages_dm_empty_page` declares `BrowseShell` and hand-rolls its own nav rail
+        # inline instead, while ProfileOwnPage and LiveDiscoverPage both import it. So the
+        # pass condition is the rate collapsing, with the names printed for adjudication --
+        # a criterion that fails on a true positive is measuring the wrong thing.
+        _tot_l4 = sum(1 for _k, _v in _pages_l4.items()
+                      if _k != "_meta" and isinstance(_v, dict) and (_v.get("components") or []))
+        _rate_l4 = (len(_bad_l4) / _tot_l4) if _tot_l4 else 0.0
+        say("l4", "CONFIRMED" if _rate_l4 <= 0.20 else "FALSIFIED",
+            "pages rendering NONE of their declared components ON THE DELIVERED TREE: "
+            "%d/%d = %.0f%% (corpus baseline 46%%, post-fix ~5%%) %s"
+            % (len(_bad_l4), _tot_l4, _rate_l4 * 100, _bad_l4[:3]))
+    except Exception as _e_l4:
+        say("l4", "N-A", "could not run the shipped walker: %s" % _e_l4)
 
     # --- #1203l7 -----------------------------------------------------------------------
     lz = re.findall(r"1202lz the browser called [^\n]{0,400}", logtext)

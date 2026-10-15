@@ -85,7 +85,16 @@ def test_it_is_idempotent():
 
 
 def test_no_real_table_name_changes():
-    """172 run dirs: the guard is a no-op on every name the corpus actually contains."""
+    """The guard is a no-op on every table name the corpus actually contains.
+
+    #1203mk: the floor below was `> 100` against the 172 run dirs on disk when this was
+    written. On 2026-10-15 the corpus was pruned to 103 runs (47->66G reclaimed so a run
+    could be launched at all) and the same scan now yields 98 names, so the floor fired its
+    own "this test proved nothing" message -- which is the guard doing its job, not a
+    regression. Re-based with headroom rather than removed: the point of the floor is that a
+    corpus-wide no-op claim must be made over a real corpus, and 98 names across 103 runs
+    still is one. A number that can only ever be re-based downward is worth dating.
+    """
     seen = set()
     for f in glob.glob(str(ROOT.parent / "generated" / "*" / "shared" / "hubs"
                            / "registryhub_tables.json")):
@@ -96,7 +105,7 @@ def test_no_real_table_name_changes():
         v = d.get("value", d) if isinstance(d, dict) else d
         if isinstance(v, dict):
             seen.update(str(t) for t in v)
-    assert len(seen) > 100, f"corpus not found ({len(seen)} names) -- this test proved nothing"
+    assert len(seen) > 50, f"corpus not found ({len(seen)} names) -- this test proved nothing"
     changed = [t for t in seen if not _class_name(t).isidentifier()
                or _class_name(t).startswith("Model") and not t.lower().startswith("model")]
     assert changed == [], changed

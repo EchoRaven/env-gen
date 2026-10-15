@@ -182,6 +182,16 @@ def test_it_agrees_with_the_real_corpus():
         if got is False:
             noev.append("%s/%s" % (p.parent.parent.name, p.name))
     assert seen[True] > 50, seen
-    assert len(noev) == 2, (
-        "expected exactly the two July no-evidence reports, got %d: %s" % (len(noev), noev))
-    assert all("gmrun4" in n or "run73" in n for n in noev), noev
+    # #1203mk: this was `len(noev) == 2`, naming the two July reports by run. The 2026-10-15
+    # corpus prune (229 -> 103 run dirs, to free the disk for r189) removed `run73`, so an
+    # exact count asserted the SIZE OF THE CORPUS rather than the property under test, and
+    # went red on a deletion that changed nothing about the predicate.
+    #
+    # What must stay true is the direction that can catch a regression: every report the
+    # predicate calls no-evidence is one of the two known ones, and at least one of them is
+    # still on disk so the claim is not vacuous. A NEW no-evidence report -- the thing a
+    # regression would produce -- still fails here, which the old form also caught; a
+    # deleted old one no longer does, which it should never have caught.
+    assert noev, "no no-evidence report left on disk -- this half of the test proved nothing"
+    assert all("gmrun4" in n or "run73" in n for n in noev), (
+        "a report outside the two known July no-evidence ones reads as no-evidence", noev)

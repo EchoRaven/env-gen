@@ -136,9 +136,26 @@ def test_open_p0_bugs_still_only_report():
 
 
 def test_751_records_both_numbers_it_chose_between():
+    """#751 must show the two candidate block-rates it weighed, in their CORRECTED form.
+
+    #1203mj moved this off `90 of 129`. That was the pre-#755 figure: #755 found the release
+    test `tag or version` scored every run as released off a bootstrap document, corrected
+    the open-P0 count to 86 and the failed-task released-share from "all 20" to 4 of 20 --
+    and the correction reached the emitted warning and no comment, so #751's own comment
+    (which cites #743 as its source) kept both uncorrected numbers while #743's live warning
+    carried the right ones.
+
+    The intent of this test is unchanged and is the thing worth pinning: the comment has to
+    record BOTH rates, because "a gate rather than a halt" is a comparison and a reader has
+    to see what it was compared against. Only the figure moves, onto the evidence #755 left.
+    Same shape as #1203l7, where an owner test pinned the behaviour its ticket removed.
+    """
     g = " ".join(_gate_src().replace("#", " ").split())
-    assert "90 of 129 runs would block" in g
+    assert "86 of 129 runs would block" in g, (
+        "#751 no longer records the open-P0 rate it rejected (#755's corrected 86)")
     assert "20 of 148 runs would block" in g
+    assert "90 of 129 runs would block" not in g, (
+        "#751 is back on the pre-#755 open-P0 figure that #755 withdrew")
 
 
 def test_751_records_how_a_lane_clears_it():

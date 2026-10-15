@@ -240,6 +240,14 @@ def test_every_modern_corpus_run_resolves_the_cluster_after_the_pass(tmp_path):
     if len(docs) < 10:
         pytest.skip("too few corpus design docs on this disk (%d)" % len(docs))
     before = sum(1 for _r, d in docs if FS._nav_utility_icons(d))
+    # #1203mk: captured HERE, not after the loop below -- `complete_design_system` mutates
+    # the doc it is handed, so the same comprehension run afterwards sees every doc already
+    # completed and names the whole corpus. (My first version of this fix did exactly that
+    # and the test caught it.)
+    _FIRST_POST_FIX_RUN_1203MK = 189
+    _early_1203mk = [run.name for run, d in docs if FS._nav_utility_icons(d)
+                     and int(re.search(r"r(\d+)$", run.name).group(1))
+                     < _FIRST_POST_FIX_RUN_1203MK]
     after = 0
     for i, (run, d) in enumerate(docs):
         # The pass ENDS by rewriting design_system.json, so it must never be pointed at a
@@ -250,5 +258,19 @@ def test_every_modern_corpus_run_resolves_the_cluster_after_the_pass(tmp_path):
         (work / "assets").symlink_to(run / "design" / "assets")
         after += 1 if FS._nav_utility_icons(
             DP.complete_design_system(d, {}, work.parent)) else 0
-    assert before == 0, ("the corpus baseline this ticket measured", before)
+    # #1203mk: this was a bare `assert before == 0`, and it went RED the first time the fix
+    # it guards reached a real run. r189 is the first run launched after #1203kv restored the
+    # field the design_analyst was dropping, so r189's own `design_system.json` resolves nav
+    # utility icons BEFORE the completion pass -- which is the fix WORKING, reported as a
+    # test failure. Exactly the direction #1203kz's note warns about: an assertion that the
+    # corpus still shows the defect turns red on the day the defect is fixed.
+    #
+    # The historical measurement is kept as what it is -- a measurement, with its date -- and
+    # the live claim is narrowed to the runs it can still be true of: a run that PREDATES the
+    # fix must still show the empty baseline, because nothing has changed for it.
+    #
+    #   measured 2026-10-14, before the fix: 39 of 39 modern runs returned empty.
+    assert not _early_1203mk, (
+        "a run that predates #1203kv resolves nav utility icons before the completion pass, "
+        "so the baseline this ticket measured no longer holds for it", _early_1203mk)
     assert after >= len(docs) * 0.9, (after, len(docs))

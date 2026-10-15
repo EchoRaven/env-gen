@@ -1402,9 +1402,20 @@ def unresolved_bug_tasks_743(hubs, output_dir=None, granted_tool_names=None) -> 
     So a hard block on "any open P0 bug" would stop 86 of 129 runs — and 15 of the 29 runs that
     actually released — and is not a gate, it is a halt. **`failed` is the narrow one**: `fail_task` is authorised (creator/claimer/orchestrator
     only), requires a `reason`, and means an attempt was MADE and did not work — unlike `pending`,
-    which can just mean nobody reached it. Only **20 of 148 runs (13%)** end with one, and all 20
-    released, carrying things like "Frontend Dockerfile uses registry-blocked base images" and
-    "Record the missing critical UI flow validations (blocks delivery)".
+    which can just mean nobody reached it. Only **20 of 148 runs (13%)** end with one, and
+    **4 of those 20** released, carrying things like "Frontend Dockerfile uses registry-blocked
+    base images" and "Record the missing critical UI flow validations (blocks delivery)".
+
+    #1203mj: that read "and all 20 released" until 2026-10-15 — the figure the #755 paragraph
+    four lines above debunks, produced by the very `tag or version` test it describes. The
+    correction landed in the emitted warning and in no comment, so the stale number outlived
+    it in the docstring of the function that computes the thing, where it was load-bearing:
+    it is the whole argument that `failed` is "the narrow one". Re-measured on the 102-run
+    corpus of 2026-10-15: 9 runs end with a FAILED task (9%) and 4 of those 9 carry a real
+    release tag — the same absolute 4, against a smaller denominator because the corpus was
+    pruned. In the modern era (r150+) the condition is nearly extinct: 1 run. #1202vs's rule
+    is the one being applied here — a correction has to REPLACE the number it corrects, in
+    every copy, not sit beside it.
 
     Reports only — no verdict changes here. Whether `failed` should block is a gate-tightening
     of the same class as item 56 and is recorded for a decision rather than switched on.
@@ -4525,11 +4536,31 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     _bugs743 = unresolved_bug_tasks_743(hubs, output_dir, granted_tool_names)
     if logger and _bugs743.get("failed_count"):
         logger.warning(
-            "#743 %d task(s) are in status FAILED at the delivery cut and nothing reads them: "
+            # #1203mj: this used to say "and nothing reads them" AND "Reported, not
+            # enforced", and BOTH became false in this same function. #751 below appends
+            # `unresolved_failed_tasks` to `failed_checks` — so a FAILED task BLOCKS the cut
+            # — #1202wi's `_note1202wi` puts the list in the ledger entry, and
+            # `remediation_dispatcher` iterates `_b743["failed"]` to re-open them. Three
+            # readers, one of them release-blocking, 70 lines apart from a sentence calling
+            # the finding inert. That is the worst direction for this particular lie: an
+            # operator who believes it stops looking for why the cut is held. The warning
+            # fires hard where it fires (51x in r114, 47x in r173, 25x in r184).
+            #
+            # r189 demonstrated it live while this was being written. The FAILED task at
+            # its cut is titled "(blocks delivery) Re-record verification checklist and
+            # build evidence after latest green" -- the task's OWN TITLE says it blocks
+            # delivery -- and this warning named it, every two seconds for six minutes, as
+            # something nothing reads. Its `reason` is `blocker_reported_not_release_ready`:
+            # the verifier deliberately failed it because UI smoke was not green, which is
+            # exactly the "attempted and did not work" the sentence below describes.
+            "#743 %d task(s) are in status FAILED at the delivery cut: "
             "%s. `fail_task` is authorised and requires a reason, so this is a deliberate "
-            "'attempted and did not work' — unlike pending. 20 of 148 corpus runs end with one "
-            "and 4 of those 20 released (#755: my first count said all 20, inflated by a "
-            "bootstrap doc read as a release tag). Reported, not enforced.",
+            "'attempted and did not work' — unlike pending. This BLOCKS the cut (#751, "
+            "`unresolved_failed_tasks`), is carried into the ledger entry (#1202wi) and is "
+            "re-opened by the remediation dispatcher. Clear it by completing the task, or "
+            "cancel it if the attempt was wrong. 4 of the 20 corpus runs that ended with one "
+            "released (#755: my first count said all 20, inflated by a bootstrap doc read as "
+            "a release tag).",
             _bugs743["failed_count"],
             _join_capped_1022(
                 [f"[{f.get('severity') or '-'}] {f.get('title')}"
@@ -4595,9 +4626,12 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # #751 (user-approved) — A TASK EXPLICITLY MARKED FAILED BLOCKS THE CUT.
     #
     # #743 measured both candidates and only this one is a gate rather than a halt:
-    #     any open P0 BUG      90 of 129 runs would block   -> a halt
+    #     any open P0 BUG      86 of 129 runs would block   -> a halt
     #     any FAILED task      20 of 148 runs would block   -> 13%
-    # and all 20 of those released. `failed` is not "nobody got to it" — `fail_task` is
+    # and 4 of those 20 released. `failed` is not "nobody got to it" — `fail_task` is
+    # (#1203mj: both figures above were the PRE-#755 ones — 90 and "all 20" — in a comment
+    # that cites #743 as its source while #743's own emitted warning carried the corrected
+    # 86 and 4. Same defect as the docstring at `unresolved_bug_tasks_743`, same file.)
     # authorised (creator, claimer or orchestrator only) and REQUIRES a reason, so the status
     # is a deliberate "this was attempted and did not work", carrying things like "Frontend
     # Dockerfile uses registry-blocked base images" and "Record the missing critical UI flow
