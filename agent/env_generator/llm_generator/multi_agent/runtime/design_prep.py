@@ -1267,7 +1267,75 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     import logging
     out = Path(output_dir)
     stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0,
-             "screens_routed": 0}
+             "screens_routed": 0, "assets_remeasured_1203kv": 0}
+    # #1203kv: re-measure every asset entry from the file that was staged for it.
+    #
+    # The MERGE in this module is careful about these fields — `# assets: add description/use
+    # by id (never touch id/file/type/dims/staged_path)` — but the document that reaches here
+    # is usually not the merge's output. The spawned design_analyst REWRITES
+    # design_system.json wholesale, and its shape is {id, file, staged_path, description,
+    # use}. `load_valid_design_system` accepts it, because all it asks is that the document
+    # parse and carry `design_system` or `screens`. So every MEASURED machine field is gone,
+    # and the framework's own consumers filter on one of them:
+    #     [a for a in assets if str(a.get("type") or "").lower() in ("svg", "png", "webp")]
+    #
+    # MEASURED over the 39 modern runs that have a design_system.json — 882 asset entries,
+    # `type` absent on 882 of 882 — by driving the real consumers over the real documents:
+    #     _nav_utility_icons  (#421, the top-nav search/bell/kids/profile cluster)  0/39
+    #     _ref_image_pool     (#415, the projector's hero bg + rail/grid posters)   0/39
+    # With the fields restored: 39/39 and 36/39. #421 then resolves
+    # `icons/search_20e71c0a.svg` and `icons/profile_9410ceda.svg` — icons that were staged,
+    # served, and unreachable because a word was missing. (`_brand_logo_url` filters on
+    # `type` too and stays empty either way; its cause is elsewhere and this does not claim
+    # it.)
+    #
+    # This is #352's shape one level over — a field the analyst is never asked for, whose
+    # absence makes a deterministic feature fire zero times — so it is backfilled by the same
+    # completion pass, under the same rule: a value the analyst DID author is never touched.
+    #
+    # RE-MEASURED rather than derived from the filename, and that is load-bearing, not
+    # thoroughness: `dominant_colors` cannot be guessed from a name, and #1203kw needs it to
+    # tell an icon that carries its own colour from one painted by `currentColor`. The suffix
+    # is only the fallback for a file that is no longer on disk. #1032: `material_prep`
+    # already owns "what is this file", so `_ingest_one` is called rather than restated —
+    # the restored values agree with the original manifest by construction.
+    try:
+        from .material_prep import (_ingest_one as _io1203kv, _IMG_EXT as _ie1203kv,
+                                    _nonimage_asset_type as _na1203kv)
+        _MEASURED_1203KV = ("type", "dims", "transparent", "dominant_colors")
+        _sdir1203kv = out / "design" / "assets"
+        for _a in (ds.get("assets") or []) if isinstance(ds, dict) else []:
+            if not isinstance(_a, dict):
+                continue
+            _rel = str(_a.get("file") or "").strip()
+            if not _rel:
+                _sp = str(_a.get("staged_path") or "")
+                _rel = _sp[len("public/assets/"):] if _sp.startswith("public/assets/") else ""
+            _missing = [k for k in _MEASURED_1203KV if k not in _a]
+            if not _missing or not _rel:
+                continue
+            _f = _sdir1203kv / _rel
+            _fresh = None
+            if _f.is_file():
+                try:
+                    _fresh = _io1203kv(_f, Path(_rel))
+                except Exception:
+                    _fresh = None
+            if _fresh is None:
+                # the staged file is gone: the suffix still answers `type`, and an absent
+                # field stays absent rather than becoming a measurement nobody made.
+                _sfx = Path(_rel).suffix.lower()
+                _t = _ie1203kv.get(_sfx) or _na1203kv(_sfx)
+                _fresh = {"type": _t} if _t else {}
+            _filled = False
+            for _k in _missing:
+                if _fresh.get(_k) is not None:
+                    _a[_k] = _fresh[_k]
+                    _filled = True
+            if _filled:
+                stats["assets_remeasured_1203kv"] += 1
+    except Exception:
+        pass  # a completion floor never blocks the phase it is completing
     # #352: backfill route + kind on every measured screen. The analyst is never
     # asked for them (they exist only in the unused single-shot fallback prompt),
     # so missing_design_screen_pages skipped 11/11 screens and the #225 page
@@ -1350,7 +1418,12 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
         _write_design_system(out / "design", ds)
         logging.getLogger("Orchestrator").info(
             "Design-Prep completion pass: %(components)d components — %(cropped)d cropped, "
-            "%(bg_filled)d bg measured, %(asset_mapped)d asset-mapped (deterministic floor)", stats)
+            "%(bg_filled)d bg measured, %(asset_mapped)d asset-mapped, "
+            # #1203kv: this line is the only reader of `stats`, so a counter the pass
+            # keeps and the line omits is a measurement nobody receives.
+            # `screens_routed` (#352) was already in that position; both are here now.
+            "%(screens_routed)d screens routed, %(assets_remeasured_1203kv)d asset(s) "
+            "re-measured (deterministic floor)", stats)
     except Exception:
         pass
     return ds

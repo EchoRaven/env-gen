@@ -30,7 +30,14 @@ def test_skeleton_has_palette_assets_and_measured_components(tmp_path):
     (di / "references").mkdir(parents=True)
     (di / "assets").mkdir(parents=True)
     _write_png(di / "references" / "home.png")
-    (di / "assets" / "logo.svg").write_text('<svg width="10" height="10"/>', encoding="utf-8")
+    # #1203ku: a DRAWABLE logo. This fixture used to be `<svg width="10" height="10"/>`,
+    # which draws nothing — ingest now refuses to stage such a file, because the reference
+    # scraper had left two empty sprite hosts in `icons/` and lanes were serving them as
+    # icons that render as nothing. The subject here is "the skeleton ingests and stages the
+    # assets folder", and a logo that cannot render was never what that meant.
+    (di / "assets" / "logo.svg").write_text(
+        '<svg width="10" height="10"><rect width="10" height="10" fill="#0af"/></svg>',
+        encoding="utf-8")
 
     out = tmp_path / "out"
     # a pre-measured component spec on disk (as reference_materials writes it), keyed by stem

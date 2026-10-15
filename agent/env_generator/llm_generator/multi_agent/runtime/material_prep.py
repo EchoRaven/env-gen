@@ -900,6 +900,22 @@ def _svg_dims(text: str) -> Optional[list]:
     return None
 
 
+# #1203ku: an element that puts ink on the canvas. `<use>`, `<image>` and `<foreignObject>`
+# count — a sprite SHEET draws through `<use>`, and HTML inside a `<foreignObject>` is real
+# pixels — so a file built that way is kept.
+#
+# `<symbol>` is deliberately NOT here, and the reason is not that the corpus never needs it
+# (all 8978 staged SVGs classify the same with or without it). A `<symbol>` holding anything
+# drawable already matches on that content, so the only case where listing it would change
+# the answer is a symbol that is EMPTY — and an empty symbol draws nothing, which is exactly
+# what this predicate exists to catch. Listing it would have made the guard wrong in its one
+# load-bearing case. Found by mutation: the sprite-sheet fixture contained a `<path>`, so
+# removing `symbol` from the pattern changed no test.
+_SVG_DRAWS_1203KU = re.compile(
+    r"<(path|circle|rect|polygon|polyline|line|ellipse|use|image|text|foreignObject)\b",
+    re.I)
+
+
 def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
     suffix = path.suffix.lower()
     kind = _IMG_EXT.get(suffix)
@@ -909,10 +925,41 @@ def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
     transparent = False
     colors: List[str] = []
     if kind == "svg":
+        _read_ok_1203ku = True
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             text = ""
+            _read_ok_1203ku = False
+        # #1203ku: an SVG that draws NOTHING is staged into `public/assets/icons/` and the
+        # frontend lane finds it by globbing that directory — r177's own log:
+        # `glob({'path': 'app/frontend/public/assets/icons', 'pattern': '*.svg'})` → a name
+        # list with no quality information attached. The scraper captured the reference
+        # site's empty sprite HOST (`<svg style="position:absolute;width:0;height:0"
+        # id="svg-sprite-container"></svg>`, 115 bytes), whose symbols the real page injects
+        # from elsewhere, so the file reaches the app as a usable-looking icon and renders
+        # nothing. MEASURED: 31 references across 11 runs, r169 and r177 among them — r177
+        # serves it as the "Go LIVE" nav icon and `icon_732aaf84.svg` as "Shop", both
+        # invisible. That is the worst case of the standing requirement that an icon look
+        # like an icon, and a hash name gives the lane nothing to judge by.
+        #
+        # Dropped at ingest rather than hidden from one consumer, because every channel has
+        # the same problem and the file has no use at all. NOT a fallback that masks a
+        # failure: the drop is logged with the path, and a file we could not READ is left
+        # alone — #647, the guard stays no wider than its evidence. The flag is the read's
+        # own outcome and not `text.strip()`, because those are different facts: a file we
+        # FAILED to read may well draw, while a zero-byte SVG was read fine and draws
+        # nothing, so it belongs with the drop.
+        #
+        # EVIDENCE FOR THE PREDICATE: across 8978 staged SVGs in the corpus it drops exactly
+        # two distinct filenames, both this sprite host, and keeps the other 8976.
+        if _read_ok_1203ku and not _SVG_DRAWS_1203KU.search(text):
+            import logging as _lg1203ku
+            _lg1203ku.getLogger(__name__).warning(
+                "material_prep: not staging %s — the SVG contains no drawable element, so it "
+                "renders nothing wherever a lane uses it (#1203ku). %d bytes.",
+                rel.as_posix(), path.stat().st_size if path.exists() else -1)
+            return None
         dims = _svg_dims(text)
         transparent = True  # vector assets are transparent by convention
         seen: List[str] = []

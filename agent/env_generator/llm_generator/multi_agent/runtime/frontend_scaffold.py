@@ -5219,7 +5219,19 @@ def _ref_image_pool(design) -> List[str]:
     'public/assets/x.jpg' → '/assets/x.jpg'; else '/assets/<file>'), deduped and
     order-preserving; [] when the app stages no usable photos (clean fallback)."""
     _PHOTO = ("jpg", "jpeg", "png", "webp")
-    _EXCLUDE = ("icon", "logo", "placeholder", "sprite", "favicon", "wordmark")
+    # #1203kx: `avatar` belongs in this list. The list is "a staged image that is not content
+    # photography", and a profile picture is not a backdrop, a poster or a still — while the
+    # consumer CYCLES this pool through poster tiles (`_REFIMGS` / `_refImg(i)`, #543's grid
+    # padding) and the collage background, so one avatar becomes every tile.
+    #
+    # Reachable only because #1203kv restored `type`; before that this function returned []
+    # in all 39 modern runs. MEASURED after the restore: 36 of 39 pools were exactly
+    # `['/assets/real_avatars/therock.jpg']` — one person's face as every padded poster —
+    # arriving through the "else fall back to ALL qualifying photos" branch, since no run
+    # stages anything with a poster/backdrop/still token. With `avatar` excluded all 39 are
+    # [] again, identical to the behaviour before the restore, and the function comes alive
+    # properly for a design input that really does stage posters.
+    _EXCLUDE = ("icon", "logo", "placeholder", "sprite", "favicon", "wordmark", "avatar")
     _PREFER = ("backdrop", "poster", "still", "thumb", "hero", "cover", "banner")
 
     def _served_url(a) -> Optional[str]:
@@ -5887,8 +5899,36 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
     # (_nav_chrome_454 inlines currentColor and DOES inherit the nav color); keep the
     # <img> asset channel only for any OTHER staged utility icon. Byte-identical when
     # the design stages no search/notification utility asset (list unchanged).
+    # #1203kw: #551's rule is "an SVG that paints its OWN default colour must not reach a
+    # themed nav through <img>, because CSS cannot get inside the image". It was written as a
+    # list of two LABELS, which is not the rule — it is the two labels that happened to carry
+    # such an asset when #551 was written. Now the rule is asked of the asset.
+    #
+    # Reachable only because #1203kv restored `dominant_colors`, and measured on the icons
+    # the restored #421 resolves: 39 of 39 modern runs emit exactly one <img> here, always
+    # the `Account` label, and 39 of 39 of those files are `fill="currentColor"` with no
+    # colour of their own (tiktok `icons/profile_9410ceda.svg`; instagram an empty-state
+    # illustration whose filename is a whole sentence). So reviving #421 without this would
+    # have put an invisible image on every nav — beside #443's deterministic avatar chip,
+    # which already renders the account.
+    #
+    # An asset with its own colours still uses the <img> channel, which is what keeps #421
+    # alive for anything the design really staged as a coloured mark. `dominant_colors`
+    # ABSENT means not measured and is left alone; only a measured EMPTY list excludes.
+    _asset_by_url_1203kw = {}
+    for _a1203kw in ((design or {}).get("assets") or []):
+        if isinstance(_a1203kw, dict):
+            _sp1203kw = str(_a1203kw.get("staged_path") or "")
+            if _sp1203kw.startswith("public/"):   # the transform _nav_utility_icons itself uses
+                _asset_by_url_1203kw["/" + _sp1203kw[len("public/"):]] = _a1203kw
+
+    def _own_colour_1203kw(url: str) -> bool:
+        _c = (_asset_by_url_1203kw.get(url) or {}).get("dominant_colors")
+        return not (isinstance(_c, list) and not _c)
+
     _util_icons_551 = [(lbl, u) for (lbl, u) in _nav_utility_icons(design)
-                       if lbl.lower() not in ("search", "notifications")]
+                       if lbl.lower() not in ("search", "notifications")
+                       and _own_colour_1203kw(u)]
     _util_jsx = "".join(
         f'            <img src="{u}" alt="{lbl}" title="{lbl}" className="h-5 w-5 opacity-90" />\n'
         for (lbl, u) in _util_icons_551)
