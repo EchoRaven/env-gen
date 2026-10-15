@@ -306,7 +306,11 @@ class BrowserManager:
 
         if self.state.browser is None:
             try:
-                self._playwright = await async_playwright().start()
+                # #1203m2: the shared driver is the long-lived one, so it is the one that
+                # fills its 4288 MB default heap and takes the browser down with it.
+                from ._bootstrap import driver_heap_1203m2
+                with driver_heap_1203m2():
+                    self._playwright = await async_playwright().start()
                 try:
                     self.state.browser = await self._playwright.chromium.launch(
                         headless=True,

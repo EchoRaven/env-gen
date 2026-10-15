@@ -3566,10 +3566,55 @@ class Orchestrator:
                         )
                     # Deterministic failure when the run budget was hit before delivery.
                     if budget_exceeded and not orchestrator_lane._project_delivered_event.is_set():
+                        # #1203m1: THE ADVICE NAMED TWO KNOBS AND OMITTED THE ONE THAT BOUND.
+                        #
+                        # This suffix was unconditional, so every budget abort ended by naming
+                        # ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS whatever had actually
+                        # stopped the run. Measured over the 83 occurrences in the 29 root logs
+                        # that carry one, classified by the cause string in the parentheses --
+                        # the only text that knows the real limit:
+                        #
+                        #     57  spend ceiling (19 runs)   advice omits ENVGEN_MAX_SPEND_USD
+                        #     20  wall-clock  (8 runs)      ENVGEN_MAX_TICKS is noise
+                        #      6  provider credits gone     advice CONTRADICTS the cause
+                        #      0  coordination ticks        <- named 83/83 times, bound NEVER
+                        #
+                        # So the one knob printed in every single one of these aborts has never
+                        # once been the answer, and 63 of 83 (76%) ended on advice that omits or
+                        # contradicts the limit that fired. r135 is the sharp case: the cause
+                        # reads "LLM provider budget/auth exhausted -- get a budget increase or
+                        # a fresh key (raising ENVGEN_MAX_* will NOT help)" and the same sentence
+                        # then closes "Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS."
+                        # One sentence contradicting itself (#1203j2).
+                        #
+                        # Derived from the cause, not from a second list of knobs (#1032): a
+                        # cause that already names an ENVGEN_* knob is self-explaining -- that is
+                        # what #1203jt built it to be -- so appending anything there can only
+                        # repeat it or fight it, and the suffix is dropped instead. The STUCK
+                        # raise three lines above has said "Raising ENVGEN_MAX_* will NOT help"
+                        # since PROPOSAL #5 for exactly this reason; this is that lesson applied
+                        # to the branch next to it.
+                        #
+                        # The unknown-cause fallback keeps both knobs: unchanged behaviour where
+                        # there is no evidence to narrow on (#647).
+                        #
+                        # NOT CHANGED, deliberately: "aborted after N coordination ticks". It is
+                        # true (the run was aborted, N ticks in) and r188's "after 1 coordination
+                        # ticks" is a useful fact about how early it died. Only the advice was
+                        # measured wrong, so only the advice moves.
+                        _cause_1203m1 = str(budget_exceeded)
+                        if "ENVGEN_MAX_" in _cause_1203m1:
+                            _advice_1203m1 = ""
+                        elif _cause_1203m1.startswith("wall-clock"):
+                            _advice_1203m1 = " Adjust via ENVGEN_MAX_WALLCLOCK_SEC."
+                        elif _cause_1203m1.startswith("coordination ticks"):
+                            _advice_1203m1 = " Adjust via ENVGEN_MAX_TICKS."
+                        else:
+                            _advice_1203m1 = (
+                                " Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS.")
                         raise RuntimeError(
                             f"Run budget exceeded ({budget_exceeded}) without delivery; "
-                            f"aborted after {tick_count} coordination ticks. "
-                            f"Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS."
+                            f"aborted after {tick_count} coordination ticks.{_advice_1203m1}"
                         )
 
                     # #1202bz: the milestone finished. Recorded HERE, at the end of the body, so a

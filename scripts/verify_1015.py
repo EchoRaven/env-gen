@@ -163,6 +163,55 @@ def main(argv):
                     last = json.loads(ln)
                 except Exception:
                     pass
+    # --- #1203m1 ----------------------------------------------------------------------
+    # The abort advice must name the limit that actually bound, and a cause that already
+    # names its own ENVGEN_* knob must get no second opinion appended.
+    _ab = re.findall(
+        r"Run budget exceeded \((.*?)\) without delivery; aborted after \d+ "
+        r"coordination ticks\.([^\n\x1b]*)", logtext, re.S)
+    if not _ab:
+        say("m1", "N-A", "this run did not hit a budget abort")
+    else:
+        _cause, _adv = _ab[-1]
+        _adv = _adv.strip()
+        if "ENVGEN_MAX_" in _cause:
+            say("m1", "CONFIRMED" if not _adv else "FALSIFIED",
+                "self-explaining cause, trailing advice=%r" % _adv)
+        elif _cause.startswith("wall-clock"):
+            ok = _adv == "Adjust via ENVGEN_MAX_WALLCLOCK_SEC."
+            say("m1", "CONFIRMED" if ok else "FALSIFIED", "wall-clock cause, advice=%r" % _adv)
+        elif _cause.startswith("coordination ticks"):
+            ok = _adv == "Adjust via ENVGEN_MAX_TICKS."
+            say("m1", "CONFIRMED" if ok else "FALSIFIED", "tick cause, advice=%r" % _adv)
+        else:
+            say("m1", "INFO", "cause shape not in the corpus: %s" % _cause[:60])
+
+    # --- #1203m2 ----------------------------------------------------------------------
+    # The Playwright driver should not reach its heap ceiling. If it still does, the number
+    # beside the fatal line says whether the raised ceiling took effect (~8100 MB, leak still
+    # wins) or was never applied (~4100 MB, the patch did not reach this spawn).
+    _ooms = list(re.finditer(r"JavaScript heap out of memory", logtext))
+    _drv = len(re.findall(r"Connection closed while reading from the driver", logtext))
+    _rel = len(re.findall(r"#1198 shared browser driver is gone \(relaunch", logtext))
+    if not _ooms:
+        say("m2", "CONFIRMED", "no driver OOM; driver-closed=%d relaunches=%d" % (_drv, _rel))
+    else:
+        _peaks = []
+        for _m in _ooms:
+            _seg = logtext[max(0, _m.start() - 2500):_m.start()]
+            _mb = [float(x) for x in re.findall(r"(\d{3,5}\.\d) \(\d", _seg)]
+            if _mb:
+                _peaks.append(max(_mb))
+        _hi = max(_peaks) if _peaks else 0.0
+        if _hi >= 7000:
+            say("m2", "CONFIRMED",
+                "ceiling applied (peak %.0f MB) but the leak still reached it: %d OOM, "
+                "driver-closed=%d relaunches=%d" % (_hi, len(_ooms), _drv, _rel))
+        else:
+            say("m2", "FALSIFIED",
+                "OOM at %.0f MB -- the raised ceiling did not reach this spawn (%d OOM)"
+                % (_hi, len(_ooms)))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
