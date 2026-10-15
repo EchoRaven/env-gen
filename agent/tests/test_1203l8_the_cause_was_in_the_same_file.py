@@ -137,6 +137,36 @@ def test_it_arrives_in_the_text_the_lane_actually_reads(tmp_path):
     assert VF._unsatisfiable_by_static_capture_855(devs[-1], "profile_own") is False
 
 
+def test_it_composes_with_1203l7_the_noise_out_the_signal_in(tmp_path):
+    """#1203l7 drops the gate's own probe at capture; this reads what survives. Asserted
+    together on one stream, because each ticket only drove its own half and the ORDER is what
+    makes the pair safe -- landing this one first would have put the probe into every
+    deviation, 63% of that console stream being the gate's own request.
+    """
+    raw = {"(startup)": ["http: 404 GET http://x/api/profiles",
+                         "http: 404 GET http://x/api/profile"],
+           "profile_own": ["http: 404 GET http://x/api/users/1"]}
+    kept = {scr: [m for m in msgs if not VF.is_own_probe_404_1203l7(scr, m)]
+            for scr, msgs in raw.items()}
+    assert kept["(startup)"] == [], kept
+    assert len(kept["profile_own"]) == 1, kept
+
+    index = {}
+    for path, screens in (VF.api_404s_from_console_1202lz(kept) or {}).items():
+        for scr in screens:
+            if scr != "(startup)":
+                index.setdefault(scr, []).append(path)
+    assert index == {"profile_own": ["/api/users/1"]}, index
+
+    txt = VF.remediation_text({"passed": False, "min_similarity": 0.65, "screens": [
+        {"name": "profile_own", "route": "/profile", "similarity": 0.34, "passed": False,
+         "deviations": W(["main content: shows only a small centered 'not found' message"],
+                         index.get("profile_own")),
+         "fixes": [], "dimensions": {}}]})
+    assert "/api/users/1" in txt, txt[:300]
+    assert "/api/profiles" not in txt and "/api/profile" not in txt, txt[:300]
+
+
 def test_the_corpus_screens_this_was_measured_on():
     """The 11 of 11, recomputed. Skipped when the corpus is absent."""
     import pytest
