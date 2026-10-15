@@ -3943,19 +3943,56 @@ def _ui_evidence_prose_1203jg(validation_results: Any, breadth: Any) -> str:
     pages = [str(x) for x in (breadth.get("pages_failed") or [])]
     if not pages:
         return ""
+    # #1203mn: total, like every sibling helper in this file. `for rec in (x or [])` raises
+    # on a non-sequence, and this one builds the PROSE OF A BLOCKER — a raise here costs the
+    # blocker its words, which is the whole failure #1203jg was written to end. Found by its
+    # own test rather than in production, so no run has paid for it.
+    _rows = validation_results if isinstance(validation_results, (list, tuple)) else []
     why: List[str] = []
     for page in pages[:8]:
         summary = ""
-        for rec in (validation_results or []):
-            if not isinstance(rec, dict) or str(rec.get("status") or "") != "failure":
+        for rec in _rows:
+            if not isinstance(rec, dict):
+                continue
+            # #1203mn: TWO breakages in #1203jg's own lookup, both measured on r189 where
+            # this prose printed `no summary recorded` 123 times out of 123.
+            #
+            # (1) VOCABULARY. `hub_registry.get_validation_results` runs every row through
+            #     `_canon_validation_status`, which maps failure -> "failed". This compared
+            #     against the RAW word "failure", so every record was skipped before the
+            #     page match ever ran. FIX #193 added that canonicaliser precisely because
+            #     "every reader compares status=='passed'" while writers pass their own
+            #     vocabulary verbatim — and then this reader did not use it.
+            # (2) SHAPE. The same normaliser LIFTS `evidence.summary` to `summary` and
+            #     FLATTENS `evidence.metadata` to `metadata`, so a normalised record has no
+            #     `evidence` key at all and `ev.get("summary")` was always "". The
+            #     widest-first `_pick` a few hundred lines above this file already reads
+            #     both shapes, with a comment saying why; this is that rule, applied here.
+            #
+            # What r189 should have printed, and had on disk the whole time:
+            #   "explore_grid_page: Fresh browser re-walk of /explore still reports failed
+            #    /assets/real_videos/*.mp4"
+            # which names the root cause #1203mm went on to remove. The top end-of-run
+            # blocker held the answer and said nothing — the exact failure #1203jg was
+            # written to end, reproduced inside it.
+            _st = str(rec.get("status") or "").strip().lower()
+            if _st not in ("failed", "failure", "fail"):
                 continue
             ev = rec.get("evidence")
             ev = ev if isinstance(ev, dict) else {}
-            md = ev.get("metadata")
+            md = rec.get("metadata")
+            if not isinstance(md, dict):
+                md = ev.get("metadata")
             md = md if isinstance(md, dict) else {}
             if (str(md.get("page") or "") == page
-                    or str(rec.get("name") or "").endswith(":" + page)):
-                summary = str(ev.get("summary") or "").strip()
+                    or str(md.get("flow") or "") == page
+                    or str(rec.get("name") or "").endswith(":" + page)
+                    or str(rec.get("task_id") or "").endswith(":" + page)):
+                for _holder in (rec, ev):
+                    _v = _holder.get("summary")
+                    if isinstance(_v, str) and _v.strip():
+                        summary = _v.strip()
+                        break
                 if summary:
                     break
         why.append("%s: %s" % (page, summary or "no summary recorded"))
