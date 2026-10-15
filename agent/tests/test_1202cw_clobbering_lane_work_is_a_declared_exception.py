@@ -69,6 +69,12 @@ _FRAMEWORK_ONLY_WRITERS_1202TD = {
     "kickoff_driver.py": "kickoff artefacts under shared/",
     "safe_code_write.py": "IS the other write primitive (#995); guards its own target",
     "design_prep.py": "design-prep artefacts, outside app/",
+    # #1203l6 made this module's first recognised write: it had only ever used shutil.copy2,
+    # which the AST scan does not count. Checked rather than assumed -- all four of its write
+    # sites target the `stage_dir` its callers pass, and both callers pass
+    # `<out>/design/assets` or `<out>/design/dataset` (design_prep.py:237/248). Nothing under
+    # app/, and no lane-owned path.
+    "material_prep.py": "design-input staging under design/, outside app/",
     "run_budget.py": "the run ledger",
     "database_scaffold.py": "app/database/schema.sql — framework-owned",
     "handler_fk_repair.py": "#995 fallback only; the live path is write_py_if_still_parses",

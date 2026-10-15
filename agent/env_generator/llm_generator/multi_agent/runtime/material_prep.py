@@ -900,6 +900,42 @@ def _svg_dims(text: str) -> Optional[list]:
     return None
 
 
+# #1203l6: an SVG loaded through `<img>` is parsed as XML, so a root `<svg>` with no
+# namespace is not an SVG document at all and the browser shows its broken-image mark. Inline
+# in HTML it works, because the HTML parser supplies the namespace — which is exactly how
+# these files were born: the reference scraper lifts `<svg>` elements out of the live page,
+# where they are inline and carry none.
+#
+# MEASURED: 987 of the 8978 staged SVGs in the corpus have no `xmlns`, all 47-per-run in the
+# 21 instagram-core runs. VERIFIED in real Chromium on the actual staged file — r174's
+# `Instagram_efa13859.svg` loads with `naturalWidth: 0`, and the same bytes with the namespace
+# added load at 24. That is the whole of r174's "broken-image placeholders replacing key UI
+# components" (the visual judge charged it on components, style, typography AND iconography at
+# once, 71-78 mentions per instagram verdict), while the tiktok runs — whose scraped icons do
+# carry the attribute — report none.
+#
+# The staged COPY is corrected; the design input is never written to. This is not a substitute
+# that hides a failure (#1202qo): the picture is the one the design input provides, and the
+# attribute is what makes the file the document it already claims to be.
+_SVG_ROOT_1203L6 = re.compile(r"<svg\b[^>]*>", re.I)
+_SVG_HAS_NS_1203L6 = re.compile(r"\bxmlns\s*=", re.I)
+
+
+def svg_needs_namespace_1203l6(text: str) -> bool:
+    """True when the root `<svg>` carries no `xmlns`. False for anything that is not an SVG."""
+    m = _SVG_ROOT_1203L6.search(text or "")
+    return bool(m) and not _SVG_HAS_NS_1203L6.search(m.group(0))
+
+
+def add_svg_namespace_1203l6(text: str) -> str:
+    """The same bytes with `xmlns` on the root tag. Unchanged when it already has one."""
+    m = _SVG_ROOT_1203L6.search(text or "")
+    if not m or _SVG_HAS_NS_1203L6.search(m.group(0)):
+        return text
+    return (text[:m.start()] + '<svg xmlns="http://www.w3.org/2000/svg"'
+            + m.group(0)[len("<svg"):] + text[m.end():])
+
+
 # #1203ku: an element that puts ink on the canvas. `<use>`, `<image>` and `<foreignObject>`
 # count — a sprite SHEET draws through `<use>`, and HTML inside a `<foreignObject>` is real
 # pixels — so a file built that way is kept.
@@ -1115,7 +1151,27 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
         try:
             dest = stage / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if not (entry.get("type") == "video" and _stage_video_1202qf(path, dest, entry)):
+            if entry.get("type") == "video" and _stage_video_1202qf(path, dest, entry):
+                pass
+            elif entry.get("type") == "svg":
+                # #1203l6: stage a RENDERABLE copy. Byte-identical unless the root tag has no
+                # namespace, in which case `<img src>` cannot decode it at all.
+                try:
+                    _t1203l6 = path.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    _t1203l6 = None
+                if _t1203l6 is not None and svg_needs_namespace_1203l6(_t1203l6):
+                    dest.write_text(add_svg_namespace_1203l6(_t1203l6), encoding="utf-8")
+                    import logging as _lg1203l6
+                    _lg1203l6.getLogger(__name__).warning(
+                        "material_prep: staged %s with `xmlns` added — the design input's copy "
+                        "has no namespace on its root <svg>, which an <img> cannot decode "
+                        "(verified in Chromium: naturalWidth 0 without it, 24 with). The "
+                        "scraper lifts these from inline page markup, where the HTML parser "
+                        "supplies it (#1203l6).", rel.as_posix())
+                else:
+                    shutil.copy2(path, dest)
+            else:
                 shutil.copy2(path, dest)
         except Exception:
             continue

@@ -2125,12 +2125,45 @@ _PROFILE_KEY_ALIASES = (
     "currentProfileId", "activeProfile", "selectedProfile", "profile",
 )
 
+# #1203l7: ONE owner for the paths the gate's own probes request. Both scripts below ask
+# for them, and `api_404s_from_console_1202lz` has to skip them -- a second hand-written
+# list in the filter would drift from the scripts the first time either changes.
+_PROBE_PATHS_1203L7 = ("/api/profiles", "/api/profile", "/profiles")
+_PROBE_404_RE_1203L7 = re.compile(
+    r"\b404\b[^\n]*?(" + "|".join(re.escape(_p) for _p in _PROBE_PATHS_1203L7) + r")(?![\w/])")
+
+
+def is_own_probe_404_1203l7(screen: Any, text: Any) -> bool:
+    """A 404 this module's OWN probe caused, which is not a fact about the app.
+
+    The two scripts below fetch these paths to find a profile gate and proceed silently on a
+    miss -- "apps with no profile gate are unaffected" -- so the 404 is the designed outcome,
+    and it lands in the same console stream the capture records.
+
+    Narrowed by SCREEN as well as path, because a path cannot tell the gate's request from the
+    app's. The probe runs before any screen, under the `(startup)` pseudo-name. MEASURED over
+    all 205 run logs: 625 probe-path 404s, 100% of them on `(startup)` and none on a named
+    screen -- so this is equivalent to a path-only rule on the corpus and strictly safer off
+    it: an app page that really 404s on `/api/profiles` is still reported.
+
+    NOT extended to the browser's companion line, "Failed to load resource: the server
+    responded with a status of 404 (Not Found)", which carries no URL (313 of them on disk).
+    At startup the app's own bundle requests run too, so dropping unattributable 404s there
+    would hide a genuinely missing asset -- the shape #1203l6 was about.
+    """
+    return (str(screen) == "(startup)"
+            and bool(_PROBE_404_RE_1203L7.search(str(text or ""))))
+_PROBE_PATHS_JS_1203L7 = "[" + ", ".join("'%s'" % p for p in _PROBE_PATHS_1203L7) + "]"
+
+
 # Discover the first profile id via the app's OWN origin/session (most robust —
 # same fetch the app itself makes). Tries the common list endpoints in order,
 # unwraps the common envelopes, reads the first present id field. Returns null on
 # any miss so the caller silently proceeds. ``token`` is passed in (may be "").
-_PROFILE_DISCOVER_JS = """async (token) => {
-  const paths = ['/api/profiles', '/api/profile', '/profiles'];
+# #1203l7: substituted in the ASSIGNMENT -- a second `X = X.replace(...)`
+# statement binds a module-level name twice (#1202cf).
+_PROFILE_DISCOVER_JS = ("""async (token) => {
+  const paths = __PROBE_PATHS_1203L7__;
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
   for (const p of paths) {
     try {
@@ -2153,7 +2186,7 @@ _PROFILE_DISCOVER_JS = """async (token) => {
     } catch (e) {}
   }
   return null;
-}"""
+}""").replace("__PROBE_PATHS_1203L7__", _PROBE_PATHS_JS_1203L7)
 
 
 # #1202eg: STORAGE ACCESS MUST NOT THROW INTO THE APP'S CONSOLE.
@@ -2271,8 +2304,8 @@ _PROFILE_PICKER_CLICK_JS = r"""() => {
 
 # JS: the size of the app's own profiles collection (for the seed-settled wait).
 # Returns -1 when NO profiles endpoint exists → no gate → nothing to wait for.
-_PROFILE_COUNT_JS = r"""async (token) => {
-  const paths = ['/api/profiles', '/api/profile', '/profiles'];
+_PROFILE_COUNT_JS = (r"""async (token) => {
+  const paths = __PROBE_PATHS_1203L7__;
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
   for (const p of paths) {
     try {
@@ -2288,7 +2321,7 @@ _PROFILE_COUNT_JS = r"""async (token) => {
     } catch (e) {}
   }
   return -1;
-}"""
+}""").replace("__PROBE_PATHS_1203L7__", _PROBE_PATHS_JS_1203L7)
 
 # how many times a still-picker capture is re-selected+re-navigated before we skip
 # the shot (rather than feed the judge a picker as a real screen). Small: a genuine
@@ -2562,6 +2595,14 @@ async def capture_route_screenshots(
                 if console_errors is None:
                     return
                 try:
+                    # #1203l7: at the CHOKE POINT, so all four consumers -- the #740 warning,
+                    # each screen's deviations, the returned dict and #1202lz -- see a stream
+                    # that is about the app. 618 of the 987 distinct #740 segments on disk
+                    # (63%) were this, diluting the real crashes it exists to surface
+                    # (`TypeError: replies.map is not a function`, `Minified React error #31`)
+                    # 2:1 under a display cap of four.
+                    if is_own_probe_404_1203l7(_cur740["name"], f"{kind}: {text}"):
+                        return
                     _b = console_errors.setdefault(_cur740["name"], [])
                     # #1202ee: 300 was BELOW the measured median console error (p50 330),
                     # and this cut is at CAPTURE -- everything downstream, the #740 log
@@ -3110,11 +3151,17 @@ def api_404s_from_console_1202lz(console_errors: Any) -> Dict[str, List[str]]:
                  http: 404 GET http://localhost:8081/api/profile  (on 1 screen(s): (startup))
 
     `/api/profiles` appears NOWHERE in that run's frontend source, and `git log -S` finds it
-    in none of the repo's 389 commits — but it IS a backend route in the browser-test-user
-    worktrees, so the contract once served it and no longer does. The gate meanwhile reported
-    `frontend_calls: 11, frontend_call_unregistered: 0`, and the registry holds no endpoint
-    with "profile" in it at all. No source scan can ever close that gap; only the live browser
-    can, and it already had.
+    in none of the repo's 389 commits. #1203l7 explains why, and the explanation is not
+    flattering: THIS MODULE issued the request. `_PROFILE_DISCOVER_JS` and `_PROFILE_COUNT_JS`
+    fetch `/api/profiles`, `/api/profile` and `/profiles` to find a profile gate, and proceed
+    silently on a miss — so the 404 is the designed outcome, and it lands in the same console
+    stream this function reads. It is in no commit because no lane wrote it.
+
+    That was 281 of the 293 warnings on disk (96%), always "(on (startup))". Those paths are
+    skipped now. The remaining 12 are the real thing and are what this exists for:
+    `/api/users/1`, `/api/users/1/videos`, `/api/creators/suggested`, `/api/videos/explore`,
+    `/api/live`. The point about source scanning still stands for them — the built bundle can
+    call a path the source no longer spells out, and only the live browser sees it.
 
     #740 routes every console error into the screens' visual DEVIATIONS, which sends this to
     the frontend lane as a rendering defect. It is not one — it is the contract question, and

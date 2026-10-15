@@ -14,9 +14,20 @@ while the same run's delivery gate reported
 and its endpoint registry holds NO endpoint with "profile" in it.
 
 `/api/profiles` appears in no frontend source file in that run, and `git log -S "api/profiles"`
-finds it in none of the repo's 389 commits — but it IS a backend route inside the
-browser-test-user worktrees, so the contract once served it and no longer does. The running
-BUNDLE calls it; the SOURCE does not spell it.
+finds it in none of the repo's 389 commits.
+
+★ #1203l5-era correction, landed as #1203l7: THE GATE ITSELF ISSUED THAT REQUEST. The same
+module's `_PROFILE_DISCOVER_JS` and `_PROFILE_COUNT_JS` fetch `/api/profiles`, `/api/profile`
+and `/profiles` to find a profile gate and proceed silently on a miss — "apps with no profile
+gate are unaffected" — so the 404 is the designed outcome of the framework's own probe, and it
+lands in the console stream this reads. It is in no commit because no lane wrote it. Measured
+over every run log on disk: 281 of the 293 warnings this produced named ONLY those three paths
+(96%), always "(on (startup))". They are skipped now.
+
+The ground truth above is still the ground truth — it is simply not evidence of contract drift.
+What IS: the 12 remaining warnings, `/api/users/1`, `/api/users/1/videos`,
+`/api/creators/suggested`, `/api/videos/explore`, `/api/live`. The running BUNDLE calls them;
+the SOURCE does not spell them.
 
 The contract-alignment check scans source literals and states one of its blind spots itself
 ("its extractor recognises `request(...)` and `fetch(...)` only"). This is the other one, and
@@ -37,14 +48,31 @@ _f = vf.api_404s_from_console_1202lz
 
 
 def test_r121s_own_console_stream():
-    """★ The exact two messages, verbatim from the run."""
-    out = _f({"(startup)": [
+    """★ The exact messages, verbatim from the run — and #1203l7 moved what they prove.
+
+    This asserted that r121's two paths ARE reported, because they were read as the app's
+    drift. They are the GATE's own probe (`_PROFILE_DISCOVER_JS`), so the stream is still the
+    ground truth and the verdict on it is now the opposite: skipped, not reported. The
+    extractor's actual subject — pulling `/api` paths out of this stream shape — is unchanged,
+    because the exclusion lives at the capture choke point where all four consumers inherit it,
+    not in this one reader.
+    """
+    stream = {"(startup)": [
         "http: 404 GET http://localhost:8081/api/profiles",
         "console.error: Failed to load resource: the server responded with a status of 404 (Not Found)",
         "http: 404 GET http://localhost:8081/api/profile",
-    ]})
-    assert set(out) == {"/api/profiles", "/api/profile"}, out
-    assert out["/api/profiles"] == ["(startup)"]
+    ]}
+    # The extractor still reports what it is HANDED -- #1032, it has one job. What changed is
+    # that in production it is never handed these: `_rec740` drops the gate's own probe 404s
+    # at capture, so all four consumers of that stream inherit the exclusion. That behaviour
+    # is pinned in test_1203l7_the_gate_reported_its_own_probe.py.
+    assert set(_f(stream)) == {"/api/profiles", "/api/profile"}, _f(stream)
+    assert _f(stream)["/api/profiles"] == ["(startup)"]
+
+    # the same stream shape with a path the app really failed to serve (r173's) -- this one
+    # does survive capture, and is what the check exists for
+    real = {"(startup)": ["http: 404 GET http://localhost:8081/api/users/1/videos"]}
+    assert _f(real) == {"/api/users/1/videos": ["(startup)"]}
 
 
 def test_auth_and_oauth_paths_count_too():
