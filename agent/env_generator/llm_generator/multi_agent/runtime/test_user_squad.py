@@ -335,7 +335,10 @@ def _dropped_goals_1203go(ordered: Sequence[Mapping[str, Any]],
     one `tenant_isolation`.
     """
     kept_keys = {(g.get("kind"), g.get("name")) for g in kept}
-    return [{"name": g.get("name"), "kind": g.get("kind")}
+    # #1203km: `modality` rides along so the caller can build the ledger key
+    # (`goal_ledger_key_1203kl`). The artifact recorder projects `kind`/`name` explicitly, so
+    # the persisted shape is unchanged.
+    return [{"name": g.get("name"), "kind": g.get("kind"), "modality": g.get("modality")}
             for g in ordered if (g.get("kind"), g.get("name")) not in kept_keys]
 
 
@@ -1276,6 +1279,47 @@ class FailureLedger:
         return sorted((dict(g) for g in planned_goals),
                       key=lambda g: (0 if self._key(g) in open_keys else 1, str(g.get("name"))))
 
+    def note_never_run_1203km(self, dropped: Sequence[Mapping[str, Any]]) -> List[str]:
+        """Record goals the CAP removed, so the next cycle's plan can reach them. (#1203km)
+
+        #1203kl made a previously-FAILED goal survive the cap. A goal the cap DROPPED never
+        entered the ledger at all — it is neither passed nor failed, just absent — so nothing
+        prioritised it and the cap's stable order dropped it again next cycle.
+
+        MEASURED over the modern era: 29 goals were dropped across 10 of 35 runs and 24 were
+        never spawned in their run. In the multi-cycle runs the order is what makes it
+        permanent: **12 goals across 4 runs were dropped on EVERY cycle of their run** — r179
+        7 of them, r183 2, r170 2, r177 1 — so those flows were never tested at all.
+
+        ONLY A KEY THE LEDGER HAS NEVER SEEN. Recording every dropped goal as unpassed would
+        ERASE an earned pass: a goal that passed in cycle 2 and is dropped in cycle 3 would go
+        back to being an open failure and churn. First sighting only, so a pass is never
+        undone and the set converges — a goal tested on the next cycle leaves the replay set
+        with its real verdict.
+
+        Honest about what it claims: `passed: False` reads "not known to pass", which is
+        exactly true of a goal nobody ran. It is the same rule #1203kk applied to a timed-out
+        goal, and `fail_streak` has no reader anywhere, so this cannot feed an escalation.
+
+        Returns the keys it added.
+        """
+        goals = self.data.setdefault("goals", {})
+        added: List[str] = []
+        for g in (dropped or []):
+            if not isinstance(g, Mapping):
+                continue
+            key = goal_ledger_key_1203kl(g)
+            if key in goals:
+                continue                      # has a history — never overwrite it
+            goals[key] = {"fail_streak": 0, "pass_count": 0,
+                          "last_cycle": int(self.data.get("cycle") or 0),
+                          "last_defects": 0, "passed": False,
+                          "never_run_1203km": True}
+            added.append(key)
+        if added:
+            self._save()
+        return added
+
     def replay_split_1203ki(self, planned_goals: Sequence[Mapping[str, Any]]
                             ) -> "tuple[List[str], List[str]]":
         """``(being_replayed, carried_but_not_planned)`` for this cycle's goal list.
@@ -1733,6 +1777,28 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
             orch._squad_dropped_goals_1203go = _dropped1203go      # read by #1202wn's recorder
         except Exception:
             pass
+        # #1203km: a goal the CAP removed never entered the ledger, so nothing prioritised it
+        # and the cap's stable order dropped it again next cycle — 12 goals across 4 runs were
+        # dropped on EVERY cycle of their run. Recorded here, right after the drop list is
+        # known, so #1203kl's `replay_first` can reach them on the next cycle. First sighting
+        # only; an earned pass is never overwritten.
+        try:
+            # Imported HERE, before the line that uses it: twice today I reached for a name
+            # that did not exist inside a guarded block, where the NameError becomes a silent
+            # degradation (#1201) and py_compile says nothing. This is the third.
+            from .message_format import join_capped as _jc1203km
+            _never1203km = ledger.note_never_run_1203km(_dropped1203go)
+            if _never1203km and logger:
+                logger.warning(
+                    "TEST-USER SQUAD (v%s): %d goal(s) the cap removed were never tested and "
+                    "are now recorded for replay (%s)", version, len(_never1203km),
+                    _jc1203km(sorted(_never1203km), total=len(_never1203km), cap=4))
+        except Exception as _e1203km:
+            if logger:
+                try:
+                    logger.debug("#1203km could not record dropped goals: %s", _e1203km)
+                except Exception:
+                    pass
         # Regression: re-test previously-FAILED goals first (design §3.5). `proj` and
         # `ledger` were built BEFORE planning by #1203kl — one object, read once, so the set
         # that shaped the plan is the same one that orders it and records the cycle.
