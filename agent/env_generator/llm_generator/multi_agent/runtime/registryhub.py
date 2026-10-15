@@ -521,7 +521,22 @@ class RegistryHub:
     #693: that sentence over-advertises, and the gap is measurable rather than a matter of
     taste. `_meta.version` in a JsonStore counts writes exactly — `JsonStore.update` always
     `_save_raw`s and always `_bump_meta`s, with no conditional skip — so a store still sitting
-    at version 1 across every kept run was created and never written by anybody. Over 146 runs:
+    at version 1 across every kept run was created and never written by anybody.
+
+    #1203ks: THE LIMIT OF THAT, because it has now been misread twice. Counting writes is not
+    counting CONTENT: `ensure_*_document` is itself a write, so version > 1 says someone
+    touched the file and nothing about whether a record landed. The one-directional reading
+    above is sound; the converse is not, and #1202jh read a particular version number as an
+    "initialisation baseline" while #695 quoted "version 1 in 146 of 146" as the evidence
+    (both corrected in #1203kq/#1203kr).
+
+    RE-VERIFIED on the instrument that does answer it — the record count — and #693's finding
+    holds outright: across 227 kept run directories all nine stores below hold ZERO records,
+    max 0, while the live ones hold records in 197-208 runs (max 27-297). The nine also sit at
+    max version 15 with version > 1 in 187 runs apiece, IDENTICALLY, which is the lockstep
+    signature of a shared upstream touch rather than nine independent writers.
+
+    Over 146 runs:
 
         live            endpoints v96, verification_chains v1574, consumers v41,
                         breaking_changes v37 ...
