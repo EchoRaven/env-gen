@@ -3144,9 +3144,53 @@ class RegistryHub:
         removed_columns: list = sorted(
             set(old_schema.keys()) - set(new_schema.keys())
         )
+        # #1203mb: THE SAME COLUMN, SPELLED TWO WAYS. This compared the declared strings
+        # raw -- the defect #1202om fixed on the ENDPOINT side of this same file, one level
+        # down and still here. There, `bool` -> `boolean` is not a contract change; here,
+        # `integer primary key` -> `integer primary_key` is not one either.
+        #
+        # MEASURED by replaying every table's schema history out of the `table_registered`
+        # events (they fire on every registration and carry the full schema): across the 39
+        # modern runs, 1703 consecutive registration pairs give **1712** raw declared-string
+        # differences. Of those, **1061 (62%) are real and 651 (38%) are pure spelling.**
+        #
+        # ★ THE EQUIVALENCE IS THE FRAMEWORK'S OWN. Two declarations that render to the SAME
+        # DDL LINE are the same column by construction -- that line is what postgres gets. So
+        # this asks `database_scaffold._render_column(_promote_inline_modifiers(col))`, the
+        # pair that already owns "what does this declaration become", rather than a type map
+        # of my own.
+        #
+        # ★ AND I MEASURED TWO WEAKER VERSIONS FIRST, both recorded because both were wrong:
+        #   * my own alias table said 92% was noise -- it stripped `bigint` into `integer` (a
+        #     narrowing), `serial` into `integer` (losing the sequence) and `date` into
+        #     `timestamp` (losing time of day), i.e. it hid real changes to look effective.
+        #   * `_sql_type` alone leaves 67%, because it only fires when the WHOLE string is an
+        #     alias key: `INTEGER` vs `integer primary key` stays unequal, and so does the
+        #     `primary key` / `primary_key` pair (36 occurrences) that is genuinely noise.
+        # The rendered line keeps every distinction that matters -- the survivors are PK
+        # added (144+25), an FK added (92+35+28), DEFAULT added (59+35), NOT NULL added (54)
+        # -- and drops only spelling.
+        #
+        # ★ ZERO LIVE EFFECT TODAY, which is why it is safe to land alone: the only caller of
+        # this function is `update_table_schema`, called 0 times in 172 runs. What it buys is
+        # that the dormant half is CORRECT BEFORE anything wakes it; the recorded sequencing
+        # is detection + aliases first, consumers and dispatch only after a live run.
+        #
+        # Any fault falls back to the raw comparison -- the pre-patch behaviour, which is the
+        # conservative direction for a detector.
+        def _same_column_1203mb(col_name, a, b):
+            if a == b:
+                return True
+            try:
+                from .database_scaffold import (_promote_inline_modifiers as _p1203mb,
+                                                _render_column as _r1203mb)
+                return (_r1203mb("t", _p1203mb({"name": col_name, "type": str(a)})).strip()
+                        == _r1203mb("t", _p1203mb({"name": col_name, "type": str(b)})).strip())
+            except Exception:
+                return False
         type_changed_columns: list = sorted(
             k for k in old_schema.keys() & new_schema.keys()
-            if old_schema[k] != new_schema[k]
+            if not _same_column_1203mb(k, old_schema[k], new_schema[k])
         )
         is_breaking = bool(removed_columns or type_changed_columns)
         return {

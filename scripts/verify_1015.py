@@ -361,6 +361,41 @@ def main(argv):
             "%d kickoff doc(s); Express-style API paths: %d %s"
             % (len(_docs), len(_bad9), sorted(set(_bad9))[:2]))
 
+    # --- #1203mb -----------------------------------------------------------------------
+    # The table detector is dormant (`update_table_schema`: 0 calls in 172 runs), so a run
+    # cannot falsify the fix directly. Two things are worth reporting: whether anything has
+    # STARTED recording table breaking changes, and how much churn the run's own
+    # `table_registered` events carry -- that is the population the fix de-noises.
+    _tbc = _json(run / "shared" / "hubs" / "registryhub_table_breaking_changes.json", {}) or {}
+    _tbc_n = len([k for k in _tbc if k != "_meta"])
+    _evs = _json(run / "shared" / "hubs" / "eventhub_events.json", {}) or {}
+    _hist: dict = {}
+    for _o in _w(_evs):
+        if str(_o.get("event_type") or "") != "table_registered":
+            continue
+        _pl = _o.get("payload") or {}
+        if not (isinstance(_pl, dict) and _pl.get("name")):
+            continue
+        _sc = _pl.get("schema")
+        if not (isinstance(_sc, dict) and isinstance(_sc.get("columns"), list)):
+            continue
+        _cols = {str(c.get("name")): str(c.get("type") or "")
+                 for c in _sc["columns"] if isinstance(c, dict) and c.get("name")}
+        _hist.setdefault(str(_pl["name"]), []).append((_o.get("created_at") or 0, _cols))
+    _rawdiff = _gone = 0
+    for _n2, _seq in _hist.items():
+        _seq.sort(key=lambda x: x[0])
+        for (_t0, _a), (_t1, _b) in zip(_seq, _seq[1:]):
+            _gone += len(set(_a) - set(_b))
+            _rawdiff += sum(1 for _c in set(_a) & set(_b) if _a[_c] != _b[_c])
+    if not _hist:
+        say("mb", "N-A", "no table_registered events in this run")
+    else:
+        say("mb", "INFO",
+            "%d table histories; raw declared-type differences %d, column removals %d; "
+            "table_breaking_changes records %d (corpus: 1712 raw -> 1061 real, 341 removals, "
+            "0 records in 227 runs)" % (len(_hist), _rawdiff, _gone, _tbc_n))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
