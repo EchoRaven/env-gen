@@ -2192,11 +2192,27 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         _links803 = _link_label_reads_803(table, models) if table else []
         if _links803:
             body_lines.append("    _labels = {}")
+            # #1203mf: BIND THE NAME THIS QUERY CALLS. The line below used a bare `text(`
+            # while nothing in the projected module binds `text` -- the header imports it
+            # ALIASED, and the alias has changed over time (`_text` in the netflix-r11 era,
+            # `_sa_text` in the current skeleton). So the label read raised NameError, the
+            # `except Exception` two lines down turned that into `[]`, and the chip row on
+            # every detail page was silently empty. All 17 delivered `main.py` that carry a
+            # `_labels` block call the bare name, and in r11 the instrument confirms `text`
+            # is bound nowhere in the file.
+            #
+            # Imported HERE rather than relying on the header, so this projection does not
+            # depend on another file's choice of alias -- that coupling is what let the two
+            # names drift apart in the first place. Dormant in the modern era (0 of the 39
+            # modern runs have a `_labels` block at all, because no modern model graph has
+            # the link-table shape #803 detects), so this is a latent path made correct
+            # before it next fires.
+            body_lines.append("    from sqlalchemy import text as _sa_text_803")
             for _rel in _links803:
                 body_lines += [
                     "    try:",
                     f"        _labels[\"{_rel['field']}\"] = [r[0] for r in db.execute("
-                    f"text(\"{_link_label_sql_803(_rel)}\"), "
+                    f"_sa_text_803(\"{_link_label_sql_803(_rel)}\"), "
                     f"{{\"_lid\": getattr(obj, \"id\", None)}}).fetchall()]",
                     "    except Exception:",
                     # a label read must never turn a working detail page into a 500 — the chip row
