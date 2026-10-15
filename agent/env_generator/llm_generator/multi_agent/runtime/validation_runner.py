@@ -211,6 +211,21 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
     # on docker_up (smoke-notes 2026-06-19). The classic builder streams full step
     # logs, so the real esbuild error reaches the repair agent.
     import os as _os
+    # #1203mm: before a build or an `up` that may build, keep the heaviest staged media out
+    # of the context and serve it from a mount instead. Idempotent, and deliberately HERE
+    # rather than at scaffold time: r189 wrote the compose file and staged `real_videos/` in
+    # the same second, so their order is not knowable, while this path runs on every build.
+    if any(a in ("build", "up") for a in args):
+        _off1203mm = offload_media_from_build_context_1203mm(compose_file)
+        if _off1203mm:
+            _LOG.info(
+                "#1203mm kept %d media dir(s) out of the frontend build context and "
+                "bind-mounted them into nginx instead: %s. The context was %.0f MB of "
+                "video; 24 of 29 runs that shipped one hit `archive/tar: missed writing` "
+                "at least once.",
+                len(_off1203mm),
+                ", ".join("%s (%.0f MB)" % (r, b / (1024 ** 2)) for r, b in _off1203mm),
+                sum(b for _r, b in _off1203mm) / (1024 ** 2))
     # #961: resolve the container CLI rather than hardcoding `docker` — see container_runtime.
     try:
         from .container_runtime import runtime_bin as _rb
@@ -390,6 +405,164 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         except Exception:
             pass
     return cp
+
+
+# ── #1203mm — keep the heaviest staged media OUT of the build context ─────────
+#
+# #1203ml measures and names the failure; this is the half that removes it. The frontend
+# build context is 393-406 MB of which 391 MB is `public/assets/real_videos`, docker tars
+# the whole context before the first instruction, and 24 of the 29 modern runs carrying a
+# >100MB media context hit `archive/tar: missed writing … / unexpected EOF` at least once
+# (0 of 3 without). r189 rebuilt four times and then died with
+# `/assets/real_videos/*.mp4 request_failed` named in its own blocker.
+#
+# VERIFIED AGAINST THE REAL IMAGE, not reasoned about (2026-10-15, `tiktok-web-r189-frontend`,
+# which bakes 71 video files into 490 MB). Same image, plus a `:ro` mount of a host directory
+# onto `/usr/share/nginx/html/assets/real_videos`:
+#
+#     /assets/index-J4FiSgga.js    (vite bundle)   200   <- survives the mount
+#     /assets/index-ijUaYhap.css                   200
+#     /assets/real_videos/hostonly__clip.mp4       200   <- the MOUNT serves it
+#     /assets/real_videos/khaby…mp4 (image only)   404   <- so the image does not need it
+#     /                                            200
+#
+# That 404 is the proof: what reaches the browser comes from the mount, so excluding the
+# media from the context changes nothing a user can see.
+#
+# THE OBVIOUS WRITE-UP IS WRONG and was measured wrong before this was written: mounting
+# `public/assets` over `/usr/share/nginx/html/assets` returns **404 for the vite bundle** —
+# vite emits `index-<hash>.js` into `dist/assets/` under the same URL prefix, so the mount
+# hides the application. The mount MUST name the media subdirectory and nothing above it.
+# (A third trap, found in the same experiment: a subdirectory mount inside a `:ro` PARENT
+# bind mount cannot start at all — docker has to mkdir the mountpoint. The real topology is
+# safe because the html root arrives via `COPY --from=builder`, an image layer.)
+#
+# Nothing reads the media at build time: `videoFiles` is a hardcoded list of URL paths in
+# the lane's own source, and none of vite.config.js / tailwind.config.js / package.json
+# touches `public/assets`.
+#
+# Computed, never hardcoded: r189 stages crops, fonts, icons, images, real_avatars and
+# real_videos side by side, and the heavy one differs by product. Only directories past the
+# floor are offloaded, so a small app is untouched byte for byte.
+_DOCKERIGNORE_HEADER_1203MM = (
+    "# #1203mm: excluded from the docker BUILD CONTEXT and bind-mounted into nginx instead\n"
+    "# (see docker/docker-compose.yml). Verified: the vite bundle survives the mount and the\n"
+    "# media is served from it. Excluding without the mount would 404 the media.\n")
+
+
+def heavy_media_dirs_1203mm(frontend_dir, floor_mb: float = 100.0):
+    """`[(relative-path, bytes)]` for each `public/assets/<dir>` past the floor, biggest first.
+
+    Pure measurement over the staged tree. Empty when there is no such tree, nothing is big
+    enough, or anything cannot be read -- "could not tell" is not a verdict (#883).
+    """
+    import os as _os1203mm
+    from pathlib import Path as _P1203mm
+    out = []
+    try:
+        base = _P1203mm(str(frontend_dir)) / "public" / "assets"
+        if not base.is_dir():
+            return []
+        for sub in sorted(base.iterdir()):
+            if not sub.is_dir():
+                continue
+            total = 0
+            for root, _d, files in _os1203mm.walk(sub):
+                for f in files:
+                    try:
+                        total += _os1203mm.path.getsize(_os1203mm.path.join(root, f))
+                    except OSError:
+                        continue
+            if total >= floor_mb * (1024 ** 2):
+                out.append(("public/assets/%s" % sub.name, total))
+    except Exception:
+        return []
+    return sorted(out, key=lambda kv: -kv[1])
+
+
+def dockerignore_text_1203mm(existing: str, rels) -> str:
+    """`existing` plus one line per relative dir, idempotent and order-stable."""
+    lines = [l for l in (existing or "").splitlines()]
+    have = {l.strip().rstrip("/") for l in lines}
+    add = [r for r in rels if r.rstrip("/") not in have]
+    if not add:
+        return existing or ""
+    body = list(lines)
+    if body and body[-1].strip():
+        body.append("")
+    if _DOCKERIGNORE_HEADER_1203MM.strip().splitlines()[0] not in existing:
+        body.extend(_DOCKERIGNORE_HEADER_1203MM.rstrip("\n").splitlines())
+    body.extend("%s/" % r.rstrip("/") for r in add)
+    return "\n".join(body) + "\n"
+
+
+def inject_frontend_volumes_1203mm(compose_text: str, rels) -> str:
+    """The same compose with a `:ro` mount per dir on the frontend service. Idempotent.
+
+    Text, not a YAML round-trip: the generated compose carries load-bearing comments that a
+    dump would drop (#1157's `name:` prepend, FIX #60's three env conventions, the vite
+    cache-header note). Anchored on the frontend service's `build:` line.
+    """
+    import re as _re1203mm
+    if not rels:
+        return compose_text
+    text = compose_text or ""
+    m = _re1203mm.search(r"(?m)^(  frontend:\n(?:.*\n)*?)(^    build: [^\n]*\n)", text)
+    if not m:
+        return text
+    mounts = []
+    for r in rels:
+        r = r.rstrip("/")
+        line = ("      - ../app/frontend/%s:/usr/share/nginx/html/%s:ro\n"
+                % (r, r[len("public/"):] if r.startswith("public/") else r))
+        if line.strip() not in text:
+            mounts.append(line)
+    if not mounts:
+        return text
+    at = m.end(2)
+    # An existing `volumes:` on this service is appended to rather than duplicated.
+    svc = text[m.start(1):]
+    nxt = _re1203mm.search(r"(?m)^  [a-z0-9_-]+:\n", svc[1:])
+    svc_end = m.start(1) + 1 + (nxt.start() if nxt else len(svc) - 1)
+    existing_vol = _re1203mm.search(r"(?m)^    volumes:\n", text[m.start(1):svc_end])
+    if existing_vol:
+        at = m.start(1) + existing_vol.end()
+        return text[:at] + "".join(mounts) + text[at:]
+    return text[:at] + "    volumes:\n" + "".join(mounts) + text[at:]
+
+
+def offload_media_from_build_context_1203mm(compose_file, floor_mb: float = 100.0):
+    """Write the `.dockerignore` and the compose mount. Returns the dirs it offloaded.
+
+    Called before a build rather than at scaffold time on purpose: r189 wrote
+    `docker-compose.yml` and staged `real_videos/` in the SAME SECOND (14:05:20), so their
+    order is not knowable, while a build happens many times per run and re-reads both. One
+    idempotent call on the build path needs no ordering assumption and self-heals if media
+    lands later. Never raises -- a failure here must not stop a build that would have worked.
+    """
+    from pathlib import Path as _P1203mm
+    try:
+        root = _P1203mm(str(compose_file)).resolve().parent.parent
+        fe = root / "app" / "frontend"
+        heavy = heavy_media_dirs_1203mm(fe, floor_mb=floor_mb)
+        if not heavy:
+            return []
+        rels = [r for r, _b in heavy]
+        di = fe / ".dockerignore"
+        before = di.read_text(encoding="utf-8") if di.is_file() else ""
+        after = dockerignore_text_1203mm(before, rels)
+        cf = _P1203mm(str(compose_file))
+        ctext = cf.read_text(encoding="utf-8") if cf.is_file() else ""
+        cafter = inject_frontend_volumes_1203mm(ctext, rels)
+        if after == before and cafter == ctext:
+            return []
+        if after != before:
+            di.write_text(after, encoding="utf-8")
+        if cafter != ctext:
+            cf.write_text(cafter, encoding="utf-8")
+        return heavy
+    except Exception:
+        return []
 
 
 _TAR_STREAM_BROKE_1203ML = (
