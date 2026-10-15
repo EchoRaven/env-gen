@@ -1451,9 +1451,27 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
     # something nobody measured. An empty container is not a fact — the trap this very fix
     # exists to close, reproduced once inside the fix itself.
     if "mcp_complete" in summary and not summary.get("mcp_complete"):
-        note = mcp.get("note")
+        # #1203ko: the note already OPENS with these words, so appending it verbatim said
+        # "MCP surface INCOMPLETE" twice in one sentence — "MCP surface INCOMPLETE (9/23
+        # tools; MCP surface INCOMPLETE: 9 tool(s) for 23 endpoint(s))". #1203kg then made
+        # that note longer (it now carries WHY the count is short), so the duplicate prefix
+        # pushes the part a reader needs further back.
+        #
+        # Honest about the harm: this consumer is a `logger.warning` with no cap, so nothing
+        # was being truncated — the cost is readability, not evidence budget, and it is paid
+        # on every incomplete-MCP report (17 of 36 modern ones).
+        #
+        # The structured counts stay in front, because the note is free text and an older or
+        # error-path shape may not carry them at all ("mcp check error: ..."). Only the
+        # REDUNDANT opening is dropped, never the rest of the sentence.
+        _PRE1203ko = "MCP surface INCOMPLETE"
+        note = str(mcp.get("note") or "")
+        _tail1203ko = note
+        if note.startswith(_PRE1203ko):
+            _tail1203ko = note[len(_PRE1203ko):].lstrip(":").lstrip()
         bits.append("MCP surface INCOMPLETE (%s/%s tools%s)" % (
-            mcp.get("tools_found"), mcp.get("tools_expected"), f"; {note}" if note else ""))
+            mcp.get("tools_found"), mcp.get("tools_expected"),
+            f"; {_tail1203ko}" if _tail1203ko else ""))
     # #1203jc: say that the API half was never exercised, on EVERY report where it was
     # not -- including the ones that already name a UI or MCP finding. A reader deciding
     # whether the app works needs to know the journey contributed no evidence either way;
