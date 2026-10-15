@@ -1163,14 +1163,53 @@ def _component_words(comp: Dict) -> set:
 
 
 def _reference_path(screen: Dict, resolved: Dict, output_dir: Path) -> Optional[Path]:
+    """The screen's reference image on disk, or None. (#1203ky)
+
+    `screen["reference"]` is a BASENAME when the skeleton wrote it and a PATH when the
+    spawned design_analyst rewrote the document — `"design/references/login_modal.png"`.
+    This joined the stored value onto `design/references/` and so looked for
+    `design/references/design/references/login_modal.png`, and the `resolved` fallback
+    compared a basename against that same path. Both miss.
+
+    MEASURED over the 39 modern runs, 429 screens: **0** resolved, and 308 resolve on the
+    basename (the other 121 have no staged reference at all). What that costs is the
+    per-component CROP at `design/crops/<screen>__<id>.png`, which #461 hands to the frontend
+    lane so it can look at one component in isolation: 38 of the 39 runs have ZERO crops on
+    disk while all 1341 of their components carry a `region`. instagram-core-r174 is the one
+    exception, and it is the only modern run with a crops directory.
+
+    The loop's other product, the measured `colors.bg`, is NOT recovered by this, and saying
+    so matters because the stat reads 0 for both: all 1341 modern components already carry a
+    `colors.bg`, so there was nothing for that half to fill. Only the crop was lost.
+
+    And what the crop buys, stated at its true size: the artefacts themselves, which #461
+    stages into the lane's workspace and lists as `_crop_names` so the lane can look at one
+    component in isolation. The one AUTOMATIC consumer, `_hero_title_crop_url_461`, matches
+    nothing here — 0 of the 1341 modern components have an id its title-art pattern accepts —
+    so this is not claimed to change a rendering. It fixes a resolver that answers None for
+    429 of 429 screens and restores a documented capability; no prompt grows, because
+    `_crop_names` is read by deterministic code and the files go to disk.
+
+    #1032: this is not a new rule. `visual_fidelity._lane_visible_reference` already takes
+    `Path(raw).name` for the same reason, in its own words — "``screen["path"]`` is the
+    orchestrator-side ORIGINAL (often a host-absolute CLI path the lane's workspace cannot
+    resolve)". There were two owners for "resolve a screen's reference to a staged file" and
+    this was the one that only knew the skeleton's shape.
+    """
     name = str(screen.get("reference") or "")
     if not name:
+        # A SEMANTIC NO-OP, said so the next reader does not spend a round on it: with the
+        # early return gone, `Path("").name` is `""`, the join yields the references
+        # DIRECTORY, `is_file()` is False, and the `resolved` loop cannot match an empty
+        # basename — so None either way. Kept because "no reference means None" is the
+        # contract, and mutation cannot tell the difference.
         return None
-    staged = output_dir / "design" / "references" / name
+    base = Path(name).name
+    staged = Path(output_dir) / "design" / "references" / base
     if staged.is_file():
         return staged
     for r in resolved.get("references") or []:
-        if Path(r).name == name and Path(r).is_file():
+        if Path(r).name == base and Path(r).is_file():
             return Path(r)
     return None
 
