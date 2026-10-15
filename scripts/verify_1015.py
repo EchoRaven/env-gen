@@ -21,6 +21,7 @@ r185 happened to pass anyway -- tiktok's scraped icons already carry xmlns, its 
 avatar, its shared nav mounted, and it emitted one COMPONENT DRIFT line.
 """
 import json
+import pathlib
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -395,6 +396,36 @@ def main(argv):
             "%d table histories; raw declared-type differences %d, column removals %d; "
             "table_breaking_changes records %d (corpus: 1712 raw -> 1061 real, 341 removals, "
             "0 records in 227 runs)" % (len(_hist), _rawdiff, _gone, _tbc_n))
+
+    # --- #1203md / #1203me / #1203mf / #1203mg ------------------------------------------
+    # The delivered BACKEND must contain no name nothing binds. Four defects of exactly that
+    # shape were fixed on 2026-10-15 -- an unbound `_sys` in the seed-shortfall report
+    # (110/110 files), a `user` a projected handler never took (r156/r160/r166), a bare
+    # `text(` in #803's label read (17/17 of the files that have one), and unreachable
+    # statements after an action stub that read an unbound `valid` (72). Every one sat on an
+    # error or degradation path, so nothing crashed loudly and no test walked it.
+    _be = run / "app" / "backend"
+    if not _be.is_dir():
+        say("names", "N-A", "this run has no delivered backend")
+    else:
+        try:
+            import importlib.util as _ilu
+            _spec = _ilu.spec_from_file_location(
+                "_undef_1015", str(pathlib.Path(__file__).resolve().parent
+                                   / "undefined_names.py"))
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+        except Exception as _e:
+            say("names", "N-A", "undefined_names.py unavailable: %s" % _e)
+        else:
+            _files = [p2 for p2 in _be.rglob("*.py") if "__pycache__" not in str(p2)]
+            _hits = []
+            for _f in _files:
+                for _scope, _line, _name in _mod.scan(str(_f)):
+                    _hits.append("%s:%s %s" % (_f.name, _line, _name))
+            say("names", "FALSIFIED" if _hits else "CONFIRMED",
+                "%d backend file(s); names nothing binds: %d %s"
+                % (len(_files), len(_hits), sorted(set(_hits))[:3]))
 
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 

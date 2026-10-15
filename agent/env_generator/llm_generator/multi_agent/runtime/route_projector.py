@@ -2581,7 +2581,27 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     "\"action endpoint not implemented by the projection — "
                     "the app's own handler serves this route\")",
                 ]
-            if m == "POST" and auth:
+            # #1203mg: NOTHING MORE BELONGS AFTER THE STUB RAISE. When `_action_unmapped`
+            # fires, `body_lines` is REPLACED by a single
+            # `raise HTTPException(404, "action endpoint not implemented …")` -- but the two
+            # POST blocks below kept appending, so the projected handler carried unreachable
+            # statements after an unconditional raise, among them
+            # `valid.setdefault("user_id", …)` where `valid` is never bound. The create/commit
+            # footer was already guarded (`if not _action_unmapped:`); these two were not, and
+            # the guard only ever read `body_lines[0]`.
+            #
+            # MEASURED: scripts/undefined_names.py reports `valid` 72 times across the
+            # delivered backends, every one of them in an action-stub handler -- and the block
+            # is gated on `auth`, which is why every hit has `user=Depends(...)`. The code is
+            # unreachable, so it never crashed; what it cost was a latent trap (the day the
+            # raise becomes conditional, `valid` is live and unbound) and 72 of the 203
+            # candidates in the delivered-backend scan, i.e. the signal that found #1203md and
+            # #1203me was buried under it.
+            #
+            # `_uc_enabled` / `_uc_ofk` / `_uc_subject_fks` are initialised above at the outer
+            # level, so skipping these blocks leaves the footer reading the same defaults it
+            # would have read anyway.
+            if m == "POST" and auth and not _action_unmapped:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
                 # #566s: REJECT a cross-user create — a body owner-FK the caller does NOT own
                 # → 403 (IDOR: userB POSTing body profile_id=userA's). An OWNED value is kept
@@ -2608,7 +2628,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     body_lines += [
                         f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))',
                     ]
-            if m == "POST":
+            if m == "POST" and not _action_unmapped:          # #1203mg
                 # #566t: a create body that DROPPED a NOT-NULL column (verifier authored the wrong
                 # key) INSERTs NULL even when the column has a DB DEFAULT → NOT-NULL 400. Apply the
                 # column's DB default explicitly for any absent NOT-NULL no-model-default column.
