@@ -1255,10 +1255,17 @@ def _unstaged_seed_media_task_1202zf(orch, out_dir) -> None:
     reason.
     """
     try:
-        from .frontend_scaffold import unstaged_seed_media_1202xn
+        from .frontend_scaffold import (unstaged_seed_media_1202xn,
+                                        remapped_seed_media_1203m3)
         missing = unstaged_seed_media_1202xn(out_dir) or []
         if not missing:
             return
+        # #1203m3: which of these the PAGE already rewrites. 9 of the modern corpus's 42
+        # are keys in a frontend remap table pointing at a file that IS staged, so for them
+        # "404s the moment a viewer presses play" is false and "fix the seed row, not the
+        # page" points away from the fix that exists. Annotated, never dropped: the check
+        # sees that a mapping exists, not that every caller goes through it.
+        _remap1203m3 = remapped_seed_media_1203m3(out_dir, missing) or {}
         wh = getattr(getattr(orch, "hubs", None), "workhub", None)
         if wh is None:
             return
@@ -1285,8 +1292,17 @@ def _unstaged_seed_media_task_1202zf(orch, out_dir) -> None:
             title="%s (%d)" % (base, len(missing)),
             description=(
                 "The seed points at local media that is NOT in the delivered app:\n"
-                + "\n".join("  - %s" % m for m in missing[:12])
+                + "\n".join(
+                    "  - %s%s" % (m, (" -> the page already remaps this to %s"
+                                      % _remap1203m3[m]) if m in _remap1203m3 else "")
+                    for m in missing[:12])
                 + ("\n  ... and %d more" % (len(missing) - 12) if len(missing) > 12 else "")
+                + ("\n\n#1203m3: %d of these appear in a frontend literal that maps them to "
+                   "a file that IS staged (marked above), so those cards may already play — "
+                   "the page fixed it instead of the seed. Check the mapping is reached from "
+                   "every caller before you touch those seed rows; it only proves the "
+                   "mapping EXISTS."
+                   % len(_remap1203m3) if _remap1203m3 else "")
                 + "\n\nThe card still LOOKS right: `thumbnail_url` is an image, images are "
                 "staged, so the failure only appears when a viewer presses play. %d playable "
                 "media file(s) ARE staged under `public/assets`, so repointing is possible."

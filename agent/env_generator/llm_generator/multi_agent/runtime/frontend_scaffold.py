@@ -14295,6 +14295,63 @@ def record_unstaged_seed_media_1202xn(output_dir, rows) -> bool:
         return False
 
 
+def remapped_seed_media_1203m3(output_dir, missing) -> Dict[str, str]:
+    """``{missing_path: staged_target}`` for each path the FRONTEND already rewrites.
+
+    #1203m3. `#1202zf` files a P1 at delivery saying the card "404s the moment a viewer
+    presses play" and orders "Fix the SEED ROW, not the page". For some of those paths the
+    page has already fixed it -- not in the seed, in a literal remap table -- so the
+    sentence is false and the instruction points away from the work that was done.
+
+    MEASURED over the modern corpus: 42 seed-side missing media in 7 runs, and 9 of them
+    (21%, r166 and r172) are keys in exactly such a table. Restricted to the universe this
+    actually fires in -- #1202zf runs AT DELIVERY, and only r158/r161/r166 of those seven cut
+    a release -- it is **5 of 17 (29%), and r166 is 5 of 5**: that run's entire P1 was false.
+    r169 does the same thing for 13 paths its own pages hardcode. r172's is `stagedVideoReplacements` in
+    `services/api.js`, consulted by `normalizeVideo`, which `getForYouFeed` applies with
+    `.map(normalizeVideo)`.
+
+    THE PREDICATE IS THE TIGHT ONE: the path appears as an object KEY whose VALUE is an
+    `/assets` path that IS on disk under `public/`. "Appears as a key" alone would overmatch
+    (#1202w1: a name is not a use) and dropping a real 404 is the direction that masks a
+    failure, so the value has to resolve. Validated against the corpus: it selects exactly
+    those 9 and **0** in r150/r158/r161/r181/r187 -- and r181 is the negative control that
+    matters, because its own validation record reads "six displayed
+    /assets/real_videos/*.mp4 requests still failed".
+
+    ★ WHAT IT CANNOT SEE, and why #1202zf still reports every path. This finds that a
+    mapping EXISTS, not that every caller goes through it: r172 applies its map in
+    `getForYouFeed` and nowhere else, so another page can still request the raw path. So the
+    finding is annotated, never dropped, and the priority is not lowered either -- both runs
+    here have ALL their paths remapped, and tuning a drop on two data points is what #1203l3
+    was withdrawn for. Pure and best-effort: any fault returns {}.
+    """
+    try:
+        from pathlib import Path as _P1203m3
+        out = _P1203m3(str(output_dir))
+        pub = out / "app" / "frontend" / "public"
+        src = out / "app" / "frontend" / "src"
+        if not src.is_dir() or not pub.is_dir() or not missing:
+            return {}
+        text = ""
+        for _f in list(src.rglob("*.js")) + list(src.rglob("*.jsx")):
+            try:
+                text += _f.read_text(encoding="utf-8", errors="ignore") + "\n"
+            except Exception:
+                continue
+        found: Dict[str, str] = {}
+        for _m in missing:
+            for _q in ("'", '"'):
+                _hit = re.search(re.escape(_q + str(_m) + _q) + r"\s*:\s*['\"]([^'\"]+)['\"]",
+                                 text)
+                if _hit and (pub / _hit.group(1).lstrip("/")).is_file():
+                    found[str(_m)] = _hit.group(1)
+                    break
+        return found
+    except Exception:
+        return {}
+
+
 def unstaged_seed_media_1202xn(output_dir) -> List[str]:
     """``["/assets/real_videos/spencerx__765….mp4", …]`` — local MEDIA the seed points at that
     is not on disk. ``[]`` when everything resolves.
