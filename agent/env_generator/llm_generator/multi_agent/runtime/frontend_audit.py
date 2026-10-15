@@ -489,6 +489,27 @@ def _page_closure_918(page: Mapping[str, Any], src_cache: Dict[str, str]) -> Dic
     return out
 
 
+# #1203l4: the LAST path segment of a relative import, which is the module's stem — the
+# same key `_rendered_components_909` indexes its sources by.
+_IMPORTED_STEM_1203L4 = re.compile(
+    r"^\s*import\s[^\n]*?from\s+['\"]\.{1,2}/[^'\"]*?([A-Za-z0-9_]+)(?:\.[jt]sx?)?['\"]", re.M)
+
+
+def _norm_component_1203l4(name: Any) -> str:
+    """A component name with its separators and case removed.
+
+    #1203l4: the registry keys components by a SLUG and the JSX renders a NAME, and nothing
+    translated between them. MEASURED over every run on disk, `registryhub_ui_components`
+    keys: 1526 snake_case against 448 PascalCase, in every era — so the comparison
+    `declared_id in rendered_tags` was mostly false by construction, not by era. #909's own
+    docstring measured the consequence and read it as the finding: "pages rendering ZERO of
+    their own: 246, 45%". Replaying the modern corpus says 110 of 239 pages (46%) report
+    drift today, and 31 after this ticket.
+    """
+    import re as _re
+    return _re.sub(r"[^a-z0-9]", "", str(name or "").lower())
+
+
 def _rendered_components_909(frontend_src: Path, page: Mapping[str, Any],
                              src_cache: Dict[str, str]) -> set:
     """#909: the components a page actually renders, following the tree TRANSITIVELY.
@@ -510,14 +531,27 @@ def _rendered_components_909(frontend_src: Path, page: Mapping[str, Any],
         start = by_stem.get(_stem)
         if start is None:
             return set()
+        # #1203l4: RECORD every tag, WALK only the ones a file is named for. The old loop
+        # did both in one test, so a component rendered from a differently-named module was
+        # never recorded at all: r161's NotificationsActivityPage.jsx line 3 is
+        # `import { CollapsedRail } from '../components/LeftSidebar'` and line 45 is
+        # `<CollapsedRail active="Activity" />`, and because there is no CollapsedRail.jsx
+        # the page was reported as rendering none of what it declares.
+        #
+        # A module the page imports FROM counts too, for the other half of the same shape:
+        # r152's pages open with `import { Shell, VideoStage } from '../components/TikTokUI'`
+        # and the component the contract names IS `TikTokUI`, which appears as no JSX tag.
         seen: set = set()
-        stack = list(_JSX_TAG_909.findall(start))
+        walked: set = set()
+        stack = list(_JSX_TAG_909.findall(start)) + _IMPORTED_STEM_1203L4.findall(start)
         while stack:
             tag = stack.pop()
-            if tag in seen or tag not in by_stem:
-                continue
             seen.add(tag)
+            if tag in walked or tag not in by_stem:
+                continue
+            walked.add(tag)
             stack.extend(_JSX_TAG_909.findall(by_stem[tag]))
+            stack.extend(_IMPORTED_STEM_1203L4.findall(by_stem[tag]))
         return seen
     except Exception:
         return set()
@@ -1810,7 +1844,26 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
             _decl_909 = [str(c) for c in (page.get("components") or []) if str(c) in comp_status]
             if _decl_909:
                 _used_909 = _rendered_components_909(frontend_src, page, cache)
-                _orphaned = [c for c in _decl_909 if c not in _used_909]
+                # #1203l4: compare the NAME, not the registry's slug. `auth_shell` is keyed
+                # that way and renders as `<AuthShell/>`; the registry already carries the
+                # translation in each entry's `component` field, which `audit_ui_component`
+                # above reads for exactly this reason (291 of 533 modern entries have it, and
+                # it is the PascalCase of the key in all but 2). Where the field is absent the
+                # normalised key is the fallback, so no entry is left uncomparable.
+                #
+                # r174's home_feed is the shape: it declares auth_shell, feed_card,
+                # suggestions_sidebar, messages_dock, notification_modal and the delivered
+                # HomeFeedPage.jsx renders AuthShell, FeedCard, SuggestionsSidebar,
+                # MessagesDock and NotificationModal — all five — and was reported as
+                # rendering NONE. That report files a P2 task (#1202bc) telling the frontend
+                # to "build each declared component under src/components/", which is work
+                # already done.
+                _used_n_1203l4 = {_norm_component_1203l4(u) for u in _used_909}
+                _orphaned = [
+                    c for c in _decl_909
+                    if _norm_component_1203l4(
+                        (components.get(c) or {}).get("component") or c) not in _used_n_1203l4
+                    and _norm_component_1203l4(c) not in _used_n_1203l4]
                 if len(_orphaned) == len(_decl_909):
                     out.setdefault("component_drift", {})[name] = _orphaned
                     try:
