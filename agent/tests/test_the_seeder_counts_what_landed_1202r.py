@@ -23,6 +23,7 @@ so the seeder can check itself.
 Reports; never raises. A seeder that died on its own bookkeeping would be worse than the silence.
 """
 
+import contextlib
 import io
 import sys
 import tempfile
@@ -62,11 +63,28 @@ def _load_checker(src, counts):
     for t, cname in (("users", "User"), ("profiles", "Profile")):
         setattr(_M, cname, type(cname, (), {}))
 
+    # #1203md: DO NOT HAND IT A `_sys`. This used to pass
+    # `"_sys": type("S", (), {"stderr": err})()` into the namespace, and that is what made
+    # the shortfall test unfalsifiable in the one direction that mattered: it proved the
+    # function writes to whatever `_sys` it is GIVEN, which is guaranteed when the fixture
+    # gives it one. The projected function bound no `_sys` of its own -- the file's only
+    # `import sys as _sys` is inside `_seed_dbg` -- so in production the write raised
+    # NameError and `except Exception: pass` ate it. 110 of 110 delivered seeders carrying
+    # this function had the unbound name, and the message appears in no run log, ever.
+    #
+    # The namespace now withholds it and the REAL `sys.stderr` is redirected for the call,
+    # so these tests fail if the projected code stops binding `sys` itself.
     err = io.StringIO()
     ns = {"_ORDER": ["users", "profiles"], "_CLASS": {"users": "User", "profiles": "Profile"},
-          "models": _M, "_sys": type("S", (), {"stderr": err})()}
+          "models": _M}
     exec(compile(body, "<projected>", "exec"), ns)
-    return ns["_verify_seed_counts_1202r"], _DB(), err
+    _raw = ns["_verify_seed_counts_1202r"]
+
+    def _checked(db, data):
+        with contextlib.redirect_stderr(err):
+            return _raw(db, data)
+
+    return _checked, _DB(), err
 
 
 def test_a_shortfall_is_reported(tmp_path):
