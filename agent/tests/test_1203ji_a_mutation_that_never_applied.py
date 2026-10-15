@@ -203,3 +203,63 @@ def test_the_second_mutation_sees_a_clean_file(tool, tmp_path, monkeypatch, caps
     assert seen[2] == "A = 1\nB = 9\n", (
         "the second mutant also carried the first mutation, so neither result is about "
         "the mutation its label names: %r" % seen[2])
+
+
+# --- #1203ma -------------------------------------------------------------------------
+# The fifth way a verdict can lie, and the only one that lies in the COMFORTING direction:
+# the mutation that ran was not the mutation the author wrote. 2026-10-15, both by me, one
+# spec: written into JSON through a bash heredoc, `r"{\\1}"` reached the file as a literal
+# backslash-1 instead of a group reference, so the mutant produced `/api/videos/{\1}/comments`,
+# the test failed, and the verdict read CAUGHT. The same mutation applied by hand -- genuinely
+# behaviour-equivalent -- was MISSED by that same test. The tool validated the ANCHOR and the
+# mutant's SYNTAX and was right about both; nothing showed what the REPLACEMENT became.
+
+def test_a_caught_verdict_shows_what_actually_landed(tool, target, monkeypatch, capsys):
+    """CAUGHT is where a mangled replacement gives false comfort, so it must show its work."""
+    code, out = _run(tool, _spec(target, [{"label": "m", "find": "return 1",
+                                           "replace": "return 2"}]),
+                     [(True, "baseline ok"), (False, "boom")], monkeypatch, capsys)
+    assert "CAUGHT" in out, out
+    assert "applied:" in out and "return 2" in out, out
+
+
+def test_a_missed_verdict_shows_it_too(tool, target, monkeypatch, capsys):
+    """So "my test is weak" can be told apart from "my mutant was not what I meant"."""
+    code, out = _run(tool, _spec(target, [{"label": "m", "find": "return 1",
+                                           "replace": "return 2"}]),
+                     [(True, "baseline ok"), (True, "still green")], monkeypatch, capsys)
+    assert "MISSED" in out and "applied:" in out, out
+
+
+def test_a_replacement_whose_escaping_slipped_is_visible(tool, tmp_path,
+                                                         monkeypatch, capsys):
+    """The exact scenario: a backslash that is not the group reference the author meant."""
+    p = tmp_path / "subj.py"
+    p.write_text('x = sub(r"a", r"b", s)\n', encoding="utf-8")
+    bad = 'x = sub(r"a", r"{' + chr(92) + chr(92) + '1}", s)'   # TWO backslashes
+    code, out = _run(tool, _spec(p, [{"label": "escaping", "find": 'x = sub(r"a", r"b", s)',
+                                      "replace": bad}]),
+                     [(True, "baseline ok"), (False, "boom")], monkeypatch, capsys)
+    assert "applied:" in out, out
+    assert (chr(92) * 4) in out, \
+        "the printed replacement does not reveal the doubled backslash: %s" % out
+
+
+def test_nothing_applied_prints_no_applied_line(tool, target, monkeypatch, capsys):
+    """NOT APPLIED means the file was never written, so there is nothing to show."""
+    code, out = _run(tool, _spec(target, [{"label": "ghost", "find": "absent",
+                                           "replace": "x"}]),
+                     [(True, "baseline ok")], monkeypatch, capsys)
+    assert "NOT APPLIED" in out and "applied:" not in out, out
+
+
+def test_a_long_replacement_is_shown_truncated_not_dropped(tool, target,
+                                                           monkeypatch, capsys):
+    """#1202vx: the evidence gets the budget -- but a cut must still show the head."""
+    long = "return " + ("9" * 400)
+    code, out = _run(tool, _spec(target, [{"label": "long", "find": "return 1",
+                                           "replace": long}]),
+                     [(True, "baseline ok"), (False, "boom")], monkeypatch, capsys)
+    assert "applied:" in out and "..." in out, out
+    assert "999999" in out, out
+    assert ("9" * 400) not in out, "the whole replacement was dumped"

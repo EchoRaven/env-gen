@@ -186,21 +186,36 @@ def main(argv):
                 src = fh.read()
             n = src.count(m["find"])
             if n != 1:
-                results.append((NOT_APPLIED, label, "anchor appears %d time(s), need 1" % n))
+                results.append((NOT_APPLIED, label, "anchor appears %d time(s), need 1" % n,
+                                ""))
                 continue
             with open(target, "w", encoding="utf-8") as fh:
                 fh.write(src.replace(m["find"], m["replace"]))
+            # #1203ma: ECHO WHAT ACTUALLY LANDED. This tool validates the ANCHOR (NOT
+            # APPLIED) and the mutant's syntax (BROKEN), and its header warns about a patch
+            # whose semantics are null -- but nothing showed the operator the REPLACEMENT, and
+            # that is where a mutation can quietly become a different mutation. 2026-10-15:
+            # the same mutation, written once in a JSON spec and once by hand, disagreed. The
+            # spec went through a bash heredoc, so `r"{\\1}"` reached the file as a literal
+            # backslash-1 instead of a group reference; its mutant produced
+            # `/api/videos/{\1}/comments`, the test failed, and the verdict read CAUGHT. The
+            # hand-applied, genuinely behaviour-equivalent mutant was MISSED by the same test.
+            # A CAUGHT earned by a mangled replacement is false comfort in exactly the
+            # direction this file exists to prevent, so the applied text is now printed.
+            applied = repr(m["replace"])
+            if len(applied) > 160:
+                applied = applied[:157] + "..."
             try:
                 if not syntax_ok(target):
-                    results.append((BROKEN, label, "the mutant does not compile"))
+                    results.append((BROKEN, label, "the mutant does not compile", applied))
                     continue
                 ok, tail = _run_test(test_rel)
                 if ok is None:
-                    results.append((BROKEN, label, "collection failed: %s" % tail))
+                    results.append((BROKEN, label, "collection failed: %s" % tail, applied))
                 elif ok:
-                    results.append((MISSED, label, tail))
+                    results.append((MISSED, label, tail, applied))
                 else:
-                    results.append((CAUGHT, label, tail))
+                    results.append((CAUGHT, label, tail, applied))
             finally:
                 shutil.copy2(backup, target)
     finally:
@@ -209,8 +224,10 @@ def main(argv):
 
     after = _sha(target)
     print()
-    for verdict, label, note in results:
+    for verdict, label, note, applied in results:
         print("  %-11s  %s" % (verdict, label))
+        if applied:
+            print("               applied: %s" % applied)   # #1203ma
         if verdict != CAUGHT:
             print("               %s" % note)
     bad = [r for r in results if r[0] != CAUGHT]

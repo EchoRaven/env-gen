@@ -16,7 +16,9 @@ Screen routes are deliberately untouched: React Router's syntax IS `:param` and 
 """
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 
 import pytest
 
@@ -59,10 +61,23 @@ def test_it_never_raises():
 
 
 def test_it_delegates_to_the_registry_rather_than_a_second_regex():
-    """#1032: one owner for the canonical form. Asserted on the source, by name."""
-    src = inspect.getsource(_canon_api_path_1203m9)
-    assert "_canonical_path" in src and "RegistryHub" in src
-    assert "re.sub" not in src and "replace(" not in src
+    """#1032: one owner for the canonical form.
+
+    Asserted on the AST, not on the source text: this helper's own docstring quotes
+    `RegistryHub._canonical_path`, so `"_canonical_path" in getsource(...)` is satisfied by
+    the comment and would stay green with the delegation ripped out. Pin the CALL instead
+    (#1202w1: a name is not a use) and, separately, that no rewriting happens inline.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(_canon_api_path_1203m9)))
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "_canonical_path"]
+    assert calls, "the canonical form is no longer obtained from its owner"
+    # no second implementation: nothing in the body may rewrite the path itself
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+            assert n.func.attr not in ("sub", "replace", "translate"), \
+                "a second rewriting implementation appeared beside the delegation"
     # and the owner still does the job this delegates to it
     assert RegistryHub._canonical_path("/api/notes/:id") == "/api/notes/{id}"
 
