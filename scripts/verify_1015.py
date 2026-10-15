@@ -341,6 +341,26 @@ def main(argv):
             "%d/%d endpoints (%.0f%%) have a first-registration-shaped earliest record "
             "(baseline 93%%)" % (_only, len(_per), _share))
 
+    # --- #1203m9 ----------------------------------------------------------------------
+    # No kickoff document may hand a lane an Express-style API path. The pattern is a colon
+    # right after a SLASH -- `{id:int}` is a legal FastAPI converter and must not match (my
+    # first detector called r167's legal path a violation).
+    _exp = re.compile(r"`[A-Z]+ (/[^`]*/:[A-Za-z_][A-Za-z0-9_]*[^`]*)`")
+    _docs = list((run / "docs").rglob("*.md")) if (run / "docs").is_dir() else []
+    _bad9 = []
+    for _f in _docs:
+        try:
+            for _m9 in _exp.findall(_f.read_text(encoding="utf-8", errors="replace")):
+                _bad9.append("%s: %s" % (_f.name, _m9))
+        except Exception:
+            continue
+    if not _docs:
+        say("m9", "N-A", "no kickoff documents in this run")
+    else:
+        say("m9", "FALSIFIED" if _bad9 else "CONFIRMED",
+            "%d kickoff doc(s); Express-style API paths: %d %s"
+            % (len(_docs), len(_bad9), sorted(set(_bad9))[:2]))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)

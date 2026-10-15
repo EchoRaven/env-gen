@@ -92,6 +92,47 @@ AuthoringOutputs = Dict[str, Any]
 # ---------------------------------------------------------------------------
 
 
+
+def _canon_api_path_1203m9(raw: Any) -> str:
+    """An API path as FastAPI will route it, for the documents a lane is handed.
+
+    #1203m9. `RegistryHub._canonical_path` exists because of PROPOSAL #38 A2: the registry
+    STORES `/api/notes/{id}`, never the raw `/api/notes/:id`, "so the route projector stamps a
+    real path param (not a literal `:id` static route) and the verifier tests `/api/notes/1`
+    against a matching route instead of getting a 405". The kickoff documents render the raw
+    declaration instead, so a lane is handed a path FastAPI cannot route.
+
+    MEASURED across every run's briefings: 281 occurrences in 37 runs, and time-sliced it is
+    live -- **27 in 9 modern runs** (r151, r157, r159, r161, r162, r167, r169, r170, r182),
+    the newest r182.
+
+    ★ AND THE DELIVERED HARM IS ZERO, which is why this is a prose fix and nothing more. In
+    all 9 of those runs the backend shipped 0 literal `:param` routes and the frontend 0
+    literal `:param` API URLs -- the lanes translated it every time. (The one apparent hit,
+    r167's `/api/users/{id:int}/follow`, is a legal FastAPI path converter; my own detector
+    matched the colon inside the braces.) What this buys is that the instruction is true and
+    the lane is not asked to correct it, which is #1203j2's standard.
+
+    ★ NOT APPLIED TO SCREEN ROUTES, deliberately. The "Screens to implement" section renders
+    a FRONTEND route, and React Router's syntax IS `:param` -- r185 ships
+    `<Route path="/video/:id/comments">`. Canonicalising there would hand the frontend a path
+    its router cannot match, i.e. the same defect pointed the other way.
+
+    Reuses the registry's own staticmethod rather than a second regex (#1032); imported inside
+    the function because a module-level relative import out of this package has broken
+    collection here before.
+    """
+    # "?" is this module's own unknown marker, and it is what both call sites rendered for a
+    # missing path before this helper existed. Canonicalising it would print "/?".
+    if not raw or str(raw).strip() == "?":
+        return "?"
+    try:
+        from ..registryhub import RegistryHub as _RH1203m9
+        return _RH1203m9._canonical_path(str(raw)) or str(raw)
+    except Exception:
+        return str(raw)
+
+
 def author_all(
     synthesis: Mapping[str, Any],
     *,
@@ -192,7 +233,7 @@ def build_milestone_doc(
             if not isinstance(ep, Mapping):
                 continue
             method = str(ep.get("method") or "?").upper()
-            path = str(ep.get("path") or "?")
+            path = _canon_api_path_1203m9(ep.get("path"))   # #1203m9
             auth_required = ep.get("auth_required")
             auth_str = "✓" if auth_required else "—"
             rkey = str(ep.get("response_key") or "—")
@@ -542,7 +583,7 @@ def _append_backend_briefing(
             if not isinstance(ep, Mapping):
                 continue
             method = str(ep.get("method") or "?").upper()
-            path = str(ep.get("path") or "?")
+            path = _canon_api_path_1203m9(ep.get("path"))   # #1203m9
             auth = "auth required" if ep.get("auth_required") else "open"
             lines.append(f"- `{method} {path}` ({auth})")
     else:
