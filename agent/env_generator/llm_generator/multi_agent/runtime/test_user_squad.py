@@ -339,6 +339,16 @@ def _dropped_goals_1203go(ordered: Sequence[Mapping[str, Any]],
             for g in ordered if (g.get("kind"), g.get("name")) not in kept_keys]
 
 
+def goal_ledger_key_1203kl(goal: Any) -> str:
+    """``"<modality>::<name>"`` — the ledger's key for a goal. (#1203kl)
+
+    One owner (#1032), because #1203kl needs the same key in the PURE planner, which must not
+    import the ledger class, and in `FailureLedger` itself.
+    """
+    g = goal if isinstance(goal, Mapping) else {}
+    return "%s::%s" % (g.get("modality"), g.get("name"))
+
+
 def plan_test_user_goals(
     *,
     business_eps: Optional[Sequence[Mapping[str, Any]]] = None,
@@ -351,6 +361,7 @@ def plan_test_user_goals(
     tables: Optional[Mapping[str, Any]] = None,
     feature_inventory: Optional[Mapping[str, Any]] = None,
     max_goals: int = 12,
+    replay_first: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Define the test workflows (one agent per workflow), tagged by MODALITY. PURE.
 
@@ -580,6 +591,28 @@ def plan_test_user_goals(
     # page-dedup above; when nothing is missing this is `[] + goals` → byte-identical output.
     missing_write = _missing_write_goals(business_eps, tables, feature_inventory, acc)
     _ordered1203go = missing_write + goals
+    # #1203kl: A PREVIOUSLY-FAILED GOAL MUST SURVIVE THE CAP, not merely run early inside it.
+    #
+    # `order_replay_first` (design §3.5, "regression of previously-failed flows") was applied
+    # to the plan the cap had ALREADY produced, so it could only reorder goals that survived.
+    # When the cap dropped a previously-failed goal, the regression pass was defeated silently:
+    # the flow that failed last cycle was not in the plan at all.
+    #
+    # MEASURED over the modern era: 29 goals were dropped across 10 of 35 runs and 24 of those
+    # were never spawned in their run. 5 of them, in r183 / r173 / r171 — every one a run with
+    # THREE OR MORE cycles, which is exactly where a regression pass is supposed to matter —
+    # were marked as open failures in that run's own ledger while being cut from its plan:
+    # `page_profile_own_page`, `page_messages_dm_empty_page`, `page_settings_more_menu[_page]`.
+    #
+    # A stable partition, not a sort: the relative order inside each half is untouched, so an
+    # empty `replay_first` returns byte-identical output and `_cap_by_kind_1203go` keeps its
+    # own "every kind one slot first" fairness on top (#1203go). The cap is unchanged — this
+    # decides WHICH goals it keeps, never how many.
+    _replay1203kl = {str(k) for k in (replay_first or [])}
+    if _replay1203kl:
+        _ordered1203go = (
+            [g for g in _ordered1203go if goal_ledger_key_1203kl(g) in _replay1203kl]
+            + [g for g in _ordered1203go if goal_ledger_key_1203kl(g) not in _replay1203kl])
     return _cap_by_kind_1203go(_ordered1203go, max_goals)
 
 
@@ -1212,7 +1245,7 @@ class FailureLedger:
 
     @staticmethod
     def _key(goal: Mapping[str, Any]) -> str:
-        return f"{goal.get('modality')}::{goal.get('name')}"
+        return goal_ledger_key_1203kl(goal)   # #1203kl: one owner for this format
 
     def record_cycle(self, results: Sequence[Mapping[str, Any]]) -> None:
         """results: [{modality, name, passed: bool, defects: int}]."""
@@ -1657,11 +1690,19 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
         inp = gather_squad_inputs(orch)
         if not inp.get("api_base") and not inp.get("ui_base"):
             return {"ran": False, "reason": "could not resolve running app ports"}
+        # #1203kl: read the ledger BEFORE planning, so a previously-failed goal can survive
+        # the cap instead of merely running early among the survivors. Construction is a
+        # guarded JSON read with no side effects (`FailureLedger._load`), so moving it ahead
+        # of the plan costs nothing; the same object is reused below.
+        proj = Path(getattr(orch, "output_dir", ".") or ".")
+        ledger = FailureLedger(proj / "test_user_reports" / "failure_ledger.json")
+        _replay1203kl = ledger.open_failures()
         goals = plan_test_user_goals(
             business_eps=inp["business_eps"], ui_pages=inp["ui_pages"],
             acceptance=inp["acceptance"], multi_tenant=inp["multi_tenant"],
             mcp_present=inp["mcp_present"], tables=inp.get("tables"),
-            feature_inventory=inp.get("feature_inventory"))
+            feature_inventory=inp.get("feature_inventory"),
+            replay_first=_replay1203kl)
         if not goals:
             return {"ran": False, "reason": "no goals planned (empty contract)"}
         # #1203go: say what the cap left out. Re-planning WITHOUT the cap is how this knows;
@@ -1692,9 +1733,9 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
             orch._squad_dropped_goals_1203go = _dropped1203go      # read by #1202wn's recorder
         except Exception:
             pass
-        # Regression: re-test previously-FAILED goals first (design §3.5).
-        proj = Path(getattr(orch, "output_dir", ".") or ".")
-        ledger = FailureLedger(proj / "test_user_reports" / "failure_ledger.json")
+        # Regression: re-test previously-FAILED goals first (design §3.5). `proj` and
+        # `ledger` were built BEFORE planning by #1203kl — one object, read once, so the set
+        # that shaped the plan is the same one that orders it and records the cycle.
         # #1203ki: split BEFORE reordering — `order_replay_first` returns the plan, so after
         # it the ledger keys that are not in the plan are invisible.
         #
