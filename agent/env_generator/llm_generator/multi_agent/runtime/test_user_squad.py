@@ -1274,6 +1274,35 @@ def squad_gate_enabled(env: Mapping[str, Any]) -> bool:
     return str(env.get("ENVGEN_TESTUSER_SQUAD", "1")).strip().lower() in ("1", "true", "yes", "on")
 
 
+def goal_agent_finished_1203kk(goal: Any, mates: Any) -> bool:
+    """Did THIS goal's own agent finish? (#1203kk)
+
+    `mates` is every agent row in the goal's modality. The caller used to accept "ANY agent in
+    this modality finished" as a fallback, so a goal whose own agent TIMED OUT was recorded
+    `passed` because a sibling finished — and the ledger exists to re-test previously-FAILED
+    flows first (design §3.5), so a goal marked passed is never an open failure and never gets
+    replayed. A flow that was never tested stayed permanently recorded as fine.
+
+    MEASURED over the modern era's 35 squad ledgers (407 agent rows): 176 agents did not
+    finish and every one of them TIMED OUT — `spawned 183 = completed 105 + timed_out 78 +
+    failed 0`, each row reading "did not finish within 300s". Of those, **140 across 34 of the
+    35 runs** sat in a modality where a sibling did finish, which is exactly what the fallback
+    masked (r181 6, r178 6, r177 6, r185 5, r184 5, r180 5 — mostly `page_*` browser goals).
+
+    The fallback was not load-bearing for name mismatches, which is the reason it could have
+    existed: the agent row is built as `{"name": str(goal.get("name") or f"goal_{idx+1}")}`
+    and all 407 corpus rows carry a real goal name. It IS kept for the one case with no key to
+    match on — a goal with NO name, where the row's name is a positional default and comparing
+    them would falsely fail a goal that actually ran.
+    """
+    rows = [a for a in (mates or []) if isinstance(a, Mapping)]
+    name = str((goal or {}).get("name") or "").strip() if isinstance(goal, Mapping) else ""
+    if name:
+        return any(bool(a.get("completed")) for a in rows
+                   if str(a.get("name") or "").strip() == name)
+    return any(bool(a.get("completed")) for a in rows)
+
+
 def squad_coverage_1203kj(report: Any) -> str:
     """How much of the plan a squad verdict covers, as a phrase for the verdict line.
 
@@ -1706,10 +1735,32 @@ async def _run_squad_for_delivery_impl(orch: Any, version: str = "",
         cycle_results = []
         for g in goals:
             mod = g.get("modality")
-            # coarse per-goal verdict: passed iff its agent completed AND no P0 bug in its modality.
-            completed = any(a.get("completed") for a in agent_by_mod.get(mod, [])
-                            if a.get("name") == g.get("name")) or any(
-                a.get("completed") for a in agent_by_mod.get(mod, []))
+            # #1203kk: A GOAL'S OWN AGENT, NOT ANY AGENT IN ITS MODALITY.
+            #
+            # The `or` below used to fall back to "did ANY agent in this modality finish", so a
+            # goal whose own agent TIMED OUT was recorded `passed` because a sibling finished.
+            # The ledger exists to re-test previously-FAILED flows first (design §3.5), so a
+            # goal marked passed is never an open failure and never gets replayed: a flow that
+            # was never tested is permanently recorded as fine.
+            #
+            # MEASURED over the modern era's 35 squad ledgers (407 agent rows): 176 agents did
+            # not finish and EVERY ONE of them timed out — `spawned 183 = completed 105 +
+            # timed_out 78 + failed 0`, with the per-agent error reading "did not finish within
+            # 300s". Of those non-finishers, **140 across 34 of the 35 runs** sat in a modality
+            # where a sibling DID finish, which is exactly the shape the fallback masks:
+            # r181 6, r178 6, r177 6, r185 5, r184 5, r180 5 … mostly `page_*` browser goals.
+            #
+            # The fallback is not load-bearing for name mismatches, which is the reason it
+            # could have existed: `rec["name"] = str(goal.get("name") or f"goal_{idx+1}")`, and
+            # all 407 rows in the corpus carry a real goal name (`page_explore_grid_page`,
+            # `api_posts`, `mcp_surface`). It IS kept for the one case with no key to match on
+            # — a goal with no name, where the agent row's name is a positional default and
+            # comparing them would falsely fail a goal that ran.
+            #
+            # Safe by scope: the ledger has exactly two readers, `order_replay_first` and
+            # #1203ki's split for the log line. No gate consults it, so this changes replay
+            # ORDER and what the line says, never whether a milestone releases.
+            completed = goal_agent_finished_1203kk(g, agent_by_mod.get(mod, []))
             mod_p0 = bugs.get("by_modality", {}).get(mod, 0)
             cycle_results.append({"modality": mod, "name": g.get("name"),
                                   "passed": bool(completed and mod_p0 == 0),
