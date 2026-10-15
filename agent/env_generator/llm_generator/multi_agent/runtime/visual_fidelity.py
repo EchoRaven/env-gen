@@ -3190,6 +3190,36 @@ def api_404s_from_console_1202lz(console_errors: Any) -> Dict[str, List[str]]:
     return out
 
 
+def _with_api_404s_1203l8(deviations: Any, paths: Any) -> List[str]:
+    """The judge's deviations, plus the `/api` calls this screen made and lost.
+
+    #1203l8. `api_404s_from_console_1202lz` already attributes each failing path to the screen
+    that requested it, and the verdict document already carries the mapping -- what never
+    happened is the screen's own deviation saying it. Measured across every verdict on disk:
+    11 of 11 real per-screen 404s are absent from their own screen's deviations, 9 of them
+    modern (r152, r155, r184, r187). r184's `profile_own` scored 0.34 with the deviation
+    "implementation shows only a small centered 'not found' message", while the same file
+    records `/api/users/1 -> profile_own`.
+
+    Never raises and never drops the judge's own list: on anything unexpected the input is
+    returned as a list, unchanged.
+    """
+    try:
+        base = list(deviations or [])
+        _p = [str(x) for x in (paths or []) if str(x).strip()]
+        if not _p:
+            return base
+        return base + [
+            "this screen requested %s and the app answered 404 — the browser recorded it "
+            "during this capture, so the missing content above is downstream of the call, "
+            "not of the markup (#1203l8)" % join_capped(sorted(_p), len(_p), cap=4, sep=", ")]
+    except Exception:
+        try:
+            return list(deviations or [])
+        except Exception:
+            return []
+
+
 def _group_console_errors_740(console_errors: Any) -> Dict[str, List[str]]:
     """#740: {screen -> [messages]} inverted to {message -> [screens]}.
 
@@ -3931,6 +3961,16 @@ async def run_visual_fidelity(
     _spent_892 = False
 
     results: List[Dict[str, Any]] = []
+    # #1203l8: measured BEFORE the judging loop so each screen's deviations can name its own
+    # failing calls, and #1202mf's rule holds -- one measurement, shared, rather than two taken
+    # moments apart. The capture is complete by here; nothing below writes `_console740`.
+    _api404_1202lz = api_404s_from_console_1202lz(_console740)
+    _api404_by_screen_1203l8: Dict[str, List[str]] = {}
+    for _p1203l8, _ss1203l8 in (_api404_1202lz or {}).items():
+        for _s1203l8 in (_ss1203l8 or []):
+            if str(_s1203l8) != "(startup)":
+                _api404_by_screen_1203l8.setdefault(str(_s1203l8), []).append(str(_p1203l8))
+
     for screen in judged_screens:
         if not _spent_892 and (_t892.monotonic() - _round_started_892) > _round_budget_892:
             _spent_892 = True
@@ -4106,11 +4146,25 @@ async def run_visual_fidelity(
                         # #1202kq: hand the lane the ROUTE explanation for a rendered-but-
                         # empty screen too. Appended to the judge's own deviations so the
                         # content complaint and its likely cause arrive together.
-                        "deviations": (list(verdict["deviations"]) + [
-                            _unmatchable_route_rendered_1202kq(screen["route"]).lstrip(". ")]
-                            if (_unmatchable_route_rendered_1202kq(screen["route"])
-                                and verdict.get("empty_state"))
-                            else verdict["deviations"]),
+                        # #1203l8: ...and the API calls this screen MADE AND LOST. The paths
+                        # were already measured per screen and persisted on the verdict as
+                        # `api_404s_1202lz`, and the deviation beside them never said so:
+                        # across every verdict on disk, 11 of 11 real per-screen 404s are
+                        # absent from their own screen's deviations, 9 of them modern. r184's
+                        # `profile_own` scored 0.34 and was told "implementation shows only a
+                        # small centered 'not found' message" while the same document records
+                        # `/api/users/1 -> profile_own`. That is #740's own rule -- name the
+                        # ACTUAL error, or the lane is handed a symptom and has to rediscover
+                        # the cause -- applied to the call instead of the console, and it is
+                        # #1202kq's shape directly above: the complaint and its likely cause
+                        # arrive together.
+                        "deviations": _with_api_404s_1203l8(
+                            (list(verdict["deviations"]) + [
+                                _unmatchable_route_rendered_1202kq(screen["route"]).lstrip(". ")]
+                                if (_unmatchable_route_rendered_1202kq(screen["route"])
+                                    and verdict.get("empty_state"))
+                                else verdict["deviations"]),
+                            _api404_by_screen_1203l8.get(screen["name"])),
                         "fixes": verdict.get("fixes", []),
                         "screenshot": shot,
                         "reference": screen.get("path"),
@@ -4220,7 +4274,7 @@ async def run_visual_fidelity(
     # one broken import crashes every route, and 12 identical lines read as 12 problems.
     # #1202lz: separate the /api 404s out of the console stream and name them as the
     # contract question they are, BEFORE #740 folds the whole stream into visual deviations.
-    _api404_1202lz = api_404s_from_console_1202lz(_console740)
+    # #1203l8: computed once before the judging loop above; reused here.
     # #1202mf/#720: measured ONCE and shared by the returned dict and the persisted verdict,
     # so the two provably carry the same value. Calling it twice would make them two
     # measurements taken moments apart — exactly the undeclared-collision shape #712 tripped
