@@ -433,6 +433,10 @@ class RunHub:
                     # #1203e0: whether the plan could ask a well-formed question. Computed by
                     # the planner, which is the only place that knows what it sent.
                     request_complete=getattr(plan, "request_complete", True),
+                    # #1203m4: did the probe send ANY request data? Only the plan knows,
+                    # and the clause self-retires once a caller starts passing one.
+                    request_had_data=(bool(getattr(plan, "body", None))
+                                      or ("?" in str(getattr(plan, "url", "")))),
                 )
                 probe_record = {
                     "method": plan.method, "path": ep.get("path"), "url": plan.url,

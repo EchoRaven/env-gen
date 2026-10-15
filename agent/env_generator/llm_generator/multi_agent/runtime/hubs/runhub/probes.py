@@ -222,6 +222,45 @@ def plan_probe(
                      request_complete=not _missing1203e0)
 
 
+# #1203m4: the APP said the request was incomplete, and the registry could not.
+#
+# `#1203e0` turns a 400/422 into a pass when the PLAN knew it had sent an incomplete request,
+# and it computes that from the registered request schema. Its own neighbour already names the
+# hole: "the framework registers its own request schema as `{}` or `null` while its handlers
+# require fields, so #1203e0 cannot even see them as incomplete". The same is true of a
+# LANE-authored endpoint that declares no required fields, so `request_complete` comes back
+# True, `{}` goes out, and the app's correct rejection is scored against it.
+#
+# The evidence was in hand the whole time: the response says so. The shapes in the corpus are
+# `{"detail":"email and password are required"}` and FastAPI's
+# `{"detail":[{"type":"missing","loc":["query","response_type"],"msg":"Field required"}]}`.
+#
+# MEASURED. 44 such records in 3 modern runs, all P2, every one of them a 400/422 whose body
+# names a field the probe never sent -- `POST /api/auth/signup` (35) and `GET /oauth/authorize`
+# (9). All three runs POSTDATE #1203e0 (landed 10-03 22:30; r152 10-04, r173 10-10, r186
+# 10-13), which is how we know this is the gap and not the old bug.
+#
+# WHAT IT COSTS. `deliverability` records that the blocker "latest run has N failed endpoint
+# probe(s)" is unreachable by construction -- but the same page records the consequence that is
+# NOT: a run with `fail_count > 0` cannot be `last_successful_run_since`, so the gate reads
+# staler evidence or the other writer, and "r152 shipped through the hole" with a P1 server
+# error. Counted per validation run: **9 runs (7 modern) have EXACTLY ONE failing probe and it
+# is this one** -- r173 six times in a row, over batteries of 25 to 44 probes, and r186 once.
+# Each of those would have qualified.
+#
+# DISCRIMINATING, not vacuous. Across every era there are 191 failing 400/422 probes; 179 match
+# this and **12 do not** -- r124/r136's `{"type":"int_parsing","loc":["path","id"]}`, where the
+# probe put an unsubstituted `{id}` in the PATH. That is a different fault with a different
+# owner, and it keeps failing here.
+#
+# SCOPED TO A PROBE THAT SENT NOTHING, which is also what makes it expire: the day a caller
+# passes a real body or query, `request_had_data` is True and this clause stops applying, the
+# same self-retiring shape #1203e0 chose for its set difference.
+_NAMES_MISSING_INPUT_1203M4 = re.compile(
+    r"\brequired\b|\"type\"\s*:\s*\"missing\"|\bmissing\b|cannot be empty"
+    r"|must not be empty", re.I)
+
+
 def classify_probe_result(
     status_code: Optional[int],
     body_excerpt: str,
@@ -229,6 +268,7 @@ def classify_probe_result(
     transport_error: Optional[str] = None,
     headers: Optional[dict] = None,
     request_complete: bool = True,          # #1203e0
+    request_had_data: bool = True,          # #1203m4
 ) -> ProbeOutcome:
     if transport_error == "connection_refused":
         return ProbeOutcome(verdict="fail", severity="P0",
@@ -279,6 +319,14 @@ def classify_probe_result(
                  "contract declares required field(s) it cannot invent, so the rejection is "
                  "the correct answer to a malformed question, not a verdict on the handler "
                  "(a 404 or 5xx here would have been)" % status_code)
+    if (status_code in (400, 422) and not request_had_data
+            and _NAMES_MISSING_INPUT_1203M4.search(body_excerpt or "")):
+        return ProbeOutcome(
+            verdict="pass",
+            note="%d: route wired and validating — this probe sent no request data and the "
+                 "RESPONSE names the field(s) it wanted, so the rejection answers a malformed "
+                 "question, not the handler (#1203m4; the registry declared no required "
+                 "fields, which is why #1203e0 read the plan as complete)" % status_code)
     # #1203e0, MEASURED AND DELIBERATELY NOT EXTENDED TO 401. 401 is the largest failure
     # bucket on disk (159 of 369) and 71 of those sit on endpoints that DO declare required
     # fields -- `POST /auth/login` 31, `POST /api/auth/signup` 16 -- so the same clause would

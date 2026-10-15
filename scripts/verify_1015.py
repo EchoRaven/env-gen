@@ -212,6 +212,64 @@ def main(argv):
                 "OOM at %.0f MB -- the raised ceiling did not reach this spawn (%d OOM)"
                 % (_hi, len(_ooms)))
 
+    # --- #1203m3 ----------------------------------------------------------------------
+    # If the seeded-media P1 is filed and any listed path is remapped by the page, the task
+    # must say so; if none is remapped, the caveat must be absent.
+    _tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", {}) or {}
+    def _w(o):
+        if isinstance(o, dict):
+            yield o
+            for v in o.values():
+                yield from _w(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from _w(v)
+    _seed_tasks = [o for o in _w(_tasks)
+                   if str(o.get("title") or "").startswith("Seeded media missing at delivery")]
+    if not _seed_tasks:
+        say("m3", "N-A", "the seeded-media task was not filed in this run")
+    else:
+        _d = " ".join(str(o.get("description") or "") for o in _seed_tasks)
+        _pub = run / "app" / "frontend" / "public"
+        _listed = re.findall(r"  - (/assets/\S+)", _d)
+        _absent = [u for u in _listed if not (_pub / u.lstrip("/")).exists()]
+        _src = run / "app" / "frontend" / "src"
+        _txt = ""
+        if _src.is_dir():
+            for _f in list(_src.rglob("*.js")) + list(_src.rglob("*.jsx")):
+                _txt += _f.read_text(encoding="utf-8", errors="replace")
+        _rm = [u for u in _absent
+               if re.search(re.escape("'" + u + "'") + r"\s*:", _txt)
+               or re.search(re.escape('"' + u + '"') + r"\s*:", _txt)]
+        if _rm:
+            say("m3", "CONFIRMED" if "#1203m3" in _d else "FALSIFIED",
+                "%d of %d listed paths are remapped by the page; caveat present=%s"
+                % (len(_rm), len(_listed), "#1203m3" in _d))
+        else:
+            say("m3", "CONFIRMED" if "#1203m3" not in _d else "FALSIFIED",
+                "no listed path is remapped; caveat absent=%s" % ("#1203m3" not in _d))
+
+    # --- #1203m4 ----------------------------------------------------------------------
+    # No probe may be scored `fail` for a 400/422 whose body names a field it never sent.
+    _runs = _json(run / "shared" / "hubs" / "runhub_runs.json", {}) or {}
+    _need = re.compile(r"\brequired\b|\"type\"\s*:\s*\"missing\"|\bmissing\b"
+                       r"|cannot be empty|must not be empty", re.I)
+    _bad4, _n4 = [], 0
+    for _r in _w(_runs):
+        if not (isinstance(_r, dict) and "verdict" in _r and "status_code" in _r):
+            continue
+        _n4 += 1
+        if str(_r.get("verdict") or "").lower() not in ("fail", "failed"):
+            continue
+        if _r.get("status_code") in (400, 422) and _need.search(str(_r.get("body_excerpt") or "")):
+            _bad4.append("%s %s" % (_r.get("method"), _r.get("path")))
+    if not _n4:
+        say("m4", "N-A", "no probe records in this run")
+    else:
+        say("m4", "FALSIFIED" if _bad4 else "CONFIRMED",
+            "%d probe record(s); scored-fail-on-own-empty-request: %d %s"
+            % (_n4, len(_bad4), sorted(set(_bad4))[:3]))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
