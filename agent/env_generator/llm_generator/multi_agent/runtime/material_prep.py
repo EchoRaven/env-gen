@@ -1175,7 +1175,7 @@ def _dataset_record_count(path: Path, kind: str) -> Optional[int]:
     return None
 
 
-def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
+def ingest_dataset(dataset_dir, stage_dir, *, stage: bool = True) -> List[Dict]:
     """F1 — the FOURTH design-input channel. Scan a user-provided ``dataset/`` folder of
     REAL structured data (JSON/CSV/NDJSON) → a manifest + physically stage each file into
     ``stage_dir`` (preserving subfolders). Mirrors ``ingest_assets`` but for data rows, not
@@ -1187,7 +1187,7 @@ def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
     src = Path(dataset_dir)
     if not src.is_dir():
         return []
-    stage = Path(stage_dir)
+    stage_path = Path(stage_dir)
     manifest: List[Dict] = []
     seen_ids: Dict[str, int] = {}
     for path in sorted(src.rglob("*")):
@@ -1198,12 +1198,17 @@ def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
         base_id = _slug(path.stem)
         seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
         entry_id = base_id if seen_ids[base_id] == 1 else f"{base_id}-{seen_ids[base_id]}"
-        try:
-            dest = stage / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, dest)
-        except Exception:
-            continue
+        # #1203l0: `stage=False` rebuilds the MANIFEST for files that are already staged.
+        # design_prep's completion floor needs that, because the design_analyst's rewrite
+        # drops `dataset` from the document while the files stay on disk — and a second
+        # implementation of this entry shape over there would be a second owner of it.
+        if stage:
+            try:
+                dest = stage_path / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, dest)
+            except Exception:
+                continue
         manifest.append({
             "id": entry_id,
             "file": rel.as_posix(),

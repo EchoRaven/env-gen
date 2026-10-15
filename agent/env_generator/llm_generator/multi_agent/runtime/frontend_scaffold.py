@@ -9221,8 +9221,20 @@ def _floor_shape(page, get_ep, name) -> str:
 # carries IMAGE columns (poster/backdrop/…) — no product literals; for any app it resolves to that
 # app's own catalog collection. Conservative: only overrides an AUXILIARY/empty GET on a
 # non-auth/non-detail/non-aux-route screen (a correct content GET like /new→/api/titles is untouched).
+# #1203l1: `avatar` is NOT a content image column, and it is the same word and the same
+# mistake as #1203kx. This pattern has ONE consumer —
+# `_content_entity_from_design`, "the staged dataset whose columns carry image fields
+# ..., i.e. the visual catalog" — which takes the one with the MOST records among
+# those that match. An avatar is the author's face hanging off a row, so every chatty
+# table has one, and record count then elects the chattiest.
+#
+# MEASURED on the manifests #1203l0 restores: r185 stages comments.json (295 rows,
+# `avatar`), videos.json (35 rows, `thumbnail`) and users.json (9 rows, `avatar`), and
+# the pattern picked `comments` in 36 of 36 runs. Without `avatar` all 36 pick
+# `videos`. Scoped by that single consumer: this cannot change a "this column holds an
+# image, render it" decision, because no such decision reads this pattern.
 _CONTENT_IMG_COL_RE = re.compile(
-    r"(poster|backdrop|thumbnail|cover|photo|banner|still|artwork|image|avatar|picture)", re.I)
+    r"(poster|backdrop|thumbnail|cover|photo|banner|still|artwork|image|picture)", re.I)
 _AUX_ENDPOINT_RE = re.compile(
     r"/(profiles?|me|users?|accounts?|auth|login|logout|register|sessions?|settings|preferences|"
     r"notifications?|health|status|config|genres?|categories|category|tags?|labels?|"

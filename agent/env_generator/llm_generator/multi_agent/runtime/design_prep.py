@@ -487,13 +487,34 @@ def _skeleton_for_prompt_816(screen: Dict) -> str:
     return out
 
 
-_SCREEN_PROMPT = (
-    "You are a senior UI engineer writing BUILD NOTES for a faithful clone of ONE screen.\n"
-    "You get: the screen's MEASURED skeleton (component ids + measured colors — ground "
-    "truth, never change a hex), the REAL asset manifest, and the reference screenshot.\n"
-    "For EVERY component id in the skeleton, submit one entry with:\n"
-    " - build_notes (REQUIRED, 1-3 concrete sentences from the SCREENSHOT: geometry, "
-    "paddings/spacing, icon shapes, borders/dividers, states — what a dev needs to copy it)\n"
+# #1203kz: ONE owner for "what `copy` is, and what must go to `data_slots` instead".
+#
+# It used to live only inside `_SCREEN_PROMPT`, which belongs to the single-shot
+# per-screen enrichment — a FALLBACK path. The agent that actually writes
+# design/design_system.json is the spawned design_analyst, and
+# `build_design_analyst_briefing` named neither field, so the ask reached the path that
+# does not run.
+#
+# MEASURED across every run on disk: components carrying a non-empty `copy` are 4640 of
+# 21159 before r100 (26 runs, when the single-shot path was in use), then 0 of 1725 in
+# r100-149 and 0 of 1341 in the 39 modern runs — zero for 89 consecutive runs. Meanwhile
+# `copy` is a JUDGED dimension (visual_fidelity's "UI copy & labels") and #797 built the
+# repair round a "REFERENCE COPY (verbatim — render these strings character for
+# character)" block out of it, which therefore renders nothing every time. #778 measured
+# the cost that block exists for: 9152 text components, 84% of their notes DESCRIBED the
+# text instead of quoting it.
+#
+# BOTH HALVES or neither. #1202ri is inside this constant because asking for `copy`
+# without the chrome-vs-data rule is the harm it was written for — "a profile header
+# transcribed as copy shipped the operator's own real handle into four generated runs" —
+# and `data_slots` is not decoration: material_prep scrubs identity values out of exactly
+# these list-valued fields.
+#
+# Honest about leverage: #1203i9 showed that REWORDING an instruction an agent already
+# receives moves nothing. This is the other case, an instruction ABSENT from the path
+# that runs, so it is worth asking at all — and the counter the completion pass logs is
+# what will say whether it worked, instead of the field staying silently empty.
+_COPY_RULE_1203KZ = (
     " - copy: if the component shows CHROME TEXT, transcribe it VERBATIM — the exact heading, "
     "label, placeholder, button caption, link text or notice, character for character, "
     "including punctuation. Do NOT describe it ('muted secondary text', 'static'): the clone "
@@ -510,6 +531,17 @@ _SCREEN_PROMPT = (
     "in renders that person's identity for every visitor and reads as a mock immediately. "
     "Measured: a profile header transcribed as copy shipped the operator's own real handle "
     "into four generated runs.\n"
+)
+
+
+_SCREEN_PROMPT = (
+    "You are a senior UI engineer writing BUILD NOTES for a faithful clone of ONE screen.\n"
+    "You get: the screen's MEASURED skeleton (component ids + measured colors — ground "
+    "truth, never change a hex), the REAL asset manifest, and the reference screenshot.\n"
+    "For EVERY component id in the skeleton, submit one entry with:\n"
+    " - build_notes (REQUIRED, 1-3 concrete sentences from the SCREENSHOT: geometry, "
+    "paddings/spacing, icon shapes, borders/dividers, states — what a dev needs to copy it)\n"
+    + _COPY_RULE_1203KZ +
     " - typography (role sizes/weights you can read), and assets (manifest ids this "
     "component should render).\n"
     "Also submit layout (one line) and the GLOBAL scales estimated from the screenshot: "
@@ -1134,6 +1166,8 @@ def build_design_analyst_briefing(output_dir, resolved: Dict) -> str:
         + (f"Reference docs ({n_docs}) are compiled into design/reference_spec.json — read it.\n" if n_docs else "")
         + "Real assets are staged under design/assets/ (also in design_system.json assets[]) — map "
         "each component's brand elements to their asset ids; never ask a lane to draw a logo.\n"
+        # #1203kz: the per-component TEXT, on the path that actually writes the doc.
+        + _COPY_RULE_1203KZ +
         "Measure, never guess. Apply the 塌缩点 checklist (dropped semantic color is the #1 collapse). "
         "When every component of every screen is measured + specced and the doc is written, finish()."
     )
@@ -1306,7 +1340,9 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     import logging
     out = Path(output_dir)
     stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0,
-             "screens_routed": 0, "assets_remeasured_1203kv": 0}
+             "screens_routed": 0, "assets_remeasured_1203kv": 0,
+             "with_copy_1203kz": 0, "layout_measured_1203l0": 0,
+             "dataset_restored_1203l0": 0}
     # #1203kv: re-measure every asset entry from the file that was staged for it.
     #
     # The MERGE in this module is careful about these fields — `# assets: add description/use
@@ -1402,8 +1438,30 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
                     _s["kind"] = _a["kind"]
     except Exception:
         pass  # backfill is best-effort; never block design-prep on it
+    # #1203l0: `dataset` is the fourth design-input channel's manifest, and the rewrite
+    # drops it. MEASURED: 0 of the 39 modern design documents carry it, while 36 of them
+    # still have the files staged under `design/dataset/`. Its readers are
+    # `_content_entity_from_design` (#513, four call sites in the frontend projector) and
+    # design_prep's own seed alignment, so the channel has been dead since r100.
+    #
+    # Rebuilt by calling `ingest_dataset` with `stage=False` rather than by writing a second
+    # loop here: #1032, the entry shape {id, file, type, records, columns, staged_path} and
+    # the id de-duplication have one owner, and this restore agrees with the original by
+    # construction. It is deliberately landed WITH #1203l1 — measured, the restored manifest
+    # makes #513 answer `comments` in 36 of 36 runs, and the reason is a word in its column
+    # pattern.
     try:
-        from .material_prep import _open_rgb, crop_region, region_background
+        if isinstance(ds, dict) and not (ds.get("dataset") or []):
+            from .material_prep import ingest_dataset as _id1203l0
+            _dsdir = out / "design" / "dataset"
+            _restored = _id1203l0(_dsdir, _dsdir, stage=False) if _dsdir.is_dir() else []
+            if _restored:
+                ds["dataset"] = _restored
+                stats["dataset_restored_1203l0"] = len(_restored)
+    except Exception:
+        pass  # a completion floor never blocks the phase it is completing
+    try:
+        from .material_prep import _open_rgb, content_bounds, crop_region, region_background
         import re as _re
 
         asset_toks = []
@@ -1420,9 +1478,24 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
                     im = _open_rgb(ref)
                 except Exception:
                     im = None
+            # #1203l0: `layout_metrics` is #220's MEASURED screen content bounds, and the
+            # rewrite drops it: 0 of 429 modern screens carry one. Its reader is #796's
+            # measured-layout block for a FAILING screen in the repair round, so restoring it
+            # changes prose a lane receives and nothing else. Reachable only because #1203ky
+            # fixed the resolver above — before that `im` was None for every screen.
+            if im is not None and not (screen.get("layout_metrics") or {}):
+                try:
+                    _lm = content_bounds(im) or {}
+                except Exception:
+                    _lm = {}
+                if _lm:
+                    screen["layout_metrics"] = _lm
+                    stats["layout_measured_1203l0"] += 1
             sname = _re.sub(r"[^A-Za-z0-9_\-]", "-", str(screen.get("name") or "screen"))
             for comp in screen.get("components") or []:
                 stats["components"] += 1
+                if str(comp.get("copy") or "").strip():
+                    stats["with_copy_1203kz"] += 1
                 region = comp.get("region")
                 region = tuple(region) if isinstance(region, (list, tuple)) and len(region) == 4 else None
 
@@ -1462,7 +1535,19 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
             # keeps and the line omits is a measurement nobody receives.
             # `screens_routed` (#352) was already in that position; both are here now.
             "%(screens_routed)d screens routed, %(assets_remeasured_1203kv)d asset(s) "
-            "re-measured (deterministic floor)", stats)
+            "re-measured, %(with_copy_1203kz)d carrying verbatim copy, "
+            "%(layout_measured_1203l0)d screen layout(s) measured, "
+            "%(dataset_restored_1203l0)d dataset entr(ies) restored "
+            "(deterministic floor)", stats)
+        # #1203kz: zero is the state this ticket found, and it was invisible — the
+        # #797 repair block simply rendered nothing. Say it once, with the number,
+        # so a run reports whether the ask on the briefing took effect.
+        if stats["components"] and not stats["with_copy_1203kz"]:
+            logging.getLogger("Orchestrator").warning(
+                "[design_system] NOT ONE of %d components carries a verbatim `copy` "
+                "string, so the repair round's REFERENCE COPY block (#797) is empty and "
+                "the judged `copy` dimension has nothing measured behind it "
+                "(#1203kz).", stats["components"])
     except Exception:
         pass
     return ds
