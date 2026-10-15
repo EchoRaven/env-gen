@@ -4298,10 +4298,29 @@ async def run_visual_fidelity(
     _by740 = _group_console_errors_740(_console740)
     if _by740:
         _LOG.warning(
+            # #1203mh: "These are now in each screen's deviations" was FALSE, and it is the
+            # sentence a reader of this module reasons from -- it is what sent me looking for
+            # the crash that reaches nobody. The attachment below lives in the `if not shot:`
+            # arm, under `elif screen["name"] in _blank_screens:`, so the raw messages reach
+            # a BLANK screen's deviations and no others. A screen that WAS photographed and
+            # judged gets only what #1203l8 extracts from the same map: the API paths it
+            # requested and lost.
+            #
+            # That is nearly everything, which is why the gap is not widened here. MEASURED
+            # over the `#740` lines of all 205 run logs, pairing each distinct message with
+            # each NAMED screen it was seen on (so `(startup)` -- #1203l7's bucket -- is
+            # excluded): 144 such pairs in the modern era, 142 of them carrying an HTTP
+            # status, i.e. #1203l8's territory. Corpus-wide exactly ONE pair is a non-status
+            # error (instagram-r175 `post_detail`, a CORS rejection). The component crashes
+            # this comment used to be about -- `replies.map is not a function`,
+            # `Minified React error #31` -- are on screens that rendered nothing, so they
+            # take the blank arm and already arrive verbatim.
             "#740 the browser reported %d distinct uncaught/console error(s) during this "
             "capture: %s. Nothing in this module used to read the console, so a crashed SPA "
             "could only be described as 'rendered BLANK' and the cause had to be rediscovered "
-            "by whoever drove a browser next. These are now in each screen's deviations.",
+            "by whoever drove a browser next. A BLANK screen's deviations now quote these "
+            "verbatim (#740); a screen that was photographed and judged carries the API paths "
+            "extracted from them instead (#1203l8).",
             len(_by740),
             # #1034: BOTH lists here were silently capped — the distinct errors (outer) and
             # the screens each was seen on (inner), each printed beside its own full count.

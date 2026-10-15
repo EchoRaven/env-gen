@@ -936,6 +936,68 @@ def add_svg_namespace_1203l6(text: str) -> str:
             + m.group(0)[len("<svg"):] + text[m.end():])
 
 
+# #1203mi: `position` on the ROOT <svg>, lifted from the live page by the scraper.
+_SVG_ROOT_POS_1203MI = re.compile(r"(^|;)\s*position\s*:", re.I)
+
+
+def svg_root_is_positioned_1203mi(text: str) -> bool:
+    """True when the root `<svg>`'s own `style` takes it out of flow."""
+    m = _SVG_ROOT_1203L6.search(text or "")
+    if not m:
+        return False
+    _s = re.search(r'style="([^"]*)"', m.group(0))
+    return bool(_s and _SVG_ROOT_POS_1203MI.search(_s.group(1)))
+
+
+def strip_root_position_1203mi(text: str) -> str:
+    """The same bytes without the root `<svg>`'s `position` declaration, and nothing else.
+
+    #1203mi. The scraper lifts icons out of inline page markup, and it takes the element's
+    live inline `style` with it. TikTok's tooltip arrow arrives as
+
+        <svg ... width="14.66" height="14" viewBox="0 0 14 14"
+             style="position: absolute; pointer-events: none; bottom: 100%;
+                    transform: rotate(180deg); left: 31.1719px;">
+
+    and a root that is `position: absolute` at `bottom: 100%` draws its paths outside its
+    own viewport, so the icon is EMPTY wherever the app uses it. Verified in real Chromium
+    over a 64x64 canvas (`<img src="data:image/svg+xml;base64,...">`, alpha > 8 counted):
+    0 opaque pixels of 4096 as staged, 1105 with `position` removed.
+
+    ONLY `position`, because that is the whole cause and #647 keeps a guard no wider than its
+    evidence. Measured per declaration on that same file: dropping `position` alone gives
+    1105; dropping `bottom`, `left`, `transform` or `pointer-events` alone each still gives
+    0. So the offsets and the rotation are inert once the element is back in flow, and
+    stripping them would be a rule the evidence does not ask for.
+
+    EVIDENCE FOR THE SET IT TOUCHES: of 8978 staged SVGs in the corpus, 843 carry a root
+    `style` and 411 of those declare `position` -- but only THREE distinct filenames, across
+    137 runs. Two are the empty sprite hosts `#1203ku` already drops at ingest (0 opaque
+    before and after, so this never competes with that drop); the third is this arrow, staged
+    in every modern run and referenced by 11 delivered source files (r27..r123, e.g. r52's
+    `SettingsMenu.jsx` uses it as the "Privacy" icon). Rendering all three before and after:
+    one improved, two unchanged, ZERO regressions.
+
+    A repair rather than a drop, unlike `#1203ku`: the arrow has real paths and a real
+    viewBox, so what is wrong with it is one declaration, not the file.
+    """
+    m = _SVG_ROOT_1203L6.search(text or "")
+    if not m:
+        return text
+    inner = m.group(0)
+    _s = re.search(r'style="([^"]*)"', inner)
+    if not _s or not _SVG_ROOT_POS_1203MI.search(_s.group(1)):
+        return text
+    kept = [d for d in _s.group(1).split(";")
+            if d.strip() and d.split(":")[0].strip().lower() != "position"]
+    if kept:
+        new_inner = inner[:_s.start(1)] + ";".join(kept) + inner[_s.end(1):]
+    else:
+        # Nothing else in it -- take the attribute with it rather than leave `style=""`.
+        new_inner = re.sub(r'\s*style="[^"]*"', "", inner, count=1)
+    return text[:m.start()] + new_inner + text[m.end():]
+
+
 # #1203ku: an element that puts ink on the canvas. `<use>`, `<image>` and `<foreignObject>`
 # count — a sprite SHEET draws through `<use>`, and HTML inside a `<foreignObject>` is real
 # pixels — so a file built that way is kept.
@@ -1160,15 +1222,39 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
                     _t1203l6 = path.read_text(encoding="utf-8", errors="replace")
                 except Exception:
                     _t1203l6 = None
-                if _t1203l6 is not None and svg_needs_namespace_1203l6(_t1203l6):
-                    dest.write_text(add_svg_namespace_1203l6(_t1203l6), encoding="utf-8")
+                # #1203mi: TWO repairs now share this text, and a file can need both -- both
+                # edit the ROOT tag, one inserting `xmlns` after `<svg` and one rewriting its
+                # `style`. Applied in sequence off ONE read with the predicates asked
+                # separately, so neither can hide the other's case; the order is pinned by a
+                # composition test because each transform has to survive the other's output.
+                _svgfix = _t1203l6
+                _did1203l6 = _did1203mi = False
+                if _svgfix is not None:
+                    if svg_needs_namespace_1203l6(_svgfix):
+                        _svgfix = add_svg_namespace_1203l6(_svgfix)
+                        _did1203l6 = True
+                    if svg_root_is_positioned_1203mi(_svgfix):
+                        _svgfix = strip_root_position_1203mi(_svgfix)
+                        _did1203mi = True
+                if _did1203l6 or _did1203mi:
+                    dest.write_text(_svgfix, encoding="utf-8")
                     import logging as _lg1203l6
-                    _lg1203l6.getLogger(__name__).warning(
-                        "material_prep: staged %s with `xmlns` added — the design input's copy "
-                        "has no namespace on its root <svg>, which an <img> cannot decode "
-                        "(verified in Chromium: naturalWidth 0 without it, 24 with). The "
-                        "scraper lifts these from inline page markup, where the HTML parser "
-                        "supplies it (#1203l6).", rel.as_posix())
+                    if _did1203l6:
+                        _lg1203l6.getLogger(__name__).warning(
+                            "material_prep: staged %s with `xmlns` added — the design input's "
+                            "copy has no namespace on its root <svg>, which an <img> cannot "
+                            "decode (verified in Chromium: naturalWidth 0 without it, 24 "
+                            "with). The scraper lifts these from inline page markup, where "
+                            "the HTML parser supplies it (#1203l6).", rel.as_posix())
+                    if _did1203mi:
+                        _lg1203l6.getLogger(__name__).warning(
+                            "material_prep: staged %s with the root <svg>'s `position` "
+                            "removed — the scraper kept the live page's inline style, and a "
+                            "root positioned out of flow draws its paths outside its own "
+                            "viewport, so the icon renders EMPTY wherever a lane uses it "
+                            "(Chromium: 0 opaque pixels of 4096 as captured, 1105 without "
+                            "it). Only that one declaration is dropped (#1203mi).",
+                            rel.as_posix())
                 else:
                     shutil.copy2(path, dest)
             else:

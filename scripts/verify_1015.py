@@ -427,6 +427,37 @@ def main(argv):
                 "%d backend file(s); names nothing binds: %d %s"
                 % (len(_files), len(_hits), sorted(set(_hits))[:3]))
 
+    # --- #1203mi -----------------------------------------------------------------------
+    # The scraper kept the live page's inline style, and a root <svg> positioned out of flow
+    # draws its paths outside its own viewport (Chromium: 0 opaque px of 4096, 1105 without
+    # it). Corpus before the fix: 411 instances, 3 distinct names, 137 runs.
+    _pos_mi = []
+    for _f in (pub.rglob("*.svg") if pub.is_dir() else []):
+        try:
+            _m = re.search(r"<svg\b[^>]*>", _f.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        if not _m:
+            continue
+        _st = re.search(r'style="([^"]*)"', _m.group(0))
+        if _st and re.search(r"(^|;)\s*position\s*:", _st.group(1), re.I):
+            _pos_mi.append(_f.name)
+    say("mi", "FALSIFIED" if _pos_mi else "CONFIRMED",
+        "staged SVGs whose ROOT style still declares `position`: %d %s"
+        % (len(_pos_mi), sorted(set(_pos_mi))[:3]))
+
+    # --- #1203mh -----------------------------------------------------------------------
+    # The #740 capture warning used to claim the console errors reach EVERY screen's
+    # deviations; they reach the _blank_screens arm only, and a judged screen gets #1203l8's
+    # extracted API paths instead. N-A when the run printed no #740 line.
+    _740 = [ln for ln in logtext.split("\n") if "#740 the browser reported" in ln]
+    if not _740:
+        say("mh", "N-A", "this run printed no #740 capture line")
+    else:
+        _bad_mh = [ln for ln in _740 if "now in each screen's deviations" in ln]
+        say("mh", "FALSIFIED" if _bad_mh else "CONFIRMED",
+            "%d #740 line(s); still claiming every screen: %d" % (len(_740), len(_bad_mh)))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
