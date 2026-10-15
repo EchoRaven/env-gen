@@ -3092,7 +3092,10 @@ _GLYPH_ICON_1203KD = re.compile(
     r">\s*(" + _GLYPH_1203KD + r"{1,3})\s*<"
     r"|>\s*\{\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]\s*\}\s*<"
     r"|=\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]"
-    r"|(?:icon|symbol|glyph)\s*[:=]\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]", re.I)
+    r"|(?:icon|symbol|glyph)\s*[:=]\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]"
+    # #1203kt: the CSS pseudo-element form, which is a whole icon mechanism the JSX shapes
+    # above cannot see — `.content:before { content: "\u2661" }`.
+    r"|content\s*:\s*['\"](" + _GLYPH_1203KD + r"{1,3})['\"]", re.I)
 
 # An icon library the code actually IMPORTS (not merely one listed in package.json: r164
 # declares lucide-react and imports it nowhere, with 29 glyphs in its source).
@@ -3145,8 +3148,15 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
         root = Path(frontend_src)
         if not root.is_dir():
             return out
+        # #1203kt: `.css` included. A project whose icons are entirely CSS pseudo-elements was
+        # invisible here, which is a structural blind spot rather than a volume question:
+        # across the modern era 8 runs carry `content: "<glyph>"` (10 occurrences — r176 `♡`
+        # and `★⌄`, r150/r152 `♪`, five more with one each), 7 already report through a JSX
+        # shape, and instagram-core-r176 has NO jsx hit and no icon library, so it reported
+        # nothing at all. A stylesheet cannot import a library, so the gate below is unaffected
+        # by reading these files.
         files = [f for f in sorted(root.rglob("*"))
-                 if f.suffix in (".jsx", ".tsx", ".js", ".ts")
+                 if f.suffix in (".jsx", ".tsx", ".js", ".ts", ".css")
                  and "node_modules" not in f.parts]
         texts = []
         for f in files:
@@ -3158,12 +3168,30 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
             return out
         for f, text in texts:
             for m in _GLYPH_ICON_1203KD.finditer(text):
+                _bol = text.rfind("\n", 0, m.start()) + 1
                 line = text[:m.start()].count("\n") + 1
-                _frag = " ".join(
-                    text.split("\n")[line - 1].strip().split())
-                # #1034: declare the cut rather than showing a slice as the whole line.
-                out.append("%s:%d: %s" % (
-                    f.name, line, _frag[:90] + ("…" if len(_frag) > 90 else "")))
+                _raw = text[_bol:text.find("\n", _bol) if text.find("\n", _bol) >= 0
+                            else len(text)]
+                _whole = " ".join(_raw.strip().split())
+                # #1203kt: CENTRE the fragment on the match, not on the line start. A
+                # stylesheet is often minified onto one line, so the first 90 characters of
+                # `styles.css:3` showed `.login-reference-page{min-height:100vh;…` and the
+                # glyph the finding is ABOUT was never visible. #1034 still applies: both cuts
+                # are declared.
+                #
+                # The window is measured in the RAW line by the match's own column, not by
+                # searching the matched text inside the line: a minified stylesheet can carry
+                # the same `content:"♡"` twice, and `find` would centre both findings on the
+                # first one.
+                if len(_whole) <= 90:
+                    _frag = _whole
+                else:
+                    _col = m.start() - _bol
+                    _lo = max(0, _col - 30)
+                    _hi = min(len(_raw), _col + len(m.group(0)) + 50)
+                    _frag = ("…" if _lo else "") + " ".join(
+                        _raw[_lo:_hi].strip().split()) + ("…" if _hi < len(_raw) else "")
+                out.append("%s:%d: %s" % (f.name, line, _frag))
                 if len(out) >= limit:
                     return out
     except Exception as _exc:

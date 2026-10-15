@@ -29,7 +29,7 @@ from multi_agent.runtime.frontend_audit import glyph_icon_findings_1203kd as G  
 
 def _src(tmp_path, **files):
     d = tmp_path / "src"
-    d.mkdir()
+    d.mkdir(parents=True)
     for name, body in files.items():
         (d / name).write_text(body, encoding="utf-8")
     return d
@@ -94,11 +94,23 @@ def test_it_honours_its_limit_and_never_raises_1203kd(tmp_path):
 
 
 def test_the_report_names_the_file_and_line_and_declares_its_cut_1203kd(tmp_path):
+    """#1203kt moved WHERE the cut falls, not whether it is declared.
+
+    This test asserted a TRAILING ellipsis, which pinned the fragment to the head of the
+    line. That is the defect #1203kt fixes: the window is now centred on the match, so a
+    long line is cut at the FRONT (and at both ends when the match sits in the middle). The
+    property #1034 asks for — a shortened line says so — is unchanged, and the stronger
+    property is now assertable: the glyph the finding is about is in the fragment.
+    """
     long = "<div className=\"" + "x" * 200 + "\"><span>♡</span></div>\n"
     d = _src(tmp_path, **{"Big.jsx": "\n" + long})
     out = G(d)
     assert out and out[0].startswith("Big.jsx:2: "), out
-    assert out[0].endswith("…"), ("#1034: a cut line must say it was cut", out)
+    assert "…" in out[0], ("#1034: a cut line must say it was cut", out)
+    assert "♡" in out[0], ("#1203kt: the fragment must show the glyph it reports", out)
+    # a line that was NOT cut carries no ellipsis, so the marker still means something
+    small = _src(tmp_path / "s", **{"Tiny.jsx": "<span>♡</span>\n"})
+    assert G(small) == ["Tiny.jsx:1: <span>♡</span>"], G(small)
 
 
 # --- the dispatch half, which is where a finding becomes an instruction ------------------
