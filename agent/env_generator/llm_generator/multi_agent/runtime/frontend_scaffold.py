@@ -6800,9 +6800,22 @@ _REL_IMPORT_RE = re.compile(r"""^\s*import\s[^'"]*from\s+['"](\.[^'"]+)['"]""", 
 # class #578 and the stub repairs exist to prevent. It was harmless only because #1202cw
 # refused the write; #1203f3 lets that write land, so the loose count had to be fixed in the
 # same breath.
+# #1203l2: the `.jsx` is OPTIONAL, because the lanes mostly leave it off. Counted over the
+# modern corpus's own `src/pages/*.jsx`: 337 component imports are written
+# `'../components/AppShell'` and 193 `'../components/AppShell.jsx'` — the shape this pattern
+# required was the MINORITY one, 193 of 530.
+#
+# What that cost: #576 discovers the app's shared shell from this count, so with 64% of the
+# imports invisible it found nothing in 24 of 39 modern runs and no dominant candidate in 12
+# more — it could fire in 3. Replaying the discovery over the delivered frontends with the
+# extension optional: 14 of 39, and the names are the app's own shells (AppShell,
+# TikTokAppShell, AuthenticatedAppShell, TikTokShell, SecondaryShell, DesktopShell, TikTokUI).
+# The cost of not firing is what #576's own docstring measured on r139: the chrome-less
+# projected page scored 0.28 against its sibling's 0.85 and alone held the blocking average
+# under the bar.
 _DEFAULT_COMP_IMPORT_1203F5 = re.compile(
     r"^\s*import\s+[A-Za-z_$][\w$]*(?:\s*,\s*\{[^}]*\})?\s+"
-    r"from\s+'\.\./components/([A-Za-z0-9_]+)\.jsx'", re.M)
+    r"from\s+'\.\./components/([A-Za-z0-9_]+)(?:\.jsx)?'", re.M)
 
 
 def _has_default_export_1203f5(comp_path: Path) -> bool:
@@ -6912,6 +6925,20 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
         ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
         comp, n = ranked[0]
         runner_up = ranked[1][1] if len(ranked) > 1 else 0
+        # #1203l3, WITHDRAWN and recorded rather than landed. With no runner-up
+        # "dominates the runner-up" has no content (`n >= 2 * 0` is free), so the floor of 3
+        # is the whole test, and #1203l2 makes that reachable in more runs: r152's only
+        # candidate is `TenantPicker` at 3 of its 12 pages, which is a widget, not chrome.
+        #
+        # The fix I tried was a share-of-pages floor for the empty-comparison case, at the
+        # ratio this feature was built for (r139's TopNav, 6 of 14 = 43%). It does refuse
+        # r152 and keeps the other no-runner-up case (r164's TikTokUI, 10 of 12) — but it
+        # also refuses #1203f5's own test fixture, where `Shell` is default-imported by 3 of
+        # 9 pages and is legitimately the shell. Separating 3-of-12 from 3-of-9 means a
+        # threshold tuned to two data points, and the docstring above already rejected a
+        # share rule for a reason that still holds: auth/landing pages correctly carry no
+        # chrome and poison the denominator. So the selection keeps a known imperfection,
+        # stated here, instead of an invented threshold.
         if n < 3 or n < 2 * runner_up:
             return {"mounted": [], "nav": None}
         if not (comp_dir / f"{comp}.jsx").is_file():
@@ -6934,7 +6961,15 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
         mounted = []
         unmounted = []                       # #1203f3: a refused mount is not a mount
         for p, txt in texts.items():
-            if 'data-projected="' not in txt or f"components/{comp}.jsx" in txt:
+            # #1203l2: extension-agnostic, for the same reason the pattern above is. This
+            # check decides whether the page ALREADY imports the shell, and the write below
+            # adds `'../components/<comp>.jsx'`; a page importing it without the extension
+            # would read as "not imported" and get a second binding, which is a build error
+            # (`Identifier has already been declared`). The corpus has 0 such pages today —
+            # said plainly — but #1203l2 is precisely what makes the no-extension form the
+            # common one, so the condition it creates is handled where it is created.
+            if ('data-projected="' not in txt
+                    or re.search(r"components/%s(\.jsx)?['\"]" % re.escape(comp), txt)):
                 continue
             m = _PROJECTED_ROOT_RE.search(txt)
             if not m or f"<{comp}" in txt:
