@@ -117,6 +117,26 @@ def test_the_call_site_wires_the_helper_into_the_rendered_screens_record():
     assert "_api404_by_screen_1203l8" in src, src[:200]
 
 
+def test_it_arrives_in_the_text_the_lane_actually_reads(tmp_path):
+    """END TO END, with r184's real shape. A note that never reaches `remediation_text` is a
+    fact with no recipient -- and there are two places it could have been lost on the way:
+    `#855` drops deviations a static capture can never satisfy, and the judge's own list is
+    capped at ten upstream. Checked rather than assumed."""
+    devs = W(["main content: implementation shows only a small centered 'not found' message, "
+              "while the reference shows the full own-profile page"], ["/api/users/1"])
+    result = {"passed": False, "min_similarity": 0.65, "screens": [
+        {"name": "profile_own", "route": "/profile", "similarity": 0.34, "passed": False,
+         "deviations": devs, "fixes": [], "dimensions": {}}]}
+    txt = VF.remediation_text(result)
+    assert "/api/users/1" in txt, txt[:400]
+    # the judge's complaint and the cause arrive together, in that order
+    assert txt.index("not found") < txt.index("/api/users/1"), txt[:400]
+    # and #855 still drops what it is for, so this is not a hole in that filter
+    assert VF._unsatisfiable_by_static_capture_855(
+        "Missing hover preview card with play/add/like actions", "my_list") is True
+    assert VF._unsatisfiable_by_static_capture_855(devs[-1], "profile_own") is False
+
+
 def test_the_corpus_screens_this_was_measured_on():
     """The 11 of 11, recomputed. Skipped when the corpus is absent."""
     import pytest
