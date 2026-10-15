@@ -69,6 +69,64 @@ def _walk(table, out, module_globals):
         _walk(child, out, module_globals)
 
 
+def _star_import_names(path, src):
+    """Top-level public names of every sibling module this one does `from X import *` on.
+
+    #1203md: without this the delivered `main.py` is unscannable. 205 of the 227 delivered
+    ones do `from models import *`, and symtable cannot know what that defines -- so every
+    ORM class came back as undefined (1328 candidates, almost all `User`/`Post`). Resolving
+    the sibling module turns that into signal: the one name in that noise which was NOT a
+    model class was `_sys`, and it was a real NameError the delivered app swallowed.
+
+    Only SIBLING modules are read, by their own top-level bindings, and only names that do
+    not start with `_` (what `import *` actually exports absent `__all__`). An `__all__` list
+    of plain strings is honoured when present. Any fault contributes nothing, which leaves
+    the scan where it was rather than hiding a name.
+    """
+    import ast as _ast
+    import os as _os
+    out = set()
+    try:
+        tree = _ast.parse(src)
+    except Exception:
+        return out
+    here = _os.path.dirname(_os.path.abspath(str(path)))
+    for node in _ast.walk(tree):
+        if not (isinstance(node, _ast.ImportFrom) and node.module
+                and any(a.name == "*" for a in node.names)):
+            continue
+        sib = _os.path.join(here, node.module.replace(".", _os.sep) + ".py")
+        if not _os.path.isfile(sib):
+            continue
+        try:
+            sibsrc = io.open(sib, encoding="utf-8", errors="replace").read()
+            sibtree = _ast.parse(sibsrc)
+        except Exception:
+            continue
+        declared = None
+        for n in sibtree.body:
+            if isinstance(n, _ast.Assign) and any(
+                    isinstance(t, _ast.Name) and t.id == "__all__" for t in n.targets):
+                if isinstance(n.value, (_ast.List, _ast.Tuple)):
+                    declared = {e.value for e in n.value.elts
+                                if isinstance(e, _ast.Constant) and isinstance(e.value, str)}
+        if declared is not None:
+            out |= declared
+            continue
+        for n in sibtree.body:
+            if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+                out.add(n.name)
+            elif isinstance(n, _ast.Assign):
+                out |= {t.id for t in n.targets if isinstance(t, _ast.Name)}
+            elif isinstance(n, _ast.AnnAssign) and isinstance(n.target, _ast.Name):
+                out.add(n.target.id)
+            elif isinstance(n, (_ast.Import, _ast.ImportFrom)):
+                for a in n.names:
+                    if a.name != "*":
+                        out.add((a.asname or a.name).split(".")[0])
+    return {n for n in out if not n.startswith("_")}
+
+
 def scan(path):
     """``[(scope_name, scope_lineno, undefined_name), ...]``; never raises on a syntax error."""
     try:
@@ -78,6 +136,7 @@ def scan(path):
         return []
     module_globals = {s.get_name() for s in top.get_symbols()
                       if s.is_assigned() or s.is_imported() or s.is_namespace()}
+    module_globals |= _star_import_names(path, src)       # #1203md
     out = []
     for child in top.get_children():
         _walk(child, out, module_globals)

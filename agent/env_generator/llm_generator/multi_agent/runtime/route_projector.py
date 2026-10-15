@@ -2745,7 +2745,32 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "        # (FK 23503→404, unique 23505→409, other incl. NotNull→400).",
             "        db.rollback()",
             *(([  # #566u: owner-scoped state-write → UPSERT on the (owner,subject) conflict, not 409
-                f'        _uc = _fw_upsert_on_conflict(db, {cls}, valid, user, "{_uc_ofk}", {_uc_subject_fks!r})',
+                # #1203me: `user` ONLY EXISTS WHEN THE HANDLER TOOK IT. The signature above
+                # adds it under `if auth:`; this line hardcoded the name regardless, so on a
+                # PUBLIC write the `except IntegrityError:` body raised NameError instead of
+                # recovering -- and a NameError inside an except clause is not caught by the
+                # sibling `except Exception` of the same try, so it reaches FastAPI as a 500.
+                # That is exactly the outcome #93 wrote this branch to prevent: its own
+                # comment says the catch-all's 500 "BYPASSED the global IntegrityError
+                # handler → reachability wedged", and the intended mapping (FK 23503→404,
+                # unique 23505→409, NotNull→400) never ran.
+                #
+                # MEASURED with scripts/undefined_names.py over every delivered backend:
+                # r156, r160 and r166 each ship a projected handler whose conflict path
+                # names a `user` its signature does not bind (modern era; `user` is the only
+                # such name left there once star imports are resolved).
+                #
+                # None, not a disabled branch: the helper reads `valid.get(owner_fk)` FIRST
+                # and only falls back to `_fw_owner_val(cls, owner_fk, user)`, so a public
+                # write whose body names the owner still upserts. With None that fallback
+                # yields None (`_fw_uid(None)` → None), the owner filter matches nothing, the
+                # helper returns None and the caller re-raises — the 409 the contract wanted.
+                #
+                # Same class the comment on the signature already fixed once in this
+                # function: dropping the `: User` annotations because they made the app die
+                # with `NameError: name 'User' is not defined` at import (instagram MM #13).
+                f'        _uc = _fw_upsert_on_conflict(db, {cls}, valid, '
+                f'{"user" if auth else "None"}, "{_uc_ofk}", {_uc_subject_fks!r})',
                 "        if _uc is not None:",
                 f"            return {{\"item\": {_serialize_expr('_uc', cols)}}}",
              ]) if _uc_enabled else []),

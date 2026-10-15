@@ -131,3 +131,73 @@ def test_the_tree_has_no_undefined_names(tool):
     hits = [(os.path.relpath(f, str(_AGENT)), line, scope, name)
             for f in files for scope, line, name in tool.scan(f)]
     assert hits == [], "names nothing defines:\n" + "\n".join(map(str, hits))
+
+
+# --- #1203md/#1203me: star imports ---------------------------------------------------
+# Without this the delivered `main.py` is unscannable: 205 of the 227 delivered ones do
+# `from models import *`, and symtable cannot know what that defines, so every ORM class came
+# back undefined — 1328 candidates, almost all `User`/`Post`. Resolving the sibling module
+# turned that into 203, and the names that were left were real: `_sys` (#1203md) and a `user`
+# a projected handler never took (#1203me).
+
+STAR_MODELS = '''
+from sqlalchemy import Column
+class User: pass
+class Post: pass
+_private = 1
+TABLE_COUNT = 2
+'''
+
+STAR_MAIN = '''
+from models import *
+def handler():
+    try:
+        return User(), Post(), TABLE_COUNT, Column
+    except Exception:
+        return None
+def broken():
+    try:
+        return Widget()
+    except Exception:
+        return None
+def also_broken():
+    try:
+        return _private
+    except Exception:
+        return None
+'''
+
+
+def _star_tree(tmp_path, main=STAR_MAIN, models=STAR_MODELS):
+    (tmp_path / "models.py").write_text(models, encoding="utf-8")
+    p = tmp_path / "main.py"
+    p.write_text(main, encoding="utf-8")
+    return p
+
+
+def test_a_star_import_resolves_the_siblings_names(tmp_path, tool):
+    """★ The two known answers again: an undefined name, and one `import *` does not export."""
+    p = _star_tree(tmp_path)
+    assert sorted(n for _s, _l, n in tool.scan(str(p))) == ["Widget", "_private"]
+
+
+def test_the_siblings_own_imports_come_through(tmp_path, tool):
+    """`Column` reaches main.py only because models.py imported it — `import *` re-exports."""
+    p = _star_tree(tmp_path)
+    assert "Column" not in {n for _s, _l, n in tool.scan(str(p))}
+
+
+def test_an_all_list_is_honoured(tmp_path, tool):
+    """With `__all__`, only those names are exported — `Post` is then undefined in main."""
+    models = STAR_MODELS + '\n__all__ = ["User"]\n'
+    p = _star_tree(tmp_path, models=models)
+    reported = {n for _s, _l, n in tool.scan(str(p))}
+    assert "Post" in reported and "User" not in reported
+
+
+def test_a_missing_sibling_contributes_nothing(tmp_path, tool):
+    """No models.py: the scan stays where it was rather than inventing bindings."""
+    p = tmp_path / "main.py"
+    p.write_text(STAR_MAIN, encoding="utf-8")
+    reported = {n for _s, _l, n in tool.scan(str(p))}
+    assert {"User", "Post", "Widget"} <= reported
