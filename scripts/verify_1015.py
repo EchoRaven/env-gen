@@ -270,6 +270,77 @@ def main(argv):
             "%d probe record(s); scored-fail-on-own-empty-request: %d %s"
             % (_n4, len(_bad4), sorted(set(_bad4))[:3]))
 
+    # --- #1203m5 ----------------------------------------------------------------------
+    # Every "type changed" breaking-change P0 must name the pair, not just the field.
+    _bc = [o for o in _w(_tasks)
+           if str(o.get("title") or "").startswith("Fix breaking change")
+           and "type changed" in str(o.get("title") or "")]
+    if not _bc:
+        say("m5", "N-A", "no type-change breaking P0 was filed in this run")
+    else:
+        _mute = [str(o.get("title"))[:48] for o in _bc
+                 if " -> " not in str(o.get("description") or "")]
+        say("m5", "FALSIFIED" if _mute else "CONFIRMED",
+            "%d type-change P0(s); without the pair: %d %s"
+            % (len(_bc), len(_mute), _mute[:2]))
+
+    # --- #1203m6 / #1203m7 / #1203m8 --------------------------------------------------
+    _bcs = _json(run / "shared" / "hubs" / "registryhub_breaking_changes.json", {}) or {}
+    _eps = _json(run / "shared" / "hubs" / "registryhub_endpoints.json", {}) or {}
+    _per = {}
+    for _k, _v in _bcs.items():
+        if _k == "_meta" or not isinstance(_v, dict):
+            continue
+        _per.setdefault(_v.get("endpoint_id"), []).append(_v)
+    for _e in _per:
+        _per[_e].sort(key=lambda r: r.get("created_at") or 0)
+
+    # m6: a response-key change must name both keys in the TITLE.
+    _rk = [o for o in _w(_tasks)
+           if str(o.get("title") or "").startswith("Fix breaking change")
+           and "response key" in str(o.get("title") or "")]
+    _bare = [o for o in _w(_tasks)
+             if str(o.get("title") or "").startswith("Fix breaking change")
+             and ":" not in str(o.get("title") or "")[len("Fix breaking change in "):]]
+    if not _per:
+        say("m6", "N-A", "no breaking-change record in this run")
+    else:
+        say("m6", "FALSIFIED" if _bare else "CONFIRMED",
+            "%d response-key title(s); titles with NO detail at all: %d (corpus baseline 114/441)"
+            % (len(_rk), len(_bare)))
+
+    # m7: how many endpoints declare the key in the schema only -- the population the
+    # effective-key read serves. Reported, not judged: one run cannot falsify it.
+    _schema_only = 0
+    for _k, _v in _eps.items():
+        if _k == "_meta" or not isinstance(_v, dict):
+            continue
+        _sc = _v.get("schema") if isinstance(_v.get("schema"), dict) else {}
+        _md = _v.get("metadata") if isinstance(_v.get("metadata"), dict) else {}
+        if _sc.get("response_key") and not _md.get("response_key"):
+            _schema_only += 1
+    say("m7", "INFO", "endpoints declaring response_key in the SCHEMA only: %d" % _schema_only)
+
+    # m8: a first registration must not mint a record. Measured as the share of endpoints
+    # whose EARLIEST record uses only the two flags an absent `old` can set -- 93% (888/955)
+    # before the fix.
+    _FIRSTABLE = {"response_key_changed", "auth_added"}
+    _only = 0
+    for _e, _recs in _per.items():
+        _b = _recs[0].get("breaking") or {}
+        _on = {f for f, v in _b.items()
+               if f != "is_breaking" and (v is True or (isinstance(v, list) and v))}
+        if _on and _on <= _FIRSTABLE:
+            _only += 1
+    if not _per:
+        say("m8", "N-A", "no breaking-change record in this run")
+    else:
+        _share = 100.0 * _only / len(_per)
+        say("m8",
+            "FALSIFIED" if _share >= 80 else ("CONFIRMED" if _share < 50 else "INFO"),
+            "%d/%d endpoints (%.0f%%) have a first-registration-shaped earliest record "
+            "(baseline 93%%)" % (_only, len(_per), _share))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)

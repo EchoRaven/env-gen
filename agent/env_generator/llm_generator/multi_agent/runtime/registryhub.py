@@ -377,10 +377,85 @@ def _breaking_title_detail_1202sr(breaking: Any, cap: int = 96) -> str:
             bits.append("auth added")
         if breaking.get("method_changed"):
             bits.append("method changed")
+        # #1203m6: the two flags that reached no bit at all. The `elif` is for a record
+        # written before this landed (and for a hand-built dict): a title that says
+        # "response key changed" is still tellable apart from "removed x", which is what
+        # #1202sr is for, and it never claims values it does not have.
+        if breaking.get("response_key_change_1203m6"):
+            bits.append("response key %s" % breaking["response_key_change_1203m6"])
+        elif breaking.get("response_key_changed"):
+            bits.append("response key changed")
+        if breaking.get("path_change_1203m6"):
+            bits.append("path %s" % breaking["path_change_1203m6"])
+        elif breaking.get("path_changed"):
+            bits.append("path changed")
         if not bits:
             return ""
         out = "; ".join(bits)
         return out if len(out) <= cap else out[:cap - 1].rstrip(", ;") + "…"
+    except Exception:
+        return ""
+
+
+def _type_change_sentence_1203m5(breaking: Any, cap: int = 6) -> str:
+    """"`created_at` datetime -> str?, `sound_id` int -> str" — or "" when nothing to say.
+
+    #1203m5: THE TASK NAMED THE FIELD AND NEVER THE CHANGE. The P0 that
+    `_record_breaking_change` files reads "type changed created_at" in its title and, in its
+    body, the raw payload -- seven boolean flags that are all False plus the field NAMES --
+    followed by the consumer files. The one fact a lane needs to act is the pair of types, and
+    `detect_breaking_change` holds BOTH of them on the line where it decides
+    (`old_response[key]`, `new_response[key]`). It threw them away.
+
+    MEASURED: 441 `Fix breaking change` tasks in 33 of the 39 modern runs (r177 alone 54), and
+    `type changed` names `id` 58 times and `created_at` 48. The cost shows up as work the
+    orchestrator had to redo by hand: r168 and r177 cancel five of these as false positives
+    with the reason written out -- "endpoint schema now declares created_at as `string?` which
+    matches JSON/runtime frontend-safe timestamp consumption". It had to go re-derive the two
+    types the framework already compared.
+
+    ★ NAMING IS THE WHOLE FIX. The tempting next step is to call `datetime -> str` non-breaking
+    and stop filing it, since both are strings on the wire. That is not done here: `#1202om`
+    chose its alias map deliberately and a predicate I invent overmatches -- a field that
+    stopped being a timestamp and became free text is a real change, and `str -> str?` adds a
+    null a consumer may not handle. Handing the lane the pair lets it make the judgement the
+    orchestrator is already making manually, which is the smallest change that removes the
+    re-derivation.
+
+    #1034: capped, and says so when it caps.
+    """
+    try:
+        if not isinstance(breaking, dict):
+            return ""
+        changes = breaking.get("type_changes_1203m5")
+        if not isinstance(changes, dict) or not changes:
+            return ""
+        from .message_format import join_capped as _jc1203m5
+        bits = ["`%s` %s" % (k, changes[k]) for k in sorted(changes)]
+        return _jc1203m5(bits, cap=cap, sep=", ")
+    except Exception:
+        return ""
+
+
+def _shape_change_sentence_1203m6(breaking: Any) -> str:
+    """"response key `posts` -> `items`" / "path /a -> /b" — or "" when neither moved.
+
+    #1203m6. The sibling of `_type_change_sentence_1203m5`, kept separate so each name says
+    what it renders (#1032). The measurement is in `detect_breaking_change`: this flag fires
+    862 times modern, more than twice the type case, and it is the one that produced the 114
+    detail-less titles.
+    """
+    try:
+        if not isinstance(breaking, dict):
+            return ""
+        bits = []
+        rk = breaking.get("response_key_change_1203m6")
+        if rk:
+            bits.append("response key %s" % rk)
+        pc = breaking.get("path_change_1203m6")
+        if pc:
+            bits.append("path %s" % pc)
+        return ", ".join(bits)
     except Exception:
         return ""
 
@@ -944,22 +1019,74 @@ class RegistryHub:
             if isinstance(endpoint.get("schema"), dict) and endpoint["schema"].get("response_key"):
                 endpoint["schema"]["response_key"] = _canon
         _note_1202qr = self._materials_auth_guard_1202qr(old, endpoint)
+        # #1203m7: THE EFFECTIVE KEY, not the metadata copy. The block twenty lines above
+        # already knows the declaration lives in either place -- it reads
+        # `_md.get("response_key") or schema.get("response_key")` and says why ("a lane that
+        # put a non-canonical key ONLY in schema ... bypassed the metadata-only rewrite") --
+        # but it only MIRRORS into metadata when the key is non-canonical. A lane that
+        # declares the already-canonical `items` in the schema alone therefore leaves
+        # `metadata.response_key` unset, and these two dicts read None for it.
+        #
+        # MEASURED over the 39 modern runs' endpoint records: 713 carry the key in BOTH
+        # places (34 of those two copies DISAGREE), 128 in metadata only, and **201 in the
+        # SCHEMA ONLY** -- invisible to this comparison. Readers are split the same way, which
+        # is the #730 shape: 8 sites read it off the endpoint top level, 3 off the schema, and
+        # this comparison off metadata.
+        #
+        # WHAT IT BUYS, after I checked the half I first claimed and was wrong. Both sides
+        # schema-only read None vs None today, so a REAL change is missed; after this they
+        # compare the declared values -- a true positive gained, for the 201.
+        #
+        # ★ The second benefit I wrote down first -- "one side metadata, the other schema,
+        # same value, so a moved declaration is reported as a change" -- DOES NOT EXIST, and
+        # driving the real object is what showed it: `register_endpoint` merges metadata
+        # forward (`{**old.metadata, **new}`), so once the key has been in metadata it stays
+        # there and both sides keep reading it. The asymmetry cannot arise by
+        # re-registration. Withdrawn rather than left in as a plausible-sounding reason.
+        #
+        # Reusing the existing expression rather than inventing a second rule (#1032).
+        def _eff_rk_1203m7(rec):
+            rec = rec or {}
+            return ((rec.get("metadata") or {}).get("response_key")
+                    or (rec.get("schema") or {}).get("response_key"))
         old_full = {
             **((old or {}).get("schema") or {}),
             "method": (old or {}).get("method"),
             "path": (old or {}).get("path"),
-            "response_key": ((old or {}).get("metadata") or {}).get("response_key"),
+            "response_key": _eff_rk_1203m7(old),
             "auth_required": _resolved_auth_1202gr(old),
         }
         new_full = {
             **endpoint["schema"],
             "method": endpoint.get("method"),
             "path": endpoint.get("path"),
-            "response_key": (endpoint.get("metadata") or {}).get("response_key"),
+            "response_key": _eff_rk_1203m7(endpoint),
             "auth_required": _resolved_auth_1202gr(endpoint),
         }
         breaking = self.detect_breaking_change(old_full, new_full)
-        if breaking["is_breaking"]:
+        # #1203m8: A FIRST REGISTRATION IS NOT A CHANGE. With no `old`, `old_full` is all
+        # Nones, and exactly two flags can still fire against it: `response_key_changed`
+        # (None != "items") and `auth_added` (new requires auth, "old" did not). The other
+        # five need both sides, so they stay False. The result is a breaking-change record
+        # minted the moment an endpoint is declared for the FIRST time -- reproduced directly
+        # on a fresh registry, where one registration leaves one record reading
+        # `response_key_change_1203m6: "(none) -> items"`.
+        #
+        # MEASURED over the 39 modern runs: of the 955 endpoints carrying any breaking record,
+        # **888 (93%)** have an EARLIEST record whose flags are only those two -- 447
+        # response_key alone, 287 both, 154 auth_added alone -- while every record using a
+        # flag that NEEDS a previous version totals 67. And it reaches lanes: **34 of the 441
+        # `Fix breaking change` P0s** were filed within 2s of such a record, i.e. a P0 to fix
+        # a regression in an endpoint that had no previous version. (It is not worse only
+        # because the task loop needs consumers to already exist; `_emit` with
+        # priority="urgent" has the same gate.)
+        #
+        # The rule is already in this function, one line below: the auth-REMOVED branch reads
+        # `elif old and old_full.get("auth_required") ...`. It was applied to one of the two
+        # branches. The guard goes HERE and not in `detect_breaking_change`, which is a pure
+        # comparator that other callers hand two schemas to directly -- only the call site
+        # knows whether there was a previous version at all.
+        if old and breaking["is_breaking"]:
             self._record_breaking_change(endpoint_id, breaking, agent=agent)
             endpoint["breaking_change"] = breaking
         elif old and old_full.get("auth_required") and not new_full.get("auth_required"):
@@ -1610,12 +1737,19 @@ class RegistryHub:
 
         removed_response_fields: list = []
         type_changed_fields: list = []
+        # #1203m5: and WHAT it changed to. See `_type_change_sentence_1203m5`.
+        type_changes_1203m5: dict = {}
         if isinstance(old_response, dict) and isinstance(new_response, dict):
             removed_response_fields = sorted(set(old_response.keys()) - set(new_response.keys()))
             for key in old_response.keys() & new_response.keys():
-                if (self._canon_type_1202om(old_response[key])      # #1202om
-                        != self._canon_type_1202om(new_response[key])):
+                _o1203m5 = self._canon_type_1202om(old_response[key])     # #1202om
+                _n1203m5 = self._canon_type_1202om(new_response[key])
+                if _o1203m5 != _n1203m5:
                     type_changed_fields.append(key)
+                    # The CANONICAL spellings, because those are what the comparison above
+                    # used: printing the raw declarations would show pairs like
+                    # `bool -> boolean`, which #1202om deliberately does NOT report.
+                    type_changes_1203m5[str(key)] = "%s -> %s" % (_o1203m5, _n1203m5)
 
         required_added_in_request: list = []
         if isinstance(old_request, dict) and isinstance(new_request, dict):
@@ -1636,6 +1770,24 @@ class RegistryHub:
             old_schema.get("response_key") != new_schema.get("response_key")
             and (old_schema.get("response_key") is not None or new_schema.get("response_key") is not None)
         )
+        # #1203m6: WHICH key, and WHICH path. Same defect as #1203m5 one flag over, and
+        # bigger: `response_key_changed` fires 862 times across the modern runs against
+        # `type_changed_fields`' 332, and unlike the type case it does not even reach the
+        # TITLE -- `_breaking_title_detail_1202sr` has no bit for it, so 114 of the 441
+        # modern `Fix breaking change` tasks (26%, in 24 of 39 runs) carry NO detail at all,
+        # and seven groups are byte-identical titles repeated inside one run. That is exactly
+        # the "22 identical rows" #1202sr exists to prevent, still live on this flag.
+        # Attribution checked on r156/r185/r152/r183: every detail-less record there is
+        # `response_key_changed` (86) or `path_changed` (9) and nothing else.
+        def _pair1203m6(a, b):
+            return "%s -> %s" % (a if a not in (None, "") else "(none)",
+                                 b if b not in (None, "") else "(none)")
+        response_key_change_1203m6 = (
+            _pair1203m6(old_schema.get("response_key"), new_schema.get("response_key"))
+            if response_key_changed else "")
+        path_change_1203m6 = (
+            _pair1203m6(old_schema.get("path"), new_schema.get("path"))
+            if path_changed else "")
         auth_added = bool(new_schema.get("auth_required") and not old_schema.get("auth_required"))
         if auth_added and _framework_auth_surface_1202gr(new_schema.get("path")
                                                          or old_schema.get("path")):
@@ -1658,10 +1810,18 @@ class RegistryHub:
             "is_breaking": is_breaking,
             "removed_response_fields": removed_response_fields,
             "type_changed_fields": sorted(type_changed_fields),
+            # #1203m5: additive. Readers of `type_changed_fields` are untouched; the dedupe
+            # key (#1202gz) gets MORE specific, which is the right direction -- the same
+            # fields moving to a different type is genuinely different news.
+            "type_changes_1203m5": dict(sorted(type_changes_1203m5.items())),
             "required_added_in_request": sorted(required_added_in_request),
             "method_changed": method_changed,
             "path_changed": path_changed,
             "response_key_changed": response_key_changed,
+            # #1203m6: additive, like #1203m5. Empty string when the flag is False, so a
+            # reader can treat presence as the same question as the boolean.
+            "path_change_1203m6": path_change_1203m6,
+            "response_key_change_1203m6": response_key_change_1203m6,
             "auth_added": auth_added,
         }
 
@@ -1828,7 +1988,17 @@ class RegistryHub:
                         title=_breaking_task_title_1202sr(endpoint_id, breaking),
                         description=(
                             f"RegistryHub detected a breaking change in {endpoint_id}: "
-                            f"{breaking}. Consumer files: {consumer_files}"
+                            # #1203m5: the types FIRST, before the payload dump whose other
+                            # seven flags are all False on a type change (#1202vx: the
+                            # evidence gets the budget, not the boilerplate).
+                            # #1203m5/#1203m6: the values first, then the payload dump.
+                            + ((", ".join(
+                                x for x in (_type_change_sentence_1203m5(breaking),
+                                            _shape_change_sentence_1203m6(breaking)) if x)
+                                + ". ")
+                               if (_type_change_sentence_1203m5(breaking)
+                                   or _shape_change_sentence_1203m6(breaking)) else "")
+                            + f"{breaking}. Consumer files: {consumer_files}"
                         ),
                         assignee=consumer_agent,
                         agent=agent or "registryhub",
