@@ -4307,12 +4307,29 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 (r for r in recorded
                  if r.get("kind") in ("broken", "missing", "environment_1202od")), None)
             if _first_fail_1202oe is not None:
+                # #1203kp: the QUOTE was cut at 80 characters with nothing to say so.
+                #
+                # Found by the length-spike instrument, which is what a bare `[:N]` looks like
+                # from outside: across the corpus's 300 of these quotes the length histogram
+                # spikes at exactly 80 — 93 of them, 62 in the modern era — against 21, 46 and
+                # 22 for the shapes that fit. A reader takes the parenthetical for the whole of
+                # what the earlier step said, and the cut lands mid-word: r175 quotes
+                # `…save failed at step 'list_participant_conversation` (the step is
+                # `conversations`), r176 `…the table is populated, so` — and in that one the
+                # clause that was dropped is the actionable half.
+                #
+                # Only the cut is declared, not widened: the budget exists because this is a
+                # QUOTE inside another step's note (#1202vx — the evidence gets the room), and
+                # the full text is on the earlier step's own record, which the sentence already
+                # names. `…` is this project's own marker for it (#1034).
+                _q1203kp = str(_first_fail_1202oe.get("note")
+                               or _first_fail_1202oe.get("status"))
                 entry["note"] = ((entry.get("note") or "") + " | " if entry.get("note") else "") + (
                     "NOT THE FIRST FAILURE in this chain — `%s %s` failed earlier (%s). Any "
                     "state that step was to create does not exist, so fix that one first and "
                     "re-run before treating this step as a defect."
                     % (_first_fail_1202oe.get("method"), _first_fail_1202oe.get("path"),
-                       str(_first_fail_1202oe.get("note") or _first_fail_1202oe.get("status"))[:80]))
+                       _q1203kp[:80] + ("…" if len(_q1203kp) > 80 else "")))
         recorded.append(entry)
         if ok:
             # #566z: remember what this actor already got a 2xx for. Recorded AFTER the
