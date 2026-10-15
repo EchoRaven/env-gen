@@ -545,6 +545,102 @@ def main(argv):
         say("mh", "FALSIFIED" if _bad_mh else "CONFIRMED",
             "%d #740 line(s); still claiming every screen: %d" % (len(_740), len(_bad_mh)))
 
+    # --- #1203mj -----------------------------------------------------------------------
+    # The #743 warning called its own finding inert while #751 blocks the cut on it. A
+    # claim about the framework's OWN EMITTED WORDING, which a run never retracts, so the
+    # log is the right place to ask (see the #1203mp audit: the question is whether the
+    # answer can change mid-run, and this one cannot).
+    _743 = [l for l in logtext.split("\n") if "#743 " in l and "FAILED at the delivery cut" in l]
+    if not _743:
+        say("mj", "N-A", "no run ended with a FAILED task at the cut")
+    else:
+        _bad_mj = [l for l in _743
+                   if "nothing reads them" in l or "Reported, not enforced" in l]
+        say("mj", "FALSIFIED" if _bad_mj else "CONFIRMED",
+            "%d #743 failed-task line(s); still calling the finding inert: %d"
+            % (len(_743), len(_bad_mj)))
+
+    # --- #1203ml -----------------------------------------------------------------------
+    # When a build dies on the tar stream, something must now NAME the context. Paired
+    # question: the premise (a tar failure happened) and the claim (it was explained).
+    _tarfail = [p for p in (run / "logs").glob("compose*failure*.log")
+                if (run / "logs").is_dir()
+                and re.search(r"missed writing|unexpected EOF",
+                              p.read_text(encoding="utf-8", errors="replace"))]
+    if not _tarfail:
+        say("ml", "N-A", "no build died on the tar stream in this run")
+    else:
+        _named = logtext.count("#1203ml the build context, not the app")
+        say("ml", "CONFIRMED" if _named else "FALSIFIED",
+            "%d tar/EOF build failure(s); times the context was named: %d"
+            % (len(_tarfail), _named))
+
+    # --- #1203mm -----------------------------------------------------------------------
+    # Both halves or neither: anything excluded from the context MUST be mounted back, or
+    # the media 404s. Read off the ARTIFACTS (.dockerignore + compose), never the log --
+    # this is a question about the project's final state.
+    _fe_mm = run / "app" / "frontend"
+    _di_mm = _fe_mm / ".dockerignore"
+    _cf_mm = run / "docker" / "docker-compose.yml"
+    _heavy_mm = []
+    _assets_mm = _fe_mm / "public" / "assets"
+    if _assets_mm.is_dir():
+        for _sub in sorted(_assets_mm.iterdir()):
+            if not _sub.is_dir():
+                continue
+            _b = sum(f.stat().st_size for f in _sub.rglob("*") if f.is_file())
+            if _b >= 100 * (1024 ** 2):
+                _heavy_mm.append((_sub.name, _b))
+    if not _heavy_mm:
+        say("mm", "N-A", "no staged media directory over the 100 MB floor")
+    else:
+        _ditext = _di_mm.read_text(encoding="utf-8", errors="replace") if _di_mm.is_file() else ""
+        _cftext = _cf_mm.read_text(encoding="utf-8", errors="replace") if _cf_mm.is_file() else ""
+        _unmatched = []
+        for _nm, _b in _heavy_mm:
+            _excluded = ("public/assets/%s" % _nm) in _ditext
+            _mounted = ("/usr/share/nginx/html/assets/%s" % _nm) in _cftext
+            if _excluded != _mounted:
+                _unmatched.append("%s(excluded=%s mounted=%s)" % (_nm, _excluded, _mounted))
+            elif not _excluded:
+                _unmatched.append("%s(still in the context)" % _nm)
+        say("mm", "FALSIFIED" if _unmatched else "CONFIRMED",
+            "%d heavy media dir(s) %s; unhandled or half-handled: %s"
+            % (len(_heavy_mm),
+               ", ".join("%s %.0fMB" % (n, b / (1024 ** 2)) for n, b in _heavy_mm),
+               _unmatched or "none"))
+
+    # --- #1203mn -----------------------------------------------------------------------
+    # The top blocker must quote the words its own records carry. Premise from the ledger,
+    # claim checked against the records on disk -- not a log count.
+    _mn_prose = []
+    _dgl = run / "logs" / "delivery_gate.jsonl"
+    if _dgl.is_file():
+        for _line in _dgl.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                _d = json.loads(_line)
+            except Exception:
+                continue
+            _v = (_d.get("blocker_prose") or {}).get("validation_ui_evidence_failed")
+            if _v:
+                _mn_prose.append(" ".join(_v) if isinstance(_v, list) else str(_v))
+    _checks_mn = _json(run / "shared" / "hubs" / "codehub_checks.json", {}) or {}
+    _have_words = any(
+        isinstance(v, dict) and "ui_flow" in str(v.get("name", ""))
+        and str(v.get("status", "")).lower() in ("failure", "failed", "fail")
+        and str(((v.get("evidence") or {}) if isinstance(v.get("evidence"), dict) else {})
+                .get("summary") or "").strip()
+        for v in _checks_mn.values())
+    if not _mn_prose:
+        say("mn", "N-A", "this run never emitted the ui-evidence blocker")
+    elif not _have_words:
+        say("mn", "N-A", "the blocker fired but no failing ui_flow record carries words")
+    else:
+        _silent = sum(p.count("no summary recorded") for p in _mn_prose)
+        say("mn", "FALSIFIED" if _silent else "CONFIRMED",
+            "%d blocker entr(ies) while records DO carry words; 'no summary recorded': %d"
+            % (len(_mn_prose), _silent))
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
