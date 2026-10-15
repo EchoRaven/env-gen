@@ -201,3 +201,79 @@ def test_a_missing_sibling_contributes_nothing(tmp_path, tool):
     p.write_text(STAR_MAIN, encoding="utf-8")
     reported = {n for _s, _l, n in tool.scan(str(p))}
     assert {"User", "Post", "Widget"} <= reported
+
+
+# --- composition: the PROJECTED backend, end to end ----------------------------------
+# #1203l9's rule: patches that land on one output need a test that renders that output
+# once. Four did on 2026-10-15 (three of them covered here -- see the note below) — #1203md (an unbound `_sys` in the seed-shortfall report),
+# #1203me (a `user` a projected handler never took), #1203mf (a bare `text(` in #803's
+# label read) and #1203mg (unreachable statements after an action stub, reading an unbound
+# `valid`). Each has its own tests; this one renders a backend that exercises all four
+# shapes at once and requires the instrument to find nothing.
+
+_COMPOSITION_ENDPOINTS = [
+    {"method": "GET", "path": "/api/titles/{id}", "metadata": {"response_key": "item"}},
+    {"method": "POST", "path": "/api/posts", "metadata": {"response_key": "item"},
+     "auth_required": True},
+    {"method": "POST", "path": "/api/posts/{id}/repost", "metadata": {},
+     "auth_required": True},
+    {"method": "GET", "path": "/api/posts", "metadata": {"response_key": "items"}},
+]
+
+_COMPOSITION_TABLES = {
+    # titles + genres + the link table give #803 its label read
+    "titles": {"columns": [{"name": "id", "type": "serial primary key"},
+                           {"name": "name", "type": "text"}]},
+    "genres": {"columns": [{"name": "id", "type": "serial primary key"},
+                           {"name": "name", "type": "text"}]},
+    "title_genres": {"columns": [{"name": "id", "type": "serial primary key"},
+                                 {"name": "title_id", "type": "integer references titles(id)"},
+                                 {"name": "genre_id", "type": "integer references genres(id)"}]},
+    "users": {"columns": [{"name": "id", "type": "serial primary key"},
+                          {"name": "email", "type": "text"}]},
+    "posts": {"columns": [{"name": "id", "type": "serial primary key"},
+                          {"name": "user_id", "type": "integer references users(id)"},
+                          {"name": "body", "type": "text"}]},
+}
+
+
+def test_a_freshly_projected_backend_has_no_undefined_names(tmp_path, tool):
+    """★ The forward state for #1203md/me/mf/mg at once, on the real rendered output."""
+    from env_generator.llm_generator.multi_agent.runtime.backend_skeleton import (
+        write_backend_skeleton)
+
+    (tmp_path / "app" / "backend").mkdir(parents=True)
+    write_backend_skeleton(tmp_path, _COMPOSITION_ENDPOINTS, _COMPOSITION_TABLES)
+    files = [f for f in (tmp_path / "app" / "backend").rglob("*.py")
+             if "__pycache__" not in str(f)]
+    assert len(files) >= 3, "the skeleton rendered almost nothing (%d files)" % len(files)
+    hits = [(f.name, line, scope, name)
+            for f in files for scope, line, name in tool.scan(str(f))]
+    assert hits == [], "the projected backend reads names nothing binds:\n" + "\n".join(
+        map(str, hits))
+
+
+def test_the_composition_actually_exercises_all_four_shapes(tmp_path):
+    """A clean scan is only evidence if the four shapes are present to be scanned."""
+    from env_generator.llm_generator.multi_agent.runtime.backend_skeleton import (
+        write_backend_skeleton)
+
+    (tmp_path / "app" / "backend").mkdir(parents=True)
+    write_backend_skeleton(tmp_path, _COMPOSITION_ENDPOINTS, _COMPOSITION_TABLES)
+    main = (tmp_path / "app" / "backend" / "main.py").read_text(encoding="utf-8")
+    seed = (tmp_path / "app" / "backend" / "seed_data.py").read_text(encoding="utf-8")
+    assert "_verify_seed_counts_1202r" in seed, "#1203md's function is not in the render"
+    assert "_labels = {}" in main, "#1203mf's label read is not in the render"
+    assert "action endpoint not implemented" in main, "#1203mg's stub is not in the render"
+    assert "_fw_upsert_on_conflict" in main, "the conflict path is not in the render"
+    # ★ WHAT THIS COMPOSITION DOES NOT COVER, and why, because a clean scan that silently
+    # misses a shape is worse than no claim. #1203me needs the conflict path in a handler
+    # that does NOT bind `user`, i.e. a PUBLIC owner-scoped write — and that combination is
+    # nearly unreachable from tables alone: #566u enables the upsert exactly for the
+    # owner-FK-plus-subject-FK shape, and #1202vt/#598 read that same shape as per-user
+    # private and project an actor onto it, overriding an explicit `auth_required: False`
+    # (the render says so out loud: "SHAPE OVERRODE AN EXPLICIT PUBLIC"). It takes MATERIALS
+    # declaring the entity public to get there, which `write_backend_skeleton` does not take
+    # here — and that is why #1203me shows in only 3 delivered runs. Mutation confirmed the
+    # gap rather than my reading it: reverting #1203me came back MISSED here while its own
+    # test (`test_1203me_…`, the invariant over both values of `auth`) CAUGHT it 3/3.
