@@ -163,7 +163,6 @@ def test_the_existing_blocker_still_demands_fk_validity():
 
 @pytest.mark.parametrize("run,expect_col,expect_n", [
     ("netflix-local-r32", "title_genres.title_id", 6),
-    ("tiktok-web-r58", "comments.user_id", 30),
 ])
 def test_the_corpus_cases_this_describes(run, expect_col, expect_n):
     f = Path(__file__).resolve().parents[2] / "generated" / run / "app" / "backend" / "seed_data.json"
@@ -171,6 +170,38 @@ def test_the_corpus_cases_this_describes(run, expect_col, expect_n):
         pytest.skip("%s artifacts not on disk" % run)
     out = orphans(json.loads(f.read_text(encoding="utf-8")))
     assert out.get(expect_col) == expect_n, out
+
+
+def test_r58_was_a_type_mismatch_not_an_orphan_set():
+    """#1203mt moved this case, it did not delete it.
+
+    This file used to parametrize `("tiktok-web-r58", "comments.user_id", 30)`, and those 30
+    were never dangling rows: r58's `users[].id` are INTS and its `comments[].user_id` are
+    STRINGS, so the old raw `val not in ids` compared 1 against {"1", ...} and called every
+    row an orphan. Corpus-wide that shape was 64 of 99 reports (65%), and two runs -- r58 and
+    tiktok-web-r107 -- lost every single one of theirs.
+
+    Kept as a case rather than dropped, because it is the evidence for the fix: the raw rule
+    still finds 30 here and the shipped one finds none, which is the whole of #1203mt in one
+    artifact.
+    """
+    f = (Path(__file__).resolve().parents[2] / "generated" / "tiktok-web-r58"
+         / "app" / "backend" / "seed_data.json")
+    if not f.exists():
+        pytest.skip("r58 artifacts not on disk")
+    data = json.loads(f.read_text(encoding="utf-8"))
+
+    users = {u.get("id") for u in data.get("users", []) if isinstance(u, dict)}
+    refs = [c.get("user_id") for c in data.get("comments", [])
+            if isinstance(c, dict) and c.get("user_id") is not None]
+    raw = [r for r in refs if r not in users]
+    assert len(raw) == 30, (
+        "r58 no longer carries the int-id/string-reference shape this case documents")
+    assert all(str(r) in {str(u) for u in users} for r in raw), (
+        "r58's references are not all resolvable by value — some may be real orphans")
+
+    assert "comments.user_id" not in orphans(data), (
+        "the shipped check still reports r58's type mismatch as dangling rows (#1203mt)")
 
 
 def test_a_clean_delivered_run_is_not_flagged():

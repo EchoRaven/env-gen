@@ -1052,10 +1052,34 @@ def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
         if not isinstance(data, dict):
             return {}
         tables = {k: v for k, v in data.items() if isinstance(v, list)}
+        # #1203mt: compare the VALUES, not their Python types. This gathered raw `id`s and
+        # tested `val not in ids[target]`, so a seed whose ids are the strings "1".."6" and
+        # whose references are the ints 1..6 -- or the reverse -- reads as every row orphaned
+        # while the parent is right there. JSON carries no integer/string discipline and the
+        # lane writes both; nothing in the seed contract picks one.
+        #
+        # MEASURED over the seeds on disk: this reports 99 orphans across 5 runs, and the
+        # SAME rule with `str()` on both sides reports 35 across 3 -- so **64 of 99 (65%) are
+        # pure type mismatch**. Two runs lose every report: tiktok-web-r107 (34, all of
+        # `comments.video_id` / `likes.video_id` / `notifications.video_id`) and
+        # tiktok-web-r58 (30, all `comments.user_id`).
+        #
+        # It matters because of what this finding is FOR. The docstring's own argument is that
+        # `audit_authored_seed`'s blocker already tells the lane to "keep it FK-valid" and
+        # nothing checked it -- so this is the evidence the lane acts on. r190 printed it 624
+        # times, 6.7x its next-loudest warning and absent from every other run's top six,
+        # while business_chain refused the cut over `sound_id` values "that do not resolve".
+        # Its FINAL seed is FK-valid under this check, so whether those 624 were the
+        # type-mismatch shape is not recoverable from the artifact -- but a detector that is
+        # 65% false corpus-wide should not be what a lane spends a run chasing.
+        #
+        # Deliberately NOT normalising anything else: no int() coercion, no stripping, no
+        # case folding. `str()` is the one transform JSON's own looseness forces, and #647
+        # keeps the guard no wider than that.
         ids: Dict[str, set] = {}
         for name, rows in tables.items():
             if rows and isinstance(rows[0], dict) and "id" in rows[0]:
-                ids[name] = {r.get("id") for r in rows if isinstance(r, dict)}
+                ids[name] = {str(r.get("id")) for r in rows if isinstance(r, dict)}
         if not ids:
             return {}
         for tbl, rows in tables.items():
@@ -1069,7 +1093,7 @@ def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
                     target = next((c for c in (base, base + "s", base + "es") if c in ids), None)
                     if target is None or not isinstance(val, (int, str)):
                         continue
-                    if val not in ids[target]:
+                    if str(val) not in ids[target]:   # #1203mt
                         out["%s.%s" % (tbl, col)] = out.get("%s.%s" % (tbl, col), 0) + 1
         return out
     except Exception:
