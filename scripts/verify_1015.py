@@ -80,20 +80,42 @@ def main(argv):
     say("l6", "FALSIFIED" if bad else "CONFIRMED",
         "%d staged svg(s) an <img> cannot decode: %s" % (len(bad), bad[:3] or "none"))
 
-    # #1203mp: counted over the WHOLE log, so ONE early mention condemned a run whose
-    # staging fix then worked -- the #1203l4 shape, found by auditing my own criteria for
-    # the two signatures that burned me on r189 (re-implementing shipped logic, and asking
-    # about the APP by counting log lines a run never retracts). `l6` above already answers
-    # the artifact question deterministically; this half only adds "and the browser saw
-    # none", which is a claim about the END of the run. Slice to the last staging pass.
-    _tail_l6 = logtext
-    _last_stage = max(
-        (logtext.rfind(_m) for _m in ("material_prep: staged", "Design-Prep")), default=-1)
-    if _last_stage >= 0:
-        _tail_l6 = logtext[_last_stage:]
-    broken = _tail_l6.lower().count("broken image") + _tail_l6.lower().count("broken-image")
-    say("l6-effect", "CONFIRMED" if broken == 0 else "FALSIFIED",
-        "'broken image' mentions in the log: %d" % broken)
+    # #1203ms: THIS CRITERION WAS WRONG TWICE, and the second fix was the same mistake as
+    # the first. It counted "broken image" over the whole log; #1203mp sliced that to the
+    # last staging pass. But the phrase comes from `#1203g9`, which fires at DELIVERY-GATE
+    # time -- after staging -- so the slice window never covered it. r190: #1203g9 named six
+    # invented video filenames at 07:19 (`dance_rooftop.mp4` beside the real
+    # `charlidamelio__7661492762902023437.mp4`), the lane replaced them with real ones, and
+    # the DELIVERED tree has zero missing. The framework was right and the criterion was not.
+    #
+    # So it stops reading the log. The question -- does a referenced asset exist? -- is
+    # answerable on the artifact, which is also the only form immune to a verdict the run
+    # later retracted. Same scope as `#1203g9` itself: quoted literal `/assets/...` paths in
+    # frontend/src, checked against public/.
+    _fe_ms = run / "app" / "frontend"
+    _refs_ms, _miss_ms = set(), []
+    if (_fe_ms / "src").is_dir() and (_fe_ms / "public").is_dir():
+        for _f in sorted((_fe_ms / "src").rglob("*")):
+            if _f.suffix.lower() not in (".jsx", ".js", ".tsx", ".ts", ".css", ".html"):
+                continue
+            if "node_modules" in _f.parts:
+                continue
+            try:
+                _t = _f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for _r in re.findall(
+                    r"""['"`](/(?:assets|images|img|icons|static|media|fonts)/"""
+                    r"""[A-Za-z0-9_./@-]+)['"`]""", _t):
+                _refs_ms.add(_r)
+        _miss_ms = [r for r in sorted(_refs_ms)
+                    if not (_fe_ms / "public" / r.lstrip("/")).exists()]
+    if not _refs_ms:
+        say("l6-effect", "N-A", "no frontend src/public pair to check")
+    else:
+        say("l6-effect", "CONFIRMED" if not _miss_ms else "FALSIFIED",
+            "%d literal asset ref(s) in the DELIVERED tree; missing under public/: %d %s"
+            % (len(_refs_ms), len(_miss_ms), _miss_ms[:3]))
 
     # --- #1203kv -----------------------------------------------------------------------
     assets = [a for a in (ds.get("assets") or []) if isinstance(a, dict)]
