@@ -2640,6 +2640,25 @@ class HealPipeline:
             # Vite/rollup build (instagram_v5: PlusSquareIcon) → frontend won't build →
             # docker_up FAIL → no successful run → no delivery. Stub the missing export.
             _me = repair_frontend_missing_local_exports(fe)
+            # #1203mr: the retraction, announced for the same reason #1203f2 and #1203jv
+            # announce theirs -- and more loudly, because this one DELETES a line from a
+            # LANE-OWNED file. #1203f6's ratchet is what required it: a producer key with no
+            # reader at the call site is #1139's shape, and my first cut added exactly that.
+            for _rt1203mr in (_me.get("retracted_1203mr") or [])[:4]:
+                orch._logger.warning(
+                    "#1203mr dropped a STALE auto-stub from %s for %s: the lane has since "
+                    "declared that name itself, so the stub this module appended was a "
+                    "second `export const` and Rollup was hard-failing with `Identifier "
+                    "already declared` (r190: eight consecutive builds). The lane's "
+                    "declaration is kept; only the stub was removed.",
+                    _rt1203mr[0], _rt1203mr[1])
+            for _ru1203mr in (_me.get("retract_unwritten_1203mr") or [])[:4]:
+                orch._logger.warning(
+                    "#1203mr frontend build-breaker STANDS: %s still carries a stale "
+                    "auto-stub for %s alongside the lane's own declaration, and the "
+                    "retraction's write did NOT land, so Rollup keeps failing with "
+                    "`Identifier already declared`. The duplicate has to go by hand.",
+                    _ru1203mr[0], _ru1203mr[1])
             if _me.get("repaired"):
                 orch._logger.warning(
                     "Frontend missing local exports stubbed (lane import/export drift): %s",

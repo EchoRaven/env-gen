@@ -2714,6 +2714,87 @@ def _import_bound_1203jv(src: str, name: str) -> bool:
     return False
 
 
+# #1203mr: the stub this module appends is PERMANENT, and the guarantee below is only true
+# at the moment it is written.
+#
+# `repair_frontend_missing_local_exports` promises "MAXIMALLY conservative: only stub a name
+# that appears NOWHERE in the target module's source (so a parser miss can never cause a
+# duplicate-declaration build break)" and calls itself idempotent. Both halves hold at WRITE
+# time -- the name is re-checked against a fresh read, twice. Neither holds afterwards: once
+# the lane declares the name itself, the stub becomes a second `export const <n>` and Rollup
+# hard-fails with `Identifier already declared`, which is exactly the break the sentence says
+# it can never cause.
+#
+# r190 live: `src/lib/staticData.js` line 11 is the lane's real `export const seededComments
+# = [` and line 19 is this module's stub under its own `// auto-reconciled missing exports`
+# comment. EIGHT consecutive `docker build FAILED`, api_smoke blocked, a remediation task
+# dispatched; the lane then deleted the duplicate itself, so the run recovered -- the cost was
+# build cycles, not the run.
+#
+# Rate, stated plainly because it is small: the marker appears in 3 files across the whole
+# corpus and 1 of those 3 carries the collision. The reason to fix it anyway is category, not
+# frequency -- it is a hard build failure, and the retraction is bounded: it removes ONLY
+# lines this module wrote, identified by the text this module emits, and ONLY when the name is
+# really declared elsewhere in the same file.
+_AUTO_STUB_LINE_1203MR = re.compile(
+    r"^export const ([A-Za-z_$][\w$]*) = (?:\(props\) => null;\s*// auto-stub component"
+    r"|\(\.\.\.args\) => \{ console\.error\('\[auto-stub\] )",
+    re.M)
+_REAL_DECL_1203MR = "export const %s = "
+
+
+def retract_stale_auto_stubs_1203mr(frontend_dir) -> Dict[str, object]:
+    """Drop an auto-stub whose name the module now really declares. Idempotent; never raises.
+
+    Only this module's own emissions are touched, and only when a non-stub
+    `export const <name> = ` exists in the same file -- so the lane's declaration always wins
+    and a file with no collision is left byte-identical.
+    """
+    out: Dict[str, object] = {"retracted": []}
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return out
+        for f in src_dir.glob("**/*"):
+            if f.suffix.lower() not in _FRONT_EXTS or "node_modules" in str(f):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if "[auto-stub]" not in text and "auto-stub component" not in text:
+                continue
+            keep, dropped = [], []
+            for line in text.splitlines(keepends=True):
+                m = _AUTO_STUB_LINE_1203MR.match(line)
+                if m:
+                    n = m.group(1)
+                    # every OTHER occurrence of a real declaration of this name
+                    others = [l for l in text.splitlines()
+                              if l.startswith(_REAL_DECL_1203MR % n)
+                              and not _AUTO_STUB_LINE_1203MR.match(l + "\n")]
+                    if others:
+                        dropped.append(n)
+                        continue
+                keep.append(line)
+            if not dropped:
+                continue
+            if _fw_write_1202cw(
+                    f, "".join(keep), encoding="utf-8",
+                    clobber_ok=("#1203mr: removes ONLY this module's own auto-stub lines, and "
+                                "only for a name the file really declares elsewhere -- the "
+                                "duplicate `export const` hard-fails Rollup (r190: 8 builds)")):
+                out["retracted"].append((f.name, sorted(dropped)))
+            else:
+                out.setdefault("unwritten", []).append((f.name, sorted(dropped)))
+    except Exception as _exc_1203mr:
+        from .message_format import warn_once_1201
+        warn_once_1201("retract_stale_auto_stubs_1203mr",
+                       "the retraction of auto-stubs the lane has since declared (#1203mr); "
+                       "a surviving duplicate hard-fails the Rollup build", _exc_1203mr)
+    return out
+
+
 def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
     """Build-integrity: a NAMED import from a LOCAL module that EXISTS but doesn't
     export that name HARD-fails the Rollup/Vite build ('X is not exported by Y' →
@@ -2726,9 +2807,37 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
     component ``() => null`` for a Capitalized name (component/icon — safe to RENDER,
     unlike a throw-stub), else a throw-fn. MAXIMALLY conservative: only stub a name
     that appears NOWHERE in the target module's source (so a parser miss can never
-    cause a duplicate-declaration build break). GENERAL, idempotent; never raises."""
+    cause a duplicate-declaration build break). GENERAL, idempotent; never raises.
+
+    #1203mr: that parenthesis is true AT WRITE TIME and not afterwards. The stub is
+    permanent, so once the lane declares the name itself the stub is a second
+    `export const <n>` and Rollup hard-fails with `Identifier already declared` -- the break
+    this sentence says cannot happen. `retract_stale_auto_stubs_1203mr` runs first, for
+    exactly that, which is also what makes the idempotence claim true across rounds."""
     result: Dict[str, object] = {"repaired": []}
     try:
+        # #1203mr: retract before stubbing, so a name the lane has since declared loses its
+        # stub in the same pass that would otherwise leave the build broken.
+        _retr1203mr = retract_stale_auto_stubs_1203mr(frontend_dir)
+        if _retr1203mr.get("retracted"):
+            result["retracted_1203mr"] = _retr1203mr["retracted"]
+        # An UNLANDED retraction is the worse outcome and was silent in my first cut:
+        # #1202cw refuses a lane-owned write it does not like, the duplicate `export const`
+        # stays, Rollup keeps hard-failing, and nothing says the repair looked and could not
+        # land. That is precisely what #1203f2 fixed for the stub-append beside it, and
+        # #1203f6's ratchet is what caught me not copying it (#1139: both halves or neither).
+        if _retr1203mr.get("unwritten"):
+            # #1203f6 requires the announcement in the SAME statement that reads the key --
+            # "a logger elsewhere in a 3000-line module cannot vouch for it" -- so this says
+            # it here as well as forwarding it to heal_pipeline's richer line. Forwarding
+            # alone was my first cut and the ratchet called it "silence one step later".
+            __import__("logging").getLogger(__name__).warning(
+                "#1203mr frontend build-breaker STANDS: the stale auto-stub could NOT be "
+                "retracted from %s, so a duplicate `export const` remains beside the lane's "
+                "own declaration and Rollup keeps failing with `Identifier already "
+                "declared`. The write was refused, not skipped.",
+                _retr1203mr["unwritten"])
+            result["retract_unwritten_1203mr"] = _retr1203mr["unwritten"]
         fe = Path(frontend_dir)
         src_dir = fe / "src"
         if not src_dir.exists():
