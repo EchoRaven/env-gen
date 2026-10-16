@@ -326,6 +326,94 @@ _ASSET_CLASSES_842 = {
     "video":    (("clip", "trailer", "video", "playback"), ("video", "clip")),
 }
 
+# #1203mq: the class is also satisfied when a STAGED ASSET SAYS IT IS THAT CLASS, whatever
+# directory it happens to sit in. #842 decides by DIRECTORY NAME, and its own docstring
+# records the false positive that caused: "an earlier cut also reported `logo`, which was a
+# false positive (the wordmark is staged under `brand/`)". That fix was a directory name, so
+# it expired the moment a product staged the wordmark somewhere else. r186-r190 all stage it
+# as `icons/go-to-tiktok-for-you-feed_50508994.svg`, whose own record reads
+#
+#     "description": "TikTok wordmark/music-note brand asset, dominant measured colors ..."
+#     "use":         ["expanded sidebar logo"]
+#
+# so `logo` was reported unstaged while the brand mark was on disk, measured and described.
+# MEASURED over 33 modern runs: 38 reports, of which 30 are `logo` and ALL 30 are this.
+#
+# WHY THE WORDS ARE THE STRONG ONES AND NOT THE CLASS WORDS. Matching the class word
+# anywhere in an asset's record rescues things that merely MENTION it: instagram-r174/5/6
+# stage `icons/Audio_is_muted_8a16b7d5.svg` with `use: ["reels video card mute state"]` and
+# `description: "Muted audio glyph displayed on reel video."` -- "video" is a modifier
+# saying where the glyph sits, and that run's `video` report is CORRECT (the spec asks for
+# "centered vertical 9:16 reel video" and no video is staged). My first two cuts rescued it;
+# reading the record is what caught them. These words name an asset's own IDENTITY, so:
+#
+#     logo      30 of 30 reports refuted      avatar  0 of 3
+#     video      0 of 3                       backdrop 0 of 2
+#
+# i.e. exactly the false ones and none of the eight true ones. `video` and `icon` are
+# deliberately EMPTY: no word names "a video asset" the way `wordmark` names a logo, and a
+# guess here would re-create the problem in the other direction (#647).
+#
+# AND THE KNOWN IMPERFECTION, written here rather than hidden behind a tuned word list
+# (#1203l2's rule): for `logo`, TODAY'S CORPUS CANNOT TELL `("wordmark", "brand asset", ...)`
+# from the plain class word `("logo",)`. Of 33 modern runs, assets that mention "logo"
+# WITHOUT also saying wordmark/brand asset: **zero**. So the narrow form is not evidence, it
+# is the safer guess — a narrow rescue can only UNDER-rescue, which means #842 reports more,
+# which is exactly the status quo this reduces. The `video` case is what the narrowness is
+# really for, and that one IS in the data. Mutation MQ3 (widening to `("logo",)`) is
+# therefore NOT falsifiable on the corpus and survives on purpose; the test that pins the
+# intent says so and labels its fixture as constructed.
+_ASSET_CLASS_IDENTITY_1203MQ = {
+    "logo":     ("wordmark", "brand asset", "brand mark", "logotype"),
+    "avatar":   ("avatar",),
+    "poster":   ("poster",),
+    "backdrop": ("backdrop", "hero image"),
+    "video":    (),
+    "icon":     (),
+}
+
+
+def _asset_says_it_is_1203mq(output_dir: Any, cls: str) -> str:
+    """The staged asset whose OWN record identifies it as `cls`, or "".
+
+    Reads `design/design_system.json`'s `assets[]` -- the manifest design-prep writes with a
+    measured `description` and a declared `use` -- rather than guessing from a path. Total:
+    "" on anything unreadable, because #842 is report-only and a scan that cannot tell must
+    not turn into a claim either way (#883).
+    """
+    words = _ASSET_CLASS_IDENTITY_1203MQ.get(cls) or ()
+    if not words:
+        return ""
+    try:
+        import json as _json1203mq
+        from pathlib import Path as _P1203mq
+        doc = _json1203mq.loads(
+            (_P1203mq(str(output_dir)) / "design" / "design_system.json")
+            .read_text(encoding="utf-8", errors="replace"))
+        for a in (doc.get("assets") or []):
+            if not isinstance(a, dict):
+                continue
+            blob = " ".join(
+                " ".join(str(x) for x in a[f]) if isinstance(a.get(f), list)
+                else str(a.get(f) or "")
+                for f in ("id", "file", "description", "use")).lower()
+            if any(w in blob for w in words):
+                return str(a.get("file") or a.get("id") or "?")
+    except Exception as _exc_1203mq:
+        # #1202ah's ratchet caught this returning "" on a crash with nothing said. The
+        # DIRECTION is safe -- "" falls through to reporting the class, which is #842's
+        # pre-patch behaviour -- but that is exactly the argument the ratchet exists to stop
+        # anyone making silently, and "could not read the manifest" must not be
+        # indistinguishable from "no asset matched". Same announcement #1202aq already added
+        # to `_unstaged_asset_classes_842`'s own crash path, one function below.
+        from .message_format import warn_once_1201
+        warn_once_1201("_asset_says_it_is_1203mq",
+                       "the check for a staged asset whose own record names its class "
+                       "(#842 will report the class, as it did before #1203mq)",
+                       _exc_1203mq)
+        return ""
+    return ""
+
 
 def _unstaged_asset_classes_842(output_dir: Any) -> List[str]:
     """#842: an asset class the spec asks for and design-prep never stages.
@@ -363,6 +451,11 @@ def _unstaged_asset_classes_842(output_dir: Any) -> List[str]:
                 if cls in seen or not any(w in txt for w in words):
                     continue
                 if any(any(dn in sd for sd in staged) for dn in dirs):
+                    continue
+                # #1203mq: and not if a staged asset's own record says it IS this class.
+                _ident = _asset_says_it_is_1203mq(output_dir, cls)
+                if _ident:
+                    seen.add(cls)
                     continue
                 seen.add(cls)
                 out.append(f"{cls} (asked by {sc.get('name')})")
