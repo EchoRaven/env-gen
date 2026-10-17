@@ -626,11 +626,40 @@ def main(argv):
                 _unmatched.append("%s(excluded=%s mounted=%s)" % (_nm, _excluded, _mounted))
             elif not _excluded:
                 _unmatched.append("%s(still in the context)" % _nm)
-        say("mm", "FALSIFIED" if _unmatched else "CONFIRMED",
-            "%d heavy media dir(s) %s; unhandled or half-handled: %s"
-            % (len(_heavy_mm),
-               ", ".join("%s %.0fMB" % (n, b / (1024 ** 2)) for n, b in _heavy_mm),
-               _unmatched or "none"))
+        # PREMISE (2026-10-17): the pair is only judgeable AFTER the repair has had a turn.
+        # `scaffolder.py` rewrites docker/docker-compose.yml from its template on every
+        # (re)start -- r190's third resume rewrote it at 05:33 -- while the .dockerignore
+        # written by #1203mm lives in the app tree and survives. So between a restart and the
+        # next build there is a real window where excluded=True/mounted=False, and reading it
+        # then reports a transient as a defect. MEASURED on the previous resume: compose
+        # regenerated at 20:07, #1203mm re-injected the mount at 20:10:48 and again at
+        # 20:31:29, and the pair read CONFIRMED all evening. This criterion was FALSIFIED by
+        # that window at 05:35 with zero build/up calls in the log -- my reading, not the
+        # framework's defect.
+        #
+        # So the claim is checked IN THE LOG, where both facts share a clock: did the repair
+        # run BEFORE each build? The tree-pair reading needs a tree and a log from the same
+        # instant, and it does not have one -- reading today's tree against yesterday's log
+        # reports FALSIFIED for a compose file a restart rewrote hours later.
+        # The spawn line is `compose spawn: docker build` / `docker up -d` -- the word
+        # "compose" is in the PREFIX, not in the argv the framework echoes. My first pattern
+        # required `docker compose build` and matched 0 lines in every log, including ones
+        # with 108 builds: calibrate the pattern on the real lines before believing a zero.
+        _builds_mm = [m.start() for m in re.finditer(
+            r"compose spawn: docker (?:compose )?(?:build|up)\b", logtext)]
+        _injects_mm = [m.start() for m in re.finditer(r"#1203mm kept \d+ media dir", logtext)]
+        if not _builds_mm:
+            say("mm", "N-A",
+                "no build/up in this log, so the repair had no turn (tree currently reads %s)"
+                % (_unmatched or "both halves present"))
+        else:
+            _unprotected = [b for b in _builds_mm if not any(i < b for i in _injects_mm)]
+            say("mm", "FALSIFIED" if _unprotected else "CONFIRMED",
+                "%d heavy media dir(s) %s; %d build/up call(s), %d injection(s), builds with "
+                "no preceding injection: %d"
+                % (len(_heavy_mm),
+                   ", ".join("%s %.0fMB" % (n, b / (1024 ** 2)) for n, b in _heavy_mm),
+                   len(_builds_mm), len(_injects_mm), len(_unprotected)))
 
     # --- #1203mn -----------------------------------------------------------------------
     # The top blocker must quote the words its own records carry. Premise from the ledger,
@@ -724,6 +753,53 @@ def main(argv):
                    else "; unnamed: %s" % [a for a in _absent if a not in _named][:3]))
     except Exception as _e1203mw:
         say("mw", "N-A", "could not evaluate: %s" % _e1203mw)
+
+    # --- #1203mx (2026-10-17) ----------------------------------------------------------
+    # Pre-registered: a chain step that 404s on an id the seed declares for ANOTHER table
+    # must now be told which table owns it. PREDICTION on r190's third resume: the
+    # `for_you_feed_to_sound_detail` failure either disappears (the lane fixed the capture)
+    # or carries "IS an id in `feed`". FALSIFIED by: a "does not resolve" failure whose value
+    # is owned by exactly one other seeded table and that says nothing about it.
+    try:
+        import json as _j1203mx
+        _ch = _json(run / "shared" / "hubs" / "registryhub_verification_chains.json", {}) or {}
+        _recs = _ch if isinstance(_ch, list) else list(_ch.values())
+        _seed = _json(run / "app" / "backend" / "seed_data.json", {}) or {}
+        _ids = {t: {str(r.get("id")) for r in rows if isinstance(r, dict)}
+                for t, rows in (_seed.items() if isinstance(_seed, dict) else [])
+                if isinstance(rows, list) and rows and isinstance(rows[0], dict)
+                and "id" in rows[0]}
+        _unres, _named = 0, 0
+        for _c in _recs:
+            if not isinstance(_c, dict):
+                continue
+            for _b in ((_c.get("last_result") or {}).get("broken") or []):
+                _b = str(_b)
+                if "does not resolve" not in _b:
+                    continue
+                _m = re.search(r"TABLE `([a-z_]+)`", _b)
+                _tgt = _m.group(1) if _m else None
+                _mp = re.search(r"(?:GET|POST|PATCH|PUT|DELETE) (/\S+?) →", _b)
+                _own = None
+                for _s in ([x for x in _mp.group(1).split("?")[0].split("/") if x] if _mp else []):
+                    if _tgt and _s in _ids.get(_tgt, set()):
+                        continue
+                    _o = sorted(t for t, v in _ids.items() if _s in v and t != _tgt)
+                    if len(_o) == 1:
+                        _own = (_s, _o[0])
+                        break
+                if not _own:
+                    continue
+                _unres += 1
+                if "IS an id in" in _b:
+                    _named += 1
+        if not _unres:
+            say("mx", "N-A", "no chain step failed on an id another seeded table owns")
+        else:
+            say("mx", "CONFIRMED" if _named == _unres else "FALSIFIED",
+                "%d attributable chain failure(s), %d name the owning table" % (_unres, _named))
+    except Exception as _e1203mx:
+        say("mx", "N-A", "could not evaluate: %s" % _e1203mx)
 
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
