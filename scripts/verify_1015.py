@@ -801,6 +801,34 @@ def main(argv):
     except Exception as _e1203mx:
         say("mx", "N-A", "could not evaluate: %s" % _e1203mx)
 
+    # --- #1203my (2026-10-17) ----------------------------------------------------------
+    # Pre-registered, and narrow on purpose: the stored record does not keep the request
+    # BODY, so "every body-side failure is attributed" is not decidable from the artifact.
+    # What IS decidable is the chain this shipped for -- `comment_panel_comment_readback`
+    # sends {"video_id": "feed-1"} and `foreign_body_id_owner_1203my` returns
+    # ('video_id','feed-1','videos','feed') against r190's seed on disk. PREDICTION: either
+    # that chain stops failing (the lane fixed the capture, as it did for #1203mx within the
+    # hour) or its failure text carries "THE BODY sent". FALSIFIED by a failure without it.
+    try:
+        _ch_my = _json(run / "shared" / "hubs" / "registryhub_verification_chains.json", {}) or {}
+        _recs_my = _ch_my if isinstance(_ch_my, list) else list(_ch_my.values())
+        _target_my = [c for c in _recs_my if isinstance(c, dict)
+                      and "comment" in str(c.get("name") or "")]
+        _broken_my = [str(b) for c in _target_my
+                      for b in ((c.get("last_result") or {}).get("broken") or [])
+                      if "does not resolve" in str(b)]
+        _bodies_my = logtext.count("THE BODY sent")
+        if not _broken_my:
+            say("my", "N-A", "no comment-chain step failed on an unresolved id (%d body "
+                             "attribution(s) in the log)" % _bodies_my)
+        else:
+            _said = sum(1 for b in _broken_my if "THE BODY sent" in b)
+            say("my", "CONFIRMED" if _said == len(_broken_my) else "FALSIFIED",
+                "%d comment-chain failure(s) on an unresolved id, %d name the body field"
+                % (len(_broken_my), _said))
+    except Exception as _e1203my:
+        say("my", "N-A", "could not evaluate: %s" % _e1203my)
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
