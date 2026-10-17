@@ -146,6 +146,23 @@ def _framework_fixed_1202kf() -> set:
         return set()
 
 
+def _kinds_1203n3() -> frozenset:
+    """`FIXED_ENDPOINT_KINDS`, from the one module that owns it (#1203n3).
+
+    `contract.py` is "a pure, import-safe leaf (no hub/runtime coupling), so every gate can
+    import this without a cycle" and says "All gates point here instead of redefining it".
+    Imported lazily and defensively so a gate can never be the thing that breaks on it.
+    """
+    try:
+        from .kickoff.contract import FIXED_ENDPOINT_KINDS
+        return frozenset(str(k).lower() for k in FIXED_ENDPOINT_KINDS)
+    except Exception:
+        return frozenset()
+
+
+_KINDS_1203N3 = _kinds_1203n3()
+
+
 def scan_dead_endpoints(hub_registry) -> List[dict]:
     registryhub = getattr(hub_registry, "registryhub", None)
     if registryhub is None or not hasattr(registryhub, "get_endpoints"):
@@ -181,6 +198,33 @@ def scan_dead_endpoints(hub_registry) -> List[dict]:
         # #1202kf: the framework's own endpoints are not the lane's dead code.
         if (str(ep.get("method") or "").upper(),
                 str(ep.get("path") or "").rstrip("/") or "/") in fixed_1202kf:
+            continue
+        # #1203n3: AND THE `kind` TAG, which this gate is the one that never read.
+        #
+        # `_tag_parked_probe_1202dw` stamps `metadata.kind='infra'` on a parked `__`-probe AT
+        # REGISTRATION, and its own argument for doing so is that "every one of those gates
+        # ALREADY exempts `metadata.kind` in FIXED_ENDPOINT_KINDS" -- `contract.py` says the
+        # same from the other side: "All gates point here instead of redefining it ... every
+        # gate that points there skips it". This one did not point there, so a probe tagged
+        # exactly for this purpose was still called dead code.
+        #
+        # MEASURED on r164: all five of its `__noop*` registrations carry
+        # `{"kind": "infra", ...}`, and the dead-artifact finding named two of them anyway --
+        # while they sat at `status=defined`, before something moved them to
+        # implemented/deprecated and rule 1 above started hiding them.
+        #
+        # WHAT IT REMOVES, by the standard #1202kf set for itself: across the modern corpus's
+        # dead-endpoint entries this drops **4 of 34**, in 3 runs, and every one is a parked
+        # probe (`/__noop__` x2, `/__noop_orchestrator_status_check`,
+        # `/__noop_orchestrator_read__`). The other 30, in 11 runs, are untouched. In two of
+        # those three runs the probes were the ENTIRE finding -- instagram-core-r174 "1 dead
+        # artifact(s) ... endpoints:/__noop__" and tiktok-web-r164 "2 dead artifact(s) ...
+        # /__noop__, /__noop_orchestrator_read__" -- so a BLOCKING delivery check was failing
+        # on nothing but an agent's parked probes.
+        _md1203n3 = ep.get("metadata")
+        if not isinstance(_md1203n3, dict):
+            _md1203n3 = {}          # a lane can register `metadata` as anything
+        if str(_md1203n3.get("kind") or "").lower() in _KINDS_1203N3:
             continue
         consumers = registryhub.get_consumers(ep_id) if hasattr(registryhub, "get_consumers") else []
         if not consumers:
