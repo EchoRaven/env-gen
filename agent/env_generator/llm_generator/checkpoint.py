@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import shutil
 
 
@@ -523,3 +523,101 @@ class CheckpointManager:
         
         print("="*50)
 
+
+
+# ---- #1203mu: a resume must be given the brief the app was built from ----------------
+#
+# The checkpoint records `description` -- the brief the first attempt was launched with --
+# and `--resume` then takes whatever the command line says and never compares the two.
+#
+# tiktok-web-r190, 2026-10-16, measured: the first attempt was launched with a 1024-char
+# inline brief; the resume was launched from a 2798-char DESCRIPTION.txt for the same
+# product, same --design-input, same model. The description is an input to #1202ca's
+# fingerprint (req_sha), so the fingerprint missed, #1202ca could not reuse, and the
+# reference spec was recompiled from scratch into a DIFFERENT CONTRACT:
+#
+#     24 endpoints -> 21, with near-zero spelling overlap
+#       GET /api/videos/feed        -> GET /api/videos
+#       POST /auth/signup           -> POST /auth/register
+#       /api/users/:username/follow -> /api/users/{id}/follow
+#       entities user/video/comment -> users/videos/comments
+#
+# M1 and M2 were already delivered (tags 1.0.0 and 1.1.0) against the OLD names. Every
+# gate after the recompile measures the delivered app against the NEW spec, so the work
+# that exists reads as missing endpoints and the lanes get sent to build what is there.
+#
+# #1202eo already warns at the recompile -- and then recompiles anyway. Its prose names
+# --design-input ("the wrong DESIGN was passed", which is what googlemaps-r16 was), so on
+# r190 it sent the operator to check the one input that was identical. This refuses the
+# case it can prove, before the compile, and names the input that actually diverged.
+#
+# Refusal rather than quietly adopting the stored brief: a resume that silently ignores
+# the --description it was handed is a second lie, and an operator who really did mean to
+# re-brief a half-built app is starting a new product, not continuing this one. The
+# deliberate case stays available through ENVGEN_ALLOW_REBRIEF_1203MU.
+REBRIEF_OPT_IN_1203MU = "ENVGEN_ALLOW_REBRIEF_1203MU"
+
+
+def _first_difference_1203mu(a: str, b: str) -> int:
+    """Index of the first differing character, or the length of the shorter string."""
+    n = min(len(a), len(b))
+    for i in range(n):
+        if a[i] != b[i]:
+            return i
+    return n
+
+
+def rebrief_verdict_1203mu(stored: str, passed: str, phases: Dict[str, str],
+                           *, allow_rebrief: bool = False,
+                           checkpoint_path: str = "") -> Tuple[str, str]:
+    """(severity, message) for a resume whose brief differs from the checkpoint's.
+
+    severity is "refuse" when milestones are already complete -- their code implements the
+    contract compiled from the STORED brief -- "notice" when nothing has been delivered
+    yet (or the operator opted in, or the checkpoint predates the stored description), and
+    "" when the two briefs are byte-for-byte the same and there is nothing to say.
+
+    Compared byte-for-byte, not normalized: #1202ca hashes the text, so a brief that
+    differs only in whitespace recompiles the spec just as surely as a rewritten one.
+    """
+    stored = stored if isinstance(stored, str) else ""
+    passed = passed if isinstance(passed, str) else ""
+    if stored and passed and stored == passed:
+        return "", ""
+    done = sorted(name for name, status in (phases or {}).items()
+                  if str(status) == "complete" and str(name).startswith("milestone:"))
+    if not stored:
+        # #883: having nothing to compare is not a pass. Say which one it was.
+        return "notice", (
+            "#1203mu this resume's brief could NOT be checked against the one the app was "
+            "built from: the checkpoint records no description (it predates #1203mu's "
+            "input, or was written by an older build). If the brief changed, the reference "
+            "spec is about to be recompiled into a different contract (#1202ca/#1202eo)."
+        )
+    where = _first_difference_1203mu(stored, passed)
+    head = (
+        "#1203mu THE BRIEF THIS RESUME WAS GIVEN IS NOT THE ONE THE APP WAS BUILT FROM. "
+        "The checkpoint records %d character(s); this launch passed %d; they first differ "
+        "at offset %d. The description is part of #1202ca's fingerprint, so the reference "
+        "spec would be RECOMPILED INTO A DIFFERENT CONTRACT -- on tiktok-web-r190 that "
+        "turned 24 endpoints into 21 with near-zero spelling overlap (/api/videos/feed -> "
+        "/api/videos, /auth/signup -> /auth/register, :username -> {id}, entities singular "
+        "-> plural)." % (len(stored), len(passed), where)
+    )
+    if not done:
+        return "notice", (
+            head + " No milestone is complete yet, so nothing has been delivered against "
+            "the stored contract and this run continues on the NEW brief."
+        )
+    tail = (
+        " %d milestone(s) are already COMPLETE (%s) and their code implements the stored "
+        "contract; every gate after the recompile would judge that delivered work against "
+        "the new spelling. Pass the stored brief instead -- it is the \"description\" field "
+        "of %s -- or set %s=1 to recompile deliberately."
+        % (len(done), ", ".join(done), checkpoint_path or "the run's .checkpoint",
+           REBRIEF_OPT_IN_1203MU)
+    )
+    if allow_rebrief:
+        return "notice", (head + tail + " Proceeding because %s is set."
+                          % REBRIEF_OPT_IN_1203MU)
+    return "refuse", head + tail

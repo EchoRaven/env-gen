@@ -1073,10 +1073,15 @@ async def compile_reference_materials(
                         logger.warning(
                             "#1202eo RECOMPILING OVER AN EXISTING REFERENCE SPEC. The one on "
                             "disk describes %d screen(s)/%d endpoint(s)/%d entities/%d mcp "
-                            "tool(s); this compile runs on %d image(s)/%d doc(s), which are "
-                            "NOT the inputs that produced it. On a resume that usually means "
-                            "the wrong DESIGN was passed — every gate after this measures "
-                            "against the NEW spec.",
+                            "tool(s); this compile runs on %d image(s)/%d doc(s) plus a "
+                            "requirements text, and that set is NOT what produced it. On a "
+                            "resume this means one of the launch inputs diverged: either "
+                            "--design-input (googlemaps-r16, which recompiled google_maps' "
+                            "contract from netflix's images) or --description (tiktok-web-"
+                            "r190, same images, a brief rewritten between the two launches "
+                            "— the text is hashed into the fingerprint too; #1203mu now "
+                            "refuses that case when milestones are already complete). Every "
+                            "gate after this measures against the NEW spec.",
                             len(_p1202eo.get("screens") or []),
                             len(_p1202eo.get("endpoints") or []),
                             len(_p1202eo.get("entities") or []),

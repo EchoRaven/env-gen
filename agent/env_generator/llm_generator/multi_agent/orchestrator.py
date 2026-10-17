@@ -2026,6 +2026,27 @@ class Orchestrator:
                     f"Checkpoint status '{summary['status']}' is not resumable."
                 )
             if not checkpoint_already_complete:
+                # #1203mu: refuse a resume that was handed a different brief than the one
+                # the completed milestones were built from -- BEFORE the reference spec is
+                # recompiled from it (#1202ca's fingerprint hashes this text).
+                # #895: `checkpoint` is a TOP-LEVEL module here, not a sibling package —
+                # line 46 of this file already imports CheckpointManager that way.
+                from checkpoint import rebrief_verdict_1203mu, REBRIEF_OPT_IN_1203MU
+                _stored_1203mu = getattr(self.checkpoint.checkpoint, "description", "") or ""
+                _phases_1203mu = {
+                    _n: getattr(_p, "status", "")
+                    for _n, _p in getattr(self.checkpoint.checkpoint, "phases", {}).items()
+                }
+                _sev_1203mu, _msg_1203mu = rebrief_verdict_1203mu(
+                    _stored_1203mu, goal, _phases_1203mu,
+                    allow_rebrief=bool(os.environ.get(REBRIEF_OPT_IN_1203MU, "").strip()),
+                    checkpoint_path=str(getattr(self.checkpoint, "checkpoint_path", "")),
+                )
+                if _sev_1203mu == "refuse":
+                    self._logger.error(_msg_1203mu)
+                    raise RuntimeError(_msg_1203mu)
+                if _sev_1203mu:
+                    self._logger.warning(_msg_1203mu)
                 self.checkpoint.resume_generation()
                 self._logger.info(
                     f"Resuming from checkpoint (phase={summary.get('current_phase')}, resumes={summary.get('resume_count', 0) + 1})"
