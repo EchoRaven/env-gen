@@ -14514,6 +14514,45 @@ def unstaged_seed_media_1202xn(output_dir) -> List[str]:
                 if rel.startswith(("icons/", "placeholders/")):
                     continue      # framework-owned, staged elsewhere
                 refs.add("/assets/" + rel)
+        # #1203mw: AND THE BACKEND PYTHON, because that is where the lane actually writes
+        # them. Both this check and `stage_missing_seed_photos` read two seed FILENAMES; the
+        # lane hand-rolls `custom_routes.py` and returns asset paths straight out of it.
+        #
+        # MEASURED over the 31 modern runs with a public/ tree: 12 ship a backend reference
+        # to a file that is not in the delivered tree, 78 references in all, and 52 of those
+        # (67%) are in `custom_routes.py` where neither check looks. SIX runs report ZERO
+        # while shipping between 4 and 12 of them -- r169 (12), r183 (12), r186 (9), r191
+        # (6), r180 (5), r179 (4). None of the 39 is remapped by the page
+        # (`remapped_seed_media_1203m3` returns {} for all four runs spot-checked), and
+        # r169's `real_thumbnails/` directory does not exist anywhere in its tree.
+        #
+        # Images are included HERE and not in the JSON scan, deliberately: `stage_missing_
+        # seed_photos` synthesises a placeholder for every image the SEED JSON references, so
+        # by the time this runs those resolve -- 0 of the 38 missing images corpus-wide are in
+        # a seed JSON, all 38 are in `custom_routes.py`, and nothing stages or reports them.
+        # Reported, not placeholdered: a grey stand-in for a thumbnail the lane invented
+        # ("real_thumbnails/bts-dance-practice.jpg", while the real file is staged under its
+        # own name) hides the mismatch instead of naming it, which is the trade #1202xn
+        # already refused for video.
+        #
+        # KNOWN GAP, left on purpose: `_SEED_IMG_RE` is `jpe?g|png|webp|gif` and is SHARED
+        # with the placeholder stager, which writes through PIL and cannot author SVG. So
+        # r186's `/assets/profile_9410ceda.svg` stays unreported -- 1 of the 39 measured.
+        # Widening the shared regex here would quietly ask the stager for a format it cannot
+        # produce, which is a bigger change than this one and needs its own evidence.
+        for _py1203mw in (sorted(be.rglob("*.py")) if be.is_dir() else []):
+            if "__pycache__" in _py1203mw.parts:
+                continue
+            try:
+                _t1203mw = _py1203mw.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for _re1203mw in (_SEED_MEDIA_RE_1202XN, _SEED_IMG_RE):
+                for m in _re1203mw.finditer(_t1203mw):
+                    rel = m.group(1)
+                    if rel.startswith(("icons/", "placeholders/")):
+                        continue
+                    refs.add("/assets/" + rel)
         # #1202xo: ON DISK IS NOT THE SAME AS IN THE IMAGE. A frontend lane that hits a docker
         # build failure on a large media file repairs the build by excluding the file in
         # `.dockerignore` -- and leaves the seed row pointing at it. r132 carries the exclusion
@@ -14776,8 +14815,9 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
             if _media1202xn:
                 from .message_format import join_capped as _jc1202xn
                 logging.getLogger(__name__).warning(
-                    "#1202xn %d local media file(s) the SEED references are not staged, so "
-                    "those cards render a thumbnail and fail on play: %s",
+                    "#1202xn %d local media file(s) the BACKEND references are not staged: a "
+                    "missing video renders a card that plays nothing, a missing image renders "
+                    "a broken glyph (#1203mw: the paths in custom_routes.py count too): %s",
                     len(_media1202xn),
                     _jc1202xn(_media1202xn, total=len(_media1202xn)))
                 record_unstaged_seed_media_1202xn(frontend_dir.parent.parent, _media1202xn)

@@ -131,6 +131,17 @@ def test_the_dockerignore_cause_gets_its_own_instruction(tmp_path, monkeypatch):
 
 
 def test_an_open_task_is_not_cloned(tmp_path, monkeypatch):
+    """#1203mw moved the dedupe off the wording and onto the ticket marker, so this case is
+    now stated as the thing that must hold: a task filed by THIS code is not filed twice."""
+    wh = _WH([{"title": "#1202zf Media the backend references is missing at delivery — a "
+                        "video 404s on play, an image renders a broken glyph (3)",
+               "status": "in_progress"}])
+    _run(monkeypatch, tmp_path, _R140, wh=wh)
+    assert wh.created == [], wh.created
+
+
+def test_a_task_filed_under_the_old_wording_still_dedupes(tmp_path, monkeypatch):
+    """A run resumed across #1203mw has the pre-change title open in its workhub."""
     wh = _WH([{"title": "Seeded media missing at delivery — cards render a thumbnail and 404 "
                         "on play (3)", "status": "in_progress"}])
     _run(monkeypatch, tmp_path, _R140, wh=wh)

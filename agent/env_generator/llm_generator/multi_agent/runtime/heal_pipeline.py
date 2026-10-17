@@ -1269,11 +1269,20 @@ def _unstaged_seed_media_task_1202zf(orch, out_dir) -> None:
         wh = getattr(getattr(orch, "hubs", None), "workhub", None)
         if wh is None:
             return
-        base = "Seeded media missing at delivery — cards render a thumbnail and 404 on play"
+        # #1203mw: the list now also carries IMAGES, and paths the lane wrote into
+        # custom_routes.py rather than a seed JSON, so the title cannot promise "plays".
+        #
+        # And the dedupe no longer keys on the WORDING. It matched `startswith(base)`, so
+        # rewriting this sentence -- which this ticket does -- would have cloned the task on
+        # every run that already had one open. The stable marker is the ticket id; the old
+        # phrasing stays in the key list so a run resumed across this change still dedupes.
+        base = ("#1202zf Media the backend references is missing at delivery — a video 404s "
+                "on play, an image renders a broken glyph")
+        _keys_1203mw = ("#1202zf", "Seeded media missing at delivery")
         try:
             for t in (wh.list_tasks() or []):
                 if (isinstance(t, dict)
-                        and str(t.get("title") or "").startswith(base)
+                        and str(t.get("title") or "").startswith(_keys_1203mw)
                         and str(t.get("status")) in ("pending", "in_progress", "open")):
                     return
         except Exception:

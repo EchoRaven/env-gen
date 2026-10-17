@@ -663,6 +663,68 @@ def main(argv):
             "%d blocker entr(ies) while records DO carry words; 'no summary recorded': %d"
             % (len(_mn_prose), _silent))
 
+    # --- #1203mu (2026-10-16) ----------------------------------------------------------
+    # Pre-registered: a resume launched with the brief the checkpoint holds must NOT
+    # recompile the reference spec. PREDICTION: zero #1202eo lines, and if #1203mu speaks at
+    # all it is a refusal BEFORE any milestone work (which would mean the launch was wrong).
+    # FALSIFIED by: #1202eo present in a resume log whose brief came from .checkpoint.
+    _eo = logtext.count("#1202eo RECOMPILING")
+    _mu = logtext.count("#1203mu")
+    _resumed = "Resuming from checkpoint" in logtext
+    if not _resumed:
+        say("mu", "N-A", "not a resume log")
+    else:
+        say("mu", "FALSIFIED" if _eo else "CONFIRMED",
+            "#1202eo recompile notices: %d; #1203mu lines: %d" % (_eo, _mu))
+
+    # --- #1203mv (2026-10-16) ----------------------------------------------------------
+    # Pre-registered: every path #1202sd declines is named. PREDICTION: usually silent (3 of
+    # 102 delivered App.jsx carry one), and when it speaks the path it names carries ? or &.
+    _mv = [ln for ln in logtext.splitlines() if "#1203mv" in ln]
+    if not _mv:
+        say("mv", "N-A", "no query-string <Route path> in this run")
+    else:
+        _ok = all(("?" in ln or "&" in ln) for ln in _mv)
+        say("mv", "CONFIRMED" if _ok else "FALSIFIED",
+            "%d declined route(s) named; all carry a query string: %s" % (len(_mv), _ok))
+
+    # --- #1203mw (2026-10-16) ----------------------------------------------------------
+    # Pre-registered: media the BACKEND references but that is not staged is reported, even
+    # when the path lives in custom_routes.py. PREDICTION on r190's tree: the one missing
+    # avatar (/assets/real_avatars/mayarios.jpg, in custom_routes.py) is named by the
+    # shipped detector. FALSIFIED by: the detector returning [] while the tree still has an
+    # unresolvable backend reference.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.frontend_scaffold import (
+            unstaged_seed_media_1202xn as _un1203mw)
+        _miss = _un1203mw(run) or []
+        import re as _re1203mw
+        _refs, _absent = set(), []
+        _rx = _re1203mw.compile(
+            r"[\"'](/assets/[A-Za-z0-9_./-]+\.(?:mp4|webm|mov|m4v|jpg|jpeg|png|webp|gif))[\"']")
+        for _f in (run / "app" / "backend").rglob("*.py"):
+            if "__pycache__" in _f.parts:
+                continue
+            try:
+                _refs |= set(_rx.findall(_f.read_text(errors="ignore")))
+            except Exception:
+                pass
+        _absent = [r for r in sorted(_refs)
+                   if not (pub.parent / r.lstrip("/")).is_file()
+                   and not r.startswith(("/assets/icons/", "/assets/placeholders/"))]
+        if not _absent:
+            say("mw", "N-A", "every backend media reference resolves in this tree")
+        else:
+            _named = [a for a in _absent if any(a in m for m in _miss)]
+            say("mw", "CONFIRMED" if len(_named) == len(_absent) else "FALSIFIED",
+                "%d unresolvable backend reference(s), %d named by the detector%s"
+                % (len(_absent), len(_named),
+                   "" if len(_named) == len(_absent)
+                   else "; unnamed: %s" % [a for a in _absent if a not in _named][:3]))
+    except Exception as _e1203mw:
+        say("mw", "N-A", "could not evaluate: %s" % _e1203mw)
+
     say("final-hold", "INFO", (last or {}).get("detail") or "no hold record")
 
     w = max(len(t) for t, _, _ in OUT)
