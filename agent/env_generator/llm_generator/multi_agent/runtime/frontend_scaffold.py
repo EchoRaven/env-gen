@@ -606,6 +606,97 @@ def dedupe_identical_routes_1203ff(frontend_dir) -> Dict[str, object]:
     return result
 
 
+_PAINT_COLOUR_1203N0 = re.compile(
+    r"""(?:fill|stroke)\s*[:=]\s*["']?\s*(#[0-9a-f]{3,8}|rgba?\(|hsla?\(|[a-z]{3,20})""",
+    re.I)
+_IMG_SVG_REF_1203N0 = re.compile(
+    r"""(?:<img[^>]*\bsrc\s*=\s*|url\(\s*|\bimg\s*:\s*)["']?([^"')\s>]*\.svg)""", re.I)
+
+
+def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
+    """``["LeftSidebar.jsx -> /assets/icons/following_eb9a6ec0.svg", …]`` — staged icons whose
+    ONLY paint colour is `currentColor`, referenced where CSS colour cannot reach them.
+
+    #551 states the rule and #1203kw sharpened it: "an SVG that paints its OWN default colour
+    must not reach a themed nav through <img>, because CSS cannot get inside the image". Both
+    apply it to the nav chrome the FRAMEWORK emits -- `_nav_utility_icons` drops a
+    colourless asset from its `<img>` channel. Nothing asks the same question of the icon
+    references the LANE writes, which is the shape #1202iy->#1202sd already had to fix once
+    for routes.
+
+    r190 is the case. `src/components/LeftSidebar.jsx` lists its nav rows two ways --
+    `icon: Icons.X` (inline JSX) and `img: 'for-you_9be6781e.svg'` (the staged file through
+    `<img>`) -- and all six `img:` rows point at `fill="currentColor"` files. The visual judge
+    then reported, unprompted, "several implementation nav items have missing or inconsistent
+    icon treatment", naming For You, Following, LIVE and Profile: exactly the `img:` rows.
+    iconography scored 0.53-0.61 on those screens.
+
+    MEASURED WITH REAL CHROMIUM on r190's own `following_eb9a6ec0.svg`, 48x48 on #121212,
+    `color:#fff` set on both carriers:
+
+        inline SVG   mean 66.2  max 255  bright(>200) 418   -> visible
+        <img src>    mean 14.3  max  18  bright(>200)   0   -> all 2304 px background-dark
+
+    So the `<img>` form paints black on near-black. (A first attempt measured nothing because
+    its inline control used `fetch()` on a file:// page, which CORS blocks -- the number was
+    pure background. The control has to be proven alive before the contrast means anything.)
+
+    CORPUS: of 22 modern runs, 4 reference a staged SVG this way at all -- r190 (6 refs, all 6
+    colourless), r173 (3/3), r182 (3 refs, 1 colourless), r191 (1/1). Most runs inline their
+    icons, which is why staged files being 30-of-34 `currentColor` is normally harmless.
+
+    REPORTS ONLY, and deliberately does not rewrite the lane's component: the fix is a choice
+    between inlining the SVG and using an asset that carries its own colours (#1203kw keeps
+    the `<img>` channel open for exactly the latter), and both are the lane's call.
+    """
+    found: List[str] = []
+    try:
+        root = Path(frontend_dir)
+        src = root / "src"
+        if not src.is_dir():
+            return []
+        pub = root / "public"
+
+        def _colourless(rel: str) -> Optional[bool]:
+            """True when the file's only paint colour is `currentColor`; None if unreadable."""
+            name = rel.split("?", 1)[0].split("#", 1)[0]
+            cand = pub / name.lstrip("/")
+            if not cand.is_file():
+                return None
+            try:
+                text = cand.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                return None
+            if "currentcolor" not in text.lower():
+                return False
+            # any concrete colour token (not `currentColor`, not `none`) keeps the img channel
+            for m in _PAINT_COLOUR_1203N0.finditer(text):
+                tok = m.group(1).lower()
+                if tok not in ("currentcolor", "none", "inherit", "transparent"):
+                    return False
+            return True
+
+        for f in sorted(src.rglob("*")):
+            if f.suffix not in (".jsx", ".js", ".tsx", ".ts", ".css") or "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            seen = set()
+            for m in _IMG_SVG_REF_1203N0.finditer(text):
+                rel = m.group(1)
+                if rel in seen:
+                    continue
+                seen.add(rel)
+                if _colourless(rel) or (rel and not rel.startswith("/")
+                                        and _colourless("/assets/icons/" + rel)):
+                    found.append("%s -> %s" % (f.name, rel))
+    except Exception:
+        return []
+    return found
+
+
 def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]:
     r"""#1202sd — rewrite a `<Route path>` React Router cannot match, wherever the LANE wrote it.
 

@@ -2359,6 +2359,28 @@ class HealPipeline:
                         _lf1203mv)
             except Exception as _ur_err:
                 orch._logger.debug("#1202sd route repair skipped: %s", _ur_err)
+            # #1203n0: an icon the lane loads through <img>/url() that paints only
+            # `currentColor` is invisible, and #551's rule has only ever been applied to the
+            # nav chrome the FRAMEWORK emits. Reported, never rewritten: the choice between
+            # inlining the SVG and using an asset with its own colours is the lane's.
+            try:
+                from .frontend_scaffold import invisible_img_icons_1203n0
+                _inv1203n0 = invisible_img_icons_1203n0(fe) or []
+                for _iv1203n0 in _inv1203n0[:6]:
+                    orch._logger.warning(
+                        "#1203n0 %s loads a staged icon whose only paint colour is "
+                        "`currentColor` through <img>/url(), where CSS colour cannot reach "
+                        "it — real Chromium paints all 2304 px of it background-dark on a "
+                        "#121212 nav, i.e. the icon is in the DOM and invisible on screen. "
+                        "INLINE the SVG (inline currentColor DOES inherit) or point at an "
+                        "asset that carries its own colours (#551/#1203kw keep the <img> "
+                        "channel open for those).", _iv1203n0)
+                if len(_inv1203n0) > 6:
+                    orch._logger.warning(
+                        "#1203n0 %d more invisible icon reference(s) not listed (#1034)",
+                        len(_inv1203n0) - 6)
+            except Exception as _iv_err:
+                orch._logger.debug("#1203n0 invisible-icon scan skipped: %s", _iv_err)
             # #1203ff: and remove the duplicates the rewrite above can CREATE. Its own try,
             # because #1202sd is one cause and not the only one -- r112 shipped a duplicate
             # with #1202sd never firing, so this must run whether that repair fired or not.
