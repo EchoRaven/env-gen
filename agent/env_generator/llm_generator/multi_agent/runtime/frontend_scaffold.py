@@ -649,6 +649,7 @@ def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]
         pat = re.compile(r"""(<Route\b[^>]*?\bpath\s*=\s*)(["'])([^"']+)\2""")
         touched: List[str] = []
         refused: List[str] = []   # #1202uc
+        left_1203mv: List[str] = []   # #1203mv
         total = 0
         for f in sorted(src.rglob("*")):
             if f.suffix not in (".jsx", ".js", ".tsx", ".ts") or "node_modules" in f.parts:
@@ -670,6 +671,15 @@ def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]
                 # the shape it was designed for -- a literal prefixing the `:` inside one
                 # segment -- and this is not that shape. Left alone, loudly unfixed.
                 if "?" in raw or "&" in raw:
+                    # #1203mv: and SAY it was left. The sentence above claimed "loudly
+                    # unfixed" and nothing was loud — `_sub` returned the match and no
+                    # caller ever heard which path it declined, which is the same silence
+                    # #1203f6 had to fix one branch over for `refused`. MEASURED: three
+                    # delivered App.jsx carry one (r35 `/?comments=true`, r74
+                    # `/?comments=1`, r163 `/?comments=:video_id` — r163 is modern), and in
+                    # every one of them the comments deep-link is a page no URL reaches,
+                    # which is exactly the consequence #1202iy went looking for.
+                    left_1203mv.append("%s: %s" % (f.name, raw))
                     return m.group(0)
                 fixed = _router_matchable_route_1202iy(raw)
                 if fixed == raw:
@@ -707,6 +717,7 @@ def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]
         result["repaired"] = touched
         result["routes"] = total
         result["refused"] = refused
+        result["left_1203mv"] = left_1203mv
         return result
     except Exception:
         return result

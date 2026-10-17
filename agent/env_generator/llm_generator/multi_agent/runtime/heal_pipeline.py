@@ -2334,6 +2334,20 @@ class HealPipeline:
                     orch._logger.warning(
                         "#1203f6 %s keeps its unmatchable <Route path> (the write was "
                         "refused, so the page stays unreachable)", _rf1203f6)
+                for _lf1203mv in (_ur.get("left_1203mv") or [])[:4]:
+                    # #1203mv: the one shape #1202sd deliberately will NOT rewrite was also
+                    # the one nothing reported. Rewriting it is harmful (r79's
+                    # `/?comments=1&video=:id` would become `/:id`, shadowing every static
+                    # path), so the lane has to do it — and the lane can only do it if the
+                    # path is named. A query string is not part of a route path: the route
+                    # must be the path alone and the parameters read with useSearchParams.
+                    orch._logger.warning(
+                        "#1203mv %s declares a <Route path> with a QUERY STRING in it, so it "
+                        "matches that literal spelling and nothing else — the page is "
+                        "unreachable. NOT rewritten on purpose (moving the `:` would make a "
+                        "top-level dynamic route that shadows every static path). The lane "
+                        "must route on the path alone and read the query with useSearchParams.",
+                        _lf1203mv)
             except Exception as _ur_err:
                 orch._logger.debug("#1202sd route repair skipped: %s", _ur_err)
             # #1203ff: and remove the duplicates the rewrite above can CREATE. Its own try,
