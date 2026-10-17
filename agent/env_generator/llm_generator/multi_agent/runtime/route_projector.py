@@ -1887,6 +1887,32 @@ def _declared_query_filters_1202os(request_schema: Any, cols: List[str],
     Only fields that name a REAL column are served: the projector can honour `video_id` on
     `comments`, and inventing a meaning for anything else is how a projection starts guessing.
     `limit`/`offset` are handled separately as pagination. Returns `[(name, "int"|"str")]`.
+
+    #1203mz: THE COLUMN'S OWN TYPE WINS over the `_id` name heuristic, which is the policy
+    `_param_column_type` already follows for PATH params in this same file -- "by-construction
+    from the schema, never hardcodes names", falling back to the name only when no model
+    resolves. This read did the opposite: `"int" if ("int" in t or name.endswith("_id"))` typed
+    EVERY `*_id` filter as int whatever the column said, and the declared type was right there
+    in `types`.
+
+    r190 paid for it. `comments.video_id` is `Column(String, ForeignKey("videos.id"))` in
+    models.py, `"video_id" text` in the DDL, and `"string references videos.id nullable"` in
+    the registry -- and the projected read came out
+    `def _projected_get_api_comments_6(video_id: int = Query(default=None), ...)`, so FastAPI
+    rejected `?video_id=video-36` with 422 before any SQL ran. The lane found it and wrote its
+    own route to get around the framework, documenting it in custom_routes.py: "The generic
+    projected collection handler typed video_id as int in the current artifact, causing FastAPI
+    to reject valid requests at validation time before the SQL layer sees them."
+
+    MEASURED over every delivered backend on disk: 4 projected params are typed int while
+    their model column is a string type, in 3 runs -- googlemaps-r16 (2, both PATH params, from
+    before `_param_column_type` existed and unaffected by this), tiktok-web-r152 (`tenant_id`,
+    Text) and tiktok-web-r190 (`video_id`, String/Text). Both modern instances are query
+    filters, i.e. this line.
+
+    The heuristic stays for the case it was written for: a raw-SQL app whose models.py the
+    projector cannot parse leaves `types` empty, and there `_id` -> int is the only signal
+    available.
     """
     out: List[Tuple[str, str]] = []
     if not isinstance(request_schema, Mapping):
@@ -1898,7 +1924,10 @@ def _declared_query_filters_1202os(request_schema: Any, cols: List[str],
         if name in ("limit", "offset") or name not in _cols:
             continue
         t = str(_types.get(name) or "").lower()
-        out.append((name, "int" if ("int" in t or name.endswith("_id")) else "str"))
+        if t:                                   # #1203mz: a KNOWN column type decides
+            out.append((name, "int" if "int" in t else "str"))
+        else:                                   # unknown: the name is all there is
+            out.append((name, "int" if name.endswith("_id") else "str"))
     return sorted(out)
 
 
