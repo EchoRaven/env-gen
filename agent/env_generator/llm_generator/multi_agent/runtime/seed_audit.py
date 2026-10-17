@@ -1044,6 +1044,29 @@ def seed_id_sets_1203mx(data: Any) -> Dict[str, set]:
     return out
 
 
+def fk_target_table_1203my(col: Any, ids: Any) -> Optional[str]:
+    """The table a `<thing>_id` column points at, or None: `video_id` → `videos`.
+
+    One rule, three readers (#1032): #1203ga asks it of a seed row, #1203my asks it of a
+    chain step's request BODY, and both need the same singular/plural ladder. A column that
+    names no known table resolves to nothing, and the row's own `id` is excluded by the
+    suffix test itself -- "id" does not end with "_id", so no separate clause is needed (one
+    was there and mutation MY9 proved it inert).
+
+    The EXACT name wins over the plural: a seed that declared both `video` and `videos`
+    would send `video_id` to `video`. Inherited from #1203ga's ladder, pinned by a test
+    because nothing in the corpus exercises it (mutation MY11 reordered it unnoticed).
+    """
+    try:
+        c = str(col)
+        if not c.endswith("_id") or not isinstance(ids, dict):
+            return None
+        base = c[:-3]
+        return next((t for t in (base, base + "s", base + "es") if t in ids), None)
+    except Exception:
+        return None
+
+
 def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
     """#1203ga: the SAME parentage question as #1168, asked of the seed FILE instead of a database.
 
@@ -1111,10 +1134,9 @@ def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
                 if not isinstance(row, dict):
                     continue
                 for col, val in row.items():
-                    if col == "id" or not str(col).endswith("_id") or val is None:
+                    if val is None:
                         continue
-                    base = str(col)[:-3]
-                    target = next((c for c in (base, base + "s", base + "es") if c in ids), None)
+                    target = fk_target_table_1203my(col, ids)   # #1203my: one shared rule
                     if target is None or not isinstance(val, (int, str)):
                         continue
                     if str(val) not in ids[target]:   # #1203mt

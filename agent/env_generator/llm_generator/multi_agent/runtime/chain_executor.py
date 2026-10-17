@@ -2286,9 +2286,63 @@ def foreign_id_owner_1203mx(project_dir: Any, path: str, target: Any) -> Optiona
     return None
 
 
+def foreign_body_id_owner_1203my(project_dir: Any, body: Any) -> Optional[tuple]:
+    """``(field, value, implied_table, owning_table)`` when a `<thing>_id` in the REQUEST
+    BODY holds an id of exactly one OTHER seeded table than the one its name points at.
+
+    #1203mx did this for the path and r190's lane acted on it within the hour: told that
+    `feed-1` is a `feed` id, it changed `for_you_feed_to_sound_detail` to save
+    `items.0.video_id` and that chain now passes after 57 failures across 8h16m of
+    milestone time. The run then stopped on the SAME mistake one chain over, where the id
+    travels in the body and #1203mx is silent by construction:
+
+        GET  /api/videos/feed                      save videoId = items.0.id
+        POST /api/comments  {"video_id": "${videoId}"}  -> 404
+
+    MEASURED over every chain hub on disk: of 95 steps failing with #1052's "does not
+    resolve", 68 carry the unresolved id in the PATH and 27 do not -- 18 of those 27 are
+    this POST, in the run this blocked.
+
+    The implied table comes from the FIELD, not from the endpoint's resource: `video_id`
+    points at `videos` however the route is spelled, which is more precise than the path
+    rule can be for a POST whose path carries no id at all. Same two guards as #1203mx:
+    silent when the value is one the implied table declares, and silent unless exactly one
+    other table owns it.
+    """
+    try:
+        from .seed_audit import seed_id_sets_1203mx, fk_target_table_1203my
+        if not isinstance(body, Mapping):
+            return None
+        p = Path(project_dir) / "app" / "backend" / "seed_data.json"
+        if not p.is_file():
+            return None
+        ids = seed_id_sets_1203mx(json.loads(p.read_text(encoding="utf-8", errors="ignore")))
+        if not ids:
+            return None
+        for field, val in body.items():
+            # `isinstance(val, bool)` carries no weight and is kept for intent: every
+            # compare below goes through `str()`, and `str(True)` is "True", so a flag can
+            # only be attributed to a table that literally declares the id "True". Mutation
+            # MY4 drops it and nothing changes (#1203jr: a mutant that changes nothing is
+            # not a test gap) -- it guards the `True == 1` trap for a future reader who
+            # compares the raw values instead.
+            if not isinstance(val, (int, str)) or isinstance(val, bool):
+                continue
+            implied = fk_target_table_1203my(field, ids)
+            if implied is None or str(val) in ids.get(implied, set()):
+                continue
+            owners = sorted(t for t, v in ids.items() if str(val) in v and t != implied)
+            if len(owners) == 1:
+                return (str(field), str(val), implied, owners[0])
+    except Exception:
+        return None
+    return None
+
+
 def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
                             seed_ids: Any, endpoints: Any,
-                            base: Any = None, token: Any = None) -> str:
+                            base: Any = None, token: Any = None,
+                            body: Any = None) -> str:
     """#1202id: a bare 404 does not say whether the ROW is wrong or the TABLE is empty.
 
     210 failing steps across this corpus are a 404 on a path whose id is a LITERAL the
@@ -2378,6 +2432,14 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
         # the owner turns "the id does not resolve" into the actual mistake -- r190's step
         # sent `feed-1`, a `feed` id, where a `videos` id goes, and spent three hours and
         # $293 on the milestone without that sentence.
+        # #1203my: the same question of the request BODY, where a POST's id travels.
+        _bod1203my = foreign_body_id_owner_1203my(project_dir, body)
+        _fk1203my = ("" if not _bod1203my else
+                     " THE BODY sent `%s` = %r, which IS an id in `%s`, not in `%s` — this "
+                     "step is sending ANOTHER ENTITY'S id, so the capture that produced it "
+                     "is what to change (look for a `%s`-id field in the response it read). "
+                     % (_bod1203my[0], _bod1203my[1], _bod1203my[3], _bod1203my[2],
+                        _bod1203my[2]))
         _own1203mx = foreign_id_owner_1203mx(project_dir, path, key)
         _fk1203mx = ("" if not _own1203mx else
                      " %r IS an id in `%s`, not in `%s` — this step is sending ANOTHER "
@@ -2390,7 +2452,7 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
                    "does not exist. " if _verified_missing else
                    " — the table is populated; the parent read could not be confirmed either "
                    "way, so this 404 is EITHER a wrong id OR this handler's lookup. ")
-                + _fk1203mx)
+                + _fk1203mx + _fk1203my)
     except Exception:
         return ""
 
@@ -4190,7 +4252,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             if (status == 404 and not _ladder_filled and not _unres_vars):
                 note = _seed_shape_note_1202id(
                     method, path, project_dir, seed_ids, endpoints,
-                    base=base, token=token) + note
+                    base=base, token=token, body=body) + note   # #1203my: the body too
             if status in (404, 405):
                 # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
                 # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
