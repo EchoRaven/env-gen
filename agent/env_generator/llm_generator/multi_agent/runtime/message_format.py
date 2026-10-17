@@ -13,7 +13,7 @@ Bounding the list is right — an unbounded dump is worse. The fix is to SAY the
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 __all__ = ["join_capped"]
 
@@ -154,3 +154,41 @@ def reset_state_memo_1202ad(prefix: str = "") -> None:
             _STATE_SAID_1202AD.pop(k, None)
     except Exception:
         pass
+
+
+def ui_page_pending_detail_1203n1(pending: Any, cap: int = 6, reasons_cap: int = 2) -> str:
+    """``"login_modal (component Foo not rendered), profile_own (…)"`` — the pending ui_pages
+    WITH the reason each one is pending.
+
+    `sync_ui_page_statuses` records `out["pending"][name] = missing`, the same `missing` list
+    that decided the page did not flip to `implemented`. Its only consumer printed
+    `list(pending.keys())`, so the reason was computed and dropped.
+
+    MEASURED over every run log on disk: `UI-PAGE LIFECYCLE` has been written **2021 times**,
+    and `is NOT in the registered contract` -- one of the misses that puts a page in that list
+    -- appears **0 times**, ever. The line that reports page lifecycle has never once said
+    what a page was waiting for.
+
+    A page whose list is empty reads "no reason recorded" rather than looking fine: #883 --
+    having no reason is a state to state, not a pass. Both levels are capped through
+    `join_capped`, which declares its own cut (#1034).
+
+    The `isinstance(pending, Mapping)` guard carries no weight and is kept for intent:
+    without it a list argument raises inside `.items()`, the `except` catches it, `.keys()`
+    raises too and the function still returns "". Mutation N15 removes it and nothing
+    changes (#1203jr).
+    """
+    try:
+        if not isinstance(pending, Mapping) or not pending:
+            return ""
+        return join_capped(
+            ["%s (%s)" % (name, join_capped([str(x) for x in (why or [])],
+                                            total=len(why or []),
+                                            cap=reasons_cap, sep="; ") or "no reason recorded")
+             for name, why in list(pending.items())],
+            total=len(pending), cap=cap, sep=", ")
+    except Exception:
+        try:
+            return str(list(pending.keys()))
+        except Exception:
+            return ""

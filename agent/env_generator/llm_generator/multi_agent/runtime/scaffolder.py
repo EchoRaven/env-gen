@@ -1591,10 +1591,30 @@ volumes:
                 _w1202bc("component_drift_1202bc",
                          "the component-drift report (#1202bc)", _e1202bc)
             if _pa.get("implemented") or _pa.get("regressed"):
+                # #1203n1: SAY WHY EACH PENDING PAGE IS PENDING. `sync_ui_page_statuses`
+                # computes a per-page reason list -- `out["pending"][name] = missing`, the
+                # same `missing` that decided the flip -- and this, its ONLY consumer,
+                # printed `list(pending.keys())` and dropped it.
+                #
+                # MEASURED over every run log on disk: this sentence has been written 2021
+                # times, and the reason string `is NOT in the registered contract` -- one of
+                # the misses that puts a page in this list -- appears **0 times**, ever. So
+                # the one line that reports page lifecycle has never once said what a page
+                # was waiting for. r190's live reading is the shape of the cost: `implemented`
+                # held only the framework's own two `__noop_probe_do_not_use__` pages while
+                # `pending` held eight real ones (fyp_feed_logged_out, login_modal,
+                # profile_own, ...) with no reason attached, and 160 of the 412 registered
+                # pages across 34 modern runs sit at `defined` at delivery.
+                #
+                # The FIRING CONDITION is deliberately unchanged: it still takes an
+                # implemented/regressed transition, because this line is already the 2021-
+                # times-printed kind and making it fire on every pending page would be the
+                # noise #1203i2 had to undo elsewhere. Only the detail improves.
+                from .message_format import ui_page_pending_detail_1203n1
+                _why1203n1 = ui_page_pending_detail_1203n1(_pa.get("pending") or {})
                 orch._logger.warning(
                     "UI-PAGE LIFECYCLE: implemented=%s regressed=%s pending=%s",
-                    _pa.get("implemented"), _pa.get("regressed"),
-                    list((_pa.get("pending") or {}).keys()))
+                    _pa.get("implemented"), _pa.get("regressed"), _why1203n1)
         except Exception:
             pass
 
