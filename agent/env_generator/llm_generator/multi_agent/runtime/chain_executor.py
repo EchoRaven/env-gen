@@ -2238,6 +2238,69 @@ def _parent_probe_path_1202jk(method: str, path: str, ep: Any) -> Optional[str]:
         return None
 
 
+_RESET_STEP_1203N2 = re.compile(r"/(?:v1/)?reset\b", re.I)
+_AUTH_STEP_1203N2 = re.compile(r"/auth/(?:register|login|signup)\b", re.I)
+
+
+def identity_wiped_by_reset_1203n2(steps: Any, idx: Any) -> str:
+    """One sentence when the step at ``idx`` uses an identity captured BEFORE a reset step
+    that ran in between — else "".
+
+    This is what killed r190. `creator_follow_unfollow_privacy` reads:
+
+        0. POST /auth/register                       save actorUsername
+        1. POST /api/v1/reset                        <- wipes the users table
+        3. POST /api/users/${actorUsername}/follow   expect [409]   (a SELF-follow denial)
+
+    After the reset, `${actorUsername}` no longer names the caller, so the request is an
+    ordinary follow of somebody else and answers 201. The step reports "DENIAL-PROBE got
+    success — the request was NOT rejected", which reads as an auth hole in the app; the
+    delivered handler in fact implements the rule (`cannot_follow_self`, custom_routes.py
+    3668) and never gets a self-follow to reject. Four chains failed this way and
+    `business_chain_failing` was the hold r190 died on, after 15.7 hours and $1549.
+
+    NARROWED BY MEASUREMENT, twice. The first rule -- "a variable captured before a reset and
+    used after it" -- matches 169 chains corpus-wide of which **164 pass**: most such
+    variables are TENANT ids, and resetting a tenant then using its id is exactly right.
+    Restricting the capture to an AUTH step leaves 5 chains, 2 failing (both r190) and 3
+    passing. 3 of 5 is far too noisy to REJECT a chain on, so this only ANNOTATES a step that
+    has ALREADY failed -- the same policy as #1203mx/#1203my, and the reason the three passing
+    chains never see it.
+    """
+    try:
+        _st = list(steps or [])
+        _i = int(idx)
+        # `_i <= 0` carries no weight and is kept for intent: at index 0 the search below
+        # runs over `_st[:0]`, finds no capture and returns "" anyway. Mutation N25 relaxes
+        # it to `_i < 0` and nothing changes (#1203jr).
+        if _i <= 0 or _i >= len(_st) + 1:
+            return ""
+        _used = set(re.findall(r"\$\{(\w+)\}", json.dumps(_st[_i], default=str)))
+        if not _used:
+            return ""
+        for _var in sorted(_used):
+            _saved = next((j for j, s in enumerate(_st[:_i])
+                           if isinstance(s, Mapping) and _var in (s.get("save") or {})
+                           and _AUTH_STEP_1203N2.search(str(s.get("path") or ""))), None)
+            if _saved is None:
+                continue
+            _reset = next((k for k in range(_saved + 1, _i)
+                           if isinstance(_st[k], Mapping)
+                           and _RESET_STEP_1203N2.search(str(_st[k].get("path") or ""))), None)
+            if _reset is None:
+                continue
+            return (" ⚠ `${%s}` was captured from step[%d] `%s` and step[%d] `%s` RESET the "
+                    "environment in between, so this value no longer names the caller — a "
+                    "self-* denial cannot hold here and the app is not what this step "
+                    "measures. Capture the identity AFTER the reset, or drop the reset "
+                    "(#1203n2)."
+                    % (_var, _saved, str((_st[_saved] or {}).get("path") or ""),
+                       _reset, str((_st[_reset] or {}).get("path") or "")))
+    except Exception:
+        return ""
+    return ""
+
+
 def foreign_id_owner_1203mx(project_dir: Any, path: str, target: Any) -> Optional[tuple]:
     """``(value, owning_table)`` when a segment of ``path`` is an id of exactly ONE OTHER
     seeded table than ``target`` -- the step sent another entity's id. Else None.
@@ -4219,6 +4282,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     and not any(200 <= e < 300 for e in expect)):
                 note = ("DENIAL-PROBE got success — the request was NOT rejected "
                         f"(expected denial {expect}). "                       # #663
+                        # #1203n2: and when the identity this probe denies with was captured
+                        # before a reset that ran in between, say so — r190 died on four
+                        # chains whose actor the reset had wiped, reported as an app hole.
+                        + identity_wiped_by_reset_1203n2(_steps, idx)
                         + _denial_scope_verdict_663(body, res.get("body_text"))
                         # #1202ib: #663 decides WRITES from the body; a read has none, so
                         # ask the contract instead of leaving the ambiguity standing.
