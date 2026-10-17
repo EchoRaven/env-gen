@@ -1017,6 +1017,33 @@ def _word_boundary_markers(rows: List[dict]) -> List[str]:
     return sorted(hits)
 
 
+def seed_id_sets_1203mx(data: Any) -> Dict[str, set]:
+    """{table → every `id` it declares, as strings} from an authored seed mapping.
+
+    Extracted so the two readers of this rule cannot drift (#1032): `#1203ga` asks whether a
+    row's FK has a parent HERE, and `#1203mx` asks whether an id a chain step sent belongs to
+    a DIFFERENT table. Both questions are "is this value an id of table X", and both need the
+    `str()` #1203mt established -- JSON carries no integer/string discipline and the lane
+    writes both, so a raw compare reads a type mismatch as a missing row.
+
+    A table is included only when its FIRST row declares an `id`: a pure association row
+    ({user_id, video_id}) has a composite pk and no `id` column, and inventing one would make
+    every lookup against it answer yes.
+    """
+    out: Dict[str, set] = {}
+    try:
+        if not isinstance(data, dict):
+            return {}
+        for name, rows in data.items():
+            if not isinstance(rows, list):
+                continue
+            if rows and isinstance(rows[0], dict) and "id" in rows[0]:
+                out[name] = {str(r.get("id")) for r in rows if isinstance(r, dict)}
+    except Exception:
+        return {}
+    return out
+
+
 def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
     """#1203ga: the SAME parentage question as #1168, asked of the seed FILE instead of a database.
 
@@ -1076,10 +1103,7 @@ def orphan_fk_rows_in_authored_seed_1203ga(data: Any) -> Dict[str, int]:
         # Deliberately NOT normalising anything else: no int() coercion, no stripping, no
         # case folding. `str()` is the one transform JSON's own looseness forces, and #647
         # keeps the guard no wider than that.
-        ids: Dict[str, set] = {}
-        for name, rows in tables.items():
-            if rows and isinstance(rows[0], dict) and "id" in rows[0]:
-                ids[name] = {str(r.get("id")) for r in rows if isinstance(r, dict)}
+        ids = seed_id_sets_1203mx(data)
         if not ids:
             return {}
         for tbl, rows in tables.items():

@@ -2238,6 +2238,54 @@ def _parent_probe_path_1202jk(method: str, path: str, ep: Any) -> Optional[str]:
         return None
 
 
+def foreign_id_owner_1203mx(project_dir: Any, path: str, target: Any) -> Optional[tuple]:
+    """``(value, owning_table)`` when a segment of ``path`` is an id of exactly ONE OTHER
+    seeded table than ``target`` -- the step sent another entity's id. Else None.
+
+    r190 is the case, and it cost that run its third milestone. The verifier registered
+    `for_you_feed_to_sound_detail`, which saves `items.0.id` from `GET /api/videos/feed` and
+    then calls `/api/videos/${videoId}/comments`. The app's feed returns FEED rows, so
+    `items.0.id` is `feed-1` -- and the seed declares `feed` ids `feed-1..feed-8` beside
+    `videos` ids `1..6`. Every attempt 404'd. The run spent three hours and $293 on that
+    milestone, cut no release, and #1052's note -- correct that the route ran -- ended "Fix
+    the CHAIN's captured id or the seed, NOT the endpoint", which is every reader except the
+    one thing that was true: the value is a `feed` id.
+
+    MEASURED over every chain hub on disk: 69 steps fail with #1052's "does not resolve", and
+    47 of them (68%) carry a value that IS an id in another seeded table -- all 47 in r190,
+    all `feed-1`, all pointing at `feed`. In the same sweep, the number of failing ids that
+    are a BARE INTEGER colliding with another table's id is **0**, so no evidence asks for a
+    numeric exclusion and none is added (#647).
+
+    Silent unless exactly one other table owns the value. A value owned by several tables
+    names nothing a lane can act on -- "it is an id in 7 tables" is noise, and this exists to
+    replace a sentence that was already too vague.
+    """
+    try:
+        from .seed_audit import seed_id_sets_1203mx
+        p = Path(project_dir) / "app" / "backend" / "seed_data.json"
+        if not p.is_file():
+            return None
+        ids = seed_id_sets_1203mx(json.loads(p.read_text(encoding="utf-8", errors="ignore")))
+        if not ids:
+            return None
+        tgt = ids.get(str(target)) or set()
+        for seg in [s for s in str(path or "").split("?", 1)[0].split("/") if s]:
+            if seg in tgt:
+                continue      # a value the target DOES declare is not a foreign id
+            # `t != str(target)` carries no weight today and is kept for intent only: the
+            # `continue` above already means a seg reaching here is not one of the target's
+            # ids, so the target cannot be an owner. Mutation MX4 removes it and every test
+            # still passes, which is the honest reading (#1203jr: a mutant that changes
+            # nothing is not a test gap).
+            owners = sorted(t for t, v in ids.items() if seg in v and t != str(target))
+            if len(owners) == 1:
+                return (seg, owners[0])
+    except Exception:
+        return None
+    return None
+
+
 def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
                             seed_ids: Any, endpoints: Any,
                             base: Any = None, token: Any = None) -> str:
@@ -2326,12 +2374,23 @@ def _seed_shape_note_1202id(method: str, path: str, project_dir: Any,
                 seeded = seed_ids.get(key) or seed_ids.get(res)
         except Exception:
             seeded = None
+        # #1203mx: and when that id belongs to ANOTHER seeded table, say which one. Naming
+        # the owner turns "the id does not resolve" into the actual mistake -- r190's step
+        # sent `feed-1`, a `feed` id, where a `videos` id goes, and spent three hours and
+        # $293 on the milestone without that sentence.
+        _own1203mx = foreign_id_owner_1203mx(project_dir, path, key)
+        _fk1203mx = ("" if not _own1203mx else
+                     " %r IS an id in `%s`, not in `%s` — this step is sending ANOTHER "
+                     "ENTITY'S id, so the capture that produced it is what to change (look "
+                     "for a `%s`-id field in the response it read). "
+                     % (_own1203mx[0], _own1203mx[1], key, key))
         return (f"TABLE `{key}` HAS {n} LIVE ROW(S)"
                 + (f" (a seeded id is {seeded!r})" if seeded is not None else "")
                 + (" — the table is populated, so the id this step names is the thing that "
                    "does not exist. " if _verified_missing else
                    " — the table is populated; the parent read could not be confirmed either "
-                   "way, so this 404 is EITHER a wrong id OR this handler's lookup. "))
+                   "way, so this 404 is EITHER a wrong id OR this handler's lookup. ")
+                + _fk1203mx)
     except Exception:
         return ""
 
