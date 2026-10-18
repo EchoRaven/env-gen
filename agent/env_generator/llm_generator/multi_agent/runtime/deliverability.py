@@ -52,6 +52,46 @@ def reset_said_700() -> None:
 _GATES_ABSENT_792: list = []
 
 
+def record_authored_orphan_fk_1203n7(seed: Any, orphans: Any) -> bool:
+    """#1203n7: put #1203ga's finding on #1168's CHANNEL, and say it ONCE per distinct finding.
+
+    #1203ga copied #1168's POLICY ("reported, not blocking" -- #566j: a false seed blocker
+    wedges a run) and not its CHANNEL. #1168 "rides here because this dict is what the gate
+    report prints, so a seed whose rows point at nothing stops being invisible"; #1203ga had
+    only a `logger.warning`, which no lane reads. That is #1139's shape from the other side:
+    the finding existed and reached nobody.
+
+    MEASURED, which is why the channel is worth having: `seed_data` IS persisted -- 30 corpus
+    runs' stored records carry its `flagged_tables` -- while `orphan_fk_rows`, #1168's own
+    payload, appears in 0 of 5708 stored records, because it needs the live database #1039
+    records as essentially never available. The authored seed is on disk the whole time, so
+    this is the half of the question that can actually be answered at gate time.
+
+    AND ONCE. r190 emitted ONE distinct line 1182 times (624 + 424 + 134 across its three
+    legs); the gate recomputes every tick and the warning had no latch. Keyed on the FINDING,
+    not on the gate, so a seed the lane partly repaired (6 dangling rows -> 3) speaks again
+    instead of being swallowed by the latch -- the failure mode #760's say-once has to avoid.
+    Reuses this module's own memory (#760/#762) rather than inventing a fourth mechanism, so
+    `reset_said_700()` covers it in the suite.
+
+    Returns True when THIS call is the one that should log. Never raises.
+    """
+    try:
+        if not isinstance(orphans, Mapping) or not orphans:
+            return False
+        items = sorted((str(k), int(v)) for k, v in orphans.items())
+        if isinstance(seed, dict):
+            seed["authored_orphan_fk_rows_1203ga"] = {k: v for k, v in items}
+            seed["authored_orphan_fk_total_1203ga"] = sum(v for _, v in items)
+        key = "1203n7:" + repr(items)
+        if key in _SAID_700:
+            return False
+        _SAID_700.add(key)
+        return True
+    except Exception:
+        return False
+
+
 def _gate_absent_792(gate: str, exc: BaseException, stage: str) -> None:
     """Record + announce a delivery gate that could not run. Never raises."""
     try:
@@ -2876,7 +2916,9 @@ def compute_deliverability(hub_registry, app_root,
             try:
                 from .seed_audit import orphan_fk_rows_in_authored_seed_1203ga
                 _orph1203ga = orphan_fk_rows_in_authored_seed_1203ga(_data)
-                if _orph1203ga:
+                # #1203n7: onto #1168's channel, and once per distinct finding. The
+                # message below is unchanged and stays here, where its citations live.
+                if _orph1203ga and record_authored_orphan_fk_1203n7(seed, _orph1203ga):
                     _n1203ga = sum(_orph1203ga.values())
                     _log1203ga = logging.getLogger(__name__)
                     _log1203ga.warning(
