@@ -1620,9 +1620,64 @@ def align_dataset_field_names(dataset, columns_by_table) -> Dict[str, List]:
                         break
             # #1202ru: then the structural pass, for the counters no spelling list caught.
             _fill_counter_columns_1202ru(rows, colset)
+            # #1203nt: and the URL TWINS, which #1202rv deliberately left out.
+            _mirror_url_twins_1203nt(rows, colset)
         return dataset
     except Exception:
         return dataset
+
+
+# #1203nt: a table declaring BOTH `avatar` and `avatar_url` has two columns for one fact, and
+# the loop above fills only `targets[0]` -- the source is skipped as "its own column" -- so the
+# twin stays NULL and whichever column the frontend reads decides whether an avatar appears.
+# That is exactly the r115 shape `#1202rv` records for counters ("Whichever column the frontend
+# happens to read then decides whether a video shows 3.6M likes or 0"), and #1202rv restricted
+# its mirror to counters because it could not answer whether a same-stem twin means a different
+# fact "the way `title` and `name` can".
+#
+# FOR THIS FAMILY THE CORPUS ANSWERS IT. MEASURED: 20 tables declare both twins
+# (`avatar`/`avatar_url` 11, `thumbnail`/`thumbnail_url` 9); **8 of them seed only ONE side,
+# always the bare noun**, and that includes the newest runs -- r189 (users + videos) and r191
+# (users) -- so this is live, not historical. And every observed value on either side is a
+# path or URL: avatar 70, thumbnail 62, thumbnail_url 35, avatar_url 20, and ZERO values of any
+# other shape. The twins mean the same fact in 100% of the instances that exist.
+#
+# No new list: the pairs come from `_FIELD_SYNONYM_GROUPS` itself, restricted to the groups
+# whose canonical name ends `_url`. Same safety envelope as #483/#1202ru -- additive, never
+# overwrites a set value, and the value must LOOK like a path/url, which is what keeps a
+# non-url twin (an initials blob, a colour) from being mirrored into a url column.
+_URL_TWIN_GROUPS_1203NT = tuple(g for g in _FIELD_SYNONYM_GROUPS if g[0].endswith("_url"))
+
+
+def _looks_like_a_ref_1203nt(v: Any) -> bool:
+    return (isinstance(v, str) and bool(v)
+            and (v.startswith("/") or v.startswith("http") or v.startswith("data:")))
+
+
+def _mirror_url_twins_1203nt(rows: Any, colset: Any) -> int:
+    """Copy a seeded media reference onto its unset twin COLUMN. Returns the fill count."""
+    mirrored = 0
+    for group in _URL_TWIN_GROUPS_1203NT:
+        declared = [c for c in group if c in colset]
+        if len(declared) < 2:
+            # One column for one fact: nothing to mirror. An EARLY EXIT, not a correctness
+            # property -- with a single declared column the inner loop's only candidate is
+            # `src` itself and is skipped, so removing this line changes no output. A mutation
+            # relaxing it to `< 1` is null by construction (#1203jr), and saying so here is
+            # cheaper than the next reader re-deriving it from a MISSED verdict.
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            src = next((c for c in declared if _looks_like_a_ref_1203nt(row.get(c))), None)
+            if src is None:
+                continue
+            for dst in declared:
+                if dst == src or row.get(dst) is not None:
+                    continue              # unset targets only -- NEVER overwrite real data
+                row[dst] = row[src]
+                mirrored += 1
+    return mirrored
 
 
 # ── #552 — deterministic Top-N ranking seed enrichment ───────────────────────
