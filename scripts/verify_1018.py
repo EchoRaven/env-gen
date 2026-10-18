@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a run against the 2026-10-17/18 tickets' PRE-REGISTERED predictions (n5…nh).
+"""Check a run against the 2026-10-17/18 tickets' PRE-REGISTERED predictions (n5…nq).
 
     python scripts/verify_1018.py generated/<run> --log gm_<run>.log
 
@@ -257,6 +257,138 @@ def main(argv):
     say("n5", "FALSIFIED" if nested else ("CONFIRMED" if logtext else "N-A"),
         "%d nested-action negative probe(s) still refused: %s"
         % (len(nested), sorted(nested)[:3] or "none"))
+
+    # --- #1203nm — the DDL-behind-models ledger must not name a DOTTED column ----------
+    # READS: logs/ddl_behind_models_1202xk.jsonl -> tables[] (the part after "<table>: ")
+    # FALSIFIED: any row names a column containing a `.`. The DDL creates
+    #   `"metadata.visibility" TEXT` and the old `\w+` column regex could not see a quoted
+    #   dotted identifier, so it reported a column the DDL CREATES as one it never creates.
+    # CONTROL (pre-patch): r190 47 such rows, r166 103, r180 25 -- all FALSIFIED.
+    _nm_f = run / "logs" / "ddl_behind_models_1202xk.jsonl"
+    _nm_rows, _nm_dotted = 0, []
+    if _nm_f.is_file():
+        for _ln in _nm_f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            try:
+                _d = json.loads(_ln)
+            except Exception:
+                continue
+            _nm_rows += 1
+            # COUNT LINES, NOT TABLE ENTRIES. The first version counted entries against a
+            # denominator of lines and printed "103 of 52", a ratio above 1 that reads as a
+            # bug in the checker rather than a verdict about the run.
+            _hit = [str(_t)[:60] for _t in (_d.get("tables") or [])
+                    if ":" in str(_t) and "." in str(_t).split(":", 1)[1]]
+            if _hit:
+                _nm_dotted.append(_hit[0])
+    say("nm", "FALSIFIED" if _nm_dotted else ("CONFIRMED" if _nm_rows else "N-A"),
+        "%d of %d ledger line(s) name a dotted column: %s"
+        % (len(_nm_dotted), _nm_rows, _nm_dotted[:2] or "none"))
+
+    # --- #1203nn — the gate must stop claiming no run ever had a task suite -------------
+    # READS: logs/delivery_gate.jsonl -> validation_runtime.matrix_skipped_reason
+    # FALSIFIED: any evaluation's reason contains "ever had one" (2 of 106 corpus trees DO
+    #   carry tasks/tasks.yaml), or the surviving population fact is missing from it.
+    # CONTROL (pre-patch): r190 467 occurrences, r183 376, r120 309 -- all FALSIFIED.
+    _nn_f = run / "logs" / "delivery_gate.jsonl"
+    _nn_seen, _nn_bad, _nn_ok = 0, 0, 0
+    if _nn_f.is_file():
+        for _ln in _nn_f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if "matrix_skipped_reason" not in _ln:
+                continue
+            _nn_seen += 1
+            if "ever had one" in _ln:
+                _nn_bad += 1
+            elif "recorded gate evaluations" in _ln:
+                _nn_ok += 1
+    say("nn", "FALSIFIED" if _nn_bad else ("CONFIRMED" if _nn_ok else "N-A"),
+        "%d of %d gate record(s) still claim no run EVER had one; %d carry the "
+        "population fact" % (_nn_bad, _nn_seen, _nn_ok))
+
+    # --- #1203no — a total/cursor contradiction must not name which number lied ---------
+    # READS: logs/list_total_unreachable_1202w0.jsonl -> endpoints[]
+    # FALSIFIED: a row still says "so more rows exist than `total` admits" -- a direction
+    #   that holds for the offset shape and not for an opaque cursor, whose page 2 #1202w0's
+    #   own probe found EMPTY (r132).
+    # CONTROL (pre-patch): r171 84 rows, r183 65, instagram-r176 55 -- all FALSIFIED.
+    _no_f = run / "logs" / "list_total_unreachable_1202w0.jsonl"
+    _no_rows, _no_bad, _no_ok = 0, 0, 0
+    if _no_f.is_file():
+        for _ln in _no_f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            try:
+                _d = json.loads(_ln)
+            except Exception:
+                continue
+            for _e in (_d.get("endpoints") or []):
+                _no_rows += 1
+                if "so more rows exist than" in str(_e):
+                    _no_bad += 1
+                elif "cannot both be right" in str(_e) or "already carries" in str(_e):
+                    _no_ok += 1
+    say("no", "FALSIFIED" if _no_bad else ("CONFIRMED" if _no_ok else "N-A"),
+        "%d of %d row(s) still assert a direction; %d state the contradiction"
+        % (_no_bad, _no_rows, _no_ok))
+
+    # --- #1203np — unstaged seeded media must reach a TASK, not just a log --------------
+    # READS: logs/unstaged_seed_media_1202xn.jsonl + shared/hubs/workhub_tasks.json
+    # FALSIFIED: the ledger has rows and no workhub task was filed for them. The detector
+    #   has run since r124 and reached a logging.warning and an artifact only.
+    # CONTROL (pre-patch): 15 runs carry ledger rows (r190 83, r181 63, r166 54) and NONE
+    #   of them has the task -- all FALSIFIED.
+    _np_f = run / "logs" / "unstaged_seed_media_1202xn.jsonl"
+    _np_rows = (len([l for l in _np_f.read_text(encoding="utf-8", errors="ignore").splitlines()
+                     if l.strip()]) if _np_f.is_file() else 0)
+    _np_tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", {}) or {}
+    _np_hit = [v for k, v in _np_tasks.items()
+               if k != "_meta" and isinstance(v, dict)
+               and "seeded media reference" in str(v.get("title") or "")]
+    say("np", "FALSIFIED" if (_np_rows and not _np_hit) else
+        ("CONFIRMED" if _np_hit else "N-A"),
+        "%d ledger row(s), %d task(s) filed%s"
+        % (_np_rows, len(_np_hit),
+           " — assignee/priority: %s/%s" % (_np_hit[0].get("assignee"),
+                                            _np_hit[0].get("priority"))
+           if _np_hit else ""))
+
+    # --- #1203nq — a missing asset the frontend REMAPS must say so ----------------------
+    # READS: logs/missing_static_assets_1203g9.jsonl -> assets[], and the delivered
+    #   frontend's own remap tables via remapped_seed_media_1203m3.
+    # FALSIFIED: a ledger row whose path IS a key in a resolving remap table does not carry
+    #   "ALREADY REMAPS". 38% of the corpus's rows are in that class, and the consumer told
+    #   the lane to "add the file" for work it had already done.
+    # CONTROL (pre-patch): r182 6 of its rows are remapped and none says so -- FALSIFIED.
+    _nq_f = run / "logs" / "missing_static_assets_1203g9.jsonl"
+    _nq_rows, _nq_bad, _nq_ok = [], 0, 0
+    if _nq_f.is_file():
+        for _ln in _nq_f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            try:
+                _d = json.loads(_ln)
+            except Exception:
+                continue
+            _nq_rows += [str(a) for a in (_d.get("assets") or [])]
+    if _nq_rows:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]
+                                   / "agent" / "env_generator" / "llm_generator"))
+            from multi_agent.runtime.frontend_scaffold import (
+                remapped_seed_media_1203m3 as _rsm)
+            _paths = sorted({r.split(" (referenced by ")[0] for r in _nq_rows})
+            _mapped = set((_rsm(run, _paths) or {}))
+        except Exception as _e:
+            _mapped = None
+            say("nq-dep", "INFO", "could not import the remap reader: %r" % (_e,))
+        if _mapped is not None:
+            for r in _nq_rows:
+                if r.split(" (referenced by ")[0] not in _mapped:
+                    continue
+                if "ALREADY REMAPS" in r:
+                    _nq_ok += 1
+                else:
+                    _nq_bad += 1
+            say("nq", "FALSIFIED" if _nq_bad else ("CONFIRMED" if _nq_ok else "N-A"),
+                "%d remapped row(s) unannotated, %d annotated, out of %d row(s)"
+                % (_nq_bad, _nq_ok, len(_nq_rows)))
+    else:
+        say("nq", "N-A", "no #1203g9 ledger rows in this run")
 
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
