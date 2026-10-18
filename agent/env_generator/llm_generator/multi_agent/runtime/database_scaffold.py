@@ -404,6 +404,54 @@ def _derived_col_type(spec: Any) -> str:
     return "text"
 
 
+def ddl_column_name_1203nm(line: str) -> str:
+    """The column name a CREATE TABLE body line declares, lowercased, or ``""``.
+
+    #1203nm: `\\w+` CANNOT MATCH A DOT, AND A QUOTED IDENTIFIER CAN CONTAIN ONE. The pattern
+    this replaces -- ``[\\"']?(\\w+)[\\"']?\\s+\\S`` -- failed outright on
+
+            "metadata.visibility" TEXT
+
+    because `(\\w+)` stops at the dot and the next character is not whitespace. The column was
+    therefore absent from the DDL's column set while models.py maps it (`#216` keeps the DB
+    name in `Column('metadata.visibility', ...)`, attribute `metadata_visibility`), so
+    `ddl_behind_models_1202xk` reported a column THE DDL CREATES as one the DDL never creates.
+
+    MEASURED, both ends. SOURCE: of the corpus's 9,578 CREATE TABLE body lines, 294 did not
+    parse -- 291 of them SQL comments, which are not columns and must stay unparsed, and
+    exactly 3 quoted names containing a dot (tiktok-web-r166 ×2, tiktok-web-r180 ×1).
+    CONSEQUENCE: `metadata.visibility` is reported 175 times, and **122 of the ledger's 185
+    lines report nothing else** -- 66% of `logs/ddl_behind_models_1202xk.jsonl` is this one
+    blind spot, because the detector re-runs on every scaffold pass. A tiny source cause with
+    an outsized report, which is the #1202td bargain stated in this module's own comment ("a
+    regex ratchet has a blind spot by construction") collecting on itself.
+
+    NON-REGRESSION, measured the same way: over the corpus's 9,578 body lines the old and new
+    verdicts differ on exactly those 3 lines and agree on the other 9,575. Swept end to end,
+    the delivered population that carries both files now reports 2 affected runs --
+    googlemaps-r16 (6 tables) and tiktok-web-r107 (`videos: metadata`), which are the two this
+    function's own docstring names. Before the fix that sweep answered 4, the extra two being
+    r166 and r180 reporting a column their DDL creates.
+
+    SCOPE, deliberately not widened (#647): the same `\\w+` sits in the CREATE TABLE *table*
+    name and in the ALTER ... ADD COLUMN pattern. MEASURED 0 dotted table names and 0 dotted
+    names among 532 ALTER ... ADD COLUMN statements, so both are left exactly as they were.
+    A dotted table name would make its whole block invisible, which lands in the "a table the
+    DDL never creates at all is a different class" branch and is silently skipped rather than
+    falsely reported -- the harmless direction.
+
+    The quoted form must be BALANCED. The old pattern's optional quotes let `"name` match with
+    no closing quote; requiring the pair is what keeps a comment or a constraint fragment from
+    being read as a column.
+    """
+    import re as _re1203nm
+    for _pat in (r'"([^"]+)"\s+\S', r"'([^']+)'\s+\S", r"(\w+)\s+\S"):
+        _m = _re1203nm.match(_pat, line or "")
+        if _m:
+            return _m.group(1).lower()
+    return ""
+
+
 def ddl_behind_models_1202xk(output_dir: Any) -> List[str]:
     """``["places: lat, lng, rating (+9 more)", ...]`` — columns models.py maps that the init
     DDL never creates. ``[]`` when both files are absent or agree.
@@ -447,9 +495,9 @@ def ddl_behind_models_1202xk(output_dir: Any) -> List[str]:
                 if not line or line.upper().startswith(
                         ("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT", "CHECK")):
                     continue
-                c = _re.match(r"[\"']?(\w+)[\"']?\s+\S", line)
+                c = ddl_column_name_1203nm(line)
                 if c:
-                    cols.add(c.group(1).lower())
+                    cols.add(c)
             ddl[m.group(1).lower()] = cols
         # ALTER ... ADD COLUMN counts: a later migration is still the DDL creating it.
         for m in _re.finditer(
