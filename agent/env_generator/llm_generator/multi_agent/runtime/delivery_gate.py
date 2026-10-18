@@ -4528,12 +4528,52 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # the five names appears in ANY of the 298 run logs, and the shared prompt
     # (`agent_definition.j2`) tells every agent to use them. So the branch is dead by agent
     # choice, not by a missing grant, and it is dead in 172 of 172 runs.
+    # #1203nn: "0 OF 172 RUNS HAVE EVER HAD ONE" IS FALSE, and this string ships 8,698 times
+    # across 83 run logs -- 467 of them in r190, 96 in r191. MEASURED: 2 of the corpus's 106
+    # run trees DO carry a `tasks/tasks.yaml` (tiktok-web-r74 and r92, both July 2026). The
+    # claim that survives is about the FLAG, not the file: `task_suite_exists` is False in 0 of
+    # 8,556 gate evaluations across the 83 runs that record it. Same class as #1024, cited
+    # above -- "the wording, not the detection, is what costs the rounds" -- and the wording
+    # here cost the belief that the file cannot exist.
+    #
+    # The producer clause survives the same check and is kept: NEITHER file came from
+    # `save_task_suite`, which dumps `{name, description, tasks}` with
+    # `default_flow_style=False`. r74 carries `version:`/`suite:` keys and an inline-flow
+    # `headers: {X-Tenant-Id: ...}` that that dump cannot emit; r92 has no `name` at all. Both
+    # were hand-written through a generic write tool.
+    #
+    # WHICH IS THE PART A READER NEEDS. Enforcement below keys on a bare `.exists()`, so ANY
+    # file at that path turns three gate checks on whatever its content is -- and two lanes
+    # wrote one unprompted. That is a latent TIGHTENING: 95 of the corpus's 1,514 `ok: true`
+    # evaluations (6.3%) carry `api_smoke_pass` or `ui_smoke_pass` false at the same time, and
+    # every one of those would start blocking.
+    #
+    # DELIBERATELY UNCHANGED (#647, and #1202w6 -- a gate change gets verified on a live run
+    # first): the verdict, the `.exists()` test and the three checks. 0 of the 83 runs that
+    # record the flag has the file, so there is no measured condition to harden against. Only
+    # the sentence is repaired.
     matrix_skipped_reason = "" if task_suite_exists else (
-        "no tasks/tasks.yaml (0 of 172 runs have ever had one) — api_smoke_pass/ui_smoke_pass "
-        "ARE evaluated and reported below, but are NOT ENFORCED: the three checks behind this "
-        "flag (validation_api_smoke_missing / validation_ui_smoke_missing / "
-        "validation_retry_pending) have never fired in 298 logs. Producer `save_task_suite` is "
-        "granted to the verifier and has never been called")
+        "no tasks/tasks.yaml in THIS run (the flag is false in 0 of 8,556 recorded gate "
+        "evaluations; 2 of 106 corpus trees DO have the file, neither written by the "
+        "producer) — api_smoke_pass/ui_smoke_pass ARE evaluated and reported below, but are "
+        # RE-RUN tests/test_1202uf_a_warning_may_not_misstate_its_own_gate.py AFTER EDITING
+        # THIS STRING. That ratchet rejects a span that says "not enforced" AND names a check
+        # reaching `failed_checks` -- these three do reach it, from the flag-gated branch
+        # below, so only the flag qualifier makes the sentence true and the ratchet cannot see
+        # a qualifier. A first draft of this repair failed it.
+        #
+        # ★ AND THE OBVIOUS EXPLANATION FOR THAT IS WRONG, measured rather than assumed. The
+        # ratchet does not read string literals: it pairs raw `"` characters across the WHOLE
+        # file with a non-greedy 80+ window, so which spans it examines depends on every quote
+        # before this point. Proof: re-running it on the exact failing draft, with only the
+        # comment above changed, reports no offender at all. So the split below is a
+        # precaution, not a mechanism -- what tells you is the ratchet, not a layout rule.
+        "NOT ENFORCED: the three checks behind this flag are "
+        "validation_api_smoke_missing / validation_ui_smoke_missing / "
+        "validation_retry_pending, and they have never fired in 298 "
+        "logs. Producer `save_task_suite` is granted to the verifier and has never been "
+        "called; enforcement keys on the file EXISTING, so writing one turns those three "
+        "checks on")
     if task_suite_exists:
         if retry_pending_count > 0:
             # Soft-fail: auto-retry loop is still in progress.

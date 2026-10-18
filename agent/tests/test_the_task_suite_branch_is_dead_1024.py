@@ -96,9 +96,27 @@ def test_both_values_are_published_every_run():
 # --- the wording defect this fixes -----------------------------------------------------------
 
 def _skip_reason():
-    src = _gate_src()
-    i = src.index("matrix_skipped_reason = ")
-    return src[i:src.index("if task_suite_exists:", i)]
+    """The assigned message, EVALUATED -- not the source slice it used to return.
+
+    #1203nn: the slice carried the source's line continuations, so a phrase of the message
+    that happens to wrap (`"... 0 of 8,556 recorded gate "` + `"evaluations; ..."`) was
+    unfindable, and an assertion about the wording failed for a formatting reason. Every
+    caller here asks a question about the MESSAGE, so hand them the message. This also makes
+    a comment unable to satisfy an assertion about the text, which matters here because
+    #1203nn's own comment quotes the false sentence it removed.
+    """
+    import ast as _ast
+    for node in _ast.walk(_ast.parse(_gate_src())):
+        if not isinstance(node, _ast.Assign):
+            continue
+        if not any(getattr(t, "id", "") == "matrix_skipped_reason" for t in node.targets):
+            continue
+        val = node.value
+        if isinstance(val, _ast.IfExp):            # `"" if task_suite_exists else (...)`
+            val = val.orelse
+        if isinstance(val, _ast.Constant) and isinstance(val.value, str):
+            return val.value
+    raise AssertionError("no `matrix_skipped_reason` string assignment found")
 
 
 def test_the_message_no_longer_contradicts_itself():
@@ -110,10 +128,28 @@ def test_the_message_no_longer_contradicts_itself():
 
 
 def test_the_message_says_the_deadness_is_STRUCTURAL():
-    """"no tasks/tasks.yaml" alone reads as 'not this run'. It has never happened in any run,
-    and a reader needs to know which."""
+    """"no tasks/tasks.yaml" alone reads as 'not this run', and a reader needs the structural
+    fact too.
+
+    #1203nn CORRECTED WHAT THIS ASSERTED, and the thing it asserted was false. The line was
+    `assert "0 of 172 runs" in r`, pinning the message's claim that 0 runs "have ever had one"
+    -- and 2 of the corpus's 106 run trees DO carry a tasks/tasks.yaml (tiktok-web-r74 and
+    r92, July 2026, both hand-written rather than produced by `save_task_suite`). So this
+    test's own justification ("It has never happened in any run") was the false belief, and a
+    green test was holding the false sentence in place across 8,698 emissions in 83 run logs.
+
+    That is the second instance of this shape in this very file -- see
+    `test_the_message_no_longer_contradicts_itself`, whose docstring already says "a test
+    asserting the exact wording is what kept the contradiction alive". So assert the
+    DISTINCTION this test exists for (this run vs the population) and not a number, and refuse
+    the specific false claim by name.
+    """
     r = _skip_reason()
-    assert "0 of 172 runs" in r
+    assert "THIS run" in r, "the message must scope the absence to this run"
+    assert "0 of 8,556 recorded gate evaluations" in r, (
+        "the message must still carry a population-level fact, not just 'not this run'")
+    assert "ever had one" not in r, (
+        "the claim that no run has ever had the file is false -- 2 of 106 trees have it")
     assert "never fired" in r or "never been called" in r
 
 
