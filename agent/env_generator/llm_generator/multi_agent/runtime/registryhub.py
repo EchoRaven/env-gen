@@ -91,6 +91,44 @@ def is_negative_probe_step(step) -> bool:
     return bool(codes) and codes <= _NOT_FOUND_OR_DENIED
 
 
+def collapse_candidates_1203n5(path: str):
+    """Every one-segment collapse of ``path``, LAST SEGMENT FIRST (#1203n5).
+
+    #363 binds a purely-negative probe to its registered TEMPLATE by collapsing the FINAL
+    segment, "minimal on purpose". That is right for a flat by-id probe
+    (`/api/users/nobody` -> `/api/users/{x}`) and cannot work for a NESTED ACTION route,
+    where the bogus id sits one segment in:
+
+        /api/users/absent_creator_{}/follow  --last-->  /api/users/absent_creator_{}/{x}
+
+    which matches nothing, while the registered template `/api/users/{username}/follow` is
+    right there. So the chain is refused for the property that makes it a probe -- exactly
+    what #363 set out to prevent, one path shape over.
+
+    MEASURED over the 37 run logs that carry an unregistered-endpoint rejection and still
+    have their endpoint registry: of the rejected items, 94 are bound by the final-segment
+    collapse (#363's population) and **84 can only be bound by collapsing a NON-final
+    segment** -- `/api/videos/not-real/comments` (r116), `/api/videos/missing-{}/comments`
+    (r170), `/api/videos/video-{}-absent/comments` (r133). 73 match no template under any
+    collapse and stay rejected. (A further 42 already match the final registry, which is the
+    timeline, not this rule: the rejection happened before the endpoint was registered. So
+    these counts are upper bounds.)
+
+    Yields the final-segment form FIRST so a path #363 already accepted takes the same
+    decision by the same route. The caller still requires the result to match a REGISTERED
+    template, so a genuinely wrong path stays rejected -- that guard is what makes widening
+    the search safe.
+    """
+    raw = str(path or "")
+    if not raw.startswith("/"):
+        return
+    segs = [s for s in raw.split("/") if s != ""]
+    if len(segs) < 2:
+        return
+    for i in range(len(segs) - 1, -1, -1):
+        yield "/" + "/".join(["{x}" if j == i else s for j, s in enumerate(segs)])
+
+
 def collapse_last_literal_segment(path: str) -> str:
     """Rewrite the final path segment to a param placeholder (#363).
 
@@ -3469,9 +3507,15 @@ class RegistryHub:
                 # chain for the property that makes it a probe. It still has to
                 # match a real registered route.
                 if is_negative_probe_step(s):
-                    alt = dict(s)
-                    alt["path"] = collapse_last_literal_segment(s.get("path") or "")
-                    return _chain_eid(alt) in registered_ids
+                    # #1203n5: try EVERY one-segment collapse, final one first, so a nested
+                    # action probe (`/api/users/absent_{}/follow`) can reach its registered
+                    # template instead of being refused for being a probe.
+                    for _alt1203n5 in collapse_candidates_1203n5(s.get("path") or ""):
+                        alt = dict(s)
+                        alt["path"] = _alt1203n5
+                        if _chain_eid(alt) in registered_ids:
+                            return True
+                    return False
                 return False
 
             # #1202oy: withdraw a probe the FRAMEWORK injected, instead of rejecting the
