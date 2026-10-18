@@ -50,12 +50,16 @@ def _template():
 
 
 def _function_source():
+    """The migration AND the ladder it calls (#1203ng) -- both shipped, both extracted, so
+    these tests exercise the generated code rather than a stand-in."""
     tpl = _template()
     tree = ast.parse(tpl)
-    for n in tree.body:
-        if isinstance(n, ast.FunctionDef) and n.name == _FN:
-            return ast.get_source_segment(tpl, n)
-    raise AssertionError("%s is not a top-level function in the template" % _FN)
+    want = ("_ddl_base_type_1203ng", _FN)
+    out = [ast.get_source_segment(tpl, n) for n in tree.body
+           if isinstance(n, ast.FunctionDef) and n.name in want]
+    if len(out) != len(want):
+        raise AssertionError("the template is missing one of %r" % (want,))
+    return "\n\n".join(out)
 
 
 class _Conn:
@@ -164,12 +168,88 @@ class ItAddsOnlyWhatIsMissing(unittest.TestCase):
         self.assertEqual(conn.ddl, [], "a column that exists was treated as missing")
         self.assertEqual(printed, [], "it announced a stale schema that is not stale")
 
-    def test_the_type_is_rendered_by_the_dialect(self):
+    def test_the_type_is_rendered_by_the_ddl_ladder_1203ng(self):
+        """#1203ng: by the ladder the INIT DDL uses, not by SQLAlchemy's own rendering.
+        `String(64)` is `text` in the init DDL, so it must be `text` here too -- a
+        `VARCHAR(64)` added by this migration would put a length limit on a column that a
+        fresh database has none on."""
         ddl, _ = _run({"videos": {"id"}, "sounds": {"id"}})
         caption = [d for d in ddl if '"caption"' in d][0]
         self.assertIn("TEXT", caption.upper())
         slug = [d for d in ddl if '"slug"' in d][0]
-        self.assertIn("VARCHAR(64)", slug.upper())
+        self.assertIn("TEXT", slug.upper())
+        self.assertNotIn("VARCHAR", slug.upper())
+
+    def test_a_json_column_is_added_as_jsonb_1203ng(self):
+        """Composition with #1203ne: a fresh database gets JSONB from the init DDL, so a
+        database repaired here must not get the non-binary `JSON`."""
+        md = _models()
+        md.tables["videos"].append_column(sa.Column("payload", sa.JSON))
+        conn = _Conn({"videos": {"id"}, "sounds": {"id"}})
+        ns = {"engine": _Engine(conn), "Base": type("B", (), {"metadata": md}),
+              "print": lambda *a, **k: None}
+        exec(compile(_function_source(), "<1203nd>", "exec"), ns)
+        ns[_FN]()
+        line = [d for d in conn.ddl if '"payload"' in d][0]
+        self.assertIn("JSONB", line.upper(), line)
+
+    def test_a_datetime_column_stays_timezone_aware_1203ng(self):
+        """906 corpus columns. SQLAlchemy renders `DateTime` as TIMESTAMP WITHOUT TIME ZONE
+        while the init DDL renders it `timestamptz`; a migrated database must not end up
+        naive where a fresh one is aware."""
+        md = _models()
+        md.tables["videos"].append_column(sa.Column("posted_at", sa.DateTime))
+        conn = _Conn({"videos": {"id"}, "sounds": {"id"}})
+        ns = {"engine": _Engine(conn), "Base": type("B", (), {"metadata": md}),
+              "print": lambda *a, **k: None}
+        exec(compile(_function_source(), "<1203nd>", "exec"), ns)
+        ns[_FN]()
+        line = [d for d in conn.ddl if '"posted_at"' in d][0]
+        self.assertIn("TIMESTAMPTZ", line.upper(), line)
+
+
+class TheTwoLaddersCannotDrift1203ng(unittest.TestCase):
+    """#1032, enforced behaviourally because the delivered app cannot import the framework:
+    the copy in the template must answer exactly what `database_scaffold._ddl_base_type`
+    answers, for every ORM type the corpus uses and then some."""
+
+    _TYPES = ("INTEGER", "BIGINT", "SMALLINT", "TEXT", "VARCHAR", "VARCHAR(64)",
+              "BOOLEAN", "DATETIME", "DATE", "TIME", "TIMESTAMP", "FLOAT", "NUMERIC",
+              "DECIMAL", "REAL", "UUID", "JSON", "JSONB", "BYTEA", "", "SOMETHING_ODD")
+
+    def _template_ladder(self):
+        tpl = _template()
+        tree = ast.parse(tpl)
+        src = [ast.get_source_segment(tpl, n) for n in tree.body
+               if isinstance(n, ast.FunctionDef) and n.name == "_ddl_base_type_1203ng"]
+        self.assertTrue(src, "the generated app lost its copy of the ladder")
+        ns = {}
+        exec(compile(src[0], "<1203ng>", "exec"), ns)
+        return ns["_ddl_base_type_1203ng"]
+
+    def test_every_type_answers_the_same(self):
+        from env_generator.llm_generator.multi_agent.runtime.database_scaffold import (
+            _ddl_base_type,
+        )
+        mine = self._template_ladder()
+        for t in self._TYPES:
+            with self.subTest(type=t):
+                self.assertEqual(mine(t), _ddl_base_type(t))
+
+    def test_the_migration_actually_uses_it(self):
+        tree = ast.parse(_function_source())
+        fn = [n for n in tree.body
+              if isinstance(n, ast.FunctionDef) and n.name == _FN][0]
+        names = [n.func.id for n in ast.walk(fn)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+        self.assertIn("_ddl_base_type_1203ng", names,
+                      "the migration is back to SQLAlchemy's own rendering")
+
+    def test_it_is_fed_the_same_expression_the_framework_feeds(self):
+        """`_ORM_INTROSPECT_CODE` records `{"type": str(c.type)}`; anything else here would
+        be a different input to the same ladder."""
+        src = _function_source()
+        self.assertIn("str(col.type).upper()", src)
 
 
 class ItAddsPlainColumnsOnly(unittest.TestCase):

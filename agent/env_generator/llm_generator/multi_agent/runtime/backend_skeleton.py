@@ -1952,6 +1952,45 @@ def _coerce_body(cls, valid):
 Base.metadata.create_all(bind=engine)
 
 
+def _ddl_base_type_1203ng(t_upper):
+    """#1203ng: the SAME ladder `database_scaffold._ddl_base_type` renders the init DDL with.
+
+    #1203nd's first version used `col.type.compile(engine.dialect)`, which is SQLAlchemy's
+    own rendering and NOT the one the init DDL uses -- so a column added here got a different
+    type from the same column in a database created fresh. Measured over the 11 ORM types the
+    corpus uses, the two disagreed on six, and on the three that matter most by volume:
+
+        String(64)   VARCHAR(64) vs text         997 columns  -- a length limit on one side only
+        DateTime     TIMESTAMP   vs timestamptz  906 columns  -- NAIVE vs AWARE
+        Float        FLOAT       vs numeric       41 columns  -- approximate vs exact
+        JSON         JSON        vs jsonb         20 columns  -- #1203ne's whole subject
+        BigInteger   BIGINT      vs integer        6 columns
+        Date         DATE        vs timestamptz     4 columns
+
+    About 24% of the corpus's 8185 modelled columns. Found by composing #1203nd with
+    #1203ne rather than by either one's own tests, which is what that rule is for.
+
+    The framework feeds `_ddl_base_type` exactly `str(c.type)` (its ORM introspection does
+    `{"type": str(c.type)}`), so the same expression here reproduces the init DDL's type by
+    construction. The two ladders are pinned equal by a behavioural test over every type the
+    corpus uses -- a copy that cannot drift silently is the point (#1032); the framework
+    cannot be imported from inside the delivered app.
+    """
+    if "INT" in t_upper:
+        return "integer"
+    if "BOOL" in t_upper:
+        return "boolean"
+    if "JSON" in t_upper:
+        return "jsonb"
+    if "DATE" in t_upper or "TIME" in t_upper:
+        return "timestamptz"
+    if "FLOAT" in t_upper or "NUMERIC" in t_upper or "DECIMAL" in t_upper or "REAL" in t_upper:
+        return "numeric"
+    if "UUID" in t_upper:
+        return "uuid"
+    return "text"
+
+
 def _ensure_modelled_columns_1203nd():
     """#1203nd: add the columns these models declare that the RUNNING database lacks.
 
@@ -2021,7 +2060,7 @@ def _ensure_modelled_columns_1203nd():
                     if str(col.name).lower() in have:
                         continue
                     try:
-                        _ddl = col.type.compile(engine.dialect)
+                        _ddl = _ddl_base_type_1203ng(str(col.type).upper())
                     except Exception:
                         continue      # a type we cannot render is not one we should guess
                     try:
