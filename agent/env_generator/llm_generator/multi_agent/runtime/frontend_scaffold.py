@@ -673,6 +673,21 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
     REPORTS ONLY, and deliberately does not rewrite the lane's component: the fix is a choice
     between inlining the SVG and using an asset that carries its own colours (#1203kw keeps
     the `<img>` channel open for exactly the latter), and both are the lane's call.
+
+    #1203nv WIDENED THE PREDICATE AND LABELLED THE ROWS. An SVG that names NO paint at all
+    was filed as coloured, and it fails identically: SVG's initial `fill` is black, and
+    `currentColor` inside an `<img>`-loaded document resolves to the initial `color`, which is
+    also black. Of the 3,393 staged icons, 2,517 (74%) are currentColor-only and 459 (14%)
+    name no paint -- 322 of those bare Material Symbols. Resolved against real references the
+    widening adds **328 rows in 11 runs**, two of them modern (tiktok-web-r169 and r177),
+    beside the 1,593 currentColor rows in 85 runs.
+    Every row now names its mechanism, because the consequence is theme-dependent and only
+    the reader can judge it: black-on-dark is invisible, black-on-light is visible but still
+    unthemeable. MEASURED backgrounds -- googlemaps-r15/r16 `#ffffff` (9 of the 11 runs are
+    googlemaps, the visible case), r169 `#000000`/`#070707` and r177 `#000000`/`#212121` (the
+    invisible one). This check was already theme-blind for the currentColor rows, which land
+    the same black on a light app, so the two are treated alike rather than given a new
+    asymmetry.
     """
     found: List[str] = []
     try:
@@ -695,17 +710,58 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
             pass
 
         def _one_colourless_1203n4(cand: Path) -> Optional[bool]:
+            # #1203nv: AND AN SVG WITH NO PAINT AT ALL, which fails identically. The guard
+            # here was `if "currentcolor" not in text: return False`, so a file that names no
+            # paint colour anywhere was filed as coloured. SVG's initial `fill` is black and
+            # `currentColor` inside an `<img>`-loaded document resolves to the initial `color`,
+            # which is also black -- the two shapes are the same pixel.
+            #
+            # MEASURED over the staged icons: 3,393 files, of which 2,517 (74%) are
+            # currentColor-only and **459 (14%) name no paint at all**. 322 of those 459 are
+            # bare Material Symbols (`viewBox="0 -960 960 960"`, a `<path>` and nothing else),
+            # 9 drive paint from a `<style>`/class and the rest use other mechanisms. Resolved
+            # against real references: **495 `<img>`/`url()` references point at a no-paint
+            # file, in 11 runs** -- against 1,733 currentColor references in 85 runs -- and two
+            # of the eleven are modern, tiktok-web-r169 and r177.
+            #
+            # ★ THEME-DEPENDENT, AND THE ROW SAYS WHICH MECHANISM IT IS so a reader can judge.
+            # Black-on-dark is invisible; black-on-light is visible but still unthemeable.
+            # MEASURED backgrounds: googlemaps-r15/r16 are `#ffffff` (9 of the 11 runs are
+            # googlemaps, i.e. the visible case) while r169 is `#000000`/`#070707` and r177
+            # `#000000`/`#212121` (invisible). This check was ALREADY theme-blind for the
+            # currentColor rows -- they resolve to the same black on a light app -- so treating
+            # the two the same keeps it consistent rather than adding a new asymmetry, and it
+            # REPORTS ONLY, so the cost of a light-theme row is attention, not a wedge.
+            # `Optional[bool]` is kept exactly as it was -- True means "cannot take a colour
+            # from CSS" -- so `_colourless`'s #883 ambiguity rule (report only when every
+            # served copy of a basename agrees) goes on working unchanged. The MECHANISM is a
+            # separate question, answered by `_mechanism_1203nv` for the row text only.
             try:
                 text = cand.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 return None
-            if "currentcolor" not in text.lower():
-                return False
             for m in _PAINT_COLOUR_1203N0.finditer(text):
                 tok = m.group(1).lower()
-                if tok not in ("currentcolor", "none", "inherit", "transparent"):
+                if tok in ("none", "inherit", "transparent"):
+                    continue
+                if tok != "currentcolor":
                     return False
             return True
+
+        def _mechanism_1203nv(ref: str) -> str:
+            """``"currentColor"`` or ``"no paint at all"`` for the row, or ``""``."""
+            name = ref.split("?", 1)[0].split("#", 1)[0]
+            direct = pub / name.lstrip("/")
+            cands = ([direct] if direct.is_file()
+                     else (_served_1203n4.get(name.rsplit("/", 1)[-1]) or []))
+            for c in cands:
+                try:
+                    if "currentcolor" in c.read_text(encoding="utf-8",
+                                                     errors="ignore").lower():
+                        return "currentColor"
+                except Exception:
+                    return ""
+            return "no paint at all" if cands else ""
 
         def _colourless(ref: str) -> Optional[bool]:
             """True when the referenced file's only paint colour is `currentColor`.
@@ -742,7 +798,13 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
                     continue
                 seen.add(rel)
                 if _colourless(rel):
-                    found.append("%s -> %s" % (f.name, rel))
+                    # #1203nv: name the MECHANISM. Black-on-dark is invisible and
+                    # black-on-light is merely unthemeable, and the reader can only tell
+                    # which case they are looking at if the row says how the icon got
+                    # colourless.
+                    _why1203nv = _mechanism_1203nv(rel)
+                    found.append("%s -> %s%s" % (f.name, rel,
+                                                 " (%s)" % _why1203nv if _why1203nv else ""))
     except Exception:
         return []
     return found

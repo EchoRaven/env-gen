@@ -200,21 +200,71 @@ class AnAssetWithItsOwnColoursKeepsTheImgChannel(_FE):
         self.src("Nav.jsx", '<img src="/assets/icons/mixed.svg"/>')
         self.assertEqual(invisible(self.fe), [])
 
+    def test_an_outline_icon_IS_reported_1203nv(self):
+        """`fill="none" stroke="currentColor"` is the single commonest icon idiom, and
+        `none`/`transparent`/`inherit` are skipped precisely so it still counts as
+        colourless. A mutation that stops skipping them (NV5) made this whole family read as
+        "carries its own colours" and nothing in the file noticed -- the skip list had no
+        test of its own."""
+        self.icon("outline.svg",
+                  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">'
+                  '<path d="M4 4h16v16H4z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/outline.svg"/>')
+        got = invisible(self.fe)
+        self.assertEqual(got, ["Nav.jsx -> /assets/icons/outline.svg (currentColor)"], got)
+
+    def test_fill_none_alone_does_not_make_an_icon_colourless(self):
+        """Non-vacuity for the skip list: `none` must be ignored as a PAINT, not treated as
+        evidence of colourlessness. An icon whose only tokens are `none` and a real colour
+        carries its own colour."""
+        self.icon("halfnone.svg",
+                  '<svg viewBox="0 0 24 24" fill="none" stroke="#ff2d55">'
+                  '<path d="M4 4h16v16H4z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/halfnone.svg"/>')
+        self.assertEqual(invisible(self.fe), [])
+
     def test_an_inline_jsx_icon_is_not_a_reference(self):
         """`icon: Icons.X` carries no .svg path at all."""
         self.icon("a.svg")
         self.src("Nav.jsx", "const nav=[{label:'Shop',icon:Icons.ShoppingBag}];")
         self.assertEqual(invisible(self.fe), [])
 
-    def test_an_svg_with_no_colour_at_all_is_out_of_scope(self):
-        """A fill-less SVG defaults to black, so it is invisible through <img> too -- but
-        INLINING would not fix it either (there is no `currentColor` to inherit), so the
-        remedy this reports does not apply and the finding would be misleading. Mutation N02
-        removes the `currentColor` precondition and this is the case that catches it."""
+    def test_an_svg_with_no_colour_at_all_IS_in_scope_1203nv(self):
+        """#1203nv REVERSED THIS, and measured the reason the old criterion gave.
+
+        It asserted a fill-less SVG is out of scope because "INLINING would not fix it
+        either (there is no `currentColor` to inherit), so the remedy this reports does not
+        apply". MEASURED WITH REAL CHROMIUM, the same method #1203n0 itself used -- 48x48 on
+        #121212, mean brightness over all 2304 px:
+
+            no-paint, INLINED under CSS `fill:#fff`   mean 151.3  bright 1296  -> visible
+            currentColor, INLINED under `fill`+`color` mean 151.3  bright 1296  -> visible
+            no-paint, INLINED under `color:#fff` only  mean   7.9  bright    0  -> invisible
+            currentColor, INLINED under `color` only   mean 151.3  bright 1296  -> visible
+
+        So inlining DOES fix it -- the CSS `fill` property applies to a shape with no `fill`
+        presentation attribute, no `currentColor` required. The old reason was wrong about
+        the mechanism. What it had a real kernel of is the ASYMMETRY on the last two lines:
+        the usual idiom (inline and set `color`) fixes a currentColor icon and not a
+        no-paint one, which is why the row now names its mechanism and the heal message
+        gives the remedy per mechanism.
+
+        Population: 328 rows in 11 runs, two of them modern (tiktok-web-r169, r177).
+        """
         self.icon("plain.svg", '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">'
                                '<path d="M1 1h4v4H1z"/></svg>')
         self.src("Nav.jsx", '<img src="/assets/icons/plain.svg"/>')
-        self.assertEqual(invisible(self.fe), [])
+        got = invisible(self.fe)
+        self.assertEqual(got, ["Nav.jsx -> /assets/icons/plain.svg (no paint at all)"], got)
+
+    def test_the_row_names_its_mechanism_1203nv(self):
+        """The two mechanisms need different remedies, so a reader must be able to tell them
+        apart without opening the file."""
+        self.icon("cc.svg", '<svg viewBox="0 0 48 48"><path fill="currentColor" '
+                            'd="M1 1h4v4H1z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/cc.svg"/>')
+        got = invisible(self.fe)
+        self.assertEqual(got, ["Nav.jsx -> /assets/icons/cc.svg (currentColor)"], got)
 
     def test_a_path_that_is_not_staged_says_nothing(self):
         """#883: an unreadable file is not evidence of invisibility."""

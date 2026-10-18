@@ -2367,14 +2367,26 @@ class HealPipeline:
                 from .frontend_scaffold import invisible_img_icons_1203n0
                 _inv1203n0 = invisible_img_icons_1203n0(fe) or []
                 for _iv1203n0 in _inv1203n0[:6]:
+                    # #1203nv: the row names its MECHANISM, and the remedy differs by it.
+                    # The old wording said "whose only paint colour is `currentColor`" and
+                    # advised "inline currentColor DOES inherit" -- both false for a no-paint
+                    # SVG, which the widened check now also reports. MEASURED WITH REAL
+                    # CHROMIUM, 48x48 on #121212: a no-paint icon inlined under CSS `fill:#fff`
+                    # reads mean 151.3 / 1296 bright px (visible, identical to the
+                    # currentColor case), and inlined under `color:#fff` ALONE reads mean 7.9
+                    # / 0 bright (still invisible) -- while a currentColor icon inlined under
+                    # `color` alone reads 151.3 / 1296. So inlining fixes both, but a no-paint
+                    # icon needs the CSS to set `fill`, not just `color`.
                     orch._logger.warning(
-                        "#1203n0 %s loads a staged icon whose only paint colour is "
-                        "`currentColor` through <img>/url(), where CSS colour cannot reach "
-                        "it — real Chromium paints all 2304 px of it background-dark on a "
-                        "#121212 nav, i.e. the icon is in the DOM and invisible on screen. "
-                        "INLINE the SVG (inline currentColor DOES inherit) or point at an "
-                        "asset that carries its own colours (#551/#1203kw keep the <img> "
-                        "channel open for those).", _iv1203n0)
+                        "#1203n0 %s loads a staged icon CSS colour cannot reach through "
+                        "<img>/url() — real Chromium paints it background-dark on a #121212 "
+                        "nav, i.e. the icon is in the DOM and invisible on screen. INLINE the "
+                        "SVG or point at an asset that carries its own colours (#551/#1203kw "
+                        "keep the <img> channel open for those). The row says which mechanism "
+                        "it is: `currentColor` inlines correctly under a CSS `color`, while "
+                        "`no paint at all` needs the CSS to set `fill` — measured, `color` "
+                        "alone leaves it invisible (mean 7.9, 0 bright px) and `fill` makes it "
+                        "visible (151.3, 1296).", _iv1203n0)
                 if len(_inv1203n0) > 6:
                     orch._logger.warning(
                         "#1203n0 %d more invisible icon reference(s) not listed (#1034)",
