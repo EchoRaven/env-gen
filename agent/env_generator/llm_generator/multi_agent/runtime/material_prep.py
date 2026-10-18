@@ -1411,6 +1411,31 @@ _FIELD_SYNONYM_GROUPS = (
     ("banner_url", "banner"),
     ("logo_url", "logo"),
     # identity and time
+    # #1203ns: THE PRIMARY TEXT OF A COMMENT/POST/MESSAGE, which this list did not have. It
+    # covers titles, descriptions, media URLs, counters, names and timestamps -- and not the
+    # one field every product with user-generated content has. #1202ro's warning was about
+    # adding another VERTICAL's vocabulary; this is the opposite case, a generic field the
+    # film-first list never needed.
+    #
+    # MEASURED: 4 runs declare `comments.body` while design-prep emits `text` -- r139, r140,
+    # r145, r160, **295 comment rows each, 1,180 in all**. `body` is nullable in every one, so
+    # the rows DID insert and every comment shipped with NO TEXT: a comments panel of blank
+    # entries. (Had it been NOT NULL it would be #483's documented outcome instead -- every
+    # per-row insert failing into an empty table, which is how r55 shipped 0 of 60 titles.)
+    #
+    # Simulated over the whole corpus before landing: 1,180 fills, all `comments.body <-
+    # text`, all string values, 0 non-string landing in a text column.
+    #
+    # ★ AND THE FIRST VERSION OF THAT SENTENCE WAS WRONG — my own test caught it. It said
+    # "exactly ONE table anywhere holds two of these as columns at once". SIX do: r142
+    # (comments, notifications), r172 (messages, notifications), r180 (messages,
+    # notifications). The simulation had only looked at tables the DATASET covers, which is
+    # always `comments/sounds/users/videos`, so five of the six were never in view. The claim
+    # that survives is narrower and is the one that matters: of those six, exactly ONE
+    # (r142's `comments`) is a table this function can reach, and the rule below -- never
+    # cannibalize a field that is its own column -- makes it a no-op there, which is why
+    # r142 does not appear among the 1,180 fills.
+    ("body", "text", "content", "message"),
     ("display_name", "displayname", "full_name"),
     ("username", "handle", "screen_name"),
     ("created_at", "created", "timestamp", "posted_at", "published_at"),
