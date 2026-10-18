@@ -5725,6 +5725,38 @@ def _rgb_1202cl(h):
         return None
 
 
+# #1203nk: the three agent-facing component blocks in this file were each capped and none of
+# them said so. Named here so the cut can be declared against the number and a test can read
+# it instead of restating it.
+_SURFACE_ROWS_1203NK = 12          # MEASURED SURFACE, from component_specs
+_COPY_ROWS_1203NK = 12             # REFERENCE COPY, from the design doc's components
+_LAYOUT_ROWS_1203NK = 10           # MEASURED LAYOUT (#796's repair-round block)
+# The per-string bound inside REFERENCE COPY. Named because the block instructs the lane to
+# reproduce the string EXACTLY, so a cut has to be declared against a number, not hidden in a
+# slice: 260 of the corpus's 2366 `copy` strings are longer than this.
+_COPY_CHARS_1203NK = 120
+
+
+def _cut_row_1203nk(total: int, cap: int, what: str = "measured component") -> list:
+    """``[]`` when nothing was cut, else one row naming what was withheld (#1034).
+
+    MEASURED, which is why this exists: across 102 runs and 1412 screens the MEASURED SURFACE
+    block showed 15882 of 20407 components (78%), the cap bit on 961 screens (68%), and it
+    withheld 4525 components in total -- every one of them silently, in prose written for the
+    agent that has to reproduce the screen. `#1203ni` then made the other two blocks start
+    cutting as well, by restoring the components the design_analyst's rewrite had dropped
+    (r191's fyp screen goes 4 -> 19).
+    """
+    try:
+        n = int(total) - int(cap)
+    except Exception:
+        return []
+    if n <= 0:
+        return []
+    return ["  · (+%d more %s%s not shown — the full set is in "
+            "design/component_specs/<screen>.json)" % (n, what, "s" if n != 1 else "")]
+
+
 def _composited_components_1202cl(output_dir: Any, threshold: float = 60.0) -> Dict[str, str]:
     """Components whose MEASURED background is really the backdrop showing through.
 
@@ -5795,7 +5827,8 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
         # #1202cl: which of these rows are measuring the backdrop rather than the component.
         _composite = _composited_components_1202cl(output_dir)
         rows = []
-        for c in (spec.get("components") or [])[:12]:
+        _all1203nk = [c for c in (spec.get("components") or []) if isinstance(c, dict)]
+        for c in _all1203nk[:_SURFACE_ROWS_1203NK]:
             acc = ", ".join(f"{k}={v}" for k, v in (c.get("accents") or {}).items())
             _nm = str(c.get("name") or "")
             _caveat = _composite.get(_nm)
@@ -5806,12 +5839,13 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
                            "its own surface from the palette instead" if _caveat else ""))
         if not rows:
             return ""
+        rows += _cut_row_1203nk(len(_all1203nk), _SURFACE_ROWS_1203NK)
         return ("MEASURED SPEC (design/component_specs/" + screen_name + ".json — use these "
                 "EXACT hex values, never eyeball" +
                 (", EXCEPT any row marked ⚠: that one measured the backdrop through a "
                  "translucent component and its hex is not the component's own colour"
                  if any(str(c.get("name") or "") in _composite
-                        for c in (spec.get("components") or [])[:12]) else "") +
+                        for c in _all1203nk[:_SURFACE_ROWS_1203NK]) else "") +
                 "):\n" + "\n".join(rows))
     except Exception:
         return ""
@@ -6382,14 +6416,33 @@ def _copy_lines_797(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[s
         if screen is None:
             return []
         rows = []
-        for c in (screen.get("components") or [])[:12]:
+        _all1203nk = [c for c in (screen.get("components") or []) if isinstance(c, Mapping)]
+        for c in _all1203nk[:_COPY_ROWS_1203NK]:
             if not isinstance(c, Mapping):
                 continue
             txt = str(c.get("copy") or "").strip()
             if txt:
-                rows.append(f"  · {c.get('id') or c.get('name')}: \"{txt[:120]}\"")
+                # #1203nk: A VERBATIM INSTRUCTION MUST NOT HAND OVER A CUT STRING SILENTLY.
+                # The block's own words are "render these strings character for character",
+                # and this slice was a bare `[:120]`. MEASURED over the delivered design
+                # docs: 2366 components in 13 runs carry `copy`, median 28 characters, p90
+                # 142, max 322 -- and 260 of them exceed 120, so the lane was being told to
+                # reproduce exactly a string it had only the first 120 characters of. The
+                # bound stays (this is a prompt), but it says so and says where the whole
+                # string is.
+                _shown = txt[:_COPY_CHARS_1203NK]
+                _tail = ("  ⚠ CUT at %d of %d characters — the full string is this "
+                         "component's `copy` in design/design_system.json; do not render "
+                         "this fragment as the complete text"
+                         % (_COPY_CHARS_1203NK, len(txt))) if len(txt) > _COPY_CHARS_1203NK else ""
+                rows.append(f"  · {c.get('id') or c.get('name')}: \"{_shown}\"" + _tail)
         if not rows:
             return []
+        # #1203nk: the budget is spent on the FIRST 12 components, not on the first 12 that
+        # carry copy, so a later one is invisible. `#1203kz` measured that copy is essentially
+        # never present at all (0 of the components in the runs it checked), so nothing is
+        # being lost today -- the cut is declared so that stops being an assumption.
+        rows += _cut_row_1203nk(len(_all1203nk), _COPY_ROWS_1203NK, "component")
         return (["REFERENCE COPY (verbatim — render these strings character for character; do "
                  "not paraphrase, translate or substitute a synonym):"] + rows)
     except Exception:
@@ -6435,7 +6488,8 @@ def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) ->
                         else ""))
             except Exception:
                 pass
-        for comp in (screen.get("components") or [])[:10]:
+        _all1203nk = [c for c in (screen.get("components") or []) if isinstance(c, dict)]
+        for comp in _all1203nk[:_LAYOUT_ROWS_1203NK]:
             if not isinstance(comp, dict):
                 continue
             reg = comp.get("region")
@@ -6469,6 +6523,7 @@ def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) ->
                 f"(width {(x2 - x1) * 100:.0f}%), y {y1 * 100:.0f}-{y2 * 100:.0f}% "
                 f"(height {(y2 - y1) * 100:.0f}%)"
                 + (f", bg {bg}" if bg else "") + _rhythm)
+        rows += _cut_row_1203nk(len(_all1203nk), _LAYOUT_ROWS_1203NK)
         if not rows and not layout:
             return []
         lines = ["LAYOUT GEOMETRY (measured from the reference — match the "
