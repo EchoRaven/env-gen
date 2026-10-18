@@ -631,6 +631,42 @@ def main(argv):
     except Exception as _e_og:
         say("og", "N-A", "the #1203og criterion could not read this run (%s)" % _e_og)
 
+    # --- #1203oi — an EMPTY-state task must not name a screen that drew nothing ----------
+    # READS: the run's workhub tasks (which screens the EMPTY-state task names) + the delivered
+    #   captures through `blank_captures_1203ny`.
+    # FALSIFIED: the task names a screen whose capture has near-zero ink AND the task body
+    #   carries no carve-out for it -- the lane was sent after seed rows or filters for a page
+    #   that did not render.
+    # CONFIRMED: either no overlap, or every overlapping screen is named in the carve-out.
+    # CONTROL (pre-patch): r163 4 of 4 named screens blank (and r163 is the ALL-blank case the
+    #   new title exists for), r180 3, r169 1, gmrun3 2; r191 no overlap.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.visual_fidelity import (
+            blank_captures_1203ny as _blank_oi)
+        _oi_tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", {}) or {}
+        _oi_named, _oi_carved = set(), set()
+        for _t in _oi_tasks.values():
+            if not isinstance(_t, dict) or "render an EMPTY" not in str(_t.get("title") or ""):
+                continue
+            _desc = str(_t.get("description") or "")
+            _m = re.search(r"EMPTY-state: ([^.]{0,300})", _desc)
+            if _m:
+                _oi_named |= {s.strip() for s in _m.group(1).split(",") if s.strip()}
+            _m2 = re.search(r"near-zero ink against its own reference: ([^.]{0,300})", _desc)
+            if _m2:
+                _oi_carved |= {s.strip() for s in _m2.group(1).split(",") if s.strip()}
+        if not _oi_named:
+            say("oi", "N-A", "this run filed no EMPTY-state task")
+        else:
+            _oi_blank = {str(r).split(":", 1)[0].strip() for r in (_blank_oi(run) or [])}
+            _oi_bad = sorted((_oi_named & _oi_blank) - _oi_carved)
+            say("oi", "FALSIFIED" if _oi_bad else "CONFIRMED",
+                "%d of %d named screen(s) drew nothing and are not carved out: %s"
+                % (len(_oi_bad), len(_oi_named), _oi_bad[:3] or "none"))
+    except Exception as _e_oi:
+        say("oi", "N-A", "the #1203oi criterion could not read this run (%s)" % _e_oi)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

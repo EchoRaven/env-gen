@@ -52,6 +52,10 @@ _CONTROLS = [
     ("og", "tiktok-web-r190", "FALSIFIED"),      # 4 of its 10 (the rest are #1203mr's class)
     ("og", "tiktok-web-r189", "CONFIRMED"),      # 4 build failures, no syntax error
     ("og", "tiktok-web-r188", "N-A"),            # no build failure at all
+    ("oi", "tiktok-web-r163", "FALSIFIED"),      # all 4 named screens drew nothing
+    ("oi", "tiktok-web-r180", "FALSIFIED"),      # 3 of 4
+    ("oi", "tiktok-web-r191", "CONFIRMED"),      # 2 named, none blank
+    ("oi", "tiktok-web-r190", "CONFIRMED"),      # 5 named, none blank
 ]
 
 _cache = {}
@@ -112,6 +116,8 @@ _CONFIRM_REQUIRES = {
     # `og` reads its own recorder's artifact; the esbuild words it counts are a THIRD PARTY's
     # output, which is the distinction its first version got wrong.
     "og": [],
+    # `oi` CONFIRMED needs the carve-out sentence the patched task body writes.
+    "oi": ["near-zero ink against its own reference"],
 }
 
 
@@ -240,7 +246,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og"):
+                     "od", "of", "og", "oi"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

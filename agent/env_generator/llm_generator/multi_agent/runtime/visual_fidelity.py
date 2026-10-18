@@ -8000,6 +8000,47 @@ class VisualFidelityGate:
                                  "rows?), the route's handler precedence, and whether the "
                                  "endpoint returns [] for a valid session. Only add seed rows "
                                  "if you first confirm the backing table is genuinely empty.")
+                    # ★ #1203oi: A SCREEN THAT RENDERED NOTHING IS NOT AN EMPTY STATE, and
+                    # this task has been telling the lane it is. `empty_state` is the JUDGE's
+                    # semantic reading ("this looks like an empty-state UI"); #1203ny measures
+                    # whether the capture has any INK at all against its own reference. They
+                    # are different questions and they overlap.
+                    #
+                    # MEASURED over the corpus: 73 runs filed this task, and in 65 the
+                    # delivered tree has no blank capture at all. In the 8 that do, SEVEN name
+                    # a blank screen in this very task -- 13 screens in all: r163 names 4 and
+                    # all 4 are blank, r180 3 of 4, r169 1, gmrun3 2, gmrun4 1, gmrun7 1,
+                    # instagram-run70 1. r163's `explore_grid` inks 0.27% of the page against
+                    # 16.44% in its reference (ratio 0.016 against a corpus median of 0.864).
+                    # For those screens the body's two diagnoses -- "seed the missing rows" and
+                    # "a read-path bug (filters/owner-scoping)" -- are both wrong, which is the
+                    # same cost #1202ff fixed one level up: a round burned on the wrong lane.
+                    #
+                    # The assignee does NOT change. 1 of the 7 runs is all-blank and 6 are
+                    # mixed, so a blank-only routing rule would fire once and a mixed task
+                    # belongs with the backend anyway; what the lane needs is to be told which
+                    # of its screens are not its question. The TITLE changes only in the
+                    # all-blank case, which is #1202ff's own rule.
+                    _blank1203oi: List[str] = []
+                    try:
+                        _bl1203oi = blank_captures_1203ny(
+                            Path(str(getattr(orch, "output_dir", "") or "")))
+                        _bn1203oi = {str(r).split(":", 1)[0].strip() for r in (_bl1203oi or [])}
+                        _blank1203oi = sorted(n for n in _empty if n in _bn1203oi)
+                    except Exception:
+                        _blank1203oi = []       # a diagnosis that fails must not cost the task
+                    _blank_note_1203oi = ""
+                    if _blank1203oi:
+                        _blank_note_1203oi = (
+                            "\n\nFIRST, %d of these screen(s) did not RENDER at all — the "
+                            "capture has near-zero ink against its own reference: %s. For "
+                            "those, do NOT add seed rows and do NOT audit filters or "
+                            "owner-scoping: a page that drew nothing cannot be fixed by the "
+                            "data it would have drawn. Find out why the route produced no "
+                            "markup (a crashed component, a failed bundle, a 404 on the "
+                            "route). The seeding/read-path advice below applies to the "
+                            "REMAINING screen(s) only."
+                            % (len(_blank1203oi), ", ".join(_blank1203oi)))
                     # #1202ff: the TITLE must carry the same verdict the body just reached.
                     # It was the literal "seed the missing rows" whatever the audit found, so
                     # on the common branch it says the opposite of its own description: r45's
@@ -8018,16 +8059,24 @@ class VisualFidelityGate:
                     # Titles are not decoration here: `workhub_list_tasks` returns them and is
                     # the most-called tool in the corpus, so a lane triaging its queue sees the
                     # title long before the description.
-                    _title_1202ff = (
-                        "Visual gate: screen(s) render an EMPTY state — seed the missing rows"
-                        if _thin else
-                        "Visual gate: screen(s) render an EMPTY state over POPULATED tables — "
-                        "read-path bug (filters/owner-scoping), NOT seeding")
+                    # #1203oi adds the third branch, ahead of both: when EVERY screen named
+                    # is blank, neither existing verdict is true of any of them.
+                    if _blank1203oi and set(_blank1203oi) == set(_empty):
+                        _title_1202ff = (
+                            "Visual gate: screen(s) rendered NOTHING (near-zero ink vs their "
+                            "reference) — the page did not render; NOT seeding, NOT filters")
+                    else:
+                        _title_1202ff = (
+                            "Visual gate: screen(s) render an EMPTY state — seed the missing rows"
+                            if _thin else
+                            "Visual gate: screen(s) render an EMPTY state over POPULATED tables — "
+                            "read-path bug (filters/owner-scoping), NOT seeding")
                     _bt = orch.hubs.workhub.create_task(
                         title=_title_1202ff,
                         description=(
                             "The visual-fidelity judge flagged these screens as EMPTY-state: "
-                            + ", ".join(_empty) + ". Their reference design only renders when "
+                            + ", ".join(_empty) + "." + _blank_note_1203oi
+                            + " Their reference design only renders when "
                             "the backing table has rows (e.g. a reels page needs video posts), "
                             "so the screen can never match the reference no matter what the "
                             "frontend does. " + _diag + " Keep FK references consistent with "
@@ -8045,7 +8094,10 @@ class VisualFidelityGate:
                                 "Seed-data task assigned "
                                 f"(task_id={(_bt or {}).get('id')}): the visual gate found "
                                 f"EMPTY-state screen(s) [{', '.join(_empty)}] whose design "
-                                "cannot render without data. " + _diag),
+                                "cannot render without data. " + _diag
+                                + ((" #1203oi: %s rendered NOTHING (near-zero ink) — not a "
+                                    "data question, see the task body."
+                                    % ", ".join(_blank1203oi)) if _blank1203oi else "")),
                             msg_type="task_ready",
                             priority="urgent",
                             persist=True,
