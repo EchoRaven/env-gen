@@ -2393,6 +2393,25 @@ class HealPipeline:
                         len(_inv1203n0) - 6)
             except Exception as _iv_err:
                 orch._logger.debug("#1203n0 invisible-icon scan skipped: %s", _iv_err)
+            # #1203nw: the other way a staged icon fails -- not its colour, its GEOMETRY. Own
+            # try, because #1203n0 answering is no reason for this to go unasked (#1201).
+            try:
+                from .frontend_scaffold import unrenderable_img_icons_1203nw
+                _un1203nw = unrenderable_img_icons_1203nw(fe) or []
+                for _u1203nw in _un1203nw[:6]:
+                    orch._logger.warning(
+                        "#1203nw %s references a staged icon that cannot render AS an icon. "
+                        "Measured with real Chromium, a 3px glyph in a 48x48 <img> slot: WITH "
+                        "a viewBox 784 of 2304 px ink (34%%), without one 12 (0.5%%), and with "
+                        "no width/height either the <img> falls back to the SVG default 300x150 "
+                        "and blows the slot apart. The row names the cause. Give the file a "
+                        "viewBox or stop referencing it — both are the lane's call.", _u1203nw)
+                if len(_un1203nw) > 6:
+                    orch._logger.warning(
+                        "#1203nw %d more unrenderable icon reference(s) not listed (#1034)",
+                        len(_un1203nw) - 6)
+            except Exception as _un_err:
+                orch._logger.debug("#1203nw unrenderable-icon scan skipped: %s", _un_err)
             # #1203ff: and remove the duplicates the rewrite above can CREATE. Its own try,
             # because #1202sd is one cause and not the only one -- r112 shipped a duplicate
             # with #1202sd never firing, so this must run whether that repair fired or not.

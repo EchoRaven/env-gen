@@ -810,6 +810,116 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
     return found
 
 
+_ICON_SHAPE_1203NW = re.compile(
+    r"<(path|rect|circle|polygon|ellipse|line|polyline|image|use|text)\b", re.I)
+
+
+def unrenderable_img_icons_1203nw(frontend_dir) -> List[str]:
+    """``["EmptyChatPane.jsx -> /assets/icons/x.svg (no viewBox …)", …]`` — referenced icons
+    that cannot render AS an icon, whatever colour they are.
+
+    #1203nw. `#1203n0`/`#1203nv` ask whether CSS colour can reach a staged icon. This asks a
+    different question about the same channel: whether the file has a usable GEOMETRY at all.
+    Both arise the same way -- the staging pipeline lifts SVG fragments out of the real
+    product's page, where the page's own CSS supplied what the fragment leaves out.
+
+    MEASURED WITH REAL CHROMIUM, a 3px circle in a 48x48 `<img>` slot on #121212, bright
+    pixels over the whole slot:
+
+        with a viewBox          img 48x48    784 of 2304 bright   34.0% -> a normal icon
+        no viewBox              img 48x48     12 of 2304 bright    0.5% -> a speck
+        no viewBox, no w/h      img 300x150   12 of 51200 bright   0.0% -> breaks the layout
+
+    Without a viewBox an SVG has no coordinate mapping, so sizing the ELEMENT does not scale
+    the CONTENT -- 68x less ink than an icon should have -- and with no width/height either
+    the `<img>` falls back to the SVG default of 300x150 and blows the slot apart.
+
+    TWO CAUSES, MEASURED, and the row names which: **14 referenced icons have no viewBox and
+    no width** (14 runs) and **6 render nothing at all** (5 runs) -- the latter being
+    `<svg style="position:absolute;width:0;height:0" id="svg-sprite-container"></svg>`, a 0x0
+    sprite HOST scraped from the page and staged as if it were a glyph. Four of the affected
+    runs are modern (tiktok-web-r166/r169/r177/r179).
+
+    A THIRD CAUSE IS LABELLED BUT UNFIRED (#647): an icon with width/height yet no viewBox is
+    the 0.5%-ink case above, and the corpus has 0 referenced instances. The branch costs
+    nothing because it is the same `viewBox` test, and saying so is cheaper than the next
+    reader wondering whether it was considered.
+
+    ★ ONE CLASS WAS A DETECTOR ERROR OF MINE AND IS NOT HERE. "A single shape with a short
+    path" looked like a placeholder and flagged 155 files, until I read one:
+    `netflix-local-r45/chevron-right.svg` is `<path d="m9 18 6-6-6-6"/>`, a correct lucide
+    chevron. A simple glyph IS one short path, so the shape of the drawing says nothing about
+    its quality.
+
+    REPORTS ONLY, like its neighbour: the fix is either a viewBox the staging step cannot
+    compute from a fragment without rendering it, or not referencing the file, and both are
+    decisions this function must not take. Pure/best-effort: any fault returns [].
+    """
+    found: List[str] = []
+    try:
+        root = Path(frontend_dir)
+        src = root / "src"
+        pub = root / "public"
+        if not src.is_dir() or not pub.is_dir():
+            return []
+        served: Dict[str, List[Path]] = {}
+        try:
+            for sf in pub.rglob("*.svg"):
+                served.setdefault(sf.name, []).append(sf)
+        except Exception:
+            pass
+
+        def _cause(cand: Path) -> Optional[str]:
+            try:
+                text = cand.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                return None
+            if not _ICON_SHAPE_1203NW.search(text):
+                return "renders nothing: no drawable element (a 0x0 sprite host)"
+            if "viewbox" in text.lower():
+                return ""
+            if re.search(r"\swidth\s*=", text):
+                return ("no viewBox: the element can be sized but the drawing cannot — "
+                        "0.5% of the slot inks against 34% for the same glyph with one")
+            return ("no viewBox and no width: an <img> falls back to the SVG default of "
+                    "300x150 and the drawing stays its original size")
+
+        def _resolve(ref: str) -> Optional[str]:
+            """#883's rule, as `#1203n0` states it: a bare basename served from two folders
+            cannot say which one the page loads, so report only when every copy agrees."""
+            name = ref.split("?", 1)[0].split("#", 1)[0]
+            direct = pub / name.lstrip("/")
+            cands = [direct] if direct.is_file() else (
+                served.get(name.rsplit("/", 1)[-1]) or [])
+            if not cands:
+                return None
+            causes = {_cause(c) for c in cands}
+            if None in causes or len(causes) != 1:
+                return None
+            return causes.pop() or None
+
+        for f in sorted(src.rglob("*")):
+            if f.suffix not in (".jsx", ".js", ".tsx", ".ts", ".css") \
+                    or "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            seen = set()
+            for m in _IMG_SVG_REF_1203N0.finditer(text):
+                rel = m.group(1)
+                if rel in seen:
+                    continue
+                seen.add(rel)
+                why = _resolve(rel)
+                if why:
+                    found.append("%s -> %s (%s)" % (f.name, rel, why))
+    except Exception:
+        return []
+    return found
+
+
 def repair_frontend_unmatchable_routes_1202sd(frontend_dir) -> Dict[str, object]:
     r"""#1202sd — rewrite a `<Route path>` React Router cannot match, wherever the LANE wrote it.
 
