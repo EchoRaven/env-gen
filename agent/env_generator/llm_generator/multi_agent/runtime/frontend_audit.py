@@ -325,6 +325,73 @@ def _route_element(app_jsx: str, route: str) -> Optional[str]:
     return None
 
 
+def routed_page_components_1203od(app_jsx: str) -> tuple:
+    """Every PAGE component a `<Route element={…}>` renders, and whether the read is sound.
+
+    Returns ``(names, state)`` where state is "read" (routes parsed), "no-routes" (the file
+    declares none, so there is nothing to examine) or "unparsed" (it declares `<Route` and
+    none of them yielded a component -- the one state that must not read as clean, #883).
+
+    #1203od: THE WRAPPER WAS EATING THE PAGE NAME. `_placeholder_route_blockers_1202w` read
+    routes with `element=\\{\\s*<(\\w+)`, which captures the FIRST identifier after `element={`
+    -- and that is the auth guard, not the page, in `element={<RequireAuth><BrowsePage/>}`.
+    MEASURED over the 102 delivered App.jsx files: the naive read sees 1114 component names,
+    this one sees 1527. 31 runs gain names and the shortfall is not marginal --
+    netflix-local-r35 routes 30 pages and the gate was examining 5 of them, r41 5 of 28,
+    r8 5 of 26 -- and every one of those runs is netflix, i.e. the check was correct on the
+    product it was written for and nearly blind on another. That is the generality bar.
+
+    `_route_element` above has done this correctly since it was written ("the PAGE, not the
+    guard"), so this is #1032's rule applied: the module that owns route parsing owns this
+    question too, and the gate stops hand-rolling a narrower regex. The wrapper list is
+    shared with it rather than copied, and an UNKNOWN wrapper is handled anyway -- the
+    innermost name is taken after dropping the known ones, and `[…] or names` keeps a
+    single-component element intact.
+
+    ★ IT CHANGES NO VERDICT TODAY, and the honest statement of that belongs here: the junk
+    vocabulary (`placeholder`/`dummy`/`noop`/…) matches 0 of the 1114 names the gate saw and
+    0 of the 413 it was missing. The four corpus runs that carry a junk-named component carry
+    it as an UNROUTED file (`NoopProbeDoNotUse`), which #1202hp now drops at the producer.
+    So this closes a blind spot rather than catching a live miss, and the test that pins the
+    blind spot is the load-bearing half.
+    """
+    try:
+        if not isinstance(app_jsx, str) or not app_jsx:
+            # Not "this app declares no routes" -- nothing was read, so #883's distinction
+            # applies at the input too.
+            return [], "unparsed"
+        names = set()
+        routes = 0
+        for m in re.finditer(r"element\s*=\s*\{", app_jsx or ""):
+            routes += 1
+            j = (app_jsx or "").find("{", m.start())
+            depth, k = 0, j
+            while k < len(app_jsx):
+                if app_jsx[k] == "{":
+                    depth += 1
+                elif app_jsx[k] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k += 1
+            expr = app_jsx[j:k + 1]
+            found = re.findall(r"<\s*([A-Za-z_]\w*)", expr)
+            page = [n for n in found if n not in _ROUTE_WRAPPERS] or found
+            if page:
+                names.add(page[-1])
+        if names:
+            return sorted(names), "read"
+        # A single-page app with no router is NOT unchecked -- googlemaps-r15's App.jsx
+        # renders its own markup and declares no `<Route` at all, and "no routed pages" is
+        # the true answer there. A file that DOES declare routes and yields no component is
+        # the other case, and it is the one #883 is about.
+        if re.search(r"<\s*Route\b", app_jsx or ""):
+            return [], "unparsed"
+        return [], "no-routes"
+    except Exception:
+        return [], "unparsed"
+
+
 def _canon_route(route: str) -> str:
     """Canonical comparable form of a declared/wired route: Express ``:param`` →
     ``{param}`` (``_express_to_fastapi``) → every param collapsed to ``{}``

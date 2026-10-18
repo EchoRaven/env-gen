@@ -2101,15 +2101,42 @@ def _placeholder_route_blockers_1202w(app_root) -> List[str]:
     `re` is imported here on purpose: this module has no module-level `re`, and a pattern
     compiled at import time would have made the whole gate module fail to import — which
     compiles clean and dies at runtime, the shape this session keeps finding.
+
+    #1203od: the route read moved to `routed_page_components_1203od`, which returns the PAGE
+    inside a guard (`element={<RequireAuth><BrowsePage/>}`) instead of the guard. The regex
+    that used to live here captured the first identifier after `element={` and therefore saw
+    1114 of the corpus's 1527 routed components; netflix-local-r35 routes 30 pages and this
+    check examined 5. It also now distinguishes "this app has no router" from "this file
+    declares routes and nothing parsed", because only the second may not read as clean.
     """
     try:
         import re as _re1202w
         app = Path(app_root) / "frontend" / "src" / "App.jsx"
         if not app.is_file():
+            # #883, with the precondition that keeps it informative: an absent App.jsx is
+            # not an app without placeholder routes, the question was never asked. But the
+            # gate also runs on ticks BEFORE the frontend is scaffolded, and an
+            # announcement that fires on every run says nothing -- so this speaks only when
+            # the frontend source tree IS there and its router is not. 2 of the corpus's
+            # 104 delivered runs are in that state (netflix-local-r15, tiktok-web-r41).
+            if app.parent.is_dir():
+                _gate_absent_792("_placeholder_route_blockers_1202w",
+                                 FileNotFoundError(str(app)), "run")
             return []
         src = app.read_text(encoding="utf-8")
-        routed = sorted({m.group(1)
-                         for m in _re1202w.finditer(r"element=\{\s*<(\w+)", src)})
+        try:
+            from .frontend_audit import routed_page_components_1203od
+            routed, _state1203od = routed_page_components_1203od(src)
+        except Exception as _e1203od:
+            _gate_absent_792("_placeholder_route_blockers_1202w", _e1203od, "import")
+            return []
+        if _state1203od == "unparsed":
+            # #883 again, and the narrow case: the file DOES declare `<Route` and none of
+            # them yielded a component name, so this check looked at nothing.
+            _gate_absent_792("_placeholder_route_blockers_1202w",
+                             ValueError("App.jsx declares <Route> and no element parsed"),
+                             "run")
+            return []
         bad = [c for c in routed
                if _re1202w.search(_JUNK_PAGE_WORDS_1202W, c, _re1202w.I)]
         if not bad:

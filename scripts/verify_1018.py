@@ -495,6 +495,43 @@ def main(argv):
     except Exception as _e_oc:
         say("oc", "N-A", "the #1203oc detector could not be imported (%s)" % _e_oc)
 
+    # --- #1203od — the gate must see the PAGE behind a route guard --------------------
+    # READS: app/frontend/src/App.jsx, through the shipped reader, so this cannot drift from
+    #   the code it checks.
+    # FALSIFIED: the file declares `<Route` and the reader gets no component out of it (the
+    #   check would then examine nothing and report clean), OR a routed page's NAME matches
+    #   the junk vocabulary -- a placeholder route that reached a release.
+    # CONTROL (pre-patch): netflix-local-r35 routes 30 pages and the old regex saw 5 (r41
+    #   5/28, r8 5/26); tiktok-web-r191 is identical under both; googlemaps-r15 declares no
+    #   router at all and is N-A rather than clean.
+    # The detail line carries the blind-spot size on THIS run, which is the number the fix
+    #   exists for even when no junk name is present.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.frontend_audit import (
+            routed_page_components_1203od as _rpc_od)
+        _od_app = run / "app" / "frontend" / "src" / "App.jsx"
+        if not _od_app.is_file():
+            say("od", "N-A", "no App.jsx in this run")
+        else:
+            _od_src = _od_app.read_text(encoding="utf-8", errors="ignore")
+            _od_names, _od_state = _rpc_od(_od_src)
+            _od_naive = set(re.findall(r"element=\{\s*<(\w+)", _od_src))
+            _od_junk = [n for n in _od_names if re.search(
+                r"noop|dummy|placeholder|todo|fixme|untitled|testpage|foobar|temppage",
+                n, re.I)]
+            if _od_state == "unparsed":
+                say("od", "FALSIFIED", "App.jsx declares <Route> and no page name parsed")
+            elif _od_state == "no-routes":
+                say("od", "N-A", "this app declares no router")
+            else:
+                say("od", "FALSIFIED" if _od_junk else "CONFIRMED",
+                    "%d routed page(s), %d of them hidden from the old regex; junk: %s"
+                    % (len(_od_names), len(set(_od_names) - _od_naive),
+                       _od_junk or "none"))
+    except Exception as _e_od:
+        say("od", "N-A", "the #1203od reader could not be imported (%s)" % _e_od)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

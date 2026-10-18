@@ -41,6 +41,9 @@ _CONTROLS = [
     ("oc", "tiktok-web-r155", "FALSIFIED"),      # 6 sites on `tiktokData.videos`
     ("oc", "tiktok-web-r191", "CONFIRMED"),      # the healthy control, 0 sites
     ("oc", "tiktok-web-r185", "CONFIRMED"),      # a second healthy control
+    ("od", "netflix-local-r35", "CONFIRMED"),    # 30 routed pages, 26 hidden from the old regex
+    ("od", "tiktok-web-r191", "CONFIRMED"),      # identical under both readers
+    ("od", "googlemaps-r15", "N-A"),             # declares no router at all
 ]
 
 _cache = {}
@@ -107,7 +110,8 @@ class TheCheckerStillBites(unittest.TestCase):
         if v is None:
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
-                     "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc"):
+                     "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
+                     "od"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 
