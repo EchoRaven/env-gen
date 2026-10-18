@@ -218,6 +218,55 @@ def _skeleton_components(spec: Optional[Dict], im=None) -> List[Dict]:
     return comps
 
 
+_LOGO_COMPONENT_1203NH = __import__("re").compile(r"(?i)(^|[_-])(logo|wordmark|brand)($|[_-])")
+
+
+def restore_logo_component_1203nh(screen: Dict, spec: Optional[Dict], im=None) -> Optional[Dict]:
+    """#1203nh: put back the LOGO component the analyst's rewrite dropped. Returns it, or None.
+
+    The spawned design_analyst REWRITES design_system.json wholesale -- `#1203kv` states that
+    in this file and repaired the ASSET half of it (re-measuring every entry from the staged
+    file). The COMPONENT half was never repaired, and it is bigger: measured on the three
+    newest runs, the deterministic skeleton writes 168-175 components and the document on disk
+    carries 35, of which only 5-6 are the skeleton's -- the other 29-30 are ids the analyst
+    invented. ~80% of the measured regions, colors and geometry never reach a lane.
+
+    ONLY THE LOGO IS RESTORED, and the number says why. `#842` -- "the SPEC asks for asset
+    class(es) design-prep never staged" -- fires in 85 corpus logs and the class is `logo` in
+    85 of 85, never anything else. Its own sentence names the consequence: "The lane has
+    nothing to point at, so it substitutes whatever is nearest", which is how the iconography
+    floor is built. Across 102 runs and 1413 screens, 760 (54%) carry a NAME-matched logo
+    component in `component_specs`, median region area 0.37% of the screen (p90 1.1%) -- they
+    are logo-sized, not headers. On r189/r190/r191 the specs measure 9/9/8 of them and
+    EXACTLY ZERO survive on disk.
+
+    A blanket restore was measured and rejected: crops are cut per component with a region, 35
+    crops already cost 14 MB in r191, and ~170 would be ~68 MB per run on a shared disk this
+    project has already filled twice. One component per screen is ~11 crops, ~4.5 MB.
+
+    Shape comes from `_skeleton_components` (#1032: one owner), so the restored entry carries
+    the same measured colors and geometry every other component does.
+    """
+    try:
+        have = [str(c.get("id") or "") for c in (screen.get("components") or [])
+                if isinstance(c, dict)]
+        if any(_LOGO_COMPONENT_1203NH.search(h) for h in have):
+            return None                     # the analyst kept one -- nothing to restore
+        want = [c for c in ((spec or {}).get("components") or [])
+                if isinstance(c, dict)
+                and _LOGO_COMPONENT_1203NH.search(str(c.get("name") or ""))
+                and isinstance(c.get("region"), (list, tuple)) and len(c["region"]) == 4]
+        if not want:
+            return None                     # this screen's reference has no logo region
+        built = _skeleton_components({"components": want[:1]}, im)
+        if not built:
+            return None
+        screen.setdefault("components", []).append(built[0])
+        return built[0]
+    except Exception:
+        return None                         # a completion floor never blocks the phase
+
+
 def build_skeleton_design_system(resolved: Dict, output_dir,
                                  *, existing_specs: Optional[Dict] = None) -> Dict:
     """Deterministic skeleton of design_system.json — MEASURED facts only, no LLM.
@@ -1360,7 +1409,9 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0,
              "screens_routed": 0, "assets_remeasured_1203kv": 0,
              "with_copy_1203kz": 0, "layout_measured_1203l0": 0,
-             "dataset_restored_1203l0": 0}
+             "dataset_restored_1203l0": 0, "logo_restored_1203nh": 0}
+    _specs1203nh = _load_component_specs(out)      # #1203nh: still on disk after the rewrite
+    _restored_names_1203nh: List[str] = []
     # #1203kv: re-measure every asset entry from the file that was staged for it.
     #
     # The MERGE in this module is careful about these fields — `# assets: add description/use
@@ -1509,6 +1560,14 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
                 if _lm:
                     screen["layout_metrics"] = _lm
                     stats["layout_measured_1203l0"] += 1
+            # #1203nh: restore the dropped LOGO component before the crop loop below, so it
+            # gets a physical crop like any other component with a region.
+            _lg1203nh = restore_logo_component_1203nh(
+                screen, (_specs1203nh or {}).get(str(screen.get("name") or "")), im)
+            if _lg1203nh is not None:
+                stats["logo_restored_1203nh"] += 1
+                _restored_names_1203nh.append("%s/%s" % (screen.get("name"),
+                                                         _lg1203nh.get("id")))
             sname = _re.sub(r"[^A-Za-z0-9_\-]", "-", str(screen.get("name") or "screen"))
             for comp in screen.get("components") or []:
                 stats["components"] += 1
@@ -1566,6 +1625,19 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
                 "string, so the repair round's REFERENCE COPY block (#797) is empty and "
                 "the judged `copy` dimension has nothing measured behind it "
                 "(#1203kz).", stats["components"])
+        # #1203nh: SAY WHAT WAS PUT BACK. The restore is silent otherwise, and the thing it
+        # repairs -- `#842`'s "the SPEC asks for asset class(es) design-prep never staged:
+        # logo", 85 of 85 corpus logs -- is itself a report a reader has to connect to this.
+        if stats["logo_restored_1203nh"]:
+            logging.getLogger("Orchestrator").warning(
+                "[design_system] #1203nh restored %d LOGO component(s) the design_analyst's "
+                "rewrite dropped, so each now has a measured region and a crop for the lane "
+                "to point at: %s. The rewrite discards most measured components (#1203kv "
+                "repaired the asset half of the same event); only the logo is put back, "
+                "because #842 names `logo` and nothing else.",
+                stats["logo_restored_1203nh"],
+                join_capped(_restored_names_1203nh, len(_restored_names_1203nh), cap=8,
+                            sep=", "))
     except Exception:
         pass
     return ds
