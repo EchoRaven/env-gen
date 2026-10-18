@@ -1438,6 +1438,82 @@ def blank_captures_1203ny(project_dir) -> List[str]:
     return out
 
 
+_THEME_STEM_1203NZ = re.compile(r"(?:^|[_\-])(dark|light)(?:[_\-]|$)", re.IGNORECASE)
+
+
+def identical_captures_1203nz(project_dir) -> List[str]:
+    """``["account_menu + home_map + …: one capture judged as 5 screens", …]``.
+
+    #1203nz: SEVERAL SCREENS, ONE RENDERING, AND A SEPARATE SCORE FOR EACH. The gate captures
+    every mapped screen and scores it against its own reference. When two captures are BYTE
+    IDENTICAL the judge still returns a score per screen, so all but one of those scores
+    describes pixels from a different screen -- and nothing says so.
+
+    MEASURED over the 30 runs holding gate captures: **11 groups in 7 runs**, 2 to 5 screens
+    each, **19 screens scored against another screen's pixels**. gmrun3 and gmrun4 each judge
+    FIVE as one image (`account_menu`, `home_map`, `home_map_biking_satellite`,
+    `hotel_detail_overview`, `layers_menu`); instagram-r174 three (`create_modal`, `explore`,
+    `notifications_flyout`); r180 two (`fyp_feed_comments_panel`, `fyp_feed_logged_out`).
+
+    ★ THE JUDGING IS EVIDENCED, and my first reading of that was wrong. `_best_by_screen` is
+    absent from the older `gate_state.json` shape, which made five of the seven runs look
+    unjudged; the `visual_gate/history/` directory is the record that survives -- 146, 103,
+    123, 35, 29, 48 and 8 entries -- and in EVERY one of the 11 groups at least two of the
+    colliding screens have a history entry sharing the same hash. The collision is scored,
+    not merely captured.
+
+    TWO CAUSES, NAMED SEPARATELY, because their owners differ:
+      * A THEME PAIR (`login_dark` ≡ `login_light`, 1 group) means FIX #141's three emulation
+        strategies were all inert on this app. #141's own words give the cost: the dark
+        reference "was judged against LIGHT pixels and structurally capped ~0.3; a blocking
+        screen that can never pass ran every visual window to the 3600s anchor". #141 made
+        the CAPTURE try harder and never checked the OUTCOME, which is this.
+      * DISTINCT SCREENS (10 groups) means several routes render the same page -- an overlay
+        that never opened, or a path falling through to `*`. Most of these names are menus and
+        modals (`account_menu`, `layers_menu`, `create_modal`, `notifications_flyout`), which
+        is the interaction-state class the gate already knows is hard.
+
+    REPORTS ONLY and changes no verdict: which of the colliding screens is the real one is not
+    decidable from the pixels, and a transient overlay failing to open is already refunded
+    elsewhere (#655b/#75a). Pure/best-effort: unreadable files are skipped, never guessed.
+    """
+    out: List[str] = []
+    try:
+        import hashlib
+        caps = Path(str(project_dir)) / "design" / "visual_gate"
+        if not caps.is_dir():
+            return []
+        groups: Dict[str, List[str]] = {}
+        for f in sorted(caps.glob("*.png")):
+            if "NOT-CAPTURED" in f.name:
+                continue          # the framework's own marker for a capture that never ran
+            try:
+                digest = hashlib.md5(f.read_bytes()).hexdigest()
+            except Exception:
+                continue
+            groups.setdefault(digest, []).append(f.stem)
+        for names in groups.values():
+            if len(names) < 2:
+                continue
+            names = sorted(names)
+            stems = {_THEME_STEM_1203NZ.sub("_", n).strip("_") for n in names}
+            if len(stems) == 1 and all(_THEME_STEM_1203NZ.search(n) for n in names):
+                out.append(
+                    "%s: the theme variants captured IDENTICALLY, so FIX #141's emulation "
+                    "was inert here — the dark reference is being judged against light "
+                    "pixels, which #141 measured as structurally capped around 0.3"
+                    % " + ".join(names))
+            else:
+                out.append(
+                    "%s: one capture is being judged as %d screens, so %d of those scores "
+                    "describe another screen's pixels — an overlay that never opened, or "
+                    "paths falling through to the same page"
+                    % (" + ".join(names), len(names), len(names) - 1))
+    except Exception:
+        return []
+    return sorted(out)
+
+
 def screen_coverage(*, results, measured, owned=None):
     """How much of the reference the visual gate actually judged (#351).
 
@@ -4345,6 +4421,22 @@ async def run_visual_fidelity(
                          len(_blank1203ny) - 6)
     except Exception as _e1203ny:
         _LOG.debug("#1203ny blank-capture scan skipped: %s", _e1203ny)
+    # #1203nz: and say when two screens were judged on the SAME capture. Its own try
+    # (#1201), because #1203ny answering is no reason for this to go unasked.
+    try:
+        _dup1203nz = identical_captures_1203nz(project_dir)
+        for _d1203nz in _dup1203nz[:6]:
+            _LOG.warning(
+                "#1203nz THE GATE SCORED ONE RENDERING AS SEVERAL SCREENS: %s. Measured over "
+                "the 30 runs holding captures: 11 such groups in 7 runs, 19 screens scored "
+                "against another screen's pixels, and gmrun3/gmrun4 judge five as one image. "
+                "Reported, not judged: which of the colliding screens is the real one cannot "
+                "be read off the pixels.", _d1203nz)
+        if len(_dup1203nz) > 6:
+            _LOG.warning("#1203nz %d more identical-capture group(s) not listed (#1034)",
+                         len(_dup1203nz) - 6)
+    except Exception as _e1203nz:
+        _LOG.debug("#1203nz identical-capture scan skipped: %s", _e1203nz)
     # #542a: the gating fidelity average over BLOCKING screens ONLY (advisory/transient
     # screens excluded). Reported alongside the pass/fail so the recorded Part-A metric
     # stops being dragged by transient interaction-state screens a static projector cannot
