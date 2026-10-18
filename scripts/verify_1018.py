@@ -37,10 +37,28 @@ def main(argv):
         return 2
     run = Path(argv[1])
     logtext = ""
+    log_note = "no --log given"
     if "--log" in argv:
         p = Path(argv[argv.index("--log") + 1])
-        if p.is_file():
-            logtext = p.read_text(encoding="utf-8", errors="replace")
+        if not p.is_file():
+            log_note = "%s does not exist" % p.name
+        else:
+            raw = p.read_text(encoding="utf-8", errors="replace")
+            # A LOG FROM ANOTHER RUN MUST NOT PRODUCE CONFIDENT NUMBERS. Measured the hard
+            # way: a glob handed `gm_tiktok_r160.log` to googlemaps-r16 and five log-based
+            # criteria came back CONFIRMED -- five answers about a run the log never watched.
+            # `main.py` writes "Output directory: <path>" as its second line, so the pairing
+            # is checkable rather than assumed.
+            want = run.resolve().name
+            m = re.search(r"Output directory:\s*(\S+)", raw[:4000])
+            got = Path(m.group(1)).name if m else None
+            if got is None:
+                log_note = "%s names no output directory in its header" % p.name
+            elif got != want:
+                log_note = "%s is the log of %r, not %r -- IGNORED" % (p.name, got, want)
+            else:
+                logtext, log_note = raw, "%s (%d bytes)" % (p.name, len(raw))
+    say("log", "INFO", log_note)
 
     reports = sorted((run / "test_user_reports").glob("*.json")) \
         if (run / "test_user_reports").is_dir() else []
