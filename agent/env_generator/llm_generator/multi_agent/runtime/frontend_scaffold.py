@@ -609,8 +609,23 @@ def dedupe_identical_routes_1203ff(frontend_dir) -> Dict[str, object]:
 _PAINT_COLOUR_1203N0 = re.compile(
     r"""(?:fill|stroke)\s*[:=]\s*["']?\s*(#[0-9a-f]{3,8}|rgba?\(|hsla?\(|[a-z]{3,20})""",
     re.I)
+# #1203n4: ANY quoted `.svg` PATH in source is an image-style load. An inline icon is a JSX
+# component and never names a file, so a path can only be reaching the browser through
+# <img>/url()/a prop -- none of which CSS colour can get inside.
+#
+# The first version of this pattern required `<img ... src=`, `url(` or `img:` immediately
+# before the path, which is tiktok's spelling. instagram writes its whole icon set as a JSX
+# template literal with a prefix variable:
+#
+#     icon={`${I}Home_b0d6db24.svg`}      src={`${I}Save_fd444e40.svg`}
+#
+# so the shipped detector reported 0 for instagram-core-r174/175/176 while all 47 of their
+# staged icons load exactly this way. MEASURED after widening: every modern run references
+# staged SVGs by path (4-26 each), and most of those files are colourless -- r177 18 of 26,
+# r190 11 of 14, instagram-r176 21 of 24. The product the detector was blind to is the one
+# whose iconography scores worst (0.32).
 _IMG_SVG_REF_1203N0 = re.compile(
-    r"""(?:<img[^>]*\bsrc\s*=\s*|url\(\s*|\bimg\s*:\s*)["']?([^"')\s>]*\.svg)""", re.I)
+    r"""["'`][^"'`]{0,160}?([A-Za-z0-9_./\-]+\.svg)["'`]""")
 
 
 def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
@@ -641,9 +656,19 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
     its inline control used `fetch()` on a file:// page, which CORS blocks -- the number was
     pure background. The control has to be proven alive before the contrast means anything.)
 
-    CORPUS: of 22 modern runs, 4 reference a staged SVG this way at all -- r190 (6 refs, all 6
-    colourless), r173 (3/3), r182 (3 refs, 1 colourless), r191 (1/1). Most runs inline their
-    icons, which is why staged files being 30-of-34 `currentColor` is normally harmless.
+    CORPUS, re-measured after #1203n4 widened the reference pattern -- the numbers that stood
+    here were taken with a tiktok-shaped regex and were wrong by 3x: **85 runs, 30 of them
+    modern, 1581 references in all**, and of the 32 modern runs carrying a visual verdict
+    **29 have at least one**; only r163, r183 and r186 have none. Per-run counts run 4 to 49
+    (r169 49, instagram-r176 35, r179 32). This is the normal case, not a rarity.
+
+    AND IT DOES NOT EXPLAIN THE ICONOGRAPHY FLOOR. The with/without comparison that first
+    said so is void -- with the corrected pattern only three modern runs have no references,
+    so there is no control group. By COUNT instead: the ten runs with the most references
+    average 0.466 on iconography and the ten with the fewest average 0.463, three
+    thousandths apart, with wide spread inside each group (r166 26 refs / 0.584; r189 8 refs
+    / 0.347). The mechanism is real per instance -- real Chromium paints all 2304 px of one
+    background-dark -- and the per-run count predicts nothing.
 
     REPORTS ONLY, and deliberately does not rewrite the lane's component: the fix is a choice
     between inlining the SVG and using an asset that carries its own colours (#1203kw keeps
@@ -657,25 +682,52 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
             return []
         pub = root / "public"
 
-        def _colourless(rel: str) -> Optional[bool]:
-            """True when the file's only paint colour is `currentColor`; None if unreadable."""
-            name = rel.split("?", 1)[0].split("#", 1)[0]
-            cand = pub / name.lstrip("/")
-            if not cand.is_file():
-                return None
+        # #1203n4: resolve by BASENAME over everything served, instead of guessing a folder.
+        # The reference in source may be a full path (`/assets/icons/x.svg`), a bare name
+        # behind a prefix variable (instagram's `${I}Home_b0d6db24.svg`), or anything in
+        # between, and products stage icons in different folders. One index answers all of
+        # them and cannot go stale against a new layout.
+        _served_1203n4: Dict[str, List[Path]] = {}
+        try:
+            for _sf in pub.rglob("*.svg"):
+                _served_1203n4.setdefault(_sf.name, []).append(_sf)
+        except Exception:
+            pass
+
+        def _one_colourless_1203n4(cand: Path) -> Optional[bool]:
             try:
                 text = cand.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 return None
             if "currentcolor" not in text.lower():
                 return False
-            # any concrete colour token (not `currentColor`, not `none`) keeps the img channel
             for m in _PAINT_COLOUR_1203N0.finditer(text):
                 tok = m.group(1).lower()
                 if tok not in ("currentcolor", "none", "inherit", "transparent"):
                     return False
             return True
 
+        def _colourless(ref: str) -> Optional[bool]:
+            """True when the referenced file's only paint colour is `currentColor`.
+
+            The reference may carry a path (`/assets/icons/x.svg`) or be a bare name left
+            behind by a prefix variable (instagram's `${I}Home_b0d6db24.svg`), so the path is
+            used when it resolves and the basename index answers otherwise.
+
+            #883 ON AMBIGUITY: 27 runs serve the SAME basename from two folders (115 names in
+            all -- `bell.svg`, `plus.svg`, `info.svg` ...). A bare reference cannot say which
+            one the page loads, so this reports only when EVERY served copy of that name is
+            colourless; copies that disagree read as "cannot tell" and say nothing.
+            """
+            name = ref.split("?", 1)[0].split("#", 1)[0]
+            direct = pub / name.lstrip("/")
+            if direct.is_file():
+                return _one_colourless_1203n4(direct)
+            cands = _served_1203n4.get(name.rsplit("/", 1)[-1]) or []
+            if not cands:
+                return None
+            verdicts = {_one_colourless_1203n4(c) for c in cands}
+            return True if verdicts == {True} else (None if None in verdicts else False)
         for f in sorted(src.rglob("*")):
             if f.suffix not in (".jsx", ".js", ".tsx", ".ts", ".css") or "node_modules" in f.parts:
                 continue
@@ -689,8 +741,7 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
                 if rel in seen:
                     continue
                 seen.add(rel)
-                if _colourless(rel) or (rel and not rel.startswith("/")
-                                        and _colourless("/assets/icons/" + rel)):
+                if _colourless(rel):
                     found.append("%s -> %s" % (f.name, rel))
     except Exception:
         return []

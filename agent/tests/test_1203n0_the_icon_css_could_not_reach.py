@@ -101,6 +101,92 @@ class TheLanesOwnReferenceIsChecked(_FE):
         self.assertEqual(len(invisible(self.fe)), 1)
 
 
+class ItSeesEveryProductsSpelling(_FE):
+    r"""#1203n4: the first pattern required `<img src=` / `url(` / `img:` immediately before
+    the path, which is tiktok's spelling. instagram writes its whole icon set as a JSX
+    template literal behind a prefix variable:
+
+        icon={`${I}Home_b0d6db24.svg`}      src={`${I}Save_fd444e40.svg`}
+
+    so the shipped detector reported 0 for instagram-core-r174/175/176 while all 47 of their
+    staged icons load exactly that way -- and 0 for tiktok-web-r185 too, a full-delivery run
+    with 12. A quoted `.svg` PATH can only be an image-style load: an inline icon is a JSX
+    component and never names a file.
+    """
+
+    def test_instagrams_template_literal_with_a_prefix_variable(self):
+        self.icon("Home_b0d6db24.svg")
+        self.src("CollapsedLeftNav.jsx",
+                 "const I='/assets/icons/';\n"
+                 "export default () => <NavItem icon={`${I}Home_b0d6db24.svg`} />;")
+        out = invisible(self.fe)
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("Home_b0d6db24.svg", out[0])
+
+    def test_a_src_prop_on_a_custom_component(self):
+        self.icon("Save_fd444e40.svg")
+        self.src("Icon.jsx", "const P='/assets/icons/';\n<Glyph src={`${P}Save_fd444e40.svg`} />")
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+    def test_a_bare_basename_resolves_against_everything_served(self):
+        self.icon("bell.svg")
+        self.src("Nav.jsx", "const n='bell.svg';")
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+    def test_an_icon_staged_outside_assets_icons(self):
+        """Products stage icons in different folders; the index is over `public/**`."""
+        p = self.fe / "public" / "img"
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "logo.svg").write_text(_COLOURLESS)
+        self.src("Nav.jsx", '<img src="/img/logo.svg" />')
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+    def test_the_original_precise_forms_still_match(self):
+        self.icon("a.svg")
+        self.src("A.jsx", '<img src="/assets/icons/a.svg"/>')
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+    def test_a_name_that_is_not_served_says_nothing(self):
+        self.src("Nav.jsx", "const n = `${I}not_staged_anywhere.svg`;")
+        self.assertEqual(invisible(self.fe), [])
+
+
+class ADuplicatedBasenameIsAnAmbiguityNotAVerdict(_FE):
+    """#883 / #1203n4: 27 runs serve the SAME basename from two folders (115 names in all --
+    `bell.svg`, `plus.svg`, `info.svg`...). A bare reference cannot say which one loads."""
+
+    def _second_copy(self, name, body):
+        d = self.fe / "public" / "img"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / name).write_text(body)
+
+    def test_both_copies_colourless_is_reported(self):
+        self.icon("bell.svg", _COLOURLESS)
+        self._second_copy("bell.svg", _COLOURLESS)
+        self.src("Nav.jsx", "const n=`${I}bell.svg`;")
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+    def test_copies_that_disagree_say_nothing(self):
+        self.icon("bell.svg", _COLOURLESS)
+        self._second_copy("bell.svg", _OWN_COLOUR)
+        self.src("Nav.jsx", "const n=`${I}bell.svg`;")
+        self.assertEqual(invisible(self.fe), [],
+                         "an ambiguous basename must not be turned into a verdict")
+
+    def test_a_full_path_beats_the_index(self):
+        """The reference names the coloured copy explicitly -- no report."""
+        self.icon("bell.svg", _COLOURLESS)
+        self._second_copy("bell.svg", _OWN_COLOUR)
+        self.src("Nav.jsx", '<img src="/img/bell.svg" />')
+        self.assertEqual(invisible(self.fe), [])
+
+    def test_a_full_path_to_the_colourless_copy_is_reported(self):
+        self.icon("bell.svg", _COLOURLESS)
+        self._second_copy("bell.svg", _OWN_COLOUR)
+        self.src("Nav.jsx", '<img src="/assets/icons/bell.svg" />')
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+
 class AnAssetWithItsOwnColoursKeepsTheImgChannel(_FE):
     """#1203kw's carve-out: #421 stays alive for a genuinely coloured mark."""
 
