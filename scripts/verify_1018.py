@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a run against the 2026-10-17/18 tickets' PRE-REGISTERED predictions (n5…nq).
+"""Check a run against the 2026-10-17/18 tickets' PRE-REGISTERED predictions (n5…nt).
 
     python scripts/verify_1018.py generated/<run> --log gm_<run>.log
 
@@ -389,6 +389,85 @@ def main(argv):
                 % (_nq_bad, _nq_ok, len(_nq_rows)))
     else:
         say("nq", "N-A", "no #1203g9 ledger rows in this run")
+
+    # --- #1203nr — the seed audit must stop blaming service-name resolution ------------
+    # READS: the run log.
+    # FALSIFIED: the stale cause "tried services database/db/postgres" appears. 104 of 104
+    #   compose files name the service `database`, so that sentence never described the real
+    #   situation (a declared service with no container, i.e. the stack is down).
+    # CONTROL (pre-patch): 38 runs carry it, r190 17 times, netflix-r37 241.
+    _nr_old = logtext.count("tried services database/db/postgres")
+    _nr_new = logtext.count("IS declared in") + logtext.count("declares NO database service")
+    say("nr", "FALSIFIED" if _nr_old else ("CONFIRMED" if _nr_new else "N-A"),
+        "%d stale cause line(s), %d line(s) naming the real one" % (_nr_old, _nr_new))
+
+    # --- #1203ns / #1203nt — the staged dataset must carry the aligned keys ------------
+    # READS: app/backend/seed_dataset.json + app/backend/models.py. `align_dataset_field_names`
+    #   runs BEFORE the file is written (backend_skeleton 3407 vs 3462), so the delivered
+    #   artifact is the aligned one and both tickets are checkable without a database.
+    # FALSIFIED (ns): the model declares a content column the dataset does not fill while
+    #   carrying a synonym of it — the shape that shipped 295 blank comments in 4 runs.
+    # FALSIFIED (nt): a table declares BOTH twins of a media group, one holds a reference and
+    #   the other is absent — the shape where the frontend picks which column is empty.
+    # CONTROL (pre-patch): ns r139/r140/r145/r160; nt r189 (users + videos) and r191 (users).
+    _be = run / "app" / "backend"
+    _ds = _json(_be / "seed_dataset.json", {}) or {}
+    _cols_by = {}
+    try:
+        _msrc = (_be / "models.py").read_text(encoding="utf-8", errors="ignore")
+        for _m in re.finditer(r"class\s+\w+\(Base\):(.*?)(?=\nclass |\Z)", _msrc, re.S):
+            _blk = _m.group(1)
+            _tn = re.search(r'__tablename__\s*=\s*[\'"]([^\'"]+)', _blk)
+            if _tn:
+                _cols_by[_tn.group(1)] = set(
+                    re.findall(r"^\s{4}(\w+)\s*=\s*Column", _blk, re.M))
+    except Exception:
+        _cols_by = {}
+
+    _CONTENT = ("body", "text", "content", "message")
+    _TWINS = (("avatar", "avatar_url"), ("thumbnail", "thumbnail_url"),
+              ("cover", "cover_url"), ("image", "image_url"),
+              ("poster", "poster_url"), ("video", "video_url"))
+
+    _ns_bad, _ns_ok, _nt_bad, _nt_ok = [], 0, [], 0
+    for _t, _rows in (_ds or {}).items():
+        _cols = _cols_by.get(_t)
+        if not _cols or not (isinstance(_rows, list) and _rows
+                             and isinstance(_rows[0], dict)):
+            continue
+        _keys = set().union(*[set(r) for r in _rows[:50] if isinstance(r, dict)])
+        # ns: a declared content column, a synonym present, the column itself not filled
+        _tgt = [c for c in _CONTENT if c in _cols]
+        if _tgt and (set(_CONTENT) & _keys):
+            if _tgt[0] in _keys:
+                _ns_ok += 1
+            elif not (set(_tgt) & _keys):
+                _ns_bad.append("%s.%s (dataset has %s)"
+                               % (_t, _tgt[0], sorted(set(_CONTENT) & _keys)))
+        # nt: both twins declared, one holds a reference, the other absent
+        for _a, _b in _TWINS:
+            if _a not in _cols or _b not in _cols:
+                continue
+            for _r in _rows[:50]:
+                if not isinstance(_r, dict):
+                    continue
+                _have = [c for c in (_a, _b)
+                         if isinstance(_r.get(c), str) and _r.get(c)
+                         and (_r[c].startswith("/") or _r[c].startswith("http")
+                              or _r[c].startswith("data:"))]
+                if not _have:
+                    continue
+                if len(_have) == 2:
+                    _nt_ok += 1
+                else:
+                    _nt_bad.append("%s.%s set, %s absent"
+                                   % (_t, _have[0], _b if _have[0] == _a else _a))
+                break
+    say("ns", "FALSIFIED" if _ns_bad else ("CONFIRMED" if _ns_ok else "N-A"),
+        "%d table(s) carry a content synonym the column never got: %s"
+        % (len(_ns_bad), _ns_bad[:2] or "none"))
+    say("nt", "FALSIFIED" if _nt_bad else ("CONFIRMED" if _nt_ok else "N-A"),
+        "%d one-sided media twin(s): %s" % (len(_nt_bad), _nt_bad[:2] or "none"))
 
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:

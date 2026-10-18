@@ -34,6 +34,9 @@ _CONTROLS = [
     ("np", "tiktok-web-r190", "FALSIFIED"),      # 83 ledger rows, 0 tasks
     ("nq", "tiktok-web-r182", "FALSIFIED"),      # 318 remapped rows unannotated
     ("n6", "tiktok-web-r190", "FALSIFIED"),      # 3 of 3 test-user reports ERRORed
+    ("ns", "tiktok-web-r140", "FALSIFIED"),      # comments.body never got the dataset's text
+    ("nt", "tiktok-web-r191", "FALSIFIED"),      # users.avatar set, avatar_url absent
+    ("nt", "tiktok-web-r189", "FALSIFIED"),      # users + videos, both one-sided
 ]
 
 _cache = {}
@@ -100,9 +103,88 @@ class TheCheckerStillBites(unittest.TestCase):
         if v is None:
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
-                     "nm", "nn", "no", "np", "nq"):
+                     "nm", "nn", "no", "np", "nq", "nr", "ns", "nt"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
+
+
+class TheLogBackedCriteriaBite(unittest.TestCase):
+    """#1203nr reads the RUN LOG, so the frozen triples above (which call the script with no
+    --log) can only ever see it as N-A. Exercised here with the real log, which also drives
+    the pairing guard's happy path."""
+
+    def test_nr_is_falsified_on_a_pre_patch_run_with_its_own_log(self):
+        run = _ROOT / "generated" / "tiktok-web-r190"
+        logs = sorted(run.glob("logs/generation_*.log"))
+        if not run.is_dir() or not logs:
+            self.skipTest("tiktok-web-r190 or its log is not on this disk")
+        p = subprocess.run([_PY, "-I", str(_SCRIPT), str(run), "--log", str(logs[-1])],
+                           cwd=str(_ROOT), capture_output=True, text=True, timeout=900)
+        line = next((l for l in (p.stdout or "").splitlines()
+                     if l.split()[:1] == ["nr"]), "")
+        self.assertIn("FALSIFIED", line,
+                      "nr came back %r on a run whose log carries the stale cause 41 times"
+                      % line)
+
+    def test_the_log_was_actually_paired(self):
+        """Non-vacuity: a log the script rejected would make every log-based criterion N-A
+        and the assertion above would fail for the wrong reason."""
+        run = _ROOT / "generated" / "tiktok-web-r190"
+        logs = sorted(run.glob("logs/generation_*.log"))
+        if not run.is_dir() or not logs:
+            self.skipTest("tiktok-web-r190 or its log is not on this disk")
+        p = subprocess.run([_PY, "-I", str(_SCRIPT), str(run), "--log", str(logs[-1])],
+                           cwd=str(_ROOT), capture_output=True, text=True, timeout=900)
+        line = next((l for l in (p.stdout or "").splitlines()
+                     if l.split()[:1] == ["log"]), "")
+        self.assertNotIn("IGNORED", line, line)
+        self.assertIn("bytes", line, line)
+
+
+class TheNtCriterionRespectsTheReferenceGuard(unittest.TestCase):
+    """A twin holding a NON-reference value must not be reported as a one-sided twin.
+
+    `#1203nt` deliberately refuses to mirror an initials blob or a colour into a url column,
+    so a run in that shape is correct and the criterion has to agree. The corpus cannot test
+    it -- every twin value it holds is a path or URL (avatar 70, thumbnail 62, thumbnail_url
+    35, avatar_url 20, zero of any other shape) -- which is exactly why a mutation dropping
+    the guard came back MISSED. A synthetic run tree is the only available control.
+    """
+
+    def _run_tree(self, tmp, avatar_value):
+        be = tmp / "app" / "backend"
+        be.mkdir(parents=True)
+        (be / "models.py").write_text(
+            "class User(Base):\n"
+            '    __tablename__ = "users"\n'
+            "    id = Column(Integer, primary_key=True)\n"
+            "    avatar = Column(String)\n"
+            "    avatar_url = Column(String)\n", encoding="utf-8")
+        (be / "seed_dataset.json").write_text(
+            json.dumps({"users": [{"id": 1, "avatar": avatar_value}]}), encoding="utf-8")
+        return tmp
+
+    def _nt(self, tmp):
+        p = subprocess.run([_PY, "-I", str(_SCRIPT), str(tmp)],
+                           cwd=str(_ROOT), capture_output=True, text=True, timeout=300)
+        return next((l for l in (p.stdout or "").splitlines()
+                     if l.split()[:1] == ["nt"]), "")
+
+    def test_a_non_reference_twin_is_not_reported(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            line = self._nt(self._run_tree(Path(d) / "fake-run", "AB"))
+            self.assertNotIn("FALSIFIED", line,
+                             "an initials blob was reported as a one-sided media twin, so "
+                             "the criterion would fail a run #1203nt deliberately leaves "
+                             "alone: %r" % line)
+
+    def test_a_reference_twin_IS_reported(self):
+        """Non-vacuity for the test above: the same tree with a real path must fire."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            line = self._nt(self._run_tree(Path(d) / "fake-run", "/assets/a.jpg"))
+            self.assertIn("FALSIFIED", line, line)
 
 
 class TheLogPairingGuardStillWorks(unittest.TestCase):
