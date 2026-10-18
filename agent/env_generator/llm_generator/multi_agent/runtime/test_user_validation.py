@@ -835,9 +835,25 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
     # than written a third time (#1032): `str(error)` alone yields a minified bundle
     # location that names no source a lane can open, and #1202br paid for that lesson on
     # netflix-r33. Imported above the probe's own `try` so an ImportError is loud --
-    # #1203it's note explains why that placement is not cosmetic, and #802 checks that this
-    # very import resolves.
-    from ...tools.browser._manager import page_error_fields_1202br
+    # #1203it's note explains why that placement is not cosmetic.
+    #
+    # #1203n6: it was NOT loud, for 6 of 6 reports in r189/r190/r191. `from ...tools` is
+    # three levels up, which lands on `llm_generator` under the SUITE's root and goes
+    # above the top level under the RUNTIME's root (`multi_agent.runtime`), where this
+    # code actually runs. `run_test_user_validation`'s outer `except Exception` then
+    # wrote the reason into `summary["error"]`, which nothing read, and the delivery log
+    # said "no cause recorded ... (report a framework defect)". It was right.
+    #
+    # The old note claimed "#802 checks that this very import resolves". #802 resolves
+    # every lazy import in the tree under the suite's root ONLY -- it cannot see the root
+    # that runs. `TheRootRatchet` in #1203n6's test is the check that can.
+    # #1203n6: `from tools.X`, NOT `from ...tools.X`. This tree is imported under two
+    # roots -- `orchestrator.py` and `_paths.setup_paths()` put LLM_GENERATOR_DIR on
+    # sys.path on purpose ("memory, tools, etc. (from LLM_GENERATOR_DIR)") -- so at
+    # runtime the package is `multi_agent.runtime` and three levels up is ABOVE the top
+    # level. Reproduced both roots: the relative form raises `attempted relative import
+    # beyond top-level package`, the absolute form resolves under both.
+    from tools.browser._manager import page_error_fields_1202br
 
     def _is_auth_url_1203it(_u) -> bool:
         """Does this URL belong to the auth surface the framework serves?"""
@@ -850,7 +866,8 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                 browser = await pw.chromium.launch(args=["--no-sandbox"])
             except Exception as _launch_exc:
                 # #234: heal a missing browser binary once in-process, then retry.
-                from ...tools.browser._bootstrap import heal_missing_browser
+                # #1203n6: absolute -- see the note above the page-error import.
+                from tools.browser._bootstrap import heal_missing_browser
                 if not heal_missing_browser(_launch_exc):
                     raise
                 browser = await pw.chromium.launch(args=["--no-sandbox"])
@@ -1435,6 +1452,16 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
     summary = summary if isinstance(summary, Mapping) else {}
     mcp = mcp if isinstance(mcp, Mapping) else {}
     bits = []
+    # #1203n6: FIRST, because an `error` means the ladder never ran -- `broken`, `missing`
+    # and `mcp_complete` are all absent, so every later branch stays silent and the slot
+    # fell through to "no cause recorded ... (report a framework defect)". That was the
+    # whole content of the delivery-time line in 6 of 6 reports across r189/r190/r191; the
+    # reason was in this dict the entire time (#1139's shape: nothing read that key).
+    _err1203n6 = str(summary.get("error") or "").strip()
+    if _err1203n6:
+        bits.append("VALIDATION ERRORED before it could judge the app: %s -- no journey, "
+                    "MCP or UI evidence was produced. Not a verdict about the app"
+                    % _err1203n6[:400])
     for label, key, cap in (("BROKEN", "broken", 6), ("MISSING (404/405)", "missing", 6)):
         vals = summary.get(key) or []
         try:

@@ -21,6 +21,7 @@ next lazy import added anywhere in `runtime/` is covered without anyone remember
 import ast
 import importlib
 import pathlib
+import sys
 
 import pytest
 
@@ -33,6 +34,47 @@ import pytest
 _ROOT = (pathlib.Path(__file__).resolve().parents[1]
          / "env_generator/llm_generator/multi_agent")
 _PKG_ROOT = "env_generator.llm_generator.multi_agent"
+_LG = _ROOT.parent
+
+# #1203n6: AND THE IDIOM THAT ACTUALLY WORKS. The skip below read
+#
+#     if node.level == 0 and not node.module.startswith("env_generator"): continue
+#
+# so `from tools.browser._manager import ...` -- level 0, module `tools...` -- was filed as
+# third-party and never checked. But `tools` is not third-party: `orchestrator.py` and
+# `_paths.setup_paths()` put LLM_GENERATOR_DIR on sys.path deliberately ("memory, tools, etc.
+# (from LLM_GENERATOR_DIR)"), which is what makes `from tools.X` resolve, and it is the form
+# 20+ call sites in this tree use. MEASURED: 105 function-level imports of this tree's OWN
+# modules, in 34 files, had never been checked -- 42 `utils`, 34 `tools`, 26 `multi_agent`
+# (the dual-root form), 2 `progress`, 1 `checkpoint` -- against 840 that were. All 105 resolve
+# today, so this widening is coverage, not a repair.
+#
+# This is the hole #1203iu fell through from the other side: its comment said "#802 checks that
+# this very import resolves", and #802 did -- under THIS root. The relative form it used goes
+# above the top level under the runtime's root (`multi_agent.runtime`), so the real import
+# raised in r189/r190/r191 while this guard stayed green. The escape ratchet lives in
+# test_1203n6_the_import_that_could_not_resolve.py; this is the other half: once the form is
+# absolute, something has to still be checking it.
+#
+# The owned-name set is read off the filesystem, never listed -- item 110's `_OWNER_FK_NAMES`
+# trap is the reason this file discovers by AST in the first place.
+_OWNED_TOPS = {p.name for p in _LG.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
+_OWNED_TOPS |= {p.stem for p in _LG.iterdir() if p.suffix == ".py"}
+_OWNED_TOPS.add("utils")          # AGENTS_DIR-rooted, per _paths' own docstring
+
+# The two roots must BE on sys.path for the absolute form to resolve, exactly as the runtime
+# puts them there. Done explicitly so this test does not depend on which module some earlier
+# test happened to import first.
+if str(_LG) not in sys.path:
+    sys.path.insert(0, str(_LG))
+if str(_LG.parent.parent) not in sys.path:
+    sys.path.insert(0, str(_LG.parent.parent))
+
+
+def _is_ours(module: str, level: int) -> bool:
+    if level != 0:
+        return True
+    return module.startswith("env_generator") or module.split(".")[0] in _OWNED_TOPS
 
 
 def _function_level_imports():
@@ -50,7 +92,7 @@ def _function_level_imports():
             for node in ast.walk(fn):
                 if not isinstance(node, ast.ImportFrom) or not node.module:
                     continue
-                if node.level == 0 and not node.module.startswith("env_generator"):
+                if not _is_ours(node.module, node.level):
                     continue                      # third-party / stdlib: not ours to police
                 out.append((rel, node.lineno, node.module, node.level,
                             tuple(a.name for a in node.names)))
@@ -64,6 +106,22 @@ def test_the_scan_finds_something():
     """Non-vacuity. If a refactor moves these, this test must fail rather than silently pass —
     the sixth instrument-zero of this session is why that sentence is here."""
     assert len(_IMPORTS) >= 300, len(_IMPORTS)   # 364 at the time of writing
+
+
+def test_the_tree_internal_absolute_imports_are_in_scope_1203n6():
+    """Separate from the floor above, because they are a separate claim. Dropping the widening
+    would leave the count above satisfied while 105 imports went back to being invisible."""
+    abs_ours = [i for i in _IMPORTS
+                if i[3] == 0 and not i[2].startswith("env_generator")]
+    assert len(abs_ours) >= 50, len(abs_ours)    # 105 at the time of writing
+    tops = {i[2].split(".")[0] for i in abs_ours}
+    assert {"tools", "utils"} <= tops, sorted(tops)
+
+
+def test_the_owned_set_is_read_off_the_filesystem_1203n6():
+    """It must contain the tree's real top levels and nothing stdlib-shaped."""
+    assert {"tools", "multi_agent", "checkpoint"} <= _OWNED_TOPS, sorted(_OWNED_TOPS)
+    assert not ({"json", "pathlib", "collections", "PIL"} & _OWNED_TOPS)
 
 
 def _resolve(rel, module, level):

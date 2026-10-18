@@ -920,11 +920,10 @@ def ensure_base_gitignore(output_dir: Path) -> list:
     two cannot drift. Build artifacts are deliberately excluded — different category,
     different delivery risk, and nothing measured points at them.
     """
-    try:
-        from ...tools.file_tools import FRAMEWORK_SCRATCH_DIRS
-    except Exception:  # pragma: no cover — import-shape safety only
-        FRAMEWORK_SCRATCH_DIRS = (
-            ".agents", ".agent_logs", "worktrees", ".memory", "snapshots")
+    # #1203n6: no fallback, and absolute -- see the viewport note in test_user_runner.py.
+    # The guarded relative form meant this function never saw the prune-set it says it
+    # shares, so "the two cannot drift" was false for the whole modern era.
+    from tools.file_tools import FRAMEWORK_SCRATCH_DIRS
     gi = Path(output_dir) / ".gitignore"
     # #1202ml: `shared/` holds the LIVE hub ledgers, and git must never own them.
     #

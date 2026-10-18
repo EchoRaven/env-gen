@@ -198,10 +198,15 @@ def design_premises_text() -> str:
     return "\n".join(lines)
 
 
-try:   # #646: one viewport for the whole pipeline (see _bootstrap for why)
-    from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
-except Exception:  # pragma: no cover — import-shape safety only
-    _CV646 = {"width": 1380, "height": 900}
+# #646: one viewport for the whole pipeline (see _bootstrap for why)
+# #1203n6: NO fallback. `from ...tools` could not resolve under the runtime's root, so the
+# hand-written copy below was not a safety net -- it was the only value ever used, which
+# makes #1032's "the two cannot drift" false by construction. Both copies happened to
+# equal their owner, so an equality test would have passed. Measured before removing it:
+# importing each of these four modules ALONE already puts LLM_GENERATOR_DIR on sys.path
+# (4/4), and the absolute form resolves under both roots, so there is nothing left to
+# catch.
+from tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
 _VIEWPORT = dict(_CV646)
 
 # #644 — THE CAPTURE AND THE REFERENCE ARE DIFFERENT SHAPES. MEASURED, NOT ACTED ON.
@@ -2543,7 +2548,8 @@ async def capture_route_screenshots(
             browser = await pw.chromium.launch(args=["--no-sandbox"])
         except Exception as _launch_exc:
             # #234: heal a missing browser binary once in-process, then retry.
-            from ...tools.browser._bootstrap import heal_missing_browser
+            # #1203n6: absolute -- the relative form raised under the runtime's root.
+            from tools.browser._bootstrap import heal_missing_browser
             if not heal_missing_browser(_launch_exc):
                 raise
             browser = await pw.chromium.launch(args=["--no-sandbox"])

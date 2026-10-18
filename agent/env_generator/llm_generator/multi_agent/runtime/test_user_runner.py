@@ -40,10 +40,15 @@ from .test_user_validation import (
     _UNFILLABLE_INPUT_TYPES_670,
 )
 
-try:   # #646: one viewport for the whole pipeline (see _bootstrap for why)
-    from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
-except Exception:  # pragma: no cover — import-shape safety only
-    _CV646 = {"width": 1380, "height": 900}
+# #646: one viewport for the whole pipeline (see _bootstrap for why)
+# #1203n6: NO fallback. `from ...tools` could not resolve under the runtime's root, so the
+# hand-written copy below was not a safety net -- it was the only value ever used, which
+# makes #1032's "the two cannot drift" false by construction. Both copies happened to
+# equal their owner, so an equality test would have passed. Measured before removing it:
+# importing each of these four modules ALONE already puts LLM_GENERATOR_DIR on sys.path
+# (4/4), and the absolute form resolves under both roots, so there is nothing left to
+# catch.
+from tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
 _VIEWPORT = dict(_CV646)
 # A page that rendered almost nothing (a stub heading) — used to flag "blank page".
 _MIN_TEXT = 12
@@ -122,9 +127,17 @@ def _page_error_entry_1203iu(error) -> str:
     "[page error] (unreadable)": that is #1203g1's scar (a guarded import silently left a
     hand-written copy in use) and the one #1203it's note describes (a guarded import would
     have silently left none). #802 parametrises over every lazy import in this tree and checks
-    it resolves, so this one has a standing test without a new one being written.
+    it resolves -- under the SUITE's root. #1203n6: that is not the root this runs on, so
+    this very import raised `attempted relative import beyond top-level package` in
+    r189/r190/r191 and #802 was blind to it. The absolute form resolves under both roots.
     """
-    from ...tools.browser._manager import page_error_fields_1202br
+    # #1203n6: `from tools.X`, NOT `from ...tools.X`. This tree is imported under two
+    # roots -- `orchestrator.py` and `_paths.setup_paths()` put LLM_GENERATOR_DIR on
+    # sys.path on purpose ("memory, tools, etc. (from LLM_GENERATOR_DIR)") -- so at
+    # runtime the package is `multi_agent.runtime` and three levels up is ABOVE the top
+    # level. Reproduced both roots: the relative form raises `attempted relative import
+    # beyond top-level package`, the absolute form resolves under both.
+    from tools.browser._manager import page_error_fields_1202br
     try:
         _f = page_error_fields_1202br(error)
         return ("[page error] " + (_f.get("message") or _f.get("text") or ""))[:400]
@@ -986,7 +999,8 @@ async def run_browser_test_user(
         # if the heal can't land, mark the outage LOUDLY so it reads as an
         # environmental error, not a quiet skip.
         try:
-            from ...tools.browser._bootstrap import (
+            # #1203n6: absolute -- see the note above the page-error import.
+            from tools.browser._bootstrap import (
                 heal_missing_browser, is_missing_executable)
             if is_missing_executable(exc):
                 if heal_missing_browser(exc):
