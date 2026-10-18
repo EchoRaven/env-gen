@@ -1056,6 +1056,26 @@ def _ddl_base_type(t_upper: str) -> str:
         return "integer"
     if "BOOL" in t_upper:
         return "boolean"
+    # #1203ne (same family as #403/#393: make the two renderers agree): JSON fell through to
+    # `text`, so `Column(JSON)` in models.py became `"user" TEXT` in the DDL -- while the
+    # SPEC-derived path already maps it correctly (`_TYPE_ALIASES["json"] == "JSONB"`). The
+    # ORM-introspected path is the one that wins whenever models.py exists, so the DDL shipped
+    # TEXT. Postgres JSON operators (`->`, `->>`, `jsonb_build_object`) do not work on a text
+    # column, and a raw-SQL read returns the serialized STRING instead of an object.
+    #
+    # MEASURED over the corpus: 16 of the 27 ORM/DDL type disagreements are exactly this, in 7
+    # runs, and it is live -- tiktok-web-r191 (2026-10-16, the newest run) has
+    # `comments.user` and `comments.video`, r180 three, r170 four, plus r181/r164/r157/r126.
+    # tiktok-web-r191's lane found it and patched the schema from inside a request handler:
+    # `ALTER TABLE comments ALTER COLUMN "user" TYPE JSONB USING NULLIF("user"::text, '')::jsonb`
+    # with the comment "Normalize pre-existing validation DB columns to JSONB so projected
+    # SQLAlchemy JSON serialization returns objects, not JSON strings."
+    #
+    # ONLY JSON IS ADDED, because only JSON is evidenced (#647): across 101 runs' models.py
+    # the types this function sends to `text` are JSON, String and Text -- there is no ARRAY,
+    # LargeBinary, Time or Enum column anywhere in the corpus. Measured, not forgotten.
+    if "JSON" in t_upper:
+        return "jsonb"
     if "DATE" in t_upper or "TIME" in t_upper:
         return "timestamptz"
     if "FLOAT" in t_upper or "NUMERIC" in t_upper or "DECIMAL" in t_upper or "REAL" in t_upper:
