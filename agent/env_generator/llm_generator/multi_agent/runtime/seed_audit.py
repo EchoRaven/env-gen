@@ -396,6 +396,32 @@ def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, in
 # already holds, and it does not depend on what anything was named. (`created_at IS NULL`
 # separates them perfectly today, which is worse than useless as a rule: it works only
 # because #1202rw's seeds leave that column empty, so it would break the day that is fixed.)
+#
+# ★ #1203ob — NOTHING CALLS EITHER HALF, AND THAT IS NOT AN OVERSIGHT. Both
+# `run_created_actor_rows_1202w7` and `record_run_created_actor_rows_1202w7` are referenced
+# only by their tests, and `logs/run_created_actor_rows_1202w7.jsonl` exists in 0 of the
+# corpus's 106 runs -- so the evidence the recorder's own docstring says "a future cleanup
+# decision is made on" has never been written. Wiring it looks like a one-liner and is not,
+# because THE FRAMEWORK NEVER HOLDS BOTH HALVES OF THE MEASUREMENT AT ONCE:
+#
+#   * at GATE time the reading's own `live_row_counts_1039` cannot reach the database -- the
+#     stack is cycled around each validation and #1202dj measured 2728 of 2728 attempts
+#     failing -- so a direct wiring reads `{}` forever;
+#   * the `#1202dj` fallback snapshot IS available (61 runs carry
+#     `shared/seed_live_counts_1202dj.json` with real counts), but it is taken at
+#     `backend_health`, i.e. just after `down -v && up` + seed, when the actor table is FRESH
+#     and the run's own test users have not accumulated yet.
+#
+# MEASURED on that snapshot across the 61 runs that carry it: added share median 0%, max 47%
+# (r182 8 of 17, googlemaps-r16 5 of 11, r190 6 of 15), and ZERO runs at 50% or above. The
+# 90% and 97% at the top of this comment came from stacks left RUNNING long after their run
+# -- a state the framework never observes. So a wiring to `_live` would not be a cheap win,
+# it would be a systematic under-report of the very thing being counted.
+#
+# What would actually measure it is a count taken at DELIVERY against a stack that is still
+# up, which is the condition #1202xn's and #1039's comments both record as absent. Left
+# uncalled deliberately, with `test_1203ob_...` pinning the snapshot-moment reason so the
+# next reader does not wire it and silently get 0%.
 _ACTOR_TABLE_CANDIDATES_1202W7 = ("users",)
 
 
