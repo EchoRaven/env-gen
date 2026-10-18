@@ -207,6 +207,34 @@ def main(argv):
             "%d screen(s) lost their measured logo: %s; %d restored logo(s) carry a crop"
             % (len(missing), missing[:3] or "none", cropped))
 
+    # --- #1203ni — the measured components must survive the analyst's rewrite -----------
+    # READS: design/component_specs/<screen>.json (components with a region) vs the same
+    #        screen's components in design/design_system.json.
+    # FALSIFIED: the document carries fewer than 80% of the measured components.
+    # N-A: no component_specs on disk.
+    spec_n = doc_n = 0
+    worst = []
+    for f in sorted(cs.glob("*.json")) if cs.is_dir() else []:
+        spec = _json(f, {}) or {}
+        want = [c for c in (spec.get("components") or [])
+                if isinstance(c, dict)
+                and isinstance(c.get("region"), list) and len(c["region"]) == 4]
+        if not want:
+            continue
+        have = (byname.get(f.stem) or {}).get("components") or []
+        spec_n += len(want)
+        doc_n += len(have)
+        if len(have) < len(want):
+            worst.append("%s %d/%d" % (f.stem, len(have), len(want)))
+    if not cs.is_dir() or not spec_n:
+        say("ni", "N-A", "no measured components to compare")
+    else:
+        keep = doc_n / spec_n
+        worst.sort(key=lambda x: int(x.rsplit(" ", 1)[1].split("/")[0]))
+        say("ni", "CONFIRMED" if keep >= 0.8 else "FALSIFIED",
+            "the document keeps %d of %d measured component(s) (%d%%); thinnest: %s"
+            % (doc_n, spec_n, round(100 * keep), worst[:3] or "none"))
+
     # --- #1203n5 — a nested negative probe must bind to its registered template ---------
     # READS: the run log's RegistryHub chain rejection.
     # FALSIFIED: a rejected item is a nested action path (/<res>/<bogus>/<action>), which a
