@@ -1458,10 +1458,19 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
     # whole content of the delivery-time line in 6 of 6 reports across r189/r190/r191; the
     # reason was in this dict the entire time (#1139's shape: nothing read that key).
     _err1203n6 = str(summary.get("error") or "").strip()
+    # #1203n8: and SAY ONLY WHAT IS TRUE. #1203n6's first wording was "no journey, MCP or UI
+    # evidence was produced", which the reports on disk contradict: the error fires at
+    # whatever step raised, and the three steps run in order -- journey (L~1575), MCP
+    # (L~1577), auth-flow walk (L~1587). All 6 ERROR reports in r189/r190/r191 carry a
+    # POPULATED `api` and `mcp` and no `ui` at all, so the first two had finished. r190's
+    # journey had even found `POST /api/comments -> 404` in all three of its reports -- a real
+    # app finding, collected and then discarded because an unrelated ImportError fired two
+    # lines later and the SUMMARY (verdict/broken/missing/api_passed) was never assembled.
+    # A false sentence in the framework is its own defect (#1203j2), including when I wrote it.
     if _err1203n6:
-        bits.append("VALIDATION ERRORED before it could judge the app: %s -- no journey, "
-                    "MCP or UI evidence was produced. Not a verdict about the app"
-                    % _err1203n6[:400])
+        bits.append("VALIDATION ERRORED before it could derive a verdict: %s -- whatever the "
+                    "journey or MCP check had already collected is in test_user_reports/, "
+                    "unjudged. Not a verdict about the app" % _err1203n6[:400])
     for label, key, cap in (("BROKEN", "broken", 6), ("MISSING (404/405)", "missing", 6)):
         vals = summary.get(key) or []
         try:

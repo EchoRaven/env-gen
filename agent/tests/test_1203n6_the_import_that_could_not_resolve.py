@@ -166,6 +166,50 @@ class BothHalvesInOneRun(unittest.TestCase):
         self.assertIn("Not a verdict about the app", msg)
 
 
+class ItSaysOnlyWhatIsTrue1203n8(unittest.TestCase):
+    """#1203n8: #1203n6's own first wording was false, and the reports on disk say so.
+
+    The three steps run in order inside one try -- journey, MCP surface, auth-flow walk -- so
+    an error at the third does not mean the first two did not run. MEASURED on all 6 ERROR
+    reports in r189/r190/r191: every one carries a POPULATED `api` and `mcp` and NO `ui`.
+    r190's journey had found `POST /api/comments -> 404` in all three of its reports: a real
+    app finding, collected and then thrown away because the summary was never assembled.
+
+    So "no journey, MCP or UI evidence was produced" was a false sentence in the framework
+    (#1203j2) -- mine, added the same day. It must not come back."""
+
+    _REAL = {"verdict": "ERROR",
+             "error": "ImportError: attempted relative import beyond top-level package"}
+
+    def test_it_does_not_claim_nothing_was_produced(self):
+        msg = describe_non_pass_1038(dict(self._REAL), {})
+        self.assertNotIn("no journey", msg)
+        self.assertNotIn("evidence was produced", msg)
+
+    def test_it_says_the_verdict_is_what_was_missing(self):
+        msg = describe_non_pass_1038(dict(self._REAL), {})
+        self.assertIn("derive a verdict", msg)
+
+    def test_it_points_at_where_the_collected_evidence_is(self):
+        msg = describe_non_pass_1038(dict(self._REAL), {})
+        self.assertIn("test_user_reports", msg)
+        self.assertIn("unjudged", msg)
+
+    def test_the_r190_report_shape_is_what_it_describes(self):
+        """The shape the claim rests on: summary ERROR with api and mcp already collected."""
+        rep = {"version": "1.0.0",
+               "api": {"steps": [{"action": "create comments", "method": "POST",
+                                  "path": "/api/comments", "status": 404, "ok": False}],
+                       "actor": "alpha"},
+               "mcp": {"server_found": True, "tools_expected": 12, "tools_found": 11,
+                       "complete": False},
+               "summary": dict(self._REAL)}
+        self.assertNotIn("ui", rep)
+        msg = describe_non_pass_1038(rep["summary"], rep["mcp"])
+        self.assertNotIn("evidence was produced", msg)
+        self.assertIn("attempted relative import", msg)
+
+
 class TheOwnerIsReachedAtRuntime(unittest.TestCase):
     """Not "the literal matches" -- the owner's value must actually arrive. Both duplicates
     happened to equal their owner today, so an equality test would have passed while the
