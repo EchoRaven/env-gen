@@ -58,20 +58,33 @@ _UI_RAN = {"ran": True, "flows": [{"flow": "signup", "ok": True},
 
 def test_a_walked_journey_is_never_overwritten(tmp_path):
     """r108's case, which #1203ja exists to protect: the pre-release gate already walked
-    this tag."""
-    assert _ask(tmp_path, {"summary": {"api_steps": 3}, "ui_flows": _UI_RAN}) is True
+    this tag.
+
+    #1203na added `verdict` to this fixture, and to the three below, because it was the one
+    thing they left out: all 129 version reports in the corpus carry a verdict, so a summary
+    without one is a shape that has never existed. Leaving it out would have let these tests
+    pass on the verdict gate alone and stop exercising the evidence logic they are named for
+    -- the quiet kind of hollowing-out. The shape itself is pinned on purpose by
+    `test_a_report_with_no_verdict_at_all_is_walked`."""
+    assert _ask(tmp_path, {"summary": {"verdict": "ISSUES", "api_steps": 3},
+                           "ui_flows": _UI_RAN}) is True
 
 
-def test_a_walked_ui_alone_is_evidence(tmp_path):
+@pytest.mark.parametrize("verdict", ("ISSUES", "PASS", "PARTIAL"))
+def test_a_walked_ui_alone_is_evidence(tmp_path, verdict):
     """The commonest real shape: 119 of the 263 reports have `api_steps == 0` with the UI
-    walk having run, because the CRUD journey needs a creatable collection (#1203jc)."""
-    assert _ask(tmp_path, {"summary": {"api_steps": 0}, "ui_flows": _UI_RAN}) is True
+    walk having run, because the CRUD journey needs a creatable collection (#1203jc).
+
+    Parametrised over the verdicts that population actually carries -- measured on the 129
+    version reports: 31 ISSUES, 9 PASS, 7 PARTIAL."""
+    assert _ask(tmp_path, {"summary": {"verdict": verdict, "api_steps": 0},
+                           "ui_flows": _UI_RAN}) is True
 
 
 def test_a_report_that_measured_nothing_is_rewalked(tmp_path):
     """★ THE TICKET. #1203je's new shape: the frontend never served, and the journey had
     nothing to drive. There is no evidence to lose, and the app is live at the final cut."""
-    rep = {"summary": {"api_steps": 0},
+    rep = {"summary": {"verdict": "NOT_WALKED", "api_steps": 0},
            "ui_flows": {"ran": False,
                         "reason": "frontend at http://localhost:8033 never served within "
                                   "the readiness budget (#1203je)"}}
@@ -81,7 +94,7 @@ def test_a_report_that_measured_nothing_is_rewalked(tmp_path):
 def test_a_ran_true_with_no_flows_is_not_evidence(tmp_path):
     """`ran` alone is not the claim — an empty container is not a fact (#1038's own words,
     in the function this feeds)."""
-    assert _ask(tmp_path, {"summary": {"api_steps": 0},
+    assert _ask(tmp_path, {"summary": {"verdict": "NOT_WALKED", "api_steps": 0},
                            "ui_flows": {"ran": True, "flows": []}}) is False
 
 
@@ -195,3 +208,79 @@ def test_it_agrees_with_the_real_corpus():
     assert noev, "no no-evidence report left on disk -- this half of the test proved nothing"
     assert all("gmrun4" in n or "run73" in n for n in noev), (
         "a report outside the two known July no-evidence ones reads as no-evidence", noev)
+
+
+# --- #1203na: evidence requires a verdict the ladder actually derived ------------------------
+#
+# #1203n9 made an ABORTED validation keep the counts its earlier steps had already collected,
+# which is right for the delivery line and wrong for this predicate: it reads `api_steps > 0`
+# as "already walked, do not overwrite". MEASURED on the 6 ERROR reports in r189/r190/r191,
+# with #1203n9's key present: r190's three (7, 7 and 9 steps) flip from "walk it" to "do not",
+# which is the outage #1203ja exists to prevent. Across all 129 version reports the fix
+# changes 0 of today's decisions, because 0 of them carry `api_steps > 0` without a derived
+# verdict -- so the guard is exactly as wide as the evidence (#647).
+
+_DERIVED = ("PASS", "ISSUES", "PARTIAL", "NOT_WALKED")
+
+
+def test_an_errored_report_that_walked_steps_is_still_walked_again(tmp_path):
+    """r190's shape: the journey had done 7 steps when an unrelated ImportError aborted the
+    run, so the counts are real and the verdict never happened."""
+    assert _ask(tmp_path, {
+        "summary": {"verdict": "ERROR", "error": "ImportError: x", "api_steps": 7,
+                    "api_passed": 5},
+        "api": {"steps": [{"ok": True}] * 7}}) is False
+
+
+def test_the_verdict_gate_comes_before_the_ui_evidence_test(tmp_path):
+    """An abort carries no verdict however much it collected first."""
+    assert _ask(tmp_path, {
+        "summary": {"verdict": "ERROR", "error": "ImportError: x", "api_steps": 7},
+        "ui_flows": _UI_RAN}) is False
+
+
+def test_env_unavailable_is_not_evidence_either(tmp_path):
+    assert _ask(tmp_path, {
+        "summary": {"verdict": "ENV_UNAVAILABLE", "error": "backend not reachable",
+                    "api_steps": 3}}) is False
+
+
+@pytest.mark.parametrize("verdict", _DERIVED)
+def test_every_derived_verdict_still_counts_as_evidence(tmp_path, verdict):
+    assert _ask(tmp_path, {"summary": {"verdict": verdict, "api_steps": 4}}) is True
+
+
+def test_not_walked_with_ui_evidence_is_still_evidence(tmp_path):
+    """The case the whitelist must not break: the ladder DID judge, it judged the journey
+    empty, and the UI walk collected flows anyway."""
+    assert _ask(tmp_path, {"summary": {"verdict": "NOT_WALKED", "api_steps": 0},
+                           "ui_flows": _UI_RAN}) is True
+
+
+def test_a_report_with_no_verdict_at_all_is_walked(tmp_path):
+    """0 of the 129 corpus reports are this shape, so this pins intent rather than a
+    population: a report that never says what it concluded has not been judged."""
+    assert _ask(tmp_path, {"summary": {"api_steps": 9}, "ui_flows": _UI_RAN}) is False
+
+
+def test_the_verdict_set_has_one_owner_1203na():
+    """#1032: the predicate must not re-list the ladder's verdicts."""
+    from multi_agent.runtime.test_user_validation import DERIVED_VERDICTS_1203NA
+    assert tuple(DERIVED_VERDICTS_1203NA) == _DERIVED
+    import ast
+    import inspect
+    src = inspect.getsource(ORCH.Orchestrator._final_report_has_evidence_1203jk)
+    tree = ast.parse(src.lstrip())
+    names = [getattr(c.comparators[0], "id", None) for c in ast.walk(tree)
+             if isinstance(c, ast.Compare) and c.comparators
+             and isinstance(c.ops[0], ast.NotIn)]
+    assert "DERIVED_VERDICTS_1203NA" in names, names
+
+
+# ★ NULL MUTATION, recorded rather than chased (#1203jr). Dropping the `.upper()` from the
+# verdict comparison comes back MISSED, and no test is added for it: every verdict the ladder
+# writes is an uppercase literal (`verdict = "ISSUES"` and its three siblings), all 129 corpus
+# reports agree, so no real input distinguishes the two versions. Both directions also fail
+# safe -- an unrecognised verdict means "walk it", which is the direction #1203ja wants. The
+# `str()` is what actually matters there, and `test_a_report_with_no_verdict_at_all_is_walked`
+# pins it.

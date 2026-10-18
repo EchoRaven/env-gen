@@ -5119,6 +5119,20 @@ class Orchestrator:
                 return True
             _summ = _rep.get("summary")
             _summ = _summ if isinstance(_summ, dict) else {}
+            # #1203na: EVIDENCE REQUIRES A VERDICT THE LADDER ACTUALLY DERIVED.
+            #
+            # #1203n9 made an aborted validation keep the counts its earlier steps had
+            # collected, which is right for the delivery LINE and wrong here: this predicate
+            # reads `api_steps > 0` as "already walked, do not overwrite", so an ERROR report
+            # that had walked 7 steps before raising would stop the final release from being
+            # walked at all -- the exact outage #1203ja exists to prevent. MEASURED on the
+            # 129 version reports: this changes 0 of today's decisions, and it returns the 3
+            # r190 ERROR reports (7, 7 and 9 steps) to "walk it", which is where they were
+            # before #1203n9. The two abort states carry no verdict by construction, so
+            # re-walking them costs nothing and may produce one.
+            from .runtime.test_user_validation import DERIVED_VERDICTS_1203NA
+            if str(_summ.get("verdict") or "").upper() not in DERIVED_VERDICTS_1203NA:
+                return False
             if int(_summ.get("api_steps") or 0) > 0:
                 return True
             _uifl = _rep.get("ui_flows")

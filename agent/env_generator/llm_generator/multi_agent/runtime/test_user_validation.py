@@ -1531,6 +1531,14 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
         "missing or MCP-incomplete (report a framework defect)")
 
 
+# #1203na: the verdicts the LADDER derives, as opposed to the two states set outside it
+# (`ENV_UNAVAILABLE` and `ERROR`, both written by handlers that abort before the ladder runs).
+# Defined here because the ladder is here (#1032: one owner), and read by
+# `_final_report_has_evidence_1203jk`, which has to tell "this report was judged" from "this
+# report was abandoned".
+DERIVED_VERDICTS_1203NA = ("PASS", "ISSUES", "PARTIAL", "NOT_WALKED")
+
+
 def collected_facts_1203n9(report: Any) -> Dict[str, Any]:
     """#1203n9: the facts an ABORTED validation had already collected. Never a judgement.
 
