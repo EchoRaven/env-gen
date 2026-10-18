@@ -1391,6 +1391,27 @@ _FIELD_SYNONYM_GROUPS = (
     ("poster_url", "poster"),
     ("backdrop_url", "backdrop"),
     ("average_rating", "rating"),
+    # #1203nu: THIS GROUP IS UNIT-BLIND, AND IT IS THE ONLY ONE THAT CAN BE. Every other group
+    # pairs names for the same fact; this one pairs names whose fact differs by a FACTOR OF 60.
+    # MEASURED, the bare `duration` means both things in the corpus: netflix-r2's episodes hold
+    # 1380-2820 and r3's titles 0-8340 (seconds), while r14's titles hold 20-118 and r19's
+    # 25-126 (minutes). On the side this function actually reads -- the design-prep dataset --
+    # it is always seconds: 2,010 values, all on `videos`, all <= 300.
+    #
+    # ★ DO NOT ADD `duration_seconds` HERE. Eight runs declare that column
+    # (netflix-r11/r37/r44, tiktok-r105/r139/r142/r145/r160) and `videos.duration_seconds` /
+    # `sounds.duration_seconds` do sit NULL in two runs each, so it is the obvious next entry
+    # -- and adding it would make the aligner treat a minutes column and a seconds column as
+    # interchangeable, writing 157 seconds into `duration_minutes` as 157 minutes.
+    #
+    # A magnitude guard cannot rescue it either: `120` is a legal value in both units, so no
+    # threshold separates them. Routing the bare `duration` to a seconds target instead would
+    # need a per-table rule, which is the vertical-vocabulary mistake #1202ro records. So the
+    # two NULLs stay, deliberately, and this comment is the cheaper half of the trade.
+    #
+    # The risk is latent rather than live: measured over the whole corpus, this alignment
+    # writes into a duration column 0 times, because the dataset's `duration` appears only on
+    # `videos` and no run declares `duration_minutes` on a videos table.
     ("duration_minutes", "duration", "runtime"),
     # engagement counters: the dataset carries the bare noun, the model the _count column
     ("like_count", "likes"),
