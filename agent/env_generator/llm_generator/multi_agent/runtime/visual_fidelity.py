@@ -1341,6 +1341,103 @@ def record_screen_coverage_1202w4(project_dir, coverage, milestone_label="") -> 
         return False
 
 
+# #1203ny: MEASURED, and these two numbers are the whole reason this is reference-RELATIVE.
+# Over the corpus's 264 (reference, capture) pairs in 30 runs the capture/reference edge-density
+# ratio has median 0.864 and p10 0.131 -- a healthy implementation inks about as much as the
+# reference it was built from. The blank ones sit far below: 18 pairs in 8 runs between 0.016
+# and 0.087, e.g. r163 and r180 both capture `explore_grid` at 0.27% against a 16.44% reference,
+# a 60x gap. 0.10 sits in the empty band between p10 and the worst blank.
+_BLANK_RATIO_1203NY = 0.10
+# The reference must HAVE content for the comparison to mean anything, and this is what makes
+# the check possible at all: a single absolute threshold cannot work, because an empty-state
+# screen is legitimately near-blank. `messages_dm_empty`'s reference inks 0.52% in every run
+# that stages it, and its capture 0.30-4.26% -- ratios 0.587 and 8.262, i.e. correct. Every
+# flagged reference is at least 8.42%, so this floor excludes the empty states without
+# touching a single real case.
+_REF_HAS_CONTENT_1203NY = 2.0
+
+
+def _edge_density_1203ny(path) -> float:
+    """Percentage of pixels that differ from a neighbour -- "is there anything on this page".
+
+    Chosen over mean brightness or colour-band counts because it is theme-independent: a dark
+    page and a light page both have text and controls, and both lack them when nothing
+    rendered. Downscales a large capture first, which keeps a 1380x900 PNG under a tenth of a
+    second and does not move the ratio (both sides get the same treatment).
+    """
+    try:
+        from PIL import Image, ImageFilter
+        im = Image.open(str(path)).convert("L")
+        w, h = im.size
+        if w * h > 3_000_000:
+            im = im.resize((max(1, w // 2), max(1, h // 2)))
+        px = list(im.filter(ImageFilter.FIND_EDGES).getdata())
+        if not px:
+            # -1.0 is "could not measure", never 0.0, because the caller reads 0.0 as "no
+            # ink" and would report a blank page it never actually looked at (#883).
+            #
+            # UNREACHABLE THROUGH A REAL FILE, and a mutation flipping it to 0.0 therefore
+            # comes back MISSED -- explained here rather than left as an open verdict
+            # (#1203jr). PIL refuses to SAVE a zero-pixel PNG at all (0x0, 0x10 and 10x0 each
+            # raise `SystemError: tile cannot extend outside image`), and a decoder rejects
+            # one, which lands in the enclosing `except` instead. The guard stays because the
+            # value it returns is the fail-closed one.
+            return -1.0
+        return 100.0 * sum(1 for v in px if v > 20) / len(px)
+    except Exception:
+        return -1.0
+
+
+def blank_captures_1203ny(project_dir) -> List[str]:
+    """``["explore_grid: capture inks 0.27% of the page vs 16.44% in its reference …"]``.
+
+    #1203ny: THE GATE JUDGES A BLANK PAGE AS A DESIGN MISMATCH. The visual gate captures each
+    mapped screen and scores it against its reference, and an LLM judge handed an empty page
+    returns a middling similarity -- r163's and r180's `explore_grid` score in the 0.5s, the
+    same band as a page that rendered and simply looks different. Nothing says "nothing
+    rendered", so the lane reads a styling note where the page is gone.
+
+    FOUND BY MEASURING THE OUTCOME, not by reading code: edge density over every staged
+    reference and its paired capture. 264 pairs in 30 runs, median ratio 0.864, p10 0.131 --
+    and 18 pairs in 8 runs between 0.016 and 0.087. r163 and r180 both capture `explore_grid`
+    at 0.27% against a 16.44% reference; googlemaps-gmrun3 captures
+    `home_map_biking_satellite` at 1.69% against 31.06%.
+
+    ★ WHY IT IS A RATIO. A single absolute threshold cannot work here, and the corpus says so:
+    `messages_dm_empty`'s reference inks 0.52% because an empty inbox IS mostly background, so
+    any threshold low enough to clear it would clear a dead page too. Against its own
+    reference that screen reads 0.587 and 8.262 and is silent, while `explore_grid` reads
+    0.016. The same comparison also makes the check theme-independent.
+
+    REPORTS ONLY: whether a blank capture is a dead page, a mid-rebuild shot or a route that
+    404s is not decidable from the pixels, and #655b/#75a already refund a capture taken while
+    the app was unreachable. Pure/best-effort: anything unreadable is skipped, never guessed.
+    """
+    out: List[str] = []
+    try:
+        root = Path(str(project_dir))
+        refs = root / "design" / "references"
+        caps = root / "design" / "visual_gate"
+        if not refs.is_dir() or not caps.is_dir():
+            return []
+        for rf in sorted(refs.glob("*.png")):
+            cf = caps / rf.name
+            if not cf.is_file():
+                continue
+            er = _edge_density_1203ny(rf)
+            ec = _edge_density_1203ny(cf)
+            if er < _REF_HAS_CONTENT_1203NY or ec < 0:
+                continue
+            if ec / er < _BLANK_RATIO_1203NY:
+                out.append(
+                    "%s: the capture inks %.2f%% of the page against %.2f%% in its "
+                    "reference (ratio %.3f, corpus median 0.864) — the page looks EMPTY, "
+                    "not merely different" % (rf.stem, ec, er, ec / er))
+    except Exception:
+        return []
+    return out
+
+
 def screen_coverage(*, results, measured, owned=None):
     """How much of the reference the visual gate actually judged (#351).
 
@@ -4229,6 +4326,25 @@ async def run_visual_fidelity(
             _coverage["judged"], _coverage["measured"],
             100.0 * _coverage["coverage"], _coverage["unjudged"],
         )
+    # #1203ny: and say when a JUDGED screen's capture is blank. Its own try, because the
+    # coverage line above answering is no reason for this to go unasked (#1201), and outside
+    # the `unjudged` branch because a blank capture IS judged -- that is the whole problem.
+    try:
+        _blank1203ny = blank_captures_1203ny(project_dir)
+        for _b1203ny in _blank1203ny[:6]:
+            _LOG.warning(
+                "#1203ny VISUAL GATE SCORED A BLANK PAGE: %s. Measured by edge density over "
+                "the corpus's 264 reference/capture pairs the healthy ratio is a median "
+                "0.864 with p10 0.131; 18 pairs in 8 runs fall between 0.016 and 0.087. An "
+                "LLM judge handed an empty page returns a middling similarity, so this reads "
+                "as a styling note when the page is gone. Reported, not judged: a blank "
+                "capture can also be a mid-rebuild shot (#655b/#75a refund those).",
+                _b1203ny)
+        if len(_blank1203ny) > 6:
+            _LOG.warning("#1203ny %d more blank capture(s) not listed (#1034)",
+                         len(_blank1203ny) - 6)
+    except Exception as _e1203ny:
+        _LOG.debug("#1203ny blank-capture scan skipped: %s", _e1203ny)
     # #542a: the gating fidelity average over BLOCKING screens ONLY (advisory/transient
     # screens excluded). Reported alongside the pass/fail so the recorded Part-A metric
     # stops being dragged by transient interaction-state screens a static projector cannot
