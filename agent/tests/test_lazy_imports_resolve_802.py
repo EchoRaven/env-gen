@@ -31,10 +31,17 @@ import pytest
 # top level is `orchestrator.py`, where #793 had just ADDED a lazy import. A guard that omits the
 # file whose defect motivated it is the #804 gap again: coverage narrower than the name implies,
 # from the moment it was written.
+# #1203nb: AND THE REST OF THE TREE. #802b's own complaint was "coverage narrower than the
+# name implies, from the moment it was written", and the root was still `multi_agent/` while
+# the docstring says "every function-level import in the runtime". MEASURED: 119 more
+# function-level framework imports live outside it, in 27 files -- 30 in live_monitor_server.py,
+# 12 in tools/docker_tools.py, 11 in tools/hub_tools.py, 5 in tools/browser/control_audit.py --
+# and `tools/` is exactly where the imports #1203n6 repaired POINT, so a break there fails the
+# same paths. All 119 resolve today, so this is coverage, not a repair.
 _ROOT = (pathlib.Path(__file__).resolve().parents[1]
-         / "env_generator/llm_generator/multi_agent")
-_PKG_ROOT = "env_generator.llm_generator.multi_agent"
-_LG = _ROOT.parent
+         / "env_generator/llm_generator")
+_PKG_ROOT = "env_generator.llm_generator"
+_LG = _ROOT
 
 # #1203n6: AND THE IDIOM THAT ACTUALLY WORKS. The skip below read
 #
@@ -108,6 +115,15 @@ def test_the_scan_finds_something():
     assert len(_IMPORTS) >= 300, len(_IMPORTS)   # 364 at the time of writing
 
 
+def test_the_whole_tree_is_in_scope_1203nb():
+    """Non-vacuity for the widening, separate from the floor above: the files outside
+    multi_agent/ must really be contributing cases."""
+    outside = [i for i in _IMPORTS if not i[0].startswith("multi_agent/")]
+    assert len(outside) >= 80, len(outside)          # 119 at the time of writing
+    mods = {i[0].split("/")[0] for i in outside}
+    assert "tools" in mods, sorted(mods)
+
+
 def test_the_tree_internal_absolute_imports_are_in_scope_1203n6():
     """Separate from the floor above, because they are a separate claim. Dropping the widening
     would leave the count above satisfied while 105 imports went back to being invisible."""
@@ -172,7 +188,8 @@ def test_the_profile_keyword_map_names_real_agent_types():
     import re
     from env_generator.llm_generator.multi_agent.agents.configurable_agent import (
         list_available_agents)
-    src = (_ROOT / "team_runtime/parallel_runtime/profiled.py").read_text(encoding="utf-8")
+    src = (_ROOT / "multi_agent/team_runtime/parallel_runtime/profiled.py"
+           ).read_text(encoding="utf-8")
     i = src.index("keyword_candidates")
     block = src[i:src.index("]", src.index("[", i)) + 1]
     targets = sorted(set(re.findall(r'\("[^"]+",\s*"([^"]+)"\)', block)))
