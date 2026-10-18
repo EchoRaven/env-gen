@@ -2450,6 +2450,44 @@ volumes:
                 from .message_format import warn_once_1201 as _w1203kd
                 _w1203kd("glyph_icon_findings_1203kd",
                          "the scan for text characters used as icons (#1203kd)", _e1203kd)
+            # #1203of: the half #1203kd above switches itself off for. Its own try, its own
+            # state key, and the two can never both report the same project -- #1203of returns
+            # [] when there is no library import and #1203kd returns [] when there is, so the
+            # ownership is exclusive by construction (#1032).
+            try:
+                from .frontend_audit import (
+                    glyph_icons_with_a_real_icon_available_1203of as _gi1203of)
+                from .message_format import join_capped as _jc1203of
+                _rows1203of = _gi1203of(fe / "src")
+                if _rows1203of:
+                    from .message_format import state_changed_1202ad as _sc1203of
+                    if _sc1203of("task:glyph_icons_with_library",
+                                 tuple(sorted(map(str, _rows1203of)))):
+                        orch.hubs.workhub.create_task(
+                            title=("Use the icons this project already has instead of %d text "
+                                   "character(s)" % len(_rows1203of))[:180],
+                            description=(
+                                "This frontend imports a real icon set and still draws icons "
+                                "with characters. Each row says whether the icon is already "
+                                "imported here or merely available in that set: %s.\n\n"
+                                "Replace each one with the named component (`<Heart size={18} "
+                                "/>`). Where the row says ALREADY IMPORTS, the import line is "
+                                "in this project already; where it does not, adding "
+                                "`import { Heart } from 'lucide-react'` needs no package.json "
+                                "edit — the framework owns that file and auto-adds it. A CSS "
+                                "`content: '\u2661'` pseudo-element is the same defect: render "
+                                "the component in the markup instead.\n\n"
+                                "Keep a character only where it IS the content (a rating star "
+                                "beside a number). A glyph with no icon in the set is not "
+                                "reported here, so every row has a real replacement."
+                                % _jc1203of(_rows1203of, total=len(_rows1203of), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P1",
+                            kind="fidelity")
+            except Exception as _e1203of:
+                from .message_format import warn_once_1201 as _w1203of
+                _w1203of("glyph_icons_with_a_real_icon_available_1203of",
+                         "the scan for characters used as icons where the real icon is "
+                         "already available (#1203of)", _e1203of)
             try:
                 from .frontend_scaffold import reconcile_ui_page_apis_1199
                 _rec1199 = reconcile_ui_page_apis_1199(fe, ui_pages, registryhub)

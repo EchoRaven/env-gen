@@ -3552,6 +3552,30 @@ _ICON_LIB_1203KD = re.compile(
     r"""|@mui/icons-material[^'\"]*)['\"]""")
 
 
+def _glyph_fragment_1203kd(text: str, m) -> str:
+    """The source fragment for a glyph-icon finding, CENTRED on the match.
+
+    #1203kt's rule, factored out here so #1203of reports the same way rather than growing a
+    second copy of it: a stylesheet is often minified onto one line, so the first 90 characters
+    of `styles.css:3` showed `.login-reference-page{min-height:100vh;…` and the glyph the
+    finding is ABOUT was never visible. The window is measured by the match's own COLUMN, not
+    by searching the matched text inside the line, because a minified stylesheet can carry the
+    same `content:"♡"` twice and `find` would centre both findings on the first one. #1034:
+    both cuts are declared with an ellipsis.
+    """
+    bol = text.rfind("\n", 0, m.start()) + 1
+    eol = text.find("\n", bol)
+    raw = text[bol:eol if eol >= 0 else len(text)]
+    whole = " ".join(raw.strip().split())
+    if len(whole) <= 90:
+        return whole
+    col = m.start() - bol
+    lo = max(0, col - 30)
+    hi = min(len(raw), col + len(m.group(0)) + 50)
+    return ("…" if lo else "") + " ".join(raw[lo:hi].strip().split()) + (
+        "…" if hi < len(raw) else "")
+
+
 def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
     """Text characters used as icons in a frontend that imports no icon library. (#1203kd)
 
@@ -3630,14 +3654,7 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
                 # searching the matched text inside the line: a minified stylesheet can carry
                 # the same `content:"♡"` twice, and `find` would centre both findings on the
                 # first one.
-                if len(_whole) <= 90:
-                    _frag = _whole
-                else:
-                    _col = m.start() - _bol
-                    _lo = max(0, _col - 30)
-                    _hi = min(len(_raw), _col + len(m.group(0)) + 50)
-                    _frag = ("…" if _lo else "") + " ".join(
-                        _raw[_lo:_hi].strip().split()) + ("…" if _hi < len(_raw) else "")
+                _frag = _glyph_fragment_1203kd(text, m)
                 out.append("%s:%d: %s" % (f.name, line, _frag))
                 if len(out) >= limit:
                     return out
@@ -3645,6 +3662,143 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
         from .message_format import warn_once_1201
         warn_once_1201("glyph_icon_findings_1203kd",
                        "the scan for text characters used as icons (#1203kd)", _exc)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# #1203of — the same character, in a project that already has the icon.
+# ---------------------------------------------------------------------------
+# `#1203kd` above returns [] "as soon as any file imports a real icon library, because a
+# project that has one made a deliberate choice about the glyph that is left". That sentence is
+# a HYPOTHESIS, and the corpus falsifies it.
+#
+# MEASURED over the 104 delivered frontends: 25 import a library, and 16 of those still use a
+# character as an icon -- 92 sites that `#1203kd` is switched off for by one import anywhere in
+# the tree. 63 of the 92 are a glyph whose concept the library offers, and in 37 of those the
+# app ALREADY IMPORTS THAT VERY ICON: `tiktok-web-r115`'s `TikTokUI.jsx` imports `Heart` from
+# lucide-react and writes `♥`; `netflix-local-r8` imports `Play` and writes `▶` on five pages
+# (CardHoverPreview, Games, Movies, RateDialog, …) while `LanguageFilters.jsx` imports
+# `ChevronDown` and writes `▾`. That is not a deliberate choice about an unavailable glyph; it
+# is the same shortcut #1203kd exists to name, one import away from its eyes.
+#
+# IT IS NOT HISTORICAL: r180 (`♪` beside an imported `Music`), r183 (`♪` with `Music2`
+# imported), and r190 carries `♡`/`▦`/`⚑` with Heart/LayoutGrid/Flag available in the library it
+# already imports. The user's standing bar names this axis as the weakest thing we ship --
+# iconography mean 0.577 over 251 PASSING screens, min 0.22 -- so a deterministic finding here
+# is worth more than another prose score.
+#
+# ★ THE MAP ONLY HAS TO BE CORRECT, NOT COMPLETE. Every entry is a glyph the corpus actually
+# uses as an icon, and the right-hand side is the icon-set name for the same concept. A glyph
+# with no library equivalent is deliberately absent and therefore never reported -- netflix-r7's
+# `🍿` is exactly that, a popcorn mark lucide does not have, and reporting it would be the
+# "false blocker" #566j already cost this repo. A missing entry costs a missed finding, never a
+# wrong one.
+#
+# The repair is a one-line import, and the framework already guarantees it resolves: #1203kd
+# checked that `lucide-react` comes from `_COMMON_FRONTEND_LIBS` and that all 33
+# `failed to resolve import "lucide-react"` build failures in the corpus are r147 or older.
+_GLYPH_LIBRARY_ICON_1203OF = {
+    "♡": ("Heart",), "♥": ("Heart",),
+    "♪": ("Music", "Music2", "Music4"), "♫": ("Music", "Music2"),
+    "▶": ("Play", "PlayCircle"), "✓": ("Check", "CheckCheck"),
+    "✔": ("Check", "CheckCheck"),
+    "↻": ("RefreshCw", "RotateCw", "RefreshCcw"),
+    "⟳": ("RefreshCw", "RotateCw"),
+    "⌄": ("ChevronDown",), "▾": ("ChevronDown",), "▼": ("ChevronDown",),
+    "⌃": ("ChevronUp",), "▴": ("ChevronUp",), "▲": ("ChevronUp",),
+    "←": ("ArrowLeft",), "→": ("ArrowRight",),
+    "↑": ("ArrowUp",), "↓": ("ArrowDown",),
+    "↗": ("ArrowUpRight", "ExternalLink", "Share2"),
+    "⚑": ("Flag",), "✎": ("Pencil", "Edit", "Edit2", "Edit3"),
+    "▦": ("LayoutGrid", "Grid", "Grid3x3"),
+    "▣": ("LayoutGrid", "Grid", "Square"), "▢": ("Square",),
+    "⌗": ("QrCode",), "☼": ("Sun",), "⌂": ("Home",),
+    "⌨": ("Keyboard",), "✉": ("Mail",), "☎": ("Phone",),
+}
+
+_ICON_IMPORT_NAMES_1203OF = re.compile(
+    r"""import\s*\{([^}]*)\}\s*from\s*['\"](?:lucide-react|react-icons[^'\"]*"""
+    r"""|@heroicons/[^'\"]*|@tabler/icons[^'\"]*|phosphor-react|react-feather"""
+    r"""|@mui/icons-material[^'\"]*)['\"]""")
+
+
+def _imported_icon_names_1203of(texts) -> set:
+    """Icon identifiers the project imports from an icon set, across the whole tree.
+
+    Tree-wide on purpose: the glyph and the import usually sit in different files (r8 imports
+    `Play` in one page and writes `▶` in four others), and the claim being made is about what
+    the PROJECT has in scope, not about one module's imports.
+    """
+    names = set()
+    for _f, text in texts:
+        for m in _ICON_IMPORT_NAMES_1203OF.finditer(text or ""):
+            for raw in m.group(1).split(","):
+                nm = raw.strip().split(" as ")[0].strip()
+                if nm:
+                    names.add(nm)
+    return names
+
+
+def glyph_icons_with_a_real_icon_available_1203of(frontend_src: Any,
+                                                  limit: int = 12) -> List[str]:
+    """Characters doing an icon's job in a project that imports an icon library. (#1203of)
+
+    The other half of `#1203kd`, which deliberately stops at the library import. Each row says
+    which case it is -- the icon is ALREADY IMPORTED here, or it is available in the set this
+    project already depends on -- because those are different sentences to hand a lane.
+
+    Returns [] when the project imports NO icon set: that is `#1203kd`'s half and reporting it
+    here too would give one defect two owners (#1032). An empty result is therefore not a
+    claim that the project is clean -- it is a statement about which of the two checks owns it.
+
+    Never raises.
+    """
+    out: List[str] = []
+    try:
+        root = Path(frontend_src)
+        texts = []
+        for f in sorted(root.rglob("*")):
+            if f.suffix not in (".jsx", ".tsx", ".js", ".ts", ".css"):
+                continue
+            if "node_modules" in f.parts:
+                continue
+            try:
+                texts.append((f, f.read_text(encoding="utf-8", errors="replace")))
+            except Exception:
+                continue
+        if not any(_ICON_LIB_1203KD.search(t) for _f, t in texts):
+            return out                       # #1203kd's half
+        imported = _imported_icon_names_1203of(texts)
+        total = 0
+        for f, text in texts:
+            for m in _GLYPH_ICON_1203KD.finditer(text):
+                glyph = next((g for g in m.groups() if g), "")
+                names = ()
+                for ch in glyph:
+                    names = _GLYPH_LIBRARY_ICON_1203OF.get(ch) or ()
+                    if names:
+                        break
+                if not names:
+                    continue                 # no library equivalent: deliberately silent
+                total += 1
+                if len(out) >= limit:
+                    continue
+                have = [n for n in names if n in imported]
+                line = text[:m.start()].count("\n") + 1
+                where = ("this project ALREADY IMPORTS `%s`" % have[0] if have
+                         else "`%s` is in the icon set this project already imports"
+                              % names[0])
+                out.append("%s:%d: %s — %s" % (
+                    f.name, line, _glyph_fragment_1203kd(text, m), where))
+        if total > len(out):
+            # #1034: the cut declares itself inside the list the reader gets.
+            out.append("…(%d of %d glyph-icon site(s) shown)" % (len(out), total))
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201(
+            "glyph_icons_with_a_real_icon_available_1203of",
+            "the scan for characters used as icons where the real icon is already available "
+            "(#1203of)", _exc)
     return out
 
 

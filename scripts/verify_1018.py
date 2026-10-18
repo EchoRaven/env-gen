@@ -532,6 +532,47 @@ def main(argv):
     except Exception as _e_od:
         say("od", "N-A", "the #1203od reader could not be imported (%s)" % _e_od)
 
+    # --- #1203of — no text character doing an icon's job where the icon is available ----
+    # READS: app/frontend/src, through the shipped detector.
+    # FALSIFIED: any site. The project imports a real icon set and still draws an icon with a
+    #   character whose concept that set offers -- in 37 of the 63 measured sites the app
+    #   ALREADY IMPORTS that very icon. This is the axis the user names as the weakest thing
+    #   shipped (iconography mean 0.577 over 251 PASSING screens, min 0.22).
+    # CONTROL (pre-patch): r190 3 (its `profile-fix.css` draws the tabs as ▦/⚑/♡), r183 2
+    #   (`♪` beside an imported `Music2`), r115 13, netflix-local-r8 10; r191 and r185 clean.
+    # N-A when the project imports NO icon set -- that half belongs to #1203kd, and an empty
+    #   result here is a statement about ownership, not about cleanliness.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.frontend_audit import (
+            _ICON_LIB_1203KD as _lib_of,
+            glyph_icons_with_a_real_icon_available_1203of as _glyph_of)
+        _of_src = run / "app" / "frontend" / "src"
+        if not _of_src.is_dir():
+            say("of", "N-A", "no frontend source in this run")
+        else:
+            _of_has_lib = False
+            for _f in _of_src.rglob("*"):
+                if _f.suffix not in (".jsx", ".tsx", ".js", ".ts", ".css"):
+                    continue
+                if "node_modules" in _f.parts:
+                    continue
+                try:
+                    if _lib_of.search(_f.read_text(encoding="utf-8", errors="replace")):
+                        _of_has_lib = True
+                        break
+                except Exception:
+                    continue
+            if not _of_has_lib:
+                say("of", "N-A", "this project imports no icon set (#1203kd's half)")
+            else:
+                _of = _glyph_of(_of_src) or []
+                say("of", "FALSIFIED" if _of else "CONFIRMED",
+                    "%d glyph-icon site(s): %s"
+                    % (len(_of), [r.split(" \u2014 ")[0] for r in _of[:2]] or "none"))
+    except Exception as _e_of:
+        say("of", "N-A", "the #1203of detector could not be imported (%s)" % _e_of)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")
