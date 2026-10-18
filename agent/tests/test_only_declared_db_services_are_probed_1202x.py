@@ -69,12 +69,32 @@ def test_an_unreadable_file_does_not_narrow(tmp_path):
     assert _compose_services_1202x(_write(tmp_path, "no services key here\n")) == set()
 
 
-def test_the_resolver_falls_back_when_nothing_is_declared(tmp_path):
-    """A compose it cannot read must still try all three names, as before."""
-    src = (THIS_DIR.parent
-           / "env_generator/llm_generator/multi_agent/runtime/seed_audit.py"
-           ).read_text(encoding="utf-8")
-    body = src[src.index("def _db_container_1039"):]
-    body = body[:body.index("\ndef ")]
-    assert "if not _declared or s in _declared" in body
-    assert '_order or ["database", "db", "postgres"]' in body
+def test_the_resolver_falls_back_when_nothing_is_declared(tmp_path, monkeypatch):
+    """A compose it cannot read must still try all three names, as before.
+
+    #1203nr changed the CRITERION, not the property. This read a SOURCE SLICE from
+    `def _db_container_1039` to the next `\ndef `, and #1203nr moved that function's body
+    into `_db_container_why_1203nr` so the reason could travel with the id -- the slice then
+    held only the delegating wrapper and the assertion failed on a refactor that preserves
+    exactly what it was written to protect. Asserted as BEHAVIOUR now (#943): probe the
+    resolver and see which service names it actually asks for.
+    """
+    from env_generator.llm_generator.multi_agent.runtime import container_runtime as CR
+    from env_generator.llm_generator.multi_agent.runtime import seed_audit as SA
+
+    asked = []
+
+    def spy(compose, svc, timeout=None):
+        asked.append(svc)
+        return ""
+
+    monkeypatch.setattr(CR, "container_id", spy)
+
+    # unreadable / no services key -> must not narrow
+    SA._db_container_1039(_write(tmp_path, "no services key here\n"), 5)
+    assert asked == ["database", "db", "postgres"], asked
+
+    # declares only `database` -> must narrow to it (that is #1202x's whole point)
+    asked.clear()
+    SA._db_container_1039(_write(tmp_path, _COMPOSE), 5)
+    assert asked == ["database"], asked

@@ -329,11 +329,11 @@ def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, in
         if compose is None:
             return _not_measured_1039("no docker-compose.yml under %s (nor its parent)" % proj)
         from .container_runtime import runtime_bin
-        cid = _db_container_1039(compose, timeout)
+        cid, _why1203nr = _db_container_why_1203nr(compose, timeout)
         if not cid:
-            return _not_measured_1039(
-                "no database container resolved from %s (tried services database/db/postgres)"
-                % compose)
+            # #1203nr: the REASON, not a guess at it. See `_db_container_why_1203nr`.
+            return _not_measured_1039("no database container from %s — %s"
+                                      % (compose, _why1203nr))
         import subprocess
         # one round trip: build a UNION ALL of exact counts over the public tables
         sql = (
@@ -591,6 +591,40 @@ def _db_container_1039(compose, timeout: int) -> str:
     A separate function so the per-service probe's `except: continue` is not an empty-default
     ASSIGN inside a gate file — #883 flags those, correctly, because that shape is how a
     failed probe comes to read as a measurement.
+
+    #1203nr: the reason now travels too; see `_db_container_why_1203nr`. This signature is
+    unchanged because four other callers read only the id.
+    """
+    return _db_container_why_1203nr(compose, timeout)[0]
+
+
+def _db_container_why_1203nr(compose, timeout: int):
+    """``(container_id, why)`` — "" and a REASON when nothing resolved.
+
+    #1203nr: THE MESSAGE NAMED THE WRONG CAUSE, roughly a thousand times. The caller printed
+
+        no database container resolved from <compose> (tried services database/db/postgres)
+
+    and that sentence is wrong twice over:
+
+      * IT BLAMES NAME RESOLUTION. MEASURED over the corpus's 104 compose files with a
+        postgres-image service, the service is called `database` in **104 of 104** — always a
+        name this function probes. So the real situation in every corpus case is "the service
+        IS declared and docker returned no container", i.e. the stack is down at this moment,
+        which `_not_measured_1039`'s own comment already describes ("the audit is called
+        between validations while the stack is down") and which is a TIMING state, not a
+        defect to go fix.
+      * IT IS STALE WITH RESPECT TO ITS OWN CODE. `#1202x` narrowed the probe to the services
+        the file DECLARES, precisely so two of those three names stop being tried. The
+        sentence kept advertising the blind sweep #1202x removed.
+
+      THE COST IS MEASURABLE, and I paid it: reading that line, I went and measured compose
+      service names across the corpus looking for a name outside the three. There is none.
+      That is #883's family arriving sideways -- not an empty default read as clean, but a
+      stated cause read as the cause.
+
+    Corpus-wide the line appears ~2,111 times in 38 runs (netflix-r37 241, googlemaps-r16
+    171, netflix-r41 168, r190 17), so this is not a rare path.
     """
     from .container_runtime import container_id
     # #1202x: probe only the services this compose file actually declares. The blind sweep
@@ -602,14 +636,39 @@ def _db_container_1039(compose, timeout: int) -> str:
     # parse failure loses nothing.
     _declared = _compose_services_1202x(compose)
     _order = [s for s in ("database", "db", "postgres") if not _declared or s in _declared]
+    # #1203nr: `_order` is empty in TWO different situations and they get different reasons —
+    # the file could not be read (so #1202x deliberately does not narrow) versus the file WAS
+    # read and declares none of the three. The first draft of this function had a `if not
+    # _probed` branch for the second case and it was DEAD, because the `or [...]` fallback
+    # below refills the loop; the unit test caught it reporting the stack-is-down sentence for
+    # a compose file with no database service at all.
+    _none_declared = bool(_declared) and not _order
+    # The three names are still PROBED in that case, deliberately: skipping them would be a
+    # behaviour change on a path with 0 corpus instances (104 of 104 compose files declare
+    # `database`), and #647 says a change needs evidence even when it looks obviously right.
+    _probed, _raised = [], []
     for svc in (_order or ["database", "db", "postgres"]):
+        _probed.append(svc)
         try:
             cid = container_id(compose, svc, timeout=timeout)
-        except Exception:
+        except Exception as _e1203nr:
+            _raised.append("%s: %s: %s" % (svc, type(_e1203nr).__name__, _e1203nr))
             continue
         if cid:
-            return cid
-    return ""
+            return cid, ""
+    # WHICH OF THE THREE SITUATIONS THIS IS. They have different owners: a name the compose
+    # file does not declare is a scaffolding question, a probe that raised is a docker/host
+    # question, and a declared service with no container is neither -- it is the stack being
+    # down between validations, and the right response is to re-read later.
+    if _none_declared:
+        return "", ("the compose file declares NO database service — it declares %s, so the "
+                    "names probed (%s) are a fallback and not a reading of this file"
+                    % (", ".join(sorted(_declared)), "/".join(_probed)))
+    if _raised:
+        return "", ("probing %s raised: %s" % ("/".join(_probed), "; ".join(_raised)[:200]))
+    return "", ("service %s IS declared in %s but has no running container — the stack is "
+                "DOWN at this moment, which is a timing state, not a missing service"
+                % ("/".join(_probed), getattr(compose, "name", compose)))
 
 
 def _compose_services_1202x(compose) -> set:
