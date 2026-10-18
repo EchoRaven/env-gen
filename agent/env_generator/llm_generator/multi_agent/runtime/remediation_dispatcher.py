@@ -2995,6 +2995,93 @@ class RemediationDispatcher:
                 "the #1041 shape this exists to close",
                 _e1203np)
 
+    async def dispatch_fabricated_record_arrays_1203oc(self) -> None:
+        """#1203oc: tell the frontend lane the page renders a table of invented rows.
+
+        #175 has blocked `place.rating || '4.5'` since gmrun9 and its own docstring names the
+        bar it enforces: "the user's no-placeholder/mock bar", added because #170's PROMPT rule
+        was ignored. Its two regexes require the fabricated value to be a quoted literal in the
+        same expression, so moving the literal one import away clears the gate while changing
+        nothing about what the viewer is shown.
+
+        r190 SHOWS BOTH IN ONE DELIVERY: the log carries a single #175 rewrite
+        (`item.text || 'shared new posts you may like'` → `(item.text ?? '—')`) while three of
+        its pages read `seededVideos` out of `lib/staticData.js` -- `MessagesDmEmptyPage`
+        renders `video ? {…} : seededVideos[2]`, so a feed call that returns nothing shows
+        "Lina Park" and a caption nobody wrote.
+
+        MEASURED, 14 sites in 4 of 104 delivered frontends (r155 6, r131 3, r190 3, r157 2),
+        the newest run among them. Two are worse than a stand-in: r155's `VideoFeed` sets
+        `onError` to a fabricated thumbnail, painting over the very 404 #1202g9/#1203nq exist
+        to surface.
+
+        A TASK, NOT A CHECK, on #1148's terms: "a task is worked, a check is a wall, and a new
+        wall cannot be validated without a run" (#1202w6). It is also the honest disposition
+        here -- r157's "Suggested LIVE creators" rail may be a milestone whose backend slice is
+        unbuilt, and that is the lane's call to make, not a gate's.
+
+        THE OWNER IS THE FRONTEND, without a branch: every one of the 14 sites is a line of
+        frontend source, and the remedy (fetch it, or show an honest empty state) is a frontend
+        edit. Where the real rows are missing from the backend the lane says so, which is why
+        the text asks for that answer explicitly rather than assuming one.
+
+        Per-milestone re-fire guard like its neighbours, and it re-reads its own detector
+        rather than any gate key -- the bug #1203ii inherited from a copied call site.
+        """
+        try:
+            orch = self._orch
+            out_dir = getattr(orch, "output_dir", None)
+            if not out_dir:
+                return
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_fra1203oc_dispatched", None) == milestone:
+                return
+            from pathlib import Path as _P1203oc
+            from .frontend_audit import fabricated_record_arrays_1203oc as _fra1203oc
+            rows = [str(r).strip() for r in (_fra1203oc(_P1203oc(str(out_dir)) / "app") or [])
+                    if str(r).strip()]
+            if not rows:
+                return
+            _shown = join_capped(["- " + r for r in rows], total=len(rows), cap=10, sep="\n")
+            orch.hubs.workhub.create_task(
+                title=("Fix %d site(s) where the UI renders fabricated rows instead of the "
+                       "app's own data" % len(rows))[:180],
+                description=(
+                    "Each line below is a component that FETCHES from services/api and ALSO "
+                    "renders a hand-written table of rows whose fields are columns of a table "
+                    "this app serves. The viewer cannot tell the difference, which is why the "
+                    "#175 fabricated-fallback gate -- which only reads a quoted literal in the "
+                    "same expression -- says nothing about it.\n"
+                    + _shown + "\n\n"
+                    "Do ONE of these per site:\n"
+                    "  * RENDER THE REAL ROWS. The component already has the call; use its "
+                    "result.\n"
+                    "  * SHOW AN HONEST EMPTY STATE when the call returns nothing — the same "
+                    "remedy #175 asks for ('—' / 'No videos yet'). An empty rail is honest; a "
+                    "rail of invented creators is not.\n"
+                    "  * If the real rows do NOT EXIST yet (the endpoint or the seed is "
+                    "unbuilt), SAY SO in this task and leave the literal in place. That is a "
+                    "backend slice to schedule, not something to hide behind plausible "
+                    "content.\n\n"
+                    "Do NOT paper over a failed request with a fabricated value. A fallback "
+                    "that looks like data makes a broken app read as a working one, and the "
+                    "next person to look cannot tell which rows were real."),
+                assignee="frontend",
+                agent="orchestrator",
+                priority="P1",
+            )
+            orch._fra1203oc_dispatched = milestone
+            orch._logger.warning(
+                "#1203oc dispatched a frontend task for %d fabricated-record site(s) the "
+                "#175 gate cannot see: %s", len(rows), _shown)
+        except Exception as _e1203oc:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "dispatch_fabricated_record_arrays_1203oc",
+                "the #1203oc finding reaches nobody, which is the #1041 shape it exists to "
+                "close -- and #175's own bar stays enforced only against one-line fakes",
+                _e1203oc)
+
     async def dispatch_never_matching_filters_1148(self) -> None:
         """#1148: tell the backend about a filter no seeded row can satisfy.
 

@@ -37,6 +37,10 @@ _CONTROLS = [
     ("ns", "tiktok-web-r140", "FALSIFIED"),      # comments.body never got the dataset's text
     ("nt", "tiktok-web-r191", "FALSIFIED"),      # users.avatar set, avatar_url absent
     ("nt", "tiktok-web-r189", "FALSIFIED"),      # users + videos, both one-sided
+    ("oc", "tiktok-web-r190", "FALSIFIED"),      # 3 pages render `seededVideos`
+    ("oc", "tiktok-web-r155", "FALSIFIED"),      # 6 sites on `tiktokData.videos`
+    ("oc", "tiktok-web-r191", "CONFIRMED"),      # the healthy control, 0 sites
+    ("oc", "tiktok-web-r185", "CONFIRMED"),      # a second healthy control
 ]
 
 _cache = {}
@@ -103,7 +107,7 @@ class TheCheckerStillBites(unittest.TestCase):
         if v is None:
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
-                     "nm", "nn", "no", "np", "nq", "nr", "ns", "nt"):
+                     "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

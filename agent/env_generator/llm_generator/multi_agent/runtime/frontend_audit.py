@@ -2679,6 +2679,333 @@ def invented_field_fallback_blockers(frontend_src: Any, limit: int = 20) -> List
     return blockers
 
 
+# ── #1203oc: THE SAME FABRICATION, ONE IMPORT AWAY FROM #175's EYES ───────────────────────
+#
+# #175 above is SOUND and NARROW: its two regexes require the fabricated value to be a QUOTED
+# LITERAL in the same expression (`place.rating || '4.5'`). Move the literal into a module and
+# the identical semantics walk straight through the gate.
+#
+# r190 PROVES IT WITHIN ONE DELIVERY. The log carries exactly one #175 line --
+# `item.text || 'shared new posts you may like'` rewritten to `(item.text ?? '—')` -- while
+# THREE pages of the same app take their content from `lib/staticData.js`:
+# `MessagesDmEmptyPage` renders `video ? {…} : seededVideos[2]`, so when the feed call returns
+# nothing the viewer is shown "Lina Park" and a caption nobody wrote; `ProfileOwnPage` and
+# `SettingsMoreMenuPage` read `seededVideos[0]` the same way. The gate caught the one-liner and
+# never looked at the module.
+#
+# MEASURED over the 104 delivered frontends: 14 sites in 4 runs (r155 6, r131 3, r190 3,
+# r157 2), and the shape is not historical -- r190 is the newest run on disk. Two of them are
+# worse than a stand-in: r155's `VideoFeed` sets `onError={e => e.currentTarget.src =
+# videos[0].thumbnail_url}`, so a 404 on a real thumbnail is PAINTED OVER with a fabricated
+# one, which is also the signal #1202g9/#1203nq exist to surface; r131's
+# `FypFeedCommentsPanelPage` falls back to `fallbackVideos[0]` when `getVideo` rejects.
+#
+# ★ THE VOCABULARY IS THE APP'S OWN SCHEMA, NOT A WORD LIST. A first version scored the
+# literal's keys against a hand-written content vocabulary (`title`/`caption`/`avatar`/…) and
+# reported FOUR icon maps -- r103's `navIcons`, r121's `assets`, r56's `ICONS` -- because an
+# icon's KEY is literally `comment` or `sound`. Reading `models.py` through
+# `model_columns_from_models_py` (#1032: that parser already owns this question) asks the only
+# question that matters: are these the COLUMNS OF A TABLE THIS APP SERVES? It drops all four
+# icon maps, keeps all 14 real sites, names the table in the row, and carries no vertical
+# vocabulary -- the user's generality bar, which a tiktok-shaped word list would fail.
+#
+# THE TWO THRESHOLDS, MEASURED AT THEIR NEIGHBOURS (#647):
+#   * `_MIN_SHARED_COLUMNS_1203OC = 2`. At 1 the same scan reports 24 sites in 11 runs, and 6
+#     of the 10 extra are UI CONFIGURATION that shares one name with some table: r164's
+#     `chips` (`label`/`type`/`testid`), r179's `menuSections`, r81's `TABS`, r9's
+#     `LANGUAGE_GENRES`, r10's star-rating `ratings`. At 3 it loses r157's `creators`
+#     (`name`+`avatar` = 2), which is a real fabricated "Suggested LIVE creators" rail.
+#     The 4 real sites 2 lets go are r68's `EXPLORE_CARDS`/`SUGGESTED_CREATORS`/`GAMING_CARDS`
+#     and r182's `cards` -- named here so a future widening has a target rather than a guess.
+#   * `_MIN_RECORDS_1203OC = 2`. A one-element literal is a shape default, not a row set.
+#     Every one of the 14 measured arrays holds at least 3 (r131 3, r157 6, r190 8, r155 8),
+#     so this floor is not fitted to the data; it only excludes the degenerate case.
+#
+# REPORTS. It does not join #175's blocker list and it does not heal. #1202w6: a new wall gets
+# a live run before it can block, and the honest reading of "the component imports fabricated
+# rows" is not always "delete them" -- r157's rail may be a milestone whose backend slice is
+# unbuilt. `dispatch_fabricated_record_arrays_1203oc` tells the frontend lane (#1203f6: a
+# finding must reach a recipient).
+_RECORD_ARRAY_1203OC = re.compile(
+    r"(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\[")
+_RECORD_KEY_1203OC = re.compile(r"['\"]?([A-Za-z_$][\w$]*)['\"]?\s*:")
+_API_IMPORT_1203OC = re.compile(r"from\s+['\"][^'\"]*services/api")
+_MIN_RECORDS_1203OC = 2        # see the two-neighbour measurement above
+_MIN_SHARED_COLUMNS_1203OC = 2  # see the two-neighbour measurement above
+# A literal bigger than this is not read: the largest in the corpus is r155's 40-record
+# `videos` at ~11 KB, and a runaway slice would make the scan quadratic on a generated bundle.
+_ARRAY_SCAN_CAP_1203OC = 120000
+
+
+def _balanced_1203oc(text: str, start: int):
+    """The balanced `[...]`/`{...}` slice beginning at ``text[start]``, or None.
+
+    Quote-aware, because a bracket inside a string would otherwise unbalance the span and
+    swallow the rest of the file.
+    """
+    depth = 0
+    quote = None
+    i = start
+    end = min(len(text), start + _ARRAY_SCAN_CAP_1203OC)
+    while i < end:
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+        elif ch in "[{":
+            depth += 1
+        elif ch in "]}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+        i += 1
+    return None
+
+
+def _top_level_keys_1203oc(obj: str) -> set:
+    """Keys at depth 1 of a `{...}` slice -- a nested object's keys belong to IT.
+
+    r155's records carry `author: {display_name, …}`, so a flat key scan attributed
+    `display_name` to the record and matched the wrong table. Depth matters.
+    """
+    keys = set()
+    depth = 0
+    quote = None
+    i = 0
+    while i < len(obj):
+        ch = obj[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+        elif ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+        elif depth == 1 and (i == 0 or obj[i - 1] in "{, \n\t"):
+            m = _RECORD_KEY_1203OC.match(obj, i)
+            if m:
+                keys.add(m.group(1))
+                i = m.end()
+                continue
+        i += 1
+    return keys
+
+
+def _record_objects_1203oc(blob: str) -> list:
+    """The top-level `{...}` elements of an array slice."""
+    out = []
+    depth = 0
+    quote = None
+    start = None
+    i = 0
+    while i < len(blob):
+        ch = blob[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+        elif ch in "{[":
+            depth += 1
+            if depth == 2 and ch == "{":
+                start = i
+        elif ch in "}]":
+            if depth == 2 and ch == "}" and start is not None:
+                out.append(blob[start:i + 1])
+                start = None
+            depth -= 1
+        i += 1
+    return out
+
+
+def record_arrays_1203oc(text: str) -> dict:
+    """``{name: (record_count, shared_field_names, defining_line)}`` for every module-level
+    array of object literals in ``text``.
+
+    "Shared" means the field appears in at least two of the records -- one record's stray key
+    says nothing about the array's shape. A literal containing a function or an arrow is not
+    data and is skipped.
+    """
+    out = {}
+    try:
+        for m in _RECORD_ARRAY_1203OC.finditer(text):
+            blob = _balanced_1203oc(text, m.end() - 1)
+            if not blob:
+                continue
+            if "=>" in blob or "function" in blob:
+                continue
+            records = _record_objects_1203oc(blob)
+            if len(records) < _MIN_RECORDS_1203OC:
+                continue
+            seen = {}
+            for rec in records:
+                for k in _top_level_keys_1203oc(rec):
+                    seen[k] = seen.get(k, 0) + 1
+            shared = frozenset(k for k, c in seen.items() if c >= 2)
+            if shared:
+                out[m.group(1)] = (len(records), shared, text[:m.start()].count("\n") + 1)
+    except Exception:
+        return out
+    return out
+
+
+def _fragment_1203oc(line: str, at: int) -> str:
+    """A window of ``line`` that CONTAINS the token at ``at``.
+
+    The first version printed `line.strip()[:120]`, and r157's `creators.map` sits past
+    column 200 of a one-line component -- so the row named a token its own fragment did not
+    hold, which is the one thing a `file:line: <fragment>` report may not do. The window is
+    centred on the match instead of anchored at the line head.
+    """
+    text = line.rstrip()
+    if at + 1 <= 120 and len(text) <= 120:
+        return text.strip()
+    start = max(0, at - 40)
+    end = min(len(text), at + 80)
+    return ("…" if start else "") + text[start:end].strip() + ("…" if end < len(text) else "")
+
+
+def fabricated_record_arrays_1203oc(app_root: Any, limit: int = 20) -> List[str]:
+    """#1203oc: components that call the API and ALSO render a literal table of fabricated rows.
+
+    See the block comment above for the measurement. Each row is
+    ``<file>:<line>: <source fragment>`` and the fragment contains the name it reports, so the
+    row carries its own evidence. Static, best-effort ``[]``.
+    ``ENVGEN_FABRICATED_RECORDS_1203OC=0`` disables.
+    """
+    import os as _os
+    if _os.environ.get("ENVGEN_FABRICATED_RECORDS_1203OC", "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        return []
+    try:
+        root = Path(app_root)
+        src = root / "frontend" / "src"
+        models = root / "backend" / "models.py"
+        if not src.is_dir():
+            return []
+        if not models.is_file():
+            # #883: "no models.py" is NOT "no fabricated rows" -- the comparison never ran.
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "fabricated_record_arrays_1203oc",
+                "#1203oc could NOT check for fabricated record tables in the frontend: "
+                "%s is absent, and the schema IS the vocabulary, so an empty result here "
+                "means UNCHECKED, not clean" % models,
+                None)
+            return []
+        from .material_prep import model_columns_from_models_py
+        schema = model_columns_from_models_py(models) or {}
+        if not schema:
+            # #883 again, and a different cause: the file is there and nothing parsed out of
+            # it, which 3 of the corpus's 104 runs do (netflix-local-r15, r104, r41).
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "fabricated_record_arrays_1203oc",
+                "#1203oc could NOT check for fabricated record tables: no table parsed out "
+                "of %s, so an empty result means UNCHECKED, not clean" % models,
+                None)
+            return []
+        files = [f for f in list(src.rglob("*.jsx")) + list(src.rglob("*.js"))
+                 if "node_modules" not in f.parts]
+        text = {}
+        for f in sorted(files):
+            try:
+                text[f] = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+        # Every module-level record array, with the table whose columns it best matches.
+        tables = {t: set(c or ()) for t, c in schema.items() if c}
+        arrays = {}
+        for f, t in text.items():
+            for name, (count, shared, line) in record_arrays_1203oc(t).items():
+                best, hits = None, 0
+                for table, cols in tables.items():
+                    n = len(shared & cols)
+                    if n > hits:
+                        best, hits = table, n
+                if hits >= _MIN_SHARED_COLUMNS_1203OC:
+                    arrays.setdefault(f.stem, {})[name] = (count, best, hits, line, f)
+        if not arrays:
+            return []
+        rows: List[str] = []
+        total = 0
+        for f in sorted(text):
+            if f.suffix != ".jsx":
+                continue
+            body = text[f]
+            if not _API_IMPORT_1203OC.search(body):
+                continue
+            candidates = {}
+            for name, info in (arrays.get(f.stem) or {}).items():
+                if info[4] == f:
+                    candidates[name] = (info, f.name)
+            for m in re.finditer(
+                    r"import\s*\{([^}]*)\}\s*from\s*['\"]([^'\"]+)['\"]", body):
+                stem = m.group(2).rstrip("/").split("/")[-1].split(".")[0]
+                for name in m.group(1).split(","):
+                    name = name.strip().split(" as ")[-1].strip()
+                    if name in (arrays.get(stem) or {}):
+                        candidates[name] = (arrays[stem][name], stem)
+            if not candidates:
+                continue
+            for i, line in enumerate(body.splitlines(), 1):
+                if line.lstrip().startswith("import "):
+                    continue
+                for name, (info, where) in sorted(candidates.items()):
+                    count, table, hits, _defined, _owner = info
+                    # NO "skip the defining line" GUARD, and that is deliberate. I wrote one
+                    # and mutation OC10 showed it DEAD: the use pattern needs `name[` or
+                    # `name.map(`, while a definition always reads `name = [`, so the two can
+                    # never collide. Worse than dead -- a module written on ONE line
+                    # (`const videos=[{…}]; const first=videos[0];`) has its definition and
+                    # its use on the same line, and the guard would have dropped the use.
+                    use = re.search(
+                        r"(?<![\w$.])%s\s*(?:\[|\.map\b|\.find\b|\.filter\b|\.slice\b)"
+                        % re.escape(name), line)
+                    if not use:
+                        continue
+                    total += 1
+                    if len(rows) < max(1, int(limit)):
+                        rows.append(
+                            "%s:%d: `%s` — `%s` is %d fabricated `%s` row(s) defined in %s "
+                            "(%d of its fields are columns of `%s`), and this component "
+                            "fetches the real ones from services/api"
+                            % (f.name, i, _fragment_1203oc(line, use.start()), name, count,
+                               table, where, hits, table))
+        if total > len(rows):
+            # #1034: the cut declares itself, in the list the reader actually gets.
+            rows.append("…(%d of %d fabricated-record site(s) shown)" % (len(rows), total))
+        return rows
+    except Exception as _e1203oc:
+        from .message_format import warn_once_1201
+        warn_once_1201(
+            "fabricated_record_arrays_1203oc",
+            "#1203oc could NOT check for fabricated record tables in the frontend — an "
+            "empty result means UNCHECKED, not clean",
+            _e1203oc)
+        return []
+
+
+
 def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
     """FIX #191 (tiktok-r3 NO-CONVERGENCE) + #496 (netflix r66): DETERMINISTIC
     rewrite of the fabricated-fallback sites the #175 gate flags —

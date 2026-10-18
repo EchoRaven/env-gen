@@ -469,6 +469,32 @@ def main(argv):
     say("nt", "FALSIFIED" if _nt_bad else ("CONFIRMED" if _nt_ok else "N-A"),
         "%d one-sided media twin(s): %s" % (len(_nt_bad), _nt_bad[:2] or "none"))
 
+    # --- #1203oc — no page may render a literal table of the app's own rows ------------
+    # READS: app/frontend/src + app/backend/models.py, through the shipped detector itself
+    #   (`fabricated_record_arrays_1203oc`), so this criterion cannot drift from the code.
+    # FALSIFIED: any site. A component that fetches from services/api and ALSO renders a
+    #   hand-written array whose fields are columns of a table this app serves is showing the
+    #   viewer rows nobody has — the #175 bar, which #175 itself only enforces against a
+    #   quoted literal in the same expression.
+    # CONTROL (pre-patch): r190 3 sites (MessagesDmEmptyPage / ProfileOwnPage /
+    #   SettingsMoreMenuPage on `seededVideos`), r155 6, r131 3, r157 2; r191 and r185 clean.
+    # N-A is REAL here and not a pass: with no parsable models.py the schema vocabulary is
+    #   missing and the detector announces UNCHECKED (3 of 104 corpus runs).
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.frontend_audit import (
+            fabricated_record_arrays_1203oc as _fab_oc)
+        _oc_app = run / "app"
+        if not (_oc_app / "backend" / "models.py").is_file():
+            say("oc", "N-A", "no models.py in this run, so the schema vocabulary is absent")
+        else:
+            _oc = _fab_oc(_oc_app) or []
+            say("oc", "FALSIFIED" if _oc else "CONFIRMED",
+                "%d fabricated-record site(s): %s"
+                % (len(_oc), [r.split(" — ")[0] for r in _oc[:2]] or "none"))
+    except Exception as _e_oc:
+        say("oc", "N-A", "the #1203oc detector could not be imported (%s)" % _e_oc)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

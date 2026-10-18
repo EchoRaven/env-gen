@@ -5929,6 +5929,14 @@ class Orchestrator:
                 await _RD1203np(self).dispatch_unstaged_seed_media_1203np()
             except Exception as _usm_exc:
                 self._logger.error("#1203np dispatch failed: %s", _usm_exc)
+            # #1203oc: the fabricated-record finding, beside its neighbours and NOT behind the
+            # gate branch below -- a run that ships invented rows is one whose gate goes green,
+            # so a call site inside `failed_checks` would never fire on the runs that have it.
+            try:
+                from .runtime.remediation_dispatcher import RemediationDispatcher as _RD1203oc
+                await _RD1203oc(self).dispatch_fabricated_record_arrays_1203oc()
+            except Exception as _fra_exc:
+                self._logger.error("#1203oc dispatch failed: %s", _fra_exc)
             if gate.get("failed_checks"):
                 # #1202kn: "attempt refunded, will retry next tick" — THERE WAS NO NEXT TICK.
                 #
