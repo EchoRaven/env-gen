@@ -604,15 +604,39 @@ def test_the_lint_helper_shows_no_list_when_it_cannot_cap_1203jx(monkeypatch):
     lives two packages over, and its `except` must NOT re-implement the remainder rule -- a
     second owner would rot (#1032). It shows the count and NO list instead, because a list
     that is not rendered cannot be a cut one. Nothing in the suite reaches a failed import,
-    so a mutation that made this branch render a cut list survived; this breaks the import on
+    so a mutation that made this branch render a cut list survived; this breaks the helper on
     purpose.
+
+    #1203nc REWROTE WHAT THIS DRIVES, and the reason is the whole of #1203n6: the branch this
+    test was breaking was the IMPORT, and an import that degrades into an apology is how
+    "Found 52 issues: (details unavailable)" reached the backend lane on every run of r189,
+    r190 and r191 -- 11 messages, 124 issues withheld. The import is now absolute and sits
+    ABOVE the try, so an ImportError is loud. The `except` covers what it always should have:
+    a failure INSIDE `join_capped`.
     """
+    import importlib
     import sys
     from env_generator.llm_generator.tools import code_tools
 
     assert "more not shown" in code_tools._jc1203jx([str(i) for i in range(5)], 23, cap=5)
-    monkeypatch.setitem(
-        sys.modules, "env_generator.llm_generator.multi_agent.runtime.message_format", None)
+
+    # The module has to be reached by the name the WRAPPER imports. `multi_agent.runtime.
+    # message_format` and `env_generator.llm_generator.multi_agent.runtime.message_format`
+    # are two sys.modules entries holding two module objects -- the dual root #1203n6 is
+    # about -- so patching the long one leaves the wrapper untouched. Measured by doing
+    # exactly that: the apology never appeared.
+    mf = importlib.import_module("multi_agent.runtime.message_format")
+
+    # #1203jx's rule, driven: the helper fails, so show the count and NO list.
+    def _boom(*a, **k):
+        raise RuntimeError("join_capped exploded")
+
+    monkeypatch.setattr(mf, "join_capped", _boom)
     out = code_tools._jc1203jx([str(i) for i in range(5)], 23, cap=5)
     assert out == "(details unavailable)", out
     assert "0; 1" not in out, "the fallback rendered a cut list: %r" % out
+
+    # #1203nc's rule: an unreachable helper is NOT the same event, and must not be swallowed.
+    monkeypatch.setitem(sys.modules, "multi_agent.runtime.message_format", None)
+    with pytest.raises(ImportError):
+        code_tools._jc1203jx([str(i) for i in range(5)], 23, cap=5)

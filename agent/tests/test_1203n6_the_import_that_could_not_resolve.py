@@ -50,20 +50,62 @@ from env_generator.llm_generator.multi_agent.runtime.test_user_validation import
 _RUNTIME = pathlib.Path(
     "env_generator/llm_generator/multi_agent/runtime").resolve()
 _SUBTREE = pathlib.Path("env_generator/llm_generator/multi_agent").resolve()
+_LG = _SUBTREE.parent
 
 
-def _escaping_imports():
-    """Every `from ...X import Y` under multi_agent/ that goes above the `multi_agent` root."""
+def _top_level_packages():
+    return sorted(d.name for d in _LG.iterdir()
+                  if d.is_dir() and (d / "__init__.py").exists())
+
+
+def _cascade_covers(node, tree):
+    """#1203nc: an escape is ALLOWED when its enclosing `try` re-imports the same names
+    absolutely in a handler -- the idiom tools/canonical_file_tools/shared.py documents, and
+    the only shape that works for a MODULE-LEVEL import, which has no later moment to retry
+    from. agents/__init__.py is the proof in both directions: under the runtime root the
+    relative form is above the top level, and under the suite root the absolute form cannot
+    work either, because llm_generator/__init__.py imports `.agents` before anything has put
+    LLM_GENERATOR_DIR on sys.path."""
+    want = {a.asname or a.name for a in node.names}
+    tail = (node.module or "").split(".")[-1]
+    for t in ast.walk(tree):
+        if not isinstance(t, ast.Try):
+            continue
+        if not any(n is node for n in ast.walk(t) if isinstance(n, ast.ImportFrom)):
+            continue
+        for h in t.handlers:
+            for n in ast.walk(h):
+                if (isinstance(n, ast.ImportFrom) and n.level == 0 and n.module
+                        and n.module.split(".")[-1] == tail
+                        and want <= {a.asname or a.name for a in n.names}):
+                    return True
+    return False
+
+
+def _escaping_imports(include_cascaded=False):
+    """Every relative import that goes above its own TOP-LEVEL package. With the default it
+    returns only the ones with NO absolute fallback, which must be empty.
+
+    #1203n6 swept multi_agent/ only; #1203nc swept the rest and found 8 more, of which 5
+    already cascade correctly and 3 did not -- one of them firing on every run. The
+    `include_cascaded` arm exists so a test can pin the SWEEP'S SCOPE: with every site fixed,
+    the uncovered list is empty whatever the scope, so narrowing it back would otherwise go
+    unnoticed (mutation NC6 came back MISSED on exactly that)."""
     out = []
-    for p in sorted(_SUBTREE.rglob("*.py")):
-        rel = p.relative_to(_SUBTREE.parent)        # multi_agent/...
+    tops = set(_top_level_packages())
+    for f in sorted(_LG.rglob("*.py")):
+        rel = f.relative_to(_LG)
+        if not rel.parts or rel.parts[0] not in tops:
+            continue
         pkg_depth = len(rel.parts) - 1              # multi_agent/runtime/x.py -> 2
         try:
-            tree = ast.parse(p.read_text(encoding="utf-8"))
+            tree = ast.parse(f.read_text(encoding="utf-8"))
         except Exception:
             continue
         for n in ast.walk(tree):
             if isinstance(n, ast.ImportFrom) and n.level and n.level > pkg_depth:
+                if _cascade_covers(n, tree) and not include_cascaded:
+                    continue
                 out.append((str(rel), n.lineno, "." * n.level + (n.module or "")))
     return out
 
@@ -88,6 +130,116 @@ class TheRootRatchet(unittest.TestCase):
 
     def test_the_sweep_actually_reads_files(self):
         self.assertGreater(len(list(_SUBTREE.rglob("*.py"))), 100)
+
+
+class TheWholeTreeRatchet1203nc(unittest.TestCase):
+    """#1203nc: #1203n6 swept multi_agent/ only. The rest of the tree had 8 more escapes --
+    5 already cascading to an absolute form (correct, and the only shape a module-level
+    import can use), and 3 that did not:
+
+        tools/code_tools.py:58        `_jc1203jx`      FIRING on every run
+        memory/generator_memory.py    the files list   latent (0 emissions in r189-r191)
+        agents/__init__.py:8          module level     latent (nothing imports it that way)
+
+    The firing one cost the backend lane its lint details: 11 messages across r189/r190/r191
+    reading "Found 52 issues: (details unavailable)", withholding 124 issues in total, from
+    the agent whose job is to fix them. r185, before #1203jx introduced the wrapper, said
+    "Found 78 issues: L11: [F401] `sqlalchemy.or_` imported but unused; L13: ...".
+    """
+
+    def test_nothing_in_the_tree_escapes_uncovered(self):
+        esc = _escaping_imports()
+        self.assertEqual(esc, [], "these raise `attempted relative import beyond top-level "
+                                  "package` under the runtime root, with no absolute "
+                                  "fallback: %r" % (esc,))
+
+    def test_the_sweep_reaches_outside_multi_agent(self):
+        """Pins the SCOPE, not just the package list: real escaping imports outside
+        multi_agent/ must be among what the sweep examined."""
+        tops = set(_top_level_packages())
+        self.assertIn("tools", tops)
+        self.assertIn("memory", tops)
+        self.assertIn("agents", tops)
+        outside = [e for e in _escaping_imports(include_cascaded=True)
+                   if not e[0].startswith("multi_agent/")]
+        self.assertGreaterEqual(len(outside), 4,
+                                "the sweep is not looking outside multi_agent/: %r" % (outside,))
+        self.assertTrue({e[0].split("/")[0] for e in outside} & {"tools", "agents", "memory"},
+                        sorted({e[0].split("/")[0] for e in outside}))
+
+    def test_the_cascade_allowance_is_not_vacuous(self):
+        """If nothing were being allowed, `test_nothing_escapes` would be passing for the
+        wrong reason. There really are escaping imports in the tree that cascade."""
+        allowed = _escaping_imports(include_cascaded=True)
+        self.assertGreaterEqual(len(allowed), 4, allowed)   # 6 at the time of writing
+        self.assertEqual(_escaping_imports(), [])
+
+    def test_the_detector_fires_on_the_shape_it_is_for(self):
+        """Both shapes, fed to the real predicate. The uncovered one must be reported and the
+        cascading one must not -- otherwise a zero says nothing."""
+        uncovered = ast.parse(
+            "def f():\n    from ..multi_agent.runtime.message_format import join_capped\n")
+        node = [n for n in ast.walk(uncovered) if isinstance(n, ast.ImportFrom)][0]
+        self.assertFalse(_cascade_covers(node, uncovered))
+        cascading = ast.parse(
+            "try:\n"
+            "    from ..multi_agent.runtime.message_format import join_capped\n"
+            "except ImportError:\n"
+            "    from multi_agent.runtime.message_format import join_capped\n")
+        node2 = [n for n in ast.walk(cascading) if isinstance(n, ast.ImportFrom)][0]
+        self.assertTrue(_cascade_covers(node2, cascading))
+
+    def test_a_handler_that_imports_DIFFERENT_names_is_not_a_cascade(self):
+        src = ("try:\n"
+               "    from ..multi_agent.runtime.message_format import join_capped\n"
+               "except ImportError:\n"
+               "    from multi_agent.runtime.message_format import something_else\n")
+        tree = ast.parse(src)
+        node = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)][0]
+        self.assertFalse(_cascade_covers(node, tree))
+
+
+class TheLintDetailsComeBack1203nc(unittest.TestCase):
+    def test_the_wrapper_returns_a_capped_list_not_the_apology(self):
+        from env_generator.llm_generator.tools.code_tools import _jc1203jx
+        got = _jc1203jx(["L11: [F401] unused", "L13: [F401] unused", "L805: [E402] late"],
+                        3, cap=2)
+        self.assertNotEqual(got, "(details unavailable)")
+        self.assertIn("L11", got)
+        self.assertIn("1 more", got)
+
+    def test_it_agrees_with_the_one_owner_of_the_rule(self):
+        """#1032: no second implementation of the remainder rule."""
+        from env_generator.llm_generator.tools.code_tools import _jc1203jx
+        from env_generator.llm_generator.multi_agent.runtime.message_format import join_capped
+        items = ["a", "b", "c", "d"]
+        self.assertEqual(_jc1203jx(items, 4, cap=2), join_capped(items, 4, cap=2))
+
+    def test_the_import_sits_above_the_try(self):
+        """#1203it's placement: an ImportError must be loud, not become the apology."""
+        import inspect
+        from env_generator.llm_generator.tools import code_tools
+        tree = ast.parse(inspect.getsource(code_tools._jc1203jx).lstrip())
+        fn = [n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "_jc1203jx"][0]
+        guarded = {i.lineno for t in ast.walk(fn) if isinstance(t, ast.Try)
+                   for i in ast.walk(t) if isinstance(i, ast.ImportFrom)}
+        imports = [i.lineno for i in ast.walk(fn) if isinstance(i, ast.ImportFrom)]
+        self.assertTrue(imports, "the import is gone")
+        self.assertFalse(set(imports) & guarded, "the import went back inside the try")
+
+    def test_the_memory_sibling_reaches_the_owner_too(self):
+        """On the AST, not the source text: my own #1203nc comment there discusses the very
+        import this asserts, and a text match would be fed by it."""
+        import inspect
+        from env_generator.llm_generator.memory import generator_memory
+        tree = ast.parse(inspect.getsource(generator_memory))
+        got = [(n.level, n.module) for n in ast.walk(tree)
+               if isinstance(n, ast.ImportFrom)
+               and (n.module or "").endswith("runtime.message_format")]
+        self.assertTrue(got, "the message_format import is gone from generator_memory")
+        self.assertTrue(all(lvl == 0 for lvl, _ in got),
+                        "a relative form is back: %r" % (got,))
 
 
 class TheErrorNamesItsCause(unittest.TestCase):

@@ -53,13 +53,31 @@ def _jc1203jx(items, total, cap=6):
     it costs the most. The import is function-local because `message_format` lives two
     packages over and a module-level relative import of that depth has broken collection in
     this tree before; the wrapper keeps that detail in one place instead of three.
+
+    #1203nc: AND `..multi_agent` IS ONE OF THOSE DEPTHS. This tree is imported under two
+    roots -- `orchestrator.py` and `_paths.setup_paths()` put LLM_GENERATOR_DIR on sys.path
+    on purpose -- so at runtime this module's package is `tools`, two levels up is ABOVE the
+    top level, and the import raised every single time. The handler then returned
+    "(details unavailable)", which is what the lane actually received:
+
+        [backend] lint FAILED (26ms): Found 52 issues: (details unavailable)
+
+    MEASURED: 11 such messages across r189, r190 and r191 -- every run since #1203jx landed
+    on 2026-10-14 13:42 -- withholding 124 lint issues in total, from the agent whose job is
+    to fix them. r185, before this wrapper existed, said
+    "Found 78 issues: L11: [F401] `sqlalchemy.or_` imported but unused; L13: ...". So the
+    ticket that existed to stop a list being silently CUT replaced the list with nothing.
+
+    The import is absolute (resolves under both roots, reproduced) and sits ABOVE the try,
+    so an ImportError is loud -- #1203it's placement, and #1203n6 is what it costs when a
+    guarded import swallows one instead.
     """
+    from multi_agent.runtime.message_format import join_capped as _jc
     try:
-        from ..multi_agent.runtime.message_format import join_capped as _jc
         return _jc(items, total, cap=cap)
     except Exception:
-        # No second implementation of the remainder rule (#1032). Without the helper, show
-        # the count and no list: a list that is not rendered cannot be a cut one.
+        # No second implementation of the remainder rule (#1032). If the helper itself fails,
+        # show the count and no list: a list that is not rendered cannot be a cut one.
         return "(details unavailable)"
 
 

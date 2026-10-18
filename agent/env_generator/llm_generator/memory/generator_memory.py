@@ -2258,8 +2258,13 @@ class GeneratorMemory(AgentMemory):
             # left in the tree (`commit_gate` and `hub_pulse` both append their own "...").
             # The import is function-local because `join_capped` lives two packages over and
             # a module-level relative import of that depth has broken collection here before.
+            # #1203nc: absolute, not `..multi_agent` -- at runtime this module's package is
+            # `memory`, so two levels up is above the top level and this import raised every
+            # time. Unlike the sibling in tools/code_tools.py this one has no measured harm:
+            # the enclosing line emits 0 times across r189/r190/r191. Same class, fixed for
+            # the same reason, said plainly.
+            from multi_agent.runtime.message_format import join_capped as _jc1203jx
             try:
-                from ..multi_agent.runtime.message_format import join_capped as _jc1203jx
                 _files_1203jx = _jc1203jx(list(self._files_created),
                                           len(self._files_created), cap=5)
             except Exception:
