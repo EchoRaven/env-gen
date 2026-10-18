@@ -573,6 +573,64 @@ def main(argv):
     except Exception as _e_of:
         say("of", "N-A", "the #1203of detector could not be imported (%s)" % _e_of)
 
+    # --- #1203og — a build failure must name the file that cannot parse -----------------
+    # READS: the run's compose_build_failure logs (how many failed on a syntax error) AND
+    #   `logs/unparsable_frontend_1203og.jsonl` (whether the pre-build scan named one).
+    # ★ THE FIRST VERSION OF THIS CRITERION COULD NEVER HAVE CONFIRMED: it looked for the
+    #   `#1203og` marker inside `compose_build_failure*.log`, which `_compose` writes from the
+    #   docker transcript alone. The #947 ratchet caught the same thing one layer down -- the
+    #   finding reached a logger and a detail string, not a file -- and the recorder it asked
+    #   for is what this now reads.
+    # FALSIFIED: a build-failure log reports a syntax error and does NOT carry the #1203og
+    #   note. That is the state r191 shipped in: 10 of 10 of its failures are the same stray
+    #   `}` in SettingsMoreMenuPage.jsx:19, and every transcript hands over a tail instead of
+    #   the line.
+    # CONFIRMED: either there are no syntax-error build failures at all, or each one names it.
+    # CONTROL (pre-patch): r191 FALSIFIED (10 logs, no note), r190 FALSIFIED (4 syntax of 10,
+    #   the other 6 being #1203mr's duplicate-declaration class), r189 CONFIRMED (4 failures,
+    #   none a syntax error), r188 N-A (no build failure at all).
+    # ★ A FALSIFIED AFTER THE PATCH IS STILL INFORMATION, not necessarily a regression: the
+    #   bracket scan sees one syntax-error family (a closer with no opener). A syntax error of
+    #   another kind leaves the note absent, and reading WHICH kind is the point -- that is the
+    #   next family to decide about, with the same false-positive measurement in hand.
+    try:
+        _og_logs = sorted((run / "logs").glob("compose_build_failure*")) \
+            if (run / "logs").is_dir() else []
+        _og_syn, _og_named = 0, 0
+        for _lf in _og_logs:
+            try:
+                _tx = _lf.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            # NOT `already been declared`: a duplicate export is #1203mr's class and no
+            # bracket scan can see it, so counting it here would report FALSIFIED for a
+            # cause this criterion does not own. (It did, on r190, before this line.)
+            if not re.search(r"Transform failed|Unexpected \"", _tx):
+                continue
+            if "already been declared" in _tx:
+                continue
+            _og_syn += 1
+        _og_led = run / "logs" / "unparsable_frontend_1203og.jsonl"
+        _og_named = 0
+        if _og_led.is_file():
+            for _ln in _og_led.read_text(encoding="utf-8", errors="ignore").splitlines():
+                try:
+                    # `_json` in this file is a FILE READER, not the module (caught before
+                    # it ran: `_json.loads` would have called it with a string path).
+                    _og_named += int((json.loads(_ln) or {}).get("count") or 0)
+                except Exception:
+                    continue
+        if not _og_logs:
+            say("og", "N-A", "no compose build failure in this run")
+        elif not _og_syn:
+            say("og", "CONFIRMED", "%d build failure(s), none a syntax error" % len(_og_logs))
+        else:
+            say("og", "FALSIFIED" if not _og_named else "CONFIRMED",
+                "%d syntax-error build failure(s), %d unparsable file(s) named in "
+                "logs/unparsable_frontend_1203og.jsonl" % (_og_syn, _og_named))
+    except Exception as _e_og:
+        say("og", "N-A", "the #1203og criterion could not read this run (%s)" % _e_og)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

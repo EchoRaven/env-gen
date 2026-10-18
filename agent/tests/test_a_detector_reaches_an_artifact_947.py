@@ -87,8 +87,17 @@ _PERSIST_CALLS = {"write_text", "writelines", "dump"}
 # intra-procedural scan does not count. Backed by a behavioural test that calls the real
 # recorder against a temp dir and reads the row back
 # (test_1202w0_a_total_its_own_pagination_cannot_reach.py), not by this list asserting it.
+# #1203og is the same shape again: a report-only pre-build parse scan whose whole output is
+# its artifact. `record_unparsable_frontend_files_1203og` opens
+# `logs/unparsable_frontend_1203og.jsonl` and appends -- the `open(...)`/`write` pair this
+# intra-procedural scan cannot see. Backed by a behavioural test that calls the real recorder
+# against a temp dir and reads the row back
+# (test_1203og_the_brace_the_build_paid_for.py::TheFindingReachesAFile), not by this list
+# asserting it. The ratchet caught the first draft, which reported only to `_LOG.warning` and
+# the build-failure detail string.
 _PERSIST_FUNCS_1202CW = {"framework_write_1202cw", "_fw_write_1202cw", "register_ui_page",
                          "_record_lock_event_1202mg",
+                         "record_unparsable_frontend_files_1203og", "_rec1203og",
                          "record_list_total_unreachable_1202w0",
                          # backed by test_1202wg_the_list_and_the_item_disagree.py
                          "record_list_ids_the_item_denies_1202wg"}
@@ -146,7 +155,11 @@ def _log_only_detectors():
                         and getattr(getattr(n.func, "value", None), "id", "") in _LOGGERS
                         and n.args and isinstance(n.args[0], ast.Constant)
                         and isinstance(n.args[0].value, str)):
-                    tickets |= set(re.findall(r"#(\d{3})", n.args[0].value))
+                    # #1203og: `#(\d{3})` truncated every modern ticket -- `#1203og` was
+                    # listed as `#120`, so this ratchet's own failure message named a ticket
+                    # from 2026-07 for a line written today. Same defect class as #1203nr: a
+                    # message that points at the wrong thing is its own bug.
+                    tickets |= set(re.findall(r"#(\d{3,4}[a-z0-9]*)", n.args[0].value))
             if tickets and not _persists(fn):
                 out.append(f"{p.relative_to(_ROOT)}:{fn.name}()  "
                            + " ".join("#" + t for t in sorted(tickets)))

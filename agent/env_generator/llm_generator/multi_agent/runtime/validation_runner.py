@@ -1055,6 +1055,39 @@ def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
     a persistent hang fails in bounded time with a clear diagnostic instead of eating the cap.
     Returns ``(ok, detail)``."""
     last = "docker build did not run"
+    # #1203og: ask whether the frontend sources can parse BEFORE paying for a build. Measured
+    # over every compose_build_failure log in the corpus: 145 failures, 84 of them the tar/EOF
+    # context break #1203mm fixed (0 in r190/r191), and the leading cause now is a lane syntax
+    # error -- 26 logs, 10 of 10 in r191, all the same stray `}` in SettingsMoreMenuPage.jsx:19.
+    # Each of those ten cost a docker build and a window where #1202lx's own warning says the
+    # visual verdict describes an older image.
+    #
+    # DIAGNOSIS ONLY, deliberately: the build still runs and the retry still happens
+    # (#1202w6 -- no new control flow on the build path without a live run), and nothing edits
+    # the file, because deleting one of two braces is a guess about which the author meant.
+    # What changes is that the failure says WHERE instead of handing over a transcript tail.
+    _unparsable_1203og = []
+    try:
+        from .frontend_audit import (
+            record_unparsable_frontend_files_1203og as _rec1203og,
+            unparsable_frontend_files_1203og as _unp1203og)
+        _unparsable_1203og = _unp1203og(Path(cwd).parent / "app" / "frontend" / "src") or []
+        if _unparsable_1203og:
+            # #947: the finding goes to a file the run keeps, not only to this logger and the
+            # failure detail. The ratchet caught the first draft and it was right -- the
+            # criterion that reads this back was looking in `compose_build_failure*.log`,
+            # where `_compose` writes the docker transcript and nothing else.
+            _rec1203og(Path(cwd).parent, _unparsable_1203og)
+            _LOG.warning(
+                "#1203og %d frontend file(s) cannot parse, so `docker compose build` is about "
+                "to fail on them and the retry cannot help: %s",
+                len(_unparsable_1203og), "; ".join(_unparsable_1203og))
+    except Exception as _exc1203og:
+        _LOG.debug("#1203og pre-build parse scan failed: %s", _exc1203og)
+    _note_1203og = ("\n#1203og: before this build ran, these frontend file(s) already had a "
+                    "closing bracket with no opener — fix these first, the retry cannot:\n"
+                    + "\n".join("  - " + r for r in _unparsable_1203og)
+                    ) if _unparsable_1203og else ""
     _raced_1202iw = False
     for attempt in range(_BUILD_RETRIES + 1):
         cp, timed_out = _compose_capture(
@@ -1096,7 +1129,7 @@ def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
                 _note_1203fk = _RACE_DIAGNOSIS_1203FK + (
                     _RACE_RETRY_PROMISE_1203FK if _more_1203fk else _RACE_EXHAUSTED_1203FK)
             last = (f"docker build FAILED (attempt {attempt + 1}/{_BUILD_RETRIES + 1})."
-                    + _note_1203fk
+                    + _note_1203fk + _note_1203og
                     + f" Transcript tail:\n" + tail)
     return False, last
 

@@ -48,6 +48,10 @@ _CONTROLS = [
     ("of", "tiktok-web-r183", "FALSIFIED"),      # `♪` beside an imported `Music2`
     ("of", "tiktok-web-r191", "CONFIRMED"),      # imports an icon set and uses no glyph
     ("of", "tiktok-web-r185", "N-A"),            # imports no icon set -> #1203kd's half
+    ("og", "tiktok-web-r191", "FALSIFIED"),      # 10 syntax failures, none naming the file
+    ("og", "tiktok-web-r190", "FALSIFIED"),      # 4 of its 10 (the rest are #1203mr's class)
+    ("og", "tiktok-web-r189", "CONFIRMED"),      # 4 build failures, no syntax error
+    ("og", "tiktok-web-r188", "N-A"),            # no build failure at all
 ]
 
 _cache = {}
@@ -115,7 +119,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of"):
+                     "od", "of", "og"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

@@ -3803,6 +3803,203 @@ def glyph_icons_with_a_real_icon_available_1203of(frontend_src: Any,
 
 
 # ---------------------------------------------------------------------------
+# #1203og — a closing bracket with no opener, before the docker build pays for it.
+# ---------------------------------------------------------------------------
+# MEASURED over every `compose_build_failure*` log in the corpus: 145 failures, and the
+# composition has CHANGED. 84 were the tar/EOF context break #1203mm fixed (0 in r190 and r191,
+# which both carry its `.dockerignore`), and the leading cause now is a SYNTAX ERROR in a lane
+# file -- 26 logs, and in r191 it is 10 of 10. All ten are the same stray `}`:
+#
+#     src/pages/SettingsMoreMenuPage.jsx:19:0: ERROR: Unexpected "}"
+#
+# The lane rewrote the component as a 18-line function and left the previous file's final `}`
+# behind, so the module closes twice. Attributed rather than assumed: the lane's own commit
+# `07d4b15` (17:15:45) already carries the extra brace and the integration copy two seconds
+# later is faithful, so this is lane-authored -- but the framework then spent TEN docker builds
+# discovering it, each one a build cycle and a window in which #1202lx's own warning says the
+# visual verdict describes an older image.
+#
+# ★ ONLY THE CLOSER-WITHOUT-OPENER CASE, and that is a measurement, not caution. Over the 3525
+# delivered frontend `.jsx`/`.js` files:
+#   * "a closing bracket at depth 0" flags 0 files -- a clean separation, and it names the
+#     SAME line esbuild does (r191's broken blob scans to `(-1, line 19)` against esbuild's
+#     `19:0`);
+#   * "the file ends with unclosed brackets" flags 105 files (3%), every one of them a FALSE
+#     positive from a regex literal this scanner deliberately does not parse (`/\(/g` and
+#     friends). That half is NOT reported, because a 3% false-positive rate on a build-blocking
+#     diagnosis is the #566j mistake.
+#
+# Strings, template literals (including `${}` nesting), line comments and block comments are
+# skipped; a regex literal is not, which is exactly why the unclosed half is unreportable and
+# the closer half is safe -- a regex would have to contain an unmatched `)`/`}`/`]` AND appear
+# before any opener to produce a false negative, and it cannot produce a false positive at
+# depth 0 unless it holds a bare closer, which 0 of 3525 files do.
+#
+# REPORTS, and only into the diagnosis the build failure already carries (#1202w6: no new
+# control flow on the build path until a live run says so). It does not skip the build, does
+# not skip the retry, and does not edit the file -- deleting a brace is a guess about which of
+# the two the author meant.
+_CLOSERS_1203OG = {")": "(", "}": "{", "]": "["}
+
+
+def _bracket_scan_1203og(text: str):
+    """``(depth_at_eof, first_line_with_a_closer_at_depth_0)`` for JS/JSX source.
+
+    Skips quoted strings, template literals (with `${}` nesting), `//` and `/* */`. Does NOT
+    parse regex literals -- see the block comment: that is what makes the unclosed half
+    unreportable and leaves the closer half clean.
+    """
+    depth = 0
+    line = 1
+    first_neg = None
+    i = 0
+    n = len(text or "")
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            line += 1
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            if j < 0:
+                break
+            line += text.count("\n", i, j)
+            i = j + 2
+            continue
+        if c in "'\"":
+            quote = c
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                if text[i] == "\n":
+                    line += 1
+                i += 1
+            continue
+        if c == "`":
+            i += 1
+            inner = 0
+            while i < n:
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == "\n":
+                    line += 1
+                    i += 1
+                    continue
+                if text[i] == "$" and i + 1 < n and text[i + 1] == "{":
+                    inner += 1
+                    i += 2
+                    continue
+                if text[i] == "}" and inner:
+                    inner -= 1
+                    i += 1
+                    continue
+                if text[i] == "`" and not inner:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c in "{([":
+            depth += 1
+        elif c in _CLOSERS_1203OG:
+            depth -= 1
+            if depth < 0 and first_neg is None:
+                first_neg = line
+        i += 1
+    return depth, first_neg
+
+
+def unparsable_frontend_files_1203og(frontend_src: Any, limit: int = 6) -> List[str]:
+    """Frontend sources with a closing bracket that has no opener. (#1203og)
+
+    Each row is ``<rel path>:<line>: <the line>`` -- the line itself, because it is short by
+    construction (a stray closer sits almost alone) and it is the thing the author has to look
+    at. Never raises; `[]` means no file in the tree has one.
+    """
+    out: List[str] = []
+    try:
+        root = Path(frontend_src)
+        if not root.is_dir():
+            return out
+        total = 0
+        for f in sorted(root.rglob("*")):
+            if f.suffix not in (".js", ".jsx", ".ts", ".tsx"):
+                continue
+            if "node_modules" in f.parts or "dist" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            _depth, neg = _bracket_scan_1203og(text)
+            if neg is None:
+                continue
+            total += 1
+            if len(out) >= max(1, int(limit)):
+                continue
+            lines = text.splitlines()
+            frag = (lines[neg - 1].strip() if 0 < neg <= len(lines) else "")[:90]
+            try:
+                rel = str(f.relative_to(root))
+            except Exception:
+                rel = f.name
+            out.append("%s:%d: %s — a closing bracket with no opener; esbuild fails the whole "
+                       "build here, so every attempt costs a build cycle and leaves the "
+                       "previous image serving" % (rel, neg, frag or "(blank line)"))
+        if total > len(out):
+            # #1034: the cut declares itself in the list the reader gets.
+            out.append("…(%d of %d unparsable file(s) shown)" % (len(out), total))
+    except Exception as _exc:
+        from .message_format import warn_once_1201
+        warn_once_1201(
+            "unparsable_frontend_files_1203og",
+            "the pre-build bracket scan (#1203og) — an empty result means UNCHECKED, not "
+            "that the sources parse", _exc)
+    return out
+
+
+def record_unparsable_frontend_files_1203og(out_dir, rows) -> bool:
+    """Land #1203og's finding in `logs/unparsable_frontend_1203og.jsonl`. (#947)
+
+    The detector is REPORT-ONLY, so its whole output is this artifact -- the shape #1202w0 and
+    #1202uv already use. Written because the #947 ratchet is right about the first draft: the
+    rows reached `_LOG.warning` and the build-failure DETAIL string, and neither is a file a
+    run keeps. The pre-registered criterion `og` was reading
+    `compose_build_failure*.log` for the marker, which `_compose` writes from the docker
+    transcript alone -- so that criterion could never have confirmed. This file is what it
+    reads now.
+
+    Returns True iff a row was written. Empty rows are NOT landed (#1039: an empty result means
+    the scan found nothing, and a row saying nothing is not evidence).
+    """
+    if not out_dir or not rows:
+        return False
+    try:
+        import json as _j
+        import time as _t
+        from pathlib import Path as _P
+        out = _P(str(out_dir)) / "logs" / "unparsable_frontend_1203og.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps({"at": _t.time(),
+                               "count": len(rows or []),
+                               "files": [str(r) for r in (rows or [])][:50]}) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # #1202cj — an authenticated page that shares nothing with its siblings.
 # ---------------------------------------------------------------------------
 _AUTH_ROUTE_1202CJ = re.compile(r"element=\{<RequireAuth>\s*<(\w+)")
