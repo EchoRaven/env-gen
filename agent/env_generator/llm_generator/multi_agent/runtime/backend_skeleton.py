@@ -1952,6 +1952,103 @@ def _coerce_body(cls, valid):
 Base.metadata.create_all(bind=engine)
 
 
+def _ensure_modelled_columns_1203nd():
+    """#1203nd: add the columns these models declare that the RUNNING database lacks.
+
+    `create_all` creates missing TABLES and never touches an existing one, and the compose
+    file mounts `app/database/init/01_init.sql` at /docker-entrypoint-initdb.d, which
+    Postgres runs ONLY on an empty volume -- with `CREATE TABLE IF NOT EXISTS` besides. So a
+    table that gains a column after the stack is up keeps its old shape, and the projected
+    handlers -- built from the CURRENT models -- SELECT a column that does not exist.
+
+    THE FRAMEWORK ALREADY KNEW. `schema_currency_1202fj` reads exactly this and says so:
+    "the running database is older than these models -- N modelled column(s) do not exist in
+    it (videos.metadata_visibility). A projected read of any of them 500s with
+    UndefinedColumn. Recreate the stack (compose down -v && up) before trusting these
+    results." MEASURED: it fired 94 times across 17 runs, naming 59 distinct columns, with
+    one run short 60 columns at once -- and its whole remedy was that sentence, addressed to
+    a reader. Nothing performed it.
+
+    MEANWHILE THE LANE DID IT BY HAND. Across the corpus, `app/backend/custom_routes.py`
+    carries 370 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements in 12 runs and 3
+    products (googlemaps-r16 186, tiktok-web-r190 39, netflix-local-r11 36, ...), and **248
+    of those columns are ones the registered table schema DECLARES** -- the lane rediscovering
+    this by failure and patching the schema from inside a request handler. Its own comment
+    names the consequence: "Add the enriched response-shape columns before the projected
+    nested GET serializes Comment rows so GET /api/videos/{id}/comments cannot omit contract
+    fields." The other 116 are lane extensions beyond the contract and are none of our
+    business.
+
+    The repair is mechanical and this file already does it twice: the init DDL emits
+    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for app-extended columns on the SPINE tables
+    (`_spine_extra_column_alters`), and `_ensure_temporal_alias_columns` below adds mirror
+    columns at boot from `information_schema`. This is the same move for business tables.
+
+    DELIBERATELY PLAIN COLUMNS. Type only -- no NOT NULL (unsafe on a table that already
+    holds rows), no UNIQUE (an existing duplicate would abort the DDL), no FK constraint (an
+    existing row could violate it). A nullable column of the right type is what stops the
+    500; the constraint belongs to a fresh database, which `01_init.sql` still builds in full.
+
+    AND IT SAYS WHAT IT DID. A silent repair would delete the evidence that this run started
+    against a stale database -- `#1202fj`'s warning is the thing worth keeping, and after this
+    runs `#1202fj` correctly reports `current`, because the condition is gone. Said precisely:
+    the line goes to the backend's stdout, i.e. into `compose logs`, which the framework
+    already reads when a chain fails (#1202gs/#1202hb) and which is where a reader chasing a
+    stale-schema 500 looks. It does NOT file a task, and nothing here claims it does.
+
+    Postgres-only, idempotent, best-effort, never blocks boot.
+    """
+    from sqlalchemy import text as _text
+    try:
+        if engine.dialect.name != "postgresql":
+            return
+    except Exception:
+        return
+    added = []
+    try:
+        with engine.begin() as _c:
+            rows = _c.execute(_text(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public'")).fetchall()
+            live = {}
+            for t, col in rows:
+                live.setdefault(str(t), set()).add(str(col).lower())
+            for table in Base.metadata.sorted_tables:
+                have = live.get(str(table.name))
+                if have is None:
+                    continue          # the table itself is absent -- create_all's business
+                for col in table.columns:
+                    if str(col.name).lower() in have:
+                        continue
+                    try:
+                        _ddl = col.type.compile(engine.dialect)
+                    except Exception:
+                        continue      # a type we cannot render is not one we should guess
+                    try:
+                        _c.execute(_text('ALTER TABLE "%s" ADD COLUMN IF NOT EXISTS "%s" %s'
+                                         % (table.name, col.name, _ddl)))
+                        added.append("%s.%s" % (table.name, col.name))
+                    except Exception:
+                        pass
+    except Exception:
+        pass  # best-effort; a missing column only re-surfaces the 500, never blocks boot
+    if added:
+        # #1202tf: no framework ticket inside a message the DELIVERED app emits -- whoever
+        # runs this env reads it, and our ticket numbers mean nothing to them. The ratchet
+        # caught the first version of this line; the announcement is a property of the
+        # message, not of the tag.
+        print("[schema] the running database was older than these models: added %d "
+              "modelled column(s) it lacked (%s%s). They are NULLABLE and carry no "
+              "UNIQUE/FK constraint -- a database created fresh from the init DDL has those. "
+              "Anything judged before this point was judged against the older schema."
+              % (len(added), ", ".join(sorted(added)[:8]),
+                 ", ... (+%d more not shown)" % (len(added) - 8) if len(added) > 8 else ""),
+              flush=True)
+
+
+_ensure_modelled_columns_1203nd()
+
+
 def _ensure_temporal_alias_columns():
     """Fix #63 (outlook run-47, live): a lane authored RAW SQL against the _time
     naming (SELECT * / WHERE start_time / ORDER BY start_time / INSERT ... start_time)
