@@ -628,6 +628,29 @@ _IMG_SVG_REF_1203N0 = re.compile(
     r"""["'`][^"'`]{0,160}?([A-Za-z0-9_./\-]+\.svg)["'`]""")
 
 
+_OWN_COLOUR_ATTR_1203NX = re.compile(r'(?:^|\s)color\s*=\s*"([^"]+)"', re.I)
+_OWN_COLOUR_STYLE_1203NX = re.compile(r'(?:^|[;{"\s])color\s*:\s*([^;"}]+)', re.I)
+
+
+def _own_concrete_colour_1203nx(text: str) -> bool:
+    """True when the SVG declares a `color` that resolves WITHOUT a stylesheet. #1203nx
+
+    `currentColor` resolves against the element's own `color`, so an SVG carrying one is
+    self-coloured and the `<img>` channel is legitimate for it (#1203kw). `var(...)` is the
+    exception that makes this safe rather than a loophole: no stylesheet reaches an
+    `<img>`-loaded document, so a custom property is undefined there, the declaration is
+    invalid and `color` falls back to black -- measured at 0.00% ink.
+    """
+    m = _OWN_COLOUR_ATTR_1203NX.search(text or "") or \
+        _OWN_COLOUR_STYLE_1203NX.search(text or "")
+    if not m:
+        return False
+    val = m.group(1).strip().lower()
+    if val in ("", "inherit", "currentcolor", "unset", "initial", "revert"):
+        return False
+    return "var(" not in val
+
+
 def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
     """``["LeftSidebar.jsx -> /assets/icons/following_eb9a6ec0.svg", …]`` — staged icons whose
     ONLY paint colour is `currentColor`, referenced where CSS colour cannot reach them.
@@ -740,12 +763,47 @@ def invisible_img_icons_1203n0(frontend_dir) -> List[str]:
                 text = cand.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 return None
+            # #1203nx: AN SVG THAT DECLARES ITS OWN `color` IS SELF-COLOURED. `fill=
+            # "currentColor"` resolves against the element's `color`, and these fragments
+            # routinely carry it on the root `<svg>` itself -- so CSS never needs to reach
+            # inside and #1203kw's carve-out for "an asset that carries its own colours"
+            # applies. This check read only `fill`/`stroke`, so it reported them.
+            #
+            # MEASURED BY RENDERED INK, 124 referenced icons of six modern runs in real
+            # Chromium (48x48 `<img>` on #121212, ink = px brighter than 60): 78 render under
+            # 1% of the slot and 77 of those are already reported, but **21 reported rows ink
+            # 55-56%** -- a perfectly visible icon. Every one of the 21 declares a concrete
+            # own `color`, e.g. `like-video-25-5m-likes` with
+            # `color="rgba(255, 255, 255, .9)"`.
+            #
+            # ★ AND `var()` IS THE LINE, which is why this is safe. `notice-list-item_9628e7c7`
+            # declares `color="var(--ui-shape-text-1-on-primary)"` and inks **0.00%**: no
+            # stylesheet reaches an `<img>` document, so the custom property is undefined, the
+            # declaration is invalid and `color` falls back to black. Treating that as
+            # self-coloured would have lost it. Validated on the rendered set: the carve-out
+            # removes 21 false positives and loses **0** true positives -- all 77 genuinely
+            # dark rows stay reported.
+            #
+            # Corpus split of the 1,880 resolvable rows: 1,687 declare no own colour (87
+            # runs), **168 a concrete one (41 runs, now silent)**, and 25 a `var()` one (15
+            # runs, still reported).
+            # ★ THE CARVE-OUT IS GATED ON `currentColor`, and the first draft was not -- my
+            # own new test caught it and Chromium confirmed the reason. An own `color` matters
+            # only because `currentColor` READS it; an SVG that names no paint is black
+            # whatever `color` says. MEASURED: `<svg color="#ffffff"><path d=…/></svg>`
+            # through `<img>` reads mean 7.9 with 0 bright px (invisible), while the same file
+            # with `fill="currentColor"` reads 151.3 / 1296. So the #1203nv row has to survive
+            # a `color` declaration, which an unconditional carve-out silently removed.
+            _saw_cc1203nx = False
             for m in _PAINT_COLOUR_1203N0.finditer(text):
                 tok = m.group(1).lower()
                 if tok in ("none", "inherit", "transparent"):
                     continue
                 if tok != "currentcolor":
                     return False
+                _saw_cc1203nx = True
+            if _saw_cc1203nx and _own_concrete_colour_1203nx(text):
+                return False
             return True
 
         def _mechanism_1203nv(ref: str) -> str:

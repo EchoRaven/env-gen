@@ -187,6 +187,68 @@ class ADuplicatedBasenameIsAnAmbiguityNotAVerdict(_FE):
         self.assertEqual(len(invisible(self.fe)), 1)
 
 
+class AnSvgThatDeclaresItsOwnColourIsSelfColoured(_FE):
+    """#1203nx: `fill="currentColor"` resolves against the element's OWN `color`, and these
+    scraped fragments routinely carry one on the root `<svg>`. CSS never needs to reach
+    inside, so #1203kw's carve-out applies and the row was a false positive.
+
+    MEASURED BY RENDERED INK -- 124 referenced icons of six modern runs in real Chromium,
+    48x48 `<img>` on #121212, ink = pixels brighter than 60: 78 render under 1% of the slot
+    and 77 of those were already reported, but 21 reported rows ink 55-56%. Every one of the
+    21 declares a concrete own `color`.
+
+    ★ `var()` IS THE LINE. `notice-list-item_9628e7c7` declares
+    `color="var(--ui-shape-text-1-on-primary)"` and inks 0.00%: no stylesheet reaches an
+    `<img>` document, so the custom property is undefined, the declaration is invalid and
+    `color` falls back to black. Validated on the rendered set, the carve-out removes 21
+    false positives and loses 0 true positives.
+    """
+
+    def test_a_concrete_own_colour_is_not_reported(self):
+        self.icon("like.svg", '<svg fill="currentColor" color="rgba(255, 255, 255, .9)" '
+                              'viewBox="0 0 48 48"><path d="M4 4h16v16H4z"/></svg>')
+        self.src("TikTokUI.jsx", '<img src="/assets/icons/like.svg"/>')
+        self.assertEqual(invisible(self.fe), [])
+
+    def test_an_own_colour_in_a_style_attribute_counts(self):
+        self.icon("like.svg", '<svg fill="currentColor" style="color:#ffffff" '
+                              'viewBox="0 0 48 48"><path d="M4 4h16v16H4z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/like.svg"/>')
+        self.assertEqual(invisible(self.fe), [])
+
+    def test_a_var_colour_IS_still_reported(self):
+        """The case that keeps this from being a loophole -- measured at 0.00% ink."""
+        self.icon("notice.svg", '<svg fill="currentColor" viewBox="0 0 48 48" '
+                                'color="var(--ui-shape-text-1-on-primary)">'
+                                '<path d="M4 4h16v16H4z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/notice.svg"/>')
+        got = invisible(self.fe)
+        self.assertEqual(got, ["Nav.jsx -> /assets/icons/notice.svg (currentColor)"], got)
+
+    def test_a_var_colour_in_a_style_attribute_is_still_reported(self):
+        self.icon("notice.svg", '<svg fill="currentColor" viewBox="0 0 48 48" '
+                                'style="color:var(--x)"><path d="M4 4h16v16H4z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/notice.svg"/>')
+        self.assertEqual(len(invisible(self.fe)), 1)
+
+    def test_colour_keywords_that_resolve_to_nothing_are_still_reported(self):
+        for val in ("inherit", "currentColor", "unset", "initial", "revert"):
+            with self.subTest(value=val):
+                self.icon("k.svg", '<svg fill="currentColor" viewBox="0 0 48 48" '
+                                   'color="%s"><path d="M4 4h16v16H4z"/></svg>' % val)
+                self.src("Nav.jsx", '<img src="/assets/icons/k.svg"/>')
+                self.assertEqual(len(invisible(self.fe)), 1, val)
+
+    def test_an_own_colour_does_not_rescue_a_no_paint_icon(self):
+        """A `color` declaration only matters because `currentColor` reads it. An SVG that
+        names no paint at all is black regardless, so #1203nv's row must survive."""
+        self.icon("plain.svg", '<svg viewBox="0 0 48 48" color="#ffffff">'
+                               '<path d="M1 1h4v4H1z"/></svg>')
+        self.src("Nav.jsx", '<img src="/assets/icons/plain.svg"/>')
+        got = invisible(self.fe)
+        self.assertEqual(got, ["Nav.jsx -> /assets/icons/plain.svg (no paint at all)"], got)
+
+
 class AnAssetWithItsOwnColoursKeepsTheImgChannel(_FE):
     """#1203kw's carve-out: #421 stays alive for a genuinely coloured mark."""
 
