@@ -2876,6 +2876,125 @@ class RemediationDispatcher:
                 "with nobody told, which is the #1041 shape this exists to close",
                 _e1203ii)
 
+    async def dispatch_unstaged_seed_media_1203np(self) -> None:
+        """#1203np: tell someone the app ships a card that plays nothing.
+
+        `#1202xn` has detected this since r124 and its finding reaches a `logging.warning`
+        and `logs/unstaged_seed_media_1202xn.jsonl` -- and nothing else. There is no gate row
+        and no task: the dispatcher list in this class has entries for routes, pages, filters
+        and list totals, and NONE for media. That is #1041's shape, the one #1148's docstring
+        states ("the evidence exists, the party who can act on it is never told") and the one
+        #1203ii was written to close for `#1202w0`. I am copying both halves this time
+        (#1139/#1148), not the detector half alone.
+
+        THE EVIDENCE IS IN, which is the bar `record_unstaged_seed_media_1202xn`'s own
+        docstring sets ("the next runs' files are the evidence for whether it earns a gate
+        check"): 456 ledger rows across 15 runs, and in the DELIVERED trees still on disk,
+        135 unstaged references across 21 runs -- r144 12, r169 12, r183 12, r181 9, r187 9,
+        r186 8, r191 6. Those are shipped apps whose cards render a thumbnail and play
+        nothing, which is the "UI with no real function" the user's standing rule names.
+
+        AND IT CARRIES WHAT THE LANE NEEDS, because the instruction otherwise is impossible:
+        a run is offline, so "stage the missing video" is not an available action.
+        `staged_alternatives_1203np` answers the question the lane would have to ask next --
+        98 of the 135 (73%) sit in a directory that already holds staged files, 18 of them
+        sharing the creator stem, and three runs are wholly in that class (r191 6 of 6, r172
+        4 of 4, r140 3 of 3). r190's seed asks for `khaby.lame__7663376464665906452.mp4`
+        while four other khaby.lame videos sit in the same directory.
+
+        A TASK, not a gate check, on #1148's terms unchanged: "a task is worked, a check is a
+        wall, and a new wall cannot be validated without a run". P1, not P0 -- the app serves,
+        one media file does not.
+
+        THE OWNER COMES FROM THE CAUSE, which is `#1202xn`'s own rule: it labels each row
+        "(not staged)" or "(excluded from the image by .dockerignore)" precisely because
+        "different owners, and a reader who cannot tell them apart looks in the wrong place".
+        Repointing a seed row is the backend's; a `.dockerignore` line is the frontend's.
+        MEASURED: 133 of the 135 are "not staged" and 2 are exclusions, and NO run carries
+        both -- so this files one task and routes it by the cause present, naming the other
+        owner in the text for the day a run does mix them.
+
+        Per-milestone re-fire guard, like its two neighbours, so running every tick cannot
+        storm. Re-reads its own detector rather than any gate key, so it does not inherit a
+        caller's branch -- the bug the call site's comment records #1203ii inheriting.
+        """
+        try:
+            orch = self._orch
+            out_dir = getattr(orch, "output_dir", None)
+            if not out_dir:
+                return
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_usm1203np_dispatched", None) == milestone:
+                return
+            from .frontend_scaffold import (
+                staged_alternatives_1203np as _alts1203np,
+                unstaged_seed_media_1202xn as _usm1203np)
+            rows = [str(r).strip() for r in (_usm1203np(out_dir) or []) if str(r).strip()]
+            if not rows:
+                return
+            _excluded = [r for r in rows if "dockerignore" in r]
+            _absent = [r for r in rows if r not in _excluded]
+            _owner = "backend" if _absent else "frontend"
+            _alt = _alts1203np(out_dir, rows) or {}
+            _lines = []
+            for r in rows:
+                _ref = r.split(" (")[0]
+                _tot, _ex = _alt.get(_ref, (0, []))
+                if _ex:
+                    _lines.append(
+                        "- %s — the same directory already holds %d staged file(s), e.g. %s"
+                        % (r, _tot, ", ".join(_ex)
+                           + (" …(%d shown of %d)" % (len(_ex), _tot)
+                              if _tot > len(_ex) else "")))
+                else:
+                    _lines.append("- %s — nothing staged in that directory to repoint to" % r)
+            # `sep="\n"`, because each row is a long sentence with its own alternatives and
+            # the default "; " runs ten of them into one unreadable line. The cap still
+            # declares itself -- that is join_capped's job and the reason it is used here
+            # rather than a bare slice (#1034).
+            _shown = join_capped(_lines, total=len(_lines), cap=10, sep="\n")
+            orch.hubs.workhub.create_task(
+                title=("Fix %d seeded media reference(s) the app cannot serve"
+                       % len(rows))[:180],
+                description=(
+                    "These paths are referenced by the running app's own data and are NOT "
+                    "served: a missing video renders a card that plays nothing, a missing "
+                    "image renders a broken glyph. The viewer sees a working UI either way, "
+                    "which is why no gate caught it.\n"
+                    + _shown + "\n\n"
+                    "This run is OFFLINE, so downloading the missing file is not an option. "
+                    "Do ONE of these per row:\n"
+                    "  * REPOINT the reference at a file that is already staged — the lines "
+                    "above name what is in the same directory. A same-creator or same-kind "
+                    "file keeps the row's meaning.\n"
+                    "  * DROP the row, if nothing staged fits it. An absent card is honest; "
+                    "a card that plays nothing is not.\n"
+                    "  * Do NOT substitute a grey placeholder for a video. The framework "
+                    "stages REAL media and a stand-in hides the mismatch instead of fixing "
+                    "it.\n\n"
+                    "A row marked `(not staged)` is the BACKEND's: the seed JSON or "
+                    "custom_routes.py names a file that was never staged. A row marked "
+                    "`(excluded from the image by .dockerignore)` is the FRONTEND's: the "
+                    "file IS on disk and a .dockerignore line keeps it out of the image, so "
+                    "repairing a build left the data pointing at it.%s"
+                    % ("\n\nThis task carries BOTH kinds; the rows say which is which, so "
+                       "hand the other owner their half." if (_absent and _excluded) else "")),
+                assignee=_owner,
+                agent="orchestrator",
+                priority="P1",
+            )
+            orch._usm1203np_dispatched = milestone
+            orch._logger.warning(
+                "#1203np dispatched a %s task for %d seeded media reference(s) the app "
+                "cannot serve: %s", _owner, len(rows), _shown)
+        except Exception as _e1203np:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "dispatch_unstaged_seed_media_1203np",
+                "the #1202xn media finding stays in a log line with nobody told, which is "
+                "the #1041 shape this exists to close",
+                _e1203np)
+
     async def dispatch_never_matching_filters_1148(self) -> None:
         """#1148: tell the backend about a filter no seeded row can satisfy.
 

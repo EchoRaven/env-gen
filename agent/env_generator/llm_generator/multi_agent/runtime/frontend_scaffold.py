@@ -14732,6 +14732,85 @@ def unstaged_seed_media_1202xn(output_dir) -> List[str]:
         return []
 
 
+# #1203np: MEASURED over the corpus's 624 populated `/assets/*` directories -- median 17
+# files, p10 5, max 582. Three names is enough to show the naming convention a lane would
+# repoint along (a same-creator stem, a `clip_NNN` sequence) and small enough that a ten-row
+# task stays readable; the TOTAL travels beside them, so the cut declares itself (#1034)
+# rather than standing in for the size of the directory.
+_ALT_CAP_1203NP = 3
+# The stem is the part of the filename before an ID. The threshold decides which numeric runs
+# count as an id. MEASURED over every digit run in the corpus's staged filenames: 25,969 runs
+# are 1-5 digits (`clip_1`, `photo_42`, `trailer-3` -- part of the NAME) and 8,601 are 6 or
+# more, which is where platform ids live (tiktok's 19-digit `creator__7663376464665906452`,
+# netflix's 8-digit `clip_18972999`).
+#
+# At 6: `khaby.lame__766…` splits on `__` to the creator, and `clip_18972999.mp4` splits to
+# `clip`, so both get a same-subject match. `clip_1.mp4` does NOT split, so its stem is its own
+# whole name, it matches nothing but itself (which is excluded) and it falls through to the
+# plain directory listing. Below 6, `clip_1` would split to `clip` and every unrelated short-
+# numbered file in the directory would be offered as a same-subject sibling.
+_STEM_SPLIT_1203NP = re.compile(r"__|[-_]\d{6,}")
+
+
+def staged_alternatives_1203np(output_dir, missing, cap: int = _ALT_CAP_1203NP) -> dict:
+    """``{"/assets/real_videos/x.mp4": (total_in_dir, [staged names…])}`` — what a lane could
+    repoint each unstaged reference AT. ``{}`` on any fault.
+
+    #1203np: `unstaged_seed_media_1202xn` names a file that is not on disk, and its own
+    docstring explains why no placeholder is synthesised -- "the framework stages REAL media
+    (71 files in r135), a grey stand-in would be worse than a stated gap". That is right, and
+    it leaves the reader of the finding with an instruction they cannot carry out: these runs
+    are offline, so "stage the missing video" is not an available action. REPOINTING is, and
+    the framework already knows what to repoint to -- it staged the files itself.
+
+    MEASURED over the 135 unstaged references in the delivered trees of 21 runs: 98 (73%) sit
+    in a directory that DOES hold staged files, and 18 of those share the leading name stem
+    with one -- tiktok's `creator__id.mp4` convention, so a same-creator video. Three runs are
+    wholly in that class (r191 6 of 6, r172 4 of 4, r140 3 of 3), i.e. every missing row has a
+    same-creator file already on disk. r190's seed asks for
+    `khaby.lame__7663376464665906452.mp4` while four other khaby.lame videos are staged among
+    76 files totalling 392 MB.
+
+    Prefix matches come FIRST, because a same-creator swap keeps the row's meaning; the rest
+    of the directory follows, so a reference whose stem matches nothing still gets an answer.
+    The total is returned alongside the examples so the caller can declare its own cut
+    (#1034) -- this function caps the examples and never the count.
+
+    Pure: reads the delivered tree, writes nothing, decides nothing. Choosing between dropping
+    the row and repointing it is still the lane's call, which is the trade #1202xn stated.
+    """
+    try:
+        from pathlib import Path as _P
+        pub = _P(str(output_dir)) / "app" / "frontend" / "public"
+        if not pub.is_dir():
+            return {}
+        out: dict = {}
+        _listing: dict = {}
+        for ref in (missing or []):
+            # the rows carry a " (not staged)" / " (excluded …)" suffix from the detector
+            rel = str(ref).split(" (")[0].strip().lstrip("/")
+            if not rel:
+                continue
+            d = (pub / rel).parent
+            key = str(d)
+            if key not in _listing:
+                try:
+                    _listing[key] = sorted(p.name for p in d.iterdir() if p.is_file())
+                except Exception:
+                    _listing[key] = []
+            pool = _listing[key]
+            if not pool:
+                continue
+            base = (pub / rel).name
+            stem = _STEM_SPLIT_1203NP.split(base)[0]
+            same = [f for f in pool if stem and f.startswith(stem) and f != base]
+            rest = [f for f in pool if f not in same and f != base]
+            out["/" + rel] = (len(pool), (same + rest)[:max(0, int(cap))])
+        return out
+    except Exception:
+        return {}
+
+
 def stage_missing_seed_photos(output_dir) -> List[str]:
     """FIX #168 (gmrun7): guarantee every LOCAL image the SEED references actually exists.
     A seed ``photo_url`` like ``/assets/photos/restaurant_2.jpg`` is a local path, but the

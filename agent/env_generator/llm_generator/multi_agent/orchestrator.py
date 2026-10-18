@@ -5918,6 +5918,17 @@ class Orchestrator:
                 await _RD1203ii(self).dispatch_list_totals_unreachable_1203ii()
             except Exception as _ltu_exc:
                 self._logger.error("#1203ii dispatch failed: %s", _ltu_exc)
+            # #1203np: the media finding, which until now reached a logging.warning and an
+            # artifact and no actor at all. Hoisted to the SAME place as its two neighbours
+            # and not behind the gate branch below -- that is the exact mistake this call
+            # site's comment above records #1203ii inheriting ("I copied the call site
+            # together with its gate"), and the runs that ship unstaged media are precisely
+            # the ones whose gate goes green. Its own try, its own per-milestone guard.
+            try:
+                from .runtime.remediation_dispatcher import RemediationDispatcher as _RD1203np
+                await _RD1203np(self).dispatch_unstaged_seed_media_1203np()
+            except Exception as _usm_exc:
+                self._logger.error("#1203np dispatch failed: %s", _usm_exc)
             if gate.get("failed_checks"):
                 # #1202kn: "attempt refunded, will retry next tick" — THERE WAS NO NEXT TICK.
                 #
