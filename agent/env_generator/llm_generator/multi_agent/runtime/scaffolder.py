@@ -1339,11 +1339,20 @@ volumes:
                 _ma1203g9 = missing_static_assets_1203g9(Path(out_dir) / "app")
                 if _ma1203g9:
                     orch._logger.warning(
+                        # #1203nq: THE THIRD OPTION, because 38% of these rows have already
+                        # taken it. "Add the file or stop referencing it" named two fixes and
+                        # the corpus shows a lane using a third -- a literal remap table from
+                        # the invented name to a staged file (r166 5 of 5, r172 4 of 4, r182
+                        # 6 of 6, r169 13 of 14). Those rows now say so, and telling a lane to
+                        # add a file it has already routed around is how #1202zf's P1 came out
+                        # false for all of r166.
                         "#1203g9 %d asset path(s) are referenced by the frontend and do NOT "
                         "exist under public/ — in a browser each is a 404 and a broken image. "
                         "Measured over the 80 delivered runs: 104 such references across 22 of "
                         "them, and googlemaps-gmrun3 shipped 22 missing icons beside 72 real "
-                        "ones. Add the file or stop referencing it: %s",
+                        "ones. Add the file, remap it to one that IS staged, or stop "
+                        "referencing it — a row annotated ALREADY REMAPS has had the third "
+                        "done to it: %s",
                         len(_ma1203g9), _jc1203g9(_ma1203g9, total=len(_ma1203g9)))
                     record_missing_assets_1203g9(out_dir, _ma1203g9)
             except Exception as _e1203g9:

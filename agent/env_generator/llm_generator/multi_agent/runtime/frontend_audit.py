@@ -3684,7 +3684,56 @@ def missing_static_assets_1203g9(app_root) -> "list":
                 if (pub / ref.lstrip("/")).exists():
                     continue
                 seen[ref] = f.name
-        return ["%s (referenced by %s)%s" % (r, n, _available_like_1203gi(pub, r))
+        # #1203nq: AND SAY WHEN THE FRONTEND ALREADY FIXED IT. `remapped_seed_media_1203m3`
+        # exists for exactly this question -- "{missing_path: staged_target} for each path
+        # the FRONTEND already rewrites" -- and it was wired to the SEED side only (#1202zf).
+        # This check never asked it, so a path the app remaps at runtime is reported as a flat
+        # 404 and the consumer's instruction ("Add the file or stop referencing it") points
+        # away from the work the lane already did. That is #1139/#1148's shape: I am copying
+        # the precedent's second half, which #1203m3 states itself.
+        #
+        # MEASURED over the 73 rows this check produces in the delivered trees of 12 runs:
+        # **28 (38%) are keys in a resolving remap table**, and four runs are essentially all
+        # remap -- r166 5 of 5, r172 4 of 4, r182 6 of 6, r169 13 of 14. r172's reads
+        # `khaby.lame__7663376464665906452.mp4 -> khaby.lame__7661681676719869214.mp4`, i.e.
+        # the same-creator repoint #1203np's task recommends, done by the lane unprompted.
+        # The other eight runs come back 0, including both googlemaps runs whose 36 missing
+        # icons are this finding's strongest genuine case -- so the annotation lands on the
+        # right rows and leaves the rest alone.
+        #
+        # ANNOTATED, NEVER DROPPED, and #1203m3's own caveat is carried with it: the predicate
+        # proves a mapping EXISTS, not that every caller goes through it (r172 applies its map
+        # in `getForYouFeed` and nowhere else). Dropping the row is the direction that masks a
+        # failure, so the row stays and the reader is told both things.
+        # ★ AND AN EMPTY DEFAULT HERE WOULD READ AS "NO REMAP EXISTS" (#883). The first draft
+        # swallowed the lookup's failure into `{}` and the #883 ratchet failed the suite for
+        # it, correctly: every row would quietly lose its annotation and a reader could not
+        # tell "the frontend does not remap this" from "the question was never answered".
+        # `None` is that third state, every row says so, and the failure is announced.
+        _remap1203nq = {}
+        try:
+            from .frontend_scaffold import remapped_seed_media_1203m3 as _rsm1203nq
+            _remap1203nq = _rsm1203nq(_P(str(app_root)).parent, list(seen)) or {}
+        except Exception as _e1203nq:
+            _remap1203nq = None
+            warn_once_1201(
+                "frontend_audit.missing_static_assets_1203g9.remap_1203nq",
+                "the #1203nq remap annotation — every row will say the question could not "
+                "be answered rather than read as a confirmed 404",
+                _e1203nq)
+
+        def _note_1203nq(ref):
+            if _remap1203nq is None:
+                return (" — could NOT check whether the frontend remaps this (the #1203m3 "
+                        "lookup failed); this 404 is UNCONFIRMED, not clean")
+            if ref in _remap1203nq:
+                return (" — the frontend ALREADY REMAPS this to %s, which is on disk, so "
+                        "this row may already be served; a mapping existing does not prove "
+                        "every caller goes through it (#1203m3)" % _remap1203nq[ref])
+            return ""
+
+        return ["%s (referenced by %s)%s%s" % (r, n, _available_like_1203gi(pub, r),
+                                               _note_1203nq(r))
                 for r, n in sorted(seen.items())]
     except Exception:
         return []
