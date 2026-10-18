@@ -267,6 +267,50 @@ def restore_logo_component_1203nh(screen: Dict, spec: Optional[Dict], im=None) -
         return None                         # a completion floor never blocks the phase
 
 
+def restore_measured_components_1203ni(screen: Dict, spec: Optional[Dict], im=None) -> int:
+    """#1203ni: put back EVERY measured component the analyst's rewrite dropped. Returns how
+    many. Called AFTER the crop loop on purpose -- see below.
+
+    `#1203nh` restored the logo and measured the rest of the loss: the deterministic skeleton
+    writes 168-175 components and the delivered document carries 35, of which only 5-6 are the
+    skeleton's. `#1203nh` stopped at the logo because a crop is cut per component with a
+    region, r191's 35 crops already cost 14 MB, and ~170 would be ~68 MB a run on a shared
+    disk this project has filled twice.
+
+    THAT WAS THE WRONG PLACE TO STOP, because the crop is not what most readers want. The
+    measured REGION and COLORS have consumers of their own, and they are the visual-fidelity
+    machinery: `_measured_vertical_gradient_602` derives a screen's CSS gradient from its
+    full-bleed component bands and their measured `colors.bg`, and `components` is read in
+    frontend_scaffold (six sites), frontend_audit and deliverability. With 35 coarse
+    components instead of ~170 measured ones those readers work from a fifth of the
+    measurement.
+
+    So restore the DATA and not the crop: this runs after the crop loop, so a restored
+    component carries `crop: None` and costs nothing on disk. Its colors are not a
+    measurement this pass has to make either -- every spec component carries `background` and
+    `accents` already (17 of 17 on r191's fyp screen), and `_skeleton_components` maps them.
+
+    Shape comes from `_skeleton_components` (#1032), ids that the analyst already used are
+    never duplicated, and the count is announced.
+    """
+    try:
+        have = {str(c.get("id") or "") for c in (screen.get("components") or [])
+                if isinstance(c, dict)}
+        want = [c for c in ((spec or {}).get("components") or [])
+                if isinstance(c, dict)
+                and isinstance(c.get("region"), (list, tuple)) and len(c["region"]) == 4]
+        if not want:
+            return 0
+        built = [c for c in _skeleton_components({"components": want}, im)
+                 if str(c.get("id") or "") not in have]
+        if not built:
+            return 0
+        screen.setdefault("components", []).extend(built)
+        return len(built)
+    except Exception:
+        return 0                        # a completion floor never blocks the phase
+
+
 def build_skeleton_design_system(resolved: Dict, output_dir,
                                  *, existing_specs: Optional[Dict] = None) -> Dict:
     """Deterministic skeleton of design_system.json — MEASURED facts only, no LLM.
@@ -1409,7 +1453,8 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0,
              "screens_routed": 0, "assets_remeasured_1203kv": 0,
              "with_copy_1203kz": 0, "layout_measured_1203l0": 0,
-             "dataset_restored_1203l0": 0, "logo_restored_1203nh": 0}
+             "dataset_restored_1203l0": 0, "logo_restored_1203nh": 0,
+             "components_restored_1203ni": 0}
     _specs1203nh = _load_component_specs(out)      # #1203nh: still on disk after the rewrite
     _restored_names_1203nh: List[str] = []
     # #1203kv: re-measure every asset entry from the file that was staged for it.
@@ -1604,6 +1649,11 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
                         comp["assets"] = matched
                         stats["asset_mapped"] += 1
 
+            # #1203ni: the rest of the measured components, AFTER the crop loop so they cost
+            # no disk. Their region + measured colors are what the fidelity machinery reads.
+            stats["components_restored_1203ni"] += restore_measured_components_1203ni(
+                screen, (_specs1203nh or {}).get(str(screen.get("name") or "")), im)
+
         _write_design_system(out / "design", ds)
         logging.getLogger("Orchestrator").info(
             "Design-Prep completion pass: %(components)d components — %(cropped)d cropped, "
@@ -1638,6 +1688,15 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
                 stats["logo_restored_1203nh"],
                 join_capped(_restored_names_1203nh, len(_restored_names_1203nh), cap=8,
                             sep=", "))
+        # #1203ni: the rest of the loss, with its number, so the scale is on the record.
+        if stats["components_restored_1203ni"]:
+            logging.getLogger("Orchestrator").warning(
+                "[design_system] #1203ni restored %d further measured component(s) the "
+                "rewrite dropped, with their regions and measured colors but NO crop (the "
+                "crops are what cost disk, the measurement is what the fidelity machinery "
+                "reads). The document now carries %d component(s) in total.",
+                stats["components_restored_1203ni"], stats["components"]
+                + stats["components_restored_1203ni"] + stats["logo_restored_1203nh"])
     except Exception:
         pass
     return ds
