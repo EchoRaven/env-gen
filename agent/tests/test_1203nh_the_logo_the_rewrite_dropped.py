@@ -111,6 +111,30 @@ class ItPutsTheLogoBack(unittest.TestCase):
         self.assertIsNotNone(restore(s, spec, None))
         self.assertEqual(len(s["components"]), 1)
 
+    def test_only_one_logo_is_BUILT_not_merely_one_appended(self):
+        """★ #1203oe: the session-end mutation replay read `want[:1]` -> `want` as MISSED, and
+        the assertion above is why -- only `built[0]` is appended either way, so counting
+        components cannot see the difference. The bound is not about the list length: with an
+        image, `_skeleton_components` CUTS A CROP PER COMPONENT, so building two writes a
+        second crop file for an entry nobody appends. 0 of the corpus's 2614 logo-bearing
+        screens carry two logo regions, so this is a cost bound on an unreachable case, which
+        is exactly the kind a test has to hold up because the data never will."""
+        # DP is imported at module scope.
+        spec = {"components": [
+            {"name": "brand_logo", "region": [0, 0, 0.1, 0.1], "role": "a"},
+            {"name": "app_logo", "region": [0, 0, 0.1, 0.1], "role": "b"}]}
+        handed = []
+        orig = DP._skeleton_components
+        DP._skeleton_components = lambda sp, im=None: (
+            handed.append(len((sp or {}).get("components") or [])) or orig(sp, im))
+        try:
+            DP.restore_logo_component_1203nh({"name": "x", "components": []}, spec, None)
+        finally:
+            DP._skeleton_components = orig
+        self.assertEqual(handed, [1],
+                         "the builder was handed %s component(s); with an image that is one "
+                         "crop written per entry" % handed)
+
 
 class ItRestoresNothingItCannotCrop(unittest.TestCase):
     def test_a_logo_without_a_region(self):
