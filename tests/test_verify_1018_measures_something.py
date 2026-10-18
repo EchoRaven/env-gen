@@ -56,6 +56,10 @@ _CONTROLS = [
     ("oi", "tiktok-web-r180", "FALSIFIED"),      # 3 of 4
     ("oi", "tiktok-web-r191", "CONFIRMED"),      # 2 named, none blank
     ("oi", "tiktok-web-r190", "CONFIRMED"),      # 5 named, none blank
+    ("oj", "tiktok-web-r120", "FALSIFIED"),      # 78 breaking-change P0s sent to the wrong lane
+    ("oj", "tiktok-web-r191", "FALSIFIED"),      # 17
+    ("oj", "tiktok-web-r190", "FALSIFIED"),      # 2
+    ("oj", "tiktok-web-r185", "N-A"),            # none; 0 contradicting records either
 ]
 
 _cache = {}
@@ -118,6 +122,8 @@ _CONFIRM_REQUIRES = {
     "og": [],
     # `oi` CONFIRMED needs the carve-out sentence the patched task body writes.
     "oi": ["near-zero ink against its own reference"],
+    # `oj` CONFIRMED needs the note the corrected task description carries.
+    "oj": ["this endpoint's consumer record was registered by"],
 }
 
 
@@ -246,7 +252,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi"):
+                     "od", "of", "og", "oi", "oj"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

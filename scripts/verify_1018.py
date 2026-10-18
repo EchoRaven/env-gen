@@ -667,6 +667,55 @@ def main(argv):
     except Exception as _e_oi:
         say("oi", "N-A", "the #1203oi criterion could not read this run (%s)" % _e_oi)
 
+    # --- #1203oj — a P0 must reach the lane that owns the file it names ------------------
+    # READS: shared/hubs/registryhub_consumers.json (the registration) and
+    #   shared/hubs/workhub_tasks.json (where the breaking-change P0s went).
+    # FALSIFIED: a breaking-change task is assigned to a lane its own `affected_files`
+    #   contradict and carries no #1203oj note -- the backend being told to edit
+    #   app/frontend/src/services/api.js.
+    # CONFIRMED: no such task, or every one of them carries the note.
+    # INFO in the detail: how many consumer RECORDS still contradict themselves. The patch
+    #   deliberately leaves those alone (they are also the link that made the consumer
+    #   reachable), so a non-zero count there is expected, not a failure.
+    # CONTROL (pre-patch): r120 78 tasks, netflix-r43 53, netflix-r44 37, netflix-r30 31,
+    #   r191 17, r181 16; r190 0 of its 2 (its contradictions are not breaking-change tasks).
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.registryhub import (
+            _breaking_task_owner_1203oj as _own_oj,
+            _consumer_file_lane_1203oj as _lane_oj)
+        _oj_tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", {}) or {}
+        _oj_bad, _oj_ok = 0, 0
+        for _t in _oj_tasks.values():
+            if not isinstance(_t, dict) or "status" not in _t:
+                continue
+            _md = _t.get("metadata") or {}
+            if not isinstance(_md, dict):
+                continue
+            if _md.get("source") != "registryhub_breaking_change":
+                continue
+            _asg, _note = _own_oj(_t.get("assignee"), _md.get("affected_files") or [])
+            if not _note:
+                continue
+            if "#1203oj" in str(_t.get("description") or ""):
+                _oj_ok += 1
+            else:
+                _oj_bad += 1
+        _oj_recs = _json(run / "shared" / "hubs" / "registryhub_consumers.json", {}) or {}
+        _oj_contra = sum(
+            1 for _c in _oj_recs.values()
+            if isinstance(_c, dict) and _c.get("agent") and _c.get("file_path")
+            and _lane_oj(_c.get("file_path")) not in ("", str(_c.get("agent"))))
+        if not _oj_bad and not _oj_ok:
+            say("oj", "N-A", "no breaking-change task whose files name another lane "
+                             "(%d self-contradicting consumer record(s))" % _oj_contra)
+        else:
+            say("oj", "FALSIFIED" if _oj_bad else "CONFIRMED",
+                "%d misrouted P0(s) with no note, %d corrected; %d self-contradicting "
+                "consumer record(s)" % (_oj_bad, _oj_ok, _oj_contra))
+    except Exception as _e_oj:
+        say("oj", "N-A", "the #1203oj criterion could not read this run (%s)" % _e_oj)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

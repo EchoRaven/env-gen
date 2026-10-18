@@ -628,6 +628,84 @@ LAST_RESULT_CARRIED_1202vp = (
 )
 
 
+# ---------------------------------------------------------------------------
+# #1203oj — the breaking-change P0 went to the lane that does not own the file.
+# ---------------------------------------------------------------------------
+# `assignee=consumer_agent` is structurally right: the lane that CONSUMES an endpoint is the
+# one that has to adapt. It takes the agent from the registered consumer record, and -- MEASURED
+# WITH THE PREDICATE BELOW, not with a looser throwaway one -- 169 of the corpus's 9,539
+# consumer records, across 26 runs, disagree with their own `file_path`. The dominant shape is
+# `agent: backend` naming `app/frontend/src/services/api.js`, a file the backend lane does not
+# own:
+#
+#     tiktok-web-r181 29   netflix-local-r43 21   tiktok-web-r120 16
+#     tiktok-web-r172 15   netflix-local-r32 14   netflix-local-r5   8   (+20 more runs)
+#
+# The consequence is measured on the other side: of the corpus's 2,736 breaking-change tasks,
+# 273 in 16 runs are assigned to a lane their own `affected_files` contradict -- "Fix breaking
+# change in GET /api/titles", `affected_files: app/frontend/src/services/api.js`,
+# `assignee: backend`, P0. r191 has 17, so this is current, not historical.
+#
+# ★ THE FIRST VERSION OF THIS COMMENT SAID 109 RECORDS IN 14 RUNS AND 209 TASKS. Those came
+# from a throwaway scan whose path test accepted `frontend/` without the `app/` prefix and
+# whose agent test only allowed frontend/backend. The numbers above are what the SHIPPED
+# predicate says, re-measured after it existed, because a number in a comment that no longer
+# matches the code is #1203j2's defect.
+#
+# WHAT IT COSTS, in the lanes' own words. netflix-local-r21's backend lane wrote FOUR triage
+# comments of the form "This should be reassigned to frontend/debugger ... not backend" --
+# rounds spent handing work back rather than doing it. (That run's tasks come from a different
+# source, so it is the cost of the SHAPE, not of these 109 records.)
+#
+# THE FILE IS THE STRONGER EVIDENCE, which is #1203np's rule ("the owner comes from the
+# cause") applied here: the file is the thing that must change, while the `agent` field is a
+# claim made at registration time. So the task goes to the lane the file belongs to, and the
+# description says BOTH -- the registration is left exactly as it is, because it is also the
+# link that made the consumer reachable at all and rejecting it would lose that.
+#
+# Narrow on purpose: no inference where the path says nothing (a bare `api.js`, a config, a
+# path outside app/). 9,539 consumer records carry a file_path and only these 109 disagree, so
+# a wider rule would be guessing on 99% of a population that is already right.
+def _consumer_file_lane_1203oj(file_path: Any) -> str:
+    """"frontend" / "backend" from a consumer's own file path, or "" when it says nothing."""
+    try:
+        s = str(file_path or "").replace("\\", "/").lower()
+        if not s:
+            return ""
+        if "app/frontend/" in s or s.endswith((".jsx", ".tsx")):
+            return "frontend"
+        if "app/backend/" in s or s.endswith(".py"):
+            return "backend"
+    except Exception:
+        return ""
+    return ""
+
+
+def _breaking_task_owner_1203oj(consumer_agent: Any, consumer_files: Any):
+    """``(assignee, note)`` -- the lane the FILES belong to when it contradicts the record.
+
+    Returns the registered agent unchanged, and an empty note, whenever the files agree with
+    it or say nothing. Only a UNANIMOUS contradiction redirects: a record naming files from
+    both lanes is not evidence about either.
+    """
+    try:
+        lanes = {_consumer_file_lane_1203oj(f) for f in (consumer_files or [])}
+        lanes.discard("")
+        if len(lanes) != 1:
+            return consumer_agent, ""
+        lane = lanes.pop()
+        if not consumer_agent or lane == str(consumer_agent):
+            return consumer_agent, ""
+        return lane, (
+            " NOTE (#1203oj): this endpoint's consumer record was registered by `%s`, but the "
+            "file(s) above are `%s`'s, and the file is what has to change — so this task is "
+            "assigned to `%s`. The registration is left as it is; if `%s` really does own "
+            "that call site, re-register the consumer with a file it owns."
+            % (consumer_agent, lane, lane, consumer_agent))
+    except Exception:
+        return consumer_agent, ""
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -2021,6 +2099,9 @@ class RegistryHub:
                 if not _breaking_task_is_new_1202gz(_seen1202gz, endpoint_id, breaking,
                                                     consumer_agent):
                     continue          # #1202gz: identical finding, already on this desk
+                # #1203oj: the files decide the owner when they contradict the record.
+                _assignee_1203oj, _owner_note_1203oj = _breaking_task_owner_1203oj(
+                    consumer_agent, consumer_files)
                 try:
                     workhub.create_task(
                         title=_breaking_task_title_1202sr(endpoint_id, breaking),
@@ -2037,8 +2118,9 @@ class RegistryHub:
                                if (_type_change_sentence_1203m5(breaking)
                                    or _shape_change_sentence_1203m6(breaking)) else "")
                             + f"{breaking}. Consumer files: {consumer_files}"
+                        + _owner_note_1203oj
                         ),
-                        assignee=consumer_agent,
+                        assignee=_assignee_1203oj,
                         agent=agent or "registryhub",
                         source="registryhub_breaking_change",
                         linked_apis=[endpoint_id],
