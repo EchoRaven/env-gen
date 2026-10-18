@@ -1704,9 +1704,48 @@ def _list_total_unreachable_1202w0(base: str, path: str, token, body_text) -> st
         # meaning of the word: `"total": query.count()` (#1202os), the size of the collection.
         _nxt1202zp = first.get("next_cursor")
         if _nxt1202zp not in (None, "", 0, False) and not isinstance(_nxt1202zp, bool):
-            return ("%s total=%d is not the collection size: the same response offers "
-                    "next_cursor=%s, so more rows exist than `total` admits"
-                    % (path, total, str(_nxt1202zp)[:40]))
+            # #1203no: SAY THE CONTRADICTION, NOT WHICH SIDE LOST. The sentence this replaces
+            # ended "so more rows exist than `total` admits", and the block above already
+            # records the counter-example that makes that a guess: r132's page 2 "comes back
+            # EMPTY while `videos` holds 78. BOTH numbers wrong" -- there the cursor is the
+            # liar and `total` under-counting is the wrong story. r139 is the other way (the
+            # walk reached 35 and `videos` held 35).
+            #
+            # MEASURED over the 698 rows this branch has written: 322 carry `cursor == total`,
+            # the offset shape r139's live walk validated; 321 carry an OPAQUE cursor, which
+            # is r132's shape; 55 carry some other integer. So 54% of its own population is
+            # not the shape the claim was checked on. The rows go to a backend task
+            # (#1203ii), and the two directions need different fixes from the same owner:
+            # a COUNT for `total`, or a null cursor on the last page.
+            #
+            # No extra request is added -- #1202zp's "no request and no database" bargain is
+            # why this branch exists at all, and the contradiction is still decidable without
+            # one. What changes is that the message stops naming a culprit it cannot see.
+            _cur1203no = str(_nxt1202zp)
+            # #1034: the 40-char bound was silent. A cursor is routinely an opaque token, so
+            # the cut is real and a reader comparing it to the response needs to know.
+            _shown1203no = (_cur1203no[:40] + "…(cut at 40 of %d chars)" % len(_cur1203no)
+                            if len(_cur1203no) > 40 else _cur1203no)
+            if total < len(items):
+                # ONE OF THE TWO CASES IS NOT A GUESS, and the either/or above would have
+                # thrown that away. When `total` is smaller than the page the caller is
+                # ALREADY HOLDING, the response proves its own under-count without the
+                # cursor being consulted at all -- `test_a_total_below_the_page_is_caught_too`
+                # is exactly this shape (items=9, total=2).
+                return ("%s total=%d while this very page already carries %d item(s): "
+                        "`total` under-counts the collection, and the response proves it "
+                        "without following next_cursor=%s"
+                        % (path, total, len(items), _shown1203no))
+            # NOT WIDENED (#647): `total < len(items)` is self-contradictory whether or not a
+            # cursor is offered, and the enclosing guard still requires one, so a response
+            # with total=2, items=9 and next_cursor=null stays unreported. That would be a
+            # new DETECTION -- it routes a P1 task through #1203ii -- and there is no measured
+            # instance of it in the corpus, so it gets a run before it gets a guard.
+            return ("%s total=%d and next_cursor=%s cannot both be right: a response that "
+                    "offers a NEXT PAGE while claiming the caller has already seen the whole "
+                    "collection contradicts itself — either `total` under-counts the "
+                    "collection, or the cursor offers a page that does not exist"
+                    % (path, total, _shown1203no))
         return ""
     seen = len(items)
     cursor = first.get("next_cursor")

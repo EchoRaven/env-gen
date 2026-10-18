@@ -2795,9 +2795,17 @@ class RemediationDispatcher:
         would have blocked all 24 runs that carry it.
 
         P1, not #1148's P0: that one is an endpoint that can NEVER return data; this is a
-        pagination contract that contradicts itself, so the rows exist and a client following
-        the cursor can still reach them -- it is the client trusting `total` that stops early.
-        Serious, not absolute.
+        pagination contract that contradicts itself, and some of the collection is readable
+        either way. Serious, not absolute.
+
+        #1203no CORRECTED THE REASON, not the priority. This said "the rows exist and a client
+        following the cursor can still reach them -- it is the client trusting `total` that
+        stops early", which holds for 12 of the 28 rows this dispatch carries and not for the
+        rest: 11 have an opaque cursor whose next page #1202w0's own live probe found EMPTY,
+        and 3 come from the page WALK reading `total=295 reachable=100`, where following the
+        cursor is exactly what does NOT reach the rows. P1 survives both readings -- part of
+        the collection is served in either -- so the verdict is unchanged and only the
+        justification and the instruction are.
 
         The rows are STRINGS, verified by reading tiktok-web-r185's live artifact rather than
         assumed -- #1148 records that guessing row field names was "the fourth field-name miss
@@ -2820,15 +2828,35 @@ class RemediationDispatcher:
                 title=("Fix %d list endpoint(s) whose `total` its own cursor contradicts"
                        % len(rows))[:180],
                 description=(
-                    "These endpoints report a `total` that is smaller than what their own "
-                    "`next_cursor` implies, so a client that trusts `total` stops early and "
-                    "the rest of the data is unreachable through the app:\n"
+                    # #1203no: THIS SAID ONE DIRECTION AND SENDS TWO. The sentence it
+                    # replaces was "report a `total` that is smaller than what their own
+                    # `next_cursor` implies", and the rows disagree with it. MEASURED over
+                    # the 28 rows this dispatch currently carries across 22 runs: 12 are the
+                    # offset shape where `total` really does under-count, 11 carry an opaque
+                    # cursor where #1202w0's own live probe found page 2 EMPTY (so `total`
+                    # may be right and the cursor wrong), 3 read `total=295 reachable=100`
+                    # from the page WALK, i.e. the opposite direction outright, and 2 are
+                    # unclassified. 12 of 28 matched the asserted direction. The old fix
+                    # instruction is also a no-op on the over-reporting three: a COUNT is
+                    # what already produced 295.
+                    "Each endpoint below returns a `total` and a `next_cursor` that "
+                    "CONTRADICT each other, and the row says which way round it is:\n"
                     + _shown + "\n\n"
-                    "`total` is the size of the WHOLE COLLECTION the endpoint can page "
+                    "A row reading `total=N and next_cursor=C cannot both be right` is the "
+                    "self-contradicting page: the response offers a next page while claiming "
+                    "the caller has seen the whole collection. A row reading "
+                    "`total=N reachable=M` is the page WALK: following the cursor from the "
+                    "first page reached only M of the N rows `total` promises.\n\n"
+                    "FIX BOTH HALVES, because either can be the wrong one:\n"
+                    "  * `total` is the size of the WHOLE COLLECTION the endpoint can page "
                     "through -- NOT `len(items)` and NOT the page size. Count it with a "
                     "COUNT query over the same filters the page uses (the framework's own "
                     "projected handlers do this with `query.count()`); do not compute it "
-                    "from the rows you just sliced.\n\n"
+                    "from the rows you just sliced.\n"
+                    "  * `next_cursor` must be null/absent on the LAST page. Emitting a "
+                    "cursor unconditionally makes the response promise a page that does not "
+                    "exist, and a client that follows it either loops or reads an empty "
+                    "page while believing there is more.\n\n"
                     "This is not theoretical: tiktok-web-r184 shipped release 1.1.0 with two "
                     "endpoints in exactly this state, and the same finding has recurred in 24 "
                     "runs since r142 without ever fixing itself."),

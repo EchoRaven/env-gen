@@ -88,7 +88,10 @@ def test_the_shape_the_notes_left_open_is_still_flagged():
     msg = detect("http://x", "/api/videos/feed", None,
                  _body(total=5, n_items=5, cursor="abc"))
     assert msg, "the validator stopped flagging the condition this patch documents"
-    assert "not the collection size" in msg
+    # #1203no: the criterion is the DETECTION, not the old phrase (which named a culprit
+    # the check cannot see). `total == len(items)` here, so the message is the
+    # undecided contradiction.
+    assert "cannot both be right" in msg, msg
 
 
 def test_the_notes_answer_the_question_the_validator_asks():

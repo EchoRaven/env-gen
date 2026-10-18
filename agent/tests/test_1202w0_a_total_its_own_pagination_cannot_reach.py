@@ -206,8 +206,14 @@ def test_r139_s_shape_total_equals_the_page_while_a_next_page_is_offered(monkeyp
     calls = _no_http(monkeypatch)
     got = _F("http://x", "/api/videos/feed", None,
              json.dumps({"items": list(range(5)), "total": 5, "next_cursor": 5}))
-    assert "total=5 is not the collection size" in got, got
-    assert "next_cursor=5" in got, got
+    # #1203no changed the CRITERION, not the detection. The old line asserted the phrase
+    # "total=5 is not the collection size", and that phrase named a culprit the check cannot
+    # see: here `total == len(items)`, so the contradiction is real but which of the two
+    # fields is wrong is not decidable without a request this check refuses to make. Assert
+    # the contradiction and both named possibilities instead of the wording.
+    assert "total=5" in got and "next_cursor=5" in got, got
+    assert "cannot both be right" in got, got
+    assert "under-counts" in got and "page that does not exist" in got, got
     assert calls == [], "the check must cost no request: %r" % calls
 
 
@@ -216,8 +222,13 @@ def test_r132_s_shape_a_timestamp_cursor_counts_too(monkeypatch):
     got = _F("http://x", "/api/videos/feed", None,
              json.dumps({"items": list(range(5)), "total": 5,
                          "next_cursor": "2026-02-26T22:16:19+00:00|31"}))
-    assert "is not the collection size" in got, got
+    # #1203no: THIS IS THE SHAPE THAT MADE THE OLD WORDING WRONG. #1202w0's own comment
+    # records r132 live -- an opaque cursor whose page 2 "comes back EMPTY while `videos`
+    # holds 78. BOTH numbers wrong" -- so for this row the cursor is the liar and "more rows
+    # exist than `total` admits" is the false story. The message must leave both open.
+    assert "cannot both be right" in got, got
     assert "2026-02-26T22:16:19" in got, got
+    assert "cursor offers a page that does not exist" in got, got
 
 
 def test_a_total_below_the_page_is_caught_too(monkeypatch):
@@ -225,7 +236,14 @@ def test_a_total_below_the_page_is_caught_too(monkeypatch):
     _no_http(monkeypatch)
     got = _F("http://x", "/api/list", None,
              json.dumps({"items": list(range(9)), "total": 2, "next_cursor": "9"}))
-    assert "total=2 is not the collection size" in got, got
+    # #1203no: and THIS one is not a guess, so the message must not hedge it. The caller is
+    # holding 9 items while `total` says 2 -- the response proves its own under-count without
+    # the cursor being consulted, which is why this case gets its own sentence.
+    assert "total=2" in got, got
+    assert "under-counts" in got, got
+    assert "already carries 9 item(s)" in got, got
+    assert "cannot both be right" not in got, (
+        "a proven under-count must not be reported as an undecided contradiction: %r" % got)
 
 
 def test_a_full_page_with_no_next_page_stays_silent(monkeypatch):
