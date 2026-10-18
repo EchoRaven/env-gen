@@ -1531,6 +1531,44 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
         "missing or MCP-incomplete (report a framework defect)")
 
 
+def collected_facts_1203n9(report: Any) -> Dict[str, Any]:
+    """#1203n9: the facts an ABORTED validation had already collected. Never a judgement.
+
+    The summary is assembled at the END of `run_test_user_validation`'s try, so an exception
+    at any step throws away everything the earlier steps collected -- and the delivery line
+    read "None/None journey steps passed" while the numbers sat in the report file. MEASURED
+    on the 6 ERROR reports in r189/r190/r191: 3 of them would gain real counts (r190 1.0.0
+    7 steps / 5 ok, 1.1.0 7/5, 1.2.0 9/6 -- the failures include the `POST /api/comments ->
+    404` the journey actually found), and r189's MCP surface was 6 of 9 tools. The other 3 are
+    genuinely 0-step journeys, which #1203jc's branch already explains.
+
+    FACTS ONLY, and this is the line that matters: `api_steps`, `api_passed` and
+    `mcp_complete` are measurements. `broken` and `missing` are VERDICTS the ladder never
+    reached, and #883 is explicit that "could not tell" must not be dressed as an answer, so
+    they are not synthesised here. The verdict stays ERROR.
+
+    ABSENT IS NOT ZERO (#1203d3). A key is emitted only when the step left its result behind;
+    an error that fired before the journey ran produces no `api_steps` at all, because
+    `api_steps == 0` is a CLAIM ("the journey had nothing to drive") that would be false.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        if not isinstance(report, Mapping):
+            return out
+        api = report.get("api")
+        if isinstance(api, Mapping) and isinstance(api.get("steps"), list):
+            steps = api["steps"]
+            out["api_steps"] = len(steps)
+            out["api_passed"] = sum(1 for st in steps
+                                    if isinstance(st, Mapping) and st.get("ok"))
+        mcp = report.get("mcp")
+        if isinstance(mcp, Mapping) and "complete" in mcp:
+            out["mcp_complete"] = bool(mcp.get("complete"))
+    except Exception:
+        return {}
+    return out
+
+
 def run_test_user_validation(
     project_dir: Any,
     business_endpoints: List[Mapping[str, Any]],
@@ -1694,7 +1732,11 @@ def run_test_user_validation(
     except _EnvUnavailable:
         pass  # summary already set; persist below
     except Exception as exc:  # never break delivery
-        report["summary"] = {"verdict": "ERROR", "error": f"{type(exc).__name__}: {exc}"}
+        # #1203n9: keep the facts the aborted steps had already collected. The verdict stays
+        # ERROR -- only measurements are carried, never `broken`/`missing` (#883).
+        _sum1203n9 = {"verdict": "ERROR", "error": f"{type(exc).__name__}: {exc}"}
+        _sum1203n9.update(collected_facts_1203n9(report))
+        report["summary"] = _sum1203n9
 
     try:
         out_dir = project_dir / "test_user_reports"
