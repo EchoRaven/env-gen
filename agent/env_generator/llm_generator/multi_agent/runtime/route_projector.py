@@ -361,18 +361,21 @@ def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]])
             continue
         prev = segs[i - 1][0] if i > 0 and not segs[i - 1][1] else None
         target_meta: Optional[Dict[str, Any]] = None
+        _target_table_1203nf = ""      # #1203nf: the announcement needs the table's NAME
         if prev:
             pm = _match_model(prev, models)
             if pm:
                 target_meta = pm[1]
+                _target_table_1203nf = str(pm[0])
         if target_meta is None and i == len(segs) - 1:
             # terminal param with no immediately-preceding model segment: fall back to
             # the resource model the whole path operates on (e.g. /api/{id} edge cases).
             rm = _resource_model(path, models)
             if rm:
                 target_meta = rm[1]
+                _target_table_1203nf = str(rm[0])
         if target_meta is not None:
-            field = _lookup_field(param, target_meta)
+            field = _lookup_field(param, target_meta, table=_target_table_1203nf, path=path)
             cols = target_meta.get("cols", [])
             param_is_id = _is_id_param(param)
             # ``_lookup_field`` DEFAULTS to "id" when nothing matches. A non-id-named
@@ -974,7 +977,7 @@ def resolve_endpoint_auth(method, path, ep, meta=None):
     return any(mark in p for mark in _SELF_READ_MARKERS)   # personalised read needs one
 
 
-def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
+def _lookup_field_col_1203nf(param: str, parent_meta: Dict[str, Any]) -> str:
     """Which parent column a path param matches: id for ``*id``, else a NAMED column.
 
     #270 (r58, live): ``/api/users/{username}/follow`` projected to
@@ -1009,6 +1012,67 @@ def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
         if col in cols:
             return col
     return "id"
+
+
+# #1203nf: say which column a by-name param actually resolved to, when it is not the param's
+# own name. Announced once per (table, param, column) per process.
+_SAID_LOOKUP_1203NF: set = set()
+
+
+def reset_said_lookup_1203nf() -> None:
+    """#762's contract: a process-lifetime memory is right for a RUN and wrong for a test
+    session, so the reset is part of the contract rather than a private global tests poke."""
+    _SAID_LOOKUP_1203NF.clear()
+
+
+def _lookup_field(param: str, parent_meta: Dict[str, Any],
+                  table: str = "", path: str = "") -> str:
+    """`_lookup_field_col_1203nf`, plus an announcement when the column is not the param.
+
+    #1203nf: THE CHOICE WAS SILENT, and this file already names that as the local failure
+    mode -- #1203a9's own comment says "The override announces itself so the choice is
+    auditable rather than silent -- the failure mode this whole area keeps producing."
+
+    `{username}` with no `username` column falls through to `name`, because step 3 of the
+    ladder matches on substring and `"name" in "username"`. That is the best available
+    column and the projection is not wrong; what was missing is that nobody could know.
+
+    MEASURED by replaying this very ladder over every run's registration + endpoints: 9
+    by-name params in 4 runs resolve to a column other than themselves, and all 9 are
+    `{username}` -> `users.name` -- tiktok-web-r58 (4), r190 (2), r81 (2), r103 (1). r190's
+    two are `POST` and `DELETE /api/users/{username}/follow`, the endpoint its final
+    milestone died on.
+
+    WHAT THE SILENCE COST on r190: its lane worked the binding out by failure and wrote
+    `UPDATE users SET name = :username, ...` to keep the alias true, commenting "The
+    framework-projected follow handler resolves /api/users/{username}/follow with
+    `users.name == username`. Keep that natural-key alias true..." -- i.e. it overwrote the
+    human display name with the handle. 64 of the 102 runs whose registration has a `users`
+    table DO register a `username` column, so the other route was open and unsaid.
+
+    Behaviour is unchanged: the column the ladder picks is the column returned.
+    """
+    col = _lookup_field_col_1203nf(param, parent_meta)
+    try:
+        if col != param and not _is_id_param(param):
+            key = "%s|%s|%s" % (table, param, col)
+            if key not in _SAID_LOOKUP_1203NF:
+                _SAID_LOOKUP_1203NF.add(key)
+                cols = list(parent_meta.get("cols") or [])
+                from .message_format import join_capped
+                import logging as _lg
+                _lg.getLogger(__name__).warning(
+                    "#1203nf %s: the path parameter {%s} has no column of that name on %r, "
+                    "so the projected handler compares it against %r. Registered columns: "
+                    "%s. If %r is a distinct field, REGISTER it on %r and the handler will "
+                    "use it. Do NOT overwrite %r to make the alias true -- that replaces "
+                    "the stored value with the parameter.",
+                    path or "(path not given)", param, table or "(table not given)", col,
+                    join_capped(sorted(str(c) for c in cols), total=len(cols), cap=12),
+                    param, table or "the table", col)
+    except Exception:
+        pass            # an announcement must never change what the projector returns
+    return col
 
 
 def _parent_context(
@@ -2118,7 +2182,8 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         parent_table, parent_meta, parent_param = parent_ctx
         parent_cls = parent_meta["cls"]
         parent_singular = parent_table.rstrip("s")
-        parent_field = _lookup_field(parent_param, parent_meta)
+        parent_field = _lookup_field(parent_param, parent_meta,
+                                     table=parent_table, path=path)
         # FIX #288 (tiktok r73, live): owner-scoping the parent lookup is correct for a PRIVATE
         # container (/api/projects/{id}/tasks — you may only reach your own project), but WRONG
         # for the app's primary PUBLIC content. TikTok's videos are public (#279 already serves
