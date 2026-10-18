@@ -1679,11 +1679,24 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
         # #797 repair block simply rendered nothing. Say it once, with the number,
         # so a run reports whether the ask on the briefing took effect.
         if stats["components"] and not stats["with_copy_1203kz"]:
+            # #1203nl: NAME THE REASON WHEN IT IS KNOWN. `#1203kz`'s own note frames this as
+            # "whether the ask on the briefing took effect" -- but on an ADOPTED document the
+            # ask was never made: adoption's log line says "skipping the design_analyst spawn",
+            # and `copy` is the one field deterministic completion cannot fill, because a
+            # verbatim string has to be read off the reference image. Without this, a reader
+            # goes after a prompt that was never issued.
+            _donor1203nl = adopted_from_1203nl(out)
             logging.getLogger("Orchestrator").warning(
                 "[design_system] NOT ONE of %d components carries a verbatim `copy` "
                 "string, so the repair round's REFERENCE COPY block (#797) is empty and "
                 "the judged `copy` dimension has nothing measured behind it "
-                "(#1203kz).", stats["components"])
+                "(#1203kz).%s", stats["components"],
+                ("" if not _donor1203nl else
+                 " THIS RUN NEVER ASKED: the design system was ADOPTED from %r and the "
+                 "design_analyst was not spawned (#1202hj), so `copy` is whatever that run "
+                 "measured and no deterministic pass can fill it — it needs a real vision "
+                 "pass. Set ENVGEN_DESIGN_PREP_REUSE=0 to force one (#1203nl)."
+                 % _donor1203nl))
         # #1203nh: SAY WHAT WAS PUT BACK. The restore is silent otherwise, and the thing it
         # repairs -- `#842`'s "the SPEC asks for asset class(es) design-prep never staged:
         # logo", 85 of 85 corpus logs -- is itself a report a reader has to connect to this.
@@ -1969,6 +1982,47 @@ def _scrub_adopted_design_system_1203b7(path, donor) -> int:
         return 0
 
 
+_ADOPTED_FROM_1203NL = ".design_prep_adopted_from.json"
+
+
+def _stamp_adopted_from_1203nl(output_dir, donor) -> None:
+    """#1203nl: record WHICH run this design system was inherited from. Never raises.
+
+    `#1203b7` states the general rule in this file -- "34 corpus runs adopt a donor, so every
+    design-prep fix has this hole until it is closed HERE" -- and the deterministic fixes do
+    close it: `#1203kv` (asset fields), `#1203l0` (layout metrics, dataset), `#1203nh`/`#1203ni`
+    (the measured components) all run in `complete_design_system`, which runs on an adopted doc.
+
+    ONE FIELD CANNOT BE CLOSED THAT WAY: `copy`. A verbatim string has to be read off the
+    reference image, which is the design_analyst's vision pass -- and adoption's own log line
+    says it is "skipping the design_analyst spawn". So an adopted doc's `copy` is whatever the
+    donor measured, and no amount of deterministic completion can change it.
+
+    MEASURED: every run from r178 to r191 adopted (79 corpus logs carry the adoption line), the
+    analyst was last actually spawned around r91-r95, and r185..r191's documents carry the SAME
+    35 components with byte-identical ids. `#1203kz`'s warning fires in 6 of 6 modern runs
+    saying no component carries `copy` -- true, and silent about the reason a reader needs:
+    this run never asked.
+    """
+    try:
+        (Path(output_dir) / "design").mkdir(parents=True, exist_ok=True)
+        (Path(output_dir) / "design" / _ADOPTED_FROM_1203NL).write_text(
+            json.dumps({"donor": Path(str(donor)).name, "analyst_spawned": False},
+                       indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def adopted_from_1203nl(output_dir) -> str:
+    """The donor run's name when this design system was inherited, else "". Never raises."""
+    try:
+        d = json.loads((Path(output_dir) / "design" / _ADOPTED_FROM_1203NL)
+                       .read_text(encoding="utf-8"))
+        return str((d or {}).get("donor") or "")
+    except Exception:
+        return ""
+
+
 def adopt_design_prep_1202hj(donor, output_dir, design_input, resolved) -> bool:
     """#1202hj -- take the donor's measured doc and record the fingerprint as our own.
 
@@ -1987,6 +2041,7 @@ def adopt_design_prep_1202hj(donor, output_dir, design_input, resolved) -> bool:
         shutil.copy2(src, dst)
         _scrub_adopted_design_system_1203b7(dst, donor)
         record_design_prep_input_1202bv(output_dir, design_input, resolved)
+        _stamp_adopted_from_1203nl(output_dir, donor)
         return True
     except Exception as _e1202hj2:
         from .message_format import warn_once_1201
