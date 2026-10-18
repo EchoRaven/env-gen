@@ -76,6 +76,127 @@ def _verdicts(run_name):
     return _cache[run_name]
 
 
+# ---------------------------------------------------------------------------
+# #1203oh — a criterion must be able to CONFIRM what it predicts.
+# ---------------------------------------------------------------------------
+# `og` shipped unable to: its CONFIRMED branch looked for the `#1203og` marker inside
+# `compose_build_failure*.log`, a file `_compose` writes from the docker transcript alone, so
+# no run could ever have satisfied it. The #947 ratchet caught the same defect one layer down
+# (the finding reached a logger and a detail string, not a file) and following it is what
+# surfaced this. Nothing checked the criterion itself.
+#
+# MEASURED, scoring all 104 corpus runs with each run's own generation log: 7 criteria are
+# NEVER CONFIRMED anywhere (nf, nn, no, np, nq, nr, nt) -- which is CORRECT, because the
+# corpus has no post-fix run and their CONFIRMED side asks for a sentence the patch only
+# started emitting today. The audit cannot tell that apart from `og`'s defect by counting, so
+# this table does it by mechanism: for each criterion, the strings the FRAMEWORK must emit for
+# its CONFIRMED branch to be reachable. Every one is grepped for below.
+#
+# ★ THE AUDIT ALSO CAUGHT MY OWN INSTRUMENT. Scored without `--log`, five criteria (n5, n8,
+# nc, nd, nr) read as "ALWAYS N-A, measures nothing on this corpus" -- they are log-based, and
+# I had not passed the log. With it they are 39 CONFIRMED / 1 FALSIFIED each and `nr` shows 38
+# FALSIFIED, which is exactly the 38 runs its own record names. A criterion that looks dead is
+# a reason to check the harness first.
+_CONFIRM_REQUIRES = {
+    # the framework must say this for the criterion to be able to confirm
+    "nf": ["#1203nf"],
+    "nn": ["recorded gate evaluations"],
+    "no": ["cannot both be right"],
+    "np": ["seeded media reference"],
+    "nr": ["IS declared in", "declares NO database service"],
+    "od": ["noop|dummy|placeholder|todo|fixme|untitled|testpage|foobar|temppage"],
+    # CONFIRMED comes from a measurement the criterion computes itself (a count, a ratio, a
+    # parsed artifact), so there is no framework sentence to depend on.
+    "n5": [], "n6": [], "n8": [], "n9": [], "nc": [], "nd": [], "ne": [], "nh": [],
+    "ni": [], "nm": [], "nq": [], "ns": [], "nt": [], "oc": [], "of": [],
+    # `og` reads its own recorder's artifact; the esbuild words it counts are a THIRD PARTY's
+    # output, which is the distinction its first version got wrong.
+    "og": [],
+}
+
+
+def _unclassified_1203oh(found, table):
+    """``(criteria with no table entry, table entries the script no longer has)``.
+
+    A pure function because the assertion that used it could not fail on real data -- see
+    `test_the_classification_check_can_actually_fail`.
+    """
+    return (sorted(set(found) - set(table)), sorted(set(table) - set(found)))
+
+
+def _criteria_in_script():
+    """The criterion ids the checker actually reports."""
+    import re
+    src = _SCRIPT.read_text(encoding="utf-8")
+    found = set(re.findall(r'say\(\s*"([a-z0-9]{2})"', src))
+    found.discard("lo")                          # the INFO row, not a criterion
+    return found
+
+
+class ACriterionCanConfirmWhatItPredicts(unittest.TestCase):
+    """#1203oh. The half nothing was checking: `og` shipped with a CONFIRMED branch whose
+    input could never contain the marker it looked for."""
+
+    @staticmethod
+    def _framework_source():
+        """The framework's sources with ADJACENT-STRING CONCATENATION collapsed.
+
+        Without that, `"… recorded gate "` + `"evaluations; …"` on the next line is not
+        contiguous text and the search misses a sentence the framework really does emit --
+        which is how the first version of this test failed on #1203nn.
+        """
+        import re as _re
+        root = _ROOT / "agent" / "env_generator" / "llm_generator"
+        out = []
+        for f in root.rglob("*.py"):
+            if "test" in f.name or "node_modules" in f.parts:
+                continue
+            try:
+                out.append(f.read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                continue
+        src = "\n".join(out)
+        return _re.sub(r"""["']\s*\n\s*(?:f|r|rf|fr)?["']""", "", src)
+
+    def test_every_required_sentence_has_an_emitter(self):
+        src = self._framework_source()
+        self.assertGreater(len(src), 100000, "the framework source did not load")
+        missing = []
+        for crit, needs in sorted(_CONFIRM_REQUIRES.items()):
+            for lit in needs:
+                if lit not in src:
+                    missing.append((crit, lit))
+        # NOT assertIn: the haystack is 10 MB and unittest would print it.
+        self.assertEqual(missing, [],
+                         "these criteria can only CONFIRM when the framework says something "
+                         "nothing in it says -- that is `og`'s defect: %s"
+                         % [(c, l[:50]) for c, l in missing])
+
+    def test_every_criterion_is_classified(self):
+        """Anti-vacuity: a criterion added without an entry here would skip the check above,
+        which is how `og` got in."""
+        found = _criteria_in_script()
+        self.assertGreaterEqual(len(found), 20, "the criterion scan found almost nothing")
+        self.assertEqual(_unclassified_1203oh(found, _CONFIRM_REQUIRES), ([], []),
+                         "left: criteria with no entry; right: entries for a criterion the "
+                         "script no longer has")
+
+    def test_the_classification_check_can_actually_fail(self):
+        """★ The mutation that taught me this: flipping the comparison above to `set() - ...`
+        read MISSED, because with the real table every criterion IS classified, so both sides
+        are empty either way. A check that cannot fail on the data it is given is not a check
+        (#1202w0's shape), so the comparison is a pure function tested on synthetic input."""
+        self.assertEqual(_unclassified_1203oh({"aa", "bb"}, {"aa": []}), (["bb"], []))
+        self.assertEqual(_unclassified_1203oh({"aa"}, {"aa": [], "zz": []}), ([], ["zz"]))
+        self.assertEqual(_unclassified_1203oh({"aa"}, {"aa": ["x"]}), ([], []))
+
+    def test_the_table_is_not_all_empty(self):
+        """If every entry were `[]` the check above would pass by saying nothing."""
+        self.assertGreaterEqual(
+            len([c for c, v in _CONFIRM_REQUIRES.items() if v]), 5,
+            "no criterion depends on a framework sentence any more, so this ratchet is inert")
+
+
 class TheCheckerStillBites(unittest.TestCase):
     def test_the_script_exists_and_runs(self):
         self.assertTrue(_SCRIPT.is_file(), str(_SCRIPT))
