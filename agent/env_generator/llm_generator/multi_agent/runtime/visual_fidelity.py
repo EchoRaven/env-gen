@@ -211,9 +211,28 @@ _VIEWPORT = dict(_CV646)
 
 # #644 — THE CAPTURE AND THE REFERENCE ARE DIFFERENT SHAPES. MEASURED, NOT ACTED ON.
 # `_VIEWPORT` is the one constant in this module carrying no measured rationale. Against the
-# corpus (all 900 reference images in the 45 kept runs):
+# corpus as it stood when #644 was written (all 900 reference images in the 45 kept runs):
 #
 #     reference aspect  1.7297-1.7391, median 1.7344   capture 1380x900 = 1.5333   (13.1% apart)
+#
+# #1203oa — THAT RANGE NO LONGER DESCRIBES ONE IMAGE IN THE CORPUS, and the decision below
+# rests on it. Re-measured over the 406 reference images in today's 32 runs:
+#
+#     range 1.4222-1.8467, median 1.7732   -> 0 of 406 (0%) inside #644's recorded range
+#     histogram (2dp): 1.77 x250, 1.84 x75, 1.76 x36, 1.78 x25, 1.85 x9, 1.42 x8, 1.83 x3
+#
+# Two things changed, and only one of them is a number. The BAND IS GONE: #644 could call its
+# spread "tighter than half a percent" and lean on "the median"; today the data is bimodal
+# (a 1.77 mass, a 1.84 mass, and 8 instagram login variants at 1.42), so a median is a much
+# weaker summary of it. And the gap WIDENED rather than closed -- 1.7732 against the capture's
+# 1.5333 is 15.6% apart, not 13.1% -- so `capture_viewport_644` would compute 778px today
+# where it computed 796px then.
+#
+# THE DECISION BELOW IS UNCHANGED. Its reasoning never depended on the exact median: the two
+# objectives still point in opposite directions, and the half that could be measured still
+# moves the wrong way. What is repaired is the recorded number a future wiring would read,
+# and `test_capture_viewport_aspect_644` now asserts the recorded range still describes the
+# corpus so it cannot rot silently again.
 #
 # and, measured on 389 screens where a top edge is detectable in BOTH images:
 #

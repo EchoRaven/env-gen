@@ -28,6 +28,27 @@ judge scores a same-shaped pair any better, and the one half I could measure mov
 The calculation is retained, unused by the capture path, so whichever direction a run's data
 supports can be wired without re-deriving it. Same call as #628b.
 
+#1203oa — THE RECORDED RANGE ABOVE NO LONGER DESCRIBES ONE IMAGE IN THE CORPUS, and a future
+wiring would read it. Re-measured over the 406 reference images in today's 32 runs:
+
+    range 1.4222 – 1.8467   median 1.7732   -> 0 of 406 (0%) inside 1.7297-1.7391
+    histogram (2dp): 1.77 x250, 1.84 x75, 1.76 x36, 1.78 x25, 1.85 x9, 1.42 x8, 1.83 x3
+
+The BAND is what went, not just the number: #644 could call its spread "tighter than half a
+percent" and lean on the median, while today's data is bimodal (a 1.77 mass, a 1.84 mass, and
+8 instagram login variants at 1.42). And the gap WIDENED -- 1.7732 against 1.5333 is 15.6%
+apart, not 13.1% -- so the calculation yields 778px today where it yielded 796px then.
+
+The decision stands: its reasoning never depended on the exact median, the two objectives
+still point in opposite directions, and the half that can be measured still moves the wrong
+way. `test_the_recorded_range_still_describes_the_corpus_1203oa` below is the ratchet, so the
+number cannot rot silently a third time.
+
+The SYNTHETIC fixtures below are deliberately left at 1920x1107 (= 1.7344). They test the
+FUNCTION -- "given this aspect, compute this height" -- which is independent of what the
+corpus happens to contain, and rewriting them to today's median would test nothing new while
+losing the 796 arithmetic that is already checked by hand.
+
 Finding it took three wrong instruments, all caught: `screenshots/*.png` (1280x720) is the browser
 test-users' output, not the gate's; the gate writes `design/visual_gate/**` at 1380x900. Measuring
 the wrong directory produced a confident aspect comparison about images the judge never sees.
@@ -154,3 +175,40 @@ def test_the_measurement_is_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_the_recorded_range_still_describes_the_corpus_1203oa():
+    """#1203oa: the numbers in this file's docstring are load-bearing for a future wiring, so
+    they must keep matching the corpus. #644's original range (1.7297-1.7391) described 0 of
+    406 images by the time anyone looked again.
+
+    Asserts the RE-MEASURED range, with a margin, rather than the exact median: the point is
+    to catch another silent drift, not to fail on one new reference image.
+    """
+    import glob
+    import statistics
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    root = Path(__file__).resolve().parents[2] / "generated"
+    if not root.is_dir():
+        pytest.skip("no generated/ corpus on this machine")
+    asp = []
+    for f in sorted(root.glob("*/design/references/*.png")):
+        try:
+            with Image.open(f) as im:
+                w, h = im.size
+        except Exception:
+            continue
+        if w > 0 and h > 0:
+            asp.append(w / h)
+    if len(asp) < 50:
+        pytest.skip("too few reference images on this disk to re-measure")
+    med = statistics.median(asp)
+    assert 1.70 <= med <= 1.85, (
+        "the reference aspect median moved to %.4f, outside the band #1203oa recorded "
+        "(1.7732). The #644 decision is unaffected but its numbers are stale again — "
+        "re-measure and update both docstrings." % med)
+    inside = sum(1 for a in asp if 1.40 <= a <= 1.86)
+    assert inside == len(asp), (
+        "%d of %d reference aspects fell outside the re-measured 1.4222-1.8467 range"
+        % (len(asp) - inside, len(asp)))
