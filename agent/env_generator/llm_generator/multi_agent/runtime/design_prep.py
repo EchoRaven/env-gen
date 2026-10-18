@@ -267,6 +267,15 @@ def restore_logo_component_1203nh(screen: Dict, spec: Optional[Dict], im=None) -
         return None                         # a completion floor never blocks the phase
 
 
+# #1203nj: the briefing's per-screen component cap, named so the cut can be declared against
+# it and a test can read it rather than re-stating the number.
+_BRIEF_COMP_CAP_1203NJ = 10
+# The character bound the pre-#1203nj code applied as a bare `[:600]`. Kept because this text
+# is a PROMPT, so an unbounded line is a bill; declared because a silent slice mid-token is
+# the other half of #1034.
+_BRIEF_LINE_CHARS_1203NJ = 600
+
+
 def restore_measured_components_1203ni(screen: Dict, spec: Optional[Dict], im=None) -> int:
     """#1203ni: put back EVERY measured component the analyst's rewrite dropped. Returns how
     many. Called AFTER the crop loop on purpose -- see below.
@@ -2022,12 +2031,30 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
         if not comps:
             continue
         parts = []
-        for c in comps[:10]:
+        for c in comps[:_BRIEF_COMP_CAP_1203NJ]:
             col = c.get("colors") or {}
             cc = "/".join(f"{k}:{v}" for k, v in col.items()) if col else ""
             am = "+".join(c.get("assets") or [])
             parts.append(f"{c.get('id')}[{cc}{('|' + am) if am else ''}]")
-        lines.append(f"{s.get('name')}: " + " ".join(parts)[:600])
+        # #1203nj: DECLARE THE CUT (#1034). This list was capped at 10 from the start and the
+        # cap never bit: the analyst's rewrite left 2-4 components a screen, so every one was
+        # shown. #1203ni restores the measured components the rewrite dropped -- r191's fyp
+        # screen goes 4 -> 19 -- so from now on the line is ALWAYS a cut list, and a cut list
+        # that does not say so is the harm #1034 exists for, in the channel where it costs
+        # most: the lane reads this as the screen's component inventory.
+        #
+        # The cap is NOT raised. 10 measured components is already more than the 2-4 coarse
+        # ones this line used to carry, and nothing measured says the lane needs more; what
+        # was missing is that it could not tell there WERE more.
+        # The CHARACTER bound the old `[:600]` provided is kept -- this is a prompt, so the
+        # line has to stay bounded even if ids are pathological -- but it declares itself now
+        # instead of slicing mid-token. Two different cuts, each named.
+        _ln1203nj = join_capped(parts, total=len(comps),
+                                cap=_BRIEF_COMP_CAP_1203NJ, sep=" ")
+        if len(_ln1203nj) > _BRIEF_LINE_CHARS_1203NJ:
+            _ln1203nj = (_ln1203nj[:_BRIEF_LINE_CHARS_1203NJ].rsplit(" ", 1)[0]
+                         + " … (line truncated at %d chars)" % _BRIEF_LINE_CHARS_1203NJ)
+        lines.append(f"{s.get('name')}: " + _ln1203nj)
     lines.append("Full doc: design/design_system.json (+ .md); crops: design/crops/. "
                  "MEASURE, DON'T GUESS — the colors are sampled truth.")
 
