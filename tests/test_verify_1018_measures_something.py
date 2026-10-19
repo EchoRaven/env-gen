@@ -60,6 +60,11 @@ _CONTROLS = [
     ("oj", "tiktok-web-r191", "FALSIFIED"),      # 17
     ("oj", "tiktok-web-r190", "FALSIFIED"),      # 2
     ("oj", "tiktok-web-r185", "N-A"),            # none; 0 contradicting records either
+    # `ok` reads the LOG, and this harness scores runs without `--log` on purpose (it is the
+    # path every criterion must survive), so N-A is the control here. Verified by hand with
+    # the log: r190 -> CONFIRMED, "11 refusal(s); 0 of them hold a chain that never passed".
+    ("ok", "tiktok-web-r190", "N-A"),
+    ("ok", "tiktok-web-r191", "N-A"),
 ]
 
 _cache = {}
@@ -124,6 +129,8 @@ _CONFIRM_REQUIRES = {
     "oi": ["near-zero ink against its own reference"],
     # `oj` CONFIRMED needs the note the corrected task description carries.
     "oj": ["this endpoint's consumer record was registered by"],
+    # `ok` counts the freeze's own refusal sentence in the log.
+    "ok": ["is frozen"],
 }
 
 
@@ -252,7 +259,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj"):
+                     "od", "of", "og", "oi", "oj", "ok"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

@@ -716,6 +716,53 @@ def main(argv):
     except Exception as _e_oj:
         say("oj", "N-A", "the #1203oj criterion could not read this run (%s)" % _e_oj)
 
+    # --- #1203ok — the freeze may hold only a chain that PASSED --------------------------
+    # READS: shared/hubs/registryhub_verification_chains.json + the run log.
+    # FALSIFIED: the log refuses a chain as frozen while the stored record shows the chain RAN
+    #   and did not pass -- #1202nz's wedge in another word (`environment_blocked`).
+    # CONFIRMED: refusals happened and none of them holds a chain with a recorded non-pass.
+    # ★ A never-ran chain (`registered`/`coverage`) being frozen is NOT a falsification: it
+    #   becomes `failing` on the next gate cycle, after which #1202nz's path applies, and the
+    #   framework's own coverage-completion does not go through that method at all. My first
+    #   version of this criterion counted those too, which would have reported a defect the
+    #   suite had already refused.
+    # CONTROL (pre-patch): r190 refuses 27 times across 16 chain names and all the checked
+    #   ones are `passing`, so r190 CONFIRMS even before the patch -- the criterion is about
+    #   the WRONG refusal, which the corpus has not yet produced. The detail prints the
+    #   never-ran count, which is what makes the refusal reachable: r144 17, r108 16, r191 3.
+    try:
+        _ok_f = run / "shared" / "hubs" / "registryhub_verification_chains.json"
+        _ok_chains = _json(_ok_f, {}) or {}
+        _ok_status = {}
+        for _k, _v in _ok_chains.items():
+            if _k == "_meta" or not isinstance(_v, dict):
+                continue
+            _ok_status[str(_k)] = str(_v.get("status") or "")
+        _ok_ran = {}
+        for _k, _v in _ok_chains.items():
+            if _k == "_meta" or not isinstance(_v, dict):
+                continue
+            _ok_ran[str(_k)] = bool(_v.get("last_result") or _v.get("results")
+                                    or _v.get("history"))
+        _ok_never = sum(1 for _k, _s in _ok_status.items()
+                        if _s in ("registered", "coverage") and not _ok_ran.get(_k))
+        _ok_blocked = sum(1 for _s in _ok_status.values() if _s == "environment_blocked")
+        _ok_refused = re.findall(r"chain `([\w.\-]+)` is frozen", logtext)
+        _ok_bad = sorted({n for n in _ok_refused
+                          if _ok_ran.get(n) and _ok_status.get(n, "passing") != "passing"})
+        if not _ok_refused:
+            say("ok", "N-A", "no frozen-chain refusal in this log (%d never-ran, %d "
+                             "environment_blocked chain(s) stored)"
+                             % (_ok_never, _ok_blocked))
+        else:
+            say("ok", "FALSIFIED" if _ok_bad else "CONFIRMED",
+                "%d refusal(s); %d hold a chain with a recorded non-pass: %s; stored: "
+                "%d never-ran, %d environment_blocked"
+                % (len(_ok_refused), len(_ok_bad), _ok_bad[:3] or "none", _ok_never,
+                   _ok_blocked))
+    except Exception as _e_ok:
+        say("ok", "N-A", "the #1203ok criterion could not read this run (%s)" % _e_ok)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

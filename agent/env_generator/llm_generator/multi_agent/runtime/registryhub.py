@@ -706,6 +706,40 @@ def _breaking_task_owner_1203oj(consumer_agent: Any, consumer_files: Any):
         return consumer_agent, ""
 
 
+def _chain_recorded_a_non_pass_1203ok(record: Any) -> bool:
+    """Did this stored chain RUN and not pass? (#1203ok)
+
+    #1202nz's principle by MECHANISM rather than by one word: the freeze protects a chain that
+    passed, so a chain with a RECORDED RESULT that is not a pass is not that chain. MEASURED
+    over the corpus's 3,278 chain records, the split is exact:
+
+        has a result:  passing 2954 | failing 135 | environment_blocked 17
+        no result:     coverage 92  | registered 80
+
+    `failing` is #1202nz's own case. `environment_blocked` is the SAME SHAPE in another word --
+    the chain ran, the stack was down, and the attempt is recorded -- and it is why this
+    function exists: 17 such records sit in r144, whose business_chain went green, so the
+    verifier could not correct any of them.
+
+    A chain with NO result stays protected on purpose. `registered` becomes `failing` on the
+    next gate cycle, after which #1202nz's path applies, so the lock-out is one cycle rather
+    than forever; and `coverage` records are written by the framework's own
+    coverage-completion, which the freeze's comment already says does not go through this
+    method. Freezing those is what `test_freeze_blocks_reauthor_of_existing_chain_keeps_passing_one`
+    asserts, and it is right to.
+    """
+    try:
+        if not isinstance(record, dict):
+            return False
+        ran = bool(record.get("last_result") or record.get("results")
+                   or record.get("history"))
+        if not ran:
+            return False
+        return str(record.get("status") or "").strip().lower() != "passing"
+    except Exception:
+        return False
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -3374,10 +3408,37 @@ class RegistryHub:
         # step went red, and five re-registrations with the corrected expectation were each
         # silently kept out while the run aborted on that one chain). A regression-guard restore
         # writes the snapshot's passing records back, so the freeze re-engages on its own.
+        # ★ #1203ok: THE CARVE-OUT ASKED FOR ONE WORD AND THE STORE HAS FIVE.
+        #
+        # #1202nz above is right about the principle -- "a chain that is FAILING now is not"
+        # the already-passing chain the freeze protects -- and it implemented that as
+        # `status == "failing"`. The store's status vocabulary is five words, and MEASURED over
+        # the corpus's 3,278 records it splits exactly by whether the chain ever ran:
+        #
+        #     has a result:  passing 2954 | failing 135 | environment_blocked 17
+        #     no result:     coverage 92  | registered 80
+        #
+        # `environment_blocked` is #1202nz's case in another word: the chain RAN, the stack was
+        # down, the attempt is recorded, and it is not a pass -- so the freeze is protecting
+        # nothing while refusing the correction. r144 ends with 17 of them AND a green
+        # business_chain, which is the other half of the freeze's condition, so this is
+        # reachable rather than theoretical.
+        #
+        # ★ AND IT IS NARROWER THAN MY FIRST ATTEMPT, WHICH THE SUITE REFUSED. That version
+        # released every non-`passing` status, and
+        # `test_freeze_blocks_reauthor_of_existing_chain_keeps_passing_one` failed -- rightly:
+        # its chain is `registered`, i.e. never run, and a never-run chain WILL become
+        # `failing` on the next gate cycle, after which #1202nz's path already applies. So the
+        # lock-out there is one cycle, not forever, and `coverage` records are written by the
+        # framework's own coverage-completion, which this method does not gate anyway. The
+        # test was asserting something true and the first patch was too wide.
+        #
+        # So the carve-out is by MECHANISM: a chain that RAN and did not pass. 152 of 3,278
+        # records move from "frozen" to "re-authorable" and every one of them has a recorded
+        # non-pass.
         _existing_1202nz = (self._verification_chains.value() or {}).get(str(name))
         if (_frozen_eps is not None and _existing_1202nz is not None
-                and not (isinstance(_existing_1202nz, dict)
-                         and _existing_1202nz.get("status") == "failing")):
+                and not _chain_recorded_a_non_pass_1203ok(_existing_1202nz)):
             try:
                 _cur_eps = set((self._endpoints.value() or {}).keys())
             except Exception:
