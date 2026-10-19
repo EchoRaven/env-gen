@@ -28,6 +28,21 @@ import pytest
 
 from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
 
+def _figure_1203p9(which):
+    """The #618 population figure, read from its SINGLE SOURCE.
+
+    #1203p9: this test used to pin the literal "24 of 39 runs". That figure was quoted in seven
+    places and went stale in five of them at once, which is the very rot #1202vs is about -- so
+    the expectation is now read from the constant the framework emits, and refreshing the
+    measurement can never again turn a correct claim into a red test.
+    """
+    import re as _re1203p9
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as _vf1203p9
+    _c = (_vf1203p9._RECORD_BEATS_LIVE_1203P9 if which == "A"
+          else _vf1203p9._BEST_ROUND_SHORTFALL_1203P9)
+    return _re1203p9.search(r"\d+ of \d+ runs", _c).group(0)
+
+
 
 def _ledger(tmp_path, rows):
     d = tmp_path / "design" / "visual_gate"
@@ -141,7 +156,8 @@ def test_the_note_names_the_commit_and_the_gap(tmp_path):
     src = inspect.getsource(vf._persist_verdict)
     i = src.index("#641: computed BEFORE this round joins the ledger")
     block = src[i:src.index('(vdir / "verdict.json").write_text', i)]
-    assert "better_state_available" in block and "24 of 39 runs" in block
+    assert "better_state_available" in block
+    assert _figure_1203p9("B") in block or "_BEST_ROUND_SHORTFALL_1203P9" in block
 
 
 def test_the_comparison_excludes_the_round_being_written(tmp_path):
@@ -156,7 +172,7 @@ def test_why_acting_on_it_still_waits_is_recorded():
     import inspect
     flat = " ".join(inspect.getsource(vf.better_state_available_641).split())
     assert "changes no decision here" in flat
-    assert "24 of 39 runs" in flat
+    assert _figure_1203p9("B") in flat or "_BEST_ROUND_SHORTFALL_1203P9" in flat
 
 
 if __name__ == "__main__":  # pragma: no cover

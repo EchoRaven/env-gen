@@ -36,6 +36,21 @@ import pytest
 
 from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
 
+def _figure_1203p9(which):
+    """The #618 population figure, read from its SINGLE SOURCE.
+
+    #1203p9: this test used to pin the literal "24 of 39 runs". That figure was quoted in seven
+    places and went stale in five of them at once, which is the very rot #1202vs is about -- so
+    the expectation is now read from the constant the framework emits, and refreshing the
+    measurement can never again turn a correct claim into a red test.
+    """
+    import re as _re1203p9
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as _vf1203p9
+    _c = (_vf1203p9._RECORD_BEATS_LIVE_1203P9 if which == "A"
+          else _vf1203p9._BEST_ROUND_SHORTFALL_1203P9)
+    return _re1203p9.search(r"\d+ of \d+ runs", _c).group(0)
+
+
 
 def _block() -> str:
     src = inspect.getsource(vf)
@@ -213,7 +228,8 @@ def test_the_mechanism_is_attributed_to_500():
 
 def test_it_explains_618():
     b = " ".join(_block().replace("#", " ").split())
-    assert "618" in b and "24 of 39" in b
+    assert "618" in b
+    assert _figure_1203p9("B") in b or "_BEST_ROUND_SHORTFALL_1203P9" in b
 
 
 def test_500s_max_is_explicitly_kept():

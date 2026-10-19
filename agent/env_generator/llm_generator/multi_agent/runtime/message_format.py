@@ -13,7 +13,7 @@ Bounding the list is right — an unbounded dump is worse. The fix is to SAY the
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 __all__ = ["join_capped"]
 
@@ -69,6 +69,45 @@ def join_capped(items: Iterable[Any], total: Optional[Any] = None, cap: int = 6,
     text = sep.join(shown)
     hidden = n - len(shown)
     return f"{text} (+{hidden} more not shown)" if hidden > 0 else text
+
+
+# #1203p7: `join_capped` above declares a cut in PROSE, and every ratchet written for #1034
+# reads f-strings (`_count_beside_cut_list_1203jx` walks `JoinedStr` nodes looking for
+# `len(whole)` beside `", ".join(whole[:n])`). A list sliced straight into a dict that is then
+# emitted, recorded or persisted is therefore OUTSIDE #1034's subject entirely -- not an
+# evasion, a surface nobody guarded. MEASURED on the corpus: the delivery-gate progress tick
+# caps `failed_checks` at 6; 411 of 6523 ticks across 82 runs sit exactly AT that cap, while
+# the uncapped ledger of the same evaluations (`logs/delivery_gate.jsonl`, 8698 rows) reaches
+# 25 failed checks and exceeds 6 in 467 rows (5.4%). A reader of the tick cannot tell 6 from
+# 25, and that tick is the only per-evaluation gate record the monitor page shows.
+_LIST_CUT_NOTE_1203P7 = "... and %d more not shown"
+
+
+def list_capped_1203p7(items: Iterable[Any], cap: int = 6) -> Tuple[list, int]:
+    """Keep a list a list, and declare the cut INSIDE it. Returns ``(shown, total)``.
+
+    The declaration rides as the last ITEM so a reader that only prints the list still sees
+    that it was cut; ``total`` is for a reader that renders a count beside it. Both halves
+    matter -- #1148's shape is adding the fact and leaving it with no consumer, so a caller
+    should persist ``total`` too rather than relying on the sentinel alone.
+
+    Never raises, for the same reason `join_capped` never does: this sits on gate and release
+    paths. But an unrenderable input returns ``([], 0)``, and per #883 THAT MUST NOT BE READ AS
+    "nothing was cut" -- it means the list could not be rendered at all.
+    """
+    try:
+        seq = list(items or [])
+    except Exception:
+        return [], 0
+    try:
+        k = max(0, int(cap))
+    except (TypeError, ValueError):
+        k = 6
+    shown = [str(x) for x in seq[:k]]
+    hidden = len(seq) - len(shown)
+    if hidden > 0:
+        shown = shown + [_LIST_CUT_NOTE_1203P7 % hidden]
+    return shown, len(seq)
 
 # --- #1201: a safety mechanism that fails must not fail SILENTLY ---------------------
 # Three times in one session a mechanism was wired and never reached — an api-module scan

@@ -1434,6 +1434,86 @@ def main(argv):
     except Exception as _e_p6:
         say("p6", "N-A", "the #1203p6 criterion could not read this run (%s)" % _e_p6)
 
+    # --- #1203p7: a list cut inside a payload declares the cut -------------------------
+    # Artifact-reading, so only a fresh run flips it. CONFIRMED needs the NEW key on the tick;
+    # the strong form additionally needs a tick where the cut actually bit, which the corpus
+    # says happens in 411 of 6523 ticks (6.3%), so a short run may legitimately show the key
+    # with no cut -- that is still CONFIRMED, because the key IS the fix.
+    #
+    # The #893 judge-instability half rides in this criterion's DETAIL rather than as its own
+    # row: ids here are two characters by convention -- the roll-call test scans this file for
+    # the report calls and reads exactly two characters out of each, so a three-character id is
+    # invisible to it. (Writing that pattern out literally in a comment makes the scanner count
+    # the comment as a criterion; it did, and the roll-call failed on an id that does not
+    # exist.) Only 4 of 104 corpus runs ever wrote such a record, so it is a secondary signal.
+    _p7_note = ""
+    try:
+        _p7b_recs = _p7b_tot = 0
+        for _vf in (sorted((run / "design").glob("**/verdict.json"))
+                    if (run / "design").exists() else []):
+            _doc = _json(_vf, None)
+            _stack = [_doc] if isinstance(_doc, (dict, list)) else []
+            while _stack:
+                _o = _stack.pop()
+                if isinstance(_o, dict):
+                    if "appeared" in _o and "vanished" in _o:
+                        _p7b_recs += 1
+                        if "appeared_total" in _o and "vanished_total" in _o:
+                            _p7b_tot += 1
+                    _stack.extend(_o.values())
+                elif isinstance(_o, list):
+                    _stack.extend(_o)
+        if not _p7b_recs:
+            _p7_note = "; no #893 instability record in this run"
+        elif _p7b_tot == _p7b_recs:
+            _p7_note = ("; all %d #893 instability record(s) carry their totals" % _p7b_recs)
+        else:
+            _p7_note = ("; %d of %d #893 instability record(s) STILL OMIT the totals"
+                        % (_p7b_recs - _p7b_tot, _p7b_recs))
+    except Exception as _e_p7b:
+        _p7_note = "; the #893 half could not be read (%s)" % _e_p7b
+    try:
+        _p7_path = run / "logs" / "progress_events.jsonl"
+        _p7_ticks = _p7_withtotal = _p7_cut = _p7_max = 0
+        if _p7_path.exists():
+            for _line in _p7_path.read_text(errors="replace").split("\n"):
+                _line = _line.strip()
+                if not _line or '"verification_start"' not in _line:
+                    continue
+                try:
+                    _e = json.loads(_line)
+                except Exception:
+                    continue
+                if not isinstance(_e, dict) or _e.get("type") != "verification_start":
+                    continue
+                _d = _e.get("data") or {}
+                _p7_ticks += 1
+                _tot = _d.get("failed_checks_total")
+                if isinstance(_tot, int):
+                    _p7_withtotal += 1
+                    _p7_max = max(_p7_max, _tot)
+                _fc = _d.get("failed_checks")
+                if isinstance(_fc, list) and any(
+                        isinstance(x, str) and "more not shown" in x for x in _fc):
+                    _p7_cut += 1
+        if not _p7_ticks:
+            say("p7", "N-A", "this run wrote no delivery-gate tick" + _p7_note)
+        elif _p7_withtotal and _p7_cut:
+            say("p7", "CONFIRMED",
+                "%d/%d tick(s) carry failed_checks_total (max %d) and %d declare their cut in "
+                "the list itself%s" % (_p7_withtotal, _p7_ticks, _p7_max, _p7_cut, _p7_note))
+        elif _p7_withtotal:
+            say("p7", "CONFIRMED",
+                "%d/%d tick(s) carry failed_checks_total (max %d); no tick exceeded six failed "
+                "checks, so the sentinel had nothing to declare (corpus rate 411/6523 = 6.3%%)%s"
+                % (_p7_withtotal, _p7_ticks, _p7_max, _p7_note))
+        else:
+            say("p7", "FALSIFIED",
+                "%d tick(s) and NOT ONE carries failed_checks_total -- the #1203p7 edit did not "
+                "reach the artifact%s" % (_p7_ticks, _p7_note))
+    except Exception as _e_p7:
+        say("p7", "N-A", "the #1203p7 criterion could not read this run (%s)" % _e_p7)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

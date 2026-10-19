@@ -7414,11 +7414,22 @@ class Orchestrator:
         # was still failing on — which is exactly what r151's post-mortem needed and had to
         # reconstruct from the abort message.
         try:
+            # #1203p7: the `[:6]` here used to be silent. MEASURED: 411 of 6523 ticks across
+            # 82 corpus runs sit exactly AT six, while the uncapped ledger of the very same
+            # evaluations (`logs/delivery_gate.jsonl`, 8698 rows) reaches 25 and exceeds six
+            # in 467 rows -- so a reader of the tick could not tell "six failures" from
+            # "twenty-five, six of them shown". #1034's ratchets all read f-strings, which is
+            # why this survived: a list sliced into a dict was never on that rule's surface.
+            from .runtime.message_format import list_capped_1203p7 as _lc1203p7
+            _shown1203p7, _total1203p7 = _lc1203p7(_gate793.get("failed_checks") or [], 6)
             self.progress.emit(
                 _ProgressEventType.VERIFICATION_START,
                 "delivery gate tick",
                 {"ok": bool(_gate793.get("ok")),
-                 "failed_checks": list(_gate793.get("failed_checks") or [])[:6],
+                 "failed_checks": _shown1203p7,
+                 # #1148: the sentinel alone would be a fact with no consumer for a renderer
+                 # that shows a count, so the true total rides along as its own key.
+                 "failed_checks_total": _total1203p7,
                  "did_not_run": len(_did_not_run)})
         except Exception:                    # never let telemetry break the gate
             pass

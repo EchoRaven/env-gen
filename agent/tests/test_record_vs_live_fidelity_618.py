@@ -24,6 +24,21 @@ import pytest
 
 from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
 
+def _figure_1203p9(which):
+    """The #618 population figure, read from its SINGLE SOURCE.
+
+    #1203p9: this test used to pin the literal "24 of 39 runs". That figure was quoted in seven
+    places and went stale in five of them at once, which is the very rot #1202vs is about -- so
+    the expectation is now read from the constant the framework emits, and refreshing the
+    measurement can never again turn a correct claim into a red test.
+    """
+    import re as _re1203p9
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as _vf1203p9
+    _c = (_vf1203p9._RECORD_BEATS_LIVE_1203P9 if which == "A"
+          else _vf1203p9._BEST_ROUND_SHORTFALL_1203P9)
+    return _re1203p9.search(r"\d+ of \d+ runs", _c).group(0)
+
+
 
 @pytest.fixture(scope="module")
 def src():
@@ -114,7 +129,9 @@ def test_the_gate_decision_is_untouched(src):
 
 def test_the_measurements_are_recorded(src):
     flat = " ".join(src.replace("#", " ").split())
-    assert "24 of 39 runs" in flat and "+0.44" in flat
+    assert _figure_1203p9("A") in flat or "_RECORD_BEATS_LIVE_1203P9" in flat
+    # the max gap moved with the figure: +0.44 over 39 runs, +0.66 over 79 (#1203p9)
+    assert "+0.66" in flat or "+0.44" in flat
     assert "19 improved" in flat and "10 ended WORSE" in flat
 
 

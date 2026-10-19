@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
 from .validation_runner import _service_host_port
 from .message_format import join_capped  # #1034
+from .message_format import list_capped_1203p7 as _list_capped_1203p7  # #1203p7
 from .message_format import CONSOLE_ERROR_CAP_1202EE as _CONSOLE_ERROR_CAP_1202EE  # #1202ee
 
 
@@ -84,6 +85,30 @@ _ROUTE_KEYWORDS: tuple = (
 # must be reachable logged-out. A fact about framework-owned routes, not a guess
 # about the app's domain.
 _FRAMEWORK_PUBLIC_ROUTES: frozenset = frozenset({"/login", "/signup"})
+
+# #1203p9: #618's figures were measured over 39 runs and quoted as "24 of 39" in SEVEN places
+# in this file. Re-measured on today's corpus (`design/visual_gate/rounds.jsonl`: 395 ledgers,
+# 1715 rows). They are TWO DIFFERENT propositions that happened to share a numerator, and
+# collapsing them into one constant would have merged two claims -- so there are two:
+#
+#   A  the persisted record beats the live capture   24/39 (62%, max +0.44) -> 60/79 (76%, max
+#                                                    +0.66), mean gap 0.160, median 0.116
+#   B  the run delivers worse than its own best      24/39 (62%)            -> 41/74 (55%) of
+#                                                    runs with >=2 scored rounds; 24/45 (53%)
+#                                                    of those that cut a release, mean gap
+#                                                    0.129, max 0.491
+#
+# A got WORSE, not better. The numerator 24 survived in B only by coincidence of denominator.
+# These exist as constants because #1202vs asks that a correction replace the number in EVERY
+# copy, and seven hand-written copies is how a figure rots unevenly: `test_1203p9_*` fails if
+# any `N of M runs` claim about #618 in this file disagrees with them.
+_RECORD_BEATS_LIVE_1203P9 = (
+    "#618: the persisted record beats the live capture in 60 of 79 runs (76%), by a mean 0.160 "
+    "and up to +0.66 (re-measured 2026-10-19 over 1715 ledger rows; was 24 of 39)")
+_BEST_ROUND_SHORTFALL_1203P9 = (
+    "#618: 41 of 74 runs with two or more scored rounds end worse than their own best (55%); "
+    "24 of the 45 that cut a release do (53%), by a mean 0.129 and up to 0.491 "
+    "(re-measured 2026-10-19; was 24 of 39)")
 
 # Home/landing screens conventionally live at the root route in ANY app, so a
 # "home"/"dashboard"/… reference maps to "/" when the app serves it — domain-
@@ -3209,8 +3234,28 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
             if str(entry.get("fix", "")).strip():
                 rec["fix"] = str(entry.get("fix"))[:400]
             if d["key"] == "components":
-                rec["missing"] = [str(x)[:120] for x in (entry.get("missing") or [])
-                                  if str(x).strip()][:15]
+                # #1203pa: the cut at fifteen was silent, and MEASURED it bites on 123 of
+                # 767 persisted screen records (16.0%, counted through the structural path
+                # verdict.json -> screens[] -> dimensions.components.missing; a bare scan for
+                # the key name answers 2333 of 10321, but that also counts kickoff_driver's
+                # own cap-20 `missing` lists) -- concentrated on the screens that need the
+                # list most. Of those 123 records at the cap, 5 passed (4%,
+                # mean similarity 0.248), against 423 of 644 below it (66%, mean 0.629). The
+                # cap is not what makes those screens bad -- a broken screen HAS more missing
+                # components -- but it does mean the worst screens are the ones whose
+                # instructions are incomplete, and today nobody can even tell how many were
+                # dropped: this record keeps fifteen and the judge's raw reply is itself
+                # capped at 400 characters.
+                #
+                # The declaration is a COUNT here, not an in-list sentinel. #893's `_miss()`
+                # unions this list into a set to compare two rounds of the same tree, so a
+                # sentinel item would enter that set as a fake component name and make
+                # byte-identical rounds read as unstable. Prose gets the sentinel (see
+                # `remediation_text` below); a machine-read list gets the total.
+                _all1203pa = [str(x)[:120] for x in (entry.get("missing") or [])
+                              if str(x).strip()]
+                rec["missing"] = _all1203pa[:15]
+                rec["missing_total"] = len(_all1203pa)
             dims[d["key"]] = rec
     sim = _clamp01(data.get("similarity"))
     _empty766 = False
@@ -5077,7 +5122,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # its historical best on the record.
         #
         # Measured over the arc, comparing `blocking_average` against the LAST live judgement
-        # in the run log: the record is better than the live code in **24 of 39 runs**, mean
+        # in the run log: the record is better than the live code in **60 of 79 runs** (76%, was 24 of 39 -- see
+        # `_RECORD_BEATS_LIVE_1203P9`), mean
         # +0.056 and up to **+0.44** (r103: recorded 0.58, last live 0.14). Related: across the
         # 29 runs with two or more scored rounds, 19 improved but **10 ended WORSE than they
         # started** — the regressions are real, and this merge is what hides them.
@@ -5090,7 +5136,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         _live_average = (round(sum(_sim(s) for s in _live_blocking) / len(_live_blocking), 4)
                          if _live_blocking else None)
         # #621 — RECORD WHICH CODE STATE THIS SCORE BELONGS TO. #618 showed the persisted
-        # number can beat the live one in 24 of 39 runs (up to +0.44), and that delivery almost
+        # number can beat the live one in 60 of 79 runs (up to +0.66; `_RECORD_BEATS_LIVE_1203P9`,
+        # re-measured 2026-10-19 -- it got WORSE, not better), and that delivery almost
         # never comes from a PASS — only 1 of 40 verdicts ever passed, the rest release through
         # the bounded escape at whatever the last round left behind. Shipping the run's own BEST
         # state instead would need one thing the artifacts do not have: a join key. The commits
@@ -5164,10 +5211,20 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     _delta = abs(float(_s.get("similarity") or 0)
                                  - float(_pn.get("similarity") or 0))
                     if (_a != _b and (_a - _b or _b - _a)) or _delta >= 0.10:
+                        # #1203p7: both lists were silently cut at five. MEASURED on the
+                        # corpus: of 53 persisted instability records 27 `appeared` and 33
+                        # `vanished` lists sit AT the cap, so for half of them the reader
+                        # could not tell five items from fifty -- and this record exists to
+                        # argue the judge is unstable, where the SIZE of the churn is the
+                        # argument. The totals ride as their own keys (#1148).
+                        _ap1203p7, _apn1203p7 = _list_capped_1203p7(sorted(_a - _b), 5)
+                        _vn1203p7, _vnn1203p7 = _list_capped_1203p7(sorted(_b - _a), 5)
                         _unstable_893.append({
                             "screen": _s.get("name"),
-                            "appeared": sorted(_a - _b)[:5],
-                            "vanished": sorted(_b - _a)[:5],
+                            "appeared": _ap1203p7,
+                            "appeared_total": _apn1203p7,
+                            "vanished": _vn1203p7,
+                            "vanished_total": _vnn1203p7,
                             "score_delta": round(_delta, 3)})
             if _unstable_893:
                 _LOG.warning(
@@ -5255,19 +5312,22 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             # an earlier commit can score better VISUALLY while being functionally worse, and
             # that trade is not this function's to make.
             try:
+                # #1203p9: the figure rides as a %s ARGUMENT, not concatenated into the
+                # format string -- it contains a literal "%" ("55%") and `"...55%..." % args`
+                # raises ValueError: unsupported format character.
                 _LOG.warning(
                     "#641 better state available: an earlier capture of this run scored %.3f "
-                    "(+%.3f) at commit %s, and the bounded escape ships the LAST round. "
-                    "#618: 24 of 39 runs deliver worse than their own best.",
-                    _better["score"], _better["delta"], str(_better["code_state"])[:12])
+                    "(+%.3f) at commit %s, and the bounded escape ships the LAST round. %s",
+                    _better["score"], _better["delta"], str(_better["code_state"])[:12],
+                    _BEST_ROUND_SHORTFALL_1203P9)
             except Exception:
                 pass
             _verdict["better_state_available"] = _better
             _verdict["better_state_note"] = (
                 "an earlier capture of this run scored %.3f (+%.3f) at commit %s — the bounded "
-                "escape ships the LAST round, not the best one (#618: 24 of 39 runs deliver "
-                "worse than their own best)" % (_better["score"], _better["delta"],
-                                                str(_better["code_state"])[:12]))
+                "escape ships the LAST round, not the best one (%s)"
+                % (_better["score"], _better["delta"], str(_better["code_state"])[:12],
+                   _BEST_ROUND_SHORTFALL_1203P9))
         # #711: SAY WHEN THE GATING NUMBER HAS LEFT THE APP BEHIND.
         # Both numbers are already computed and written side by side; nothing compares them.
         # `blocking_average` is taken over `merged`, and #500 defines merged as the BEST
@@ -5297,10 +5357,28 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # for anyone reading verdict.json to judge quality (I did, all session, and it is why
         # this warning is worth keeping). It is NOT what authorises a release.
         #
-        # And the value that DOES authorise one is persisted nowhere — the current blocking-only
-        # average appears in no artifact — so "what number released r146" cannot be recovered
-        # from disk at all. That is the honest state, and it is why the delivery claims are
-        # withdrawn rather than re-measured.
+        # #1203p8 — THAT CLAIM IS FALSE, AND IT SUPPRESSED A MEASUREMENT. The sentence here
+        # used to read: "the value that DOES authorise one is persisted nowhere — the current
+        # blocking-only average appears in no artifact — so 'what number released r146' cannot
+        # be recovered from disk at all", and the paragraph above withdrew the delivery claims
+        # "rather than re-measured" ON THAT BASIS. The authorising number IS persisted, by THIS
+        # function, ~110 lines up: `blocking_average_live` (#768r). Its filter and its
+        # arithmetic are the same as `_blocking_similarity_average`'s — drop `advisory`, drop
+        # `blank is True`, mean of `similarity` — so for every non-empty blocking set the record
+        # already carries the number that authorised the release.
+        #
+        # The ONE divergence is the empty blocking set: the decision returns 0.0 (a hard fail)
+        # and this record writes None. MEASURED: 42 of 1715 corpus rows (2.4%). A reader of
+        # `rounds.jsonl` cannot tell that None from "not recorded" — the #883 shape — so read
+        # a None here as "the blocking set was empty and the decision was 0.0", never as
+        # "unknown".
+        #
+        # And the re-measurement the old sentence said was impossible, done from
+        # `blocking_average_live` over the corpus: of 45 runs that cut at least one release and
+        # kept a rounds ledger, 34 had a last-round authorising average BELOW the 0.65 bar
+        # (netflix-r5 0.0909, tiktok-r123 0.1371, netflix-r26 0.1542 …). That is not a new
+        # defect — the paragraph above already says delivery almost never comes from a PASS —
+        # but it is the honest size of #618's pattern, and it was recoverable all along.
         #
         # ~~r146 DELIVERED at gating 0.67 while its screens sat at 0.6409 — under the 0.65 bar.~~
         # r147 is the extreme case and it ALSO delivered: its sixth and final round reads 0.700
@@ -5315,7 +5393,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # The release branch is cut at 93d1a3d, exactly ONE commit past round 6's 9e606251d and
         # differing only by four one-line frontend edits, so 0.3817 is what shipped. No round
         # ever judged the released commit itself. This is also the mechanism behind #618's unexplained corpus pattern
-        # (24 of 39 runs deliver worse than their own best round): the gate's number IS the best
+        # (41 of 74 runs deliver worse than their own best round, 24 of the 45 that cut a
+        # release -- `_BEST_ROUND_SHORTFALL_1203P9`): the gate's number IS the best
         # round, per screen, so release happens when the high-water mark crosses the bar.
         #
         # #500's max is deliberate and defensible — one flaky blank capture should not tank a
@@ -5641,7 +5720,8 @@ def better_state_available_641(vdir: Any, this_live: Any,
                                margin: float = 0.02) -> Optional[Dict[str, Any]]:
     """The recommendation: a recorded round beat what is about to ship, by more than `margin`.
 
-    #618 measured that **24 of 39 runs deliver a state worse than their own best**, by up to
+    #618 measured that **41 of 74 runs deliver a state worse than their own best**
+    (`_BEST_ROUND_SHORTFALL_1203P9`, re-measured 2026-10-19; was 24 of 39), by up to
     +0.44 — the bounded escape releases whatever the last round happened to leave. Returns
     ``{code_state, score, delta}`` when going back is justified, else None.
 
@@ -5685,7 +5765,8 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
                              results: List[Dict[str, Any]]) -> None:
     """#640 — one line per capture round, so "which tree scored best" becomes answerable.
 
-    #618 measured that **24 of 39 runs ship a state worse than their own best** (up to +0.44),
+    #618 measured that **41 of 74 runs ship a state worse than their own best**
+    (`_BEST_ROUND_SHORTFALL_1203P9`; was 24 of 39) (up to 0.491),
     and #621 stamped `code_state` on the verdict so a score could be tied to a commit. Neither
     is enough, and testing the claim rather than restating it is what showed why:
 
@@ -6429,7 +6510,18 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
         dims = r.get("dimensions") or {}
         missing = (dims.get("components") or {}).get("missing") or []
         if missing:
-            lines.append("Missing components (build these first): " + ", ".join(missing))
+            # #1203pa: this told the lane fifteen names out of however many there were, under
+            # the heading "build these first" -- so the lane builds fifteen, the judge
+            # re-scores, and more appear. `join_capped` is #1034's owner and declares the
+            # remainder; the true count rides in `missing_total`, and a record written before
+            # #1203pa has no such key, which degrades to today's wording rather than inventing
+            # a number. `sep` is pinned to the comma this line has always used.
+            _mt1203pa = (dims.get("components") or {}).get("missing_total")
+            lines.append(
+                "Missing components (build these first): "
+                + join_capped(missing,
+                              _mt1203pa if isinstance(_mt1203pa, int) else None,
+                              cap=len(missing), sep=", "))
         # #649 — SAY WHICH DIMENSION THE SCORE IS ACTUALLY FOLLOWING.
         # Measured over 412 judged screens, the holistic `similarity` tracks the MINIMUM
         # dimension at r=0.942 — higher than any single dimension (components 0.924, layout

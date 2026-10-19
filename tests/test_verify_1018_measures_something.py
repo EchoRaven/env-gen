@@ -140,6 +140,14 @@ _CONTROLS = [
     # dispatched visual tasks (r191 9, r190 37) and named no UI skill in any of them.
     ("p6", "tiktok-web-r191", "FALSIFIED"),
     ("p6", "tiktok-web-r190", "FALSIFIED"),
+    # `p7` reads `logs/progress_events.jsonl`; every pre-patch run that wrote a gate tick
+    # answers FALSIFIED (82 of 104 corpus runs do), which is what makes it non-vacuous --
+    # it flips to CONFIRMED only once a run writes `failed_checks_total`.
+    ("p7", "tiktok-web-r190", "FALSIFIED"),
+    ("p7", "tiktok-web-r191", "FALSIFIED"),
+    # netflix-r5 is the run that carries #893 instability records (11 of them), so this
+    # triple also pins that the #893 half rides in p7's detail rather than its own row.
+    ("p7", "netflix-local-r5", "FALSIFIED"),
 ]
 
 _cache = {}
@@ -239,6 +247,8 @@ _CONFIRM_REQUIRES = {
     "p4": ["reached NO ONE"],
     # `p6` CONFIRMED needs the pointer the remediation body now carries.
     "p6": ["Two skills are about this exact job"],
+    # `p7` CONFIRMED needs the key the tick now carries; `p7b` the two totals.
+    "p7": ["failed_checks_total", "appeared_total"],
 }
 
 
@@ -400,7 +410,7 @@ class TheCheckerStillBites(unittest.TestCase):
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
                      "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov",
-                     "ox", "oy", "p2", "p4", "p6"):
+                     "ox", "oy", "p2", "p4", "p6", "p7"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 
