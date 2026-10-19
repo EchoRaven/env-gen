@@ -31,9 +31,16 @@ import pytest
 _ROOT = (pathlib.Path(__file__).resolve().parents[1]
          / "env_generator/llm_generator/multi_agent")
 
+# #1203ow: the three `test_user_*` modules are FRAMEWORK source, not tests -- the walk, the
+# squad and the test-user validation, 5,540 lines, and the subsystem whose failures are the
+# corpus's number-one and number-two terminal blockers. The scan below skipped them because
+# their FILENAMES start with `test`, so every empty default they return was invisible to this
+# rule. Two were real (`missing_state = {}` and `flow_findings = []` decide which goals the
+# squad spawns, so a crash there records a gap as clean) and are announced now.
 _GATES = ("delivery_gate.py", "deliverability.py", "frontend_audit.py", "backend_audit.py",
           "completeness_audit.py", "seed_audit.py", "flow_coverage.py",
-          "framework_validation.py")
+          "framework_validation.py",
+          "test_user_runner.py", "test_user_squad.py", "test_user_validation.py")
 
 # frozen after #883 reviewed all 17. Lower these freely; never raise one.
 _BASELINE = {
@@ -43,6 +50,15 @@ _BASELINE = {
     "flow_coverage.py": 5,          # every one fail-closed: empty => nothing covered
     "framework_validation.py": 4,   # signature reads; empty => "changed", the conservative side
     "frontend_audit.py": 1,         # text — unreadable file, already reported by its caller
+    # #1203ow: reviewed one at a time when these three framework modules first became
+    # visible to this scan. `test_user_runner.py` is 0 — its affordance probe announces now.
+    "test_user_squad.py": 1,        # ui = api = "" — reports through `report["reason"] = "no
+                                    # app address resolved"` and returns; `_announces` knows
+                                    # loggers and raises, not reporting through the ARTIFACT
+    "test_user_validation.py": 2,   # _wfr_1203je = None — a guarded import whose next line
+                                    # is `if _wfr_1203je is not None` (#802's own comment);
+                                    # vals = [] — a display path, and `vals` came from
+                                    # `summary.get(key) or []`, so `list(vals)` cannot fail
 }
 
 
@@ -62,7 +78,10 @@ def _announces(h):
 def _counts():
     out, total = {}, 0
     for f in sorted(_ROOT.rglob("*.py")):
-        if f.name.startswith("test_"):
+        # #1203ow: by DIRECTORY, not by filename. `f.name.startswith("test_")` dropped ten
+        # files and only seven are tests (`bundled_tests/oauth_contract/*`); the other three
+        # are the framework's own `runtime/test_user_*.py`. A filter has to key on the role.
+        if {"tests", "bundled_tests", "node_modules"} & set(f.parts):
             continue
         try:
             tree = ast.parse(f.read_text(errors="ignore"))

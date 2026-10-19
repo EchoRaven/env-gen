@@ -790,7 +790,18 @@ async def run_browser_test_user(
                     # Best-effort: a probe that throws must not fail a working login.
                     try:
                         _affordance = bool(await page.evaluate(_LOGIN_AFFORDANCE_JS))
-                    except Exception:
+                    except Exception as _e1203ow3:
+                        # #1203ow: the VALUE is deliberate and stays -- `False` feeds
+                        # `_landed_in_the_app_1126`, whose `if not login_affordance: return
+                        # True` is documented as conservative on purpose ("a false 'auth
+                        # broken' is worse than a missed one here", #504 / r81). But a probe
+                        # that threw is then indistinguishable from a probe that found no
+                        # login affordance, which is #883's rule exactly: keep the side you
+                        # chose, and say that you could not look.
+                        from .message_format import warn_once_1201
+                        warn_once_1201("test_user_runner.login_affordance_1203ow",
+                                       "the post-login affordance probe whose absence is "
+                                       "read as `landed in the app`", _e1203ow3)
                         _affordance = False
                     landed = _landed_in_the_app_1126(path, "/login", _affordance)
                     ok_auth = bool(token) and navigated and landed

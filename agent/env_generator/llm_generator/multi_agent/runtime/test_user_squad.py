@@ -234,7 +234,15 @@ def _missing_write_goals(
 
     try:
         missing_state = state_entities_missing_write(dict(tables or {}), eps_dict)
-    except Exception:
+    except Exception as _e1203ow:
+        # #1203ow / #883: `{}` here means "no entity is missing a write path", so this
+        # squad spawns no `missing_write_path` goal and the gap is recorded as clean. The
+        # value is kept (a crashed inventory must not invent goals) and the swallow is
+        # announced, which is the whole of #883's rule.
+        from .message_format import warn_once_1201
+        warn_once_1201("test_user_squad.missing_state_1203ow",
+                       "the state-entity write-path inventory that decides whether a "
+                       "`missing_write_path` goal is spawned", _e1203ow)
         missing_state = {}
     for entity, cols in sorted(missing_state.items()):
         key = _slug(entity)
@@ -259,7 +267,13 @@ def _missing_write_goals(
         _, fi_flows = _normalize_inventory(dict(feature_inventory or {}))
         flow_findings = check_flow_no_write(None, eps_dict, fi_flows,
                                             dict(tables or {}))
-    except Exception:
+    except Exception as _e1203ow2:
+        # #1203ow / #883: `[]` means "no flow has a missing write", so no flow goal is
+        # spawned and the flow reads as covered. Same handling: keep the value, say it.
+        from .message_format import warn_once_1201
+        warn_once_1201("test_user_squad.flow_findings_1203ow",
+                       "the flow write-coverage check that decides which flow goals the "
+                       "squad spawns", _e1203ow2)
         flow_findings = []
     for r in flow_findings:
         flow = getattr(r, "flow", None) or ""
