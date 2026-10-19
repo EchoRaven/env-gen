@@ -25,10 +25,14 @@ from. That is item 54's question — the oldest open thread in the document — 
 an actionable form for the first time.
 """
 import inspect
+import tempfile
+import types
+from pathlib import Path
 
 import pytest
 
 from env_generator.llm_generator.multi_agent.runtime import deliverability as dl
+from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa1203pg
 
 
 @pytest.fixture(autouse=True)
@@ -137,3 +141,93 @@ def test_the_gating_choice_is_justified():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the task is really filed, and it names the routes ---------------------------------
+#
+# Every assertion above reads the SOURCE, and both mutations went through:
+#
+#   * `None and workhub.create_task(...)` -- the substring `workhub.create_task(` is still
+#     there, which is all `test_a_task_is_created` checks, while nothing is filed and the fix
+#     goes back to the log nobody reads. That is the state #780 exists to end: r151 printed both
+#     halves once in a 116-minute run and filed nothing.
+#   * `_routes780 = ""` -- the task IS filed, naming no routes at all, so the lane cannot tell
+#     which pages are affected.
+#
+# A first version of the first mutation expressed "never files" as a `raise` and was CAUGHT --
+# by this file's own statement-level anti-raise assertion, which says nothing about whether the
+# filing is driven. A mutation that is caught for the wrong reason is worse than one that is
+# missed, because it reads as coverage.
+#
+# `duplicate_route_content_groups` is a module-level function, so the group can be injected and
+# the property under test is just the filing.
+
+_GROUP_1203PG = {"routes": ["/browse", "/movies"], "endpoints": ["/api/titles"]}
+
+
+def _filed(monkeypatch, group=None, endpoints=None):
+    """Run the reporter over one duplicate-content group; return the tasks it filed."""
+    created = []
+    d = Path(tempfile.mkdtemp())
+    (d / "frontend" / "src").mkdir(parents=True)
+    eps = endpoints if endpoints is not None else {
+        "e1": {"path": "/api/titles",
+               "schema": {"request": {"genre": "str?", "kind": "str?", "limit": "int?"}}}}
+    pages = {"p1": {"route": "/browse", "apis_used": ["/api/titles"]},
+             "p2": {"route": "/movies", "apis_used": ["/api/titles"]}}
+    # `get_ui_pages` is read off the WORKHUB here, not the registryhub. The first fixture put it
+    # on the registryhub and filed nothing -- diagnosed in one read because #1067 announces the
+    # skip with the AttributeError in it, which is the whole point of that ticket.
+    hub = types.SimpleNamespace(
+        workhub=types.SimpleNamespace(
+            list_tasks=lambda: [],
+            get_ui_pages=lambda: pages,
+            create_task=lambda **kw: (created.append(kw), {"id": "t1"})[1]),
+        registryhub=types.SimpleNamespace(
+            get_endpoints=lambda: eps,
+            get_ui_pages=lambda: pages))
+    # the reporter imports it INSIDE the function (`from .frontend_audit import ...`), so the
+    # patch has to land on the defining module, not on `deliverability`.
+    monkeypatch.setattr(
+        fa1203pg, "duplicate_route_content_groups",
+        lambda *a, **k: [group if group is not None else dict(_GROUP_1203PG)])
+    dl._ui_page_wiring_blockers(hub, d)
+    return created
+
+
+def test_the_fixture_actually_reaches_the_filing(monkeypatch):
+    """Non-vacuity, pinned: without this the assertions below would pass on an empty list."""
+    created = _filed(monkeypatch)
+    assert len(created) == 1, "the fixture never reached create_task -- fix the fixture"
+
+
+def test_the_task_names_the_routes(monkeypatch):
+    task = _filed(monkeypatch)[0]
+    assert "/browse" in task["title"] and "/movies" in task["title"], task["title"]
+    assert "/browse" in task["description"] and "/movies" in task["description"]
+
+
+def test_the_task_names_the_filters_the_contract_declares(monkeypatch):
+    task = _filed(monkeypatch)[0]
+    assert "genre" in task["description"] and "kind" in task["description"]
+    assert "/api/titles" in task["description"]
+
+
+def test_pagination_parameters_are_not_offered_as_a_filter(monkeypatch):
+    """`limit` is in the fixture and must not be proposed: paging every page the same way does
+    not make two routes render different content."""
+    task = _filed(monkeypatch)[0]
+    assert "limit" not in task["description"], task["description"]
+
+
+def test_it_goes_to_the_lane_that_can_fix_it(monkeypatch):
+    task = _filed(monkeypatch)[0]
+    assert task.get("assignee") == "frontend", task.get("assignee")
+
+
+def test_nothing_is_filed_when_the_contract_declares_no_filters(monkeypatch):
+    """The other side of #708b: with no optional parameter there is no fix to propose, and
+    filing one would be a task the lane cannot act on."""
+    created = _filed(monkeypatch, endpoints={
+        "e1": {"path": "/api/titles", "schema": {"request": {"id": "int"}}}})
+    assert created == [], created

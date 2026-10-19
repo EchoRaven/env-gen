@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/deliverability.py",
+ "test": "tests/test_failed_repair_says_so_770.py",
+ "mutations": [
+  {
+   "label": "W1 site 1's announcement is unreachable (`if False:`), so a failed `inject_auth_fetch_wrapper` is silent again and the very next line reports the blocker the repair exists to clear -- the lane gets a blocker it cannot reconcile with the code in front of it. All three of this file's assertions are COUNTS of substrings and every substring is still there, twice",
+   "find": "            _LOG_700.warning(\n                \"#770 auto-repair inject_auth_fetch_wrapper failed (%s: %s)",
+   "replace": "            if False:\n              _LOG_700.warning(\n                \"#770 auto-repair inject_auth_fetch_wrapper failed (%s: %s)"
+  },
+  {
+   "label": "W2 site 2's announcement is unreachable, same shape, for `repair_fabricated_fallbacks`",
+   "find": "            _LOG_700.warning(\n                \"#770 auto-repair repair_fabricated_fallbacks failed (%s: %s)",
+   "replace": "            if False:\n              _LOG_700.warning(\n                \"#770 auto-repair repair_fabricated_fallbacks failed (%s: %s)"
+  },
+  {
+   "label": "W3 site 1 stops running the blocker check after a failed repair, returning an empty list -- so a repair failure reads as 'no blockers', which is worse than reporting the consequence. EXPECTED CAUGHT: the file asserts `bare_authed_fetch_blockers` appears just after the handler. Control",
+   "find": "                type(_rep770).__name__, str(_rep770)[:160])\n        return bare_authed_fetch_blockers(_fe / \"src\")",
+   "replace": "                type(_rep770).__name__, str(_rep770)[:160])\n            return []\n        return bare_authed_fetch_blockers(_fe / \"src\")"
+  }
+ ]
+}

@@ -1,0 +1,31 @@
+{
+ "file": "agent/tests/test_1203pi_an_assertion_that_never_runs.py",
+ "test": "tests/test_1203pi_an_assertion_that_never_runs.py",
+ "mutations": [
+  {
+   "label": "PI1 the search pattern matches nothing, so the scan returns an empty set and the ratchet reports no new instances forever -- #1039/#947: a detector that reaches nothing must not read as a clean result",
+   "find": "_SEARCH = re.compile(r\"finditer|findall|ast\\.walk|\\.glob\\(|\\.rglob\\(|\\.iterdir\\(|re\\.search\")",
+   "replace": "_SEARCH = re.compile(r\"zzz_no_such_pattern\")"
+  },
+  {
+   "label": "PI2 the 'something asserts unconditionally' guard is dropped, so a test that DOES assert its search found its target is still reported -- the documented way out stops working and the baseline can never shrink",
+   "find": "        if len(in_loop) != len(asserts):\n            continue                     # something asserts unconditionally; not this shape",
+   "replace": "        if False:\n            continue                     # something asserts unconditionally; not this shape"
+  },
+  {
+   "label": "PI3 parametrized tests are no longer excluded, so pytest's own loop counts as the test's -- 682 tests loop over something and the ratchet becomes noise",
+   "find": "        if \"parametrize\" in \" \".join(ast.unparse(d) for d in fn.decorator_list):\n            continue",
+   "replace": "        if False:\n            continue"
+  },
+  {
+   "label": "PI4 the new-instance check compares the wrong way round, so it reports STALE entries as new arrivals and lets a genuine new instance through unnoticed",
+   "find": "    return sorted(set(found) - set(baseline))",
+   "replace": "    return sorted(set(baseline) - set(found))"
+  },
+  {
+   "label": "PI5 EXPECTED-MISSED (self-reference, not a gap): this replaces the INPUT of the ratchet's own assertion with `[]`, and no test can catch a mutation that stops that same test from checking -- a ratchet cannot be verified by mutating itself. What IS verified is the function it calls: `stale_entries` has four driven tests covering both directions, added by #1203pg after a reversed-comparison mutation was MISSED because both set differences are empty in the healthy state.",
+   "find": "        gone = stale_entries(_scan(), _BASELINE)",
+   "replace": "        gone = []"
+  }
+ ]
+}

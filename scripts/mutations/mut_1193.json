@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1193_route_collision_resolved_under_lock.py",
+ "mutations": [
+  {
+   "label": "X1 the resolver reads the OUTER snapshot instead of the live view under the lock, which is #1193's original defect exactly: two lanes each read a snapshot without the other's entry, each conclude they are first, and both write. The file asserts `\"m.value()\" in body` -- the call is still in the source, just not the one used",
+   "find": "                _live = m.value() or {}",
+   "replace": "                _live = _pages_now or {}"
+  },
+  {
+   "label": "X2 the colliding record is written under a NEW key instead of the existing one, so both names survive and the collision is not resolved at all. `\"m.set(_k1193, _rec, actor)\" in body` is satisfied by the text staying put",
+   "find": "                            return m.set(_k1193, _rec, actor)",
+   "replace": "                            return m.set(name, _rec, actor)"
+  },
+  {
+   "label": "X3 the route-collision branch never runs, so #1193 is inert while every asserted substring stays verbatim in the source",
+   "find": "                if route and name not in _live:\n                    _r1193 = str(route).strip()",
+   "replace": "                if False and route and name not in _live:\n                    _r1193 = str(route).strip()"
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/deliverability.py",
+ "test": "tests/test_route_filter_finding_is_filed_780.py",
+ "mutations": [
+  {
+   "label": "Q1 the call SHORT-CIRCUITS (`None and workhub.create_task(...)`), so the substring `workhub.create_task(` is still in the source -- which is all `test_a_task_is_created` checks -- while the fix the framework computed goes back to a log nobody reads. r151 printed both halves once in a 116-minute run and filed nothing. CORRECTION of this mutation's first version, which expressed 'never files' as a `raise` and was caught by the file's own statement-level anti-raise assertion -- a CAUGHT that proved nothing about a driver",
+   "find": "                    workhub.create_task(",
+   "replace": "                    None and workhub.create_task("
+  },
+  {
+   "label": "Q2 the task is filed with an EMPTY route list, so its title and description name no routes at all and the lane cannot tell which pages are affected. `_routes780` is still in the source, which is all the test asks",
+   "find": "                    _routes780 = \", \".join(_g.get(\"routes\") or [])",
+   "replace": "                    _routes780 = \"\""
+  }
+ ]
+}

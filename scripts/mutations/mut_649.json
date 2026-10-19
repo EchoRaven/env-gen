@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_weakest_dimension_named_649.py",
+ "mutations": [
+  {
+   "label": "Y1 the sentence names the STRONGEST dimension as the weakest, so the lane is sent at the axis that is already fine while the one holding the score down is never mentioned. Iconography is the lowest dimension on 41% of screens, so this mis-direction lands on the user's weakest delivery axis (#1203nr's shape)",
+   "find": "            _lo, _lokey = _ranked[0]",
+   "replace": "            _lo, _lokey = _ranked[-1]"
+  },
+  {
+   "label": "Y2 the tie window collapses, so two dimensions 0.01 apart are reported as if one alone held the score and the lane raises that one while the other still pins it",
+   "find": "            if _ranked[1][0] - _lo >= 0.05:",
+   "replace": "            if _ranked[1][0] - _lo >= 0.0:"
+  },
+  {
+   "label": "Y3 the whole statement is never emitted, so the lane is back to a mean of 6.4 FIX instructions with nothing saying which one moves the number. EXPECTED CAUGHT: the tests build a result and read the rendered line. Control",
+   "find": "        if len(_ranked) >= 2:\n            _lo, _lokey = _ranked[0]",
+   "replace": "        if False and len(_ranked) >= 2:\n            _lo, _lokey = _ranked[0]"
+  }
+ ]
+}
