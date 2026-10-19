@@ -59,6 +59,28 @@ def test_a_broken_report_falls_back_quietly(monkeypatch):
     assert rd._ui_evidence_failed_pages(_Orch()) == []
 
 
+def test_the_fallback_ANNOUNCES_itself(monkeypatch):
+    """#1203pf: `_ui_evidence_report_1203fx` swallows a bad validation shape and returns {} --
+    which is right, a remediation reader must not abort the tick. But a swallow that says
+    nothing makes "the report broke" indistinguishable from "nothing failed" (#1201), and a
+    mutation deleting the `_swallowed_1152` call came back MISSED.
+
+    Driven, not read: the announcement is captured, not grepped out of the source.
+    """
+    said = []
+    monkeypatch.setitem(rd.__dict__, "_swallowed_1152",
+                        lambda *a, **k: said.append(a))
+
+    def _boom(_r):
+        raise RuntimeError("no results")
+
+    _with_breadth(monkeypatch, None)
+    monkeypatch.setitem(rd.__dict__, "_ui_evidence_breadth_739", _boom)
+    assert rd._ui_evidence_failed_pages(_Orch()) == []
+    assert said, "the swallow said nothing -- #1201"
+    assert "_ui_evidence_report_1203fx" in " ".join(str(x) for x in said[0])
+
+
 def test_the_dispatcher_uses_it():
     """The named-pages body is built INSIDE this branch — anchored on the next branch
     landmark, not on a byte count. The original `- i < 500` was a fixed window: #1176

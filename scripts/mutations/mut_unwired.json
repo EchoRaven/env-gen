@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_unwired_ui_pages_dispatch.py",
+ "mutations": [
+  {
+   "label": "U1 the per-milestone guard is never set, so every tick re-files the same P0 (#1041 task storm)",
+   "find": "            orch._unwired_ui_pages_dispatched = milestone",
+   "replace": "            pass  # guard not set"
+  },
+  {
+   "label": "U2 an empty blocker list still dispatches, so a run with nothing unwired gets a P0 naming no page (#883)",
+   "find": "            if not blockers:\n                return",
+   "replace": "            if False:\n                return"
+  },
+  {
+   "label": "U3 the P0 becomes a P1, so the check that HARD-blocks delivery is filed as something the lane can defer",
+   "find": "                assignee=\"frontend\",\n                agent=\"orchestrator\",\n                priority=\"P0\",\n            )\n            orch._unwired_ui_pages_dispatched = milestone",
+   "replace": "                assignee=\"frontend\",\n                agent=\"orchestrator\",\n                priority=\"P1\",\n            )\n            orch._unwired_ui_pages_dispatched = milestone"
+  },
+  {
+   "label": "U4 it goes to the backend, which cannot wire a React page",
+   "find": "                assignee=\"frontend\",\n                agent=\"orchestrator\",\n                priority=\"P0\",\n            )\n            orch._unwired_ui_pages_dispatched = milestone",
+   "replace": "                assignee=\"backend\",\n                agent=\"orchestrator\",\n                priority=\"P0\",\n            )\n            orch._unwired_ui_pages_dispatched = milestone"
+  }
+ ]
+}

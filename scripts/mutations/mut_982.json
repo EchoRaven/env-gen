@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_failed_ui_evidence_pages_are_named_982.py",
+ "mutations": [
+  {
+   "label": "E1 the `?` placeholder is kept, so the lane is handed a bullet naming nothing -- #757's own rule is 'a gate that cannot say WHICH page failed cannot be acted on'",
+   "find": "    return [str(x) for x in (_report or {}).get(\"pages_failed\") or []\n            if str(x) and str(x) != \"?\"]",
+   "replace": "    return [str(x) for x in (_report or {}).get(\"pages_failed\") or []]"
+  },
+  {
+   "label": "E2 it reads `pages_passed` instead of `pages_failed`, so the remediation names the pages that WORK",
+   "find": "(_report or {}).get(\"pages_failed\") or []",
+   "replace": "(_report or {}).get(\"pages_passed\") or []"
+  },
+  {
+   "label": "E3 the fallback re-raises instead of swallowing, so one bad validation shape aborts the whole dispatch tick  [RE-AIMED: the first anchor sat AFTER `_ui_evidence_report_1203fx` returned, so for a report that already fell back to {} it was a null mutation]",
+   "find": "    except Exception as _exc_1152:\n        _swallowed_1152(\"_ui_evidence_report_1203fx\", _exc_1152, \"{} = nothing to remediate\")\n        return {}",
+   "replace": "    except Exception as _exc_1152:\n        _swallowed_1152(\"_ui_evidence_report_1203fx\", _exc_1152, \"{} = nothing to remediate\")\n        raise"
+  },
+  {
+   "label": "E4 the swallow stops announcing itself, so a report that silently returned {} is indistinguishable from one that found nothing (#1201)",
+   "find": "        _swallowed_1152(\"_ui_evidence_report_1203fx\", _exc_1152, \"{} = nothing to remediate\")\n        return {}",
+   "replace": "        return {}"
+  }
+ ]
+}
