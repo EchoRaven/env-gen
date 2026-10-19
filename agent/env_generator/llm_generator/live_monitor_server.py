@@ -908,6 +908,35 @@ def _phase_summary(events: List[dict]) -> List[dict]:
                 phases[message] = {"name": message}
             phases[message]["status"] = "completed"
             phases[message]["updatedAt"] = timestamp
+        elif event_type == "phase_error":
+            # #1203p5: A PHASE THAT ABORTED WAS SHOWN AS RUNNING, FOREVER.
+            # This renderer handled exactly two event types, and `phase_error` -- which the
+            # orchestrator emits when the workflow gives up -- was not one of them. So the
+            # phase kept the `"running"` its `phase_start` set, on the one page a human
+            # watches, for the rest of the run and every time the page was reopened
+            # afterwards.
+            #
+            # MEASURED over 104 runs' `progress_events.jsonl`: 66 `phase_error` events, every
+            # one of them `Agent Workflow`, against 20 `phase_complete`. So of the runs that
+            # ended their workflow at all, MOST ended in an error this view did not show.
+            #
+            # And the event carries the answer to the question that page exists to answer.
+            # Verbatim from a corpus record: "STUCK -- generation aborted without delivery
+            # after 14 coordination ticks: delivery never SUCCEEDED in 148min of lane time
+            # since the contract built (now failing ['business_chain_failing',
+            # 'validation_ui_evidence_failed'])". That sentence reached `progress_events.jsonl`
+            # and nothing else. #1203oy's shape: the record had it, the reader did not.
+            if message not in phases:
+                order.append(message)
+                phases[message] = {"name": message}
+            phases[message]["status"] = "failed"
+            phases[message]["updatedAt"] = timestamp
+            # The reason is the point. Kept whole rather than truncated: it is one sentence
+            # per run, and #1034's cut would hide the part that names the failing checks --
+            # which is the half a reader acts on.
+            _err1203p5 = (event.get("data") or {})
+            if isinstance(_err1203p5, dict) and _err1203p5.get("error"):
+                phases[message]["error"] = str(_err1203p5["error"])
     return [phases[name] for name in order]
 
 
