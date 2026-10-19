@@ -88,17 +88,71 @@ _WARNED_1201 = set()
 
 
 def warn_once_1201(site: str, what: str, exc: Any) -> None:
-    """Say, once, that a best-effort mechanism did not run. (#1201)"""
+    """Say, once, that a best-effort mechanism did not run. (#1201)
+
+    #1203os: the CAUSE clause now says what it means when there is no exception. A caller
+    that checked a precondition and found it absent passes `exc=None`, and the tail then read
+    `NoneType: None`, which looks like a bug in the reporter rather than a mechanism that
+    declined for a reason it already stated.
+    """
     try:
         if site in _WARNED_1201:
             return
         _WARNED_1201.add(site)
         import logging
+        _cause = ("its precondition was not met (no exception was raised)" if exc is None
+                  else "%s: %s" % (type(exc).__name__, str(exc)[:160]))
         logging.getLogger(__name__).warning(
-            "#1201 %s did NOT run this process: %s: %s. It is guarded so it cannot break the "
+            "#1201 %s did NOT run this process: %s. It is guarded so it cannot break the "
             "run, which also means nothing else will report it — treat this as the mechanism "
             "being OFF, not as a transient.",
-            what, type(exc).__name__, str(exc)[:160])
+            what, _cause)
+    except Exception:
+        pass
+
+
+# --- #1203os: a FINDING is not a mechanism that turned off --------------------------
+# #1201's population is supposed to answer one question -- "which guarded mechanisms were off
+# in this run?" -- and three call sites were using it to report something else entirely: a
+# fact about the GENERATED APP, or an event that happened on purpose. The template then
+# appended `did NOT run this process ... treat this as the mechanism being OFF` to a sentence
+# about which nothing was off.
+#
+# MEASURED over the 294 corpus run logs: of 602 `#1201` lines, **599 in 66 logs** are those
+# three sites --
+#
+#     registryhub: "ui_page 'X' registered with no `apis_used`"              565 / 66 logs
+#     registryhub: "ui_page 'X' claimed IMPLEMENTED with no route/component"  32 / 10 logs
+#     compose_mutex: "waited Ns for the stack lease ... tearing it down"       2 /  2 logs
+#
+# -- and only 3 lines in 3 logs are a mechanism actually declining. So 99.5% of the answer to
+# "which mechanisms turned off" was wrong, and the cost is not hypothetical: an audit of that
+# very question returned 608 rows of which 3 were real, which is how this was found.
+#
+# It also buries the findings. Two of the three are the UI contract -- a page registered
+# without naming the endpoints it reads, which is what turns the decoy-twin / consumer-wiring
+# / implemented-flip checks OFF for that page -- and the third is the lease-wait announcement
+# that the 13.2h `lease_wait` measurement is built on. A reader who meets them inside #1201's
+# template is told to read them as a framework mechanism being broken.
+#
+# Same dedupe contract as #1201 (once per process per site, never raises); separate store, so
+# moving a site between the two cannot silence it.
+_ANNOUNCED_1203OS = set()
+
+
+def announce_once_1203os(site: str, message: str, *args: Any) -> None:
+    """Say, once per process per `site`, a thing that IS the case. (#1203os)
+
+    For a finding about the generated app or an event the framework chose -- never for a
+    mechanism that failed, which is `warn_once_1201`'s job and whose population has to stay
+    answerable.
+    """
+    try:
+        if site in _ANNOUNCED_1203OS:
+            return
+        _ANNOUNCED_1203OS.add(site)
+        import logging
+        logging.getLogger(__name__).warning("#1203os " + str(message), *args)
     except Exception:
         pass
 

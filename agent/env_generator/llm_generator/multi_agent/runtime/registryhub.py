@@ -2968,13 +2968,16 @@ class RegistryHub:
             _refused_1202ud = ("implemented claimed with no route and no component; "
                                "nothing to render or navigate to")
             try:
-                from .message_format import warn_once_1201
-                warn_once_1201(
+                # #1203os: this is a FINDING about the generated app, not a framework
+                # mechanism that declined -- #1201's template told the reader to treat it as
+                # the mechanism being OFF, and 32 lines in 10 corpus runs said so.
+                from .message_format import announce_once_1203os
+                announce_once_1203os(
                     "ui_page_implemented_without_a_surface_1202ud:%s" % name,
                     "ui_page %r was claimed IMPLEMENTED with no route and no component. There "
                     "is nothing to render or navigate to, so nothing can have been verified; "
                     "it is held at `defined`. Give it a route or a component, or do not "
-                    "register it." % name, None)
+                    "register it." % name)
             except Exception:
                 pass
 
@@ -2997,15 +3000,18 @@ class RegistryHub:
         # #1202rm blocks it at the cut; this is the same fact at the moment it is created,
         # where the lane can still act on it cheaply. Advisory, never raises.
         try:
-            from .message_format import warn_once_1201
+            # #1203os: a finding about the page, not a mechanism that failed. This is the
+            # single loudest #1201 line in the corpus (565 of 602, across 66 runs) and nothing
+            # about it was ever OFF -- the page was registered, with an empty apis_used.
+            from .message_format import announce_once_1203os
             if not (apis_used or existing.get("apis_used")):
-                warn_once_1201(
+                announce_once_1203os(
                     "ui_page_no_apis_1202rn:%s" % name,
                     "ui_page %r registered with no `apis_used`. If this page shows anything "
                     "from the backend, name its endpoints: an empty list does not fail the "
                     "decoy-twin / consumer-wiring / implemented-flip checks, it turns them "
                     "off, and the page then ships without them ever looking at it. Empty is "
-                    "correct only for a page that genuinely reads no data." % name, None)
+                    "correct only for a page that genuinely reads no data." % name)
         except Exception:
             pass
         rec = {

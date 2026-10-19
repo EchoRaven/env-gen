@@ -124,12 +124,21 @@ def test_the_free_path_reports_how_long_it_waited():
     raise AssertionError("no `if not holders: ... return True` branch found")
 
 
-def test_the_cap_path_still_warns():
+def test_the_cap_path_still_announces_once_with_the_duration():
     """#1202nx's escape — 'a lease must never wedge a run' — tore the stack down while a holder
-    was using it once in r165. Whatever else changes, that warning stays."""
+    was using it once in r165. Whatever else changes, that announcement stays.
+
+    ★ This asserted `"warn_once_1201" in body` and went red when #1203os moved the line to
+    `announce_once_1203os` — because it is an EVENT the framework chose, not a mechanism that
+    failed, and #1201's template was telling the reader to treat it as the mechanism being
+    OFF. The property this test exists for (the cap path says it tore the stack down, once,
+    with how long it waited) was never touched; the assertion was bound to a helper NAME.
+    So it now asserts the property: SOME once-per-site announcer is called, the sentence is
+    there, and the waited seconds are in it."""
     body = ast.unparse(_wait_fn())
-    assert "warn_once_1201" in body, body
+    assert ("announce_once_1203os" in body or "warn_once_1201" in body), body
     assert "tearing the stack down anyway" in body, body
+    assert "waited" in body, "the cap path no longer says how long it waited: %s" % body
 
 
 def test_the_duration_log_cannot_raise_into_the_caller():

@@ -100,6 +100,16 @@ _CONTROLS = [
     ("or", "tiktok-web-r185", "FALSIFIED"),
     ("or", "tiktok-web-r191", "FALSIFIED"),
     ("or", "tiktok-web-r190", "N-A"),
+    # `os` reads the LOG, and this harness calls the script WITHOUT --log on purpose (the path
+    # every criterion must survive), so N-A is the control here. Verified by hand with the
+    # log: r191 -> FALSIFIED "10 findings still wear the #1201 template, 0 genuine
+    # mechanism-off lines", r190 -> 8, r185 -> 10.
+    ("os", "tiktok-web-r191", "N-A"),
+    ("os", "tiktok-web-r190", "N-A"),
+    # `ot` also reads the LOG, so N-A is the no---log control. Verified by hand with the log:
+    # r190 -> FALSIFIED "797 lines for 1 distinct resolution", r191 427/1, r185 607/1.
+    ("ot", "tiktok-web-r190", "N-A"),
+    ("ot", "tiktok-web-r191", "N-A"),
 ]
 
 _cache = {}
@@ -180,6 +190,11 @@ _CONFIRM_REQUIRES = {
     "oq": ["never answered the business endpoints"],
     # `or` CONFIRMED needs the ledger line its own recorder writes.
     "or": ["contradicted_capability_claims_1203or"],
+    # `os` CONFIRMED needs the marker the new announcer prints.
+    "os": ["#1203os"],
+    # `ot` counts lines against distinct bodies in the log; nothing has to be emitted for it
+    # to be able to confirm.
+    "ot": [],
 }
 
 
@@ -308,7 +323,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

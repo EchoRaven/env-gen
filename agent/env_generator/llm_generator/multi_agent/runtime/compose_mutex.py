@@ -32,7 +32,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Dict
 
-from .message_format import warn_once_1201
+# #1203os: BOTH names at module level. The lease-wait call site below is NOT inside a
+# try, so a bare `announce_once_1203os` would raise NameError and take the run with it
+# -- the sixth time this project has paid for a name reached for but never bound.
+from .message_format import announce_once_1203os, warn_once_1201
 
 # The verbs that create or destroy containers. `build`, `ps`, `logs`, `config`, `images`,
 # `pull` and `version` are absent on purpose -- see the module docstring.
@@ -362,9 +365,12 @@ def wait_for_stack_leases_1202nx(project_dir: Any, who: str, timeout_s: Any = No
             except Exception:
                 pass
         if waited >= limit:
-            warn_once_1201("stack_lease_wait_1202nx",
-                           "%s waited %.0fs for the stack lease held by %s and is tearing the "
-                           "stack down anyway (a lease must never wedge a run)"
-                           % (who, waited, ", ".join(holders)), None)
+            # #1203os: this is an EVENT the framework chose, not a mechanism that failed.
+            # #1201's template appended "treat this as the mechanism being OFF" to the one
+            # announcement the 13.2h `lease_wait` measurement is built on.
+            announce_once_1203os("stack_lease_wait_1202nx",
+                                 "%s waited %.0fs for the stack lease held by %s and is "
+                                 "tearing the stack down anyway (a lease must never wedge "
+                                 "a run)" % (who, waited, ", ".join(holders)))
             return False
         time.sleep(poll_s)

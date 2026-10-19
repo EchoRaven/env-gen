@@ -1096,6 +1096,69 @@ def main(argv):
     except Exception as _e_or:
         say("or", "N-A", "the #1203or criterion could not read this run (%s)" % _e_or)
 
+    # --- #1203os — a finding must not wear #1201's "this mechanism is OFF" template -------
+    # READS: the run log (--log), which is where #1201/#1203os lines land.
+    # FALSIFIED: a `#1201 ... did NOT run this process` line whose subject is one of the three
+    #   moved sites -- a ui_page registered with no `apis_used`, a ui_page claimed IMPLEMENTED
+    #   with no surface, or a stack-lease wait. None of those is a mechanism that declined.
+    # CONFIRMED: those subjects appear under `#1203os` (or not at all) and every remaining
+    #   `#1201` line is a mechanism that really did not run.
+    # CONTROL (pre-patch): 599 of the corpus's 602 `#1201` lines are these three, across 66
+    #   logs -- r191 and r190 among them. 3 lines in 3 logs are the real population.
+    try:
+        _os_subjects = ("registered with no `apis_used`",
+                        "was claimed IMPLEMENTED with no route and no component",
+                        "for the stack lease held by")
+        if not logtext:
+            say("os", "N-A", "no run log given, and these lines live only in the log")
+        else:
+            _os_bad, _os_ok, _os_real = 0, 0, 0
+            for _l in logtext.splitlines():
+                if "#1203os " in _l and any(x in _l for x in _os_subjects):
+                    _os_ok += 1
+                    continue
+                if "#1201 " not in _l:
+                    continue
+                if any(x in _l for x in _os_subjects):
+                    _os_bad += 1
+                elif "did NOT run this process" in _l:
+                    _os_real += 1
+            if not (_os_bad or _os_ok):
+                say("os", "N-A", "this log carries none of the three moved subjects "
+                                 "(%d real #1201 line(s))" % _os_real)
+            else:
+                say("os", "FALSIFIED" if _os_bad else "CONFIRMED",
+                    "%d finding(s) still wear the #1201 template, %d announce correctly, "
+                    "%d genuine mechanism-off line(s)" % (_os_bad, _os_ok, _os_real))
+    except Exception as _e_os:
+        say("os", "N-A", "the #1203os criterion could not read this run (%s)" % _e_os)
+
+    # --- #1203ot — a success line must not repeat itself byte for byte ------------------
+    # READS: the run log (--log).
+    # FALSIFIED: the `#1202vz resolved ...` line appears more times than it has DISTINCT
+    #   bodies plus a small allowance -- i.e. the localiser's every pass is still printing the
+    #   same sentence. #1202ad's rule, on the biggest offender left after #1203i3.
+    # CONFIRMED: each distinct resolution is said at most a handful of times (one per state).
+    # CONTROL (pre-patch): r183 1220 lines / 1 distinct body, r190 797/1, r185 607/1,
+    #   r191 427/1.
+    try:
+        if not logtext:
+            say("ot", "N-A", "no run log given, and this line lives only in the log")
+        else:
+            _ot_lines = [l for l in logtext.splitlines() if "#1202vz resolved" in l]
+            _ot_bodies = {l.split("#1202vz", 1)[1].strip() for l in _ot_lines}
+            if not _ot_lines:
+                say("ot", "N-A", "this run never resolved a declared FK by natural key")
+            else:
+                # one line per distinct state is the fix's own shape; allow 3x headroom for
+                # counts that legitimately move between passes.
+                _ot_cap = max(3 * len(_ot_bodies), 3)
+                say("ot", "FALSIFIED" if len(_ot_lines) > _ot_cap else "CONFIRMED",
+                    "%d line(s) for %d distinct resolution(s)"
+                    % (len(_ot_lines), len(_ot_bodies)))
+    except Exception as _e_ot:
+        say("ot", "N-A", "the #1203ot criterion could not read this run (%s)" % _e_ot)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")
