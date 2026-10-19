@@ -198,3 +198,73 @@ def test_a_missing_directory_is_not_reported_as_a_broken_scan_1203kd(tmp_path):
     assert "glyph_icon_findings_1203kd" not in MF._WARNED_1201, (
         "a frontend with no src/ is not a broken scan — #1201's warning claims the mechanism "
         "is OFF for the whole process, so it must stay for real faults")
+
+
+# --- #1203p1: the shapes the regex matches on purpose that NO fixture reached -------------
+# Found by running mutations against the CURRENT regex rather than the one this file was
+# written against: disabling each alternative in turn left five of them passing, because
+# every fixture above happens to exercise only the primary shape. Each alternative below is
+# in `_GLYPH_ICON_1203KD` deliberately -- one of them (the library gate's IMPORT form) is
+# load-bearing on a MEASURED corpus fact and had no test at all.
+
+def test_a_braced_string_child_is_reported_1203p1(tmp_path):
+    """`>{'♡'}<` -- the same glyph, written as a JSX expression instead of text.
+
+    The regex carries this alternative separately from the text-child one because a lane
+    writing `{'♡'}` produces different source bytes for the same rendered icon. Every
+    fixture above uses the bare text form, so removing this alternative changed nothing.
+    """
+    d = _src(tmp_path, **{"Row.jsx": "<span>{'♡'}</span>\n"})
+    out = G(d)
+    assert len(out) == 1, out
+    assert "♡" in out[0], out
+
+
+def test_a_glyph_in_a_NON_icon_attribute_is_reported_1203p1(tmp_path):
+    """`label="♡"` -- the generic `=` alternative, which no fixture reached alone.
+
+    `icon="⌷"` above matches BOTH the generic `=` form and the `(?:icon|symbol|glyph)[:=]`
+    form, so it cannot tell which alternative did the work; with the generic one removed it
+    still passed. A glyph sitting in any quoted attribute is a character doing an icon's
+    job -- that is why the alternative is there, and this is the case that proves it.
+    """
+    d = _src(tmp_path, **{"Nav.jsx": '<Tab label="✦" to="/live" />\n'})
+    out = G(d)
+    assert len(out) == 1, out
+
+
+def test_a_long_run_of_glyphs_is_not_an_icon_1203p1(tmp_path):
+    """The `{1,3}` bound: an icon is one to three characters, a row of them is decoration.
+
+    Nothing exercised the upper bound, so widening it to `+` passed. A separator strip like
+    `◆◆◆◆◆◆` is not a control and must not be filed as one.
+    """
+    d = _src(tmp_path, **{"Divider.jsx": "<div>◆◆◆◆◆◆◆◆</div>\n"})
+    assert G(d) == [], G(d)
+
+
+def test_a_library_LISTED_but_never_imported_does_not_silence_the_check_1203p1(tmp_path):
+    """The gate is on the IMPORT, not on the name appearing somewhere.
+
+    `_ICON_LIB_1203KD`'s own comment records the measurement: "r164 declares lucide-react
+    and imports it nowhere, with 29 glyphs in its source". That is the whole reason the
+    pattern requires `from '<lib>'` -- and loosening it to match any quoted occurrence
+    passed, because every fixture that mentions a library also imports it.
+    """
+    d = _src(tmp_path, **{"package.json": '{"dependencies": {"lucide-react": "^0.408.0"}}\n',
+                          "Row.jsx": "<span>♡</span>\n"})
+    out = G(d)
+    assert len(out) == 1, ("a listed-but-unimported library must not silence the check", out)
+
+
+def test_node_modules_is_not_the_apps_source_1203p1(tmp_path):
+    """A dependency's own glyphs are not the app's icons.
+
+    The scan excludes `node_modules`, and nothing tested it: including that tree passed.
+    """
+    d = tmp_path / "src"
+    (d / "node_modules" / "some-lib").mkdir(parents=True)
+    (d / "node_modules" / "some-lib" / "dist.js").write_text(
+        "<span>♡</span>\n", encoding="utf-8")
+    (d / "App.jsx").write_text("export default function App(){return null}\n", encoding="utf-8")
+    assert G(d) == [], G(d)
