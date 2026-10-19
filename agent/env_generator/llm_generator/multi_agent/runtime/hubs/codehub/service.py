@@ -12,6 +12,71 @@ from ...eventhub import EventHub
 from .git_ops import GitOps
 from .stores import CodeHubStores
 
+# #1203oy: THE SENTENCE A HUMAN READS MUST CARRY THE VERDICT THE RECORD REACHED.
+# `#1202jr` (below) found this exact silence -- it quotes r43's notes, "Final delivery:
+# delivery gate fully clear", as "true of the gate it names and SILENT ABOUT THIS ONE" --
+# and fixed it by STAMPING the visual fields onto the release. That is the record half.
+# The reader half was never wired: `live_monitor_server.build_releases_list` serves a human
+# exactly six keys per release -- tag, branch, sha, NOTES, createdAt, snapshots -- and not
+# one `visual_*` field, so the only visual fact that reaches that page is whatever the
+# notes string says. MEASURED over this corpus: 78 releases carry the framework's constant
+# "the delivery gate is fully clear", and 22 of them were cut with `visual_passed=False` --
+# r167, r168, r169, r173 (two tags), r177 (two), r184, r190 and r191 among them, with
+# blocking averages down to 0.02 and up to 9 screens below the bar.
+# #1148's shape: evidence put in a record that the consumer which matters never reads.
+# Scope checked rather than assumed: of the 15 record->payload projections that page
+# builds, this is the ONLY one that drops a verdict-ish field, and the dropped set is
+# exactly the four visual keys plus `branch_error` -- which never fires (0 of 95
+# releases carry it, and none is missing its branch sha). So the clause covers the
+# whole of what that surface loses, and #647 keeps it no wider than that.
+# So the clause is appended HERE, next to the one reading of the verdict, which is also
+# where #1202jr argues the stamp belongs ("One writer, one stamp") -- the `create_release`
+# TOOL a lane calls with notes of its own gets it too.
+# It does NOT claim the delivery gate was unclear: the blocking set can be genuinely clear
+# while the visual gate is advisory or waived. It states the visual verdict as its own fact.
+_VIS_NOTE_CAP_1203OY = 4
+
+
+def _notes_with_visual_1203oy(notes, vis):
+    """`notes` with one clause naming the visual verdict in `vis`. Never raises."""
+    base = str(notes or "").rstrip()
+    try:
+        if "#1203oy" in base:
+            return base                      # idempotent: already carried
+        passed = (vis or {}).get("visual_passed")
+        if passed is True:
+            clause = "Visual verdict: passed."
+        elif passed is None:
+            # #1039/#883: "not measured" must not read as "measured and clean".
+            clause = ("Visual verdict: NOT RECORDED -- nothing measured how the delivered "
+                      "app looked.")
+        else:
+            below = [str(x) for x in ((vis or {}).get("visual_screens_below") or [])]
+            avg = (vis or {}).get("visual_blocking_average_live")
+            # #1034: the list is capped and the cut says so.
+            shown = ", ".join(below[:_VIS_NOTE_CAP_1203OY])
+            more = ("" if len(below) <= _VIS_NOTE_CAP_1203OY
+                    else " (+%d more)" % (len(below) - _VIS_NOTE_CAP_1203OY))
+            clause = "Visual verdict: NOT passed -- %d screen(s) below the bar" % len(below)
+            if isinstance(avg, (int, float)):
+                clause += ", blocking average %.4g" % avg
+            if shown:
+                clause += ": %s%s" % (shown, more)
+            clause += "."
+        return ((base + " ") if base else "") + clause + " (#1203oy)"
+    except Exception as _e1203oy:
+        # #1202ah: a silent default here would restore the exact silence this ticket is
+        # about, so say why the clause is missing rather than dropping it quietly.
+        try:
+            from ...message_format import warn_once_1201 as _w1203oy
+            _w1203oy("codehub.service._notes_with_visual_1203oy",
+                     "carrying the visual verdict into the release notes", _e1203oy)
+        except Exception:
+            pass
+        return base
+
+
+
 log = logging.getLogger(__name__)
 
 
@@ -1211,6 +1276,7 @@ class CodeHub:
         # build from exactly this snapshot. Sanitize the tag for use as a ref.
         safe_tag = re.sub(r"[^A-Za-z0-9._-]+", "-", str(tag)).strip("-") or "untagged"
         branch = f"release-v{safe_tag}"
+        _vis1203oy = self._visual_state_1202jr()
         branch_sha = None
         branch_error = None
         try:
@@ -1222,7 +1288,7 @@ class CodeHub:
             "id": tag,
             "tag": tag,
             "source": source,
-            "notes": notes,
+            "notes": _notes_with_visual_1203oy(notes, _vis1203oy),
             "branch": branch,
             "branch_sha": branch_sha,
             "branch_error": branch_error,
@@ -1242,7 +1308,9 @@ class CodeHub:
             # its own — and #706b records what hooking one of them costs: "#706 hooked the
             # api_smoke-validated cut further down this file and missed this one, which is the
             # path r147 actually took". One writer, one stamp.
-            **self._visual_state_1202jr(),
+            # #1203oy: ONE reading, used twice -- the note and the stamp must not be two
+            # separate measurements of a verdict that can change between them.
+            **_vis1203oy,
         }
         self.stores.releases.update(
             lambda m: m.set(tag, release, agent),

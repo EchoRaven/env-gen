@@ -118,6 +118,14 @@ _CONTROLS = [
     # silent walk as a failed login", r183 1, r185 1; r190 -> N-A (no all-empty line).
     ("ov", "tiktok-web-r191", "N-A"),
     ("ov", "tiktok-web-r190", "N-A"),
+    # `ox` lives only in the run log, so the no-log call is N-A by construction; with the
+    # log it is FALSIFIED on every run on this disk (14 lines each, one per profile).
+    ("ox", "tiktok-web-r191", "N-A"),
+    ("ox", "tiktok-web-r190", "N-A"),
+    # `oy` reads codehub_releases.json, so it answers without a log: both runs cut releases
+    # whose notes omit the visual verdict the same record carries.
+    ("oy", "tiktok-web-r191", "FALSIFIED"),
+    ("oy", "tiktok-web-r190", "FALSIFIED"),
 ]
 
 _cache = {}
@@ -207,6 +215,10 @@ _CONFIRM_REQUIRES = {
     "ou": [],
     # `ov` CONFIRMED needs the wording the patched summary/signal emits.
     "ov": ["no login steps recorded"],
+    # `ox` CONFIRMED needs the startup line to state the condition instead of the outcome.
+    "ox": ["leaves the ranker a free slot"],
+    # `oy` CONFIRMED needs the release note to carry the verdict clause.
+    "oy": ["Visual verdict:"],
 }
 
 
@@ -367,7 +379,8 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov",
+                     "ox", "oy"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

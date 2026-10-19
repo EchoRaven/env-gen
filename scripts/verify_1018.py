@@ -1218,6 +1218,82 @@ def main(argv):
     except Exception as _e_ov:
         say("ov", "N-A", "the #1203ov criterion could not read this run (%s)" % _e_ov)
 
+    # --- #1203ox — the startup tool-surface line must not assert offerability ------------
+    # READS: the run log (--log).
+    # FALSIFIED: a `tool-surface: profile ...` line says the tools it names are
+    #   "(offerable via ranking)". For most profiles that is not true: `rank_tool_names`
+    #   caps at `max(limit, len(always_include))` and fills `always_include` first, so the
+    #   ranked slots are `max(0, limit - |always_include[stage] & granted|)` -- 0 for the
+    #   orchestrator in 5 of its 6 stages, and for backend / frontend / verifier / debugger
+    #   / knowledge / realism_judge / the three test users in essentially every stage.
+    # CONFIRMED: every such line states the CONDITION instead (free ranker slot or the
+    #   stage's allowlist) and carries the ticket id.
+    # CONTROL (pre-patch): 2806 lines in 211 of 211 logs, 14 per log (one per profile), every
+    #   one of them asserting offerability; r189/r190/r191 are 14 each.
+    try:
+        if not logtext:
+            say("ox", "N-A", "no run log given, and this line lives only in the log")
+        else:
+            _ox_bad = _ox_ok = 0
+            for _l in logtext.splitlines():
+                if "tool-surface: profile" not in _l:
+                    continue
+                _low = _l.lower()
+                if ("#1203ox" in _l and "only" in _low and "slot" in _low
+                        and "allowlist" in _low):
+                    _ox_ok += 1
+                elif "offerable via ranking" in _low:
+                    _ox_bad += 1
+            if not (_ox_bad or _ox_ok):
+                say("ox", "N-A", "this log has no tool-surface profile line")
+            else:
+                # #883: a log carrying BOTH wordings is not clean -- the old sentence is
+                # still being emitted somewhere, so this fails closed.
+                say("ox", "FALSIFIED" if _ox_bad else "CONFIRMED",
+                    "%d line(s) assert the tools are offerable, %d state the condition"
+                    % (_ox_bad, _ox_ok))
+    except Exception as _e_ox:
+        say("ox", "N-A", "the #1203ox criterion could not read this run (%s)" % _e_ox)
+
+    # --- #1203oy — the release note must carry the visual verdict ------------------------
+    # READS: shared/hubs/codehub_releases.json
+    # FALSIFIED: a release record whose `notes` do NOT mention the visual verdict while the
+    #   same record carries one (`visual_passed` present) -- the note is the only visual
+    #   fact that reaches `live_monitor_server.build_releases`, whose per-release payload is
+    #   tag/branch/sha/notes/createdAt/snapshots and no `visual_*` key.
+    # CONFIRMED: every release that has a verdict says so in its note.
+    # CONTROL (pre-patch): 78 of 95 releases carry the framework's constant "the delivery
+    #   gate is fully clear" and 22 of those were cut with `visual_passed=False` (r167, r168,
+    #   r169, r173 x2, r177 x2, r184, r190, r191); none of the 95 notes mentions a verdict.
+    try:
+        # `_json` is this script's own reader (path, default) -- NOT the stdlib module.
+        _oy_d = _json(run / "shared" / "hubs" / "codehub_releases.json", None)
+        if _oy_d is None:
+            say("oy", "N-A", "this run cut no release")
+        else:
+            _oy_bad, _oy_ok, _oy_novrd = [], 0, 0
+            for _k, _v in (_oy_d or {}).items():
+                if _k == "_meta" or not isinstance(_v, dict):
+                    continue
+                if "visual_passed" not in _v:
+                    _oy_novrd += 1
+                    continue
+                _n = str(_v.get("notes") or "")
+                if "#1203oy" in _n or "visual verdict" in _n.lower():
+                    _oy_ok += 1
+                else:
+                    _oy_bad.append("%s(visual_passed=%r)" % (_k, _v.get("visual_passed")))
+            if not (_oy_bad or _oy_ok):
+                say("oy", "N-A", "none of this run's %d release(s) carries a visual verdict"
+                    % _oy_novrd)
+            else:
+                say("oy", "FALSIFIED" if _oy_bad else "CONFIRMED",
+                    "%d release note(s) omit the verdict in the same record, %d carry it%s"
+                    % (len(_oy_bad), _oy_ok,
+                       (" -- " + ", ".join(sorted(_oy_bad)[:3])) if _oy_bad else ""))
+    except Exception as _e_oy:
+        say("oy", "N-A", "the #1203oy criterion could not read this run (%s)" % _e_oy)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

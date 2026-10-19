@@ -463,12 +463,17 @@ def _assemble_granted_tool_categories(profile_id: str, profile_cfg: Dict[str, An
 def validate_orphaned_tool_offerings(profiles: Dict[str, Dict[str, Any]]) -> None:
     """STARTUP guard for the orphan class (called from ``load_config``).
 
-    For each profile, dry-assemble its granted pool, then emit a LOUD
-    ``logger.warning`` (one consolidated line per profile) listing every granted
-    tool that is never offerable — category in no stage hint AND name in no
-    always-include set. Never raises: a profile whose pool can't be assembled, or
-    a reference-set import failure, degrades to a debug line so ``load_config``
-    still completes."""
+    For each profile, dry-assemble its granted pool, then emit ONE consolidated
+    ``logger.info`` line per profile naming the granted tools that are neither
+    category-hinted nor force-offered in any stage. Never raises: a profile whose
+    pool can't be assembled, or a reference-set import failure, degrades to a debug
+    line so ``load_config`` still completes.
+
+    #1203ox CORRECTS THIS DOCSTRING. It used to promise "a LOUD ``logger.warning``"
+    while the body has emitted ``logger.info`` ever since the downgrade below -- and
+    the downgrade's own comment is right there, three lines under it. Measured: the
+    line fires in 211 of 211 run logs (2806 lines), so this is the sentence a reader
+    arrives with. #1203j2: a false sentence in the framework is its own defect."""
     try:
         hint_categories, always_include_names = _orphan_reference_sets()
     except Exception as exc:
@@ -488,16 +493,47 @@ def validate_orphaned_tool_offerings(profiles: Dict[str, Dict[str, Any]]) -> Non
             )
             if orphans:
                 # The AND-heuristic over-reports: the action stage can still OFFER any
-                # granted tool via token-overlap ranking, so "not pinned/hinted" does
-                # NOT mean "never offerable". Emit ONE concise INFO summary per profile
+                # granted tool via token-overlap ranking, so "neither force-offered nor
+                # category-hinted" does NOT mean "never offerable" (#1203ox reworded the
+                # emitted line, and this comment quotes the line, so it moves with it).
+                # Emit ONE concise INFO summary per profile
                 # (count + up to 5 example names) instead of one WARN per orphan, so
                 # startup logs aren't flooded with false positives. Detection is
                 # unchanged; only the logging is downgraded. Never raises.
+                #
+                # #1203ox: BUT "offerable via ranking" WAS STATED UNCONDITIONALLY, AND
+                # FOR MOST PROFILES IT IS NOT TRUE. `rank_tool_names` caps its result at
+                # `max(limit, len(always_include))` and fills `always_include` FIRST, so
+                # the slots a ranked name can occupy are
+                #     max(0, limit - |always_include[stage] & granted|)
+                # and `limit` is 10 (8 for communicate/deliver, action.py). Computed over
+                # all 14 profiles in agents_config.yaml: the orchestrator -- which the
+                # comment in step_pipeline/tooling.py calls the ONE agent left on the
+                # query-ranked path -- has 0 such slots in 5 of its 6 stages (action 35,
+                # deliver 31, communicate 22, edit_code 20, run_checks 11 force-offered
+                # against a limit of 8-10) while holding 161 granted tools; backend,
+                # frontend, verifier, debugger, knowledge, realism_judge and the three
+                # test users are 0 in essentially every stage. Only worker /
+                # review_worker / analysis_worker / design_analyst and `delegate_team`
+                # (which force-offers nothing) leave slots.
+                #
+                # The claim is not reversed into "never offerable" either, because the
+                # force-offer list SHRINKS on purpose at times -- #1202mx withdraws the
+                # validation tools while a kickoff is open, #361 on the milestone axis,
+                # and the validation-ready defer for the orchestrator -- and each of those
+                # moments opens slots. A phase-keyed `stage_tool_allowlist` is a fourth
+                # route entirely (FIX #29 offers the whole curated set, up to 48), which
+                # is how `kickoff_declare_predicate` reaches the verifier 747 times
+                # across the run logs while sitting in NO always-include set.
+                #
+                # So the line now states the CONDITION instead of asserting the outcome.
                 examples = ", ".join(orphans[:5])
                 more = "..." if len(orphans) > 5 else ""
                 logger.info(
-                    "tool-surface: profile '%s' has %d tool(s) not pinned/hinted to a "
-                    "stage (offerable via ranking): %s%s",
+                    "tool-surface: profile '%s' has %d tool(s) neither force-offered nor "
+                    "category-hinted in any stage; each is offerable only in a stage that "
+                    "leaves the ranker a free slot or lists it in that stage's allowlist "
+                    "(#1203ox): %s%s",
                     profile_id, len(orphans), examples, more,
                 )
         except Exception as exc:
