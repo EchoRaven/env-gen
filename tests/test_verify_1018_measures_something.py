@@ -94,6 +94,12 @@ _CONTROLS = [
     ("oq", "tiktok-web-r190", "FALSIFIED"),
     ("oq", "tiktok-web-r107", "N-A"),
     ("oq", "tiktok-web-r191", "N-A"),
+    # `or` pairs the run to its log beside the repo (`gm_<run>.log`), so it answers on any
+    # modern tree. r190 is N-A: it holds no contradicted capability claim at all.
+    ("or", "instagram-core-r175", "FALSIFIED"),
+    ("or", "tiktok-web-r185", "FALSIFIED"),
+    ("or", "tiktok-web-r191", "FALSIFIED"),
+    ("or", "tiktok-web-r190", "N-A"),
 ]
 
 _cache = {}
@@ -172,6 +178,8 @@ _CONFIRM_REQUIRES = {
     "op": ["#1203op"],
     # `oq` CONFIRMED needs the rewritten instruction the patched dispatch writes.
     "oq": ["never answered the business endpoints"],
+    # `or` CONFIRMED needs the ledger line its own recorder writes.
+    "or": ["contradicted_capability_claims_1203or"],
 }
 
 
@@ -300,7 +308,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

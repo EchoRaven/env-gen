@@ -1028,6 +1028,74 @@ def main(argv):
     except Exception as _e_oq:
         say("oq", "N-A", "the #1203oq criterion could not read this run (%s)" % _e_oq)
 
+    # --- #1203or — a lane must not get away with "that tool is not on my surface" ---------
+    # READS: the run's hubs, through the framework's OWN
+    #   `contradicted_capability_claims_1203or`, with the "offered" set taken from the tools
+    #   each agent SUCCESSFULLY CALLED in its paired run log (a strict subset of what it was
+    #   offered, so this under-counts rather than over-counts).
+    # FALSIFIED: such a claim exists and `logs/contradicted_capability_claims_1203or.jsonl`
+    #   does not record it -- i.e. the run contained the contradiction and nothing said so.
+    # CONFIRMED: no such claim, or every one of them is in that ledger.
+    # ★ THE LOG IS NOT IN THE TREE. A modern run's log sits beside the repo as `gm_<run>.log`
+    #   (37 of 38 r140+ trees have no `generation_*.log` at all), so this pairs by the log's
+    #   own `Output directory:` line -- the same pairing this script already does for --log.
+    # CONTROL (pre-patch): instagram-r175 FALSIFIES 4, r185 3, r182 3, r176 3, r191 1.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]
+                               / "agent" / "env_generator" / "llm_generator"))
+        from multi_agent.runtime.delivery_gate import (  # noqa: E402
+            contradicted_capability_claims_1203or as _cc1203or)
+        import subprocess as _sp_or
+        _or_logs = []
+        for _f in sorted((Path(__file__).resolve().parents[1]).glob("*.log")):
+            try:
+                with _f.open(encoding="utf-8", errors="replace") as _fh:
+                    _head = [next(_fh, "") for _ in range(40)]
+            except Exception:
+                continue
+            for _l in _head:
+                _m = re.search(r"Output directory:\s*(\S+)", _l)
+                if _m:
+                    if Path(_m.group(1).rstrip("/")).name == run.name:
+                        _or_logs.append(str(_f))
+                    break
+        _or_logs += [str(x) for x in (run / "logs").glob("generation_*.log")]
+        if not _or_logs:
+            say("or", "N-A", "no run log pairs to this tree, so nothing can be judged")
+        else:
+            # the tick is a real character, not an escape: inside an r-string `\u2705`
+            # reaches grep literally and matches nothing, which reads as "no tool was ever
+            # called successfully" -- an N-A that looks like a fact.
+            _or_ok = "\u2705"
+            _out = _sp_or.run(["grep", "-ohE",
+                               r"\[[a-z_0-9]+\] " + _or_ok + r" [a-z_0-9]+"]
+                              + _or_logs, capture_output=True, text=True, timeout=900).stdout
+            _did = {}
+            for _l in _out.splitlines():
+                _m = re.match(r"\[([a-z_0-9]+)\] " + _or_ok + r" ([a-z_0-9]+)", _l.strip())
+                if _m:
+                    _did.setdefault(_m.group(1), set()).add(_m.group(2))
+            if not _did:
+                say("or", "N-A", "the paired log records no successful tool call")
+            else:
+                _rows = _cc1203or(run / "shared" / "hubs", _did)
+                _led = run / "logs" / "contradicted_capability_claims_1203or.jsonl"
+                _have = _led.read_text(encoding="utf-8") if _led.is_file() else ""
+                _unsaid = [r for r in _rows
+                           if str(r.get("id") or "") not in _have]
+                if not _rows:
+                    say("or", "N-A", "no contradicted capability claim in this run")
+                else:
+                    say("or", "FALSIFIED" if _unsaid else "CONFIRMED",
+                        "%d of %d contradicted capability claim(s) reach no ledger%s"
+                        % (len(_unsaid), len(_rows),
+                           (" -- e.g. %s says %s" % (_rows[0].get("agent"),
+                                                     ",".join(_rows[0].get("tools") or [])))
+                           if _unsaid else ""))
+    except Exception as _e_or:
+        say("or", "N-A", "the #1203or criterion could not read this run (%s)" % _e_or)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

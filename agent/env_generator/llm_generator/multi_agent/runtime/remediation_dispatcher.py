@@ -4083,6 +4083,63 @@ class RemediationDispatcher:
                 # for non-verifier owners, so set it whenever the wake targets the verifier.
                 if owner == "verifier":
                     _gmsg.metadata["validation_phase"] = True
+                # #1203or: before this wake goes out, check whether the lane it is going to has
+                # already recorded that it CANNOT do this because a tool is missing -- and
+                # whether that tool was in fact offered to it. 70 such claims across 27 modern
+                # runs; 44 of them the verifier's, and the two tools they name most are
+                # `run_validation` (39) and `registryhub_register_verification_chain` (25),
+                # i.e. the ones whose absence turns into `api_smoke: NOT RUN` and the corpus's
+                # number-one terminal blocker. #1033 established the rule and the action -- "a
+                # blocker resting on a checkable falsehood must not read like a real one" -- and
+                # reads `fail_reason` on FAILED tasks, where 60 of these 70 are messagebus
+                # events and 7 are tasks already marked `completed`.
+                #
+                # Quoted onto the wake rather than filed as its own task: the lane is being
+                # woken about this very check in this very message, and a second P0 saying "and
+                # your excuse was wrong" is the #1041 storm one layer out.
+                try:
+                    from .delivery_gate import (
+                        contradicted_capability_claims_1203or as _cc1203or,
+                        record_contradicted_capability_claims_1203or as _rec1203or)
+                    from utils.llm import offered_tools_by_agent_1203or as _off1203or
+                    _root1203or = Path(getattr(orch, "output_dir", ".") or ".")
+                    _rows1203or = _cc1203or(_root1203or / "shared" / "hubs", _off1203or())
+                    _mine1203or = [r for r in _rows1203or if r.get("agent") == owner]
+                    if _mine1203or:
+                        _rec1203or(_root1203or, _mine1203or)
+                        _tools1203or = sorted({t for r in _mine1203or
+                                               for t in (r.get("tools") or [])})
+                        # THE BODY IS `payload`, NOT `content`. `_create_message` returns a
+                        # `BaseMessage` whose text lives in `payload`; `_gmsg.content += ...`
+                        # silently CREATES an attribute nobody transports, so the note reached
+                        # no lane at all. Caught by the test that asserts it arrives -- which
+                        # is the whole reason #1203f6 asks for that test and not for a spy on
+                        # the detector.
+                        # Name the STAGES the tool is guaranteed in, computed from the
+                        # force-offer map rather than written down: the one honest reading of
+                        # "not available in this step" is a `communicate` round, which forces
+                        # none of these on purpose. Saying so turns the note from "you are
+                        # wrong" into "you were in the wrong round", which is actionable.
+                        from .delivery_gate import forced_stages_1203or as _fs1203or
+                        _where1203or = sorted({st for t in _tools1203or
+                                               for st in _fs1203or(t)})
+                        _gmsg.payload = str(getattr(_gmsg, "payload", "") or "") + (
+                            " || #1203or: you have already recorded %d time(s) in this run that "
+                            "a tool you need here is unavailable (%s) -- and this run DID offer "
+                            "you every one of them.%s Do not record a check as NOT RUN on the "
+                            "grounds that the tool does not exist; call it, and if the CALL "
+                            "fails, report what it returned."
+                            % (len(_mine1203or),
+                               join_capped(_tools1203or, len(_tools1203or), cap=4, sep=", "),
+                               (" They are force-offered in the %s stage(s), so run the check "
+                                "from one of those rather than from a messaging round."
+                                % join_capped(_where1203or, len(_where1203or), cap=4, sep=", "))
+                               if _where1203or else ""))
+                except Exception as _e1203or:
+                    from .message_format import warn_once_1201
+                    warn_once_1201("remediation_dispatcher.capability_claims_1203or",
+                                   "quoting back a contradicted tool-availability claim",
+                                   _e1203or)
                 await orch.message_bus.send(_gmsg)
                 orch._logger.warning(
                     "GATE-CHECK remediation dispatched to %s (task %s): %s",

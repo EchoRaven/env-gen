@@ -1790,6 +1790,37 @@ def stage_tool_sets_1202zc() -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def offered_tools_by_agent_1203or() -> Dict[str, set]:
+    """{agent_id: every tool name that agent was OFFERED in this process}.
+
+    #1202zc's store already holds this -- `union` per "<agent>:<stage>" label -- and nothing
+    has ever read it to answer the one question a lane keeps asserting the answer to.
+
+    WHY THIS SET AND NOT `_registered_tool_names`. The agent attribute #1033 added holds the
+    LAST step's schema map and is overwritten every step, and it is the REGISTERED surface
+    (185 names for r191's verifier), not what the step actually showed. A lane that says
+    "`run_validation` is not available in this step" is making a claim about the STEP MENU, so
+    refuting it with the registered surface answers a different sentence. This union is the
+    menu, accumulated: if the name is in here, that agent was shown that tool at least once.
+
+    Keyed on the label's text before the first ":" -- see `record_stage_tool_set_1202zc`, whose
+    caller builds it as "%s:%s" % (agent_id, stage_name).
+
+    In-process only, like the store. An empty result means "nothing was recorded yet", which
+    every consumer must treat as "cannot judge" rather than "nothing was offered" (#883).
+    """
+    out: Dict[str, set] = {}
+    try:
+        for k, v in _STAGE_TOOL_SETS_1202ZC.items():
+            agent = str(k).split(":", 1)[0].strip()
+            if not agent:
+                continue
+            out.setdefault(agent, set()).update(str(n) for n in (v.get("union") or ()))
+    except Exception:
+        return out
+    return out
+
+
 def tool_result_bytes() -> Dict[str, Any]:
     """{tool: {calls, bytes, max}} sorted by bytes, biggest first."""
     try:

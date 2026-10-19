@@ -1229,6 +1229,316 @@ _TOOL_CLAIM_RE_1033 = re.compile(
     re.IGNORECASE)
 
 
+# #1203or: the same rule as #1033, over the places the claim is ACTUALLY written, judged
+# against what the claiming agent was actually offered.
+#
+# #1033's regex requires the tool name immediately before the phrase, which fits a hand-written
+# fail_reason and misses the shapes the lanes really use. Tested against ten verbatim corpus
+# strings it recognises FOUR:
+#
+#   MISS  required `run_validation()` tool is not available on this verifier tool surface
+#   MISS  required `run_validation`/verification-chain tools are not available in this surface
+#   MISS  submit_retro and deliver_project are not exposed in the current tool subset
+#   MISS  this runtime surface has not exposed the required verifier tools `registryhub_...`
+#   MISS  register_visual_review_task/capture build tools are not exposed in this toolset
+#   HIT   seed_audit_check is not available in this backend tool surface
+#   HIT   that validator is not available in the frontend tool surface      <- and `validator`
+#                                                                             is not a tool
+# So this reads the other way round: find the PHRASE, then take the tool-shaped tokens near it
+# and keep only the ones that agent was offered. Membership in the offered set is the filter,
+# so `validator` and `verification-chain` drop out by construction instead of by pattern.
+#
+# #1033's narrow regex is left exactly as it is: its own parametrised test pins the four
+# phrasings a fail_reason uses, and that predicate annotates a BLOCKER, where a false positive
+# costs more than a miss.
+# #1203or: #1033's rule -- "a blocker resting on a checkable falsehood must not read like a
+# real one" -- applied where the claim is actually written, and judged against what the
+# claiming agent was actually OFFERED.
+#
+# WHY A SECOND READER AND NOT A WIDER #1033. That predicate requires the tool name immediately
+# before the phrase, which fits a hand-written `fail_reason`. Against ten verbatim corpus
+# strings it recognises four, missing every shape the lanes actually use:
+#     MISS  required `run_validation()` tool is not available on this verifier tool surface
+#     MISS  required `run_validation`/verification-chain tools are not available in this surface
+#     MISS  submit_retro and deliver_project are not exposed in the current tool subset
+#     MISS  this runtime surface has not exposed the required verifier tools `registryhub_...`
+#     HIT   that validator is not available in the frontend tool surface   <- not a tool
+# #1033 is left exactly as it is: its own parametrised test pins the four `fail_reason`
+# phrasings, and it annotates a BLOCKER, where a false positive costs more than a miss.
+_UNAVAILABLE_PHRASE_1203OR = re.compile(
+    r"\b(?:not\s+(?:exposed|available|present)|unavailable"
+    r"|(?:does\s+not|doesn't|has\s+not)\s+(?:include|expose[d]?))\b",
+    re.IGNORECASE)
+# The segment must also DECLARE that something was not done, or call the tool REQUIRED. Both
+# halves matter: see the false positives listed below.
+_CLAIM_OUTCOME_1203OR = re.compile(
+    r"\b(?:NOT\s+RUN|NOT\s+CHECKED|BLOCKED|could\s+not|cannot|unable\s+to"
+    r"|required|requires|needs?|prescribed|canonical)\b", re.IGNORECASE)
+# The tool must be named the way the framework names a tool: in backticks, optionally with
+# the empty call parens the lanes write (`run_validation()`).
+_CLAIM_TOOL_1203OR = re.compile(r"`([a-z][a-z0-9_]{3,})(?:\(\))?`")
+_CLAIM_SEGMENT_1203OR = re.compile(r"[-\u2022*]\s|\n|(?<=[.;])\s")
+
+
+def capability_claim_tools_1203or(text: Any, offered: Any) -> List[str]:
+    """Tool names this text says were unavailable AND that the agent was offered.
+
+    PRECISION OVER RECALL, and the first version got that backwards. Reading any
+    tool-shaped token within 220 characters of an unavailability phrase answered 214 modern
+    claims, and eyeballing them showed most were not claims at all:
+
+      * "run_validation PASSED (run_8dfb...), then UI flow failed because the required follow
+        control was not present"            -> the thing absent is a BUTTON
+      * "Email fill succeeded, but Password input became unavailable; browser_fill ... timed
+        out"                                -> the thing absent is an INPUT
+      * "this action environment EXPOSES read/view_image/list_reference_images/..., but does
+        not ..."                            -> that list is what the lane HAS
+
+    So the rule is three conditions in ONE segment, not proximity: an unavailability phrase, a
+    declared outcome or a "required"-class word, and the tool named IN BACKTICKS. A UI control
+    is not backticked as a tool, and a list of granted tools is not introduced by "required".
+
+    What that deliberately gives up: a claim that names its tool unquoted
+    ("submit_retro and deliver_project are not exposed") is not counted. Worth it -- this
+    feeds a message that tells a lane its own words were false, and a false accusation there
+    costs more than a miss (the same trade #1033 made for its narrow regex).
+
+    `offered` empty -> []: an empty container is not a fact (#1023b/#883).
+    """
+    out: List[str] = []
+    try:
+        pool = {str(x) for x in (offered or ())}
+        if not pool:
+            return out
+        t = str(text or "")
+        if not t:
+            return out
+        hit = set()
+        for seg in _CLAIM_SEGMENT_1203OR.split(t):
+            if not seg or not _UNAVAILABLE_PHRASE_1203OR.search(seg):
+                continue
+            if not _CLAIM_OUTCOME_1203OR.search(seg):
+                continue
+            for name in _CLAIM_TOOL_1203OR.findall(seg):
+                if name in pool:
+                    hit.add(name)
+        out = sorted(hit)
+    except Exception as _e1203or:
+        # #1202ah: a swallowed failure here returns "no claim", which reads exactly like
+        # "the lane said nothing" -- the shape that ratchet exists to stop.
+        from .message_format import warn_once_1201 as _w1203or
+        _w1203or("delivery_gate.capability_claim_tools_1203or",
+                 "reading a capability claim out of one text", _e1203or)
+        return []
+    return out
+
+
+def _claim_author_1203or(record: Any, lanes: Any = None) -> str:
+    """Which agent wrote this record, or "".
+
+    The key differs per store and the one that matters is the least obvious: a lane's
+    validation summary arrives as a MESSAGEBUS event whose author is `payload["from"]`, not
+    any top-level field -- 60 of the 70 modern claims measured are in that shape, which is
+    why #1033's task-shaped reader sees almost none of them.
+    """
+    names = {str(x) for x in (lanes or ())} or None
+    try:
+        if not isinstance(record, dict):
+            return ""
+        payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        for src in (record, payload):
+            for key in ("author", "agent", "from", "source_agent_id", "created_by",
+                        "assignee", "_updated_by"):
+                a = str(src.get(key) or "").strip()
+                if a and (names is None or a in names):
+                    return a
+    except Exception as _e1203or:
+        # #1202ah: "" means "nobody wrote this", so a crash here silently drops the claim.
+        from .message_format import warn_once_1201 as _w1203or
+        _w1203or("delivery_gate.claim_author_1203or",
+                 "attributing a capability claim to the agent that wrote it", _e1203or)
+        return ""
+    return ""
+
+
+def _claim_strings_1203or(record: Any) -> List[str]:
+    """Every string inside one record that carries an unavailability phrase."""
+    out: List[str] = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+        elif isinstance(o, str) and _UNAVAILABLE_PHRASE_1203OR.search(o):
+            out.append(o)
+
+    try:
+        walk(record)
+    except Exception:
+        return out
+    return out
+
+
+_CLAIM_STORES_1203OR = ("workhub_comments", "workhub_tasks", "workhub_documents",
+                        "eventhub_events")
+
+
+def contradicted_capability_claims_1203or(hub_dir: Any, offered_by_agent: Any,
+                                          lanes: Any = None) -> List[Dict[str, Any]]:
+    """Claims that a tool was unavailable, written by an agent that WAS offered it.
+
+    MEASURED over the 95 corpus runs whose run log can be paired to their tree (the logs for
+    the modern runs live beside the repo as `gm_<run>.log`, NOT under the run's own `logs/`,
+    which is what made this look unmeasurable at first): 70 such claims in 27 modern runs
+    (r140+), by `verifier` 44, `orchestrator` 19, `frontend` 5, `backend` 2. The tools they
+    name are the ones that decide delivery: `run_validation` 39,
+    `registryhub_register_verification_chain` 25, `bug_create` 20, the browser tools 36.
+
+    Hand-checked on the loudest subset, where it is not a matter of pattern at all: in r177,
+    r180, r181, r182, r183, r185, r186, r191 and instagram-r175 the verifier SUCCESSFULLY
+    called `run_validation` 11-48 times and `registryhub_register_verification_chain` 31-84
+    times in the SAME run in which it recorded "required `run_validation()` tool is not
+    available on this verifier tool surface" and set `api_smoke: NOT RUN` on that basis --
+    and `validation_*` is the corpus's number-one terminal blocker.
+
+    Where they live is the whole reason #1033 never sees them: 60 of the 70 are messagebus
+    EVENTS and 7 are tasks whose status is `completed`, while #1033 reads `fail_reason` on
+    tasks whose status is `failed`.
+
+    Changes no verdict, exactly as #1033 and #1050 chose: this returns evidence. Empty
+    `offered_by_agent` returns [] -- nothing was recorded yet, so nothing can be judged.
+    """
+    out: List[Dict[str, Any]] = []
+    # This module imports neither `json` nor `Path` at module level -- every other user does
+    # it locally with an alias. A bare `json.loads` here would raise NameError into the
+    # `except Exception` below and return [] in silence, which reads exactly like "no claims".
+    import json as _json1203or
+    from pathlib import Path as _P1203or
+    try:
+        offered = {str(k): {str(x) for x in (v or ())}
+                   for k, v in (offered_by_agent or {}).items()}
+        if not offered:
+            # #883, and a COST early-exit rather than a correctness one: an empty map already
+            # makes `author not in offered` true for every record, so mutation OR3 showed
+            # removing this changes no answer. It is kept so a cold store does not read four
+            # JSON files per dispatch to conclude it cannot judge.
+            return out
+        _seen = set()
+        base = _P1203or(str(hub_dir))
+        if not base.is_dir():
+            return out
+        for store in _CLAIM_STORES_1203OR:
+            f = base / ("%s.json" % store)
+            if not f.is_file():
+                continue
+            try:
+                data = _json1203or.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            for key, rec in data.items():
+                if key == "_meta" or not isinstance(rec, dict):
+                    continue
+                author = _claim_author_1203or(rec, offered.keys() if lanes is None else lanes)
+                if not author or author not in offered:
+                    continue
+                for text in _claim_strings_1203or(rec):
+                    tools = capability_claim_tools_1203or(text, offered[author])
+                    if not tools:
+                        continue
+                    # DEDUPE. One record routinely carries the same sentence twice (a comment
+                    # and the event that mirrors it; a task's description and its result), and
+                    # a detector that reports one claim twice inflates its own ledger -- the
+                    # #1202z7 shape. Keyed on what identifies the claim, not on the text.
+                    _k = (store, str(rec.get("id") or key), author, tuple(tools))
+                    if _k in _seen:
+                        continue
+                    _seen.add(_k)
+                    # #1034: the excerpt is capped, so it says so. A claim quoted back to a
+                    # lane that stops mid-sentence with no marker reads as the whole thing.
+                    _c1203or = " ".join(str(text).split())
+                    out.append({"store": store, "id": str(rec.get("id") or key),
+                                "agent": author, "tools": tools,
+                                "claim": (_c1203or if len(_c1203or) <= 220 else
+                                          _c1203or[:220] + " …(+%d chars not shown)"
+                                          % (len(_c1203or) - 220))})
+    except Exception:
+        return out
+    return out
+
+
+def forced_stages_1203or(tool: Any) -> List[str]:
+    """The action stages in which `tool` is FORCE-OFFERED, from the map that decides it.
+
+    Computed rather than written down, because a stage list in prose rots (see #1203oa) and
+    this one is quoted back to a lane as a fact about its own surface.
+
+    `ACTION_STAGE_ALWAYS_INCLUDE` feeds `rank_tool_names(always_include=...)`, and #1202ep
+    made that list unfilterable ("ALWAYS-INCLUDE MEANS ALWAYS"), with the result slice taken
+    as `max(limit, len(always_include))` -- so a name in here is offered in that stage no
+    matter what the top-10 ranker thinks. Measured across the modern claims, every tool they
+    name is in this map:
+
+        run_validation / registryhub_register_verification_chain / bug_create /
+        browser_navigate / browser_screenshot / browser_click / deliverability_check /
+        docker_up / run_start      -> forced in `run_checks`, `deliver` and `action`
+
+    ...and `communicate` forces NONE of them, which is correct -- it is the messaging stage.
+    That is the one honest reading of the lanes' wording: "not available in THIS STEP" can be
+    true of a `communicate` round. It does not make `api_smoke: NOT RUN` true, because the
+    same wake has `run_checks` rounds where the tool is guaranteed, which is what the note
+    built from this says.
+    """
+    out: List[str] = []
+    try:
+        name = str(tool or "")
+        if not name:
+            return out
+        from ..agents.base import EnvGenAgent as _A1203or
+        m = getattr(_A1203or, "ACTION_STAGE_ALWAYS_INCLUDE", None) or {}
+        out = sorted(st for st, names in m.items() if name in (names or ()))
+    except Exception as _e1203or:
+        # #1202ah: [] means "it is forced nowhere", and the import this does (into
+        # `..agents.base`) is exactly the kind that can fail for a reason worth hearing --
+        # after which the note silently drops the one actionable half of its sentence.
+        from .message_format import warn_once_1201 as _w1203or
+        _w1203or("delivery_gate.forced_stages_1203or",
+                 "reading which stages force-offer a tool", _e1203or)
+        return []
+    return out
+
+
+def record_contradicted_capability_claims_1203or(project_root: Any, rows: Any) -> bool:
+    """#947: a detector that only reaches a logger has not reached anything.
+
+    One JSONL line per claim under `logs/`, beside the ledgers every other detector writes.
+    """
+    import json as _json1203or
+    from pathlib import Path as _P1203or
+    try:
+        if not rows:
+            return False
+        out = (_P1203or(str(project_root)) / "logs"
+               / "contradicted_capability_claims_1203or.jsonl")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("a", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(_json1203or.dumps(r, ensure_ascii=False,
+                                          sort_keys=True) + "\n")
+        return True
+    except Exception as _e1203or:
+        # #1202ah / #947: False here means "the finding reached no file", and the caller
+        # cannot tell that from "there was nothing to write" unless this says so.
+        from .message_format import warn_once_1201 as _w1203or
+        _w1203or("delivery_gate.record_contradicted_capability_claims_1203or",
+                 "writing the contradicted-capability-claim ledger", _e1203or)
+        return False
+
+
 _FRAMEWORK_OWNED_MARKERS_1050 = (
     "framework-owned", "framework owned", "framework-managed",
     "not mounted in the generated project", "outside the generated workspace",
