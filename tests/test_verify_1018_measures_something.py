@@ -74,6 +74,14 @@ _CONTROLS = [
     ("om", "tiktok-web-r190", "FALSIFIED"),
     ("om", "tiktok-web-r191", "FALSIFIED"),
     ("om", "googlemaps-r15", "FALSIFIED"),
+    # `oo` is CONFIRMED post-patch wherever the contract restates a path parameter at all, and
+    # N-A where it never does -- so both arms are frozen here. Pre-patch (verified by applying
+    # mutation OO1 to the shipped note and re-running) these same runs answered FALSIFIED
+    # 1/1, 5/5, 2/2 and 3/3.
+    ("oo", "tiktok-web-r190", "CONFIRMED"),
+    ("oo", "instagram-core-r175", "CONFIRMED"),
+    ("oo", "tiktok-web-r184", "CONFIRMED"),
+    ("oo", "tiktok-web-r191", "N-A"),
 ]
 
 _cache = {}
@@ -145,6 +153,9 @@ _CONFIRM_REQUIRES = {
     "ol": [],
     # `om` CONFIRMED needs the header the patched guard template sets on its own 4xx.
     "om": ["Access-Control-Allow-Origin"],
+    # `oo` renders the contract through the framework's own note function and reads the
+    # labels back; CONFIRMED is a property of that output, not of anything the run emitted.
+    "oo": [],
 }
 
 
@@ -273,7 +284,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

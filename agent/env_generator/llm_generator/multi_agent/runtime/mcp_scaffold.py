@@ -337,6 +337,8 @@ def _body_fields_note_1202xt(ep: Mapping[str, Any]) -> str:
         return ""
     parts: List[str] = []
     heads: List[str] = []      # #1202xy
+    inpath: List[str] = []     # #1203oo
+    _pp1203oo = set(_path_params(str(ep.get("path") or "")))
     for name, typ in req.items():
         _n = _one_line_1202xt(name)
         if not _n:
@@ -357,10 +359,48 @@ def _body_fields_note_1202xt(ep: Mapping[str, Any]) -> str:
         # way (`X-Tenant-Id`, `Authorization`, `X-Profile-Id`), so they are named by the
         # contract, not guessed at here. Both groups are worth telling the agent; only the
         # label was wrong.
-        (heads if _t.lower().startswith("header") else parts).append("%s (%s)" % (_n, _t))
+        # #1203oo: ...and a PATH PARAMETER is not a body field either -- the third case of
+        # exactly what #1202xy fixed above, "wrong about where the value goes". The contract
+        # restates a path parameter in `request` and this note then called it a body field,
+        # while `render_tool` has ALREADY made that same name a required argument of the tool
+        # and interpolates it into the URL. Corpus: 93 write endpoints in 37 runs (r184, r187,
+        # r189 and r190 among them) out of the 899 writes that have a request schema, and for
+        # **30 of them in 13 runs the note names NOTHING ELSE** -- `POST /api/posts/{post_id}/
+        # likes. Body fields: post_id (int)` is a sentence with no true content, about a body
+        # that takes nothing. Commonest names: id (40), video_id (37), post_id (8).
+        #
+        # WHY THIS STOPS AT #1203j2 (a false sentence is its own defect) AND IS NOT A DATA
+        # BUG -- three independent mechanisms, each measured, not assumed:
+        #   * 92 of the 93 are served by a PROJECTED handler, and for a nested create the
+        #     projector overwrites the parent key itself (`valid["<tfk>"] = _parent.id`), so a
+        #     body copy of an FK cannot win;
+        #   * the 7 PUT/PATCH cases are the ones that could re-key a row (the update branch is
+        #     `for k, v in valid.items(): setattr(obj, k, v)` and `hasattr(cls, "id")` is true)
+        #     -- and all 7 are SHADOWED: each run has a lane handler for the same route in
+        #     custom_routes.py, included hundreds of lines before the projected one, and
+        #     FastAPI serves the first match (r184: include_router at main.py:1329, the
+        #     projected PUT at :2019);
+        #   * the only clients that actually send a path value in the body are the framework's
+        #     own verification chains -- 27 steps in 14 runs out of 8,315 write steps with a
+        #     body -- and every one sends the SAME value in both places (`${video_id}`), and
+        #     every one is an FK, never a child's own `id`.
+        #
+        # ★ DELIBERATELY NOT FIXED, in the projector: a projected create keeps a body `id`
+        # (`valid` is filtered by `hasattr(cls, k)`, and nothing drops the primary key), so
+        # `cls(**valid)` would insert a caller-chosen PK and leave the sequence behind it. No
+        # corpus client does that, and refusing it is NOT free -- a String `id` is a legitimate
+        # client-chosen key (a slug), so a guard would reject real creates. #647: no wider
+        # than the evidence. Recorded here because this note is what would have told an agent
+        # to send it.
+        if _n in _pp1203oo:
+            inpath.append("%s (%s)" % (_n, _t))
+        else:
+            (heads if _t.lower().startswith("header") else parts).append("%s (%s)" % (_n, _t))
     _out = []
     if parts:
         _out.append("Body fields: " + ", ".join(parts))
+    if inpath:
+        _out.append("Path: " + ", ".join(inpath))      # #1203oo
     if heads:
         _out.append("Headers: " + ", ".join(heads))
     return ". ".join(_out)

@@ -853,6 +853,70 @@ def main(argv):
     except Exception as _e_om:
         say("om", "N-A", "the #1203om criterion could not read this run (%s)" % _e_om)
 
+    # --- #1203oo — an MCP tool must not call a path parameter a body field ---------------
+    # READS: shared/hubs/registryhub_endpoints.json, rendered through the framework's own
+    #   `_body_fields_note_1202xt` -- the function that writes the line, so the criterion
+    #   cannot disagree with what ships.
+    # FALSIFIED: some POST/PUT/PATCH endpoint whose contract restates one of its own path
+    #   parameters in `request` has that name under "Body fields". `render_tool` already makes
+    #   it a required ARGUMENT of the tool and interpolates it into the URL, so the sentence is
+    #   wrong about where the value goes -- #1202xy's finding, third case.
+    # CONFIRMED: every restated path parameter appears under "Path" instead.
+    # CONTROL (pre-patch): 93 endpoints in 37 runs FALSIFY, r184/r187/r189/r190 among them;
+    #   for 30 of them in 13 runs the old note named nothing else at all.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]
+                               / "agent" / "env_generator" / "llm_generator"))
+        from multi_agent.runtime.mcp_scaffold import (  # noqa: E402
+            _body_fields_note_1202xt as _oo_note, _path_params as _oo_pp)
+        _oo_src = run / "shared" / "hubs" / "registryhub_endpoints.json"
+        _oo_d = _json(_oo_src, None)
+        _oo_eps = None
+        if isinstance(_oo_d, list):
+            _oo_eps = _oo_d
+        elif isinstance(_oo_d, dict):
+            _oo_eps = _oo_d.get("endpoints")
+            if isinstance(_oo_eps, dict):
+                _oo_eps = list(_oo_eps.values())
+            if _oo_eps is None:
+                _oo_eps = list(_oo_d.values())
+        _oo_writes, _oo_clash, _oo_bad = 0, 0, []
+        for _ep in _oo_eps or []:
+            if not isinstance(_ep, dict):
+                continue
+            if str(_ep.get("method", "")).upper() not in ("POST", "PUT", "PATCH"):
+                continue
+            _rq = (_ep.get("schema") or {}).get("request") if isinstance(
+                _ep.get("schema"), dict) else None
+            if not isinstance(_rq, dict) or not _rq:
+                continue
+            _oo_writes += 1
+            _pp = set(_oo_pp(str(_ep.get("path") or "")))
+            _cl = {n for n in _rq if str(n) in _pp}
+            if not _cl:
+                continue
+            _oo_clash += 1
+            _note = _oo_note(_ep)
+            _body = re.search(r"(?:^|\. )Body fields: (.*?)(?=(?:\. (?:Path|Headers): )|$)",
+                              _note)
+            _named = ({x.split(" (")[0].strip() for x in _body.group(1).split(", ")}
+                      if _body else set())
+            if _named & _cl:
+                _oo_bad.append("%s %s" % (_ep.get("method"), _ep.get("path")))
+        if _oo_eps is None:
+            say("oo", "N-A", "this run has no registryhub_endpoints.json")
+        elif not _oo_clash:
+            say("oo", "N-A", "none of this run's %d schema'd writes restate a path parameter"
+                % _oo_writes)
+        else:
+            say("oo", "FALSIFIED" if _oo_bad else "CONFIRMED",
+                "%d of %d restating write(s) still name the path value as a body field%s"
+                % (len(_oo_bad), _oo_clash,
+                   (" -- e.g. " + ", ".join(sorted(_oo_bad)[:2])) if _oo_bad else ""))
+    except Exception as _e_oo:
+        say("oo", "N-A", "the #1203oo criterion could not read this run (%s)" % _e_oo)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")
