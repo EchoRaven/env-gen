@@ -446,6 +446,37 @@ _AUTH_MIDDLEWARE = '''
 # handler was built with, so it holds only routes projected with no actor. Absent -- including
 # a main.py the skeleton did not render (the repair_auth_enforcement_middleware heal path) --
 # leaves the set empty and this guard exactly as #47 wrote it.
+#
+# ★ #1203on -- WHAT "ONLY ROUTES PROJECTED WITH NO ACTOR" EXCLUDES, MEASURED, AND WHY IT IS
+# STILL RIGHT. A route the LANE implements in custom_routes.py is not projected, so it never
+# reaches this list even when the contract declares it public, and the guard denies it. Across
+# the 49 corpus runs that carry this mechanism: 351 contract-public /api/ endpoints, 295
+# listed, and -- after applying this guard's OWN prefix exemptions (/auth/, /api/v1/, /oauth,
+# /.well-known, and the login|register|signup terminal segments under /api/auth/) -- 39 routes
+# in 22 runs are declared public and denied anyway. 37 OF THE 39 ARE IN THE LANE'S
+# custom_routes.py. (The first draft of this comment said 38: that came from the throwaway
+# scan that found the lead, which also matched a path with `{id}` stripped. 37 is what the
+# shipped helper in the ratchet test says, re-counted after it existed -- #1203j2.)
+#
+# r133's backend lane wrote it out four times, in its own words: "tokenless session 401 is
+# caused by generated app/backend/main.py auth guard allow-list omitting GET
+# /api/auth/session despite RegistryHub auth_required=false". r122 has 5 such routes, r131,
+# r133 and r160 three each.
+#
+# ★ DELIBERATELY NOT WIDENED, for two measured reasons:
+#   * THE MODERN ERA HAS NEARLY CLOSED IT. r185, r186, r188, r189, r190 and r191 deny ZERO of
+#     their declared-public routes; only r187 denies one. The projector now builds most public
+#     business routes itself, so they land here by construction.
+#   * SOURCING THIS LIST FROM `schema.auth_required` INSTEAD WOULD OPEN A HOLE, not close a
+#     wall. A lane that declares `auth_required=false` by mistake would then be believed by the
+#     guard, and a wrongly-public /api/ route is worse than a wrongly-denied one -- which is
+#     the whole reason this comment says FAIL CLOSED. A new wall gets a live run (#1202w6); a
+#     new HOLE deserves more than that, not less.
+#
+# So the measurement lives here instead of a patch, and a ratchet
+# (test_1203on_the_public_route_the_guard_still_denies.py) pins it: if a modern run starts
+# denying declared-public routes again, that test says so and the trade can be re-decided with
+# numbers rather than from scratch.
 import jwt as _fw_jwt
 import re as _fw_re
 from fastapi.responses import JSONResponse as _FWJSONResponse
