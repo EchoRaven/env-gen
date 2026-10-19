@@ -973,6 +973,61 @@ def main(argv):
     except Exception as _e_op:
         say("op", "N-A", "the #1203op criterion could not read this run (%s)" % _e_op)
 
+    # --- #1203oq — one task must not carry two opposite orders --------------------------
+    # READS: shared/hubs/workhub_tasks.json, through the framework's OWN
+    #   `is_transport_failure_1202od`, the predicate #1202vq classifies with.
+    # FALSIFIED: a `business_endpoints_reachable` task whose EVERY evidence fragment raised at
+    #   the socket still carries "Add them to app/backend/custom_routes.py" (so it says both
+    #   "do NOT edit a handler for these" and "add them"), or is still assigned to a lane that
+    #   cannot re-run a validation.
+    # CONFIRMED: no such task, or each one carries the re-run instruction and went to the
+    #   verifier. A MIXED task (some answered, some did not) is correct either way and is not
+    #   counted -- there the "wire them" prose is still true of the ones that answered.
+    # CONTROL (pre-patch): tiktok-web-r166 1 and tiktok-web-r190 1 FALSIFY. tiktok-web-r107
+    #   has the same shape and is N-A on purpose: it predates #1202vq's notice, so the
+    #   framework had concluded nothing for the prose to contradict.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]
+                               / "agent" / "env_generator" / "llm_generator"))
+        from multi_agent.runtime.chain_executor import (  # noqa: E402
+            is_transport_failure_1202od as _oq_gone)
+        _oq_pre = "The `business_endpoints_reachable` validation check FAILED: "
+        _oq_add = "Add them to app/backend/custom_routes.py"
+        _oq_not = "THE APP DID NOT ANSWER"
+        _oq_t = _json(run / "shared" / "hubs" / "workhub_tasks.json", None)
+        if not isinstance(_oq_t, dict):
+            say("oq", "N-A", "this run has no workhub_tasks.json")
+        else:
+            _oq_n, _oq_bad = 0, []
+            for _k, _t in _oq_t.items():
+                if _k == "_meta" or not isinstance(_t, dict):
+                    continue
+                _d = str(_t.get("description") or "")
+                if not _d.startswith(_oq_pre) or _oq_not not in _d:
+                    continue
+                _fr = [x.strip() for x
+                       in _d[len(_oq_pre):].split("\n")[0].split(" || ")[-1].split(";")
+                       if x.strip()]
+                if not _fr:
+                    continue
+                if any(not _oq_gone({"status": None, "error": x}) for x in _fr):
+                    continue          # mixed: both instructions are true of their own half
+                _oq_n += 1
+                if _oq_add in _d or str(_t.get("assignee") or "") != "verifier":
+                    _oq_bad.append("%s -> %s"
+                                   % (str(_t.get("title") or "")[:38], _t.get("assignee")))
+            if not _oq_n:
+                say("oq", "N-A", "no task in this run reports every endpoint unanswered")
+            else:
+                say("oq", "FALSIFIED" if _oq_bad else "CONFIRMED",
+                    "%d of %d all-unanswered task(s) still say to wire the routes or went to a "
+                    "lane with no validation tool%s"
+                    % (len(_oq_bad), _oq_n,
+                       (" -- e.g. " + _oq_bad[0]) if _oq_bad else ""))
+    except Exception as _e_oq:
+        say("oq", "N-A", "the #1203oq criterion could not read this run (%s)" % _e_oq)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

@@ -2383,6 +2383,9 @@ class RemediationDispatcher:
                 # the lane "the salient line, not a blind prefix"; spending that line on a
                 # lecture is the same defect it was written to end.
                 _notices_1202vx: List[str] = []
+                # #1203oq: did EVERY endpoint in this failure raise at the socket? Set where
+                # the classification is computed; read at the dispatch below.
+                _all_gone_1203oq = False
                 if name == "business_endpoints_reachable":
                     try:
                         from .backend_audit import unreachable_but_mounted
@@ -2411,6 +2414,7 @@ class RemediationDispatcher:
                         from .chain_executor import is_transport_failure_1202od
                         _gone = [f for f in _frags_1202vq
                                  if is_transport_failure_1202od({"status": None, "error": f})]
+                        _all_gone_1203oq = bool(_frags_1202vq) and len(_gone) == len(_frags_1202vq)
                         if _gone:
                             orch._logger.warning(
                                 "#1202vq UNREACHED (not a defect of the app): %s \u2014 the "
@@ -2527,6 +2531,41 @@ class RemediationDispatcher:
                                "file (e.g. a parse/import error with file:line)."
                                " Fix that source file directly — you do NOT "
                                "need docker tools; the error is in your code.")
+                if name == "business_endpoints_reachable" and _all_gone_1203oq:
+                    # #1203oq: #1202vq already decided this case and said the true thing in a
+                    # NOTICE -- "the request raised at the socket, so none of them is evidence
+                    # about your code ... Do NOT edit a handler for these" -- and then the task
+                    # it is pasted into still carried the opposite instruction. The title said
+                    # "Wire the unreachable business endpoints", the prose said "the routes are
+                    # not actually mounted. Add them to app/backend/custom_routes.py", and it
+                    # went to `backend`. One P0, two contradictory orders, and the lane that got
+                    # it cannot carry out either reading of the true one.
+                    #
+                    # THE OWNER IS THE DECIDING PART, and it is measured rather than assumed:
+                    # across the corpus `run_validation` was called 1,119 times and EVERY ONE
+                    # was the verifier -- backend, frontend and debugger have called it zero
+                    # times. "Check the stack is up and re-run the validation" is not something
+                    # the backend lane has ever been able to do. This is the #143/docker_up
+                    # branch ~30 lines below, for the same reason it exists: route the work to
+                    # the lane that holds the tool.
+                    #
+                    # MEASURED over the runs that HAVE #1202vq's notice: 2 tasks in 2 runs
+                    # (tiktok-r166, tiktok-r190 -- the most recent full run) have every fragment
+                    # raising at the socket. r107 has the same shape and is NOT counted: it
+                    # predates the notice, so the framework had not yet concluded anything to
+                    # contradict. A third r190 task is MIXED -- some answered, some did not --
+                    # and is deliberately left alone, because there the "wire them" prose is
+                    # still true of the ones that answered. #647: the rewrite fires only when
+                    # the classification covers the whole failure.
+                    owner = "verifier"
+                    title = ("The app never answered the business endpoints — bring the stack "
+                             "up and re-run the validation (blocks delivery)")
+                    how = ("EVERY endpoint above raised at the socket, so nothing here says a "
+                           "route is missing and no file in app/backend/ is implicated. Do not "
+                           "add or edit handlers. Bring the stack up (docker_build / "
+                           "docker_logs if it will not boot), then run_validation again. If the "
+                           "endpoints answer 404/405 once the app is up, THAT is the signal to "
+                           "wire them, and it goes to the backend lane.")
                 task = orch.hubs.workhub.create_task(
                     title=title,
                     description=(

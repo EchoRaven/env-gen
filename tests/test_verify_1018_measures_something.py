@@ -88,6 +88,12 @@ _CONTROLS = [
     ("op", "tiktok-web-r191", "FALSIFIED"),
     ("op", "tiktok-web-r184", "FALSIFIED"),
     ("op", "tiktok-web-r190", "N-A"),
+    # `oq` -- r107 is N-A on purpose: same shape, but it predates #1202vq's notice, so there
+    # was no framework conclusion for the prose to contradict.
+    ("oq", "tiktok-web-r166", "FALSIFIED"),
+    ("oq", "tiktok-web-r190", "FALSIFIED"),
+    ("oq", "tiktok-web-r107", "N-A"),
+    ("oq", "tiktok-web-r191", "N-A"),
 ]
 
 _cache = {}
@@ -164,6 +170,8 @@ _CONFIRM_REQUIRES = {
     "oo": [],
     # `op` CONFIRMED needs the note the patched task builder writes into the description.
     "op": ["#1203op"],
+    # `oq` CONFIRMED needs the rewritten instruction the patched dispatch writes.
+    "oq": ["never answered the business endpoints"],
 }
 
 
@@ -292,7 +300,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 
