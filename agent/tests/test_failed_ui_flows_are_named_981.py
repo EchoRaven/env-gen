@@ -72,6 +72,22 @@ def test_a_hub_hiccup_falls_back_quietly(monkeypatch):
     assert rd._ui_flow_failed_names(_Orch()) == []
 
 
+def test_a_blank_name_is_dropped_not_rendered_as_an_empty_bullet(monkeypatch):
+    """#1203pf: `_ui_flow_failed_extra` joins these with "\n- ", so a blank survivor becomes a
+    bullet with nothing after it -- a check that fires while naming nothing (#983), handed to
+    a lane that cannot act on it. MEASURED: the `.strip()` and the emptiness test here were
+    the only thing stopping it, and a mutation removing both was MISSED until this test.
+    """
+    _with_report(monkeypatch, _Report(failed=["player_page", "   ", "", "continue_watching"]))
+    assert rd._ui_flow_failed_names(_Orch()) == ["player_page", "continue_watching"]
+
+
+def test_a_name_that_is_only_padded_keeps_its_content(monkeypatch):
+    """The pair. Dropping blanks must not become dropping anything with whitespace in it."""
+    _with_report(monkeypatch, _Report(failed=["  player_page  ", "continue watching"]))
+    assert rd._ui_flow_failed_names(_Orch()) == ["player_page", "continue watching"]
+
+
 def test_duplicates_collapse(monkeypatch):
     _with_report(monkeypatch, _Report(failed=["a", "a", "b"]))
     assert rd._ui_flow_failed_names(_Orch()) == ["a", "b"]

@@ -85,9 +85,75 @@ def test_a_detail_route_does_not_pull_in_sibling_action_paths():
 
 
 def test_writes_are_never_backfilled():
+    """#1203pf: this used to assert `a.startswith("GET ")`, which CANNOT FAIL -- the emitter
+    is `add.append(f"GET {path}")`, so the prefix is hardcoded and the assertion was true by
+    construction. Worse, it hid the failure it was written for: drop the GET filter on the
+    candidate list and a POST-only path is backfilled AND LABELLED `GET`, naming an endpoint
+    the contract does not have. The property is about the PATH's registered method, so that
+    is what this asserts now.
+    """
     pages = [{"name": "my_list_page", "route": "/my-list", "apis_used": []}]
     got = _apis(backfill_page_apis(pages, _EPS), "my_list_page")
-    assert all(a.startswith("GET ") for a in got), got
+    get_paths = {e["path"] for e in _EPS if e["method"] == "GET"}
+    for entry in got:
+        method, _, path = str(entry).partition(" ")
+        assert method == "GET", entry
+        assert path in get_paths, (
+            "%s names a path that is not a registered GET endpoint -- "
+            "`POST /api/my-list` exists, `GET` of it does not" % entry)
+
+
+def test_a_WRITE_ONLY_endpoint_is_never_backfilled():
+    """#1203pf: the shared fixture's only POST (`POST /api/my-list`) has a GET TWIN, so
+    removing the write filter changed nothing and the property was never driven -- a mutation
+    that dropped the filter came back MISSED. This endpoint set has a write with no GET of the
+    same path, which is the only shape that can exercise it.
+    """
+    eps = [{"method": "GET", "path": "/api/titles"},
+           {"method": "POST", "path": "/api/ratings"}]
+    pages = [{"name": "ratings_page", "route": "/ratings", "apis_used": []}]
+    got = _apis(backfill_page_apis(pages, eps), "ratings_page")
+    assert got == [], (
+        "a write-only endpoint was backfilled as %s -- and it would be LABELLED `GET`, "
+        "naming a route the contract does not serve" % got)
+
+
+def test_a_PARAMETERISED_path_is_not_offered_as_a_collection():
+    """#1203pf: the candidate list keeps only unparameterised `/api/` paths, and nothing drove
+    that. A detail endpoint backfilled as a page's collection read names a URL the page cannot
+    build -- it has no id to put in it.
+
+    Driven with a `{id}` path whose tokens DO match the page, and no collection twin: with the
+    filter, nothing is backfilled; without it, `GET /api/ratings/{id}` appears.
+    """
+    eps = [{"method": "GET", "path": "/api/titles"},
+           {"method": "GET", "path": "/api/ratings/{id}"}]
+    pages = [{"name": "ratings_page", "route": "/ratings", "apis_used": []}]
+    got = _apis(backfill_page_apis(pages, eps), "ratings_page")
+    assert got == [], "a parameterised path was offered as a collection: %s" % got
+
+
+def test_a_path_outside_the_api_surface_is_not_offered():
+    """#1203pf: the same filter requires `/api/`. A backfill naming `/healthz` or a static
+    asset path would put a non-API URL into `apis_used`, which every downstream consumer of
+    that field then reasons about as an endpoint."""
+    eps = [{"method": "GET", "path": "/api/titles"},
+           {"method": "GET", "path": "/ratings"}]
+    pages = [{"name": "ratings_page", "route": "/ratings", "apis_used": []}]
+    got = _apis(backfill_page_apis(pages, eps), "ratings_page")
+    assert got == [], "a non-/api path was offered: %s" % got
+
+
+def test_no_registered_GET_collection_means_silence_not_a_guess():
+    """#883 and the function's own rule: "writing a form no reader of the contract recognises
+    would be worse than writing nothing". With only writes and parameterised reads registered,
+    there is no collection to infer from, and the pages must come back untouched.
+    """
+    eps = [{"method": "POST", "path": "/api/ratings"},
+           {"method": "GET", "path": "/api/ratings/{id}"}]
+    pages = [{"name": "ratings_page", "route": "/ratings", "apis_used": []}]
+    out = backfill_page_apis(pages, eps)
+    assert out == pages, "an empty collection surface produced a guess: %s" % out
 
 
 def test_no_endpoints_or_garbage_returns_the_input():

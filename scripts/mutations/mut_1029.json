@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_ui_evidence_failures_are_actually_named_1029.py",
+ "mutations": [
+  {
+   "label": "T1 TEXT-PRESERVING: the names never accumulate, while the dict literal the test asserts on is untouched",
+   "find": "            else:\n                failed.append(page)",
+   "replace": "            else:\n                pass"
+  },
+  {
+   "label": "T2 the #1017 defect reintroduced at the consumer: it reads the COUNT and tries to name it",
+   "find": "                _names1017 = [str(p)[:44] for p in (_breadth739.get(\"pages_failed\") or [])]",
+   "replace": "                _names1017 = [str(p)[:44] for p in (_breadth739.get(\"failed_records\") or [])]"
+  },
+  {
+   "label": "T3 the two shapes merge: the list becomes a count, which is the premise the test guards",
+   "find": "        \"pages_failed\": sorted(set(failed)),",
+   "replace": "        \"pages_failed\": len(failed),"
+  },
+  {
+   "label": "T4 an unreachable-only run stops counting as failed, so a run where NOTHING passed reports no failures  [CARRIED ELSEWHERE: asserted by tests/test_1154_unreachable_origin_is_not_product_evidence.py::test_with_nothing_passing_it_still_blocks, which this spec does not run -- mutate.py takes ONE test path. Reads MISSED here; verify it by pointing a spec at that file.]",
+   "find": "    if unreachable and not passed:\n        failed.extend(unreachable)\n        unreachable = []",
+   "replace": "    if unreachable and not passed:\n        unreachable = []"
+  }
+ ]
+}

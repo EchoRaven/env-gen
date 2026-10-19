@@ -40,18 +40,24 @@ _CARRIER_RE = re.compile(r"([A-Za-z0-9_]+\.json)")
 
 
 def _test_paths(spec_test, agent_dir):
-    """Every test file a spec names, resolved -- or [] when one of them is gone.
+    """The test file a spec names, resolved, plus whether the field is malformed.
 
-    `mutate.py` accepts a pytest node id (`path.py::test_name`) and several space-separated
-    paths, so a naive `os.path.isfile(spec["test"])` reports a live spec as dead. MEASURED when
-    this was written: of 248 specs, 7 looked unresolvable and only 3 were -- the other 4 were
-    this checker refusing a `::node-id` suffix and a two-path `test` field.
+    Returns ``(paths, malformed)``. `mutate.py` hands `spec["test"]` to pytest as ONE argv
+    element, so a pytest node id (`path.py::test_name`) is fine -- pytest resolves it -- and
+    the existence check has to strip the `::` part. Several SPACE-SEPARATED paths are NOT
+    fine: they arrive as a single nonexistent path and the run comes back BROKEN.
+
+    #1203pe first claimed mutate.py accepted several paths and silently resolved each, which
+    made a malformed spec look healthy -- the #883 mistake, in the checker written to catch
+    it. MEASURED: of 248 specs, 7 looked unresolvable; 3 are retired controls, 3 carry a
+    `::node-id` the old checker refused, and exactly 1 (`mu_spec7.json`) carries two paths and
+    is therefore unrunnable as written.
     """
-    out = []
-    for token in str(spec_test or "").split():
-        rel = token.split("::", 1)[0]
-        out.append(os.path.join(agent_dir, rel))
-    return out
+    raw = str(spec_test or "")
+    tokens = raw.split()
+    malformed = len(tokens) > 1
+    out = [os.path.join(agent_dir, t.split("::", 1)[0]) for t in tokens]
+    return out, malformed
 
 
 def _label(mutation, index):
@@ -90,7 +96,11 @@ def census(spec_dir=_SPECS, root=_ROOT):
         # record of what the old form could not see, not deleted.
         agent_dir = os.path.join(root, "agent")
         retired = str(spec.get("retired") or "").strip()
-        for candidate in _test_paths(spec.get("test"), agent_dir):
+        candidates, malformed = _test_paths(spec.get("test"), agent_dir)
+        if malformed and not retired:
+            problems.append((name, "`test` names several paths; mutate.py passes it as ONE "
+                                   "argv element, so this spec cannot run"))
+        for candidate in candidates:
             if os.path.isfile(candidate):
                 continue
             if retired:

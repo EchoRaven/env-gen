@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_failed_ui_flows_are_named_981.py",
+ "mutations": [
+  {
+   "label": "F1 it reads `missing` instead of `failed` -- the #981 defect itself, where the missing branch was the only one ever read",
+   "find": "        for f in (getattr(report, \"failed\", None) or []):",
+   "replace": "        for f in (getattr(report, \"missing\", None) or []):"
+  },
+  {
+   "label": "F2 duplicates stop collapsing, so one flow is named several times",
+   "find": "            if t and t not in seen:\n                seen.add(t)\n                out.append(t)",
+   "replace": "            if t:\n                out.append(t)"
+  },
+  {
+   "label": "F3 a blank name is kept, so the lane is handed an empty bullet",
+   "find": "            t = str(f).strip()\n            if t and t not in seen:",
+   "replace": "            t = str(f)\n            if t not in seen:"
+  },
+  {
+   "label": "F4 an empty `failed` list still produces the heading, so a clean run reads as if flows had failed (#883)",
+   "find": "    if not failed:\n        return \"\"",
+   "replace": "    if False:\n        return \"\""
+  },
+  {
+   "label": "F5 the text drops the sentence saying re-recording is not the fix, so the lane re-runs the walk and changes nothing",
+   "find": "            \"\\n\\nEach already HAS a record, so re-recording it changes nothing: open the \"",
+   "replace": "            \"\\n\\nSee the named flow. \""
+  }
+ ]
+}

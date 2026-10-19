@@ -69,6 +69,39 @@ class ARegressionIsVisible(unittest.TestCase):
             _index([_rec("fyp_feed", "failed", 200), _rec("fyp_feed", "passed", 100)]),
             {"fyp_feed": "failed"})
 
+    def test_two_records_at_the_SAME_instant_take_the_later_one_in_the_store(self):
+        """#1203pf: the tie-break is `_at >= _prev_at`, so an equal timestamp still updates.
+
+        Nothing drove the `=` half: a mutation narrowing it to `>` came back MISSED, which
+        means "equal timestamps keep whichever was seen first" would have been a silent change
+        of semantics. Two validation rows CAN share a timestamp -- they are recorded with
+        second granularity by the same pass.
+        """
+        self.assertEqual(
+            _index([_rec("fyp_feed", "passed", 100), _rec("fyp_feed", "failed", 100)]),
+            {"fyp_feed": "failed"})
+        self.assertEqual(
+            _index([_rec("fyp_feed", "failed", 100), _rec("fyp_feed", "passed", 100)]),
+            {"fyp_feed": "passed"})
+
+    def test_a_blank_flow_name_is_dropped_not_indexed(self):
+        """#1203pf: `str(flow).strip()` plus the emptiness test were the only thing stopping a
+        nameless entry, and a mutation removing both was MISSED. An entry keyed on "" reaches
+        `_ui_flow_failed_extra`, which renders it as a bullet with nothing after it (#983)."""
+        got = _index([_rec("   ", "failed", 100), _rec("fyp_feed", "failed", 100)])
+        self.assertEqual(got, {"fyp_feed": "failed"})
+
+    def test_an_unparseable_timestamp_is_UNTIMED_not_time_zero(self):
+        """#1203pf: the docstring says a timestamped record always outranks an untimed one and
+        that untimed records keep the passed-wins collapse. A corrupt `recorded_at` must fall
+        into the untimed branch -- reading it as 0.0 would make it a real (oldest) timestamp,
+        and then a later untimed PASS could never clear it. A mutation doing exactly that was
+        MISSED.
+        """
+        self.assertEqual(
+            _index([_rec("fyp_feed", "failed", "not-a-number"), _rec("fyp_feed", "passed")]),
+            {"fyp_feed": "passed"})
+
     def test_the_r91_flip_flop_ends_where_it_actually_ended(self):
         rows = [_rec("fyp_feed", "passed", 1), _rec("fyp_feed", "failed", 2),
                 _rec("fyp_feed", "passed", 3), _rec("fyp_feed", "failed", 4)]

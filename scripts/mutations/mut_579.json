@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_route_implied_page_apis_579.py",
+ "mutations": [
+  {
+   "label": "B1 writes become backfillable, so a page is credited with a POST/DELETE it never declared -- the docstring's 'only GET collections' promise",
+   "find": "            if str(ep.get(\"method\") or \"GET\").upper() != \"GET\":\n                continue\n            path = str(ep.get(\"path\") or \"\")",
+   "replace": "            path = str(ep.get(\"path\") or \"\")"
+  },
+  {
+   "label": "B2 a parameterised path is treated as a collection, so a detail endpoint (`/api/x/{id}`) gets backfilled as if it were a list  [EXPECTED-MISSED, not drivable: the overlap heuristic keys on the path's LAST segment, and for `/api/ratings/{id}` that is `{id}` -- no token matches `ratings`, so a parameterised path cannot be chosen even with the filter removed. The `{`/`:` test is belt-and-braces for other shapes; `test_a_PARAMETERISED_path_is_not_offered_as_a_collection` pins the behaviour, it just cannot be falsified by removing that clause alone.]",
+   "find": "            if not path.startswith(\"/api/\") or \"{\" in path or \":\" in path:\n                continue",
+   "replace": "            if not path.startswith(\"/api/\"):\n                continue"
+  },
+  {
+   "label": "B3 a non-/api path is accepted, so the backfill can name something outside the app's API surface",
+   "find": "            if not path.startswith(\"/api/\") or \"{\" in path",
+   "replace": "            if \"{\" in path"
+  },
+  {
+   "label": "B4 with NO registered GET collection it stops returning the input unchanged, so an empty contract produces a guess instead of silence (#883)  [EXPECTED-MISSED, null: `if not gets: return ui_pages` is an early exit, not a guard -- with `gets` empty the loop below adds nothing, so skipping the return produces the same output. `test_no_registered_GET_collection_means_silence_not_a_guess` pins the property; breaking it would take removing the `gets` iteration itself.]",
+   "find": "        if not gets:\n            return ui_pages",
+   "replace": "        if False:\n            return ui_pages"
+  }
+ ]
+}

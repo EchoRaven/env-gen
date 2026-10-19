@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/flow_coverage.py",
+ "test": "tests/test_357_ui_flow_status_is_latest_wins.py",
+ "mutations": [
+  {
+   "label": "L1 latest-wins inverts: the FIRST timestamped record wins, so a later failure can never clear an earlier pass -- the exact #357 defect (r91 read green forever after its first success)",
+   "find": "                if _prev_at is None or _at >= _prev_at:",
+   "replace": "                if _prev_at is None:"
+  },
+  {
+   "label": "L2 equal timestamps stop updating, so two records at the same instant keep the first one seen -- order starts mattering again",
+   "find": "                if _prev_at is None or _at >= _prev_at:",
+   "replace": "                if _prev_at is None or _at > _prev_at:"
+  },
+  {
+   "label": "L3 a blank flow name is kept, so the index grows a nameless entry",
+   "find": "        flow = str(flow).strip()\n        if not flow:\n            continue",
+   "replace": "        flow = str(flow)"
+  },
+  {
+   "label": "L4 an unparseable recorded_at is treated as time 0 instead of 'untimed', so a corrupt row outranks nothing and silently wins the oldest slot",
+   "find": "            except Exception:\n                _at = None\n            _prev_at = seen_at.get(flow)",
+   "replace": "            except Exception:\n                _at = 0.0\n            _prev_at = seen_at.get(flow)"
+  }
+ ]
+}

@@ -33,9 +33,14 @@
    "replace": "            if retired:\n                retired_specs.append((name, retired))"
   },
   {
-   "label": "the `::node-id` suffix is not stripped, so a live spec reads as dead",
-   "find": "        rel = token.split(\"::\", 1)[0]",
-   "replace": "        rel = token"
+   "label": "the `::node-id` suffix is not stripped, so a live spec reads as dead [RE-AIMED 2026-10-19: my own correction of `_test_paths` rewrote the line this anchored on, in the same session -- the census caught it immediately]",
+   "find": "    out = [os.path.join(agent_dir, t.split(\"::\", 1)[0]) for t in tokens]",
+   "replace": "    out = [os.path.join(agent_dir, t) for t in tokens]"
+  },
+  {
+   "label": "a `test` field naming several paths is no longer reported, so an unrunnable spec looks healthy (#883, and the mistake #1203pe itself first made)",
+   "find": "        if malformed and not retired:",
+   "replace": "        if False:"
   }
  ]
 }

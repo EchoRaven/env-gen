@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/heal_pipeline.py",
+ "test": "tests/test_1202zf_seeded_media_missing_at_delivery.py",
+ "mutations": [
+  {
+   "label": "MW6 the dedupe goes back to keying on the wording  [SPLIT 2026-10-19 by #1203pe: this spec named two test files, and mutate.py passes `test` to pytest as ONE argv element, so it could never run. Same mutations, one spec per test file: mu_spec7.json -> tests/test_1203mw_the_paths_the_lane_hand_rolled.py, mu_spec7_zf.json -> tests/test_1202zf_seeded_media_missing_at_delivery.py]",
+   "find": "                        and str(t.get(\"title\") or \"\").startswith(_keys_1203mw)",
+   "replace": "                        and str(t.get(\"title\") or \"\").startswith(base)"
+  },
+  {
+   "label": "MW7 the legacy wording is dropped from the keys  [SPLIT 2026-10-19 by #1203pe: this spec named two test files, and mutate.py passes `test` to pytest as ONE argv element, so it could never run. Same mutations, one spec per test file: mu_spec7.json -> tests/test_1203mw_the_paths_the_lane_hand_rolled.py, mu_spec7_zf.json -> tests/test_1202zf_seeded_media_missing_at_delivery.py]",
+   "find": "        _keys_1203mw = (\"#1202zf\", \"Seeded media missing at delivery\")",
+   "replace": "        _keys_1203mw = (\"#1202zf\",)"
+  },
+  {
+   "label": "MW8 the marker is dropped from the keys  [SPLIT 2026-10-19 by #1203pe: this spec named two test files, and mutate.py passes `test` to pytest as ONE argv element, so it could never run. Same mutations, one spec per test file: mu_spec7.json -> tests/test_1203mw_the_paths_the_lane_hand_rolled.py, mu_spec7_zf.json -> tests/test_1202zf_seeded_media_missing_at_delivery.py]",
+   "find": "        _keys_1203mw = (\"#1202zf\", \"Seeded media missing at delivery\")",
+   "replace": "        _keys_1203mw = (\"Seeded media missing at delivery\",)"
+  }
+ ]
+}
