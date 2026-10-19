@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_a_path_merge_needs_agreement_1202f.py",
+ "mutations": [
+  {
+   "label": "Z1 the #1195 branch never runs, so a ROUTE-LESS registration naming an already registered component file stays a second page -- r26's exact outcome, where /login ended up under both `login` and `login_page`. Route-less registrations are the norm (20 of r23's 32 records, 21 of r24's 44), so this is the common case, not an edge SPLIT BY OWNER (#1203pg): running all three against BOTH candidate files showed the ownership divides cleanly -- test_a_path_merge_needs_agreement_1202f.py owns 'the merge happens' (Z1) and test_1195_routeless_component_dedup.py owns 'what the merged record keeps' (Z2) and 'when it must NOT merge' (Z3). Aiming all three at either file alone reports a false gap. Nothing was missing here.",
+   "find": "                if _path1195 and not str(route or \"\").strip() and name not in _live:",
+   "replace": "                if False and _path1195 and not str(route or \"\").strip() and name not in _live:"
+  }
+ ]
+}

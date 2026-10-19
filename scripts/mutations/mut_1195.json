@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1195_routeless_component_dedup.py",
+ "mutations": [
+  {
+   "label": "Z2 the merged record loses the route the existing one had, so the surviving page has no route at all and every route-keyed check stops seeing it SPLIT BY OWNER (#1203pg): running all three against BOTH candidate files showed the ownership divides cleanly -- test_a_path_merge_needs_agreement_1202f.py owns 'the merge happens' (Z1) and test_1195_routeless_component_dedup.py owns 'what the merged record keeps' (Z2) and 'when it must NOT merge' (Z3). Aiming all three at either file alone reports a false gap. Nothing was missing here.",
+   "find": "                            _rec[\"route\"] = _rec.get(\"route\") or _v1195.get(\"route\") or \"\"",
+   "replace": "                            _rec[\"route\"] = _rec.get(\"route\") or \"\""
+  },
+  {
+   "label": "Z3 the ROUTE-LESS precondition is dropped, so a record that HAS a route merges on a shared component file -- #1202f's case, where two genuinely distinct pages render one shared list component and must stay distinct SPLIT BY OWNER (#1203pg): running all three against BOTH candidate files showed the ownership divides cleanly -- test_a_path_merge_needs_agreement_1202f.py owns 'the merge happens' (Z1) and test_1195_routeless_component_dedup.py owns 'what the merged record keeps' (Z2) and 'when it must NOT merge' (Z3). Aiming all three at either file alone reports a false gap. Nothing was missing here.",
+   "find": "                if _path1195 and not str(route or \"\").strip() and name not in _live:",
+   "replace": "                if _path1195 and name not in _live:"
+  }
+ ]
+}

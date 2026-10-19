@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/communication_tools.py",
+ "test": "tests/test_302_check_inbox_read_preview.py",
+ "mutations": [
+  {
+   "label": "V1 the stamp never records that a message was already read, so `_was_read` is always False and NOTHING is ever previewed -- #302's context reduction stops firing for durable messages, which is exactly the state #604 fixed. `check_inbox` is 63% of all tool-io tokens (68.9M of 108.6M over 45 runs) and 69% of reads lead with a message already delivered. Both quoted statements stay verbatim AIMED AT #302, NOT #604 (#1203pg): the ratio flagged test_durable_inbox_read_preview_604.py at 1.00 and all three missed there -- but #604 is a CORRECTION to #302, so its test pins the fixed prose while the BEHAVIOUR stayed owned by test_302_check_inbox_read_preview.py (ratio 0.00, 12 assertions), which catches all three. A correction ticket's test being prose-heavy is expected, not a gap: the general rule is that a high ratio on a '#B corrects #A' file is not a signal until #A's test is checked.",
+   "find": "            msg[\"_was_read\"] = bool(msg.get(\"read\"))",
+   "replace": "            msg[\"_was_read\"] = False"
+  },
+  {
+   "label": "V2 the preview branch is never taken even when the flag is set, so the saving is lost while `is_preview = bool(msg.get(\"_was_read\"))` and `len(body) > _INBOX_PREVIEW_LEN` both stay exactly as the file quotes them AIMED AT #302, NOT #604 (#1203pg): the ratio flagged test_durable_inbox_read_preview_604.py at 1.00 and all three missed there -- but #604 is a CORRECTION to #302, so its test pins the fixed prose while the BEHAVIOUR stayed owned by test_302_check_inbox_read_preview.py (ratio 0.00, 12 assertions), which catches all three. A correction ticket's test being prose-heavy is expected, not a gap: the general rule is that a high ratio on a '#B corrects #A' file is not a signal until #A's test is checked.",
+   "find": "            if is_preview:\n                content = (body[:_INBOX_PREVIEW_LEN].rstrip()",
+   "replace": "            if False and is_preview:\n                content = (body[:_INBOX_PREVIEW_LEN].rstrip()"
+  },
+  {
+   "label": "V3 an UNREAD body is previewed too, so a message the agent has never seen arrives truncated -- the one thing the reduction must never do. EXPECTED CAUGHT: the file quotes the `and` that requires `_was_read`. Control AIMED AT #302, NOT #604 (#1203pg): the ratio flagged test_durable_inbox_read_preview_604.py at 1.00 and all three missed there -- but #604 is a CORRECTION to #302, so its test pins the fixed prose while the BEHAVIOUR stayed owned by test_302_check_inbox_read_preview.py (ratio 0.00, 12 assertions), which catches all three. A correction ticket's test being prose-heavy is expected, not a gap: the general rule is that a high ratio on a '#B corrects #A' file is not a signal until #A's test is checked.",
+   "find": "            is_preview = bool(msg.get(\"_was_read\")) and len(body) > _INBOX_PREVIEW_LEN",
+   "replace": "            is_preview = len(body) > _INBOX_PREVIEW_LEN"
+  }
+ ]
+}
