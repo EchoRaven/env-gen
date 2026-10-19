@@ -69,3 +69,51 @@ def test_the_verdict_line_actually_carries_it_1203kj():
     line = verdicts[0]
     assert "squad_coverage_1203kj" in line or "_cov1203kj" in line, line
     assert "open P0" in line, "the defect counts must stay — coverage is added, not swapped in"
+
+
+# --- #1203p3: the helper was tested; the LINE THAT CARRIES IT was not --------------------
+
+def test_the_verdict_line_actually_carries_the_coverage_1203p3():
+    """#1203f6's shape, one level in: every test above exercises `squad_coverage_1203kj`
+    and none of them looks at the `logger.warning` that is supposed to say it.
+
+    #1203kj exists because the verdict line said NOTHING about coverage -- a PASS whose
+    denominator was invisible. The fix put the sentence into that line, and a mutation that
+    takes it back out (dropping `over %s` from the format) passed the whole suite: the
+    helper still returns the right string, and nobody asked whether it is emitted.
+
+    Read from the AST, not from the source text: this file's own prose quotes the format
+    string, and a text assertion would be fed by that prose (the trap recorded three times
+    -- see #943 / test_1203jr).
+    """
+    import ast
+    import inspect
+    from multi_agent.runtime import test_user_squad as TUS
+
+    tree = ast.parse(inspect.getsource(TUS))
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "warning" and node.args):
+            continue
+        try:
+            fmt = ast.literal_eval(node.args[0])
+        except Exception:
+            continue
+        # Narrowed to the VERDICT line: this module emits six "TEST-USER SQUAD ..."
+        # warnings (the goal cap, the replay record, ...) and the first draft of this
+        # test matched all six. `verdict=` is what makes this one the line #1203kj is
+        # about.
+        if not (isinstance(fmt, str) and fmt.startswith("TEST-USER SQUAD")
+                and "verdict=" in fmt):
+            continue
+        names = {a.id for a in node.args[1:] if isinstance(a, ast.Name)}
+        found.append((fmt, names))
+    assert len(found) == 1, "expected exactly one TEST-USER SQUAD verdict line, got %d" % len(found)
+    fmt, names = found[0]
+    assert "over %s" in fmt, (
+        "the verdict line no longer has a slot for the coverage sentence -- #1203kj's whole "
+        "point was that this line said nothing about it: %r" % fmt)
+    assert any("1203kj" in n for n in names), (
+        "the coverage sentence is not among the line's arguments, so the slot is filled by "
+        "something else: %r" % sorted(names))

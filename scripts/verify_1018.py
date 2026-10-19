@@ -1294,6 +1294,49 @@ def main(argv):
     except Exception as _e_oy:
         say("oy", "N-A", "the #1203oy criterion could not read this run (%s)" % _e_oy)
 
+    # --- #1203p2 — the `apis_used` no-op must be observable, not only returned ----------
+    # READS: the run log (--log).
+    # This one is a QUESTION, not a guard: #1203b0's note rides in `ToolResult.data`, which
+    # reaches the model and nothing else -- tool results are not logged, so the note's text
+    # appears 0 times in all 211 pre-patch logs BY CONSTRUCTION. #1203p2 adds one line per
+    # (page, repeat) so the next run can say whether that no-op is what keeps
+    # `deliverability_page_apis_understated` coming back: 59 returns across the gate ledgers,
+    # and the check's own task bodies are specific (only 2 of its 139 tasks lack a concrete
+    # identifier), so vagueness is already ruled out.
+    # CONFIRMED: the line is present -- the no-op happens, and its count per page is the
+    #   attribution this ticket was written to get.
+    # N-A (not a failure): no line, which means lanes passed `apis_used` on every
+    #   re-registration in this run and the returns have another cause.
+    # FALSIFIED: `page_apis_understated` failed in this run AND a re-registration happened
+    #   with no line at all -- that would mean the recorder itself did not run.
+    # CONTROL (pre-patch): r190 is FALSIFIED by construction -- `page_apis_understated`
+    #   is in that log, pages were re-registered, and the recorder did not exist yet, so
+    #   it said nothing. Every pre-patch log reads the same way.
+    try:
+        if not logtext:
+            say("p2", "N-A", "no run log given, and this line lives only in the log")
+        else:
+            _p2_lines = [l for l in logtext.splitlines() if "#1203p2" in l]
+            _p2_pages = {l.split("register_ui_page(", 1)[1].split(")", 1)[0]
+                         for l in _p2_lines if "register_ui_page(" in l}
+            _p2_blocked = "page_apis_understated" in logtext
+            if _p2_lines:
+                say("p2", "CONFIRMED",
+                    "%d omission(s) recorded over %d page(s)%s"
+                    % (len(_p2_lines), len(_p2_pages),
+                       " -- and `page_apis_understated` is in this run, so these are the "
+                       "calls that changed nothing" if _p2_blocked else ""))
+            elif _p2_blocked and "registryhub_register_ui_page" in logtext:
+                say("p2", "FALSIFIED",
+                    "`page_apis_understated` is in this run and pages were re-registered, "
+                    "yet the #1203p2 recorder said nothing")
+            else:
+                say("p2", "N-A",
+                    "no re-registration omitted `apis_used` in this run (the no-op #1203b0 "
+                    "reports did not happen), so the returns have another cause")
+    except Exception as _e_p2:
+        say("p2", "N-A", "the #1203p2 criterion could not read this run (%s)" % _e_p2)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

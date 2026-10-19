@@ -160,3 +160,109 @@ def test_kickoff_remains_the_only_other_writer():
             names.append(getattr(obj, "NAME", obj.__name__))
     assert "registryhub_register_ui_page" in names, names
     assert "kickoff_declare_ui_page" in names, names
+
+
+# --- #1203p2: the note must also land where a reader can COUNT it ------------------------
+# The note above rides in `ToolResult.data`, which reaches the model and nothing else: tool
+# RESULTS are not logged. Checked, not assumed -- the note's text appears 0 times in all 211
+# run logs and 0 times in every delivered tree, by construction. So whether #1203b0 ever
+# fired, and whether it broke the loop it names, could not be read off any artifact, while
+# `deliverability_page_apis_understated` clears and comes back 43 times in the hold ledgers,
+# 35 of them modern. #1203or answered the same question with a ledger; this is one log line.
+
+def _kept_tool(kept=("POST /auth/signup",)):
+    t, _ = _tool()
+
+    class _WHKept:
+        def update_ui_page(self, name, data, agent=""):
+            return {"id": name, "apis_used": list(kept), **data}
+
+    t._hubs = types.SimpleNamespace(workhub=_WHKept())
+    return t
+
+
+def _reset_1203p2():
+    HT._APIS_UNCHANGED_SEEN_1203P2.clear()
+    from multi_agent.runtime import message_format as MF
+    for k in [k for k in getattr(MF, "_STATE_SAID_1202AD", {}) if "1203p2" in str(k)]:
+        MF._STATE_SAID_1202AD.pop(k, None)
+
+
+def test_the_omission_is_announced_where_it_can_be_counted_1203p2(caplog):
+    _reset_1203p2()
+    t = _kept_tool()
+    with caplog.at_level("INFO"):
+        out = _run(t, name="signup", path="app/frontend/src/pages/SignupPage.jsx")
+    assert out.get("_apis_used_unchanged_1203b0"), "#1203b0's note must still be there"
+    msgs = [r.getMessage() for r in caplog.records if "1203p2" in r.getMessage()]
+    assert len(msgs) == 1, msgs
+    assert "signup" in msgs[0] and "apis_used" in msgs[0], msgs[0]
+
+
+def test_a_second_omission_on_the_same_page_is_also_announced_1203p2(caplog):
+    """#1202ad: a count that moves is a change. The repeat is the whole signal here -- the
+    lane calling again with the same omission is what "fixed it 19 times over" looks like."""
+    _reset_1203p2()
+    t = _kept_tool()
+    with caplog.at_level("INFO"):
+        _run(t, name="signup", path="a.jsx")
+        _run(t, name="signup", path="a.jsx")
+    msgs = [r.getMessage() for r in caplog.records if "1203p2" in r.getMessage()]
+    assert len(msgs) == 2, msgs
+    assert "1st" in msgs[0] and "2nd" in msgs[1], msgs
+
+
+def test_two_pages_do_not_silence_each_other_1203p2(caplog):
+    _reset_1203p2()
+    t = _kept_tool()
+    with caplog.at_level("INFO"):
+        _run(t, name="signup", path="a.jsx")
+        _run(t, name="login", path="b.jsx")
+    msgs = [r.getMessage() for r in caplog.records if "1203p2" in r.getMessage()]
+    assert len(msgs) == 2, msgs
+    assert any("signup" in m for m in msgs) and any("login" in m for m in msgs), msgs
+
+
+def test_a_call_that_passes_the_field_announces_nothing_1203p2(caplog):
+    _reset_1203p2()
+    t, _ = _tool()
+    with caplog.at_level("INFO"):
+        _run(t, name="signup", apis_used=["POST /auth/register"])
+    assert [r.getMessage() for r in caplog.records if "1203p2" in r.getMessage()] == []
+
+
+def test_nothing_to_keep_announces_nothing_1203p2(caplog):
+    _reset_1203p2()
+    t, _ = _tool()
+    with caplog.at_level("INFO"):
+        _run(t, name="brand_new", path="x.jsx")
+    assert [r.getMessage() for r in caplog.records if "1203p2" in r.getMessage()] == []
+
+
+def test_the_failure_path_says_why_rather_than_going_quiet_1203p2(caplog):
+    """#1202ah: a silent default here would restore exactly the silence #1203p2 is about.
+
+    Mutation said why this test exists: with the `except` emptied, nothing in the suite
+    reached it, so the announcement could be deleted and every other test stayed green. The
+    counter is the cheapest injection point -- a hostile `.get` makes the guarded block raise
+    deterministically, without patching an import.
+    """
+    _reset_1203p2()
+    from multi_agent.runtime import message_format as MF
+    MF._WARNED_1201.discard("hub_tools.apis_used_unchanged_1203p2")
+
+    class _Hostile(dict):
+        def get(self, *a, **k):
+            raise RuntimeError("counter unreadable")
+
+    real = HT._APIS_UNCHANGED_SEEN_1203P2
+    HT._APIS_UNCHANGED_SEEN_1203P2 = _Hostile()
+    try:
+        with caplog.at_level("WARNING"):
+            out = _run(_kept_tool(), name="signup", path="a.jsx")
+    finally:
+        HT._APIS_UNCHANGED_SEEN_1203P2 = real
+    assert out.get("_apis_used_unchanged_1203b0"), "the note must survive the failure"
+    said = [r.getMessage() for r in caplog.records
+            if "1201" in r.getMessage() or "re-registration omitted" in r.getMessage()]
+    assert said, "nothing was announced: %r" % [r.getMessage() for r in caplog.records]

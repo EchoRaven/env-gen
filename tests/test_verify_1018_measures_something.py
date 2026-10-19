@@ -126,6 +126,11 @@ _CONTROLS = [
     # whose notes omit the visual verdict the same record carries.
     ("oy", "tiktok-web-r191", "FALSIFIED"),
     ("oy", "tiktok-web-r190", "FALSIFIED"),
+    # `p2` lives only in the run log, so the no-log call is N-A by construction. With the
+    # log, every pre-patch run is FALSIFIED: the condition held and the recorder did not
+    # exist yet. Its CONFIRMED and N-A verdicts are BOTH answers -- see the criterion.
+    ("p2", "tiktok-web-r191", "N-A"),
+    ("p2", "tiktok-web-r190", "N-A"),
 ]
 
 _cache = {}
@@ -219,6 +224,8 @@ _CONFIRM_REQUIRES = {
     "ox": ["leaves the ranker a free slot"],
     # `oy` CONFIRMED needs the release note to carry the verdict clause.
     "oy": ["Visual verdict:"],
+    # `p2` CONFIRMED needs the recorder's own line.
+    "p2": ["omitted `apis_used` for the"],
 }
 
 
@@ -380,7 +387,7 @@ class TheCheckerStillBites(unittest.TestCase):
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
                      "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov",
-                     "ox", "oy"):
+                     "ox", "oy", "p2"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

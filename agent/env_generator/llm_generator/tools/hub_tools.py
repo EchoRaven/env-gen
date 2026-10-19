@@ -303,6 +303,13 @@ def _open_task_for_same_endpoint_998(workhub, title: str, assignee):
             return t
     return None
 
+# #1203p2: how many times each page has been re-registered WITHOUT `apis_used`.
+# Per page, because two pages must not silence each other; the count is what makes a
+# repeat a state rather than a heartbeat (#1202ad).
+_APIS_UNCHANGED_SEEN_1203P2: dict = {}
+import logging as _lg1203p2
+
+
 class HubTool(BaseTool):
     def __init__(self, agent_id: str = "", hub_workspace: Any = None):
         super().__init__(name=getattr(self, "NAME", self.__class__.__name__.lower()), category="hub")
@@ -933,6 +940,41 @@ class WorkHubUpdatePageTool(HubTool):
                         "changed nothing — pass the full list."
                         % (len(_kept), ", ".join(str(a) for a in _kept[:8]))),
                 }
+                # #1203p2: AND SAY IT WHERE A READER CAN COUNT IT. The note above rides in
+                # `ToolResult.data`, which reaches the model and nothing else -- tool RESULTS
+                # are not logged anywhere. Checked rather than assumed: this note's text
+                # appears 0 times in all 211 run logs and 0 times in every delivered tree, and
+                # that is by construction, not by chance. So whether #1203b0 ever fired, and
+                # whether it broke the loop it was written for, cannot be read off any
+                # artifact -- while `deliverability_page_apis_understated` CLEARS AND COMES
+                # BACK 43 times across the hold ledgers, 35 of them in the modern era (r167+),
+                # which is exactly the "fixed it 19 times over" shape #1203b0 names.
+                # #1203or faced the same question yesterday and answered it by writing a
+                # ledger; one line is enough here.
+                # Keyed PER PAGE so two pages cannot silence each other, and carrying the
+                # repeat ordinal so a SECOND omission on the same page is a change rather
+                # than a heartbeat -- #1202ad's own words, "a count that moves is a change".
+                try:
+                    _n1203p2 = _APIS_UNCHANGED_SEEN_1203P2.get(str(name), 0) + 1
+                    _APIS_UNCHANGED_SEEN_1203P2[str(name)] = _n1203p2
+                    from multi_agent.runtime.message_format import state_changed_1202ad as _sc1203p2
+                    if _sc1203p2("hub_tools.apis_used_unchanged_1203p2:%s" % name, _n1203p2):
+                        _lg1203p2.getLogger(__name__).info(
+                            "#1203p2 register_ui_page(%s) omitted `apis_used` for the %d%s time; "
+                            "%d existing entry(ies) kept, so a `page_apis_understated` blocker "
+                            "is unchanged by this call",
+                            name, _n1203p2,
+                            {1: "st", 2: "nd", 3: "rd"}.get(_n1203p2 if _n1203p2 < 20 else 0, "th"),
+                            len(_kept))
+                except Exception as _e1203p2:
+                    # #1202ah: a silent default here would restore exactly the silence this
+                    # ticket is about, so say why the line is missing.
+                    try:
+                        from multi_agent.runtime.message_format import warn_once_1201 as _w1203p2
+                        _w1203p2("hub_tools.apis_used_unchanged_1203p2",
+                                 "recording that a re-registration omitted `apis_used`", _e1203p2)
+                    except Exception:
+                        pass
         return ToolResult(data=_rec1203b0)
 
 
