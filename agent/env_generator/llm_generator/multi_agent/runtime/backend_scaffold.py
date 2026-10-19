@@ -582,7 +582,47 @@ async def _framework_auth_guard(request, call_next):
             except Exception:
                 ok = False
         if not ok:
-            return _FWJSONResponse(status_code=401, content={"detail": "missing or invalid token"})
+            # #1203om: THIS 401 NEVER PASSES THROUGH CORSMiddleware, so it must carry the
+            # headers itself. Starlette builds the stack in REVERSE: the skeleton registers
+            # CORSMiddleware right after `app = FastAPI()` and this guard is a
+            # `@app.middleware("http")` added LATER, which makes the guard the OUTER layer.
+            # A response returned here without awaiting `call_next` therefore skips CORS
+            # entirely, so the browser sees a cross-origin reply with no
+            # `Access-Control-Allow-Origin` and reports a CORS FAILURE instead of a 401.
+            #
+            # PROVEN against real Starlette 0.49 with this exact structure: tokenless GET from
+            # another origin -> `Access-Control-Allow-Origin` is absent with the framework's
+            # order, and present when CORS is the outer layer.
+            #
+            # MEASURED (AST, not regex -- a string scan of the guard body undercounted this at
+            # 64): 101 of the corpus's 101 delivered `main.py` files register CORS before a
+            # 4xx-returning guard, r190 and r191 among them. r181 is where it became the
+            # blocker: its verifier reported "CORS blocks GET /api/auth/me from
+            # http://localhost:8059" about FORTY-NINE times and the run died on
+            # `validation_ui_evidence_failed` + `deliverability_ui_flow_failed`, the corpus's
+            # two most common delivery blockers.
+            #
+            # #1202zu already knows this ordering rule and applies it to LANE-installed
+            # middleware ("Starlette builds the stack in reverse, so middleware added later
+            # runs OUTER"). This is the other half: the framework's own guard.
+            #
+            # Headers are added HERE rather than by reordering the middleware, because the
+            # order is split across two writers (skeleton emits CORS, scaffold injects this
+            # guard later in the same file) and a re-registration would double the headers on
+            # every normal response. Mirrors the skeleton's own policy
+            # (`allow_origins=["*"], allow_credentials=True`): echo the caller's Origin so the
+            # reply is valid for a credentialed request too, which `*` is not.
+            _fw_401 = _FWJSONResponse(status_code=401,
+                                      content={"detail": "missing or invalid token"})
+            try:
+                _fw_origin = request.headers.get("origin")
+                if _fw_origin:
+                    _fw_401.headers["Access-Control-Allow-Origin"] = _fw_origin
+                    _fw_401.headers["Access-Control-Allow-Credentials"] = "true"
+                    _fw_401.headers["Vary"] = "Origin"
+            except Exception:
+                pass            # a header that cannot be set must not cost the 401
+            return _fw_401
     return await call_next(request)
 # === end auth enforcement ===
 '''

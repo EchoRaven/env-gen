@@ -140,8 +140,17 @@ def test_the_guard_calls_it_before_refusing():
     guard = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef)
              and n.name == "_framework_auth_guard"]
     assert guard, "the middleware is gone"
+    # #1203om: find the refusal by where the 4xx response is CONSTRUCTED, not by the shape of
+    # the statement that returns it. This assertion used to require
+    # `return <Call containing JSONResponse>`; #1203om builds the response into `_fw_401`
+    # first (to attach the CORS headers the guard answers outside CORSMiddleware with) and
+    # returns the NAME, so the old matcher saw no 401 at all and reported "the 401 response is
+    # gone" about a 401 that is still there. The PROPERTY #1202zt cares about -- the route
+    # check runs before the refusal -- was never in question.
     lines = [n.lineno for n in ast.walk(guard[0])
-             if isinstance(n, ast.Return) and isinstance(n.value, ast.Call)
-             and "JSONResponse" in ast.dump(n.value)]
-    assert lines, "the 401 response is gone"
+             if isinstance(n, ast.Call) and "JSONResponse" in ast.dump(n.func)
+             and any(kw.arg == "status_code" and isinstance(kw.value, ast.Constant)
+                     and isinstance(kw.value.value, int) and 400 <= kw.value.value < 500
+                     for kw in n.keywords)]
+    assert lines, "the 4xx refusal is gone"
     assert calls[0].lineno < min(lines), "the check must run BEFORE the refusal"

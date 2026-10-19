@@ -68,6 +68,12 @@ _CONTROLS = [
     ("ol", "tiktok-web-r171", "FALSIFIED"),      # 1 path-keyed inbox, 108 events
     ("ol", "tiktok-web-r190", "CONFIRMED"),
     ("ol", "tiktok-web-r191", "CONFIRMED"),
+    # `om` falsifies on EVERY pre-patch backend (101 of 101), so these four are a sample of
+    # the universal state rather than a selected case.
+    ("om", "tiktok-web-r181", "FALSIFIED"),
+    ("om", "tiktok-web-r190", "FALSIFIED"),
+    ("om", "tiktok-web-r191", "FALSIFIED"),
+    ("om", "googlemaps-r15", "FALSIFIED"),
 ]
 
 _cache = {}
@@ -137,6 +143,8 @@ _CONFIRM_REQUIRES = {
     # `ol` reads inbox KEYS, not a framework sentence -- CONFIRMED is the absence of a
     # path-shaped one, which needs nothing emitted.
     "ol": [],
+    # `om` CONFIRMED needs the header the patched guard template sets on its own 4xx.
+    "om": ["Access-Control-Allow-Origin"],
 }
 
 
@@ -265,7 +273,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

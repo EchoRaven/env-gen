@@ -800,6 +800,59 @@ def main(argv):
     except Exception as _e_ol:
         say("ol", "N-A", "the #1203ol criterion could not read this run (%s)" % _e_ol)
 
+    # --- #1203om — the guard's own 4xx must carry CORS headers ---------------------------
+    # READS: the delivered app/backend/main.py, by AST.
+    # FALSIFIED: a 4xx-returning `@app.middleware("http")` guard is registered AFTER
+    #   CORSMiddleware (so it is the OUTER layer and its response skips CORS) and its 4xx
+    #   branch does not set `Access-Control-Allow-Origin` itself. A browser then reports a CORS
+    #   failure instead of a 401 -- r181's verifier said so about 49 times and the run died on
+    #   validation_ui_evidence_failed + deliverability_ui_flow_failed.
+    # CONFIRMED: either CORS is the outer layer, or the guard sets the header itself.
+    # CONTROL (pre-patch): 101 of 101 delivered backends FALSIFY, r190 and r191 among them.
+    # ★ AST, not a string scan: a `split("\n\n\n")` window over the guard body answered 64.
+    try:
+        _om_f = run / "app" / "backend" / "main.py"
+        if not _om_f.is_file():
+            say("om", "N-A", "no delivered backend main.py in this run")
+        else:
+            import ast as _ast_om
+            _om_tree = _ast_om.parse(_om_f.read_text(encoding="utf-8", errors="ignore"))
+            _om_cors, _om_guards = None, []
+            for _n in _ast_om.walk(_om_tree):
+                if isinstance(_n, _ast_om.Call):
+                    _fn = getattr(_n.func, "attr", getattr(_n.func, "id", ""))
+                    if _fn == "add_middleware" and _n.args:
+                        _nm = getattr(_n.args[0], "id", getattr(_n.args[0], "attr", ""))
+                        if _nm == "CORSMiddleware":
+                            _om_cors = (_n.lineno if _om_cors is None
+                                        else min(_om_cors, _n.lineno))
+                if isinstance(_n, (_ast_om.FunctionDef, _ast_om.AsyncFunctionDef)):
+                    if not any(isinstance(_d, _ast_om.Call)
+                               and getattr(_d.func, "attr", "") == "middleware"
+                               and _d.args and isinstance(_d.args[0], _ast_om.Constant)
+                               and _d.args[0].value == "http"
+                               for _d in _n.decorator_list):
+                        continue
+                    _dump = _ast_om.dump(_n)
+                    _four = any(
+                        _kw.arg == "status_code" and isinstance(_kw.value, _ast_om.Constant)
+                        and isinstance(_kw.value.value, int) and 400 <= _kw.value.value < 500
+                        for _r in _ast_om.walk(_n)
+                        if isinstance(_r, _ast_om.Return) and isinstance(_r.value, _ast_om.Call)
+                        for _kw in _r.value.keywords)
+                    _om_guards.append((_n.lineno, _four,
+                                       "Access-Control-Allow-Origin" in _dump))
+            _om_bad = [g for g in _om_guards
+                       if g[1] and _om_cors is not None and g[0] > _om_cors and not g[2]]
+            if _om_cors is None or not _om_guards:
+                say("om", "N-A", "this backend has no CORS middleware or no http guard")
+            else:
+                say("om", "FALSIFIED" if _om_bad else "CONFIRMED",
+                    "%d of %d http guard(s) answer 4xx outside CORS without setting the "
+                    "header themselves" % (len(_om_bad), len(_om_guards)))
+    except Exception as _e_om:
+        say("om", "N-A", "the #1203om criterion could not read this run (%s)" % _e_om)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")
