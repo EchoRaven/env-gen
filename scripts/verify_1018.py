@@ -1337,6 +1337,45 @@ def main(argv):
     except Exception as _e_p2:
         say("p2", "N-A", "the #1203p2 criterion could not read this run (%s)" % _e_p2)
 
+    # --- #1203p4 — a breaking change that reached no consumer must say so --------------
+    # READS: shared/hubs/eventhub_events.json for the CONDITION, and the run log for the
+    #   announcement. Both halves, because the condition is visible in an artifact and the
+    #   answer is not: with `recipient_agents` empty the urgent event goes to nobody AND the
+    #   per-consumer fix-task loop never runs, so the whole breaking change passed silently.
+    # FALSIFIED: this run has `breaking_change_detected` events with an empty `recipients`
+    #   and the log never says it (the pre-patch state of every run).
+    # CONFIRMED: the condition held and the log names it.
+    # N-A: no such event in this run, so there was nothing to announce.
+    # CONTROL (pre-patch): 1,887 of 20,970 urgent events across 102 runs have empty
+    #   recipients and EVERY one is this event type -- 47% of the corpus's 4,043
+    #   `breaking_change_detected` events. r186 is 37 such events and 0 lines; r181 30, r185
+    #   28, r184 25. Not a spelling mismatch: normalising the `/api` and `/api/v1` prefixes on
+    #   both sides recovers 1 of the 1,887.
+    try:
+        _p4_ev = _json(run / "shared" / "hubs" / "eventhub_events.json", None)
+        _p4_silent = 0
+        for _k, _v in (_p4_ev or {}).items():
+            if _k == "_meta" or not isinstance(_v, dict):
+                continue
+            if str(_v.get("event_type") or "") != "breaking_change_detected":
+                continue
+            if not _v.get("recipients"):
+                _p4_silent += 1
+        _p4_said = len([l for l in (logtext or "").splitlines() if "#1203p4" in l])
+        if _p4_ev is None:
+            say("p4", "N-A", "this run has no eventhub_events.json")
+        elif not _p4_silent:
+            say("p4", "N-A", "every breaking-change event in this run had a consumer to tell")
+        elif not logtext:
+            say("p4", "N-A", "%d breaking change(s) reached no consumer, but no run log was "
+                "given to check whether it was said" % _p4_silent)
+        else:
+            say("p4", "FALSIFIED" if not _p4_said else "CONFIRMED",
+                "%d breaking change(s) reached no consumer; %d announcement(s) in the log"
+                % (_p4_silent, _p4_said))
+    except Exception as _e_p4:
+        say("p4", "N-A", "the #1203p4 criterion could not read this run (%s)" % _e_p4)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

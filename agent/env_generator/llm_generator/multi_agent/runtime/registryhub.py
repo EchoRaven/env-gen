@@ -2252,6 +2252,50 @@ class RegistryHub:
                      if c.get("endpoint_id") == endpoint_id]
         recipient_agents = sorted(set(c.get("agent") for c in consumers if c.get("agent")))
 
+        # #1203p4: AN URGENT ALERT WITH NO RECIPIENT IS A DROPPED ALERT, AND NOTHING SAID SO.
+        # With `recipient_agents` empty BOTH halves below are no-ops: the event is published to
+        # nobody and the per-consumer fix-task loop never runs, so a breaking change to a
+        # BUSINESS endpoint (the framework-owned ones are already returned above) passes in
+        # complete silence.
+        #
+        # MEASURED over 102 runs' `eventhub_events`: 20,970 urgent events, 1,887 of them with
+        # empty `recipients` -- and every single one is this event type, which is 47% of the
+        # 4,043 `breaking_change_detected` events in the corpus.
+        #
+        # NOT a lookup bug: the obvious suspect was a spelling mismatch (consumers registered
+        # as `POST /auth/login` while the event carries `POST /api/auth/signup`), the #483 /
+        # #1203ol shape. Normalising the `/api` and `/api/v1` prefixes on both sides recovers
+        # 1 of the 1,887. The consumers are genuinely absent.
+        #
+        # Which makes this the SECOND cost of a gap the gate already blocks on: consumer
+        # records are auto-registered from a page's `apis_used` (`register_ui_page`, #627), so
+        # an endpoint with no consumer is an endpoint some page uses and did not declare --
+        # `deliverability_page_apis_understated`. That check clears and comes back 59 times
+        # across the gate ledgers; this is the part of its cost nobody could see.
+        #
+        # Deduped per endpoint on a REGISTRY-SCOPED set, not `state_changed_1202ad`: #1202gz's
+        # comment thirty lines up records why ("A module global also leaks between tests"), and
+        # a new HubRegistry must start clean. The total is said so a reader can tell "no
+        # consumers registered at all" from "this one endpoint is missing".
+        if not recipient_agents:
+            try:
+                _said1203p4 = self.__dict__.setdefault("_no_consumer_said_1203p4", set())
+                if endpoint_id not in _said1203p4:
+                    _said1203p4.add(endpoint_id)
+                    import logging as _lg1203p4
+                    _lg1203p4.getLogger(__name__).warning(
+                        "#1203p4 breaking change in %s reached NO ONE: no consumer is "
+                        "registered for it (%d consumer record(s) in this registry), so the "
+                        "urgent event went to an empty recipient list and no fix task was "
+                        "filed. Consumers are auto-registered from a page's `apis_used`, so "
+                        "this endpoint is used by a page that did not declare it -- the same "
+                        "gap `deliverability_page_apis_understated` blocks on.",
+                        endpoint_id, len(self._consumers.value() or {}))
+            except Exception as _e1203p4:
+                from .message_format import warn_once_1201 as _w1203p4
+                _w1203p4("registryhub.no_consumer_1203p4",
+                         "reporting a breaking change that reached no consumer", _e1203p4)
+
         self._emit("breaking_change_detected", payload,
                    recipients=recipient_agents, priority="urgent")
 

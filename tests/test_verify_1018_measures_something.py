@@ -131,6 +131,11 @@ _CONTROLS = [
     # exist yet. Its CONFIRMED and N-A verdicts are BOTH answers -- see the criterion.
     ("p2", "tiktok-web-r191", "N-A"),
     ("p2", "tiktok-web-r190", "N-A"),
+    # `p4` reads the EVENT STORE for the condition and the log for the answer, so without a
+    # log it stops at "there was something to say and no log to check it in". r191 is N-A on
+    # the artifact alone: every breaking change there had a consumer to tell.
+    ("p4", "tiktok-web-r191", "N-A"),
+    ("p4", "tiktok-web-r190", "N-A"),
 ]
 
 _cache = {}
@@ -226,6 +231,8 @@ _CONFIRM_REQUIRES = {
     "oy": ["Visual verdict:"],
     # `p2` CONFIRMED needs the recorder's own line.
     "p2": ["omitted `apis_used` for the"],
+    # `p4` CONFIRMED needs the no-consumer announcement.
+    "p4": ["reached NO ONE"],
 }
 
 
@@ -387,7 +394,7 @@ class TheCheckerStillBites(unittest.TestCase):
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
                      "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov",
-                     "ox", "oy", "p2"):
+                     "ox", "oy", "p2", "p4"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 
