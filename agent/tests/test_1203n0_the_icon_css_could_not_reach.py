@@ -333,6 +333,26 @@ class AnAssetWithItsOwnColoursKeepsTheImgChannel(_FE):
         self.src("Nav.jsx", '<img src="/assets/icons/absent.svg"/>')
         self.assertEqual(invisible(self.fe), [])
 
+    def test_a_staged_but_UNREADABLE_file_says_nothing_either_1203p0(self):
+        """#1203p0: the OTHER half of #883 here, and it had no test.
+
+        `test_a_path_that_is_not_staged_says_nothing` above covers the path that resolves to
+        nothing -- the basename index has no entry, so the read never happens. A file that IS
+        in the index and then fails to read is a different branch: `_one_colourless_1203n4`
+        returns `None` there, deliberately, because "could not read it" is not "it takes a
+        colour from CSS". Nothing asserted that, so changing the `except` to `return False`
+        passed the whole suite while silently reclassifying every unreadable icon as coloured
+        -- i.e. no longer reported. Found by writing fresh mutations against the CURRENT shape
+        of this code rather than re-aiming the ones written before #1203nv/#1203nx rewrote it.
+
+        The index is built by `pub.rglob("*.svg")` with no `is_file()` filter, so a DIRECTORY
+        named like an icon is the deterministic way to make the read raise -- no chmod, no
+        platform assumptions.
+        """
+        (self.fe / "public" / "assets" / "icons" / "dir_shaped.svg").mkdir()
+        self.src("Nav.jsx", '<img src="/assets/icons/dir_shaped.svg"/>')
+        self.assertEqual(invisible(self.fe), [])
+
     def test_no_src_tree(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(invisible(Path(d)), [])
