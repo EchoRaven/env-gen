@@ -153,5 +153,77 @@ def test_the_unprintable_page_name_is_recorded():
     assert "cannot say WHICH page failed cannot be acted on" in p
 
 
+# --- #1203pg: the timestamp has to DECIDE, not merely be present -------------------------------
+#
+# #1202fu's defect was that `_ts757` returned 0.0 for EVERY record, which turns the dedup's
+# `_ts757(r) >= _ts757(_prev)` into `0 >= 0` -- always true -- so "keep the latest record per
+# name" silently became "keep whichever record the iteration reached LAST". #1202fu fixed the
+# cause (the store renames `updated_at` to `recorded_at`, so none of the four keys the helper
+# first looked for existed on a row the gate sees) and left nothing that would catch its return.
+#
+# Every superseding test above lists the record that should win LAST, so the degenerate
+# tie-break produces the right answer for the wrong reason. Measured, not supposed: a mutation
+# that reintroduces #1202fu verbatim -- `if isinstance(v, (int, float)) and False` -- leaves all
+# 19 of those tests green, and so does dropping `recorded_at` from the lookup, which is the ONE
+# key a row the gate receives carries (`hub_registry.py:508`, `orchestrator.py:1599`).
+#
+# These reverse the input order, so the tie-break works AGAINST the expected answer and only a
+# real reading of the key can produce it.
+
+
+def test_a_tie_is_decided_by_input_order_which_is_why_the_rest_reverse_it():
+    """The mechanism that made the tests above vacuous, pinned so it stays visible."""
+    f = {"name": "n", "status": "failed", "metadata": {"check": "ui_flow"}}
+    s = {"name": "n", "status": "success", "metadata": {"check": "ui_flow"}}
+    assert dg._ui_evidence_breadth_739([f, s])["failed_records"] == 0
+    assert dg._ui_evidence_breadth_739([s, f])["failed_records"] == 1
+
+
+def test_a_later_pass_clears_the_failure_even_when_it_is_listed_FIRST():
+    b = dg._ui_evidence_breadth_739([
+        _rec("validation:ui_flow:browse_home", "success", 2),   # newer, listed first
+        _rec("validation:ui_flow:browse_home", "failed", 1)])
+    assert b["failed_records"] == 0, "the timestamp lost to input order"
+    assert b["pages_passed"] == ["browse_home"]
+
+
+def test_a_later_FAILURE_still_blocks_even_when_it_is_listed_FIRST():
+    b = dg._ui_evidence_breadth_739([
+        _rec("validation:ui_flow:browse_home", "failed", 2),    # newer, listed first
+        _rec("validation:ui_flow:browse_home", "success", 1)])
+    assert b["failed_records"] == 1, "a live failure was retired by a stale pass"
+    assert b["pages_failed"] == ["browse_home"]
+
+
+@pytest.mark.parametrize("field", ["recorded_at", "updated_at", "_updated_at", "created_at", "at"])
+def test_every_timestamp_field_is_LOAD_BEARING_not_merely_tolerated(field):
+    """The older `test_every_timestamp_field_the_stores_use_is_read` listed the newer record
+    LAST and omitted `recorded_at` -- so it passed for every key, including keys nothing reads.
+    """
+    newer = {"name": "n", "status": "success", "metadata": {"check": "ui_flow"}, field: 2}
+    older = {"name": "n", "status": "failed", "metadata": {"check": "ui_flow"}, field: 1}
+    assert dg._ui_evidence_breadth_739([newer, older])["failed_records"] == 0, field
+
+
+@pytest.mark.parametrize("field", ["recorded_at", "updated_at", "_updated_at", "created_at", "at"])
+def test_the_recency_helper_returns_the_value_it_found(field):
+    """`_ts757` always returning 0.0 satisfies `test_the_recency_helper_is_total`, because that
+    test only ever asks about junk. This asks what it does with a real record."""
+    assert dg._ts757({field: 7}) == 7.0, field
+
+
+def test_the_key_priority_survives_a_row_carrying_two_of_them():
+    """#1202fu: "the offline fixture that said otherwise carried BOTH `recorded_at` and
+    `updated_at`". The gate's rows carry only the first, so the first must win -- otherwise a
+    future reader reorders the tuple and the renamed field stops being read again."""
+    assert dg._ts757({"recorded_at": 1, "updated_at": 2}) == 1.0
+
+
+def test_the_degenerate_tiebreak_is_named_where_the_helper_lives():
+    """#1203j2: the reason this file now reverses its input order belongs next to the code."""
+    import inspect
+    assert "0 >= 0" in inspect.getdoc(dg._ts757)
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

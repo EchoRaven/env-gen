@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_gates_that_block_750_751_752.py",
+ "mutations": [
+  {
+   "label": "G1 the #750 veto itself: `app_dead` no longer refuses the release escapes, which is exactly r148 -- v1.0.0 cut while the SPA threw on every authenticated route",
+   "find": "    if app_dead:\n        return \"defer\"",
+   "replace": "    if app_dead and False:\n        return \"defer\""
+  }
+ ]
+}

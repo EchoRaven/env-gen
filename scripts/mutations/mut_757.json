@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_ui_evidence_supersedes_757.py",
+ "mutations": [
+  {
+   "label": "S1 `recorded_at` is dropped from the lookup. It is the ONE key a row the gate receives carries: `hub_registry.py:508` and `orchestrator.py:1599` both build the row as `\"recorded_at\": check.get(\"updated_at\", 0)`, renaming the field, which is #1202fu.",
+   "find": "    for k in (\"recorded_at\", \"updated_at\", \"_updated_at\", \"created_at\", \"at\"):",
+   "replace": "    for k in (\"updated_at\", \"_updated_at\", \"created_at\", \"at\"):"
+  },
+  {
+   "label": "S2 `updated_at` is dropped. CORRECTION of this label's first version, which said \"the key 8852 of 8874 REAL records carry\": that measurement is of what is ON DISK, and the rows the gate sees are not on disk in that shape -- the store renames the field, so the gate never sees `updated_at` at all. The key is defensive, and the mutation is here because the parametrized test claims EVERY key in the tuple is read.",
+   "find": "    for k in (\"recorded_at\", \"updated_at\", \"_updated_at\", \"created_at\", \"at\"):",
+   "replace": "    for k in (\"recorded_at\", \"_updated_at\", \"created_at\", \"at\"):"
+  },
+  {
+   "label": "S3 the helper returns 0.0 for every record, so `_ts757(r) >= _ts757(_prev)` is `0 >= 0` and \"latest wins\" becomes \"last-in-input wins\" -- #1202fu reintroduced verbatim. All 19 tests in this file stayed green against it before #1203pg.",
+   "find": "        v = (rec or {}).get(k) if isinstance(rec, dict) else None\n        if isinstance(v, (int, float)):\n            return float(v)",
+   "replace": "        v = (rec or {}).get(k) if isinstance(rec, dict) else None\n        if isinstance(v, (int, float)) and False:\n            return float(v)"
+  }
+ ]
+}

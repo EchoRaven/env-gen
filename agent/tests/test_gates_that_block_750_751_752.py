@@ -25,7 +25,10 @@ be the harness rather than the app, which is exactly why the decision sat open; 
 refund cap AND the browser raised an uncaught error" is not ambiguous, and only #740 made the
 second half observable.
 """
+import asyncio
 import inspect
+import pathlib
+import types
 
 import pytest
 
@@ -106,6 +109,104 @@ def test_the_latch_clears_when_a_capture_renders():
     src = inspect.getsource(vf.VisualFidelityGate.maybe_run)
     assert "#750 veto CLEARED" in src
     assert "self.app_dead_750 = False" in src
+
+
+# --- #1203pg: the latch must CLEAR, driven rather than spelled ---------------------------------
+#
+# `test_the_latch_is_set_only_with_BOTH_conditions` and `test_the_latch_clears_when_a_capture
+# _renders` both assert on SOURCE TEXT, and a mutation showed what that costs: guarding the
+# clear with `if self.app_dead_750 and not self.app_dead_750` leaves both strings in place and
+# every test in this file green, while the veto becomes permanent -- the one failure mode the
+# code's own comment says must never happen ("a sticky veto would turn one bad round into a run
+# that can never deliver"). A present-but-dead line reads identical to a working one, so the
+# property needs a driver (#826: a check that lives in a habit is not a check).
+
+
+def _orch_for_the_gate(box):
+    """`box["sig"]` is the app-source signature. It is mutable on purpose: `maybe_run` returns
+    early on an UNCHANGED signature ("budget spent on this source state -- wait for lane
+    changes"), and a lane that fixes the crash necessarily changes it. A fixed signature makes
+    every tick after the first a no-op, which is how the first version of these tests read a
+    latch that had merely never been re-examined as a latch that would not clear.
+    """
+    _noop = lambda *a, **k: None  # noqa: E731
+
+    class _Bus:
+        async def send(self, *a, **k):
+            return None
+
+    return types.SimpleNamespace(
+        _reference_images=[{"name": "inbox", "route": "/inbox", "auth": True, "path": "x.png"}],
+        _compute_app_source_signature=lambda: box["sig"],
+        output_dir=str(pathlib.Path(__file__).resolve().parents[1]),
+        llm=None, message_bus=_Bus(),
+        _logger=types.SimpleNamespace(warning=_noop, info=_noop, error=_noop, debug=_noop),
+        hubs=types.SimpleNamespace(
+            workhub=types.SimpleNamespace(create_task=lambda **k: {"id": "t1"})),
+    )
+
+
+def _tick(gate):
+    loop = asyncio.new_event_loop()   # fresh loop per call, isolated from other async tests
+    try:
+        loop.run_until_complete(gate.maybe_run())
+    finally:
+        loop.close()
+
+
+def _result(transient, console_errors, similarity):
+    async def _fake(*a, **k):
+        return {"passed": False, "capture_transient": transient, "skipped": [],
+                "summary": "blank shell" if transient else "rendered but imperfect",
+                "screens": [{"name": "inbox", "similarity": similarity,
+                             "blank": bool(transient), "console_errors": list(console_errors)}]}
+    return _fake
+
+
+def _blackout(gate, box, monkeypatch, errors=("TypeError: (void 0) is not a function",)):
+    monkeypatch.setattr(vf, "run_visual_fidelity", _result(True, errors, 0.0))
+    for i in range(vf._TRANSIENT_REFUND_CAP + 1):
+        box["sig"] = "blackout-round-%d" % i
+        _tick(gate)
+
+
+def test_the_latch_is_really_set_by_a_blackout_past_the_cap(monkeypatch):
+    box = {"sig": "sig0"}
+    gate = vf.VisualFidelityGate(_orch_for_the_gate(box))
+    gate.reset_for_milestone()
+    _blackout(gate, box, monkeypatch)
+    assert gate.app_dead_750 is True, "r148's shape did not set the veto"
+
+
+def test_the_latch_is_really_CLEARED_by_a_capture_that_rendered(monkeypatch):
+    """The driver the two source-text tests above do not provide.
+
+    This is the mutation's point: `if self.app_dead_750 and not self.app_dead_750` keeps both
+    asserted strings and makes the veto permanent, which the code's own comment calls out as
+    the thing that must never happen -- "a sticky veto would turn one bad round into a run that
+    can never deliver".
+    """
+    box = {"sig": "sig0"}
+    gate = vf.VisualFidelityGate(_orch_for_the_gate(box))
+    gate.reset_for_milestone()
+    _blackout(gate, box, monkeypatch)
+    assert gate.app_dead_750 is True, "precondition: the veto has to be latched first"
+
+    monkeypatch.setattr(vf, "run_visual_fidelity", _result(False, (), 0.5))
+    box["sig"] = "the-lane-fixed-the-crash"
+    _tick(gate)
+    assert gate.app_dead_750 is False, (
+        "the veto outlived the condition -- this run can never deliver")
+
+
+def test_a_blackout_without_console_errors_does_not_set_it(monkeypatch):
+    """The narrowness #750 was approved on, driven rather than read off the source: a blank
+    capture alone is #75a's business and can be the harness rather than the app (#647)."""
+    box = {"sig": "sig0"}
+    gate = vf.VisualFidelityGate(_orch_for_the_gate(box))
+    gate.reset_for_milestone()
+    _blackout(gate, box, monkeypatch, errors=())
+    assert gate.app_dead_750 is False, "a blackout with a clean console vetoed anyway"
 
 
 def test_the_veto_explains_the_trade_in_place():

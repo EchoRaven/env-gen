@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1203i6_the_checklist_knew_which_item_was_red.py",
+ "mutations": [
+  {
+   "label": "C1 EXPECTED-MISSED (null mutation, not a gap): the early `if not isinstance(_cl, dict) or not _cl` return is disabled. Every input it guards reaches the same answer anyway -- a non-dict hits `_cl.items()` and the bare `except` returns the generic sentence; an empty dict leaves `_failed` and `_unrun` empty and hits the second generic return. The guard is defensive, so no test can distinguish it.",
+   "find": "        if not isinstance(_cl, dict) or not _cl:\n            return _CHECKLIST_GENERIC_1203I6",
+   "replace": "        if False:\n            return _CHECKLIST_GENERIC_1203I6"
+  },
+  {
+   "label": "C2 failed and pending items are merged into one list, so a FAILURE that must be FIXED is reported as something to RUN -- the two stops #1203i6 exists to separate",
+   "find": "        _failed, _unrun = [], []",
+   "replace": "        _failed = _unrun = []"
+  }
+ ]
+}

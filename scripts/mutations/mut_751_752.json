@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_gates_that_block_750_751_752.py",
+ "mutations": [
+  {
+   "label": "G4 #751: a task explicitly marked `failed` stops blocking the cut (20 of 148 runs, 4 of which released)",
+   "find": "    if _bugs743.get(\"failed_count\"):\n        failed_checks.append(\"unresolved_failed_tasks\")",
+   "replace": "    if False and _bugs743.get(\"failed_count\"):\n        failed_checks.append(\"unresolved_failed_tasks\")"
+  },
+  {
+   "label": "G5 #752: UI evidence that both passes and fails stops blocking -- r148 read ui_smoke_pass True off landing+login while the SPA crashed on 12 of 14 pages",
+   "find": "        failed_checks.append(\"validation_ui_evidence_failed\")",
+   "replace": "        pass  # mutated"
+  }
+ ]
+}

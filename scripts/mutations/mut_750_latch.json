@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_gates_that_block_750_751_752.py",
+ "mutations": [
+  {
+   "label": "G2 the veto widens to \"the capture blanked\" ALONE, dropping the console-error half. #750 was approved BECAUSE the conjunction is unambiguous: a blackout alone can be the harness (#75a), so this is the over-wide guard #647 forbids",
+   "find": "                if self.transient_refunds >= _TRANSIENT_REFUND_CAP and _errs750:",
+   "replace": "                if self.transient_refunds >= _TRANSIENT_REFUND_CAP or _errs750:"
+  },
+  {
+   "label": "G3 the latch never clears: a capture that RENDERED leaves app_dead_750 set, so one bad round turns into a run that can never deliver -- the failure mode the code's own comment says must never happen",
+   "find": "                        \"demonstrably dead and the release escapes apply again.\")\n                    self.app_dead_750 = False",
+   "replace": "                        \"demonstrably dead and the release escapes apply again.\")"
+  },
+  {
+   "label": "G3b the clear LINE survives but can never run (`and not self.app_dead_750`). Both latch tests assert on SOURCE TEXT, so a clear that is present-but-dead reads identical to a working one -- if this is MISSED the property \"the latch clears when a capture renders\" has no driver, only a spelling check (#826)",
+   "find": "                if self.app_dead_750:\n                    orch._logger.warning(\n                        \"#750 veto CLEARED",
+   "replace": "                if self.app_dead_750 and not self.app_dead_750:\n                    orch._logger.warning(\n                        \"#750 veto CLEARED"
+  }
+ ]
+}
