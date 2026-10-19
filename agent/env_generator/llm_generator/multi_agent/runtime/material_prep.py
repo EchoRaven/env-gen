@@ -2117,9 +2117,39 @@ def resolve_dataset_fks_1202vz(dataset, schema) -> Dict[str, List]:
                     v = best.get(str(r.get(base)))
                     if v is not None:
                         r[col] = v
-                _LOG_1202VZ.info(
-                    "#1202vz resolved %s.%s -> %s for %d of %d rows via their `%s`",
-                    table, col, target, best_hits, len(drows), base)
+                # #1203ot: #1203i4 memoised the TWO WARNINGS above -- its docstring says
+                # why, in this file: "These two #1202vz warnings printed 319 identical lines
+                # in r180 alone" -- and left the SUCCESS line they sit beside unguarded.
+                #
+                # MEASURED on the modern run logs: this one line printed 797 times BYTE FOR
+                # BYTE in r190, 1220 in r183, 607 in r185, 427 in r191; median 430 across the
+                # 12 r183+ logs, 5,692 in all. That is larger than every offender #1202ad was
+                # written for (134 / 416 / 213 lines) and larger per run than what #1203i3 had
+                # just fixed, in a 16MB log whose budget #1202vx says belongs to the evidence.
+                # The localiser revisits the same dataset on every pass, so every repeat is
+                # the same table, the same column and the same counts.
+                #
+                # Keyed per column and stated as the COUNT, not as #1203i4's constant marker:
+                # a resolution that moves from "20 of 35" to "35 of 35" between passes IS news
+                # -- "a count that moves is a change", in #1202ad's own words -- while the same
+                # count again is the heartbeat.
+                #
+                # The sibling #1202w9 info line thirty lines up has the same shape and is NOT
+                # guarded: measured over r183/r185/r190/r191 it fires ZERO times, so there is
+                # no evidence to size a guard against (#647), and an unexercised branch is its
+                # own cost. If it ever starts repeating, this is the pattern to copy.
+                _say1203ot = True
+                try:
+                    from .message_format import state_changed_1202ad as _sc1203ot
+                    _say1203ot = bool(_sc1203ot(
+                        "material_prep.resolved_fk_1203ot:%s.%s->%s" % (table, col, target),
+                        "%d/%d" % (best_hits, len(drows))))
+                except Exception:
+                    _say1203ot = True   # a memo failure must never silence the report
+                if _say1203ot:
+                    _LOG_1202VZ.info(
+                        "#1202vz resolved %s.%s -> %s for %d of %d rows via their `%s`",
+                        table, col, target, best_hits, len(drows), base)
         return dataset
     except Exception as _e1202vz:
         try:
