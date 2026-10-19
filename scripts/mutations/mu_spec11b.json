@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/seed_audit.py",
+ "test": "tests/test_1203mt_the_foreign_key_was_a_string.py",
+ "mutations": [
+  {"label": "MX8 the shared id-set builder drops str()",
+   "find": "                out[name] = {str(r.get(\"id\")) for r in rows if isinstance(r, dict)}",
+   "replace": "                out[name] = {r.get(\"id\") for r in rows if isinstance(r, dict)}"},
+  {"label": "MX9 an association table becomes an owner",
+   "find": "            if rows and isinstance(rows[0], dict) and \"id\" in rows[0]:",
+   "replace": "            if rows and isinstance(rows[0], dict):"}
+ ]}

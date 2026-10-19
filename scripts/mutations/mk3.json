@@ -1,0 +1,1 @@
+{"file": "agent/tests/test_1203jk_a_report_that_measured_nothing.py", "test": "tests/test_1203jk_a_report_that_measured_nothing.py", "mutations": [{"label": "MK3 an unknown report would read as no-evidence -> must bite", "find": "    assert all(\"gmrun4\" in n or \"run73\" in n for n in noev), (", "replace": "    assert all(\"NOSUCHRUN\" in n for n in noev), ("}]}

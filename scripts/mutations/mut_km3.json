@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203km_a_goal_the_cap_removed_never_entered_the_ledger.py",
+ "mutations": [
+   {"label": "the caller stops recording the drops",
+    "find": "            _never1203km = ledger.note_never_run_1203km(_dropped1203go)",
+    "replace": "            _never1203km = []"},
+   {"label": "the caller records an empty list instead of the drops",
+    "find": "ledger.note_never_run_1203km(_dropped1203go)",
+    "replace": "ledger.note_never_run_1203km([])"}
+ ]}

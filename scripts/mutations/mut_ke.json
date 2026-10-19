@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203ke_attributed_by_the_other_column.py",
+ "mutations": [
+   {"label": "back to first-name-wins (the original defect)",
+    "find": "        present = [k for k in _own if k in obj]\n        attributed = [k for k in present if obj[k] not in (None, \"\")]",
+    "replace": "        present = [k for k in _own if k in obj][:1]\n        attributed = [k for k in present if obj[k] not in (None, \"\")]"},
+   {"label": "a row attributed to nobody now passes",
+    "find": "        if present and not attributed:",
+    "replace": "        if False:"},
+   {"label": "the empty string no longer counts as unattributed",
+    "find": "        attributed = [k for k in present if obj[k] not in (None, \"\")]",
+    "replace": "        attributed = [k for k in present if obj[k] is not None]"},
+   {"label": "the failure names only one column while both are empty",
+    "find": "                           % (res, \", \".join(present)))",
+    "replace": "                           % (res, present[0]))"},
+   {"label": "the null sibling is dropped from the note",
+    "find": "            if nulls:",
+    "replace": "            if False:"},
+   {"label": "the envelope is no longer unwrapped",
+    "find": "        for k in (\"item\", \"data\", \"result\"):\n            if isinstance(payload.get(k), dict):\n                obj = payload[k]\n                break",
+    "replace": "        for k in ():\n            if isinstance(payload.get(k), dict):\n                obj = payload[k]\n                break"}
+ ]}

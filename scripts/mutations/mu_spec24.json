@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203n0_the_icon_css_could_not_reach.py",
+ "mutations": [
+  {
+   "label": "N41b the pattern stops matching a template literal  [SUPERSEDED 2026-10-19 by icons_now.json: same rewrite, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "    r\"\"\"[\"'`][^\"'`]{0,160}?([A-Za-z0-9_.\\-]+\\.svg)[\"'`]\"\"\")",
+   "replace": "    r\"\"\"[\"']([A-Za-z0-9_.\\-]+\\.svg)[\"']\"\"\")"
+  },
+  {
+   "label": "N45 the index keeps the LAST file of a duplicated basename  [SUPERSEDED 2026-10-19 by icons_now.json: same rewrite, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                _served_1203n4.setdefault(_sf.name, _sf)",
+   "replace": "                _served_1203n4[_sf.name] = _sf"
+  }
+ ]
+}

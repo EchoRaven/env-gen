@@ -1,0 +1,16 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203kp_the_quote_was_cut_without_saying_so.py",
+ "mutations": [
+   {"label": "back to the bare slice (the silent cut)",
+    "find": "                       _q1203kp[:80] + (\"…\" if len(_q1203kp) > 80 else \"\")))",
+    "replace": "                       _q1203kp[:80]))"},
+   {"label": "the marker is added even when nothing was cut",
+    "find": "(\"…\" if len(_q1203kp) > 80 else \"\")",
+    "replace": "\"…\""},
+   {"label": "the budget silently grows instead of declaring the cut",
+    "find": "                       _q1203kp[:80] + (\"…\" if len(_q1203kp) > 80 else \"\")))",
+    "replace": "                       _q1203kp[:400] + (\"…\" if len(_q1203kp) > 400 else \"\")))"},
+   {"label": "the step it tells you to look at is dropped",
+    "find": "                    % (_first_fail_1202oe.get(\"method\"), _first_fail_1202oe.get(\"path\"),",
+    "replace": "                    % (\"\", \"\","}
+ ]}

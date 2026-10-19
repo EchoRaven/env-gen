@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203jh_the_stop_reason_said_nothing_shipped.py",
+ "mutations": [
+  {
+   "label": "M1 the clause goes back to the END (past the 400-char cap)",
+   "find": "            return (\"no abort and no cap -- the loop exited with the app not delivered.\"\n                    + _shipped1203jh + \" \" + \"; \".join(bits))",
+   "replace": "            return (\"no abort and no cap -- the loop exited with the app not delivered. \"\n                    + \"; \".join(bits) + _shipped1203jh)"
+  },
+  {
+   "label": "M2 the clause grows back to a full sentence (184 chars)",
+   "find": "                    _shipped1203jh = (\" SHIPPED: %s (#1202jg: `status`=delivered means \"\n                                      \"this, not that the run finished).\"\n                                      % \", \".join(_tags1203jh[:4]))",
+   "replace": "                    _shipped1203jh = (\" It DID ship %d release(s) (%s) -- `usage.status` reads `delivered` for that reason (#1202jg), so this sentence is about the PROJECT, not about nothing having been cut.\" % (len(_tags1203jh), \", \".join(_tags1203jh[:4])))"
+  },
+  {
+   "label": "M3 the diagnostic bits are dropped to make room",
+   "find": "                    + _shipped1203jh + \" \" + \"; \".join(bits))",
+   "replace": "                    + _shipped1203jh)"
+  },
+  {
+   "label": "M4 the clause no longer points at the owner of the definition",
+   "find": "\" SHIPPED: %s (#1202jg: `status`=delivered means \"",
+   "replace": "\" SHIPPED: %s (see the status field, \""
+  },
+  {
+   "label": "M5 nothing shipped still produces the clause",
+   "find": "                if _tags1203jh:",
+   "replace": "                if True:"
+  }
+ ]
+}

@@ -1,0 +1,13 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/tool_bundles.py",
+ "test": "tests/test_1203kr_the_baseline_version_was_not_a_baseline.py",
+ "mutations": [
+   {"label": "the old version-1 evidence line comes back",
+    "find": "            # ever return an empty list: `codehub_pull_requests` holds ZERO records in 227 of\n            # 227 kept runs.",
+    "replace": "            # ever return an empty list: `codehub_pull_requests` sits at _meta.version 1 in 146 of 146 runs."},
+   {"label": "the pointer to why the version cannot carry it is dropped",
+    "find": "(#1203kr corrects the evidence this line used to give, \"_meta",
+    "replace": "(corrects the evidence this line used to give, \"_meta"},
+   {"label": "the conclusion is softened along with the evidence",
+    "find": "            # the same argument #35 makes two comments above, applied to the two PR tools it",
+    "replace": "            # a PR can sometimes be opened, so"}
+ ]}

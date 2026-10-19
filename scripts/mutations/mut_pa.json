@@ -1,0 +1,18 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+  "test": "tests/test_1203pa_the_lane_was_told_fifteen.py",
+  "mutations": [
+    {"name": "PAA the lane line goes back to the silent join",
+     "find": "                + join_capped(missing,\n                              _mt1203pa if isinstance(_mt1203pa, int) else None,\n                              cap=len(missing), sep=\", \"))",
+     "replace": "                + \", \".join(missing))"},
+    {"name": "PAB the true total is never read, so the cut is never declared",
+     "find": "            _mt1203pa = (dims.get(\"components\") or {}).get(\"missing_total\")",
+     "replace": "            _mt1203pa = None"},
+    {"name": "PAC the record stops carrying the total",
+     "find": "                rec[\"missing_total\"] = len(_all1203pa)",
+     "replace": "                rec[\"missing_count_1203pa\"] = len(_all1203pa)"},
+    {"name": "PAD a sentinel is put INTO the record, which would poison #893's set comparison",
+     "find": "                rec[\"missing\"] = _all1203pa[:15]",
+     "replace": "                rec[\"missing\"] = _all1203pa[:15] + ([\"... and more not shown\"] if len(_all1203pa) > 15 else [])"}
+  ]
+}

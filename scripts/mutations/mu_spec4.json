@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203mv_the_route_it_would_not_touch_said_nothing.py",
+ "mutations": [
+  {"label": "MV1 the declined path is not recorded",
+   "find": "                    left_1203mv.append(\"%s: %s\" % (f.name, raw))",
+   "replace": "                    pass"},
+  {"label": "MV2 the record loses the file name",
+   "find": "                    left_1203mv.append(\"%s: %s\" % (f.name, raw))",
+   "replace": "                    left_1203mv.append(\"%s\" % (raw,))"},
+  {"label": "MV3 reporting it starts rewriting it",
+   "find": "                    left_1203mv.append(\"%s: %s\" % (f.name, raw))\n                    return m.group(0)",
+   "replace": "                    left_1203mv.append(\"%s: %s\" % (f.name, raw))"},
+  {"label": "MV4 the key is absent when nothing was left",
+   "find": "        result[\"left_1203mv\"] = left_1203mv",
+   "replace": "        result[\"left_1203mv\"] = left_1203mv or None"},
+  {"label": "MV5 a rewritable route is also reported as left",
+   "find": "                if \"?\" in raw or \"&\" in raw:",
+   "replace": "                if True:"}
+ ]}

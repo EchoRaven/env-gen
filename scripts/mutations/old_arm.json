@@ -1,0 +1,12 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/_tmp_old_1202r.py",
+ "mutations": [
+  {
+   "label": "the original defect, judged by the OLD (fixture-supplied _sys) test",
+   "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"",
+   "replace": "        \"    try:\\n\""
+  }
+ ],
+ "retired": "completed control (#1203pe): the original defect judged by the OLD fixture-supplied `_sys` test, kept to record that the old test passed it. Its throwaway test (`tests/_tmp_old_1202r.py`) is gone."
+}

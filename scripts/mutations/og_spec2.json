@@ -1,0 +1,13 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/validation_runner.py",
+ "test": "tests/test_1203og_the_brace_the_build_paid_for.py",
+ "mutations": [
+  {"label": "OG10 the builder stops running the scan",
+   "find": "        _unparsable_1203og = _unp1203og(Path(cwd).parent / \"app\" / \"frontend\" / \"src\") or []",
+   "replace": "        _unparsable_1203og = []"},
+  {"label": "OG11 the failure detail stops carrying the rows",
+   "find": "                    + _note_1203fk + _note_1203og",
+   "replace": "                    + _note_1203fk"},
+  {"label": "OG12 the note stops saying the retry cannot help",
+   "find": "                    \"closing bracket with no opener — fix these first, the retry cannot:\\n\"",
+   "replace": "                    \"closing bracket with no opener:\\n\""}
+ ]}

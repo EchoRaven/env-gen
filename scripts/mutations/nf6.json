@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/route_projector.py",
+ "test": "tests/test_1203nf_the_column_the_param_resolved_to.py",
+ "mutations": [
+  {
+   "label": "NF6b the announcement becomes load-bearing (its failure propagates)",
+   "find": "    except Exception:\n        pass            # an announcement must never change what the projector returns",
+   "replace": "    except Exception:\n        raise"
+  }
+ ]
+}

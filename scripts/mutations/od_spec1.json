@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203od_the_guard_ate_the_page_name.py",
+ "mutations": [
+  {"label": "OD1 the reader takes the FIRST name again, i.e. the guard",
+   "find": "            page = [n for n in found if n not in _ROUTE_WRAPPERS] or found\n            if page:\n                names.add(page[-1])",
+   "replace": "            page = [n for n in found if n not in _ROUTE_WRAPPERS] or found\n            if page:\n                names.add(page[0])"},
+  {"label": "OD2 known wrappers are no longer dropped, so Suspense wins when it is innermost",
+   "find": "            page = [n for n in found if n not in _ROUTE_WRAPPERS] or found",
+   "replace": "            page = list(found)"},
+  {"label": "OD3 the element expression is cut at the first brace, losing a nested fallback",
+   "find": "            expr = app_jsx[j:k + 1]",
+   "replace": "            expr = app_jsx[j:app_jsx.find('}', j) + 1]"},
+  {"label": "OD4 a router-less app reads as unchecked, so every SPA announces",
+   "find": "        if re.search(r\"<\\s*Route\\b\", app_jsx or \"\"):\n            return [], \"unparsed\"\n        return [], \"no-routes\"",
+   "replace": "        return [], \"unparsed\""},
+  {"label": "OD5 routes that parse to nothing read as 'no routes', i.e. clean (#883)",
+   "find": "        if re.search(r\"<\\s*Route\\b\", app_jsx or \"\"):\n            return [], \"unparsed\"",
+   "replace": "        if False:\n            return [], \"unparsed\""},
+  {"label": "OD6 a non-string input claims the app declares no routes",
+   "find": "        if not isinstance(app_jsx, str) or not app_jsx:",
+   "replace": "        if False:"}
+ ]}

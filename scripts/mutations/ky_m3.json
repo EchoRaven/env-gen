@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203ky_the_reference_was_a_path.py",
+ "mutations": [
+  {
+   "label": "M3 an empty reference now resolves to the references DIRECTORY  [anchor re-aimed 2026-10-19: comment inserted before the return; `pass` keeps the block compilable -- removing the line outright gave BROKEN, which is not evidence]",
+   "find": "        return None\n    base = Path(name).name",
+   "replace": "        pass\n    base = Path(name).name"
+  }
+ ]
+}

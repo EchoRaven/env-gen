@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203kg_which_kind_of_mcp_shortfall.py",
+ "mutations": [
+   {"label": "every shortfall is called stale (the mask)",
+    "find": "    if not newer:\n        return False, (\" — the server file is NEWER than every endpoint it is counted \"",
+    "replace": "    if False:\n        return False, (\" — the server file is NEWER than every endpoint it is counted \""},
+   {"label": "an endpoint OLDER than the server also counts as an excuse",
+    "find": "        if _at > _mt:",
+    "replace": "        if _at > 0:"},
+   {"label": "the late endpoints are not named",
+    "find": "                  % (_n, \", \".join(sorted(newer)[:3]), \" …\" if _n > 3 else \"\", 14))",
+    "replace": "                  % (_n, \"\", \"\", 14))"},
+   {"label": "the cut list does not say it was cut (#1034)",
+    "find": "\" …\" if _n > 3 else \"\"",
+    "replace": "\"\""},
+   {"label": "a missing mtime is guessed as stale instead of saying nothing",
+    "find": "    if _mt <= 0:\n        return False, \"\"",
+    "replace": "    if _mt <= 0:\n        return True, \" — stale\""},
+   {"label": "the cause is allowed to decide the verdict",
+    "find": "        if out[\"complete\"]:\n            out[\"note\"] = f\"{tools} MCP tool(s) for {len(business_eps)} endpoint(s)\"",
+    "replace": "        out[\"complete\"] = out[\"complete\"] or mcp_shortfall_cause_1203kg(mains[0].stat().st_mtime, business_eps)[0]\n        if out[\"complete\"]:\n            out[\"note\"] = f\"{tools} MCP tool(s) for {len(business_eps)} endpoint(s)\""}
+ ]}

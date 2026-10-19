@@ -1,0 +1,16 @@
+{"file": "scripts/reclaim_generated.sh",
+ "test": "tests/test_1203jp_the_keep_set_missed_a_citation_root.py",
+ "mutations": [
+   {"label": "scripts/ drops out of the default citation roots (the original defect)",
+    "find": "CITE_ROOTS=${CITE_ROOTS:-\"agent/env_generator agent/tests scripts\"}",
+    "replace": "CITE_ROOTS=${CITE_ROOTS:-\"agent/env_generator agent/tests\"}"},
+   {"label": "the citation count is never reported",
+    "find": "echo \"kept by citation: $cited_n run(s) named in $CITE_ROOTS\"",
+    "replace": ":"},
+   {"label": "back to the subshell pipeline, so cited_n can never leave 0",
+    "find": "cited_n=$((cited_n + 1))",
+    "replace": "true"},
+   {"label": "the directory-exists check is dropped, so a stale citation enters the keep set",
+    "find": "[ -n \"$cited\" ] && [ -d \"$GEN/$cited\" ] || continue",
+    "replace": "[ -n \"$cited\" ] || continue"}
+ ]}

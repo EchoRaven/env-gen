@@ -1,0 +1,56 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/hubs/codehub/service.py",
+ "test": "tests/test_1203oy_the_release_note_a_human_reads.py",
+ "mutations": [
+  {
+   "label": "OY1 the clause is never appended, so the note passes through unchanged",
+   "find": "            \"notes\": _notes_with_visual_1203oy(notes, _vis1203oy),",
+   "replace": "            \"notes\": notes,"
+  },
+  {
+   "label": "OY2 a failing verdict is reported as a passing one",
+   "find": "        if passed is True:\n            clause = \"Visual verdict: passed.\"",
+   "replace": "        if passed is not None:\n            clause = \"Visual verdict: passed.\""
+  },
+  {
+   "label": "OY3 an unmeasured verdict reads as a clean one (#1039)",
+   "find": "            clause = (\"Visual verdict: NOT RECORDED -- nothing measured how the delivered \"\n                      \"app looked.\")",
+   "replace": "            clause = \"Visual verdict: passed.\""
+  },
+  {
+   "label": "OY4 the screen list is no longer capped (#1034)",
+   "find": "            shown = \", \".join(below[:_VIS_NOTE_CAP_1203OY])",
+   "replace": "            shown = \", \".join(below)"
+  },
+  {
+   "label": "OY5 the cap applies but the cut stops declaring itself (#1034)",
+   "find": "            more = (\"\" if len(below) <= _VIS_NOTE_CAP_1203OY\n                    else \" (+%d more)\" % (len(below) - _VIS_NOTE_CAP_1203OY))",
+   "replace": "            more = \"\""
+  },
+  {
+   "label": "OY6 idempotence is gone, so a re-cut doubles the clause",
+   "find": "        if \"#1203oy\" in base:\n            return base",
+   "replace": "        if False:\n            return base"
+  },
+  {
+   "label": "OY7 the caller's own note is replaced instead of extended",
+   "find": "        return ((base + \" \") if base else \"\") + clause + \" (#1203oy)\"",
+   "replace": "        return clause + \" (#1203oy)\""
+  },
+  {
+   "label": "OY8 the verdict is measured twice -- the note and the stamp can disagree",
+   "find": "            **_vis1203oy,",
+   "replace": "            **self._visual_state_1202jr(),"
+  },
+  {
+   "label": "OY9 the failure path goes silent again (#1202ah)",
+   "find": "            from ...message_format import warn_once_1201 as _w1203oy\n            _w1203oy(\"codehub.service._notes_with_visual_1203oy\",\n                     \"carrying the visual verdict into the release notes\", _e1203oy)",
+   "replace": "            pass"
+  },
+  {
+   "label": "OY10 the count of screens below leaves the clause",
+   "find": "            clause = \"Visual verdict: NOT passed -- %d screen(s) below the bar\" % len(below)",
+   "replace": "            clause = \"Visual verdict: NOT passed\""
+  }
+ ]
+}

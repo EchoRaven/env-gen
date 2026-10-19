@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203kt_an_icon_made_of_css.py",
+ "mutations": [
+  {
+   "label": "M1 the CSS content: branch is gone, so a pseudo-element icon is invisible again",
+   "find": "    r\"|content\\s*:\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\", re.I)",
+   "replace": "    , re.I)"
+  },
+  {
+   "label": "M2 .css dropped from the suffixes, so the stylesheet is never read  [anchor re-aimed 2026-10-19: #1203of added a 2nd suffix tuple; pinned to kt's own `in (` site]",
+   "find": "if f.suffix in (\".jsx\", \".tsx\", \".js\", \".ts\", \".css\")",
+   "replace": "if f.suffix in (\".jsx\", \".tsx\", \".js\", \".ts\")"
+  },
+  {
+   "label": "M3 the fragment is the head of the line again, so the glyph is not shown  [anchor re-aimed 2026-10-19: code moved into _glyph_fragment_1203kd by #1203of]",
+   "find": "    col = m.start() - bol\n",
+   "replace": "    col = 0\n"
+  },
+  {
+   "label": "M4 the window is found by SEARCHING the matched text, so repeats collapse  [anchor re-aimed 2026-10-19: code moved into _glyph_fragment_1203kd by #1203of]",
+   "find": "    col = m.start() - bol\n    lo",
+   "replace": "    col = raw.find(m.group(0))\n    lo"
+  },
+  {
+   "label": "M5 no cut declared at the front, so a shortened line reads as whole  [anchor re-aimed 2026-10-19: code moved into _glyph_fragment_1203kd by #1203of]",
+   "find": "    return (\"…\" if lo else \"\") + \" \".join(",
+   "replace": "    return \"\" + \" \".join("
+  },
+  {
+   "label": "M6 the glyph may be followed by anything, so CSS copy counts as an icon",
+   "find": "_GLYPH_1203KD + r\"{1,3})['\\\"]\", re.I)",
+   "replace": "_GLYPH_1203KD + r\"{1,3})\", re.I)"
+  },
+  {
+   "label": "M7 the project-level library gate is removed (CSS findings must still be gated)",
+   "find": "        if any(_ICON_LIB_1203KD.search(t) for _f, t in texts):\n            return out\n",
+   "replace": ""
+  }
+ ]
+}

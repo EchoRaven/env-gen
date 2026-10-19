@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "N61 revert the page-error import to the relative form",
+   "find": "    from tools.browser._manager import page_error_fields_1202br\n",
+   "replace": "    from ...tools.browser._manager import page_error_fields_1202br\n"
+  },
+  {
+   "label": "N62 the describer stops reading `error`",
+   "find": "_err1203n6 = str(summary.get(\"error\") or \"\").strip()",
+   "replace": "_err1203n6 = \"\""
+  },
+  {
+   "label": "N63 the describer reads the wrong key",
+   "find": "str(summary.get(\"error\") or \"\").strip()",
+   "replace": "str(summary.get(\"err\") or \"\").strip()"
+  },
+  {
+   "label": "N64 the error is no longer capped",
+   "find": "% _err1203n6[:400])",
+   "replace": "% _err1203n6)"
+  },
+  {
+   "label": "N65 wrap the loud import in a try  [anchor re-aimed 2026-10-19: a blank line now separates the import from the def]",
+   "find": "    from tools.browser._manager import page_error_fields_1202br\n\n    def _is_auth_url_1203it",
+   "replace": "    try:\n        from tools.browser._manager import page_error_fields_1202br\n    except Exception:\n        page_error_fields_1202br = lambda e: {}\n\n    def _is_auth_url_1203it"
+  },
+  {
+   "label": "N66 the heal import leaves its except path",
+   "find": "                # #1203n6: absolute -- see the note above the page-error import.\n                from tools.browser._bootstrap import heal_missing_browser\n",
+   "replace": "                pass\n"
+  }
+ ]
+}

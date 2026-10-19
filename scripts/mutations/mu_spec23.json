@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203n0_the_icon_css_could_not_reach.py",
+ "mutations": [
+  {
+   "label": "N41 the regex goes back to the tiktok-only spelling  [SUPERSEDED 2026-10-19 by icons_now.json: same rewrite, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "    r\"\"\"[\\\"'`][^\\\"'`]{0,160}?([A-Za-z0-9_.\\\\-]+\\\\.svg)[\\\"'`]\"\"\")",
+   "replace": "    r\"\"\"(?:<img[^>]*\\\\bsrc\\\\s*=\\\\s*|url\\\\(\\\\s*|\\\\bimg\\\\s*:\\\\s*)[\\\"']?([^\\\"')\\\\s>]*\\\\.svg)\"\"\", re.I)"
+  },
+  {
+   "label": "N42 the basename index is never built  [SUPERSEDED 2026-10-19 by icons_now.json: same rewrite, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "            for _sf in pub.rglob(\"*.svg\"):\n                _served_1203n4.setdefault(_sf.name, _sf)",
+   "replace": "            for _sf in []:\n                _served_1203n4.setdefault(_sf.name, _sf)"
+  },
+  {
+   "label": "N43 the index lookup drops the basename split  [SUPERSEDED 2026-10-19 by icons_now.json: same rewrite, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                cand = _served_1203n4.get(name.rsplit(\"/\", 1)[-1])",
+   "replace": "                cand = _served_1203n4.get(name)"
+  },
+  {
+   "label": "N44 an unserved name is treated as invisible  [SUPERSEDED 2026-10-19 by icons_now.json: same rewrite, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "            if cand is None or not cand.is_file():\n                return None",
+   "replace": "            if cand is None or not cand.is_file():\n                return True"
+  }
+ ]
+}

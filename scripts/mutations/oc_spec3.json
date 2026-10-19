@@ -1,0 +1,13 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203oc_the_fake_rows_one_import_away.py",
+ "mutations": [
+  {"label": "OC13 the dispatcher reads a gate key instead of its own detector",
+   "find": "            rows = [str(r).strip() for r in (_fra1203oc(_P1203oc(str(out_dir)) / \"app\") or [])\n                    if str(r).strip()]",
+   "replace": "            rows = [str(r).strip() for r in (gate.get(\"fabricated_records\") or [])\n                    if str(r).strip()]"},
+  {"label": "OC14 the task goes to the backend",
+   "find": "                assignee=\"frontend\",\n                agent=\"orchestrator\",\n                priority=\"P1\",\n            )\n            orch._fra1203oc_dispatched = milestone",
+   "replace": "                assignee=\"backend\",\n                agent=\"orchestrator\",\n                priority=\"P1\",\n            )\n            orch._fra1203oc_dispatched = milestone"},
+  {"label": "OC15 the third answer ('the rows do not exist yet') is removed",
+   "find": "                    \"  * If the real rows do NOT EXIST yet (the endpoint or the seed is \"\n                    \"unbuilt), SAY SO in this task and leave the literal in place. That is a \"\n                    \"backend slice to schedule, not something to hide behind plausible \"\n                    \"content.\\n\\n\"",
+   "replace": "                    \"\\n\""}
+ ]}

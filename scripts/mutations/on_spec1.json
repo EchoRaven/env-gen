@@ -1,0 +1,31 @@
+{
+ "file": "agent/tests/test_1203on_the_public_route_the_guard_still_denies.py",
+ "test": "tests/test_1203on_the_public_route_the_guard_still_denies.py",
+ "mutations": [
+  {
+   "label": "ON1 pre-mechanism runs are folded in again (the 542 answer)",
+   "find": "    if \"_FW_PUBLIC_API_1202KH\" not in src:\n        return None",
+   "replace": "    if False:\n        return None"
+  },
+  {
+   "label": "ON2 the guard's /api/auth entry-point exemption is dropped",
+   "find": "    if p.startswith(\"/api/auth/\") and p.rsplit(\"/\", 1)[-1] in ENTRY_SEGMENTS:\n        return True",
+   "replace": "    if False:\n        return True"
+  },
+  {
+   "label": "ON3 /api/auth/session is treated as exempt, so r133's case disappears",
+   "find": "ENTRY_SEGMENTS = (\"login\", \"register\", \"signup\")",
+   "replace": "ENTRY_SEGMENTS = (\"login\", \"register\", \"signup\", \"session\", \"logout\")"
+  },
+  {
+   "label": "ON4 the modern-era ratchet looks at nothing and SKIPS instead of failing",
+   "find": "        for run in present:",
+   "replace": "        for run in ():"
+  },
+  {
+   "label": "ON5 [EXPECTED-MISSED, category control] loosening an ASSERTION cannot be caught by the test that holds it -- only a meta-test could, which is #1203oh's pattern and overkill here. Kept to document that the exact pair (22, 39, 37) is a deliberate choice over a floor",
+   "find": "        self.assertEqual((runs, total, lane), (22, 39, 37),",
+   "replace": "        self.assertGreaterEqual(lane / max(1, total), 0.0,"
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203km_a_goal_the_cap_removed_never_entered_the_ledger.py",
+ "mutations": [
+   {"label": "the loop never runs (patch removed)",
+    "find": "        for g in (dropped or []):\n            if not isinstance(g, Mapping):",
+    "replace": "        for g in []:\n            if not isinstance(g, Mapping):"},
+   {"label": "the added list is never returned, so the caller logs nothing",
+    "find": "            added.append(key)",
+    "replace": "            pass"}
+ ]}

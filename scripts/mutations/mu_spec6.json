@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203mw_the_paths_the_lane_hand_rolled.py",
+ "mutations": [
+  {"label": "MW1 the backend python is not scanned",
+   "find": "        for _py1203mw in (sorted(be.rglob(\"*.py\")) if be.is_dir() else []):",
+   "replace": "        for _py1203mw in []:"},
+  {"label": "MW2 only video is picked up from the python",
+   "find": "            for _re1203mw in (_SEED_MEDIA_RE_1202XN, _SEED_IMG_RE):",
+   "replace": "            for _re1203mw in (_SEED_MEDIA_RE_1202XN,):"},
+  {"label": "MW3 the framework-owned prefixes stop being skipped",
+   "find": "                    if rel.startswith((\"icons/\", \"placeholders/\")):\n                        continue\n                    refs.add(\"/assets/\" + rel)",
+   "replace": "                    refs.add(\"/assets/\" + rel)"},
+  {"label": "MW4 __pycache__ is scanned too",
+   "find": "            if \"__pycache__\" in _py1203mw.parts:\n                continue",
+   "replace": "            if False:\n                continue"},
+  {"label": "MW5 the seed JSON images start being reported as well",
+   "find": "            for m in _SEED_MEDIA_RE_1202XN.finditer(txt):\n                rel = m.group(1)",
+   "replace": "            for m in _SEED_IMG_RE.finditer(txt):\n                rel = m.group(1)"}
+ ]}

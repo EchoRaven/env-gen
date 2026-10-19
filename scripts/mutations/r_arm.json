@@ -1,0 +1,1 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py", "mutations": [{"label": "the original defect: no import in the projected function", "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"", "replace": "        \"    try:\\n\""}], "test": "tests/test_the_seeder_counts_what_landed_1202r.py"}

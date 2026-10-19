@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203nh_the_logo_the_rewrite_dropped.py",
+ "mutations": [
+  {
+   "label": "NH1 the restore is never called",
+   "find": "            _lg1203nh = restore_logo_component_1203nh(\n                screen, (_specs1203nh or {}).get(str(screen.get(\"name\") or \"\")), im)",
+   "replace": "            _lg1203nh = None"
+  },
+  {
+   "label": "NH2 the detector reads the role again (the too-wide version)",
+   "find": "                and _LOGO_COMPONENT_1203NH.search(str(c.get(\"name\") or \"\"))",
+   "replace": "                and (_LOGO_COMPONENT_1203NH.search(str(c.get(\"name\") or \"\"))\n                     or _LOGO_COMPONENT_1203NH.search(str(c.get(\"role\") or \"\")))"
+  },
+  {
+   "label": "NH3 the idempotence check is dropped (a duplicate\u6bcf run)",
+   "find": "        if any(_LOGO_COMPONENT_1203NH.search(h) for h in have):\n            return None                     # the analyst kept one -- nothing to restore",
+   "replace": "        if False:\n            return None"
+  },
+  {
+   "label": "NH4 every logo is restored, not just the first",
+   "find": "        built = _skeleton_components({\"components\": want[:1]}, im)",
+   "replace": "        built = _skeleton_components({\"components\": want}, im)"
+  },
+  {
+   "label": "NH5 a logo without a region is restored anyway (and can never be cropped)",
+   "find": "                and _LOGO_COMPONENT_1203NH.search(str(c.get(\"name\") or \"\"))\n                and isinstance(c.get(\"region\"), (list, tuple)) and len(c[\"region\"]) == 4]",
+   "replace": "                and _LOGO_COMPONENT_1203NH.search(str(c.get(\"name\") or \"\"))]"
+  },
+  {
+   "label": "NH6 the restore goes silent",
+   "find": "        if stats[\"logo_restored_1203nh\"]:",
+   "replace": "        if False:"
+  },
+  {
+   "label": "NH7 the name pattern widens to any nav-ish component",
+   "find": "_LOGO_COMPONENT_1203NH = __import__(\"re\").compile(r\"(?i)(^|[_-])(logo|wordmark|brand)($|[_-])\")",
+   "replace": "_LOGO_COMPONENT_1203NH = __import__(\"re\").compile(r\"(?i)(logo|wordmark|brand|nav|bar)\")"
+  }
+ ]
+}

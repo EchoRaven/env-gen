@@ -1,0 +1,16 @@
+{
+ "file": "agent/tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "NC6 the ratchet goes back to multi_agent/ only",
+   "find": "        if not rel.parts or rel.parts[0] not in tops:\n            continue\n",
+   "replace": "        if not rel.parts or rel.parts[0] != \"multi_agent\":\n            continue\n"
+  },
+  {
+   "label": "NC7 the cascade allowance stops checking the NAMES",
+   "find": "                        and want <= {a.asname or a.name for a in n.names}):",
+   "replace": "                        ):"
+  }
+ ]
+}

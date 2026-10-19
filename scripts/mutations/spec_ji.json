@@ -1,0 +1,36 @@
+{
+ "file": "scripts/mutate.py",
+ "test": "tests/test_1203ji_a_mutation_that_never_applied.py",
+ "mutations": [
+  {
+   "label": "M1 the anchor-count check is dropped (today's sed failure becomes MISSED again)",
+   "find": "            if n != 1:",
+   "replace": "            if False:"
+  },
+  {
+   "label": "M2 the compile check is dropped (a syntax-error mutant becomes MISSED)  [anchor re-aimed 2026-10-19: `_compiles` was renamed to the injected `syntax_ok` checker]",
+   "find": "                if not syntax_ok(target):",
+   "replace": "                if False:"
+  },
+  {
+   "label": "M3 a collection failure is no longer BROKEN  [anchor re-aimed 2026-10-19: the BROKEN row gained an `applied` column]",
+   "find": "                if ok is None:\n                    results.append((BROKEN, label, \"collection failed: %s\" % tail, applied))",
+   "replace": "                if False:\n                    results.append((BROKEN, label, \"collection failed: %s\" % tail, applied))"
+  },
+  {
+   "label": "M4 a RED baseline no longer refuses",
+   "find": "    if not ok:\n        print(\"RED — %s\" % tail)",
+   "replace": "    if False:\n        print(\"RED — %s\" % tail)"
+  },
+  {
+   "label": "M5 an empty mutation list exits 0 (silence as a pass)",
+   "find": "    return 0 if (results and not bad) else 1",
+   "replace": "    return 0 if not bad else 1"
+  },
+  {
+   "label": "M6 the target is no longer restored after each mutation",
+   "find": "            finally:\n                shutil.copy2(backup, target)",
+   "replace": "            finally:\n                pass"
+  }
+ ]
+}

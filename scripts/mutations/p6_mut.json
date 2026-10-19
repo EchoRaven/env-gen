@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203p6_the_skills_the_task_never_named.py",
+ "mutations": [
+  {
+   "label": "P61 the pointer is gone, so the task names neither skill again  [find rebuilt to cover the WHOLE statement; the first draft was a tangle that would not compile]",
+   "find": "    lines.insert(1,                     # after the body's own header line\n        \"\\n## Two skills are about this exact job\\n\"\n        \" `get_skill(\\\"frontend-design\\\")` — reference fidelity over novelty, which is what \"\n        \"this gate scores; `get_skill(\\\"ui-ux-review\\\")` — hierarchy, spacing and the \"\n        \"loading/empty/error states a screen can pass a smoke check without having. \"\n        \"Both ship with this env and are already granted to you; nothing else in this task \"\n        \"will point you at them.\")",
+   "replace": "    pass  # #1203p6 pointer removed"
+  },
+  {
+   "label": "P62 frontend-design leaves the pointer",
+   "find": " `get_skill(\\\"frontend-design\\\")` — reference fidelity over novelty, which is what \"",
+   "replace": " `get_skill(\\\"ui-ux-review\\\")` — reference fidelity over novelty, which is what \""
+  },
+  {
+   "label": "P63 ui-ux-review leaves the pointer",
+   "find": "\"this gate scores; `get_skill(\\\"ui-ux-review\\\")` — hierarchy, spacing and the \"",
+   "replace": "\"this gate scores; and \""
+  },
+  {
+   "label": "P64 the skills are named as prose, not as the callable tool",
+   "find": " `get_skill(\\\"frontend-design\\\")` — reference fidelity",
+   "replace": " the frontend-design skill — reference fidelity"
+  },
+  {
+   "label": "P65 the fidelity half of the distinction is dropped",
+   "find": "— reference fidelity over novelty, which is what \"",
+   "replace": "— read it, which is what \""
+  },
+  {
+   "label": "P66 the empty/error states half is dropped",
+   "find": "\"loading/empty/error states a screen can pass a smoke check without having. \"",
+   "replace": "\"other things. \""
+  },
+  {
+   "label": "P67 the sentence stops saying why it exists",
+   "find": "\"Both ship with this env and are already granted to you; nothing else in this task \"\n        \"will point you at them.\")",
+   "replace": "\"Both ship with this env.\")"
+  },
+  {
+   "label": "P68 the pointer goes back to the END of a body whose own #680 comment measures it at a median 57,815 chars and 77.8% of all task bytes",
+   "find": "    lines.insert(1,                     # after the body's own header line",
+   "replace": "    lines.append("
+  }
+ ]
+}

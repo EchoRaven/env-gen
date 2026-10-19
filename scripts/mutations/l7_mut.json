@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203l7_the_gate_reported_its_own_probe.py",
+ "mutations": [
+  {
+   "label": "M1 the probe filter is gone, so the gate reports its own request again  [anchor re-aimed 2026-10-19: the filter became is_own_probe_404_1203l7; the predicate itself is the property]",
+   "find": "return (str(screen) == \"(startup)\"\n            and bool(_PROBE_404_RE_1203L7.search(str(text or \"\"))))",
+   "replace": "return False"
+  },
+  {
+   "label": "M2 the filter drops only the plural, leaving /api/profile reported  [anchor re-aimed 2026-10-19: single-owner refactor: narrowing is now expressed on the regex, not on a second hand-written list]",
+   "find": "\"|\".join(re.escape(_p) for _p in _PROBE_PATHS_1203L7)",
+   "replace": "\"|\".join(re.escape(_p) for _p in _PROBE_PATHS_1203L7[:1])"
+  },
+  {
+   "label": "M3 the filter swallows everything, so a real app 404 is lost  [anchor re-aimed 2026-10-19: swallow-everything is now the regex condition dropped]",
+   "find": "and bool(_PROBE_404_RE_1203L7.search(str(text or \"\"))))",
+   "replace": "and True)"
+  },
+  {
+   "label": "M5 the substitution never runs, so the scripts ship a placeholder  [anchor re-aimed 2026-10-19: the substitution is now chained onto the literal; disambiguated by `return null;`]",
+   "find": "return null;\n}\"\"\").replace(\"__PROBE_PATHS_1203L7__\", _PROBE_PATHS_JS_1203L7)",
+   "replace": "return null;\n}\"\"\")"
+  },
+  {
+   "label": "M6 a path leaves the owner list, so the scripts stop probing it",
+   "find": "_PROBE_PATHS_1203L7 = (\"/api/profiles\", \"/api/profile\", \"/profiles\")",
+   "replace": "_PROBE_PATHS_1203L7 = (\"/api/profiles\", \"/profiles\")"
+  }
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203oq_one_task_two_opposite_orders.py",
+ "mutations": [
+  {
+   "label": "OQ1 the rewrite never fires (the pre-fix behaviour)",
+   "find": "                if name == \"business_endpoints_reachable\" and _all_gone_1203oq:",
+   "replace": "                if name == \"business_endpoints_reachable\" and False:"
+  },
+  {
+   "label": "OQ2 the rewrite fires whenever ANY endpoint went unanswered",
+   "find": "                        _all_gone_1203oq = bool(_frags_1202vq) and len(_gone) == len(_frags_1202vq)",
+   "replace": "                        _all_gone_1203oq = bool(_gone)"
+  },
+  {
+   "label": "OQ3 an empty fragment list counts as 'all gone'",
+   "find": "_all_gone_1203oq = bool(_frags_1202vq) and len(_gone) == len(_frags_1202vq)",
+   "replace": "_all_gone_1203oq = len(_gone) == len(_frags_1202vq)"
+  },
+  {
+   "label": "OQ4 the owner is left on the lane that has never run a validation",
+   "find": "                    owner = \"verifier\"\n                    title = (\"The app never answered the business endpoints",
+   "replace": "                    owner = \"backend\"\n                    title = (\"The app never answered the business endpoints"
+  },
+  {
+   "label": "OQ5 the title keeps the verdict it did not reach",
+   "find": "                    title = (\"The app never answered the business endpoints — bring the stack \"\n                             \"up and re-run the validation (blocks delivery)\")",
+   "replace": "                    title = \"Wire the unreachable business endpoints (blocks delivery)\""
+  },
+  {
+   "label": "OQ6 the prose goes back to telling the lane to add the routes",
+   "find": "                    how = (\"EVERY endpoint above raised at the socket, so nothing here says a \"",
+   "replace": "                    how = (\"registered+implemented endpoints answer 404/405 - the routes are not actually mounted. Add them to app/backend/custom_routes.py. \" \"and a \""
+  },
+  {
+   "label": "OQ7 the new prose stops naming the tool to use",
+   "find": "                           \"docker_logs if it will not boot), then run_validation again. If the \"",
+   "replace": "                           \"docker_logs if it will not boot), then validate again. If the \""
+  },
+  {
+   "label": "OQ8 the new prose stops saying who the work goes to next",
+   "find": "                           \"wire them, and it goes to the backend lane.\")",
+   "replace": "                           \"wire them.\")"
+  },
+  {
+   "label": "OQ9 [EXPECTED-MISSED, category control] the flag carries over between checks -- unobservable: its only reader is gated on the same check name that writes it, and a second same-name check is dropped by the per-milestone storm guard, so staleness can reach nothing",
+   "find": "                _all_gone_1203oq = False\n",
+   "replace": "                _all_gone_1203oq = locals().get(\"_all_gone_1203oq\", False)\n"
+  }
+ ]
+}

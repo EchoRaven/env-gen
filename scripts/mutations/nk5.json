@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203nk_the_visual_gates_silent_cuts.py",
+ "mutations": [
+  {
+   "label": "NK5b the verbatim string goes back to a silent slice",
+   "find": "                _tail = (\"  \u26a0 CUT at %d of %d characters \u2014 the full string is this \"\n                         \"component's `copy` in design/design_system.json; do not render \"\n                         \"this fragment as the complete text\"\n                         % (_COPY_CHARS_1203NK, len(txt))) if len(txt) > _COPY_CHARS_1203NK else \"\"",
+   "replace": "                _tail = \"\""
+  },
+  {
+   "label": "NK5c the cut fires even when the string fits",
+   "find": "% (_COPY_CHARS_1203NK, len(txt))) if len(txt) > _COPY_CHARS_1203NK else \"\"",
+   "replace": "% (_COPY_CHARS_1203NK, len(txt)))"
+  }
+ ]
+}

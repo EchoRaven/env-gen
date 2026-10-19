@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1203jj_a_park_whose_trigger_named_nothing.py",
+ "mutations": [
+  {
+   "label": "M1 the gate is flipped ON by default without a run",
+   "find": "if _os.environ.get(\"ENVGEN_ISOLATION_GATE\", \"0\").lower() in (\"1\", \"true\", \"yes\", \"on\"):",
+   "replace": "if _os.environ.get(\"ENVGEN_ISOLATION_GATE\", \"1\").lower() in (\"1\", \"true\", \"yes\", \"on\"):"
+  },
+  {
+   "label": "M2 the measurement beside the park is deleted",
+   "find": "    # #1203jj: MEASURED, SEEN, DELIBERATELY STILL PARKED",
+   "replace": "    # (removed)"
+  },
+  {
+   "label": "M3 the number and the named exception are dropped",
+   "find": "denial-asserting chain. The single exception is tiktok-web-r131 -- 17 chains, zero",
+   "replace": "denial-asserting chain. The single exception is one run -- some chains, zero"
+  },
+  {
+   "label": "M4 the unevaluable trigger is deleted instead of answered",
+   "find": "    # drive fix is validated end-to-end, then enable by default.",
+   "replace": "    # precondition is validated end-to-end, then enable by default."
+  },
+  {
+   "label": "M5 the step key the chains write is no longer read",
+   "find": "                _exp = _st.get(\"expect\")",
+   "replace": "                _exp = _st.get(\"expected\")"
+  },
+  {
+   "label": "M6 403 is dropped from the denial set",
+   "find": "        _denial = {401, 403}",
+   "replace": "        _denial = {401}"
+  },
+  {
+   "label": "M7 the blocker stops telling the verifier what to author",
+   "find": "                           \"modify another user's resource MUST be refused (expect 401/403). \"",
+   "replace": "                           \"modify another user's resource should be handled. \""
+  }
+ ]
+}

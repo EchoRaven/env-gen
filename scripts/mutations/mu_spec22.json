@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/coverage_audit.py",
+ "test": "tests/test_1203n3_the_probe_the_gate_called_dead_code.py",
+ "mutations": [
+  {"label": "N31 the kind exemption is removed again",
+   "find": "        if str(_md1203n3.get(\"kind\") or \"\").lower() in _KINDS_1203N3:\n            continue",
+   "replace": "        if False:\n            continue"},
+  {"label": "N32 the tag is read case-sensitively",
+   "find": "        if str(_md1203n3.get(\"kind\") or \"\").lower() in _KINDS_1203N3:",
+   "replace": "        if str(_md1203n3.get(\"kind\") or \"\") in _KINDS_1203N3:"},
+  {"label": "N33 a non-dict metadata crashes the scan",
+   "find": "        if not isinstance(_md1203n3, dict):\n            _md1203n3 = {}",
+   "replace": "        if False:\n            _md1203n3 = {}"},
+  {"label": "N34 the kind set is hardcoded instead of imported",
+   "find": "        from .kickoff.contract import FIXED_ENDPOINT_KINDS\n        return frozenset(str(k).lower() for k in FIXED_ENDPOINT_KINDS)",
+   "replace": "        return frozenset({\"infra\"})"},
+  {"label": "N35 every kind is exempt (the set becomes a wildcard)",
+   "find": "        if str(_md1203n3.get(\"kind\") or \"\").lower() in _KINDS_1203N3:",
+   "replace": "        if str(_md1203n3.get(\"kind\") or \"\").lower() is not None:"}
+ ]}

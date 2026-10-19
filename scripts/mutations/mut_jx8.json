@@ -1,0 +1,7 @@
+{"file": "agent/tests/test_counts_and_lists_agree_1034.py",
+ "test": "tests/test_counts_and_lists_agree_1034.py",
+ "mutations": [
+   {"label": "scope is ignored in BOTH loops (the actual cross-function defect)",
+    "find": "def _own_nodes_1203jx(scope):",
+    "replace": "def _own_nodes_1203jx(scope):\n    return list(_ast1203jx.walk(scope))\n"}
+ ]}

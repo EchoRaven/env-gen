@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203jk_a_report_that_measured_nothing.py",
+ "mutations": [
+  {
+   "label": "NA5 ERROR joins the derived set",
+   "find": "DERIVED_VERDICTS_1203NA = (\"PASS\", \"ISSUES\", \"PARTIAL\", \"NOT_WALKED\")",
+   "replace": "DERIVED_VERDICTS_1203NA = (\"PASS\", \"ISSUES\", \"PARTIAL\", \"NOT_WALKED\", \"ERROR\")"
+  },
+  {
+   "label": "NA6 NOT_WALKED drops out of the derived set",
+   "find": "DERIVED_VERDICTS_1203NA = (\"PASS\", \"ISSUES\", \"PARTIAL\", \"NOT_WALKED\")",
+   "replace": "DERIVED_VERDICTS_1203NA = (\"PASS\", \"ISSUES\", \"PARTIAL\")"
+  }
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/route_projector.py",
+ "test": "tests/test_1203nf_the_column_the_param_resolved_to.py",
+ "mutations": [
+  {
+   "label": "NF1 the announcement is removed",
+   "find": "        if col != param and not _is_id_param(param):",
+   "replace": "        if False:"
+  },
+  {
+   "label": "NF2 it announces even when the column IS the param",
+   "find": "        if col != param and not _is_id_param(param):",
+   "replace": "        if not _is_id_param(param):"
+  },
+  {
+   "label": "NF3 an id-like param starts being announced",
+   "find": "        if col != param and not _is_id_param(param):",
+   "replace": "        if col != param:"
+  },
+  {
+   "label": "NF4 the latch is keyed on the table only (a second param is swallowed)",
+   "find": "            key = \"%s|%s|%s\" % (table, param, col)",
+   "replace": "            key = \"%s\" % (table,)"
+  },
+  {
+   "label": "NF5 the wrapper stops returning what the ladder decided",
+   "find": "    col = _lookup_field_col_1203nf(param, parent_meta)",
+   "replace": "    col = \"id\""
+  },
+  {
+   "label": "NF6 the announcement becomes load-bearing (its failure now propagates)",
+   "find": "    except Exception:\n        pass            # an announcement must never change what the projector returns",
+   "replace": "    except Exception:\n        raise           # an announcement must never change what the projector returns"
+  },
+  {
+   "label": "NF7 the message drops the warning against overwriting",
+   "find": "\"use it. Do NOT overwrite %r to make the alias true -- that replaces \"\n                    \"the stored value with the parameter.\",",
+   "replace": "\"use it.\","
+  },
+  {
+   "label": "NF8 the column list stops declaring its cut (#1034)",
+   "find": "join_capped(sorted(str(c) for c in cols), total=len(cols), cap=12),",
+   "replace": "\"; \".join(sorted(str(c) for c in cols)[:12]),"
+  },
+  {
+   "label": "NF9 the message stops naming where to register it",
+   "find": "\"%s. If %r is a distinct field, REGISTER it on %r and the handler will \"",
+   "replace": "\"%s. The handler will \""
+  }
+ ]
+}

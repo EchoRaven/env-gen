@@ -1,0 +1,16 @@
+{
+ "file": "agent/tests/test_counts_and_lists_agree_1034.py",
+ "test": "tests/test_counts_and_lists_agree_1034.py",
+ "mutations": [
+  {
+   "label": "the scan reaches nothing, so the ceiling is vacuous",
+   "find": "    for dirpath, _dirs, files in os.walk(_PKG_1203JX):",
+   "replace": "    for dirpath, _dirs, files in []:"
+  },
+  {
+   "label": "the scan is narrowed back to runtime/ (where the real violation was NOT)  [anchor re-aimed 2026-10-19: the package root lost one `..` level]",
+   "find": "_PKG_1203JX = os.path.abspath(os.path.join(_RUNTIME, \"..\", \"..\"))",
+   "replace": "_PKG_1203JX = os.path.abspath(_RUNTIME)"
+  }
+ ]
+}

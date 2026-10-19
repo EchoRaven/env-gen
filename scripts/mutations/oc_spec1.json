@@ -1,0 +1,56 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203oc_the_fake_rows_one_import_away.py",
+ "mutations": [
+  {
+   "label": "OC1 the column floor drops to one, so UI config is reported",
+   "find": "_MIN_SHARED_COLUMNS_1203OC = 2  # see the two-neighbour measurement above",
+   "replace": "_MIN_SHARED_COLUMNS_1203OC = 1  # see the two-neighbour measurement above"
+  },
+  {
+   "label": "OC2 a one-record shape default counts as a row set",
+   "find": "_MIN_RECORDS_1203OC = 2        # see the two-neighbour measurement above",
+   "replace": "_MIN_RECORDS_1203OC = 1        # see the two-neighbour measurement above"
+  },
+  {
+   "label": "OC3 the key scan forgets depth, so a nested object's keys become the record's",
+   "find": "        elif depth == 1 and (i == 0 or obj[i - 1] in \"{, \\n\\t\"):",
+   "replace": "        elif depth >= 1 and (i == 0 or obj[i - 1] in \"{, \\n\\t\"):"
+  },
+  {
+   "label": "OC4 a missing models.py is scored as clean in silence (#883)",
+   "find": "                \"%s is absent, and the schema IS the vocabulary, so an empty result here \"\n                \"means UNCHECKED, not clean\" % models,\n                None)\n            return []",
+   "replace": "                \"unused\" % models,\n                None) if False else None\n            return []"
+  },
+  {
+   "label": "OC5 the cap stops declaring itself (#1034)",
+   "find": "        if total > len(rows):",
+   "replace": "        if False:"
+  },
+  {
+   "label": "OC6 the fragment goes back to the line head, losing its own token",
+   "find": "    if at + 1 <= 120 and len(text) <= 120:\n        return text.strip()",
+   "replace": "    if True:\n        return text.strip()[:120]"
+  },
+  {
+   "label": "OC7 the api-import filter goes away, so a static surface is reported too",
+   "find": "            if not _API_IMPORT_1203OC.search(body):\n                continue",
+   "replace": "            if False:\n                continue"
+  },
+  {
+   "label": "OC8 an array holding a function counts as data",
+   "find": "            if \"=>\" in blob or \"function\" in blob:\n                continue",
+   "replace": "            if False:\n                continue"
+  },
+  {
+   "label": "OC9 the env switch stops disabling it",
+   "find": "    if _os.environ.get(\"ENVGEN_FABRICATED_RECORDS_1203OC\", \"1\").strip().lower() in (\n            \"0\", \"false\", \"no\", \"off\"):\n        return []",
+   "replace": "    if False:\n        return []"
+  },
+  {
+   "label": "OC10 the dead 'skip the defining line' guard comes back and eats a one-liner",
+   "find": "                    use = re.search(",
+   "replace": "                    if _defined == i:\n                        continue\n                    use = re.search("
+  }
+ ]
+}

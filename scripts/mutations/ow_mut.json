@@ -1,0 +1,16 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203ow_the_ratchets_blind_spot.py",
+ "mutations": [
+  {"label": "OW1 the write-path inventory swallow goes silent again",
+   "find": "        warn_once_1201(\"test_user_squad.missing_state_1203ow\",",
+   "replace": "        _ = (\"test_user_squad.missing_state_1203ow\","},
+  {"label": "OW2 the flow-check swallow goes silent again",
+   "find": "        warn_once_1201(\"test_user_squad.flow_findings_1203ow\",",
+   "replace": "        _ = (\"test_user_squad.flow_findings_1203ow\","},
+  {"label": "OW3 the inventory swallow announces on EVERY pass (a heartbeat, not an exception)",
+   "find": "    except Exception as _e1203ow:\n        # #1203ow / #883: `{}` here means \"no entity is missing a write path\", so this",
+   "replace": "    except Exception as _e1203ow:\n        pass\n    if True:\n        # #1203ow / #883: `{}` here means \"no entity is missing a write path\", so this"},
+  {"label": "OW4 the exception is not bound, so the announcement cannot say what happened",
+   "find": "    except Exception as _e1203ow:\n        # #1203ow / #883",
+   "replace": "    except Exception as _e1203ow:\n        _e1203ow = None\n        # #1203ow / #883"}
+ ]}

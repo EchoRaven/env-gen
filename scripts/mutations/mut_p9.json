@@ -1,0 +1,18 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+  "test": "tests/test_1203p9_a_figure_quoted_seven_times.py",
+  "mutations": [
+    {"name": "P9A the two propositions are collapsed into one constant",
+     "find": "_RECORD_BEATS_LIVE_1203P9 = (\n    \"#618: the persisted record beats the live capture in 60 of 79 runs (76%), by a mean 0.160 \"\n    \"and up to +0.66 (re-measured 2026-10-19 over 1715 ledger rows; was 24 of 39)\")",
+     "replace": "_RECORD_BEATS_LIVE_1203P9 = (\n    \"#618: 41 of 74 runs with two or more scored rounds end worse than their own best (55%) \"\n    \"(re-measured 2026-10-19; was 24 of 39)\")"},
+    {"name": "P9B the measurement date is dropped, so the figure cannot be aged",
+     "find": "    \"24 of the 45 that cut a release do (53%), by a mean 0.129 and up to 0.491 \"\n    \"(re-measured 2026-10-19; was 24 of 39)\")",
+     "replace": "    \"24 of the 45 that cut a release do (53%), by a mean 0.129 and up to 0.491\")"},
+    {"name": "P9C the figure is concatenated into the warning's format string again",
+     "find": "                    \"(+%.3f) at commit %s, and the bounded escape ships the LAST round. %s\",\n                    _better[\"score\"], _better[\"delta\"], str(_better[\"code_state\"])[:12],\n                    _BEST_ROUND_SHORTFALL_1203P9)",
+     "replace": "                    \"(+%.3f) at commit %s, and the bounded escape ships the LAST round.\",\n                    _better[\"score\"], _better[\"delta\"], str(_better[\"code_state\"])[:12])"},
+    {"name": "P9D a stale copy of the old figure comes back, asserted afresh",
+     "find": "        # (41 of 74 runs deliver worse than their own best round, 24 of the 45 that cut a",
+     "replace": "        # (24 of 39 runs deliver worse than their own best round, 24 of the 45 that cut a"}
+  ]
+}

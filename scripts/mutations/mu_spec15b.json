@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/seed_audit.py",
+ "test": "tests/test_1203mt_the_foreign_key_was_a_string.py",
+ "mutations": [
+  {"label": "MY11b the ladder prefers the plural over the exact name",
+   "find": "        return next((t for t in (base, base + \"s\", base + \"es\") if t in ids), None)",
+   "replace": "        return next((t for t in (base + \"s\", base, base + \"es\") if t in ids), None)"},
+  {"label": "MY12 the suffix test is dropped so every column is a foreign key",
+   "find": "        if not c.endswith(\"_id\") or not isinstance(ids, dict):",
+   "replace": "        if not isinstance(ids, dict):"}
+ ]}

@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/code_tools.py",
+ "test": "tests/test_counts_and_lists_agree_1034.py",
+ "mutations": [
+  {
+   "label": "a lint summary goes back to a silent cut list  [rebuilt 2026-10-19: the find now covers the WHOLE call (the first version stopped after the first argument, so every replacement left a broken arity -> BROKEN, which is never a conclusion), and the mutant is a real `str.join` because the #1034 ratchet looks for one]",
+   "find": "            if errors:\n                error_summary = _jc1203jx([f\"L{e['line']}: [{e['code']}] {e['msg']}\" for e in errors[:5]],\n                                          len(errors), cap=5)",
+   "replace": "            if errors:\n                error_summary = \", \".join([f\"L{e['line']}: [{e['code']}] {e['msg']}\" for e in errors[:5]])"
+  },
+  {
+   "label": "the unreachable-helper branch renders a cut list instead of no list",
+   "find": "        return \"(details unavailable)\"",
+   "replace": "        return \"; \".join(str(x) for x in list(items)[:cap])"
+  }
+ ]
+}

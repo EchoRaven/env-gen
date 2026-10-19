@@ -1,0 +1,16 @@
+{"file": "scripts/mutate.py",
+ "test": "tests/test_1203jq_a_python_compiler_judged_a_bash_file.py",
+ "mutations": [
+   {"label": "back to judging everything with py_compile (the original defect)",
+    "find": "    ext = os.path.splitext(path)[1].lower()\n    if ext == \".py\":\n        return _py_ok",
+    "replace": "    ext = os.path.splitext(path)[1].lower()\n    return _py_ok\n    if ext == \".py\":\n        return _py_ok"},
+   {"label": "an unknown language gets a pass instead of a refusal (the masking fallback)",
+    "find": "    if first.startswith(\"#!\"):",
+    "replace": "    return lambda _p: True\n    if first.startswith(\"#!\"):"},
+   {"label": "bash syntax is never actually checked",
+    "find": "    return subprocess.run([\"bash\", \"-n\", path], capture_output=True).returncode == 0",
+    "replace": "    return True"},
+   {"label": "the refusal is dropped and the run proceeds without a checker",
+    "find": "    if syntax_ok is None:",
+    "replace": "    if False:"}
+ ]}

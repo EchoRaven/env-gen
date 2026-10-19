@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/material_prep.py",
+ "test": "tests/test_1203ot_the_success_line_said_itself_eight_hundred_times.py",
+ "mutations": [
+  {
+   "label": "OT1 the memo is bypassed, so every pass says it again (the pre-fix behaviour)",
+   "find": "                if _say1203ot:\n                    _LOG_1202VZ.info(",
+   "replace": "                if True:\n                    _LOG_1202VZ.info("
+  },
+  {
+   "label": "OT2 the state is a constant, so a count that moves goes unreported",
+   "find": "                        \"%d/%d\" % (best_hits, len(drows))))",
+   "replace": "                        \"said\"))"
+  },
+  {
+   "label": "OT3 the site key drops the column, so two columns silence each other",
+   "find": "                        \"material_prep.resolved_fk_1203ot:%s.%s->%s\" % (table, col, target),",
+   "replace": "                        \"material_prep.resolved_fk_1203ot\","
+  },
+  {
+   "label": "OT4 a memo failure silences the report instead of letting it through",
+   "find": "                except Exception:\n                    _say1203ot = True   # a memo failure must never silence the report",
+   "replace": "                except Exception:\n                    _say1203ot = False  # a memo failure must never silence the report"
+  },
+  {
+   "label": "OT5 [EXPECTED-MISSED, category control] the initialiser before the try -- a NULL mutation: the try assigns it on success and the except assigns it on failure, so no path reads the initial value. Kept so a later edit that stops assigning cannot leave it unbound; the property it would guard is OT4's.",
+   "find": "                _say1203ot = True\n                try:\n                    from .message_format import state_changed_1202ad as _sc1203ot",
+   "replace": "                _say1203ot = False\n                try:\n                    from .message_format import state_changed_1202ad as _sc1203ot"
+  },
+  {
+   "label": "OT6 the two warnings beside it lose their own memo (#1203i4)",
+   "find": "                    if _say_once_1203i4(\"material_prep.fk_ambiguous_1202vz\",\n                                        \"%s.%s|%s\" % (table, col, base)):",
+   "replace": "                    if True:"
+  }
+ ]
+}

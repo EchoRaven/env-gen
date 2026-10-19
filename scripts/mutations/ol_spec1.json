@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/eventhub.py",
+ "test": "tests/test_1203ol_an_event_addressed_to_a_file.py",
+ "mutations": [
+  {
+   "label": "OL1 the path recipient is no longer dropped, so the dead letterbox returns",
+   "find": "            explicit -= set(_pathish_1203ol)",
+   "replace": "            pass"
+  },
+  {
+   "label": "OL2 the guard stops looking, so nothing is ever detected",
+   "find": "        _pathish_1203ol = sorted(r for r in explicit\n                                 if _looks_like_a_path_1203ol(r))",
+   "replace": "        _pathish_1203ol = []"
+  },
+  {
+   "label": "OL3 the announcement goes back to the bare name (NameError into the except)",
+   "find": "                from .message_format import warn_once_1201 as _w1203ol\n                _w1203ol(",
+   "replace": "                _w1203ol = warn_once_1201_undefined_name\n                _w1203ol("
+  },
+  {
+   "label": "OL4 the announcement stops interpolating which recipient was dropped",
+   "find": "letterbox).\" % \", \".join(_pathish_1203ol),",
+   "replace": "letterbox).\","
+  },
+  {
+   "label": "OL5 a separator no longer makes it a path",
+   "find": "if \"/\" in s or \"",
+   "replace": "if False and \"/\" in s or \"\" == \"x\" or \""
+  },
+  {
+   "label": "OL6 a bare source filename is no longer a path",
+   "find": "        return s.lower().endswith((\".py\", \".js\", \".jsx\", \".ts\", \".tsx\", \".json\",\n                                   \".yml\", \".yaml\", \".css\", \".html\"))",
+   "replace": "        return False"
+  },
+  {
+   "label": "OL7 every recipient is treated as a path, so real agents lose their inbox",
+   "find": "        s = str(recipient or \"\")\n        if not s:\n            return False",
+   "replace": "        s = str(recipient or \"\")\n        if s:\n            return True"
+  }
+ ]
+}

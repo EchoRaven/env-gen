@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1203or_the_tool_it_said_it_did_not_have.py",
+ "mutations": [
+  {
+   "label": "OR3 [EXPECTED-MISSED, category control] either #883 empty-offered early return -- BOTH are redundant by construction (an empty pool makes `name in pool` false, and an empty map makes `author not in offered` true for every record), so neither removal is observable. They are kept as a cost early-exit: nothing can be judged, so nothing is read. The PROPERTY is asserted by test_an_empty_offered_map_reports_nothing.  [anchor re-aimed 2026-10-19: a #883 comment was inserted between the test and the return]",
+   "find": "        if not offered:\n",
+   "replace": "        if False:\n"
+  }
+ ]
+}

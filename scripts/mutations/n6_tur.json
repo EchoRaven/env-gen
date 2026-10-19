@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "N67 revert the page-error entry import to relative",
+   "find": "    from tools.browser._manager import page_error_fields_1202br\n",
+   "replace": "    from ...tools.browser._manager import page_error_fields_1202br\n"
+  },
+  {
+   "label": "N68 reinstate the literal viewport duplicate",
+   "find": "from tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646\n",
+   "replace": "_CV646 = {\"width\": 1380, \"height\": 900}\n"
+  },
+  {
+   "label": "N69 guard the page-error import",
+   "find": "    from tools.browser._manager import page_error_fields_1202br\n    try:\n        _f = page_error_fields_1202br(error)",
+   "replace": "    try:\n        from tools.browser._manager import page_error_fields_1202br\n        _f = page_error_fields_1202br(error)"
+  }
+ ]
+}

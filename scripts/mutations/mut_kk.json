@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203kk_a_goal_nobody_tested_was_marked_passed.py",
+ "mutations": [
+   {"label": "back to the modality fallback (the original defect)",
+    "find": "    if name:\n        return any(bool(a.get(\"completed\")) for a in rows\n                   if str(a.get(\"name\") or \"\").strip() == name)\n    return any(bool(a.get(\"completed\")) for a in rows)",
+    "replace": "    return any(bool(a.get(\"completed\")) for a in rows)"},
+   {"label": "a nameless goal is failed instead of keeping the fallback",
+    "find": "    if name:\n        return any(bool(a.get(\"completed\")) for a in rows\n                   if str(a.get(\"name\") or \"\").strip() == name)",
+    "replace": "    if True:\n        return any(bool(a.get(\"completed\")) for a in rows\n                   if str(a.get(\"name\") or \"\").strip() == name)"},
+   {"label": "whitespace breaks the name match",
+    "find": "                   if str(a.get(\"name\") or \"\").strip() == name)",
+    "replace": "                   if str(a.get(\"name\") or \"\") == name)"},
+   {"label": "a non-Mapping agent row crashes the scan",
+    "find": "    rows = [a for a in (mates or []) if isinstance(a, Mapping)]",
+    "replace": "    rows = list(mates or [])"},
+   {"label": "the caller stops using the helper",
+    "find": "            completed = goal_agent_finished_1203kk(g, agent_by_mod.get(mod, []))",
+    "replace": "            completed = any(a.get(\"completed\") for a in agent_by_mod.get(mod, []))"}
+ ]}

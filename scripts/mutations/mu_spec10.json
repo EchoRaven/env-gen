@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203mx_the_id_belonged_to_another_table.py",
+ "mutations": [
+  {"label": "MX5b the query string is searched too",
+   "find": "        for seg in [s for s in str(path or \"\").split(\"?\", 1)[0].split(\"/\") if s]:",
+   "replace": "        for seg in [s for s in str(path or \"\").split(\"/\") if s]:"},
+  {"label": "MX7 only the first matching segment is not required (reports the last instead)",
+   "find": "            if len(owners) == 1:\n                return (seg, owners[0])",
+   "replace": "            if len(owners) == 1:\n                pass"}
+ ]}

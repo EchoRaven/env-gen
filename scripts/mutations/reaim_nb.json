@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "NB3 a broken relative import under tools/  [anchor re-aimed 2026-10-19: a detach twin with the same import line was added, so the anchor is pinned to the attach site]",
+   "find": "        from .reasoning_tools import PlanTool\n        PlanTool.get_instance(agent_id).attach_to_task(task_id)",
+   "replace": "        from ...reasoning_tools import PlanTool\n        PlanTool.get_instance(agent_id).attach_to_task(task_id)"
+  }
+ ]
+}

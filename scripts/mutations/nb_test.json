@@ -1,0 +1,11 @@
+{
+ "file": "agent/tests/test_lazy_imports_resolve_802.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "NB4 the root goes back to multi_agent/ (the widening disappears)",
+   "find": "         / \"env_generator/llm_generator\")\n_PKG_ROOT = \"env_generator.llm_generator\"",
+   "replace": "         / \"env_generator/llm_generator/multi_agent\")\n_PKG_ROOT = \"env_generator.llm_generator.multi_agent\""
+  }
+ ]
+}

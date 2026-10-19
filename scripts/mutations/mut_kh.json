@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_declared_405_is_timing_614.py",
+ "mutations": [
+   {"label": "back to 405 only (the #1203kh extension removed)",
+    "find": "            if status in (404, 405) and _declared_endpoint(method, path):",
+    "replace": "            if status == 405 and _declared_endpoint(method, path):"},
+   {"label": "the contract gate is dropped, so an UNDECLARED 404 gets the note too",
+    "find": "            if status in (404, 405) and _declared_endpoint(method, path):",
+    "replace": "            if status in (404, 405):"},
+   {"label": "the note REPLACES the server's own text instead of appending",
+    "find": "                note = ((note + \" | \") if note else \"\") + (\n                    \"NOTE: this endpoint IS in the contract",
+    "replace": "                note = (\n                    \"NOTE: this endpoint IS in the contract"},
+   {"label": "the step is silently softened into a pass",
+    "find": "                    \"dispatching it as a missing feature.\" % status)",
+    "replace": "                    \"dispatching it as a missing feature.\" % status)\n                ok = True"},
+   {"label": "the kind is silently reclassified",
+    "find": "                    \"dispatching it as a missing feature.\" % status)",
+    "replace": "                    \"dispatching it as a missing feature.\" % status)\n                kind = \"ok\""}
+ ]}

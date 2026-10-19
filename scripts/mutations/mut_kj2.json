@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203kj_the_verdict_said_nothing_about_coverage.py",
+ "mutations": [
+   {"label": "the verdict line drops the coverage again (patch removed)",
+    "find": "            logger.warning(\"TEST-USER SQUAD (v%s) verdict=%s over %s: %d open P0 \"\n                           \"(%d from test-users) / %d P1 %s by-source=%s\",\n                           version, verdict, _cov1203kj, bugs.get(\"p0\", 0),",
+    "replace": "            logger.warning(\"TEST-USER SQUAD (v%s) verdict=%s: %d open P0 \"\n                           \"(%d from test-users) / %d P1 %s by-source=%s\",\n                           version, verdict, bugs.get(\"p0\", 0),"},
+   {"label": "a missing count is guessed as 0 instead of unknown",
+    "find": "        return \"%d/%d agents finished\" % (done, spawned)\n    return \"coverage unknown (no spawn/completion count in this report)\"",
+    "replace": "        return \"%d/%d agents finished\" % (done, spawned)\n    return \"%s/%s agents finished\" % (report.get(\"completed\") or 0, report.get(\"spawned\") or 0)"}
+ ]}

@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_registryhub_breaking_change_creates_task.py",
+ "mutations": [
+  {
+   "label": "P41 the silence comes back (no announcement at all)",
+   "find": "        if not recipient_agents:\n            try:\n                _said1203p4 = self.__dict__.setdefault",
+   "replace": "        if False:\n            try:\n                _said1203p4 = self.__dict__.setdefault"
+  },
+  {
+   "label": "P42 it also fires when a consumer IS registered, so the signal means nothing",
+   "find": "        if not recipient_agents:\n            try:",
+   "replace": "        if True:\n            try:"
+  },
+  {
+   "label": "P43 the dedupe is dropped, so a flipping lane gets one line per pass (#1202bn)",
+   "find": "                if endpoint_id not in _said1203p4:\n                    _said1203p4.add(endpoint_id)",
+   "replace": "                if True:\n                    _said1203p4.add(endpoint_id)"
+  },
+  {
+   "label": "P44 the seen-set becomes a MODULE global, so it leaks between runs (#1202gz)",
+   "find": "                _said1203p4 = self.__dict__.setdefault(\"_no_consumer_said_1203p4\", set())",
+   "replace": "                _said1203p4 = globals().setdefault(\"_no_consumer_said_1203p4\", set())"
+  },
+  {
+   "label": "P45 the registry size leaves the line, so 'none at all' reads like 'this one missing'",
+   "find": "                        endpoint_id, len(self._consumers.value() or {}))",
+   "replace": "                        endpoint_id, 0)"
+  },
+  {
+   "label": "P46 the actionable half (where the consumer record comes from) is dropped  [re-aimed: the first version replaced the clause AFTER the one the test checks, so `apis_used` survived -- a mis-aimed mutation, not a gap]",
+   "find": "                        \"filed. Consumers are auto-registered from a page's `apis_used`, so \"",
+   "replace": "                        \"filed. \""
+  },
+  {
+   "label": "P47 the failure path goes silent again (#1202ah)",
+   "find": "                from .message_format import warn_once_1201 as _w1203p4\n                _w1203p4(\"registryhub.no_consumer_1203p4\",",
+   "replace": "                _w1203p4 = lambda *a, **k: None\n                _w1203p4(\"registryhub.no_consumer_1203p4\","
+  }
+ ]
+}

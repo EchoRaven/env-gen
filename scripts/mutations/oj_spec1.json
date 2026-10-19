@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203oj_the_p0_went_to_the_wrong_lane.py",
+ "mutations": [
+  {
+   "label": "OJ1 the task goes back to the registered agent, files ignored",
+   "find": "                        assignee=_assignee_1203oj,",
+   "replace": "                        assignee=consumer_agent,"
+  },
+  {
+   "label": "OJ2 the description stops saying the owner was corrected",
+   "find": "                        + _owner_note_1203oj\n",
+   "replace": "\n"
+  },
+  {
+   "label": "OJ3 a mixed record redirects anyway, on no evidence",
+   "find": "        if len(lanes) != 1:\n            return consumer_agent, \"\"",
+   "replace": "        if not lanes:\n            return consumer_agent, \"\""
+  },
+  {
+   "label": "OJ4 agreement is treated as a contradiction, so every task gets the note",
+   "find": "        if not consumer_agent or lane == str(consumer_agent):\n            return consumer_agent, \"\"",
+   "replace": "        if not consumer_agent:\n            return consumer_agent, \"\""
+  },
+  {
+   "label": "OJ5 a bare filename is read as frontend",
+   "find": "        if \"app/frontend/\" in s or s.endswith((\".jsx\", \".tsx\")):",
+   "replace": "        if \"frontend\" in s or s.endswith((\".jsx\", \".tsx\", \".js\")):"
+  },
+  {
+   "label": "OJ6 a python file no longer implies the backend",
+   "find": "        if \"app/backend/\" in s or s.endswith(\".py\"):",
+   "replace": "        if \"app/backend/\" in s:"
+  },
+  {
+   "label": "OJ7 the note stops naming who registered the consumer",
+   "find": "registered by `%s`, but the ",
+   "replace": "wrong, but the "
+  },
+  {
+   "label": "OJ8 the lane lookup stops lowercasing, so a capitalised path misses",
+   "find": ", \"/\").lower()",
+   "replace": ", \"/\")"
+  }
+ ]
+}

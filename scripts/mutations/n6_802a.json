@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "M1 a tree-internal absolute import of a NAME that does not exist",
+   "find": "            from tools.browser._bootstrap import heal_missing_browser\n",
+   "replace": "            from tools.browser._bootstrap import NO_SUCH_NAME_1203N6 as heal_missing_browser\n"
+  },
+  {
+   "label": "M2 a tree-internal absolute import of a MODULE that does not exist",
+   "find": "            browser = await pw.chromium.launch(args=[\"--no-sandbox\"])\n        try:\n",
+   "replace": "            from tools.no_such_module_1203n6 import x\n            browser = await pw.chromium.launch(args=[\"--no-sandbox\"])\n        try:\n"
+  }
+ ]
+}

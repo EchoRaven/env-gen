@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203kr_the_baseline_version_was_not_a_baseline.py",
+ "mutations": [
+   {"label": "the registry claim calls 11 a baseline again",
+    "find": "    #1203kr: that line used to call `_meta.version` 11 \"the initialisation baseline\". There is\n    no stable baseline",
+    "replace": "    #1203kr: nine stores sit at the initialisation baseline (`_meta.version` 11). There is\n    a stable baseline"},
+   {"label": "the record-count fact is dropped",
+    "find": "ZERO RECORDS is what holds in 227 of 227, and it",
+    "replace": "The version is what holds in 227 of 227, and it"}
+ ]}

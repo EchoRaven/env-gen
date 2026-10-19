@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/material_prep.py",
+ "test": "tests/test_1203l6_an_svg_without_its_namespace.py",
+ "mutations": [
+  {
+   "label": "M1 the svg branch is gone, so the namespace-less file stages as-is",
+   "find": "            elif entry.get(\"type\") == \"svg\":",
+   "replace": "            elif False and entry.get(\"type\") == \"svg\":"
+  },
+  {
+   "label": "M2 the namespace is added to EVERY svg, rewriting correct files  [anchor re-aimed 2026-10-19: #1203mi restructured this block]",
+   "find": "                    if svg_needs_namespace_1203l6(_svgfix):",
+   "replace": "                    if True:"
+  },
+  {
+   "label": "M3 the predicate ignores the root tag and looks anywhere in the file",
+   "find": "    return bool(m) and not _SVG_HAS_NS_1203L6.search(m.group(0))",
+   "replace": "    return bool(m) and not _SVG_HAS_NS_1203L6.search(text or \"\")"
+  },
+  {
+   "label": "M4 the repair writes the namespace on a NESTED svg too",
+   "find": "    m = _SVG_ROOT_1203L6.search(text or \"\")\n    if not m or _SVG_HAS_NS_1203L6.search(m.group(0)):\n        return text\n    return (text[:m.start()] + '<svg xmlns=\"http://www.w3.org/2000/svg\"'",
+   "replace": "    m = list(_SVG_ROOT_1203L6.finditer(text or \"\"))[-1] if _SVG_ROOT_1203L6.search(text or \"\") else None\n    if not m or _SVG_HAS_NS_1203L6.search(m.group(0)):\n        return text\n    return (text[:m.start()] + '<svg xmlns=\"http://www.w3.org/2000/svg\"'"
+  },
+  {
+   "label": "M5 the rest of the root tag is discarded, losing viewBox and the drawing",
+   "find": "            + m.group(0)[len(\"<svg\"):] + text[m.end():])",
+   "replace": "            + '>' + text[m.end():])"
+  },
+  {
+   "label": "M6 the repair is silent  [anchor re-aimed 2026-10-19: #1203mi restructured this block]",
+   "find": "                    if _did1203l6:\n                        _lg1203l6.getLogger(__name__).warning(",
+   "replace": "                    if False:\n                        _lg1203l6.getLogger(__name__).warning("
+  },
+  {
+   "label": "M7 the input file is rewritten instead of the staged copy  [anchor re-aimed 2026-10-19: #1203mi restructured this block]",
+   "find": "                    dest.write_text(_svgfix, encoding=\"utf-8\")",
+   "replace": "                    path.write_text(_svgfix, encoding=\"utf-8\")"
+  }
+ ]
+}

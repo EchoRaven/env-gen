@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203n0_the_icon_css_could_not_reach.py",
+ "mutations": [
+  {
+   "label": "N01 an asset with its own colours is reported too  [SUPERSEDED 2026-10-19 by icons_now.json: #1203nv/#1203nw/#1203nx rewrote the icon-visibility path, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                if tok not in (\"currentcolor\", \"none\", \"inherit\", \"transparent\"):\n                    return False",
+   "replace": "                if False:\n                    return False"
+  },
+  {
+   "label": "N02 a file with no currentColor at all is reported  [SUPERSEDED 2026-10-19 by icons_now.json: #1203nv/#1203nw/#1203nx rewrote the icon-visibility path, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "            if \"currentcolor\" not in text.lower():\n                return False",
+   "replace": "            if False:\n                return False"
+  },
+  {
+   "label": "N03 an unreadable path is treated as invisible  [SUPERSEDED 2026-10-19 by icons_now.json: #1203nv/#1203nw/#1203nx rewrote the icon-visibility path, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "            if not cand.is_file():\n                return None",
+   "replace": "            if not cand.is_file():\n                return True"
+  },
+  {
+   "label": "N04 the same reference is reported once per occurrence  [SUPERSEDED 2026-10-19 by icons_now.json: #1203nv/#1203nw/#1203nx rewrote the icon-visibility path, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                if rel in seen:\n                    continue\n                seen.add(rel)",
+   "replace": "                if False:\n                    continue"
+  },
+  {
+   "label": "N05 css files are not scanned",
+   "find": "            if f.suffix not in (\".jsx\", \".js\", \".tsx\", \".ts\", \".css\") or \"node_modules\" in f.parts:",
+   "replace": "            if f.suffix not in (\".jsx\", \".js\", \".tsx\", \".ts\") or \"node_modules\" in f.parts:"
+  },
+  {
+   "label": "N06 the img: field form is not matched  [SUPERSEDED 2026-10-19 by icons_now.json: #1203nv/#1203nw/#1203nx rewrote the icon-visibility path, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "    r\"\"\"(?:<img[^>]*\\bsrc\\s*=\\s*|url\\(\\s*|\\bimg\\s*:\\s*)[\"']?([^\"')\\s>]*\\.svg)\"\"\", re.I)",
+   "replace": "    r\"\"\"(?:<img[^>]*\\bsrc\\s*=\\s*|url\\(\\s*)[\"']?([^\"')\\s>]*\\.svg)\"\"\", re.I)"
+  }
+ ]
+}

@@ -1,0 +1,66 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1203or_the_tool_it_said_it_did_not_have.py",
+ "mutations": [
+  {
+   "label": "OR1 the outcome/required condition is dropped (proximity alone)",
+   "find": "            if not _CLAIM_OUTCOME_1203OR.search(seg):\n                continue",
+   "replace": "            if False:\n                continue"
+  },
+  {
+   "label": "OR2 the backtick requirement is dropped, so any token counts",
+   "find": "_CLAIM_TOOL_1203OR = re.compile(r\"`([a-z][a-z0-9_]{3,})(?:\\(\\))?`\")",
+   "replace": "_CLAIM_TOOL_1203OR = re.compile(r\"`?([a-z][a-z0-9_]{3,})(?:\\(\\))?`?\")"
+  },
+  {
+   "label": "OR3 [EXPECTED-MISSED, category control] either #883 empty-offered early return -- BOTH are redundant by construction (an empty pool makes `name in pool` false, and an empty map makes `author not in offered` true for every record), so neither removal is observable. They are kept as a cost early-exit: nothing can be judged, so nothing is read. The PROPERTY is asserted by test_an_empty_offered_map_reports_nothing.  [anchor re-aimed 2026-10-19: a #883 comment was inserted between the test and the return]",
+   "find": "        if not offered:\n",
+   "replace": "        if False:\n"
+  },
+  {
+   "label": "OR4 the call parens are not tolerated, so run_validation() is missed",
+   "find": "_CLAIM_TOOL_1203OR = re.compile(r\"`([a-z][a-z0-9_]{3,})(?:\\(\\))?`\")",
+   "replace": "_CLAIM_TOOL_1203OR = re.compile(r\"`([a-z][a-z0-9_]{3,})`\")"
+  },
+  {
+   "label": "OR5 the segment split is dropped, so the whole text is one segment",
+   "find": "        for seg in _CLAIM_SEGMENT_1203OR.split(t):",
+   "replace": "        for seg in [t]:"
+  },
+  {
+   "label": "OR6 the offered-membership filter is dropped",
+   "find": "                if name in pool:\n                    hit.add(name)",
+   "replace": "                if True:\n                    hit.add(name)"
+  },
+  {
+   "label": "OR7 the lane filter on the author is dropped, so messagebus becomes the author",
+   "find": "                if a and (names is None or a in names):\n                    return a",
+   "replace": "                if a:\n                    return a"
+  },
+  {
+   "label": "OR8 the payload is not searched, so an event's sender is never found",
+   "find": "        payload = record.get(\"payload\") if isinstance(record.get(\"payload\"), dict) else {}\n        for src in (record, payload):",
+   "replace": "        payload = record.get(\"payload\") if isinstance(record.get(\"payload\"), dict) else {}\n        for src in (record,):"
+  },
+  {
+   "label": "OR9 the dedupe is removed",
+   "find": "                    if _k in _seen:\n                        continue\n                    _seen.add(_k)",
+   "replace": "                    if False:\n                        continue\n                    _seen.add(_k)"
+  },
+  {
+   "label": "OR10 the recorder writes nothing but still says it did",
+   "find": "            for r in rows:\n                fh.write(_json1203or.dumps(r, ensure_ascii=False,\n                                          sort_keys=True) + \"\\n\")",
+   "replace": "            for r in []:\n                fh.write(_json1203or.dumps(r, ensure_ascii=False,\n                                          sort_keys=True) + \"\\n\")"
+  },
+  {
+   "label": "OR11 the forced-stage lookup returns nothing, so the note loses its actionable half",
+   "find": "        out = sorted(st for st, names in m.items() if name in (names or ()))",
+   "replace": "        out = []"
+  },
+  {
+   "label": "OR12 the capped claim excerpt stops declaring its cut (#1034)",
+   "find": "\"claim\": (_c1203or if len(_c1203or) <= 220 else\n                                          _c1203or[:220] + \" …(+%d chars not shown)\"\n                                          % (len(_c1203or) - 220))})",
+   "replace": "\"claim\": _c1203or[:220]})"
+  }
+ ]
+}

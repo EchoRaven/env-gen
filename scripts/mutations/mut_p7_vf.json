@@ -1,0 +1,12 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+  "test": "tests/test_1203p7_a_list_cut_inside_a_payload.py",
+  "mutations": [
+    {"name": "P7G the #893 record reverts appeared to the silent slice",
+     "find": "                            \"appeared\": _ap1203p7,",
+     "replace": "                            \"appeared\": sorted(_a - _b)[:5],"},
+    {"name": "P7H the totals are dropped from the #893 record",
+     "find": "                            \"appeared_total\": _apn1203p7,",
+     "replace": "                            \"screen_again_1203p7\": _s.get(\"name\"),"}
+  ]
+}

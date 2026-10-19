@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203ky_the_reference_was_a_path.py",
+ "mutations": [
+  {
+   "label": "M1 the stored value is joined as-is again, so a path doubles the directory",
+   "find": "    base = Path(name).name\n    staged = Path(output_dir) / \"design\" / \"references\" / base",
+   "replace": "    base = Path(name).name\n    staged = Path(output_dir) / \"design\" / \"references\" / name"
+  },
+  {
+   "label": "M2 the resolved fallback compares the raw value again",
+   "find": "        if Path(r).name == base and Path(r).is_file():",
+   "replace": "        if Path(r).name == name and Path(r).is_file():"
+  },
+  {
+   "label": "M3 an empty reference now resolves to the references DIRECTORY  [anchor re-aimed 2026-10-19: comment inserted before the return; `pass` keeps the block compilable -- removing the line outright gave BROKEN, which is not evidence]",
+   "find": "        return None\n    base = Path(name).name",
+   "replace": "        pass\n    base = Path(name).name"
+  },
+  {
+   "label": "M4 the basename is taken from the wrong component (parent, not file)",
+   "find": "    base = Path(name).name\n",
+   "replace": "    base = Path(name).parent.name\n"
+  }
+ ]
+}

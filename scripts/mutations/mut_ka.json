@@ -1,0 +1,13 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203ka_the_record_never_said_who_asked.py",
+ "mutations": [
+   {"label": "the actor is never recorded (the original gap)",
+    "find": "        if step.get(\"auth\"):\n            entry[\"auth\"] = str(step.get(\"auth\"))",
+    "replace": "        if False:\n            entry[\"auth\"] = str(step.get(\"auth\"))"},
+   {"label": "the guard is dropped, so an anonymous probe is recorded as an empty actor",
+    "find": "        if step.get(\"auth\"):\n            entry[\"auth\"] = str(step.get(\"auth\"))",
+    "replace": "        entry[\"auth\"] = str(step.get(\"auth\") or \"\")"},
+   {"label": "the value is a constant, so a cross-user probe is labelled as the owner",
+    "find": "            entry[\"auth\"] = str(step.get(\"auth\"))",
+    "replace": "            entry[\"auth\"] = \"token\""}
+ ]}

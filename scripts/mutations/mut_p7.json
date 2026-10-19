@@ -1,0 +1,26 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/message_format.py",
+  "test": "tests/test_1203p7_a_list_cut_inside_a_payload.py",
+  "mutations": [
+    {
+      "name": "P7A the declaration is not appended, so the cut goes silent again",
+      "find": "        shown = shown + [_LIST_CUT_NOTE_1203P7 % hidden]",
+      "replace": "        shown = list(shown)"
+    },
+    {
+      "name": "P7B the total reports what was SHOWN instead of what there was",
+      "find": "    return shown, len(seq)",
+      "replace": "    return shown, len(shown)"
+    },
+    {
+      "name": "P7C an unrenderable input claims it saw one item",
+      "find": "    except Exception:\n        return [], 0",
+      "replace": "    except Exception:\n        return [], 1"
+    },
+    {
+      "name": "P7D a negative cap is allowed through, so the slice silently inverts",
+      "find": "        k = max(0, int(cap))\n    except (TypeError, ValueError):\n        k = 6\n    shown = [str(x) for x in seq[:k]]\n    hidden = len(seq) - len(shown)",
+      "replace": "        k = int(cap)\n    except (TypeError, ValueError):\n        k = 6\n    shown = [str(x) for x in seq[:k]]\n    hidden = len(seq) - len(shown)"
+    }
+  ]
+}

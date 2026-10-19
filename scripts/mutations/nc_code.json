@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/code_tools.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "NC1 the relative form comes back (and with it the apology)",
+   "find": "    from multi_agent.runtime.message_format import join_capped as _jc\n    try:\n        return _jc(items, total, cap=cap)\n",
+   "replace": "    try:\n        from ..multi_agent.runtime.message_format import join_capped as _jc\n        return _jc(items, total, cap=cap)\n"
+  },
+  {
+   "label": "NC2 the import goes back inside the try (an ImportError becomes the apology)",
+   "find": "    from multi_agent.runtime.message_format import join_capped as _jc\n    try:\n",
+   "replace": "    try:\n        from multi_agent.runtime.message_format import join_capped as _jc\n"
+  },
+  {
+   "label": "NC3 a second implementation of the remainder rule (#1032)",
+   "find": "        return _jc(items, total, cap=cap)",
+   "replace": "        return \"; \".join(str(i) for i in items[:cap])"
+  }
+ ]
+}

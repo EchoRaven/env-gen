@@ -1,0 +1,12 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/kickoff/authoring.py",
+ "mutations": [
+  {
+   "label": "behaviour-EQUIVALENT inline regex, docstring untouched",
+   "find": "        from ..registryhub import RegistryHub as _RH1203m9\n        return _RH1203m9._canonical_path(str(raw)) or str(raw)",
+   "replace": "        import re as _re9\n        return _re9.sub(r\"(?<=/):([A-Za-z_][A-Za-z0-9_]*)\", r\"{\\1}\", str(raw))"
+  }
+ ],
+ "test": "tests/_tmp_old_m9_test.py",
+ "retired": "completed control (#1203pe): it mutated authoring.py against the OLD test to show a behaviour-equivalent rewrite passed it; the comparison test was a throwaway (`tests/_tmp_old_m9_test.py`) and is gone. Kept as the record of what the old assertion could not see."
+}

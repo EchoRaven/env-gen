@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/live_monitor_server.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "NB1 a broken MODULE in a file outside multi_agent/",
+   "find": "        from multi_agent.runtime.hub_registry import HubRegistry\n",
+   "replace": "        from multi_agent.runtime.no_such_module_1203nb import HubRegistry\n"
+  },
+  {
+   "label": "NB2 a missing NAME in a file outside multi_agent/",
+   "find": "            from multi_agent.runtime.user_gates import validate_gate\n",
+   "replace": "            from multi_agent.runtime.user_gates import no_such_name_1203nb as validate_gate\n"
+  }
+ ]
+}

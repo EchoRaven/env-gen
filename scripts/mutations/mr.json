@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203mr_the_stub_outlived_its_reason.py",
+ "mutations": [
+  {
+   "label": "MR1 the retraction never removes anything",
+   "find": "                    if others:\n                        dropped.append(n)\n                        continue",
+   "replace": "                    if False:\n                        dropped.append(n)\n                        continue"
+  },
+  {
+   "label": "MR2 it removes a stub even with NO real declaration (undoes the repair)",
+   "find": "                    if others:",
+   "replace": "                    if True:"
+  },
+  {
+   "label": "MR3 the real declaration is dropped instead of the stub  [anchor re-aimed 2026-10-19: find rebuilt verbatim from the current source (an escaping mismatch, not a moved site)]",
+   "find": "                    others = [l for l in text.splitlines()\n                              if l.startswith(_REAL_DECL_1203MR % n)\n                              and not _AUTO_STUB_LINE_1203MR.match(l + \"\\n\")]",
+   "replace": "                    others = [l for l in text.splitlines()\n                              if l.startswith(_REAL_DECL_1203MR % n)]"
+  },
+  {
+   "label": "MR4 the emission shape widens to any export const (eats lane lines)",
+   "find": "_AUTO_STUB_LINE_1203MR = re.compile(",
+   "replace": "_AUTO_STUB_LINE_1203MR_UNUSED = re.compile("
+  },
+  {
+   "label": "MR5 the repair pass stops calling the retraction",
+   "find": "        _retr1203mr = retract_stale_auto_stubs_1203mr(frontend_dir)",
+   "replace": "        _retr1203mr = {}"
+  },
+  {
+   "label": "MR6 the write loses its declared clobber ticket  [rebuilt 2026-10-19: the old replacement was `clobber_ok=(\"\" or \"` -- a dangling literal (BROKEN) AND, had it compiled, the exact `\"\" or X` null pattern this tool's own header warns about (#1203jr). The mutant now carries a valid reason string with no ticket.]  [and rebuilt AGAIN: the second version's `find` ran past the call and swallowed the `if` body -> IndentationError. Only the first line of the implicitly-concatenated reason is replaced now, so the other two lines still join onto it.]",
+   "find": "                    clobber_ok=(\"#1203mr: removes ONLY this module's own auto-stub lines, and \"",
+   "replace": "                    clobber_ok=(\"removes some lines, and \""
+  },
+  {
+   "label": "MR7 the crash path goes silent again",
+   "find": "        from .message_format import warn_once_1201\n        warn_once_1201(\"retract_stale_auto_stubs_1203mr\",",
+   "replace": "        _ = _exc_1203mr\n        _noop_1203mr = (\"retract_stale_auto_stubs_1203mr\","
+  }
+ ]
+}

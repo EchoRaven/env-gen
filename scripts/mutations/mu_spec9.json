@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203mx_the_id_belonged_to_another_table.py",
+ "mutations": [
+  {
+   "label": "MX1 the owner is never looked up",
+   "find": "        _own1203mx = foreign_id_owner_1203mx(project_dir, path, key)",
+   "replace": "        _own1203mx = None"
+  },
+  {
+   "label": "MX2 a value the target declares is reported as foreign",
+   "find": "            if seg in tgt:\n                continue      # a value the target DOES declare is not a foreign id",
+   "replace": "            if False:\n                continue      # a value the target DOES declare is not a foreign id"
+  },
+  {
+   "label": "MX3 a multi-owner value is reported too  [anchor re-aimed TWICE 2026-10-19: my first re-aim pointed at `foreign_body_id_owner_1203my`'s twin block -- a DIFFERENT ticket's gate, which this spec's test file (test_1203mx_*) does not hold. The lesson I already had: ask WHICH GATE a MISSED refers to before calling it a gap.]",
+   "find": "            owners = sorted(t for t, v in ids.items() if seg in v and t != str(target))\n            if len(owners) == 1:",
+   "replace": "            owners = sorted(t for t, v in ids.items() if seg in v and t != str(target))\n            if len(owners) >= 1:"
+  },
+  {
+   "label": "MX4 the target table is not excluded from the owners  [EXPECTED-MISSED, null -- and the code says so AT THE SITE: \"`t != str(target)` carries no weight today and is kept for intent only: the `continue` above already means a seg reaching here is not one of the target's ids... Mutation MX4 removes it and every test still passes, which is the honest reading (#1203jr)\"]",
+   "find": "            owners = sorted(t for t, v in ids.items() if seg in v and t != str(target))",
+   "replace": "            owners = sorted(t for t, v in ids.items() if seg in v)"
+  },
+  {
+   "label": "MX5 the query string is searched too",
+   "find": "        for seg in [s for s in str(path or \"\").split(\"?\", 1)[0].split(\"/\") if s]:",
+   "replace": "        for seg in [s for s in str(path or \"\").split(\"/\") if s]:"
+  },
+  {
+   "label": "MX6 the sentence drops the owning table",
+   "find": "                     \" %r IS an id in `%s`, not in `%s` — this step is sending ANOTHER \"",
+   "replace": "                     \" %.0s IS an id in another table, not in `%.0s%s` — this step is sending ANOTHER \""
+  }
+ ]
+}

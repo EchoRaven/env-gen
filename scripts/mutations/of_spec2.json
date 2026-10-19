@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1203of_the_icon_it_already_had.py",
+ "mutations": [
+  {
+   "label": "OF10 nobody calls the detector",
+   "find": "                _rows1203of = _gi1203of(fe / \"src\")",
+   "replace": "                _rows1203of = []"
+  },
+  {
+   "label": "OF11 it shares #1203kd's state key, so one check's rows suppress the other's task",
+   "find": "                    if _sc1203of(\"task:glyph_icons_with_library\",",
+   "replace": "                    if _sc1203of(\"task:glyph_icons\","
+  },
+  {
+   "label": "OF12 the task stops naming the one-line import that resolves",
+   "find": "                                \"`import { Heart } from 'lucide-react'` needs no package.json \"",
+   "replace": "                                \"adding the import needs no package.json \""
+  }
+ ]
+}

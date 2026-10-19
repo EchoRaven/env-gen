@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n9_the_facts_the_abort_threw_away.py",
+ "mutations": [
+  {
+   "label": "N91 the abort stops carrying the facts",
+   "find": "        _sum1203n9.update(collected_facts_1203n9(report))\n",
+   "replace": "\n"
+  },
+  {
+   "label": "N92 absent becomes zero",
+   "find": "        if isinstance(api, Mapping) and isinstance(api.get(\"steps\"), list):",
+   "replace": "        if True:\n            api = api if isinstance(api, Mapping) else {\"steps\": []}"
+  },
+  {
+   "label": "N93 api_passed counts every step",
+   "find": "            out[\"api_passed\"] = sum(1 for st in steps\n                                    if isinstance(st, Mapping) and st.get(\"ok\"))",
+   "replace": "            out[\"api_passed\"] = len(steps)"
+  },
+  {
+   "label": "N94 a missing `complete` field is reported as complete",
+   "find": "        if isinstance(mcp, Mapping) and \"complete\" in mcp:",
+   "replace": "        if isinstance(mcp, Mapping):"
+  },
+  {
+   "label": "N95 the helper synthesises a verdict key",
+   "find": "        mcp = report.get(\"mcp\")",
+   "replace": "        out[\"broken\"] = []\n        mcp = report.get(\"mcp\")"
+  },
+  {
+   "label": "N96 mcp_complete is hard-wired true",
+   "find": "            out[\"mcp_complete\"] = bool(mcp.get(\"complete\"))",
+   "replace": "            out[\"mcp_complete\"] = True"
+  },
+  {
+   "label": "N97 a non-mapping step counts as passing",
+   "find": "                                    if isinstance(st, Mapping) and st.get(\"ok\"))",
+   "replace": "                                    if not isinstance(st, Mapping) or st.get(\"ok\"))"
+  }
+ ]
+}

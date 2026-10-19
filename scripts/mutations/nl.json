@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203nl_the_run_that_never_asked.py",
+ "mutations": [
+  {
+   "label": "NL1 adoption stops stamping the donor",
+   "find": "        _stamp_adopted_from_1203nl(output_dir, donor)\n",
+   "replace": ""
+  },
+  {
+   "label": "NL2 the stamp records the full PATH instead of the run name",
+   "find": "json.dumps({\"donor\": Path(str(donor)).name, \"analyst_spawned\": False},",
+   "replace": "json.dumps({\"donor\": str(donor), \"analyst_spawned\": False},"
+  },
+  {
+   "label": "NL3 the warning stops naming the reason",
+   "find": "            _donor1203nl = adopted_from_1203nl(out)",
+   "replace": "            _donor1203nl = \"\""
+  },
+  {
+   "label": "NL4 the clause fires even on a freshly measured document",
+   "find": "                (\"\" if not _donor1203nl else",
+   "replace": "                (\"\" if False else"
+  },
+  {
+   "label": "NL5 the warning stops naming the lever",
+   "find": "\"pass. Set ENVGEN_DESIGN_PREP_REUSE=0 to force one (#1203nl).\"",
+   "replace": "\"pass.\""
+  },
+  {
+   "label": "NL6 the reader stops reading the stamp",
+   "find": "        return str((d or {}).get(\"donor\") or \"\")",
+   "replace": "        return \"\""
+  },
+  {
+   "label": "NL7 the stamp lands before the scrub (so the scrub could clobber it)",
+   "find": "        _scrub_adopted_design_system_1203b7(dst, donor)\n        record_design_prep_input_1202bv(output_dir, design_input, resolved)\n        _stamp_adopted_from_1203nl(output_dir, donor)",
+   "replace": "        _stamp_adopted_from_1203nl(output_dir, donor)\n        _scrub_adopted_design_system_1203b7(dst, donor)\n        record_design_prep_input_1202bv(output_dir, design_input, resolved)"
+  }
+ ]
+}

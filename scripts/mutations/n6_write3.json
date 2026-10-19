@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n9_the_facts_the_abort_threw_away.py",
+ "mutations": [
+  {
+   "label": "N6E3 the carried facts stop reaching the summary",
+   "find": "        _sum1203n9.update(collected_facts_1203n9(report))\n        report[\"summary\"] = _sum1203n9",
+   "replace": "        report[\"summary\"] = _sum1203n9"
+  }
+ ]
+}

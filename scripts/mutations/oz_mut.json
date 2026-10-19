@@ -1,0 +1,66 @@
+{
+ "file": "agent/tests/test_1203oz_a_reach_floor_that_stopped_reaching.py",
+ "test": "tests/test_1203oz_a_reach_floor_that_stopped_reaching.py",
+ "mutations": [
+  {
+   "label": "OZ1 the slack ceiling is removed, so a rotted floor passes again",
+   "find": "_MAX_SLACK_1203OZ = 2.0",
+   "replace": "_MAX_SLACK_1203OZ = 1e9"
+  },
+  {
+   "label": "OZ2 a floor ABOVE its scan stops being reported",
+   "find": "    if floor > size:",
+   "replace": "    if False:"
+  },
+  {
+   "label": "OZ3 an empty subject reads as a healthy floor",
+   "find": "    if size <= 0:",
+   "replace": "    if False:"
+  },
+  {
+   "label": "OZ4 the complaint stops naming the number to raise the floor to",
+   "find": "int(size * 0.82)))",
+   "replace": "0))"
+  },
+  {
+   "label": "OZ5 discovery narrows to the variable's spelling instead of the function's role",
+   "find": "            blob = (fn.name + \" \" + (ast.get_docstring(fn) or \"\")).lower()",
+   "replace": "            blob = (ast.get_docstring(fn) or \"\").lower()"
+  },
+  {
+   "label": "OZ6 a stray unwatched floor is no longer refused",
+   "find": "    return [(m, v, n) for m, v, n in found\n            if (m, v) not in _WATCHED_1203OZ and (m, v) not in _EXEMPT_1203OZ]",
+   "replace": "    return []"
+  },
+  {
+   "label": "OZ7 the watched list may silently lose an entry (discovery coverage dropped)",
+   "find": "    return sorted(k for k in _WATCHED_1203OZ if k not in keys)",
+   "replace": "    return []"
+  },
+  {
+   "label": "OZ8 the call-based subject becomes the whole tuple, not the scanned list",
+   "find": "    return out[int(idx)] if idx else out",
+   "replace": "    return out"
+  },
+  {
+   "label": "OZ9 [EXPECTED-MISSED, category control] the loop's completeness equality is made tautological -- a test cannot observe its own assertion being weakened unless something currently violates it, and nothing skips today (the ON5 class)",
+   "find": "        self.assertEqual(sorted(verdicts), sorted(_WATCHED_1203OZ),",
+   "replace": "        self.assertEqual(sorted(verdicts), sorted(verdicts),"
+  },
+  {
+   "label": "OZ10 an exemption no longer has to say why",
+   "find": "    return len(str(why or \"\").strip()) > 40",
+   "replace": "    return True"
+  },
+  {
+   "label": "OZ11 the boundary is loosened from > to >=",
+   "find": "    if slack > _MAX_SLACK_1203OZ:",
+   "replace": "    if slack > _MAX_SLACK_1203OZ + 0.01:"
+  },
+  {
+   "label": "OZ12 the vocabulary loses 'exercised', so #834's floor goes unwatched again (the recall miss this file's own audit found)",
+   "find": "    \"has marked\", \"corpus has\", \"exercised\",",
+   "replace": "    \"has marked\", \"corpus has\","
+  }
+ ]
+}

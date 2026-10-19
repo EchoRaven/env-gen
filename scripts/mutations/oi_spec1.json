@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203oi_a_page_that_drew_nothing_is_not_empty.py",
+ "mutations": [
+  {
+   "label": "OI1 the carve-out never reaches the task body",
+   "find": "                            + \", \".join(_empty) + \".\" + _blank_note_1203oi",
+   "replace": "                            + \", \".join(_empty) + \".\""
+  },
+  {
+   "label": "OI2 the blank branch loses its precedence over the seeding title",
+   "find": "                    if _blank1203oi and set(_blank1203oi) == set(_empty):",
+   "replace": "                    if False and set(_blank1203oi) == set(_empty):"
+  },
+  {
+   "label": "OI3 it stops asking #1203ny and guesses from the judge alone",
+   "find": "                        _bl1203oi = blank_captures_1203ny(",
+   "replace": "                        _bl1203oi = [] or blank_captures_1203oi_absent("
+  },
+  {
+   "label": "OI4 the intersection widens to every blank screen, not the named ones",
+   "find": "                        _blank1203oi = sorted(n for n in _empty if n in _bn1203oi)",
+   "replace": "                        _blank1203oi = sorted(_bn1203oi)"
+  },
+  {
+   "label": "OI5 the note stops telling the lane what to look at instead",
+   "find": "\"markup (a crashed component, a failed bundle, a 404 on the \"",
+   "replace": "\"markup (look into it, \""
+  },
+  {
+   "label": "OI6 the note stops saying the old advice applies to the rest",
+   "find": "                            \"REMAINING screen(s) only.\"",
+   "replace": "                            \"screens.\""
+  },
+  {
+   "label": "OI7 the backend message loses the correction",
+   "find": "                                + ((\" #1203oi: %s rendered NOTHING (near-zero ink) — not a \"",
+   "replace": "                                + ((\" %s needs attention \""
+  },
+  {
+   "label": "OI8 the guard goes away so a diagnosis fault costs the whole task",
+   "find": "                    except Exception:\n                        _blank1203oi = []       # a diagnosis that fails must not cost the task",
+   "replace": "                    except Exception:\n                        raise"
+  }
+ ]
+}

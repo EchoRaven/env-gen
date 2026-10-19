@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "N81 the false clause comes back",
+   "find": "        bits.append(\"VALIDATION ERRORED before it could derive a verdict: %s -- whatever the \"\n                    \"journey or MCP check had already collected is in test_user_reports/, \"\n                    \"unjudged. Not a verdict about the app\" % _err1203n6[:400])\n",
+   "replace": "        bits.append(\"VALIDATION ERRORED before it could judge the app: %s -- no journey, \"\n                    \"MCP or UI evidence was produced. Not a verdict about the app\"\n                    % _err1203n6[:400])\n"
+  },
+  {
+   "label": "N82 it stops pointing at where the evidence is",
+   "find": "\"journey or MCP check had already collected is in test_user_reports/, \"",
+   "replace": "\"journey or MCP check had already collected is somewhere, \""
+  },
+  {
+   "label": "N83 it stops saying the evidence was never judged",
+   "find": "\"unjudged. Not a verdict about the app\" % _err1203n6[:400])",
+   "replace": "\"fine. Not a verdict about the app\" % _err1203n6[:400])"
+  },
+  {
+   "label": "N84 it goes back to claiming the app was judged",
+   "find": "\"VALIDATION ERRORED before it could derive a verdict: %s -- whatever the \"",
+   "replace": "\"VALIDATION ERRORED: %s -- whatever the \""
+  }
+ ]
+}

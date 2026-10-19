@@ -1,0 +1,18 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+  "test": "tests/test_1203pc_the_thin_that_was_not_thin.py",
+  "mutations": [
+    {"name": "PCA the modern runs that disprove 'thin' are dropped",
+     "find": "        the MODERN era carries r187 with 9 and r190 with 7 -- both well past \"thin\", and both",
+     "replace": "        the MODERN era carries some too -- well past \"thin\", and both"},
+    {"name": "PCB the mp4 ratio that names the cause is dropped",
+     "find": "    whole corpus, **160 are `.mp4` and one is `.jpg`**. That is the stager's regex",
+     "replace": "    whole corpus, most are videos. That is the stager's regex"},
+    {"name": "PCC the claim stops naming the dispatcher, so it understates again",
+     "find": "    REPORTS AND FILES A P1 TASK (#1203np), NEVER BLOCKS, and deliberately does not synthesise",
+     "replace": "    REPORTS, NEVER BLOCKS, and deliberately does not synthesise"},
+    {"name": "PCD the decision flips to blocking without a live run",
+     "find": "    a placeholder video: the framework stages REAL media (71 files in r135), a grey stand-in",
+     "replace": "    a placeholder video: the framework stages REAL media (71 files in r135), a stand-in"}
+  ]
+}

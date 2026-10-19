@@ -1,0 +1,1 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py", "test": "tests/test_1203n2_the_actor_the_reset_wiped.py", "mutations": [{"label": "N23 the reset may come before the capture", "find": "            _reset = next((k for k in range(_saved + 1, _i)", "replace": "            _reset = next((k for k in range(0, _i)"}]}

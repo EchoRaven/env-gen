@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203og_the_brace_the_build_paid_for.py",
+ "mutations": [
+  {
+   "label": "OG1 the unclosed half is reported too, bringing back 105 false positives",
+   "find": "            _depth, neg = _bracket_scan_1203og(text)\n            if neg is None:\n                continue",
+   "replace": "            _depth, neg = _bracket_scan_1203og(text)\n            if neg is None:\n                neg = 1 if _depth else None\n            if neg is None:\n                continue"
+  },
+  {
+   "label": "OG2 strings are parsed as code, so '}}}' counts",
+   "find": "        if c in \"'\\\"\":\n            quote = c",
+   "replace": "        if False:\n            quote = c"
+  },
+  {
+   "label": "OG3 template literals are parsed as code",
+   "find": "        if c == \"`\":\n            i += 1\n            inner = 0",
+   "replace": "        if False:\n            i += 1\n            inner = 0"
+  },
+  {
+   "label": "OG4 block comments are parsed as code",
+   "find": "        if c == \"/\" and i + 1 < n and text[i + 1] == \"*\":",
+   "replace": "        if False and i + 1 < n and text[i + 1] == \"*\":"
+  },
+  {
+   "label": "OG5 the newlines inside a block comment stop being counted",
+   "find": "            line += text.count(\"\\n\", i, j)\n            i = j + 2",
+   "replace": "            i = j + 2"
+  },
+  {
+   "label": "OG6 node_modules and dist are scanned",
+   "find": "            if \"node_modules\" in f.parts or \"dist\" in f.parts:\n                continue",
+   "replace": "            if False:\n                continue"
+  },
+  {
+   "label": "OG7 the cut stops declaring itself (#1034)",
+   "find": "        if total > len(out):\n            # #1034: the cut declares itself in the list the reader gets.\n            out.append(\"…(%d of %d unparsable file(s) shown)\" % (len(out), total))",
+   "replace": "        if False:\n            out.append(\"…(%d of %d unparsable file(s) shown)\" % (len(out), total))"
+  },
+  {
+   "label": "OG8 an escaped quote ends the string",
+   "find": "                if text[i] == \"\\\\\":\n                    i += 2\n                    continue\n                if text[i] == quote:",
+   "replace": "                if False:\n                    i += 2\n                    continue\n                if text[i] == quote:"
+  },
+  {
+   "label": "OG9 the row loses the line's text",
+   "find": "            out.append(\"%s:%d: %s — a closing bracket with no opener;",
+   "replace": "            frag = \"\"\n            out.append(\"%s:%d: %s — a closing bracket with no opener;"
+  }
+ ]
+}

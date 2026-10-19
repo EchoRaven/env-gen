@@ -1,0 +1,7 @@
+{"file": "agent/tests/test_counts_and_lists_agree_1034.py",
+ "test": "tests/test_1202eu_source_scanners_must_close_what_they_open.py",
+ "mutations": [
+   {"label": "the handle is left open again in the tree scan",
+    "find": "                with open(path, encoding=\"utf-8\", errors=\"ignore\") as _fh1203jx:\n                    tree = _ast1203jx.parse(_fh1203jx.read())",
+    "replace": "                tree = _ast1203jx.parse(open(path, encoding=\"utf-8\", errors=\"ignore\").read())"}
+ ]}

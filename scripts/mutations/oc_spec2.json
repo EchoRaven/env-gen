@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203oc_the_fake_rows_one_import_away.py",
+ "mutations": [
+  {
+   "label": "OC11 nobody calls the dispatcher",
+   "find": "                await _RD1203oc(self).dispatch_fabricated_record_arrays_1203oc()",
+   "replace": "                pass"
+  },
+  {
+   "label": "OC12a another dispatcher shares its try, so one failing silences the other [RE-AIMED 2026-10-19 by #1203pe: the old OC12 quoted the SEAM with #1203np's except block, so #1203pd inserting a call site there broke the anchor while the property held. This one anchors on #1203oc's OWN call line.]",
+   "find": "                await _RD1203oc(self).dispatch_fabricated_record_arrays_1203oc()",
+   "replace": "                await _RD1203oc(self).dispatch_fabricated_record_arrays_1203oc()\n                await _RD1203oc(self).dispatch_unstaged_seed_media_1203np()"
+  },
+  {
+   "label": "OC12b the neighbour that shares its try is #1203pd, which the old assertion (hardcoded to #1203np) would have let through -- #1203pe generalised it",
+   "find": "                await _RD1203oc(self).dispatch_fabricated_record_arrays_1203oc()",
+   "replace": "                await _RD1203oc(self).dispatch_fabricated_record_arrays_1203oc()\n                await _RD1203oc(self).dispatch_route_params_ignored_1203pd()"
+  }
+ ]
+}

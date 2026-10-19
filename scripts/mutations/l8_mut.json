@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203l8_the_cause_was_in_the_same_file.py",
+ "mutations": [
+  {
+   "label": "M1 the rendered screen's record stops using the helper",
+   "find": "                        \"deviations\": _with_api_404s_1203l8(",
+   "replace": "                        \"deviations\": (lambda a, b: a)("
+  },
+  {
+   "label": "M2 the note replaces the judge's deviations instead of joining them",
+   "find": "        return base + [",
+   "replace": "        return ["
+  },
+  {
+   "label": "M3 the startup bucket is attributed to a screen named '(startup)'",
+   "find": "            if str(_s1203l8) != \"(startup)\":\n                _api404_by_screen_1203l8.setdefault(str(_s1203l8), []).append(str(_p1203l8))",
+   "replace": "            _api404_by_screen_1203l8.setdefault(str(_s1203l8), []).append(str(_p1203l8))"
+  },
+  {
+   "label": "M4 the path list is no longer capped, so #1034's declared cut is gone  [anchor re-aimed 2026-10-19: the format string is now a full sentence, no longer a bare \"%s\"]",
+   "find": "% join_capped(sorted(_p), len(_p), cap=4, sep=\", \")]",
+   "replace": "% \", \".join(sorted(_p))]"
+  },
+  {
+   "label": "M5 an empty path list still appends a note about nothing",
+   "find": "        if not _p:\n            return base",
+   "replace": "        if False:\n            return base"
+  },
+  {
+   "label": "M6 the measurement is taken twice (two readings moments apart)",
+   "find": "    # #1203l8: computed once before the judging loop above; reused here.",
+   "replace": "    _api404_1202lz = api_404s_from_console_1202lz(_console740)"
+  }
+ ]
+}

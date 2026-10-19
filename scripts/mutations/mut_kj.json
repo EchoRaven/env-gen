@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203kj_the_verdict_said_nothing_about_coverage.py",
+ "mutations": [
+  {
+   "label": "the verdict line drops the coverage again (patch removed)",
+   "find": "            logger.warning(\"TEST-USER SQUAD (v%s) verdict=%s over %s: %d open P0 \"",
+   "replace": "            logger.warning(\"TEST-USER SQUAD (v%s) verdict=%s: %d open P0 \"  # %s\" if False else \"TEST-USER SQUAD (v%s) verdict=%s over %s: %d open P0 \""
+  },
+  {
+   "label": "a missing count is guessed as 0 instead of unknown  [anchor re-aimed 2026-10-19: the same sentence is also the non-Mapping early return; pinned to the FALLTHROUGH, which is the branch where the counts are missing]",
+   "find": "    return \"%d/%d agents finished\" % (done, spawned)\n    return \"coverage unknown (no spawn/completion count in this report)\"\n",
+   "replace": "    return \"%d/%d agents finished\" % (done, spawned)\n    return \"0/0 agents finished\"\n"
+  },
+  {
+   "label": "a bool passes as a count",
+   "find": "    if (isinstance(done, int) and not isinstance(done, bool)\n            and isinstance(spawned, int) and not isinstance(spawned, bool)\n            and spawned > 0):",
+   "replace": "    if (isinstance(done, int)\n            and isinstance(spawned, int)\n            and spawned > 0):"
+  },
+  {
+   "label": "a zero spawn divides into a nonsense phrase",
+   "find": "            and spawned > 0):",
+   "replace": "            and spawned >= 0):"
+  },
+  {
+   "label": "a non-Mapping report crashes instead of saying unknown",
+   "find": "    if not isinstance(report, Mapping):\n        return \"coverage unknown (no spawn/completion count in this report)\"",
+   "replace": "    if False:\n        return \"coverage unknown (no spawn/completion count in this report)\""
+  }
+ ]
+}

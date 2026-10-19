@@ -1,0 +1,12 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+  "test": "tests/test_1203p7_a_list_cut_inside_a_payload.py",
+  "mutations": [
+    {"name": "P7E the gate tick reverts to the silent slice",
+     "find": "                 \"failed_checks\": _shown1203p7,",
+     "replace": "                 \"failed_checks\": list(_gate793.get(\"failed_checks\") or [])[:6],"},
+    {"name": "P7F the tick keeps the helper but drops the true total",
+     "find": "                 \"failed_checks_total\": _total1203p7,",
+     "replace": "                 \"ok_again_1203p7\": bool(_gate793.get(\"ok\")),"}
+  ]
+}

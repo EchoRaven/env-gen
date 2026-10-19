@@ -1,0 +1,22 @@
+{"file": "agent/utils/llm.py",
+ "test": "tests/test_1203jt_the_spend_cap_failed_open_in_silence.py",
+ "mutations": [
+   {"label": "the comparison goes back inside the embellishments' try (the original defect)",
+    "find": "    except Exception as _e1203jt:\n        # 1.0 is the conservative value: no grace, stop at the number the operator set.\n        # A grace nobody can compute is not a grace that should be granted silently.\n        _shoot, _why = 1.0, \"\"\n        _warn_cap_check_1203jt(\"computing the overshoot allowance\", _e1203jt,\n                               enforced=True)",
+    "replace": "    except Exception as _e1203jt:\n        return"},
+   {"label": "the failed overshoot probe invents a grace instead of stopping",
+    "find": "        _shoot, _why = 1.0, \"\"\n        _warn_cap_check_1203jt(\"computing the overshoot allowance\", _e1203jt,",
+    "replace": "        _shoot, _why = 1.25, \"invented\"\n        _warn_cap_check_1203jt(\"computing the overshoot allowance\", _e1203jt,"},
+   {"label": "the announcement is dropped",
+    "find": "        logging.getLogger(\"LLM.budget\").error(\n            \"#1203jt the spend cap check failed while %s: %s: %s. Consequence: %s.\",",
+    "replace": "        return\n        logging.getLogger(\"LLM.budget\").error(\n            \"#1203jt the spend cap check failed while %s: %s: %s. Consequence: %s.\","},
+   {"label": "the consequence is hardcoded to 'not enforced' regardless of the step",
+    "find": "        _cost = (\"the cap is STILL enforced, at the operator's number with no overshoot \"",
+    "replace": "        enforced = False\n        _cost = (\"the cap is STILL enforced, at the operator's number with no overshoot \""},
+   {"label": "the once-per-step latch is removed, so it logs every call",
+    "find": "        if step in _CAP_CHECK_WARNED_1203JT:\n            return",
+    "replace": "        if False:\n            return"},
+   {"label": "the designed x1.25 delivery grace is dropped",
+    "find": "        _shoot = _overshoot_1183() if delivering_1183() else 1.0",
+    "replace": "        _shoot = 1.0"}
+ ]}

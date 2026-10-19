@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203nh_the_logo_the_rewrite_dropped.py",
+ "mutations": [
+  {
+   "label": "NI1 the bulk restore is never called",
+   "find": "            stats[\"components_restored_1203ni\"] += restore_measured_components_1203ni(\n                screen, (_specs1203nh or {}).get(str(screen.get(\"name\") or \"\")), im)",
+   "replace": "            pass"
+  },
+  {
+   "label": "NI2 it runs BEFORE the crop loop (the 68 MB mistake)",
+   "find": "            # #1203ni: the rest of the measured components, AFTER the crop loop so they cost\n            # no disk. Their region + measured colors are what the fidelity machinery reads.\n            stats[\"components_restored_1203ni\"] += restore_measured_components_1203ni(\n                screen, (_specs1203nh or {}).get(str(screen.get(\"name\") or \"\")), im)\n",
+   "replace": ""
+  },
+  {
+   "label": "NI3 ids the analyst already used are duplicated",
+   "find": "        built = [c for c in _skeleton_components({\"components\": want}, im)\n                 if str(c.get(\"id\") or \"\") not in have]",
+   "replace": "        built = list(_skeleton_components({\"components\": want}, im))"
+  },
+  {
+   "label": "NI4 a component without a region is restored anyway",
+   "find": "        want = [c for c in ((spec or {}).get(\"components\") or [])\n                if isinstance(c, dict)\n                and isinstance(c.get(\"region\"), (list, tuple)) and len(c[\"region\"]) == 4]\n        if not want:\n            return 0",
+   "replace": "        want = [c for c in ((spec or {}).get(\"components\") or []) if isinstance(c, dict)]\n        if not want:\n            return 0"
+  },
+  {
+   "label": "NI5 the bulk restore goes silent",
+   "find": "        if stats[\"components_restored_1203ni\"]:",
+   "replace": "        if False:"
+  },
+  {
+   "label": "NI6 the restored components are given a crop after all",
+   "find": "        screen.setdefault(\"components\", []).extend(built)\n        return len(built)",
+   "replace": "        for _b in built:\n            _b[\"crop\"] = \"design/crops/forced.png\"\n        screen.setdefault(\"components\", []).extend(built)\n        return len(built)"
+  }
+ ]
+}

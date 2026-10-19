@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203n2_the_actor_the_reset_wiped.py",
+ "mutations": [
+  {"label": "N21 the auth restriction is dropped (the 164-passing false positive returns)",
+   "find": "                           if isinstance(s, Mapping) and _var in (s.get(\"save\") or {})\n                           and _AUTH_STEP_1203N2.search(str(s.get(\"path\") or \"\")))",
+   "replace": "                           if isinstance(s, Mapping) and _var in (s.get(\"save\") or {}))"},
+  {"label": "N22 a reset is no longer required in between",
+   "find": "            if _reset is None:\n                continue",
+   "replace": "            _reset = _reset if _reset is not None else 0"},
+  {"label": "N23 the reset may come before the capture",
+   "find": "            _reset = next((k for k in range(_saved + 1, _i)",
+   "replace": "            _reset = next((k for k in range(0, _i)"},
+  {"label": "N24 the sentence loses the variable name",
+   "find": "            return (\" ⚠ `${%s}` was captured from step[%d] `%s` and step[%d] `%s` RESET the \"",
+   "replace": "            return (\" ⚠ %.0san identity was captured from step[%d] `%s` and step[%d] `%s` RESET the \""},
+  {"label": "N25 it fires on the capture step itself",
+   "find": "        if _i <= 0 or _i >= len(_st) + 1:",
+   "replace": "        if _i < 0 or _i >= len(_st) + 1:"},
+  {"label": "N26 the executor stops passing the raw steps",
+   "find": "                        + identity_wiped_by_reset_1203n2(_steps, idx)",
+   "replace": "                        + identity_wiped_by_reset_1203n2([], idx)"}
+ ]}

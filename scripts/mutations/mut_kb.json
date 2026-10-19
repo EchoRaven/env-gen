@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203kb_no_revert_order_on_a_drop_the_harness_caused.py",
+ "mutations": [
+  {
+   "label": "the unphotographed set is always empty (patch removed)  [SUPERSEDED 2026-10-19: #1203kc moved this predicate into `_unshot_blocking_1203kc`; carried over as KC7 in mut_kc.json, which had NO mutation on this disjunction until today]",
+   "find": "        if isinstance(s, Mapping) and (s.get(\"capture_missing\") or s.get(\"capture_error\"))})",
+   "replace": "        if False})"
+  },
+  {
+   "label": "the new branch is unconditional, so a REAL regression loses its revert order",
+   "find": "        if _d < -0.01 and _unshot_1203kb:",
+   "replace": "        if _d < -0.01:"
+  },
+  {
+   "label": "only the #768 flag arms it, so a bare #935 capture_error slips through  [SUPERSEDED 2026-10-19: #1203kc moved this predicate into `_unshot_blocking_1203kc`; carried over as KC8 in mut_kc.json, which had NO mutation on this disjunction until today]",
+   "find": "(s.get(\"capture_missing\") or s.get(\"capture_error\"))",
+   "replace": "(s.get(\"capture_missing\"))"
+  },
+  {
+   "label": "the drop itself is no longer reported, only the excuse",
+   "find": "            _head = (f\"{_r}⚠ the blocking average went {prev_live:.2f} → {this_live:.2f} \"\n                     f\"({_d:+.2f}) — but {_n1203kb} screen(s) took NO photograph this pass \"",
+   "replace": "            _head = (f\"{_r}⚠ the blocking average moved \"\n                     f\"— but {_n1203kb} screen(s) took NO photograph this pass \""
+  },
+  {
+   "label": "the unphotographed screens are not named",
+   "find": "                     f\"({', '.join(_unshot_1203kb[:4])}\"",
+   "replace": "                     f\"({''}\""
+  }
+ ]
+}

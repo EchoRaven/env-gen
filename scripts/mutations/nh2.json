@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203nh_the_logo_the_rewrite_dropped.py",
+ "mutations": [
+  {
+   "label": "NH2 the detector reads the role again (the too-wide version)",
+   "find": "                and _LOGO_COMPONENT_1203NH.search(str(c.get(\"name\") or \"\"))",
+   "replace": "                and (_LOGO_COMPONENT_1203NH.search(str(c.get(\"name\") or \"\"))\n                     or _LOGO_COMPONENT_1203NH.search(str(c.get(\"role\") or \"\")))"
+  },
+  {
+   "label": "NH6 the restore goes silent",
+   "find": "        if stats[\"logo_restored_1203nh\"]:",
+   "replace": "        if False:"
+  }
+ ]
+}

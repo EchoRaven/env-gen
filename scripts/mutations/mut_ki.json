@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203ki_the_replay_count_described_what_it_could_not_do.py",
+ "mutations": [
+   {"label": "back to len(open_failures()) in the log (the original claim)",
+    "find": "                inp[\"mcp_present\"], inp[\"multi_tenant\"], len(_replay1203ki),",
+    "replace": "                inp[\"mcp_present\"], inp[\"multi_tenant\"], len(ledger.open_failures()),"},
+   {"label": "the carried-over failures are dropped from the line",
+    "find": "                (\"; %d prior failure(s) are NOT in this cycle's plan and will not be re-tested\"",
+    "replace": "                (\"\" or \"; %d skipped\""},
+   {"label": "the split ignores the plan, so everything counts as replayed",
+    "find": "        return ([k for k in open_keys if k in planned],\n                [k for k in open_keys if k not in planned])",
+    "replace": "        return (list(open_keys), [])"},
+   {"label": "a goal that PASSED is replayed too",
+    "find": "        return [k for k, g in self.data.get(\"goals\", {}).items() if not g.get(\"passed\", False)]",
+    "replace": "        return list(self.data.get(\"goals\", {}).keys())"},
+   {"label": "the two halves overlap",
+    "find": "                [k for k in open_keys if k not in planned])",
+    "replace": "                list(open_keys))"},
+   {"label": "a non-mapping goal crashes the split",
+    "find": "        planned = {self._key(g) for g in (planned_goals or []) if isinstance(g, Mapping)}",
+    "replace": "        planned = {self._key(g) for g in (planned_goals or [])}"}
+ ]}

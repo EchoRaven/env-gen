@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/message_format.py",
+ "test": "tests/test_1203n1_the_lifecycle_line_never_said_why.py",
+ "mutations": [
+  {"label": "N11 the reasons are dropped again (names only)",
+   "find": "            [\"%s (%s)\" % (name, join_capped([str(x) for x in (why or [])],\n                                            total=len(why or []),\n                                            cap=reasons_cap, sep=\"; \") or \"no reason recorded\")\n             for name, why in list(pending.items())],",
+   "replace": "            [\"%s\" % (name,) for name, why in list(pending.items())],"},
+  {"label": "N12 an empty reason list renders as fine",
+   "find": "cap=reasons_cap, sep=\"; \") or \"no reason recorded\")",
+   "replace": "cap=reasons_cap, sep=\"; \"))"},
+  {"label": "N13 the page list is not capped",
+   "find": "            total=len(pending), cap=cap, sep=\", \")",
+   "replace": "            total=len(pending), cap=10**6, sep=\", \")"},
+  {"label": "N14 the reason list is not capped",
+   "find": "                                            cap=reasons_cap, sep=\"; \") or \"no reason recorded\")",
+   "replace": "                                            cap=10**6, sep=\"; \") or \"no reason recorded\")"},
+  {"label": "N15 a non-mapping is rendered instead of refused",
+   "find": "        if not isinstance(pending, Mapping) or not pending:\n            return \"\"",
+   "replace": "        if not pending:\n            return \"\""}
+ ]}

@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203kj_the_verdict_said_nothing_about_coverage.py",
+ "mutations": [
+  {"label": "P31 the coverage slot leaves the verdict line (#1203kj's defect, restored)",
+   "find": "            logger.warning(\"TEST-USER SQUAD (v%s) verdict=%s over %s: %d open P0 \"\n                           \"(%d from test-users) / %d P1 %s by-source=%s\",\n                           version, verdict, _cov1203kj,",
+   "replace": "            logger.warning(\"TEST-USER SQUAD (v%s) verdict=%s: %d open P0 \"\n                           \"(%d from test-users) / %d P1 %s by-source=%s\",\n                           version, verdict,"},
+  {"label": "P32 the slot stays but something else fills it, so the coverage never reaches a reader",
+   "find": "                           version, verdict, _cov1203kj,",
+   "replace": "                           version, verdict, version,"}
+ ]}

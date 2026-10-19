@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/route_projector.py",
+ "test": "tests/test_1203mz_the_projector_typed_a_text_id_as_int.py",
+ "mutations": [
+  {"label": "MZ1 the _id name goes back to overriding the column type",
+   "find": "        if t:                                   # #1203mz: a KNOWN column type decides\n            out.append((name, \"int\" if \"int\" in t else \"str\"))",
+   "replace": "        if t:                                   # #1203mz: a KNOWN column type decides\n            out.append((name, \"int\" if (\"int\" in t or name.endswith(\"_id\")) else \"str\"))"},
+  {"label": "MZ2 the unknown-type fallback loses the _id guess",
+   "find": "            out.append((name, \"int\" if name.endswith(\"_id\") else \"str\"))",
+   "replace": "            out.append((name, \"str\"))"},
+  {"label": "MZ3 an integer column is typed str",
+   "find": "            out.append((name, \"int\" if \"int\" in t else \"str\"))",
+   "replace": "            out.append((name, \"str\"))"},
+  {"label": "MZ4 pagination becomes a filter",
+   "find": "        if name in (\"limit\", \"offset\") or name not in _cols:",
+   "replace": "        if name not in _cols:"},
+  {"label": "MZ5 a field that is not a column is served anyway",
+   "find": "        if name in (\"limit\", \"offset\") or name not in _cols:",
+   "replace": "        if name in (\"limit\", \"offset\"):"}
+ ]}

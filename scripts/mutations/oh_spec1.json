@@ -1,0 +1,26 @@
+{
+ "file": "tests/test_verify_1018_measures_something.py",
+ "test": "../tests/test_verify_1018_measures_something.py",
+ "mutations": [
+  {
+   "label": "OH1 a criterion keyed on a sentence nobody emits (og's original defect) slips through",
+   "find": "    \"nn\": [\"recorded gate evaluations\"],",
+   "replace": "    \"nn\": [\"recorded gate evaluations\", \"#1203og marker in the docker transcript\"],"
+  },
+  {
+   "label": "OH2 the classification comparison stops seeing an unclassified criterion",
+   "find": "    return (sorted(set(found) - set(table)), sorted(set(table) - set(found)))",
+   "replace": "    return ([], sorted(set(table) - set(found)))"
+  },
+  {
+   "label": "OH3 the table loses its framework-sentence entries and the ratchet goes inert",
+   "find": "    \"nf\": [\"#1203nf\"],\n    \"nn\": [\"recorded gate evaluations\"],",
+   "replace": "    \"nf\": [],\n    \"nn\": [],"
+  },
+  {
+   "label": "OH4 adjacent-string concatenation is no longer collapsed, so a real emitter reads as missing",
+   "find": "        return _re.sub(r\"\"\"[\"']\\s*\\n\\s*(?:f|r|rf|fr)?[\"']\"\"\", \"\", src)",
+   "replace": "        return src"
+  }
+ ]
+}

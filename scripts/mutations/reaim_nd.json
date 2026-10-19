@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203nd_the_database_older_than_its_models.py",
+ "mutations": [
+  {
+   "label": "ND6 the repair goes silent  [anchor re-aimed 2026-10-19: #1202tf rewrote the message (no framework ticket in a delivered-app line), so the old print text is gone]",
+   "find": "    if added:\n        # #1202tf",
+   "replace": "    if False:\n        # #1202tf"
+  }
+ ]
+}

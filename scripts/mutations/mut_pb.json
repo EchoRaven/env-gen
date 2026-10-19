@@ -1,0 +1,24 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/agent_subscriptions.py",
+  "test": "tests/test_1203pb_a_subscription_nobody_can_satisfy.py",
+  "mutations": [
+    {"name": "PBA the installer stops calling the reporter",
+     "find": "    warn_unsatisfiable_subscriptions_1203pb(agent_id)\n",
+     "replace": "    pass  # reporter removed\n"},
+    {"name": "PBB the report moves AFTER the subscribe loop, so a raise swallows it",
+     "find": "    warn_unsatisfiable_subscriptions_1203pb(agent_id)\n    for source_hub, event_type, priority_floor in (DEFAULT_SUBSCRIPTIONS.get(agent_id) or []):",
+     "replace": "    for source_hub, event_type, priority_floor in (DEFAULT_SUBSCRIPTIONS.get(agent_id) or []):"},
+    {"name": "PBC the per-agent dedupe is dropped, so the pulse repeats the line every step",
+     "find": "        if not dead or agent_id in _UNSATISFIABLE_SAID_1203PB:\n            return\n        _UNSATISFIABLE_SAID_1203PB.add(agent_id)",
+     "replace": "        if not dead:\n            return"},
+    {"name": "PBD the line stops saying the reasons, only the count",
+     "find": "            \"; \".join(\"%s/%s (%s)\" % (h, t, why) for h, t, why in dead))",
+     "replace": "            \"; \".join(\"%s/%s\" % (h, t) for h, t, _why in dead))"},
+    {"name": "PBE a frozen entry names a subscription nobody installs",
+     "find": "    (\"workhub\", \"task_stale\"): \"no emitter anywhere; 0 events in 104 corpus runs\",",
+     "replace": "    (\"workhub\", \"task_never_1203pb\"): \"no emitter anywhere; 0 events in 104 corpus runs\","},
+    {"name": "PBF the line claims a NEW failure instead of naming an already-dead wire",
+     "find": "            \"events they wait for will never arrive by subscription: %s. This changes no \"\n            \"delivery -- it names wires that are already dead.\",",
+     "replace": "            \"events they wait for will never arrive by subscription: %s.\","}
+  ]
+}

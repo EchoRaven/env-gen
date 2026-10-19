@@ -1,0 +1,7 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_silent_mechanism_guards_do_not_grow_1201.py",
+ "mutations": [
+   {"label": "repair_dead_nav_links goes back to a bare pass",
+    "find": "    except Exception as _e1203js:",
+    "replace": "    except Exception:\n        pass\n    if False:"}
+ ]}

@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "N6C the owner is not reached (hand-written copy back)",
+   "find": "    from tools.file_tools import FRAMEWORK_SCRATCH_DIRS\n",
+   "replace": "    FRAMEWORK_SCRATCH_DIRS = (\n        \".agents\", \".agent_logs\", \"worktrees\", \".memory\", \"snapshots\")\n"
+  },
+  {
+   "label": "N6D revert to the relative form",
+   "find": "from tools.file_tools import FRAMEWORK_SCRATCH_DIRS",
+   "replace": "from ...tools.file_tools import FRAMEWORK_SCRATCH_DIRS"
+  }
+ ]
+}

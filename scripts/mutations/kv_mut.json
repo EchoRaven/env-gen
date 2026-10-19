@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203kv_the_fields_the_analyst_dropped.py",
+ "mutations": [
+  {
+   "label": "M1 the re-measure loop is gone, so the consumer stays dead",
+   "find": "            _missing = [k for k in _MEASURED_1203KV if k not in _a]\n            if not _missing or not _rel:\n                continue",
+   "replace": "            _missing = [k for k in _MEASURED_1203KV if k not in _a]\n            if True or not _missing or not _rel:\n                continue"
+  },
+  {
+   "label": "M2 `type` leaves the restored set, so #421 stays empty",
+   "find": "    _MEASURED_1203KV = (\"type\", \"dims\", \"transparent\", \"dominant_colors\")",
+   "replace": "    _MEASURED_1203KV = (\"dims\", \"transparent\", \"dominant_colors\")"
+  },
+  {
+   "label": "M3 `dominant_colors` leaves the restored set, so #1203kw cannot decide",
+   "find": "    _MEASURED_1203KV = (\"type\", \"dims\", \"transparent\", \"dominant_colors\")",
+   "replace": "    _MEASURED_1203KV = (\"type\", \"dims\", \"transparent\")"
+  },
+  {
+   "label": "M4 an authored value is overwritten by the measurement",
+   "find": "            _missing = [k for k in _MEASURED_1203KV if k not in _a]",
+   "replace": "            _missing = list(_MEASURED_1203KV)"
+  },
+  {
+   "label": "M5 a missing file invents the other measurements instead of only the type",
+   "find": "                _fresh = {\"type\": _t} if _t else {}",
+   "replace": "                _fresh = {\"type\": _t, \"dims\": [0, 0], \"transparent\": False,\n                          \"dominant_colors\": []} if _t else {}"
+  },
+  {
+   "label": "M6 the suffix fallback is dropped, so a staged-then-deleted file stays untyped",
+   "find": "                _t = _ie1203kv.get(_sfx) or _na1203kv(_sfx)",
+   "replace": "                _t = None"
+  },
+  {
+   "label": "M7 the count stops being reported  [anchor re-aimed 2026-10-19: the summary line grew with #1203kz/#1203l0 counters; mutation now drops only kv's clause]",
+   "find": ", %(assets_remeasured_1203kv)d asset(s) \"\n            \"re-measured, ",
+   "replace": ", \"\n            \""
+  },
+  {
+   "label": "M8 the suffix table is restated locally instead of asking material_prep",
+   "find": "        from .material_prep import (_ingest_one as _io1203kv, _IMG_EXT as _ie1203kv,\n                                    _nonimage_asset_type as _na1203kv)",
+   "replace": "        from .material_prep import _nonimage_asset_type as _na1203kv\n        _io1203kv = lambda *a, **k: None\n        _ie1203kv = {\".svg\": \"svg\", \".png\": \"png\", \".jpg\": \"jpg\"}"
+  }
+ ]
+}

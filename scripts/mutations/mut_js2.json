@@ -1,0 +1,22 @@
+{"file": "agent/tests/test_silent_mechanism_guards_do_not_grow_1201.py",
+ "test": "tests/test_silent_mechanism_guards_do_not_grow_1201.py",
+ "mutations": [
+   {"label": "the 80-line cap is restored (the original blind spot)",
+    "find": "            for j in range(i + 1, len(lines)):",
+    "replace": "            for j in range(i + 1, min(i + 80, len(lines))):"},
+   {"label": "the scan dies and returns nothing (non-vacuity)",
+    "find": "    found = []\n    for p in sorted((root or ROOT).rglob(\"*.py\")):",
+    "replace": "    found = []\n    for p in []:"},
+   {"label": "site keying drops the symbol, so a swap inside one file cancels",
+    "find": "        out[\"%s %s\" % (path, symbol)] += 1",
+    "replace": "        out[path] += 1"},
+   {"label": "the conversion direction is never computed",
+    "find": "    gone = {k: want[k] - got.get(k, 0) for k in want if want[k] > got.get(k, 0)}",
+    "replace": "    gone = {}"},
+   {"label": "the arrival direction is never computed",
+    "find": "    added = {k: got[k] - want.get(k, 0) for k in got if got[k] > want.get(k, 0)}",
+    "replace": "    added = {}"},
+   {"label": "the multiset becomes a set, so a second site in one file is invisible",
+    "find": "    added = {k: got[k] - want.get(k, 0) for k in got if got[k] > want.get(k, 0)}",
+    "replace": "    added = {k: 1 for k in got if k not in want}"}
+ ]}

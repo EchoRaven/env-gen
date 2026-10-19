@@ -368,8 +368,16 @@ class SomebodyIsTold(unittest.TestCase):
         tries = [a for a in self._ancestors(node, parents) if isinstance(a, ast.Try)]
         self.assertTrue(tries, "unguarded (#1201)")
         body = ast.dump(ast.Module(body=tries[0].body, type_ignores=[]))
-        self.assertNotIn("dispatch_unstaged_seed_media_1203np", body,
-                         "it shares a try with #1203np, so one failing silences the other")
+        # #1203pe GENERALISED THIS. It named one neighbour, `#1203np`, because that was the
+        # only one at the time -- and #1203pd later added a third dispatch between them, which
+        # would silence this one exactly as badly while this assertion passed. The property is
+        # "no OTHER dispatcher shares my try", not "#1203np does not".
+        import re as _re1203pe
+        others = {m for m in _re1203pe.findall(r"dispatch_[a-z_0-9]+", body)
+                  if m != "dispatch_fabricated_record_arrays_1203oc"}
+        self.assertEqual(others, set(),
+                         "it shares a try with %s, so one failing silences the other"
+                         % sorted(others))
 
     def test_it_is_not_behind_the_failed_checks_branch(self):
         """#1203ii's recorded bug: the call site was copied together with its gate, and the

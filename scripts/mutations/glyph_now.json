@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203kd_a_character_doing_an_icons_job.py",
+ "mutations": [
+  {
+   "label": "GL1 the JSX text-child shape is not matched (>♡< goes unseen)",
+   "find": "    r\">\\s*(\" + _GLYPH_1203KD + r\"{1,3})\\s*<\"\n",
+   "replace": "    r\">\\s*(__never_1203gl)\\s*<\"\n"
+  },
+  {
+   "label": "GL2 the braced-string child shape is not matched",
+   "find": "    r\"|>\\s*\\{\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\\s*\\}\\s*<\"\n",
+   "replace": "    r\"|>\\s*\\{\\s*['\\\"](__never_1203gl)['\\\"]\\s*\\}\\s*<\"\n"
+  },
+  {
+   "label": "GL3 the attribute form (=\"♡\") is not matched",
+   "find": "    r\"|=\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\"\n",
+   "replace": "    r\"|=\\s*['\\\"](__never_1203gl)['\\\"]\"\n"
+  },
+  {
+   "label": "GL4 the icon:/symbol:/glyph: field form is not matched (r179's AuthOption shape)",
+   "find": "    r\"|(?:icon|symbol|glyph)\\s*[:=]\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\"\n",
+   "replace": "    r\"|(?:icon|symbol|glyph)\\s*[:=]\\s*['\\\"](__never_1203gl)['\\\"]\"\n"
+  },
+  {
+   "label": "GL5 a glyph run of any length counts, so prose is reported as an icon",
+   "find": "    r\">\\s*(\" + _GLYPH_1203KD + r\"{1,3})\\s*<\"",
+   "replace": "    r\">\\s*(\" + _GLYPH_1203KD + r\"+)\\s*<\""
+  },
+  {
+   "label": "GL6 [EXPECTED-MISSED, structurally unreachable] the library gate reads package.json spellings too. The scan only reads (\".jsx\", \".tsx\", \".js\", \".ts\", \".css\") -- `.json` is NOT in the suffix set -- so `package.json` is never opened and a wider regex has nothing new to match. The property ('the gate is on the IMPORT, not on the name appearing somewhere', measured on r164: lucide-react declared, imported nowhere, 29 glyphs in source) is guaranteed by WHICH FILES ARE READ, not by this pattern. #1203p1's test pins the behaviour from outside anyway.",
+   "find": "    r\"\"\"from\\s+['\\\"](lucide-react|react-icons[^'\\\"]*|@heroicons/[^'\\\"]*\"\"\"",
+   "replace": "    r\"\"\"['\\\"](lucide-react|react-icons[^'\\\"]*|@heroicons/[^'\\\"]*\"\"\""
+  },
+  {
+   "label": "GL7 the limit is ignored, so one file can fill the report  [anchored on the glyph row so the two other limit sites are not matched]",
+   "find": "                out.append(\"%s:%d: %s\" % (f.name, line, _frag))\n                if len(out) >= limit:",
+   "replace": "                out.append(\"%s:%d: %s\" % (f.name, line, _frag))\n                if False:"
+  },
+  {
+   "label": "GL8 node_modules is scanned, so a dependency's glyphs are reported as the app's",
+   "find": "                 and \"node_modules\" not in f.parts]",
+   "replace": "                 and True]"
+  }
+ ]
+}

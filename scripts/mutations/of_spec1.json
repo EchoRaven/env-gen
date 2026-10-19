@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203of_the_icon_it_already_had.py",
+ "mutations": [
+  {
+   "label": "OF1 the no-library early return goes away, so one defect gets two owners",
+   "find": "        if not any(_ICON_LIB_1203KD.search(t) for _f, t in texts):\n            return out                       # #1203kd's half",
+   "replace": "        if False:\n            return out                       # #1203kd's half"
+  },
+  {
+   "label": "OF2 an unmapped glyph gets a default icon name, so the popcorn is reported",
+   "find": "                    names = _GLYPH_LIBRARY_ICON_1203OF.get(ch) or ()",
+   "replace": "                    names = _GLYPH_LIBRARY_ICON_1203OF.get(ch) or (\"Heart\",)"
+  },
+  {
+   "label": "OF3 the import reader only sees the file the glyph is in",
+   "find": "        imported = _imported_icon_names_1203of(texts)",
+   "replace": "        imported = set()"
+  },
+  {
+   "label": "OF4 the already-imported distinction is dropped",
+   "find": "                have = [n for n in names if n in imported]",
+   "replace": "                have = []"
+  },
+  {
+   "label": "OF5 stylesheets stop being read, so r190's CSS tabs disappear",
+   "find": "            if f.suffix not in (\".jsx\", \".tsx\", \".js\", \".ts\", \".css\"):\n                continue\n            if \"node_modules\" in f.parts:\n                continue\n            try:\n                texts.append((f, f.read_text(encoding=\"utf-8\", errors=\"replace\")))\n            except Exception:\n                continue\n        if not any(_ICON_LIB_1203KD.search(t)",
+   "replace": "            if f.suffix not in (\".jsx\", \".tsx\", \".js\", \".ts\"):\n                continue\n            if \"node_modules\" in f.parts:\n                continue\n            try:\n                texts.append((f, f.read_text(encoding=\"utf-8\", errors=\"replace\")))\n            except Exception:\n                continue\n        if not any(_ICON_LIB_1203KD.search(t)"
+  },
+  {
+   "label": "OF6 the fragment is anchored at the line head again",
+   "find": "    col = m.start() - bol\n    lo = max(0, col - 30)",
+   "replace": "    col = 0\n    lo = max(0, col - 30)"
+  },
+  {
+   "label": "OF7 the cap stops declaring itself (#1034) [anchor made unique after #1203og reused the line]",
+   "find": "        if total > len(out):\n            # #1034: the cut declares itself inside the list the reader gets.",
+   "replace": "        if False:\n            # #1034: the cut declares itself inside the list the reader gets."
+  },
+  {
+   "label": "OF8 an aliased import loses its real name",
+   "find": "                nm = raw.strip().split(\" as \")[0].strip()",
+   "replace": "                nm = raw.strip().split(\" as \")[-1].strip()"
+  },
+  {
+   "label": "OF9 the Heart entry leaves the map",
+   "find": "    \"♡\": (\"Heart\",), \"♥\": (\"Heart\",),",
+   "replace": "    \"♥\": (\"Heart\",),"
+  }
+ ]
+}

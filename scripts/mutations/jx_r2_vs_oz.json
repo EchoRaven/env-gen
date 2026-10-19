@@ -1,0 +1,16 @@
+{
+ "file": "agent/tests/test_counts_and_lists_agree_1034.py",
+ "test": "tests/test_1203oz_a_reach_floor_that_stopped_reaching.py",
+ "mutations": [
+  {
+   "label": "the reach floor is removed, so an empty scan passes again  [anchor re-aimed 2026-10-19: #1203oz raised this very floor 100 -> 220 and wrapped the message in parentheses -- my own patch moved it the same day]  [gate corrected 2026-10-19: this property is now held by #1203oz's meta-ratchet, not by the file being mutated -- a test cannot catch its own assertion being deleted]",
+   "find": "    assert len(visited) >= 220, (",
+   "replace": "    assert True, ("
+  },
+  {
+   "label": "the marked-site positive control is removed  [gate corrected 2026-10-19: this property is now held by #1203oz's meta-ratchet, not by the file being mutated -- a test cannot catch its own assertion being deleted]",
+   "find": "    assert {\"commit_gate.py\", \"hub_pulse.py\"} <= names, (",
+   "replace": "    assert True or {\"commit_gate.py\", \"hub_pulse.py\"} <= names, ("
+  }
+ ]
+}

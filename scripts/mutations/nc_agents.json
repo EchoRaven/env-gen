@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/agents/__init__.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "NC5 the cascade loses its absolute half",
+   "find": "except ImportError:  # runtime root: `multi_agent` is a sibling TOP-LEVEL package\n    from multi_agent import (  # type: ignore[no-redef]\n        Orchestrator,\n        ConfigurableAgent,\n        create_agent,\n    )\n",
+   "replace": "except ImportError:  # pragma: no cover\n    Orchestrator = ConfigurableAgent = create_agent = None\n"
+  }
+ ]
+}

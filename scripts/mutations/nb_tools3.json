@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/docker_tools.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "NB5 a broken relative import inside tools/",
+   "find": "    from .runtime_tools import env_cache\n",
+   "replace": "    from .no_such_runtime_tools_1203nb import env_cache\n"
+  }
+ ]
+}

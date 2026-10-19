@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203ok_the_freeze_held_a_chain_that_never_passed.py",
+ "mutations": [
+  {"label": "OK1 the carve-out goes back to the literal `failing`, so environment_blocked stays frozen",
+   "find": "        return str(record.get(\"status\") or \"\").strip().lower() != \"passing\"",
+   "replace": "        return str(record.get(\"status\") or \"\").strip().lower() == \"failing\""},
+  {"label": "OK2 the freeze stops asking whether the chain recorded a non-pass",
+   "find": "                and not _chain_recorded_a_non_pass_1203ok(_existing_1202nz)):",
+   "replace": "                and _existing_1202nz is not None):"},
+  {"label": "OK3 a never-ran chain is released too (the first, too-wide patch)",
+   "find": "        if not ran:\n            return False",
+   "replace": "        if not ran:\n            return str(record.get(\"status\") or \"\").strip().lower() != \"passing\""},
+  {"label": "OK4 a passing chain with a result is released (the oscillation #1202nz guards returns)",
+   "find": "        return str(record.get(\"status\") or \"\").strip().lower() != \"passing\"",
+   "replace": "        return True"},
+  {"label": "OK5 only `last_result` counts as having run",
+   "find": "        ran = bool(record.get(\"last_result\") or record.get(\"results\")\n                   or record.get(\"history\"))",
+   "replace": "        ran = bool(record.get(\"last_result\"))"},
+  {"label": "OK6 the status is read case-sensitively and untrimmed",
+   "find": "        return str(record.get(\"status\") or \"\").strip().lower() != \"passing\"",
+   "replace": "        return str(record.get(\"status\") or \"\") != \"passing\""}
+ ]}

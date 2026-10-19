@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203kl_a_failed_goal_must_survive_the_cap.py",
+ "mutations": [
+   {"label": "the partition never happens (patch removed)",
+    "find": "    if _replay1203kl:\n        _ordered1203go = (",
+    "replace": "    if False:\n        _ordered1203go = ("},
+   {"label": "the partition is unstable (reversed tail)",
+    "find": "            + [g for g in _ordered1203go if goal_ledger_key_1203kl(g) not in _replay1203kl])",
+    "replace": "            + [g for g in _ordered1203go if goal_ledger_key_1203kl(g) not in _replay1203kl][::-1])"},
+   {"label": "replaying also raises the cap",
+    "find": "    return _cap_by_kind_1203go(_ordered1203go, max_goals)",
+    "replace": "    return _cap_by_kind_1203go(_ordered1203go, max_goals + len(_replay1203kl))"},
+   {"label": "the key loses the modality, so two modalities collide",
+    "find": "    return \"%s::%s\" % (g.get(\"modality\"), g.get(\"name\"))",
+    "replace": "    return \"%s\" % (g.get(\"name\"),)"},
+   {"label": "the ledger is read AFTER the plan again",
+    "find": "        _replay1203kl = ledger.open_failures()\n        goals = plan_test_user_goals(",
+    "replace": "        _replay1203kl = []\n        goals = plan_test_user_goals("},
+   {"label": "the planner stops receiving the set",
+    "find": "            feature_inventory=inp.get(\"feature_inventory\"),\n            replay_first=_replay1203kl)",
+    "replace": "            feature_inventory=inp.get(\"feature_inventory\"))"}
+ ]}

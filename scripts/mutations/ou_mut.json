@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203ou_the_kept_page_said_itself_ninety_times.py",
+ "mutations": [
+  {"label": "OU1 the memo is bypassed, so every pass says it again (the pre-fix behaviour)",
+   "find": "                        if _say1203ou:\n                            __import__(\"logging\").getLogger(__name__).info(",
+   "replace": "                        if True:\n                            __import__(\"logging\").getLogger(__name__).info("},
+  {"label": "OU2 ★ the DECISION moves under the memo, so a deduped pass clobbers the lane's page",
+   "find": "                                comp, len(_prev1197.splitlines()), len(_body.splitlines()))\n                        _body = None",
+   "replace": "                                comp, len(_prev1197.splitlines()), len(_body.splitlines()))\n                            _body = None"},
+  {"label": "OU3 the state is a constant, so the lane editing its page goes unreported",
+   "find": "                                \"%d/%d\" % (len(_prev1197.splitlines()),\n                                           len(_body.splitlines()))))",
+   "replace": "                                \"said\"))"},
+  {"label": "OU4 the site key drops the component, so two auth pages silence each other",
+   "find": "                                \"frontend_scaffold.kept_auth_page_1203ou:%s\" % comp,",
+   "replace": "                                \"frontend_scaffold.kept_auth_page_1203ou\","},
+  {"label": "OU5 a memo failure silences the report",
+   "find": "                        except Exception:\n                            _say1203ou = True   # a memo failure must never silence the report",
+   "replace": "                        except Exception:\n                            _say1203ou = False  # a memo failure must never silence the report"},
+  {"label": "OU6 the decision is dropped from the branch entirely",
+   "find": "                                comp, len(_prev1197.splitlines()), len(_body.splitlines()))\n                        _body = None",
+   "replace": "                                comp, len(_prev1197.splitlines()), len(_body.splitlines()))"}
+ ]}

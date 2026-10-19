@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/deliverability.py",
+ "test": "tests/test_1203n7_the_finding_that_only_reached_the_log.py",
+ "mutations": [
+  {
+   "label": "N71 the finding stops riding the channel",
+   "find": "            seed[\"authored_orphan_fk_rows_1203ga\"] = {k: v for k, v in items}\n            seed[\"authored_orphan_fk_total_1203ga\"] = sum(v for _, v in items)\n",
+   "replace": "            pass\n"
+  },
+  {
+   "label": "N72 the total is the key COUNT, not the row count",
+   "find": "seed[\"authored_orphan_fk_total_1203ga\"] = sum(v for _, v in items)",
+   "replace": "seed[\"authored_orphan_fk_total_1203ga\"] = len(items)"
+  },
+  {
+   "label": "N73 the latch is keyed on the GATE, so a partial repair is swallowed",
+   "find": "        key = \"1203n7:\" + repr(items)",
+   "replace": "        key = \"1203n7\""
+  },
+  {
+   "label": "N74 no latch at all (back to 1182 lines)",
+   "find": "        if key in _SAID_700:\n            return False\n        _SAID_700.add(key)\n        return True",
+   "replace": "        _SAID_700.add(key)\n        return True"
+  },
+  {
+   "label": "N75 the channel write stops happening on a silenced repeat",
+   "find": "        items = sorted((str(k), int(v)) for k, v in orphans.items())\n        if isinstance(seed, dict):",
+   "replace": "        items = sorted((str(k), int(v)) for k, v in orphans.items())\n        if False and isinstance(seed, dict):"
+  },
+  {
+   "label": "N76 key order becomes a new finding",
+   "find": "        items = sorted((str(k), int(v)) for k, v in orphans.items())",
+   "replace": "        items = [(str(k), int(v)) for k, v in orphans.items()]"
+  },
+  {
+   "label": "N77 the warning no longer waits for the helper",
+   "find": "                if _orph1203ga and record_authored_orphan_fk_1203n7(seed, _orph1203ga):",
+   "replace": "                record_authored_orphan_fk_1203n7(seed, _orph1203ga)\n                if _orph1203ga:"
+  },
+  {
+   "label": "N78 an empty finding is written anyway",
+   "find": "        if not isinstance(orphans, Mapping) or not orphans:\n            return False",
+   "replace": "        if not isinstance(orphans, Mapping):\n            return False"
+  }
+ ]
+}

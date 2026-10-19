@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203l5_the_floor_was_a_different_dimension.py",
+ "mutations": [
+  {
+   "label": "M1 the false sentence goes back into the #797 docstring",
+   "find": "    text rather than quoting it; #786 added the transcription to the design-prep schema and",
+   "replace": "    text rather than quoting it, which is why `ui_copy` keeps scoring as a floor; #786 added the transcription to the design-prep schema and"
+  },
+  {
+   "label": "M2 the correction loses its ticket id, so the quote reads as an assertion again",
+   "find": "    # #1203l5 CORRECTS the sentence that used to sit in the line above. It read \"which is",
+   "replace": "    # CORRECTS the sentence that used to sit in the line above. It read \"which is"
+  },
+  {
+   "label": "M3 the #797 block stops rendering the copy it was given  [anchor re-aimed 2026-10-19: #1203nk rewrote the rendering body; the guard itself is the property]",
+   "find": "            if txt:\n",
+   "replace": "            if False:\n"
+  }
+ ]
+}

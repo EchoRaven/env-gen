@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203n0_the_icon_css_could_not_reach.py",
+ "mutations": [
+  {
+   "label": "IC1 a concrete paint colour no longer makes the file coloured (every icon reported)",
+   "find": "                if tok != \"currentcolor\":\n                    return False",
+   "replace": "                if False:\n                    return False"
+  },
+  {
+   "label": "IC2 none/inherit/transparent count as paint, so a currentColor-only file reads coloured",
+   "find": "                if tok in (\"none\", \"inherit\", \"transparent\"):\n                    continue",
+   "replace": "                if True:\n                    continue"
+  },
+  {
+   "label": "IC3 #1203nv's no-paint-at-all case goes back to reading as coloured",
+   "find": "            if _saw_cc1203nx and _own_concrete_colour_1203nx(text):\n                return False\n            return True",
+   "replace": "            if _saw_cc1203nx and _own_concrete_colour_1203nx(text):\n                return False\n            return bool(_saw_cc1203nx)"
+  },
+  {
+   "label": "IC4 #1203nx's own-colour carve-out is removed (21 visible icons reported again)",
+   "find": "            if _saw_cc1203nx and _own_concrete_colour_1203nx(text):\n                return False",
+   "replace": "            if False:\n                return False"
+  },
+  {
+   "label": "IC5 the carve-out stops being gated on currentColor",
+   "find": "            if _saw_cc1203nx and _own_concrete_colour_1203nx(text):",
+   "replace": "            if _own_concrete_colour_1203nx(text):"
+  },
+  {
+   "label": "IC6 a var() own-colour is treated as concrete, so the 0.00%-ink line is lost [mutation re-aimed 2026-10-19: the first version added a dead member to the membership test above -- a NULL mutation, #1203jr's trap]",
+   "find": "    return \"var(\" not in val",
+   "replace": "    return True"
+  },
+  {
+   "label": "IC7 the basename index is never built, so nothing resolves (#1203n4)",
+   "find": "            for _sf in pub.rglob(\"*.svg\"):\n                _served_1203n4.setdefault(_sf.name, []).append(_sf)",
+   "replace": "            for _sf in []:\n                _served_1203n4.setdefault(_sf.name, []).append(_sf)"
+  },
+  {
+   "label": "IC8 an unreadable file is reported as INVISIBLE -- a false finding on evidence nobody could read (#883's forbidden direction)",
+   "find": "            except Exception:\n                return None\n            # #1203nx: AN SVG THAT DECLARES ITS OWN `color` IS SELF-COLOURED",
+   "replace": "            except Exception:\n                return True\n            # #1203nx: AN SVG THAT DECLARES ITS OWN `color` IS SELF-COLOURED"
+  },
+  {
+   "label": "IC9 [EXPECTED-MISSED, null w.r.t. the output] `return None` -> `return False` on an unreadable file. `_colourless` collapses both to 'not reported' (`True if verdicts == {True} else (None if None in verdicts else False)`), so no input distinguishes them; the OBSERVABLE half is IC8's direction. Kept as the record that this was checked, not assumed (#1203jr)",
+   "find": "            except Exception:\n                return None\n            # #1203nx: AN SVG THAT DECLARES ITS OWN `color` IS SELF-COLOURED",
+   "replace": "            except Exception:\n                return False\n            # #1203nx: AN SVG THAT DECLARES ITS OWN `color` IS SELF-COLOURED"
+  }
+ ]
+}

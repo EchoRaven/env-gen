@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "NB3b a broken import inside tools/ (where #1203n6's repaired imports point)",
+   "find": "        from multi_agent.agents.runtime.auto_commit import revert_commit_on_branch\n",
+   "replace": "        from multi_agent.agents.runtime.auto_commit import no_such_name_1203nb as revert_commit_on_branch\n"
+  }
+ ]
+}

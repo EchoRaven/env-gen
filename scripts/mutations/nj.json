@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203nj_the_briefing_list_that_started_being_cut.py",
+ "mutations": [
+  {
+   "label": "NJ1 the cut stops declaring itself (back to a silent slice)",
+   "find": "        _ln1203nj = join_capped(parts, total=len(comps),\n                                cap=_BRIEF_COMP_CAP_1203NJ, sep=\" \")",
+   "replace": "        _ln1203nj = \" \".join(parts)"
+  },
+  {
+   "label": "NJ2 the remainder is computed from the SHOWN list, not the real total",
+   "find": "        _ln1203nj = join_capped(parts, total=len(comps),",
+   "replace": "        _ln1203nj = join_capped(parts, total=len(parts),"
+  },
+  {
+   "label": "NJ3 the character bound is dropped (an unbounded prompt line)",
+   "find": "        if len(_ln1203nj) > _BRIEF_LINE_CHARS_1203NJ:",
+   "replace": "        if False:"
+  },
+  {
+   "label": "NJ4 the character cut goes back to slicing mid-token",
+   "find": "            _ln1203nj = (_ln1203nj[:_BRIEF_LINE_CHARS_1203NJ].rsplit(\" \", 1)[0]\n                         + \" \u2026 (line truncated at %d chars)\" % _BRIEF_LINE_CHARS_1203NJ)",
+   "replace": "            _ln1203nj = _ln1203nj[:_BRIEF_LINE_CHARS_1203NJ]"
+  },
+  {
+   "label": "NJ5 the component cap is silently widened",
+   "find": "_BRIEF_COMP_CAP_1203NJ = 10",
+   "replace": "_BRIEF_COMP_CAP_1203NJ = 40"
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/seed_audit.py",
+ "test": "tests/test_1203mt_the_foreign_key_was_a_string.py",
+ "mutations": [
+  {
+   "label": "MT1 back to the raw compare on the value side",
+   "find": "                    if str(val) not in ids[target]:   # #1203mt",
+   "replace": "                    if val not in ids[target]:"
+  },
+  {
+   "label": "MT2 back to the raw compare on the id side  [anchor re-aimed 2026-10-19: the local was renamed ids -> out]",
+   "find": "                out[name] = {str(r.get(\"id\")) for r in rows if isinstance(r, dict)}",
+   "replace": "                out[name] = {r.get(\"id\") for r in rows if isinstance(r, dict)}"
+  },
+  {
+   "label": "MT3 the narrowing widens to strip() (not forced by JSON)",
+   "find": "                    if str(val) not in ids[target]:   # #1203mt",
+   "replace": "                    if str(val).strip() not in {i.strip() for i in ids[target]}:"
+  },
+  {
+   "label": "MT4 the narrowing widens to casefold",
+   "find": "                    if str(val) not in ids[target]:   # #1203mt",
+   "replace": "                    if str(val).lower() not in {i.lower() for i in ids[target]}:"
+  },
+  {
+   "label": "MT5 tables without an explicit id become targets",
+   "find": "            if rows and isinstance(rows[0], dict) and \"id\" in rows[0]:",
+   "replace": "            if rows and isinstance(rows[0], dict):"
+  },
+  {
+   "label": "MT6 nothing is ever reported",
+   "find": "                        out[\"%s.%s\" % (tbl, col)] = out.get(\"%s.%s\" % (tbl, col), 0) + 1",
+   "replace": "                        pass"
+  }
+ ]
+}

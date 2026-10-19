@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "N6E2 the error path stops recording the reason (the WRITE half, re-anchored after n9)",
+   "find": "        _sum1203n9 = {\"verdict\": \"ERROR\", \"error\": f\"{type(exc).__name__}: {exc}\"}",
+   "replace": "        _sum1203n9 = {\"verdict\": \"ERROR\"}"
+  },
+  {
+   "label": "N6E3 [EXPECTED-MISSED here] this names #1203n9's gate, not #1203n6's -- the n6_write3 spec is the one that verifies it (1/1 CAUGHT); a verdict that flips with the spec selection is the evidence",
+   "find": "        _sum1203n9.update(collected_facts_1203n9(report))\n        report[\"summary\"] = _sum1203n9",
+   "replace": "        report[\"summary\"] = _sum1203n9"
+  }
+ ]
+}

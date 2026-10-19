@@ -1,0 +1,1 @@
+{"file": "agent/tests/test_1202tp_a_table_name_that_starts_with_a_digit.py", "test": "tests/test_1202tp_a_table_name_that_starts_with_a_digit.py", "mutations": [{"label": "MK2 floor above the real corpus -> non-vacuity guard must bite", "find": "    assert len(seen) > 50, f\"corpus not found", "replace": "    assert len(seen) > 200, f\"corpus not found"}]}

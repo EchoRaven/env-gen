@@ -1,0 +1,13 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/hubs/codehub/service.py",
+ "test": "tests/test_1203kq_the_version_counts_touches_not_writes.py",
+ "mutations": [
+   {"label": "the correction is removed from the docstring (#1032: the claim keeps its old instrument)",
+    "find": "    So the claim holds on the right instrument: across 39 modern runs these stores contain 0\n    records. COUNT THE RECORDS, not the version",
+    "replace": "    So the claim holds on the right instrument: across 39 modern runs these stores contain 0\n    records. Use the version"},
+   {"label": "what bumps the version is no longer named",
+    "find": "`ensure_codehub_document` bumps the version when it touches a document, so a store can sit",
+    "replace": "something else bumps the version when it touches a document, so a store can sit"},
+   {"label": "the conclusion is softened away with the instrument",
+    "find": "        never written   pull_requests, review_threads, code_reviews, repos",
+    "replace": "        rarely written  pull_requests, review_threads"}
+ ]}

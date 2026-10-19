@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/memory/generator_memory.py",
+ "test": "tests/test_counts_and_lists_agree_1034.py",
+ "mutations": [
+   {"label": "the site goes back to a silent cut list (the original violation)",
+    "find": "                f\"Task created {len(self._files_created)} files: {_files_1203jx}\",",
+    "replace": "                f\"Task created {len(self._files_created)} files: {', '.join(list(self._files_created)[:5])}\","},
+   {"label": "the unreachable-helper branch renders a cut list instead of no list",
+    "find": "                _files_1203jx = \"(names unavailable)\"",
+    "replace": "                _files_1203jx = ', '.join(list(self._files_created)[:5])"}
+ ]}

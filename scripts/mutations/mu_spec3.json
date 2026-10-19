@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/reference_materials.py",
+ "test": "tests/test_1203mu_the_resume_took_a_different_brief.py",
+ "mutations": [
+  {"label": "MU10 the warning goes back to blaming the design alone",
+   "find": "                            \"resume this means one of the launch inputs diverged: either \"",
+   "replace": "                            \"resume that usually means the wrong DESIGN was passed. Either \""},
+  {"label": "MU11 the warning stops pointing at the guard",
+   "find": "                            \"— the text is hashed into the fingerprint too; #1203mu now \"",
+   "replace": "                            \"— the text is hashed into the fingerprint too; nothing \""}
+ ]}

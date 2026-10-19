@@ -139,8 +139,26 @@ Claude on Vertex **要求** `max_tokens`；生成器按模型名解析（`claude
 只有全部 CAUGHT 才 exit 0。另外它**拒绝在 baseline 是红的时候开工** —— 对着一个失败的测试
 文件,每条变异都会读成 CAUGHT,那是同一种虚假安慰升了一级。
 
+★ **规格要存进仓库,不要写到 `/tmp`(`#1203pe`)**。规格是「这条变异在验哪条性质」的唯一记录,
+而本节此前教的是 `cat > /tmp/spec.json` —— 于是每次会话结束它就没了。**这会废掉一条依赖历史的
+纪律**:后落的补丁会改写先落补丁的锚点,那条性质悄悄变成「没有变异在验」而套件照绿;要抓它必须
+拿**过去的**规格去对当前的树,而过去的规格已经不在。落地时实测:当前会话有 **62 份规格 / 253 条
+变异**,而**任何更早会话一份都没有**,仓库里也没有副本 —— 这条纪律的跨会话那一半**从来没能跑过**。
+`mutate.py` 自己的头注就引了 `#826`:「a check that lives in a habit is not a check」。
+
+规格放 `scripts/mutations/*.json`,免费的锚点普查用:
+
 ```bash
-cat > /tmp/spec.json <<'EOF'
+scripts/mutation_census.py            # 只数锚点,不跑测试
+scripts/mutation_census.py --strict   # 有「未解释的锚点丢失」就退非零
+```
+
+锚点不再恰好出现一次**不自动等于问题** —— 代码可能是被刻意重写的。但它必须**被解释**,方式是在
+那条变异的 `label` 里写上 `[SUPERSEDED <日期>: 性质现在由谁承接]` / `[NOT RUNNABLE: …]` /
+`[BAD-ANCHOR: …]`。词表是封闭的:**「代码变了」不算解释**,那正是要报的东西。
+
+```bash
+cat > scripts/mutations/mut_<ticket>.json <<'EOF'
 {"file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
  "test": "tests/test_1203jg_the_top_blocker_said_nothing.py",
  "mutations": [

@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203nd_the_database_older_than_its_models.py",
+ "mutations": [
+  {
+   "label": "ND1 the migration is never called",
+   "find": "_ensure_modelled_columns_1203nd()\n\n\ndef _ensure_temporal_alias_columns():",
+   "replace": "def _ensure_temporal_alias_columns():"
+  },
+  {
+   "label": "ND2 NOT NULL joins the added column",
+   "find": "_c.execute(_text('ALTER TABLE \"%s\" ADD COLUMN IF NOT EXISTS \"%s\" %s'\n                                         % (table.name, col.name, _ddl)))",
+   "replace": "_c.execute(_text('ALTER TABLE \"%s\" ADD COLUMN IF NOT EXISTS \"%s\" %s NOT NULL'\n                                         % (table.name, col.name, _ddl)))"
+  },
+  {
+   "label": "ND3 the DDL stops being idempotent",
+   "find": "'ALTER TABLE \"%s\" ADD COLUMN IF NOT EXISTS \"%s\" %s'\n                                         % (table.name, col.name, _ddl)",
+   "replace": "'ALTER TABLE \"%s\" ADD COLUMN \"%s\" %s'\n                                         % (table.name, col.name, _ddl)"
+  },
+  {
+   "label": "ND4 the name match becomes case-sensitive",
+   "find": "                    if str(col.name).lower() in have:",
+   "replace": "                    if str(col.name) in have:"
+  },
+  {
+   "label": "ND5 a table the database lacks is ALTERed anyway",
+   "find": "                have = live.get(str(table.name))\n                if have is None:\n                    continue          # the table itself is absent -- create_all's business",
+   "replace": "                have = live.get(str(table.name)) or set()\n                if False:\n                    continue"
+  },
+  {
+   "label": "ND6 the repair goes silent  [anchor re-aimed 2026-10-19: #1202tf rewrote the message (no framework ticket in a delivered-app line), so the old print text is gone]",
+   "find": "    if added:\n        # #1202tf",
+   "replace": "    if False:\n        # #1202tf"
+  },
+  {
+   "label": "ND7 the postgres guard is dropped",
+   "find": "        if engine.dialect.name != \"postgresql\":\n            return\n    except Exception:\n        return\n    added = []",
+   "replace": "        pass\n    except Exception:\n        return\n    added = []"
+  },
+  {
+   "label": "ND8 the cut list stops declaring itself (#1034)",
+   "find": "\", ... (+%d more not shown)\" % (len(added) - 8) if len(added) > 8 else \"\"",
+   "replace": "\"\""
+  }
+ ]
+}

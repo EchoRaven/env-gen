@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/checkpoint.py",
+ "test": "tests/test_1203mu_the_resume_took_a_different_brief.py",
+ "mutations": [
+  {"label": "MU1 any complete phase counts as a delivered milestone",
+   "find": "if str(status) == \"complete\" and str(name).startswith(\"milestone:\"))",
+   "replace": "if str(status) == \"complete\")"},
+  {"label": "MU2 the briefs are compared with whitespace normalized away",
+   "find": "if stored and passed and stored == passed:",
+   "replace": "if stored and passed and stored.strip() == passed.strip():"},
+  {"label": "MU3 nothing delivered still refuses",
+   "find": "    if not done:\n        return \"notice\", (",
+   "replace": "    if False:\n        return \"notice\", ("},
+  {"label": "MU4 the offset is always reported as the start",
+   "find": "        if a[i] != b[i]:\n            return i",
+   "replace": "        if a[i] != b[i]:\n            return 0"},
+  {"label": "MU5 the opt-in refuses instead of letting through",
+   "find": "    if allow_rebrief:",
+   "replace": "    if not allow_rebrief:"},
+  {"label": "MU6 an empty stored description reads as a pass",
+   "find": "    if not stored:\n        # #883",
+   "replace": "    if False:\n        # #883"}
+ ]}

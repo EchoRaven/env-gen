@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203jh_the_stop_reason_said_nothing_shipped.py",
+ "mutations": [
+  {
+   "label": "M1 the clause is never built  [anchor re-aimed 2026-10-19: #1203jhb rewrote the clause and moved it BEFORE the bits]",
+   "find": "                    _shipped1203jh = (\" SHIPPED: %s (#1202jg: `status`=delivered means ",
+   "replace": "                    _shipped1203jh = (\"\" + \" (#1202jg: `status`=delivered means "
+  },
+  {
+   "label": "M2 the _meta key is listed as a release",
+   "find": "if not str(k).startswith(\"_\"))",
+   "replace": "if True)"
+  },
+  {
+   "label": "M4 the other branch loses the clause  [anchor re-aimed 2026-10-19: #1203jhb put the clause BEFORE the bits, so the old `join(bits) + clause` order is gone]",
+   "find": "                    + _shipped1203jh + \" \" + \"; \".join(bits))",
+   "replace": "                    + \"; \".join(bits))"
+  },
+  {
+   "label": "BAD-ANCHOR the sed-style mutation that never matched (today's real failure)  [SUPERSEDED/NOT RUNNABLE 2026-10-19: already labelled BAD-ANCHOR when written (a sed-style mutation that never matched) -- kept as the record, not runnable]",
+   "find": "\"Use relative '/api', '/auth' URLs and restore auth on \"",
+   "replace": "\"Restore auth on \""
+  },
+  {
+   "label": "BROKEN-MUTANT try: -> if False: leaving an orphan except (today's other failure)",
+   "find": "            _shipped1203jh = \"\"\n            try:",
+   "replace": "            _shipped1203jh = \"\"\n            if False:"
+  }
+ ]
+}

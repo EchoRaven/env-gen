@@ -1,0 +1,13 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203mu_the_resume_took_a_different_brief.py",
+ "mutations": [
+  {"label": "MU7 a refusal is only logged, like #1202eo was",
+   "find": "                if _sev_1203mu == \"refuse\":\n                    self._logger.error(_msg_1203mu)\n                    raise RuntimeError(_msg_1203mu)",
+   "replace": "                if _sev_1203mu == \"refuse\":\n                    self._logger.error(_msg_1203mu)"},
+  {"label": "MU8 the stored brief is compared against itself",
+   "find": "                    _stored_1203mu, goal, _phases_1203mu,",
+   "replace": "                    _stored_1203mu, _stored_1203mu, _phases_1203mu,"},
+  {"label": "MU9 the guard is never called",
+   "find": "                _sev_1203mu, _msg_1203mu = rebrief_verdict_1203mu(",
+   "replace": "                _sev_1203mu, _msg_1203mu = (\"\", \"\") or rebrief_verdict_1203mu_UNCALLED("}
+ ]}

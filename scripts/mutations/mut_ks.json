@@ -1,0 +1,16 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203ks_counting_writes_is_not_counting_content.py",
+ "mutations": [
+   {"label": "the limit is removed, leaving the instrument readable both ways",
+    "find": "    #1203ks: THE LIMIT OF THAT, because it has now been misread twice. Counting writes is not\n    counting CONTENT:",
+    "replace": "    #1203ks: a note. Counting writes is the same as counting CONTENT:"},
+   {"label": "what counts as a write is no longer named",
+    "find": "`ensure_*_document` is itself a write, so version > 1 says someone",
+    "replace": "something else is itself a write, so version > 1 says someone"},
+   {"label": "the two misreadings are no longer named",
+    "find": "    \"initialisation baseline\" while #695 quoted \"version 1 in 146 of 146\" as the evidence",
+    "replace": "    \"initialisation baseline\" while another site quoted a figure as the evidence"},
+   {"label": "the record-count re-verification is dropped",
+    "find": "    holds outright: across 227 kept run directories all nine stores below hold ZERO records,",
+    "replace": "    holds outright: the version numbers below say so,"}
+ ]}

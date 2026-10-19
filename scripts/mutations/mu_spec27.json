@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203n5_the_probe_one_segment_in.py",
+ "mutations": [
+  {"label": "N53b a single-segment path is collapsed anyway",
+   "find": "    if len(segs) < 2:\n        return\n    for i in range(len(segs) - 1, -1, -1):",
+   "replace": "    if len(segs) < 1:\n        return\n    for i in range(len(segs) - 1, -1, -1):"},
+  {"label": "N54b a relative path is accepted",
+   "find": "    raw = str(path or \"\")\n    if not raw.startswith(\"/\"):\n        return\n    segs = [s for s in raw.split(\"/\") if s != \"\"]\n    if len(segs) < 2:\n        return\n    for i in",
+   "replace": "    raw = str(path or \"\")\n    if False:\n        return\n    segs = [s for s in raw.split(\"/\") if s != \"\"]\n    if len(segs) < 2:\n        return\n    for i in"}
+ ]}

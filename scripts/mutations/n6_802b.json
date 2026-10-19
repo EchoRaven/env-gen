@@ -1,0 +1,16 @@
+{
+ "file": "agent/tests/test_lazy_imports_resolve_802.py",
+ "test": "tests/test_lazy_imports_resolve_802.py",
+ "mutations": [
+  {
+   "label": "M3 revert the skip predicate (the widening disappears)",
+   "find": "    return module.startswith(\"env_generator\") or module.split(\".\")[0] in _OWNED_TOPS",
+   "replace": "    return module.startswith(\"env_generator\")"
+  },
+  {
+   "label": "M4 the owned set stops including utils",
+   "find": "_OWNED_TOPS.add(\"utils\")",
+   "replace": "pass"
+  }
+ ]
+}

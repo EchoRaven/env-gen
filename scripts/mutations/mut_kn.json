@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203kn_the_squad_coverage_patches_compose.py",
+ "mutations": [
+   {"label": "#1203km off: the cap's drops are never recorded",
+    "find": "        for g in (dropped or []):\n            if not isinstance(g, Mapping):",
+    "replace": "        for g in []:\n            if not isinstance(g, Mapping):"},
+   {"label": "#1203km's first-sighting guard off: a pass is taken back",
+    "find": "            if key in goals:\n                continue                      # has a history — never overwrite it",
+    "replace": "            if False:\n                continue                      # has a history — never overwrite it"},
+   {"label": "#1203kl off: open failures no longer survive the cap",
+    "find": "    if _replay1203kl:\n        _ordered1203go = (",
+    "replace": "    if False:\n        _ordered1203go = ("},
+   {"label": "#1203kk off: a sibling's completion passes the goal",
+    "find": "    if name:\n        return any(bool(a.get(\"completed\")) for a in rows\n                   if str(a.get(\"name\") or \"\").strip() == name)",
+    "replace": "    if False:\n        return any(bool(a.get(\"completed\")) for a in rows\n                   if str(a.get(\"name\") or \"\").strip() == name)"},
+   {"label": "#1203ki off: the split counts every open failure as replayed",
+    "find": "        return ([k for k in open_keys if k in planned],\n                [k for k in open_keys if k not in planned])",
+    "replace": "        return (list(open_keys), [])"}
+ ]}

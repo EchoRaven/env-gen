@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n6_the_import_that_could_not_resolve.py",
+ "mutations": [
+  {
+   "label": "N6E the error path stops recording the reason (the WRITE half)  [SUPERSEDED 2026-10-19 by n6_write3.json: the verdict string changed ERROR -> ENV_UNAVAILABLE; re-aimed there as N6E2, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "report[\"summary\"] = {\"verdict\": \"ERROR\", \"error\": f\"{type(exc).__name__}: {exc}\"}",
+   "replace": "report[\"summary\"] = {\"verdict\": \"ERROR\"}"
+  }
+ ]
+}

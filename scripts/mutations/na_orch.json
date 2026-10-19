@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203jk_a_report_that_measured_nothing.py",
+ "mutations": [
+  {
+   "label": "NA1 the verdict gate is removed (back to #1203n9's reversal)",
+   "find": "            from .runtime.test_user_validation import DERIVED_VERDICTS_1203NA\n            if str(_summ.get(\"verdict\") or \"\").upper() not in DERIVED_VERDICTS_1203NA:\n                return False\n",
+   "replace": "\n"
+  },
+  {
+   "label": "NA2 the membership test is inverted",
+   "find": "            if str(_summ.get(\"verdict\") or \"\").upper() not in DERIVED_VERDICTS_1203NA:",
+   "replace": "            if str(_summ.get(\"verdict\") or \"\").upper() in DERIVED_VERDICTS_1203NA:"
+  },
+  {
+   "label": "NA3 the verdicts are re-listed inline (#1032 broken)",
+   "find": "            from .runtime.test_user_validation import DERIVED_VERDICTS_1203NA\n            if str(_summ.get(\"verdict\") or \"\").upper() not in DERIVED_VERDICTS_1203NA:",
+   "replace": "            if str(_summ.get(\"verdict\") or \"\").upper() not in (\n                    \"PASS\", \"ISSUES\", \"PARTIAL\", \"NOT_WALKED\", \"ERROR\"):"
+  },
+  {
+   "label": "NA4 the case fold is dropped (a lowercase verdict stops counting)",
+   "find": "str(_summ.get(\"verdict\") or \"\").upper() not in DERIVED_VERDICTS_1203NA",
+   "replace": "str(_summ.get(\"verdict\") or \"\") not in DERIVED_VERDICTS_1203NA"
+  }
+ ]
+}

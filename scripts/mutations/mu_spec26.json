@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203n5_the_probe_one_segment_in.py",
+ "mutations": [
+  {
+   "label": "N51 only the final segment is offered again (#363's blindness returns)",
+   "find": "    for i in range(len(segs) - 1, -1, -1):\n        yield \"/\" + \"/\".join([\"{x}\" if j == i else s for j, s in enumerate(segs)])",
+   "replace": "    yield \"/\" + \"/\".join(segs[:-1] + [\"{x}\"])"
+  },
+  {
+   "label": "N52 the final-segment form is no longer offered FIRST",
+   "find": "    for i in range(len(segs) - 1, -1, -1):",
+   "replace": "    for i in range(0, len(segs)):"
+  },
+  {
+   "label": "N53 a single-segment path is collapsed anyway  [anchor re-aimed 2026-10-19: `collapse_last_literal_segment` is a twin whose guards `return raw`; the bare `return` is unique to the #1203n5 generator]",
+   "find": "    if len(segs) < 2:\n        return\n",
+   "replace": "    if False:\n        return\n"
+  },
+  {
+   "label": "N54 a relative path is accepted  [anchor re-aimed 2026-10-19: same twin; pinned by the bare `return`]",
+   "find": "    if not raw.startswith(\"/\"):\n        return\n",
+   "replace": "    if False:\n        return\n"
+  },
+  {
+   "label": "N55 the registry accepts the first candidate without checking the registry",
+   "find": "                        if _chain_eid(alt) in registered_ids:\n                            return True\n                    return False",
+   "replace": "                        if True:\n                            return True\n                    return False"
+  }
+ ]
+}

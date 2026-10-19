@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/database_scaffold.py",
+ "test": "tests/test_1203ne_the_json_column_the_ddl_called_text.py",
+ "mutations": [
+  {
+   "label": "NE1 the JSON branch is removed (back to text)",
+   "find": "    if \"JSON\" in t_upper:\n        return \"jsonb\"\n",
+   "replace": ""
+  },
+  {
+   "label": "NE2 JSON renders as the non-binary `json` type",
+   "find": "    if \"JSON\" in t_upper:\n        return \"jsonb\"",
+   "replace": "    if \"JSON\" in t_upper:\n        return \"json\""
+  },
+  {
+   "label": "NE3 the match becomes exact, so JSONB falls through",
+   "find": "    if \"JSON\" in t_upper:\n        return \"jsonb\"",
+   "replace": "    if \"JSON\" == t_upper:\n        return \"jsonb\""
+  },
+  {
+   "label": "NE4 [EXPECTED-MISSED, null control] swapping the JSON and DATE/TIME branches cannot change a verdict: no corpus type string contains both, so this pins the ORDER as irrelevant rather than testing the test",
+   "find": "    if \"JSON\" in t_upper:\n        return \"jsonb\"\n    if \"DATE\" in t_upper or \"TIME\" in t_upper:\n        return \"timestamptz\"\n",
+   "replace": "    if \"DATE\" in t_upper or \"TIME\" in t_upper:\n        return \"timestamptz\"\n    if \"JSON\" in t_upper:\n        return \"jsonb\"\n"
+  },
+  {
+   "label": "NE5 the introspected column path overrides JSON back to text",
+   "find": "    t = str(col.get(\"type\") or \"\").upper()\n    base = _ddl_base_type(t)",
+   "replace": "    t = str(col.get(\"type\") or \"\").upper()\n    base = \"text\" if \"JSON\" in t else _ddl_base_type(t)"
+  },
+  {
+   "label": "NE6 a text column starts rendering as jsonb",
+   "find": "    return \"text\"\n\n\ndef _ddl_type_from_introspect",
+   "replace": "    return \"jsonb\"\n\n\ndef _ddl_type_from_introspect"
+  }
+ ]
+}

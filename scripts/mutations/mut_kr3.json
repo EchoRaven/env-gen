@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/tool_bundles.py",
+ "test": "tests/test_1203kr_the_baseline_version_was_not_a_baseline.py",
+ "mutations": [
+   {"label": "the conclusion sentence itself is softened",
+    "find": "In commit-only mode a PR cannot be opened",
+    "replace": "In commit-only mode a PR is rarely opened"},
+   {"label": "the 227-of-227 record count loses its denominator",
+    "find": "`codehub_pull_requests` holds ZERO records in 227 of\n            # 227 kept runs.",
+    "replace": "`codehub_pull_requests` holds no records.\n            #"}
+ ]}

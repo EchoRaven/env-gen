@@ -1,0 +1,16 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/deliverability.py",
+ "test": "tests/test_1203od_the_guard_ate_the_page_name.py",
+ "mutations": [
+  {"label": "OD7 the gate goes back to its own narrow regex",
+   "find": "        try:\n            from .frontend_audit import routed_page_components_1203od\n            routed, _state1203od = routed_page_components_1203od(src)\n        except Exception as _e1203od:\n            _gate_absent_792(\"_placeholder_route_blockers_1202w\", _e1203od, \"import\")\n            return []",
+   "replace": "        routed = sorted({m.group(1) for m in _re1202w.finditer(r\"element=\\{\\s*<(\\w+)\", src)})\n        _state1203od = \"read\""},
+  {"label": "OD8 an unparsed App.jsx reads as clean (#883)",
+   "find": "        if _state1203od == \"unparsed\":",
+   "replace": "        if False:"},
+  {"label": "OD9 a scaffolded frontend with no App.jsx is scored clean in silence",
+   "find": "            if app.parent.is_dir():\n                _gate_absent_792(\"_placeholder_route_blockers_1202w\",\n                                 FileNotFoundError(str(app)), \"run\")",
+   "replace": "            if False:\n                _gate_absent_792(\"_placeholder_route_blockers_1202w\",\n                                 FileNotFoundError(str(app)), \"run\")"},
+  {"label": "OD10 the announcement loses its precondition and fires on every pre-scaffold tick",
+   "find": "            if app.parent.is_dir():",
+   "replace": "            if True:"}
+ ]}

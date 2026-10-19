@@ -1,0 +1,51 @@
+{
+ "file": "scripts/verify_shipped_fixes.py",
+ "test": "tests/test_1203jm_checks_that_always_say_nothing.py",
+ "mutations": [
+  {
+   "label": "M1 the gate marker is misspelt (every check goes permanently silent)",
+   "find": "                \"ui_walk_ran_1203je\" in rep[\"summary\"]:",
+   "replace": "                \"ui_walk_ran_1203jE\" in rep[\"summary\"]:"
+  },
+  {
+   "label": "M2 the gate accepts any run (pre-fix runs would confirm)",
+   "find": "def _has_1014_1203ja(run: Path) -> bool:",
+   "replace": "def _has_1014_1203ja(run: Path) -> bool:\n    return True"
+  },
+  {
+   "label": "M3 #1203ja stops comparing the FINAL tag",
+   "find": "    if tags[-1] in have:",
+   "replace": "    if tags[0] in have:"
+  },
+  {
+   "label": "M4 #1203jc stops noticing a PASS with nothing walked",
+   "find": "        if s.get(\"verdict\") == \"PASS\" and (steps == 0 or not ui_ran):",
+   "replace": "        if False:"
+  },
+  {
+   "label": "M5 #1203je stops looking for ERR_CONNECTION_REFUSED",
+   "find": "            if \"ERR_CONNECTION_REFUSED\" in str(fl.get(\"note\") or \"\"):",
+   "replace": "            if False:"
+  },
+  {
+   "label": "M6 #1203jd scores a hold instead of surfacing it",
+   "find": "    return _say(\"#1203jd\", UNMEASURED,\n                \"the final cut was HELD %d time(s)",
+   "replace": "    return _say(\"#1203jd\", CONFIRMED,\n                \"the final cut was HELD %d time(s)"
+  },
+  {
+   "label": "M7 #1203jg accepts prose that matched nothing",
+   "find": "    if \"no summary recorded\" in txt and \":\" in txt:",
+   "replace": "    if False:"
+  },
+  {
+   "label": "M8 #1203jk accepts a final report with no evidence",
+   "find": "    if steps > 0 or walked_ui:",
+   "replace": "    if True:"
+  },
+  {
+   "label": "M9 the new checks are unregistered",
+   "find": "CHECKS = [check_1203ja, check_1203jc, check_1203je, check_1203jd,\n          check_1203jg, check_1203jf, check_1203jh, check_1203jk,\n",
+   "replace": "CHECKS = [\n"
+  }
+ ]
+}

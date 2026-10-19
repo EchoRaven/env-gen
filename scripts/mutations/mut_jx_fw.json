@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/memory/generator_memory.py",
+ "test": "tests/test_counts_and_lists_agree_1034.py",
+ "mutations": [
+  {
+   "label": "the site goes back to a silent cut list (the original violation)",
+   "find": "            self.add_knowledge(\n                f\"Task created {len(self._files_created)} files: {_files_1203jx}\",",
+   "replace": "            self.add_knowledge(\n                f\"Task created {len(self._files_created)} files: {', '.join(list(self._files_created)[:5])}\","
+  },
+  {
+   "label": "the local fallback drops its remainder marker  [SUPERSEDED BY THE FIX 2026-10-19: the hand-rolled `'' if _n1203jx <= 5 else ' (+%d more not shown)'` is gone -- the fallback now renders NO list at all (`'(names unavailable)'`), so it cannot render a cut one. The code says why in its own comment: a mutation that deleted the marker SURVIVED because nothing in the suite reaches a failed import, so the property was made STRUCTURAL instead of test-guarded (#1032: one owner for #1034). Nothing to re-aim: the defect class no longer has a site.]",
+   "find": "                _files_1203jx = \"(names unavailable)\"",
+   "replace": "                _files_1203jx = \", \".join(list(self._files_created)[:5])"
+  }
+ ]
+}

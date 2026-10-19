@@ -1,0 +1,19 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203ko_the_cause_said_it_twice.py",
+ "mutations": [
+   {"label": "the duplicate prefix comes back (patch removed)",
+    "find": "        if note.startswith(_PRE1203ko):\n            _tail1203ko = note[len(_PRE1203ko):].lstrip(\":\").lstrip()",
+    "replace": "        if False:\n            _tail1203ko = note[len(_PRE1203ko):].lstrip(\":\").lstrip()"},
+   {"label": "the whole note is dropped, losing #1203kg's cause clause",
+    "find": "        _tail1203ko = note\n        if note.startswith(_PRE1203ko):",
+    "replace": "        _tail1203ko = \"\"\n        if note.startswith(_PRE1203ko):"},
+   {"label": "an unrelated note is also stripped",
+    "find": "        if note.startswith(_PRE1203ko):",
+    "replace": "        if True:"},
+   {"label": "the dangling separator is left when the note is only the prefix",
+    "find": "            f\"; {_tail1203ko}\" if _tail1203ko else \"\"))",
+    "replace": "            f\"; {_tail1203ko}\"))"},
+   {"label": "the structured counts are dropped in favour of the note",
+    "find": "        bits.append(\"MCP surface INCOMPLETE (%s/%s tools%s)\" % (\n            mcp.get(\"tools_found\"), mcp.get(\"tools_expected\"),",
+    "replace": "        bits.append(\"MCP surface INCOMPLETE (%s%s)\" % (\n            \"\","}
+ ]}

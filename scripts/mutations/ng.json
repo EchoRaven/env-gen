@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203nd_the_database_older_than_its_models.py",
+ "mutations": [
+  {
+   "label": "NG1 back to SQLAlchemy's own rendering",
+   "find": "                        _ddl = _ddl_base_type_1203ng(str(col.type).upper())",
+   "replace": "                        _ddl = col.type.compile(engine.dialect)"
+  },
+  {
+   "label": "NG2 the copied ladder loses its JSON branch",
+   "find": "    if \"JSON\" in t_upper:\n        return \"jsonb\"\n    if \"DATE\" in t_upper or \"TIME\" in t_upper:\n        return \"timestamptz\"\n    if \"FLOAT\" in t_upper or \"NUMERIC\" in t_upper or \"DECIMAL\" in t_upper or \"REAL\" in t_upper:\n        return \"numeric\"\n    if \"UUID\" in t_upper:\n        return \"uuid\"\n    return \"text\"\n\n\ndef _ensure_modelled_columns_1203nd",
+   "replace": "    if \"DATE\" in t_upper or \"TIME\" in t_upper:\n        return \"timestamptz\"\n    if \"FLOAT\" in t_upper or \"NUMERIC\" in t_upper or \"DECIMAL\" in t_upper or \"REAL\" in t_upper:\n        return \"numeric\"\n    if \"UUID\" in t_upper:\n        return \"uuid\"\n    return \"text\"\n\n\ndef _ensure_modelled_columns_1203nd"
+  },
+  {
+   "label": "NG3 the input is no longer uppercased",
+   "find": "_ddl_base_type_1203ng(str(col.type).upper())",
+   "replace": "_ddl_base_type_1203ng(str(col.type))"
+  },
+  {
+   "label": "NG4 the copied ladder drops NUMERIC from the float branch",
+   "find": "    if \"FLOAT\" in t_upper or \"NUMERIC\" in t_upper or \"DECIMAL\" in t_upper or \"REAL\" in t_upper:\n        return \"numeric\"\n    if \"UUID\" in t_upper:\n        return \"uuid\"\n    return \"text\"\n\n\ndef _ensure_modelled_columns_1203nd",
+   "replace": "    if \"FLOAT\" in t_upper or \"DECIMAL\" in t_upper or \"REAL\" in t_upper:\n        return \"numeric\"\n    if \"UUID\" in t_upper:\n        return \"uuid\"\n    return \"text\"\n\n\ndef _ensure_modelled_columns_1203nd"
+  },
+  {
+   "label": "NG5 the copied ladder sends UUID to text",
+   "find": "    if \"UUID\" in t_upper:\n        return \"uuid\"\n    return \"text\"\n\n\ndef _ensure_modelled_columns_1203nd",
+   "replace": "    return \"text\"\n\n\ndef _ensure_modelled_columns_1203nd"
+  }
+ ]
+}

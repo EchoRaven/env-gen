@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203m5_the_task_named_the_field_not_the_change.py",
+ "mutations": [
+  {
+   "label": "M1 the transition is never recorded",
+   "find": "                    type_changes_1203m5[str(key)] = \"%s -> %s\" % (_o1203m5, _n1203m5)",
+   "replace": "                    pass"
+  },
+  {
+   "label": "M2 the transition never leaves the detector",
+   "find": "            \"type_changes_1203m5\": dict(sorted(type_changes_1203m5.items())),",
+   "replace": "            \"type_changes_1203m5\": {},"
+  },
+  {
+   "label": "M3 the RAW declarations are shown instead of what was compared",
+   "find": "                    type_changes_1203m5[str(key)] = \"%s -> %s\" % (_o1203m5, _n1203m5)",
+   "replace": "                    type_changes_1203m5[str(key)] = \"%s -> %s\" % (old_response[key], new_response[key])"
+  },
+  {
+   "label": "M4 the pair never reaches the task body  [anchor re-aimed 2026-10-19: the call moved into a tuple comprehension]",
+   "find": "                                x for x in (_type_change_sentence_1203m5(breaking),",
+   "replace": "                                x for x in (\"\","
+  },
+  {
+   "label": "M5 the pair is buried after the payload dump  [SUPERSEDED/NOT RUNNABLE 2026-10-19: the ORDER property's site is gone: #1203m5's sentence moved into a tuple comprehension, where 'before the payload dump' no longer has a position. M4 covers the reachability half.]",
+   "find": "                            + ((_type_change_sentence_1203m5(breaking) + \". \")\n                               if _type_change_sentence_1203m5(breaking) else \"\")\n                            + f\"{breaking}. Consumer files: {consumer_files}\"",
+   "replace": "                            + f\"{breaking}. Consumer files: {consumer_files}\"\n                            + ((\" \" + _type_change_sentence_1203m5(breaking) + \".\")\n                               if _type_change_sentence_1203m5(breaking) else \"\")"
+  },
+  {
+   "label": "M6 the cap stops declaring itself (#1034)",
+   "find": "        return _jc1203m5(bits, cap=cap, sep=\", \")",
+   "replace": "        return \", \".join(bits[:cap])"
+  },
+  {
+   "label": "M7 1202om's canonicalisation is bypassed for the comparison",
+   "find": "                _n1203m5 = self._canon_type_1202om(new_response[key])",
+   "replace": "                _n1203m5 = str(new_response[key])"
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203kd_a_character_doing_an_icons_job.py",
+ "mutations": [
+  {
+   "label": "the icon-library gate is dropped, so a project using real icons is nagged",
+   "find": "        if any(_ICON_LIB_1203KD.search(t) for _f, t in texts):\n            return out",
+   "replace": "        if False:\n            return out"
+  },
+  {
+   "label": "a glyph anywhere counts, so copy inside a sentence becomes a finding",
+   "find": "    r\">\\s*(\" + _GLYPH_1203KD + r\"{1,3})\\s*<\"",
+   "replace": "    r\"(\" + _GLYPH_1203KD + r\"{1,3})\""
+  },
+  {
+   "label": "the icon= prop shape is not detected (r179's AuthOption)  [SUPERSEDED 2026-10-19 by glyph_now.json: #1203of extracted _glyph_fragment_1203kd and added a second scan, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "    r\"|(?:icon|symbol|glyph)\\s*[:=]\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\", re.I)",
+   "replace": "    r\"|(?:zzznope)\\s*[:=]\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\", re.I)"
+  },
+  {
+   "label": "the limit is ignored  [SUPERSEDED 2026-10-19 by glyph_now.json: #1203of extracted _glyph_fragment_1203kd and added a second scan, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                if len(out) >= limit:\n                    return out",
+   "replace": "                if False:\n                    return out"
+  },
+  {
+   "label": "the cut line is shown as if it were whole (#1034)  [SUPERSEDED 2026-10-19 by glyph_now.json: #1203of extracted _glyph_fragment_1203kd and added a second scan, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                    f.name, line, _frag[:90] + (\"…\" if len(_frag) > 90 else \"\")))",
+   "replace": "                    f.name, line, _frag[:90]))"
+  },
+  {
+   "label": "a missing directory raises instead of returning empty  [SUPERSEDED 2026-10-19 by glyph_now.json: #1203of extracted _glyph_fragment_1203kd and added a second scan, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "        if not root.is_dir():\n            return out",
+   "replace": "        if False:\n            return out"
+  }
+ ]
+}

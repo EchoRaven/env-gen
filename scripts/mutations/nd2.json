@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203nd_the_database_older_than_its_models.py",
+ "mutations": [
+  {
+   "label": "ND6b the repair goes silent",
+   "find": "    if added:\n        # #1202tf: no framework ticket inside a message the DELIVERED app emits",
+   "replace": "    if False:\n        # #1202tf: no framework ticket inside a message the DELIVERED app emits"
+  },
+  {
+   "label": "ND8b the cut list stops declaring itself (#1034)",
+   "find": "\", ... (+%d more not shown)\" % (len(added) - 8) if len(added) > 8 else \"\"",
+   "replace": "\"\""
+  },
+  {
+   "label": "ND9 a framework ticket goes back into the delivered message",
+   "find": "        print(\"[schema] the running database was older than these models: added %d \"",
+   "replace": "        print(\"[schema] #1203nd the running database was older than these models: added %d \""
+  }
+ ]
+}

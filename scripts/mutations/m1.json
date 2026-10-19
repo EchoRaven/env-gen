@@ -1,0 +1,18 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203m1_the_advice_named_the_wrong_knob.py",
+ "mutations": [
+   {"label": "M1 a self-explaining cause gets the suffix appended anyway",
+    "find": "if \"ENVGEN_MAX_\" in _cause_1203m1:", "replace": "if \"ZZ_NEVER_\" in _cause_1203m1:"},
+   {"label": "M2 the wall-clock advice drags ENVGEN_MAX_TICKS back in",
+    "find": "_advice_1203m1 = \" Adjust via ENVGEN_MAX_WALLCLOCK_SEC.\"",
+    "replace": "_advice_1203m1 = \" Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS.\""},
+   {"label": "M3 the tick cause is told to adjust the clock",
+    "find": "_advice_1203m1 = \" Adjust via ENVGEN_MAX_TICKS.\"",
+    "replace": "_advice_1203m1 = \" Adjust via ENVGEN_MAX_WALLCLOCK_SEC.\""},
+   {"label": "M4 the unknown-cause fallback is narrowed with no evidence",
+    "find": "                                \" Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS.\")",
+    "replace": "                                \" Adjust via ENVGEN_MAX_TICKS.\")"},
+   {"label": "M5 the chosen advice never reaches the message",
+    "find": "f\"aborted after {tick_count} coordination ticks.{_advice_1203m1}\"",
+    "replace": "f\"aborted after {tick_count} coordination ticks. Adjust via ENVGEN_MAX_WALLCLOCK_SEC / ENVGEN_MAX_TICKS.\""}
+ ]}

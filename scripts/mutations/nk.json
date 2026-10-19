@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203nk_the_visual_gates_silent_cuts.py",
+ "mutations": [
+  {
+   "label": "NK1 the MEASURED SPEC cut stops declaring itself",
+   "find": "        rows += _cut_row_1203nk(len(_all1203nk), _SURFACE_ROWS_1203NK)\n",
+   "replace": ""
+  },
+  {
+   "label": "NK2 the LAYOUT cut stops declaring itself",
+   "find": "        rows += _cut_row_1203nk(len(_all1203nk), _LAYOUT_ROWS_1203NK)\n",
+   "replace": ""
+  },
+  {
+   "label": "NK3 the COPY-list cut stops declaring itself",
+   "find": "        rows += _cut_row_1203nk(len(_all1203nk), _COPY_ROWS_1203NK, \"component\")\n",
+   "replace": ""
+  },
+  {
+   "label": "NK4 the cut row counts from the SHOWN rows, not the real total",
+   "find": "        rows += _cut_row_1203nk(len(_all1203nk), _SURFACE_ROWS_1203NK)",
+   "replace": "        rows += _cut_row_1203nk(len(rows), _SURFACE_ROWS_1203NK)"
+  },
+  {
+   "label": "NK5 the verbatim cut stops declaring itself (the tail goes away)",
+   "find": "                         % (_COPY_CHARS_1203NK, len(txt))) if len(txt) > _COPY_CHARS_1203NK else \"\"",
+   "replace": "                         % (_COPY_CHARS_1203NK, len(txt))) if False else \"\""
+  },
+  {
+   "label": "NK6 the verbatim cut stops naming the real length",
+   "find": "                _tail = (\"  \u26a0 CUT at %d of %d characters",
+   "replace": "                _tail = (\"  \u26a0 CUT at %d of %d chars"
+  },
+  {
+   "label": "NK7 a cut row is emitted even when nothing was cut",
+   "find": "    if n <= 0:\n        return []",
+   "replace": "    if False:\n        return []"
+  }
+ ]
+}

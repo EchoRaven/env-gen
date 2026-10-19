@@ -1,0 +1,18 @@
+{
+  "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+  "test": "tests/test_1203p8_the_authorising_number_is_recoverable.py",
+  "mutations": [
+    {"name": "P8A the correction stops naming the key that disproves the old claim",
+     "find": "        # function, ~110 lines up: `blocking_average_live` (#768r). Its filter and its",
+     "replace": "        # function, ~110 lines up: that other average (#768r). Its filter and its"},
+    {"name": "P8B the #883 divergence is dropped from the correction",
+     "find": "        # and this record writes None. MEASURED: 42 of 1715 corpus rows (2.4%). A reader of\n        # `rounds.jsonl` cannot tell that None from \"not recorded\" — the #883 shape — so read",
+     "replace": "        # and this record writes None. MEASURED: 42 of 1715 corpus rows (2.4%). A reader of\n        # `rounds.jsonl` cannot tell that None from \"not recorded\" — so read"},
+    {"name": "P8C the live average stops being written beside the verdict row",
+     "find": "            \"blocking_average_live\": _live_average,",
+     "replace": "            \"blocking_avg_live_1203p8\": _live_average,"},
+    {"name": "P8D the decision formula stops excluding advisory screens, so the two diverge",
+     "find": "    blk = [r for r in (results or [])\n           if isinstance(r, dict) and not r.get(\"advisory\") and r.get(\"blank\") is not True]",
+     "replace": "    blk = [r for r in (results or [])\n           if isinstance(r, dict) and r.get(\"blank\") is not True]"}
+  ]
+}

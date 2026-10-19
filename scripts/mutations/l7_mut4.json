@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203l7_the_gate_reported_its_own_probe.py",
+ "mutations": [
+  {
+   "label": "M4 one script keeps its own literal list, which can drift from the filter  [anchor re-aimed 2026-10-19: the literal is now parenthesised for the chained .replace()]",
+   "find": "_PROFILE_DISCOVER_JS = (\"\"\"async (token) => {\n  const paths = __PROBE_PATHS_1203L7__;",
+   "replace": "_PROFILE_DISCOVER_JS = (\"\"\"async (token) => {\n  const paths = ['/api/profiles', '/api/profile', '/profiles'];"
+  },
+  {
+   "label": "M7 the OTHER script keeps its own literal list  [anchor re-aimed 2026-10-19: the literal is now parenthesised for the chained .replace()]",
+   "find": "_PROFILE_COUNT_JS = (r\"\"\"async (token) => {\n  const paths = __PROBE_PATHS_1203L7__;",
+   "replace": "_PROFILE_COUNT_JS = (r\"\"\"async (token) => {\n  const paths = ['/api/profiles', '/api/profile', '/profiles'];"
+  }
+ ]
+}

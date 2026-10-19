@@ -1,0 +1,7 @@
+{"file": "agent/tests/test_a_silent_detector_never_feeds_a_gate_1202ar.py",
+ "test": "tests/test_a_silent_detector_never_feeds_a_gate_1202ar.py",
+ "mutations": [
+   {"label": "the announcement regex matches everything, so every function is skipped",
+    "find": "_ANNOUNCES = re.compile(\n",
+    "replace": "_ANNOUNCES = re.compile(r\"\") or re.compile(\n"}
+ ]}

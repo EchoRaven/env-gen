@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_1203jn_the_detector_is_one_field_away.py",
+ "mutations": [
+  {
+   "label": "M1 the comment drops the count that makes it checkable",
+   "find": "            # all: over tiktok-web-r185's 15 registered pages, ZERO carry `auth_required`,",
+   "replace": "            # all: over the registered pages, none carry `auth_required`,"
+  },
+  {
+   "label": "M2 the comment stops naming the store",
+   "find": "            # THE THIRD DOES NOT. `registryhub_ui_pages.json` records no page-level auth at",
+   "replace": "            # THE THIRD DOES NOT. The page registry records no page-level auth at"
+  },
+  {
+   "label": "M3 the comment stops naming the two inputs that DO exist",
+   "find": "            # three inputs already exist -- `frontend_audit._effective_page_apis_1202vg`",
+   "replace": "            # three inputs already exist -- the page-api helper"
+  }
+ ]
+}

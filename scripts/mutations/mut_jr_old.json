@@ -1,0 +1,13 @@
+{"file": "agent/tests/test_a_silent_detector_never_feeds_a_gate_1202ar.py",
+ "test": "tests/test_a_silent_detector_never_feeds_a_gate_1202ar.py::test_no_silent_detector_decides_a_gate",
+ "mutations": [
+   {"label": "the announcement regex matches every function, so silent collapses to {}",
+    "find": "_ANNOUNCES = re.compile(\n    r\"warn_once_1201",
+    "replace": "_ANNOUNCES = re.compile(\n    r\"\" or r\"warn_once_1201"},
+   {"label": "the handler walk stops seeing except blocks",
+    "find": "            for handler in [h for h in ast.walk(node) if isinstance(h, ast.ExceptHandler)]:",
+    "replace": "            for handler in []:"},
+   {"label": "rglob reaches a single module",
+    "find": "    for f in _ROOT.rglob(\"*.py\"):",
+    "replace": "    for f in list(_ROOT.rglob(\"deliverability.py\")):"}
+ ]}

@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203kd_a_character_doing_an_icons_job.py",
+ "mutations": [
+  {
+   "label": "the icon= prop shape is not detected (r179's AuthOption)  [SUPERSEDED 2026-10-19 by glyph_now.json: same extraction, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "    r\"|(?:icon|symbol|glyph)\\s*[:=]\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\", re.I)",
+   "replace": "    r\"|(?:zzznope)\\s*[:=]\\s*['\\\"](\" + _GLYPH_1203KD + r\"{1,3})['\\\"]\", re.I)"
+  },
+  {
+   "label": "the limit is ignored",
+   "find": "                if len(out) >= limit:\n                    return out\n    except Exception as _exc:\n        from .message_format import warn_once_1201\n        warn_once_1201(\"glyph_icon_findings_1203kd\",",
+   "replace": "                if False:\n                    return out\n    except Exception as _exc:\n        from .message_format import warn_once_1201\n        warn_once_1201(\"glyph_icon_findings_1203kd\","
+  },
+  {
+   "label": "a missing directory is not short-circuited  [SUPERSEDED 2026-10-19 by glyph_now.json: same extraction, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "        if not root.is_dir():\n            return out\n        files = [f for f in sorted(root.rglob(\"*\"))",
+   "replace": "        if False:\n            return out\n        files = [f for f in sorted(root.rglob(\"*\"))"
+  },
+  {
+   "label": "the scan only looks at .jsx, missing the .js object-literal form  [SUPERSEDED 2026-10-19 by glyph_now.json: same extraction, so this anchor has no site. The CURRENT properties are covered there -- do not re-aim this one.]",
+   "find": "                 if f.suffix in (\".jsx\", \".tsx\", \".js\", \".ts\")",
+   "replace": "                 if f.suffix in (\".jsx\", \".tsx\")"
+  }
+ ]
+}

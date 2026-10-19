@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203nd_the_database_older_than_its_models.py",
+ "mutations": [
+  {
+   "label": "ND4 the name match becomes case-sensitive",
+   "find": "                    if str(col.name).lower() in have:",
+   "replace": "                    if str(col.name) in have:"
+  }
+ ]
+}

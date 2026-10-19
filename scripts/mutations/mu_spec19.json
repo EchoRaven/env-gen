@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/heal_pipeline.py",
+ "test": "tests/test_1203n0_the_icon_css_could_not_reach.py",
+ "mutations": [
+  {
+   "label": "N07 the finding is computed and never announced",
+   "find": "                for _iv1203n0 in _inv1203n0[:6]:",
+   "replace": "                for _iv1203n0 in []:"
+  },
+  {
+   "label": "N08 the warning stops saying the icon is invisible  [anchor re-aimed 2026-10-19: the warning was rewritten by #1203nv/#1203nx; the 'in the DOM and invisible on screen' clause is the property this mutation is about]",
+   "find": "\"<img>/url() — real Chromium paints it background-dark on a #121212 \"\n                        \"nav, i.e. the icon is in the DOM and invisible on screen. INLINE the \"",
+   "replace": "\"<img>/url(). INLINE the \""
+  },
+  {
+   "label": "N09 the capped list stops declaring the cut",
+   "find": "                if len(_inv1203n0) > 6:",
+   "replace": "                if False:"
+  }
+ ]
+}

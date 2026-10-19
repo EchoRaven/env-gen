@@ -1,0 +1,10 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203my_the_id_travelled_in_the_body.py",
+ "mutations": [
+  {"label": "MY13 the body clause replaces the path clause instead of joining it",
+   "find": "                + _fk1203mx + _fk1203my)",
+   "replace": "                + (_fk1203my or _fk1203mx))"},
+  {"label": "MY14 an unseeded implied table is guessed at anyway",
+   "find": "            implied = fk_target_table_1203my(field, ids)\n            if implied is None or str(val) in ids.get(implied, set()):\n                continue",
+   "replace": "            implied = fk_target_table_1203my(field, ids) or str(field)[:-3]\n            if str(val) in ids.get(implied, set()):\n                continue"}
+ ]}

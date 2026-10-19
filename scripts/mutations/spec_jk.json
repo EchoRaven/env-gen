@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203jk_a_report_that_measured_nothing.py",
+ "mutations": [
+  {
+   "label": "M1 an absent report counts as walked (the final walk never runs)",
+   "find": "            if not _p.exists():\n                return False",
+   "replace": "            if not _p.exists():\n                return True"
+  },
+  {
+   "label": "M2 any report counts as evidence (back to #1203ja's exists-proxy)",
+   "find": "            if int(_summ.get(\"api_steps\") or 0) > 0:",
+   "replace": "            if int(_summ.get(\"api_steps\") or 0) >= 0:"
+  },
+  {
+   "label": "M3 a walked UI stops counting as evidence (would overwrite 119 real reports)",
+   "find": "            if _uifl.get(\"ran\", True) and (_uifl.get(\"flows\") or []):\n                return True",
+   "replace": "            if False:\n                return True"
+  },
+  {
+   "label": "M4 ran=True with no flows counts as evidence (empty container as a fact)",
+   "find": "            if _uifl.get(\"ran\", True) and (_uifl.get(\"flows\") or []):",
+   "replace": "            if _uifl.get(\"ran\", True):"
+  },
+  {
+   "label": "M5 an unreadable report is overwritten (fail OPEN)",
+   "find": "                \"already there.\", version, _e1203jk)\n            return True",
+   "replace": "                \"already there.\", version, _e1203jk)\n            return False"
+  },
+  {
+   "label": "M6 the non-object guard is removed (the gap the test found pre-landing)",
+   "find": "            if not isinstance(_rep, dict):\n                # #1203jk: parses, but is not a report.",
+   "replace": "            if False:\n                # #1203jk: parses, but is not a report."
+  }
+ ]
+}

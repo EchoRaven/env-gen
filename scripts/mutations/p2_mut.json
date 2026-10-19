@@ -1,0 +1,21 @@
+{"file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_1203b0_the_tool_can_set_what_the_gate_judges.py",
+ "mutations": [
+  {"label": "P21 the line is never emitted, so the note is unobservable again",
+   "find": "                    if _sc1203p2(\"hub_tools.apis_used_unchanged_1203p2:%s\" % name, _n1203p2):",
+   "replace": "                    if False:"},
+  {"label": "P22 the state key drops the page, so two pages silence each other",
+   "find": "\"hub_tools.apis_used_unchanged_1203p2:%s\" % name, _n1203p2)",
+   "replace": "\"hub_tools.apis_used_unchanged_1203p2\", _n1203p2)"},
+  {"label": "P23 the ordinal is dropped, so a repeat becomes a heartbeat and is silenced (#1202ad)",
+   "find": "% name, _n1203p2):", "replace": "% name, \"same\"):"},
+  {"label": "P24 the counter never advances, so every call looks like the first",
+   "find": "                    _APIS_UNCHANGED_SEEN_1203P2[str(name)] = _n1203p2",
+   "replace": "                    _APIS_UNCHANGED_SEEN_1203P2[str(name)] = 0"},
+  {"label": "P25 the failure path goes silent again (#1202ah)",
+   "find": "                        from multi_agent.runtime.message_format import warn_once_1201 as _w1203p2\n                        _w1203p2(\"hub_tools.apis_used_unchanged_1203p2\",\n                                 \"recording that a re-registration omitted `apis_used`\", _e1203p2)",
+   "replace": "                        pass"},
+  {"label": "P26 #1203b0's own note is dropped (this ticket must only ADD)",
+   "find": "                    \"_apis_used_unchanged_1203b0\": (",
+   "replace": "                    \"_apis_used_unchanged_1203b0_gone\": ("}
+ ]}

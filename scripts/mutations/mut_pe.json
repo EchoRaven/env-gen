@@ -1,0 +1,41 @@
+{
+ "file": "scripts/mutation_census.py",
+ "test": "tests/test_1203pe_the_census_the_habit_could_not_do.py",
+ "mutations": [
+  {
+   "label": "an unlabelled loss reads as explained, so the census can never fail",
+   "find": "            explained = any(token in label for token in _EXPLAINED)",
+   "replace": "            explained = True"
+  },
+  {
+   "label": "the vocabulary opens up, so \"the code changed\" becomes an explanation",
+   "find": "_EXPLAINED = (\"[SUPERSEDED\", \"[NOT RUNNABLE\", \"[BAD-ANCHOR\")",
+   "replace": "_EXPLAINED = (\"[SUPERSEDED\", \"[NOT RUNNABLE\", \"[BAD-ANCHOR\", \"changed\")"
+  },
+  {
+   "label": "a missing spec dir reads as a clean census instead of a problem (#883)",
+   "find": "    if not os.path.isdir(spec_dir):\n        return rows, [(\"<spec dir>\", \"missing: %s\" % spec_dir)]",
+   "replace": "    if not os.path.isdir(spec_dir):\n        return rows, problems"
+  },
+  {
+   "label": "--strict stops failing on an unexplained loss",
+   "find": "    if unexplained and strict:",
+   "replace": "    if unexplained and False:"
+  },
+  {
+   "label": "a carrier that does not exist still counts as an explanation (#1201: a claim read only in a failure message is not an assertion)",
+   "find": "                        if not os.path.isfile(os.path.join(spec_dir, carrier)):",
+   "replace": "                        if False:"
+  },
+  {
+   "label": "a spec whose test is gone is reported as clean instead of as 'cannot look' (#883)",
+   "find": "            if retired:\n                retired_specs.append((name, retired))\n            else:\n                problems.append((name, \"test gone: %s\" % os.path.relpath(candidate, root)))",
+   "replace": "            if retired:\n                retired_specs.append((name, retired))"
+  },
+  {
+   "label": "the `::node-id` suffix is not stripped, so a live spec reads as dead",
+   "find": "        rel = token.split(\"::\", 1)[0]",
+   "replace": "        rel = token"
+  }
+ ]
+}

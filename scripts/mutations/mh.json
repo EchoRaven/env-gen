@@ -1,0 +1,16 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203mh_the_warning_said_every_screen.py",
+ "mutations": [
+   {"label": "MH1 the false sentence is restored verbatim",
+    "find": "\"by whoever drove a browser next. A BLANK screen's deviations now quote these \"\n            \"verbatim (#740); a screen that was photographed and judged carries the API paths \"\n            \"extracted from them instead (#1203l8).\",",
+    "replace": "\"by whoever drove a browser next. These are now in each screen's deviations.\","},
+   {"label": "MH2 the warning names the blank arm but not what a judged screen gets",
+    "find": "\"verbatim (#740); a screen that was photographed and judged carries the API paths \"\n            \"extracted from them instead (#1203l8).\",",
+    "replace": "\"verbatim (#740).\","},
+   {"label": "MH3 the judged arm loses the lost-API-path clause",
+    "find": "        if not _p:\n            return base",
+    "replace": "        if True:\n            return base"},
+   {"label": "MH4 the blank arm stops reading the console map",
+    "find": "                _err740 = _console740.get(screen[\"name\"]) or []",
+    "replace": "                _err740 = [] or []"}
+ ]}

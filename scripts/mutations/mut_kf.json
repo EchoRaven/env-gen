@@ -1,0 +1,22 @@
+{"file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203kf_which_of_the_three_causes.py",
+ "mutations": [
+   {"label": "always the old three-way hedge (patch removed)",
+    "find": "    if any(200 <= s < 300 for s in sust):",
+    "replace": "    if False:"},
+   {"label": "signup's ok is taken as registration (the #1203iz trap)",
+    "find": "    sust = [s for s in ((su or {}).get(\"auth_status\") or []) if isinstance(s, int)]",
+    "replace": "    sust = [200] if (su or {}).get(\"ok\") else [s for s in ((su or {}).get(\"auth_status\") or []) if isinstance(s, int)]"},
+   {"label": "any status counts as registered, not only a 2xx",
+    "find": "    if any(200 <= s < 300 for s in sust):",
+    "replace": "    if sust:"},
+   {"label": "the signup flow itself gets the login narrowing",
+    "find": "    if label != \"login\" or su is None:",
+    "replace": "    if su is None:"},
+   {"label": "the statuses are not cited, so the claim cannot be checked",
+    "find": "                \"'not registered' is excluded — this is the credentials or the backend\"\n                % sorted(set(sust)))",
+    "replace": "                \"'not registered' is excluded — this is the credentials or the backend\")"},
+   {"label": "#1203is's binding is moved INSIDE the route loop (the ratchet)",
+    "find": "        for route, label in ((\"/signup\", \"signup\"), (\"/login\", \"login\")):",
+    "replace": "        for route, label in ((\"/signup\", \"signup\"), (\"/login\", \"login\")):\n            _sfx = str(int(__import__('time').time()))"}
+ ]}
