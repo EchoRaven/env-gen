@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_an_unreadable_prior_verdict_is_loud_884.py",
+ "mutations": [
+  {
+   "label": "A1 the announcement is unreachable, so an unreadable prior verdict is silent again -- #500's high-water merge is disabled for the round AND any screen not captured now goes MISSING from the verdict, which #872 shows the gate scores as a failure rather than a skip. Third file with this exact shape today (#882, #888)",
+   "find": "            if not globals().get(\"_said_prior_884\"):\n                globals()[\"_said_prior_884\"] = True",
+   "replace": "            prior_by_name = {}\n            if False and not globals().get(\"_said_prior_884\"):\n                globals()[\"_said_prior_884\"] = True"
+  },
+  {
+   "label": "A2 the say-once latch is inverted, so the FIRST unreadable prior is suppressed and nothing else sets the flag -- it never announces at all. `src.count(\"_said_prior_884\") >= 2` holds either way",
+   "find": "            if not globals().get(\"_said_prior_884\"):",
+   "replace": "            if globals().get(\"_said_prior_884\"):"
+  },
+  {
+   "label": "A3 the permissive default is dropped, so an unreadable prior leaves whatever `prior_by_name` already held. EXPECTED CAUGHT -- the file asserts `prior_by_name = {}` is in the span twice. Control",
+   "find": "                    type(_pv_exc).__name__, _pv_exc)\n            prior_by_name = {}",
+   "replace": "                    type(_pv_exc).__name__, _pv_exc)"
+  }
+ ]
+}

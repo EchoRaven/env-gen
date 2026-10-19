@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_stable_rounds_cannot_reset_712.py",
+ "mutations": [
+  {
+   "label": "T1 the counter never advances (`>=` becomes an impossible test), so #558's 'two consecutive rounds above the bar' fast release can never fire -- the exact cost #897 measured when the same path was disabled by a phantom key. The quoted read `_ba = result.get(\"blocking_average\")` is untouched, which is all this file asserts",
+   "find": "                if _ba is not None and _mn is not None and float(_ba) >= float(_mn):",
+   "replace": "                if _ba is not None and _mn is not None and float(_ba) > 1e9:"
+  },
+  {
+   "label": "T2 a round BELOW the bar no longer resets the count, making FALSE the exact sentence #712r adjudicated and restored -- '#558: a single lucky pass never triggers a release; a round below the bar resets the count -- TRUE as written'. This file pins that sentence as PROSE and nothing drives it",
+   "find": "                else:\n                    self.avg_pass_rounds = 0\n            except Exception:\n                self.avg_pass_rounds = 0",
+   "replace": "                else:\n                    pass\n            except Exception:\n                self.avg_pass_rounds = 0"
+  },
+  {
+   "label": "T3 the counter reads the PERSISTED record instead of this capture's return, which is precisely the defect #712 claimed existed and #712r withdrew. EXPECTED CAUGHT: the file quotes the read statement. Control",
+   "find": "                _ba = result.get(\"blocking_average\")",
+   "replace": "                _ba = (self.last_result or {}).get(\"blocking_average\")"
+  }
+ ]
+}

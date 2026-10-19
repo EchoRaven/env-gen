@@ -1,0 +1,31 @@
+{
+ "file": "scripts/text_assertion_ratio.py",
+ "test": "tests/test_1203pg_the_ratio_that_predicted_the_misses.py",
+ "mutations": [
+  {
+   "label": "R1 the propagation goes back to being MODULE-WIDE, so a loop variable in one test poisons another that reuses the letter. That is the fifth detector bug and it made a fully behavioural file rank 0.90",
+   "find": "            if id(s) not in cache:\n                cache[id(s)] = _text_names(tree, s)",
+   "replace": "            if id(s) not in cache:\n                cache[id(s)] = _text_names(tree)"
+  },
+  {
+   "label": "R2 string literals are no longer blanked before the pattern match, so a docstring that spells `getsource` counts as code -- the second detector bug",
+   "find": "        if isinstance(node.value, str):\n            return ast.copy_location(ast.Constant(value=\"\"), node)",
+   "replace": "        if isinstance(node.value, str):\n            return node"
+  },
+  {
+   "label": "R3 evaluated source is scored as merely read, so a file that lifts a guard out with `getsource` and `eval`s it ranks 1.00 while actually driving the behaviour -- the fourth detector bug",
+   "find": "        if isinstance(n, ast.Call) and getattr(n.func, \"id\", \"\") in (\"eval\", \"exec\"):\n            return True",
+   "replace": "        if isinstance(n, ast.Call) and getattr(n.func, \"id\", \"\") in (\"eval\", \"exec\"):\n            return False"
+  },
+  {
+   "label": "R4 a read no longer needs a source locator, so `open(\"fixture.json\").read()` counts as reading source -- the bug that turned 64 into 105",
+   "find": "    return bool(_READ.search(expr)) and bool(_SRC_LOCATOR.search(expr))",
+   "replace": "    return bool(_READ.search(expr))"
+  },
+  {
+   "label": "R5 the transitive propagation is removed (one pass only), so `_src()` -> `s` -> `blk` stops being followed -- the first detector bug, which scored #794 at 0.05 against a hand count of 18/19",
+   "find": "    for _ in range(8):                      # bounded: the graph is tiny and must not spin",
+   "replace": "    for _ in range(0):                      # bounded: the graph is tiny and must not spin"
+  }
+ ]
+}

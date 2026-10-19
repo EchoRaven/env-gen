@@ -27,8 +27,14 @@ count of 18/19 and reported "only 7 tests are entirely source-text".
 That headline figure then moved TWICE more as two further detector bugs were fixed, and every
 move was toward fewer false positives: 7 (missed the transitive step) -> 105 (a FIXTURE read
 counted as a source read) -> 64 (a text name spelled inside a STRING leaked and cascaded) ->
-32 (source that is EVALUATED is driven, not read). The number is 32. Each copy of it is a
-liability (#1202vs), so there is exactly one: run the tool.
+32 (source that is EVALUATED is driven, not read) -> 9 (names were matched WITHOUT SCOPE, so a
+loop variable in one test poisoned another that reused the letter).
+
+Worth being precise about what that means. At the point the ranking was first used it was
+over-reporting by roughly 3.5x -- and it still RANKED correctly: every file taken from the top
+of it (#794 at 0.95, #882 and #888 at 1.00) turned out to hold real gaps, 17 of which were
+closed and each confirmed by mutation. A noisy ORDER can still be a useful order. The absolute
+count is not written down anywhere (#1202vs: each copy is a liability); run the tool.
 
 `--check` therefore re-measures cases whose answers are known BY CONSTRUCTION, written in this
 file. The first version anchored on two real files' hand-counted ratios instead, and those rotted
@@ -85,6 +91,21 @@ def test_d():
     rows = open("fixture.json").read()
     assert len(rows) > 0
 """, 0, 1),
+    ("a STRING that spells a source pattern is not source", """
+def test_i():
+    msg = "we read it with inspect.getsource in the old version"
+    assert msg.startswith("we read")
+""", 0, 1),
+    ("a name is scoped to the function that binds it", """
+import inspect
+def test_a():
+    src = inspect.getsource(object)
+    i = src.index("x")
+    assert "def" in src[i:]
+def test_b():
+    out = reasons([dict(EP, id="n%d" % i) for i in range(3)])
+    assert len(out) == 3
+""", 1, 2),
     ("source that is EVALUATED is driven, not read", """
 import inspect
 def test_h():
@@ -119,34 +140,49 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _TEST_DIRS = ("agent/tests", "tests")
 
 
-def _text_names(tree):
-    """Names and functions that carry source TEXT, to a fixed point.
+def _returns_text(node):
+    """A function whose own `return` reads source text."""
+    return any(isinstance(b, ast.Return) and b.value is not None
+               and _is_text_expr(_code_text(b.value)) for b in ast.walk(node))
 
-    The fixed point is the part the first version got wrong: `_src` returns `getsource(...)`,
-    `s = _src()`, `blk = s[i:j]` -- three hops from the pattern to the asserted name.
-    """
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if any(isinstance(b, ast.Return) and b.value is not None
-                   and _is_text_expr(_code_text(b.value)) for b in ast.walk(node)):
-                names.add(node.name)
+
+def _propagate(scope, names):
+    """Grow `names` over the assignments in ONE scope, to a fixed point."""
+    names = set(names)
     for _ in range(8):                      # bounded: the graph is tiny and must not spin
         before = len(names)
-        for node in ast.walk(tree):
+        for node in ast.walk(scope):
             if isinstance(node, ast.Assign) and node.value is not None:
                 if _mentions(node.value, names):
                     for t in node.targets:
                         if isinstance(t, ast.Name):
                             names.add(t.id)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for b in ast.walk(node):
-                    if (isinstance(b, ast.Return) and b.value is not None
-                            and _mentions(b.value, names)):
-                        names.add(node.name)
         if len(names) == before:
-            return names
+            break
     return names
+
+
+def _text_names(tree, scope=None):
+    """Names holding source TEXT, resolved PER SCOPE.
+
+    Scope is the fourth thing this detector got wrong, and the subtlest. The propagation used to
+    run over the whole module and keyed on the NAME, so a short identifier in one test function
+    poisoned a different function that happened to reuse it. In
+    `test_1203g3_the_reason_was_computed_and_dropped.py` one test does `i = src.index(...)` --
+    `i` genuinely holds a source offset -- and another does
+    `out = reasons([dict(_EP, id="impl.endpoint.%d" % i) for i in range(5)])`, where `i` is a
+    COMPREHENSION variable. That marked `out`, and every assertion in the file is about `out`,
+    which is the return value of the function under test. 0.90 for a fully behavioural file.
+    """
+    module_names = {n.name for n in ast.walk(tree)
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and _returns_text(n)}
+    # module-level assignments are visible everywhere
+    top = ast.Module(body=[s for s in tree.body if isinstance(s, ast.Assign)], type_ignores=[])
+    module_names = _propagate(top, module_names)
+    if scope is None:
+        return module_names
+    return _propagate(scope, module_names)
 
 
 class _BlankStrings(ast.NodeTransformer):
@@ -224,12 +260,34 @@ def ratio(path):
         tree = ast.parse(path.read_text(errors="replace"))
     except SyntaxError:
         return None
-    names = _text_names(tree)
+    return _count(tree)
+
+
+def _count(tree):
+    module_names = _text_names(tree)
+    scopes = [n for n in ast.walk(tree)
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    owner = {}
+    for s in scopes:
+        for node in ast.walk(s):
+            if isinstance(node, ast.Assert):
+                # innermost wins: a nested function is its own scope
+                cur = owner.get(node)
+                if cur is None or s.lineno > cur.lineno:
+                    owner[node] = s
+    cache = {}
     total = text = 0
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assert):
             continue
         total += 1
+        s = owner.get(node)
+        if s is None:
+            names = module_names
+        else:
+            if id(s) not in cache:
+                cache[id(s)] = _text_names(tree, s)
+            names = cache[id(s)]
         if _mentions(node.test, names):
             text += 1
     return text, total

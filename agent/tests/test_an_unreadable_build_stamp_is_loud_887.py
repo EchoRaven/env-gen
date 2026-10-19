@@ -24,7 +24,12 @@ SPA throwing on every route.
 The permissive default stays — a corrupt stamp must not block a capture. What it must not be is
 indistinguishable from round one.
 """
+import asyncio
 import inspect
+import json
+import pathlib
+import tempfile
+import types
 import logging
 
 import pytest
@@ -94,3 +99,139 @@ def test_the_probe_still_detects_a_real_stale_build():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the announcement, DRIVEN -----------------------------------------------------------
+#
+# Every assertion above reads the SOURCE, and the two mutations that work on every member of the
+# "fail open + say once" family walked through here too: making the `_LOG.error` unreachable, and
+# inverting the say-once latch so the FIRST unreadable stamp is suppressed and nothing else ever
+# sets the flag. `src.count("_said_sb_887") >= 2` holds either way, because the flag is written
+# once and read once. Only the permissive default had a driver. Same in #882, #884 and #888.
+#
+# No docker and no extraction needed: the probe's one hard requirement is a container id, and
+# `_container_id_936` is a module function.
+
+
+def _clear_887():
+    vf.__dict__.pop("_said_sb_887", None)
+
+
+def _drive_887(stamp_bytes, monkeypatch):
+    """Run one visual round with `served_build.json` holding `stamp_bytes`.
+
+    Returns the error records the module logger received.
+    """
+    _clear_887()
+    errors = []
+    monkeypatch.setattr(vf, "_LOG", types.SimpleNamespace(
+        error=lambda *a, **k: errors.append((a[0] % a[1:]) if len(a) > 1 else str(a[0])),
+        warning=lambda *a, **k: None, info=lambda *a, **k: None, debug=lambda *a, **k: None))
+    monkeypatch.setattr(vf, "_container_id_936", lambda *a, **k: "deadbeefcafe")
+
+    d = pathlib.Path(tempfile.mkdtemp())
+    (d / "app" / "frontend" / "src").mkdir(parents=True)
+    (d / "app" / "frontend" / "src" / "App.jsx").write_text(
+        '<Route path="/a" element={<div/>} />', encoding="utf-8")
+    (d / "docker").mkdir()
+    (d / "docker" / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    vg = d / "design" / "visual_gate"
+    vg.mkdir(parents=True)
+    if stamp_bytes is not None:
+        (vg / "served_build.json").write_bytes(stamp_bytes)
+    ref = d / "a.png"
+    ref.write_bytes(b"\x89PNG\r\n")
+
+    async def _capture(screens):
+        out = {}
+        for s in screens:
+            p = d / ("shot_%s.png" % s["name"])
+            p.write_bytes(b"\x89PNG\r\n" + s["name"].encode())
+            out[s["name"]] = str(p)
+        return out
+
+    async def _judge(llm, screen, shot):
+        return {"similarity": 0.9, "dimensions": {}, "deviations": [], "fixes": [],
+                "summary": "ok", "empty_state": False}
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(vf.run_visual_fidelity(
+            d, [str(ref)], llm=object(), capture_fn=_capture, judge_fn=_judge))
+    finally:
+        loop.close()
+        _clear_887()
+    return errors
+
+
+def test_an_unreadable_stamp_really_announces(monkeypatch):
+    errors = _drive_887(b"{ not json", monkeypatch)
+    assert len(errors) == 1, "an unreadable served-build stamp was silent"
+    assert "SERVED-BUILD STAMP UNREADABLE" in errors[0]
+
+
+def test_the_announcement_names_the_consequence_and_the_fault(monkeypatch):
+    msg = _drive_887(b"{ not json", monkeypatch)[0]
+    assert "stale-bundle" in msg and "DISABLED" in msg
+    assert "report the build clean" in msg, (
+        "the direction of the failure must be named: it reads CLEAN, which is the blind spot")
+    assert "JSONDecodeError" in msg or "ValueError" in msg, msg
+
+
+def test_a_readable_stamp_announces_nothing(monkeypatch):
+    """Non-vacuity: a normal round must stay quiet, or the test above proves nothing."""
+    good = json.dumps({"frontend_commit": "abc", "bundle": "main.js"}).encode()
+    assert _drive_887(good, monkeypatch) == []
+
+
+def test_a_MISSING_stamp_announces_nothing(monkeypatch):
+    """The distinction this ticket rests on: "first round, no prior" is a legitimate
+    never-stale state and must NOT be reported as unreadable."""
+    assert _drive_887(None, monkeypatch) == []
+
+
+def test_it_really_says_it_once(monkeypatch):
+    """The flag is module-global, which is what makes the inverted-latch mutation invisible to
+    a source count — so say-once has to be driven, not spelled."""
+    _clear_887()
+    errors = []
+    monkeypatch.setattr(vf, "_LOG", types.SimpleNamespace(
+        error=lambda *a, **k: errors.append(str(a[0])), warning=lambda *a, **k: None,
+        info=lambda *a, **k: None, debug=lambda *a, **k: None))
+    monkeypatch.setattr(vf, "_container_id_936", lambda *a, **k: "deadbeefcafe")
+    try:
+        for _ in range(3):
+            d = pathlib.Path(tempfile.mkdtemp())
+            (d / "app" / "frontend" / "src").mkdir(parents=True)
+            (d / "app" / "frontend" / "src" / "App.jsx").write_text(
+                '<Route path="/a" element={<div/>} />', encoding="utf-8")
+            (d / "docker").mkdir()
+            (d / "docker" / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+            vg = d / "design" / "visual_gate"
+            vg.mkdir(parents=True)
+            (vg / "served_build.json").write_bytes(b"{ not json")
+            ref = d / "a.png"
+            ref.write_bytes(b"\x89PNG\r\n")
+
+            async def _capture(screens, _d=d):
+                out = {}
+                for s in screens:
+                    p = _d / ("shot_%s.png" % s["name"])
+                    p.write_bytes(b"\x89PNG\r\n" + s["name"].encode())
+                    out[s["name"]] = str(p)
+                return out
+
+            async def _judge(llm, screen, shot):
+                return {"similarity": 0.9, "dimensions": {}, "deviations": [], "fixes": [],
+                        "summary": "ok", "empty_state": False}
+
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(vf.run_visual_fidelity(
+                    d, [str(ref)], llm=object(), capture_fn=_capture, judge_fn=_judge))
+            finally:
+                loop.close()
+        assert len(errors) == 1, "announced %d times" % len(errors)
+        assert vf.__dict__.get("_said_sb_887") is True
+    finally:
+        _clear_887()

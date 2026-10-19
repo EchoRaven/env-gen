@@ -14,6 +14,10 @@ These tests pin the two things the tool got WRONG, because both produced a confi
     count of 18/19, and reported 7 entirely-text tests.
   * a FIXTURE read is not a source read. `.read()` matched on its own, so
     `open("fixture.json").read()` counted as source text and every ratio came out high.
+  * names were matched WITHOUT SCOPE. One test doing `i = src.index(...)` poisoned another
+    doing `out = reasons([dict(EP, id="n%d" % i) for i in range(5)])`, where `i` is a
+    comprehension variable -- so `out`, the return value of the function under test, counted as
+    source text and a fully behavioural file ranked 0.90.
 
 And the self-check's own anchoring, which is the most expensive lesson here: it first anchored on
 two real files' hand-counted ratios, and those rotted within the hour -- adding the behavioural
@@ -73,7 +77,7 @@ class TheDetectorProvesItselfBeforeRanking(unittest.TestCase):
         self.assertEqual(self.tar.main(["--limit", "1"]), 1)
 
 
-class TheFourDetectorBugsStayFixed(unittest.TestCase):
+class TheFiveDetectorBugsStayFixed(unittest.TestCase):
     """Each bug produced a confident number, which is why each keeps a named case.
 
     The sources come from the script's own `_SELF_TEST` rather than being retyped here: one
@@ -165,6 +169,34 @@ class TheFourDetectorBugsStayFixed(unittest.TestCase):
         self.assertLess(text / total, 0.5,
                         "a file that builds a fake WorkHub and asserts on the created task "
                         "scored as mostly source text (%d/%d)" % (text, total))
+
+    def test_a_string_that_spells_a_source_pattern_is_not_source(self):
+        """Found by mutating the detector: removing the string-blanking was MISSED, because no
+        constructed case contained a literal that SPELLS `getsource`. The self-test suite had
+        the same hole it exists to find."""
+        self._assert_case_holds("spells a source pattern",
+                                "a string literal naming a source pattern counted as source")
+
+    def test_a_name_is_scoped_to_the_function_that_binds_it(self):
+        """The fifth bug: `i` as a source offset in one test, a loop variable in another."""
+        self._assert_case_holds("scoped to the function",
+                                "a name leaked across function scopes")
+
+    def test_the_real_file_that_exposed_the_scope_bug_is_mostly_behavioural(self):
+        """Shape, not a count, so adding tests cannot rot it (#1203oa).
+
+        Every assertion in this file is about `out`, the return value of the function under
+        test. It ranked 0.90.
+        """
+        hits = [p for d in self.tar._TEST_DIRS
+                for p in (self.tar._ROOT / d).glob("test_1203g3_*.py")]
+        if not hits:
+            self.skipTest("test_1203g3 is gone; the constructed case still covers the bug")
+        text, total = self.tar.ratio(hits[0])
+        self.assertGreater(total, 0)
+        self.assertLess(text / total, 0.5,
+                        "a file whose assertions are all about a return value scored as mostly "
+                        "source text (%d/%d)" % (text, total))
 
     def test_a_behavioural_assert_is_never_text(self):
         self._assert_case_holds("behavioural",

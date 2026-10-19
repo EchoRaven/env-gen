@@ -39,6 +39,10 @@ verdict into a crashed merge. `compile()` does not catch an undefined name; chec
 own logging convention does.
 """
 import inspect
+import json
+import pathlib
+import tempfile
+import types
 import logging
 
 import pytest
@@ -123,3 +127,107 @@ def test_the_carry_over_loop_it_protects_still_exists():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the announcement, DRIVEN -----------------------------------------------------------
+#
+# Every assertion above reads the SOURCE, and two mutations walked through:
+#
+#   * making the `_LOG.error` unreachable, which returns the site to the silent fail-open that
+#     is the only thing this ticket changed;
+#   * inverting the say-once latch, so the FIRST unreadable prior is suppressed and nothing
+#     else sets the flag -- it never announces at all. `src.count("_said_prior_884") >= 2`
+#     holds either way, because the flag is written once and read once.
+#
+# The permissive default was the only property with a real driver, and it was the only mutation
+# the file caught. Same result in #882, #887 and #888 -- "fail open + say once" is a FAMILY, and
+# these two mutations work on every member of it.
+#
+# The flag lives in module `globals()`, so it is per-PROCESS: without clearing it, the second
+# test in any run would see a latched flag and silently assert nothing.
+
+
+def _clear_884():
+    vf.__dict__.pop("_said_prior_884", None)
+
+
+def _drive_884(prior_bytes):
+    """Persist a verdict over an existing `verdict.json` holding `prior_bytes`.
+
+    Returns the error records the module logger received.
+    """
+    _clear_884()
+    errors = []
+    real = vf._LOG
+    vf._LOG = types.SimpleNamespace(
+        error=lambda *a, **k: errors.append((a[0] % a[1:]) if len(a) > 1 else str(a[0])),
+        warning=lambda *a, **k: None, info=lambda *a, **k: None, debug=lambda *a, **k: None)
+    try:
+        d = pathlib.Path(tempfile.mkdtemp())
+        vdir = d / "design" / "visual_gate"
+        vdir.mkdir(parents=True)
+        (vdir / "verdict.json").write_bytes(prior_bytes)
+        (vdir / "a.png").write_bytes(b"PNG")
+        vf._persist_verdict(
+            d, passed=False, min_similarity=0.65, summary="s", coverage={},
+            results=[{"name": "a", "route": "/a", "similarity": 0.5, "dimensions": {}}])
+        return errors, json.loads((vdir / "verdict.json").read_text(encoding="utf-8"))
+    finally:
+        vf._LOG = real
+        _clear_884()
+
+
+def test_an_unreadable_prior_really_announces():
+    errors, _ = _drive_884(b"{ this is not json")
+    assert len(errors) == 1, "an unreadable prior verdict was silent -- #884's whole subject"
+    assert "PRIOR VERDICT UNREADABLE" in errors[0]
+
+
+def test_the_announcement_names_both_consequences():
+    errors, _ = _drive_884(b"{ this is not json")
+    msg = errors[0]
+    assert "high-water merge is disabled" in msg
+    assert "MISSING from the verdict" in msg
+    assert "#872" in msg, "the boundary that makes it fatal must be named"
+    assert "JSONDecodeError" in msg or "ValueError" in msg, msg
+
+
+def test_it_really_says_it_once():
+    """The flag is module-global, so a second unreadable prior in the same process is silent.
+
+    That is the intended behaviour ("announced once"), and it is what makes the inverted-latch
+    mutation invisible to a source count -- so it has to be driven.
+    """
+    errors = []
+    real = vf._LOG
+    _clear_884()
+    vf._LOG = types.SimpleNamespace(
+        error=lambda *a, **k: errors.append(str(a[0])), warning=lambda *a, **k: None,
+        info=lambda *a, **k: None, debug=lambda *a, **k: None)
+    try:
+        for _ in range(3):
+            d = pathlib.Path(tempfile.mkdtemp())
+            vdir = d / "design" / "visual_gate"
+            vdir.mkdir(parents=True)
+            (vdir / "verdict.json").write_bytes(b"{ not json")
+            (vdir / "a.png").write_bytes(b"PNG")
+            vf._persist_verdict(
+                d, passed=False, min_similarity=0.65, summary="s", coverage={},
+                results=[{"name": "a", "route": "/a", "similarity": 0.5, "dimensions": {}}])
+        assert len(errors) == 1, "announced %d times" % len(errors)
+        assert vf.__dict__.get("_said_prior_884") is True
+    finally:
+        vf._LOG = real
+        _clear_884()
+
+
+def test_a_readable_prior_announces_nothing():
+    """Non-vacuity in the other direction: a normal round must stay quiet."""
+    errors, _ = _drive_884(json.dumps({"screens": [], "version": 1}).encode())
+    assert errors == [], errors
+
+
+def test_the_round_still_completes_on_an_unreadable_prior():
+    """The permissive default is deliberate: a corrupt verdict.json must not block the gate."""
+    _, written = _drive_884(b"{ not json")
+    assert written.get("screens") is not None, "the round did not write a verdict at all"

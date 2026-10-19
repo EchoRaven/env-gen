@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_an_unreadable_build_stamp_is_loud_887.py",
+ "mutations": [
+  {
+   "label": "E1 the announcement is unreachable, so an unreadable served-build stamp is silent again -- #738's stale-bundle check is DISABLED for the round and reports the build clean, which is exactly the blind spot it was written to cover. Fourth file with this shape today (#882, #884, #888)",
+   "find": "                            if not globals().get(\"_said_sb_887\"):\n                                globals()[\"_said_sb_887\"] = True",
+   "replace": "                            _prev738 = {}\n                            if False and not globals().get(\"_said_sb_887\"):\n                                globals()[\"_said_sb_887\"] = True"
+  },
+  {
+   "label": "E2 the say-once latch is inverted, so the FIRST unreadable stamp is suppressed and nothing else sets the flag -- it never announces at all",
+   "find": "                            if not globals().get(\"_said_sb_887\"):",
+   "replace": "                            if globals().get(\"_said_sb_887\"):"
+  },
+  {
+   "label": "E3 the permissive default is dropped, so an unreadable stamp leaves whatever `_prev738` already held and #738 compares against stale data. Control",
+   "find": "                                    type(_sb_exc).__name__, _sb_exc)\n                            _prev738 = {}",
+   "replace": "                                    type(_sb_exc).__name__, _sb_exc)"
+  }
+ ]
+}
