@@ -82,6 +82,12 @@ _CONTROLS = [
     ("oo", "instagram-core-r175", "CONFIRMED"),
     ("oo", "tiktok-web-r184", "CONFIRMED"),
     ("oo", "tiktok-web-r191", "N-A"),
+    # `op` reads each run's own git history, so it answers on any run directory. These are the
+    # measured counts: 37 / 17 / 4 / 2 tasks naming a file that never existed, pre-patch.
+    ("op", "netflix-local-r44", "FALSIFIED"),
+    ("op", "tiktok-web-r191", "FALSIFIED"),
+    ("op", "tiktok-web-r184", "FALSIFIED"),
+    ("op", "tiktok-web-r190", "N-A"),
 ]
 
 _cache = {}
@@ -156,6 +162,8 @@ _CONFIRM_REQUIRES = {
     # `oo` renders the contract through the framework's own note function and reads the
     # labels back; CONFIRMED is a property of that output, not of anything the run emitted.
     "oo": [],
+    # `op` CONFIRMED needs the note the patched task builder writes into the description.
+    "op": ["#1203op"],
 }
 
 
@@ -284,7 +292,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

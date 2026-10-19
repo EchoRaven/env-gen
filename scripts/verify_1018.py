@@ -917,6 +917,62 @@ def main(argv):
     except Exception as _e_oo:
         say("oo", "N-A", "the #1203oo criterion could not read this run (%s)" % _e_oo)
 
+    # --- #1203op — a task must not send a lane to a file that is not there ---------------
+    # READS: shared/hubs/workhub_tasks.json, and the run's OWN git history
+    #   (`git log --all --name-only`) to decide what "not there" means.
+    # FALSIFIED: a breaking-change or auth-relaxed task names an `app/...` path that NEVER
+    #   existed at any point in this run, and the task carries no #1203op note saying so.
+    # CONFIRMED: no such task, or every one of them carries the note.
+    # ★ WHY GIT AND NOT THE TREE: a task that asked the lane to DELETE a file names a path
+    #   that is correctly absent from the final tree, and at filing time it existed, so the
+    #   runtime check never fired. Scanning the tree answers 138 tasks in 19 runs and that
+    #   number is not this behaviour; "never in the history" is what can be attributed.
+    # CONTROL (pre-patch): netflix-local-r44 FALSIFIES 37, tiktok-web-r191 17,
+    #   tiktok-web-r184 4, netflix-local-r5 2, netflix-local-r6 2; r190 has none -> N-A.
+    try:
+        import subprocess as _sp_op
+        _op_tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", None)
+        if not isinstance(_op_tasks, dict):
+            say("op", "N-A", "this run has no workhub_tasks.json")
+        elif not (run / ".git").is_dir():
+            say("op", "N-A", "this run directory carries no git history to check against")
+        else:
+            _op_h = _sp_op.run(["git", "-C", str(run), "log", "--all", "--name-only",
+                                "--format="], capture_output=True, text=True, timeout=300)
+            _op_ever = {l.strip() for l in _op_h.stdout.splitlines() if l.strip()}
+            if _op_h.returncode != 0 or not _op_ever:
+                say("op", "N-A", "git could not list this run's history")
+            else:
+                _op_pat = re.compile(
+                    r"\b(app/(?:backend|frontend)/[A-Za-z0-9_./\-]+\.[A-Za-z]{2,4})\b")
+                _op_n, _op_bad = 0, []
+                for _k, _t in _op_tasks.items():
+                    if _k == "_meta" or not isinstance(_t, dict):
+                        continue
+                    _ti = str(_t.get("title") or "")
+                    if not (_ti.startswith("Fix breaking change in")
+                            or "is public again - undo the auth workaround" in _ti):
+                        continue
+                    _desc = str(_t.get("description") or "")
+                    _ps = set(_op_pat.findall(_ti + " " + _desc))
+                    _ps |= {str(x) for x in (_t.get("affected_files") or [])
+                            if isinstance(x, str)}
+                    _gh = [x for x in _ps if x.startswith("app/") and x not in _op_ever]
+                    if not _gh:
+                        continue
+                    _op_n += 1
+                    if "#1203op" not in _desc:
+                        _op_bad.append("%s -> %s" % (_ti[:40], sorted(_gh)[0]))
+                if not _op_n:
+                    say("op", "N-A", "no task in this run names a path that never existed")
+                else:
+                    say("op", "FALSIFIED" if _op_bad else "CONFIRMED",
+                        "%d of %d task(s) naming a never-existing file say nothing about it%s"
+                        % (len(_op_bad), _op_n,
+                           (" -- e.g. " + _op_bad[0]) if _op_bad else ""))
+    except Exception as _e_op:
+        say("op", "N-A", "the #1203op criterion could not read this run (%s)" % _e_op)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

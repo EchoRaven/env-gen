@@ -706,6 +706,130 @@ def _breaking_task_owner_1203oj(consumer_agent: Any, consumer_files: Any):
         return consumer_agent, ""
 
 
+_SKIPPED_DIRS_1203OP = ("node_modules", ".git", "dist", "build", "__pycache__",
+                        ".venv", "venv", ".pytest_cache", "coverage", ".next")
+
+
+def _repo_app_files_1203op(root: Any) -> set:
+    """Every repo-relative file under ``app/``, the lanes' worktree copies included.
+
+    THE WORKTREES ARE NOT OPTIONAL. A lane's file can exist ONLY in that lane's worktree at
+    the moment a task is filed, so checking the delivered tree alone would call a real file
+    missing -- #566j's shape, a false blocker, inside a task description. A worktree copy is
+    reported under its repo-relative name (the ``worktrees/<lane>/`` prefix dropped), because
+    that is the name the lane edits.
+
+    ``os`` is imported HERE: this module has no module-level ``import os``, and a bare
+    ``os.walk`` would raise NameError into the caller's ``except Exception`` and take the
+    annotation down in silence -- the same trap #1203ol's announcement fell into.
+    """
+    import os as _os
+    out: set = set()
+    try:
+        roots = [Path(str(root)) / "app"]
+        wt = Path(str(root)) / "worktrees"
+        if wt.is_dir():
+            for d in sorted(wt.iterdir()):
+                if (d / "app").is_dir():
+                    roots.append(d / "app")
+        for r in roots:
+            if not r.is_dir():
+                continue
+            base = str(r.parent)
+            for dp, dn, fn in _os.walk(str(r)):
+                dn[:] = [x for x in dn if x not in _SKIPPED_DIRS_1203OP]
+                for n in fn:
+                    out.add(_os.path.relpath(_os.path.join(dp, n), base)
+                            .replace(_os.sep, "/"))
+    except Exception:
+        return out
+    return out
+
+
+def unregistered_consumer_files_1203op(root: Any, files: Any) -> dict:
+    """``{registered path: one line saying what is there instead}``, for paths not in the tree.
+
+    #1203oj made the FILES decide which lane a breaking-change P0 goes to. This is the half
+    underneath it: nothing has ever checked that the registered file EXISTS.
+    `_record_breaking_change` copies `c["file_path"]` straight into "Consumer files: [...]"
+    and into `affected_files`, so a lane is sent to a path that is not in the tree and has to
+    go find the real call site on its own.
+
+    MEASURED over the corpus, counting only paths that never existed AT ANY POINT (checked
+    against each run's whole `git log --all --name-only`, because a file a task asked to
+    DELETE is absent from the final tree for the RIGHT reason -- scanning the final tree
+    instead answers 138 tasks in 19 runs, and that number is not this behaviour):
+
+        app/-shaped consumer registrations             6552
+        ...naming a file that never existed              26, in 8 runs  (0.4%)
+        breaking-change + auth-relaxed tasks           2757
+        ...naming such a path                            62, in 5 runs
+
+    netflix-r44 37, r191 17, r184 4, netflix-r5 2, netflix-r6 2 -- about 2.4 tasks per bad
+    registration, since one record is re-read on every re-declaration. #1203nm's shape, where
+    a three-line source becomes most of a ledger. r184 and r191 are modern.
+
+    * EVERY ONE OF THE 62 IS RECOVERABLE, which is why this annotates rather than drops: 23
+    have the same basename one directory away (`app/frontend/src/api.js` registered while only
+    `app/frontend/src/services/api.js` exists -- r191's 17 are all this one), and 41 have a
+    near-named sibling in the very directory they name (`pages/GenreCategory.jsx` ->
+    `pages/GenreCategoryPage.jsx`). NOT ONE was unrecoverable. What the lane needed was always
+    one suffix or one directory away, and the task did not say so.
+
+    Shaped after #1203np: an unactionable instruction is fixed by naming what IS there, not by
+    deleting the instruction -- the endpoint change is real and the consumer still has to be
+    found. The registration itself is left alone (#1203nq: annotate, do not discard).
+    """
+    import os as _os
+    out: dict = {}
+    try:
+        from .message_format import join_capped as _jc1203op
+        if not root:
+            return out
+        rp = Path(str(root))
+        cand = []
+        for f in (files or []):
+            if not isinstance(f, str) or not f.strip():
+                continue
+            cand.append(f.replace("\\", "/").strip().lstrip("./"))
+        miss = [f for f in cand if not (rp / f).exists()]
+        if not miss:
+            return out          # the normal case walks nothing
+        tree = _repo_app_files_1203op(rp)
+        if not tree:
+            return out          # #883: "could not look" is not "it is not there"
+        bybase: dict = {}
+        bydir: dict = {}
+        for q in tree:
+            bybase.setdefault(_os.path.basename(q), set()).add(q)
+            bydir.setdefault(_os.path.dirname(q), set()).add(q)
+        for f in miss:
+            if f in tree:
+                continue        # a worktree copy is a real file
+            base = _os.path.basename(f)
+            same = sorted(bybase.get(base) or ())
+            if same:
+                out[f] = ("%s is not in this tree; the file with that name is %s"
+                          % (f, _jc1203op(same, len(same), cap=4, sep=", ")))
+                continue
+            d = _os.path.dirname(f)
+            stem = (base.split(".")[0] or base).lower()
+            near = sorted(_os.path.basename(q) for q in (bydir.get(d) or ())
+                          if _os.path.basename(q).lower().startswith(stem[:6] or stem))
+            if near:
+                out[f] = ("%s is not in this tree; %s/ holds %s"
+                          % (f, d, _jc1203op(near, len(near), cap=4, sep=", ")))
+                continue
+            there = sorted(_os.path.basename(q) for q in (bydir.get(d) or ()))
+            out[f] = ("%s is not in this tree and nothing is named like it; %s"
+                      % (f, ("%s/ holds %s"
+                             % (d, _jc1203op(there, len(there), cap=6, sep=", ")))
+                         if there else "there is no %s/ either" % d))
+    except Exception:
+        return out
+    return out
+
+
 def _chain_recorded_a_non_pass_1203ok(record: Any) -> bool:
     """Did this stored chain RUN and not pass? (#1203ok)
 
@@ -2066,6 +2190,15 @@ class RegistryHub:
             self._emit("endpoint_auth_relaxed", payload, recipients=recipients, priority="urgent")
             for consumer_agent in recipients:
                 files = [c.get("file_path") for c in consumers if c.get("agent") == consumer_agent]
+                # #1203op: the same "Files: [...]" sentence, from the same unchecked
+                # registration. 3 of this builder's 21 corpus tasks name a path that never
+                # existed (all in r184), so #1032 -- one owner for the rule, both callers.
+                _ghost_1203op = unregistered_consumer_files_1203op(
+                    self.hub_dir.parent.parent, files)
+                _ghost_note_1203op = (
+                    (" NOTE (#1203op): %s."
+                     % "; ".join(_ghost_1203op[k] for k in sorted(_ghost_1203op)))
+                    if _ghost_1203op else "")
                 try:
                     workhub.create_task(
                         title=f"{endpoint_id} is public again - undo the auth workaround",
@@ -2073,7 +2206,8 @@ class RegistryHub:
                             f"{endpoint_id} was announced as newly auth-required and is now "
                             "registered auth_required=false. Remove whatever was added for the "
                             "auth change (a logged-out branch that skips the call, hard-coded "
-                            f"data for anonymous visitors) and call the endpoint. Files: {files}"),
+                            f"data for anonymous visitors) and call the endpoint. Files: {files}"
+                            + _ghost_note_1203op),
                         assignee=consumer_agent, agent=agent or "registryhub",
                         source="registryhub_auth_relaxed", linked_apis=[endpoint_id],
                         affected_files=files, priority="P1")
@@ -2136,6 +2270,17 @@ class RegistryHub:
                 # #1203oj: the files decide the owner when they contradict the record.
                 _assignee_1203oj, _owner_note_1203oj = _breaking_task_owner_1203oj(
                     consumer_agent, consumer_files)
+                # #1203op: ...and #1203oj routes on files nobody has ever checked exist. Say
+                # which of them is not in the tree and what is there instead, so the lane can
+                # act on the task instead of going looking.
+                _ghost_1203op = unregistered_consumer_files_1203op(
+                    self.hub_dir.parent.parent, consumer_files)
+                _ghost_note_1203op = (
+                    (" NOTE (#1203op): %s. The endpoint change is real -- find the call "
+                     "site, and once you have it re-register the consumer with the file it "
+                     "is actually in."
+                     % "; ".join(_ghost_1203op[k] for k in sorted(_ghost_1203op)))
+                    if _ghost_1203op else "")
                 try:
                     workhub.create_task(
                         title=_breaking_task_title_1202sr(endpoint_id, breaking),
@@ -2153,6 +2298,7 @@ class RegistryHub:
                                    or _shape_change_sentence_1203m6(breaking)) else "")
                             + f"{breaking}. Consumer files: {consumer_files}"
                         + _owner_note_1203oj
+                        + _ghost_note_1203op
                         ),
                         assignee=_assignee_1203oj,
                         agent=agent or "registryhub",
