@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_the_visual_defer_check_that_failed_open_888.py",
+ "mutations": [
+  {
+   "label": "E1 the announcement is unreachable (`return False` inserted above it), so a fault in the visual-defer check is silent again -- the exact state #888 was written to end. Every string the test file asserts on is still in the source",
+   "find": "            if not getattr(self, \"_said_vd_888\", False):\n                self._said_vd_888 = True",
+   "replace": "            return False\n            if not getattr(self, \"_said_vd_888\", False):\n                self._said_vd_888 = True"
+  },
+  {
+   "label": "E2 the say-once latch is inverted, so the FIRST fault is suppressed and the flag is never set by any other site -- it never announces at all. `src.count(\"_said_vd_888\") >= 2` is satisfied either way",
+   "find": "            if not getattr(self, \"_said_vd_888\", False):",
+   "replace": "            if getattr(self, \"_said_vd_888\", False):"
+  },
+  {
+   "label": "E3 the permissive default flips to True on a fault. EXPECTED CAUGHT -- `test_the_permissive_default_is_deliberate_and_unchanged` asserts `return False` is in the span and this is the span's only one. Here as the control for E1/E2",
+   "find": "                    type(_vd_exc).__name__, _vd_exc)\n            return False",
+   "replace": "                    type(_vd_exc).__name__, _vd_exc)\n            return True"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_capture_failure_says_why_769.py",
+ "mutations": [
+  {
+   "label": "P1 the out-parameter is never populated, so the reason survives only in a logger that r154's run directory does not persist -- the exact state #935 added this dict to end. RE-AIMED at #1203pg's owner.",
+   "find": "    if capture_errors is None:\n        return",
+   "replace": "    if capture_errors is not None:\n        return"
+  },
+  {
+   "label": "P2 the persisted reason loses its message and keeps only the exception type, which cannot tell a navigation timeout from a closed page from a proxy refusal -- r154's whole cost",
+   "find": "        \"%s: %s\" % (type(exc).__name__, str(exc)[:200]))",
+   "replace": "        \"%s: %s\" % (type(exc).__name__, str(exc)[:0]))"
+  },
+  {
+   "label": "P3 the screen is no longer skipped after a failed capture, so it falls through into scoring with no shot. Control: the test asserts `continue` inside this handler's span",
+   "find": "                    _record_capture_error_1203pg(capture_errors, screen, _cap769)\n                    continue",
+   "replace": "                    _record_capture_error_1203pg(capture_errors, screen, _cap769)"
+  }
+ ]
+}

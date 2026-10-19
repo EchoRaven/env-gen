@@ -42,13 +42,42 @@ def test_the_handler_no_longer_swallows_silently():
     assert "#769 capture FAILED for screen" in s
 
 
+def _cap769_handler():
+    """The `except Exception as _cap769:` handler, from the parse tree.
+
+    #1203pg: not a source span. The span version asserted `"continue" in blk`, and a mutation
+    that DELETED this handler's own `continue` survived — fed by a different `continue`
+    elsewhere in the same span. The statement has to be located, not spelled.
+    """
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(vf))
+    hits = [h for n in ast.walk(tree) if isinstance(n, ast.Try)
+            for h in n.handlers if getattr(h, "name", None) == "_cap769"]
+    assert len(hits) == 1, "the #769 handler moved or multiplied: %d" % len(hits)
+    return hits[0]
+
+
 def test_the_exception_is_still_caught():
     """It must not start raising — one screen failing must never abort the whole capture."""
-    s = _src()
-    i = s.index("except Exception as _cap769:")
-    blk = s[i:s.index("finally:", i)]
-    assert "continue" in blk
-    assert "raise" not in blk
+    import ast
+    h = _cap769_handler()
+    body = ast.unparse(h)
+    assert "raise" not in body, body[:200]
+    assert isinstance(h.body[-1], ast.Continue), (
+        "the handler no longer ENDS in `continue`, so a screen whose capture raised falls "
+        "through into scoring with no shot: %s" % ast.unparse(h.body[-1])[:120])
+
+
+def test_the_handler_records_before_it_skips():
+    """Order matters: a `continue` placed above the recorder would keep every assertion in this
+    file green while recording nothing."""
+    import ast
+    h = _cap769_handler()
+    stmts = [ast.unparse(s) for s in h.body]
+    rec = next(i for i, s in enumerate(stmts) if "_record_capture_error_1203pg" in s)
+    cont = next(i for i, s in enumerate(stmts) if s.strip() == "continue")
+    assert rec < cont, stmts
 
 
 def test_it_names_the_screen_and_the_route():
@@ -110,3 +139,70 @@ def test_it_records_that_the_downstream_zero_is_deliberate():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the PERSISTED half, driven ---------------------------------------------------------
+#
+# Every assertion above reads the source of a handler that only runs inside a live browser
+# capture, so nothing could reach it. Three mutations proved it: the dict was never populated
+# (leaving the reason in a logger the run directory does not persist -- exactly the state #935
+# added the out-parameter to end), the message was dropped so only the exception TYPE survived,
+# and the `continue` was removed so a failed screen fell through into scoring. All three MISSED,
+# including the one meant as a control.
+#
+# The recorder is now `_record_capture_error_1203pg`, which is a plain function.
+
+_REC = vf._record_capture_error_1203pg
+
+
+def test_the_reason_is_recorded_under_the_screen_name():
+    errs = {}
+    _REC(errs, {"name": "title_detail", "route": "/title/1"}, TimeoutError("nav exceeded 30000ms"))
+    assert list(errs) == ["title_detail"], errs
+    assert errs["title_detail"].startswith("TimeoutError: ")
+
+
+def test_the_MESSAGE_survives_not_only_the_type():
+    """r154's whole cost was not knowing WHY. "TimeoutError" alone does not distinguish a
+    navigation timeout from a closed page from a proxy refusal."""
+    errs = {}
+    _REC(errs, {"name": "s"}, RuntimeError("Target page, context or browser has been closed"))
+    assert "browser has been closed" in errs["s"], errs["s"]
+
+
+def test_a_long_message_is_bounded():
+    errs = {}
+    _REC(errs, {"name": "s"}, RuntimeError("x" * 5000))
+    assert len(errs["s"]) <= 240, len(errs["s"])
+    assert errs["s"].startswith("RuntimeError: ")
+
+
+def test_a_caller_that_collects_nothing_is_not_an_error():
+    """`None` means "this caller does not collect them" — it must not raise into the capture
+    loop, because losing the whole capture is worse than losing one reason."""
+    _REC(None, {"name": "s"}, RuntimeError("boom"))
+
+
+def test_each_failed_screen_gets_its_own_entry():
+    errs = {}
+    _REC(errs, {"name": "a"}, TimeoutError("t"))
+    _REC(errs, {"name": "b"}, RuntimeError("r"))
+    assert sorted(errs) == ["a", "b"]
+    assert "TimeoutError" in errs["a"] and "RuntimeError" in errs["b"]
+
+
+def test_the_handler_calls_the_owner():
+    """#1032: if the assignment is inlined again the property loses its driver."""
+    s = _src()
+    assert "_record_capture_error_1203pg(capture_errors, screen, _cap769)" in s
+    assert 'capture_errors[str(screen.get("name"))]' not in s, (
+        "the recorder was inlined back into the handler, where nothing can reach it")
+
+
+def test_what_949_reports_is_what_this_recorded():
+    """The two halves joined: #949's sentence is built from exactly this dict (#947's rule —
+    a finding has to reach a reader, and the reader here is the lane's ledger)."""
+    errs = {}
+    _REC(errs, {"name": "browse_home"}, TimeoutError("nav exceeded 30000ms"))
+    sentence = vf._capture_unavailable_summary_1203pg(12, errs)
+    assert "browse_home" in sentence and "TimeoutError" in sentence

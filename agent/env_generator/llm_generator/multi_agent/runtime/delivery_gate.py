@@ -2074,6 +2074,26 @@ def _checklist_advice_1203i6(gate: Any) -> str:
         return _CHECKLIST_GENERIC_1203I6
 
 
+def _checklist_pending_note_1203pg(seen: Any) -> str:
+    """#585's ledger note, given ONE owner: WHICH checklist components are not success.
+
+    Extracted because nothing read what the sentence SAID. The two neighbouring guards each own
+    half of it and neither owns this: #1202wi owns "every measured check records an instance"
+    (an AST pass over the whole gate), and #585 owns the WARNING above the call site. So
+    inverting the filter -- making the note name the components that ARE success while still
+    calling them "not success" -- left both green. That is the #1203nr shape: a sentence that
+    points at the wrong thing is worse than no sentence, because a lane acts on it.
+
+    `pending` and a missing status are NOT success, which is the distinction #1203i6 drew in the
+    sibling advice: a `failure` has to be FIXED while a `pending` was never run, and both belong
+    in this list because neither is a recorded pass.
+    """
+    _pend = sorted("%s=%s" % (k, v) for k, v in (seen or {}).items()
+                   if str(v or "pending") != "success")
+    return "%d component(s) not success: %s" % (
+        len(_pend), join_capped(_pend, len(_pend), cap=6))
+
+
 def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
     """Map gate failures to concrete remediation suggestions."""
     suggestions: List[str] = []
@@ -4606,12 +4626,11 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                      for c, r in (by_component or {}).items()}
             logger.warning("verification_checklist_not_ready — observed %s | build:* "
                            "updated_at %s", _seen, _when)
-            _pend1202wi = sorted("%s=%s" % (k, v) for k, v in _seen.items()
-                                 if str(v or "pending") != "success")
+            # #1203pg: the note's CONTENT has an owner now — see
+            # `_checklist_pending_note_1203pg`. Inverting the filter here used to leave both
+            # neighbouring guards green while the sentence named the opposite set.
             _note1202wi("verification_checklist_not_ready",
-                        "%d component(s) not success: %s" % (
-                            len(_pend1202wi),
-                            join_capped(_pend1202wi, len(_pend1202wi), cap=6)))
+                        _checklist_pending_note_1203pg(_seen))
         except Exception:
             pass
 

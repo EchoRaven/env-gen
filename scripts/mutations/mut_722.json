@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_freshness_probe_says_when_clean_722.py",
+ "mutations": [
+  {
+   "label": "F1 the branch is INVERTED, so a stale bundle reports 'served build matches the source' and a matching bundle reports the stale-build warning. #722 exists because silence meant three things; saying the WRONG one is worse. `test_the_clean_path_is_the_else_of_the_stale_one` only checks the two messages' ORDER in the source and that an `else:` sits between them, which is unchanged",
+   "find": "                            if _missing715:\n                                _stale_serve_715 = sorted(_missing715)",
+   "replace": "                            if not _missing715:\n                                _stale_serve_715 = sorted(_missing715)"
+  },
+  {
+   "label": "F2 the clean message's count is off by one, so 'all N declared route(s) are present' understates the bundle it just verified. `len(known_routes)` is still in the branch, which is all the test asks",
+   "find": "                                    \"route(s) are present in the bundle.\", len(known_routes))",
+   "replace": "                                    \"route(s) are present in the bundle.\", len(known_routes) - 1)"
+  },
+  {
+   "label": "F3 the clean path is demoted to debug, so the signal #722 added vanishes from the log again and silence returns to meaning three things. EXPECTED CAUGHT -- `test_the_clean_path_is_info_not_warning` looks for `_LOG.info(` near the message",
+   "find": "                                _LOG.info(\n                                    \"#715 served build matches the source: all %d declared \"",
+   "replace": "                                _LOG.debug(\n                                    \"#715 served build matches the source: all %d declared \""
+  }
+ ]
+}

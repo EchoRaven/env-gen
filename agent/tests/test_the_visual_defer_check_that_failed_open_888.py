@@ -24,6 +24,7 @@ not to guess on an unverified root. What changes is that it stops being indistin
 honest "not deferring".
 """
 import inspect
+import types
 
 import pytest
 
@@ -103,3 +104,71 @@ def test_the_caller_still_reads_it_as_the_defer_signal():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the announcement, DRIVEN -----------------------------------------------------------
+#
+# Every assertion above reads the SOURCE. A mutation showed what that misses: inserting
+# `return False` above the announcement, or inverting the say-once latch, leaves every asserted
+# string in place and makes the fault silent again -- which is the entire state #888 was written
+# to end. The permissive default was the only property with a real driver (it is pinned by a
+# `return False` that the span contains exactly once), and it was the only one the mutation
+# could not get past.
+
+
+class _ReferenceLookupRaises:
+    """A `self` for which the FIRST getattr inside the check raises, so the except arm runs.
+
+    `_reference_images` is the check's first lookup. Only that name raises; everything else
+    raises AttributeError so `getattr(self, "_said_vd_888", False)` still falls to its default,
+    exactly as it does on a real orchestrator that has never announced.
+    """
+
+    def __init__(self):
+        self.errors = []
+        self._logger = types.SimpleNamespace(
+            error=self._record, warning=lambda *a, **k: None,
+            info=lambda *a, **k: None, debug=lambda *a, **k: None)
+
+    def _record(self, *a, **k):
+        self.errors.append((a[0] % a[1:]) if len(a) > 1 else str(a[0]))
+
+    def __getattr__(self, name):
+        if name == "_reference_images":
+            raise RuntimeError("the hub hiccuped")
+        raise AttributeError(name)
+
+
+def test_a_fault_really_announces():
+    s = _ReferenceLookupRaises()
+    assert orch.Orchestrator._visual_delivery_defer_active(s) is False
+    assert len(s.errors) == 1, "the fault was silent -- #888's whole subject"
+    assert "VISUAL-DEFER CHECK FAILED" in s.errors[0]
+
+
+def test_the_announcement_names_the_consequence_in_the_FORMATTED_message():
+    """The source-text sibling of this test has to assert `PERMITS` and `deliver_project`
+    separately, because the format string is wrapped across two lines. The runtime value is
+    joined, so the phrase a human actually reads can be asserted whole."""
+    s = _ReferenceLookupRaises()
+    orch.Orchestrator._visual_delivery_defer_active(s)
+    msg = s.errors[0]
+    assert "PERMITS deliver_project" in msg
+    assert "RuntimeError" in msg, "the message must name the fault it is reporting"
+    assert "unverified" in msg
+
+
+def test_it_really_says_it_once():
+    """Consulted on every delivery poll, so a per-poll line would drown the log."""
+    s = _ReferenceLookupRaises()
+    for _ in range(5):
+        assert orch.Orchestrator._visual_delivery_defer_active(s) is False
+    assert len(s.errors) == 1, "announced %d times" % len(s.errors)
+    assert s._said_vd_888 is True
+
+
+def test_the_permissive_default_is_what_it_actually_returns():
+    """Pinned behaviourally as well as textually: `False` means "not deferring", which is what
+    lets `deliver_project` through, and that direction is deliberate (#112 bounds it)."""
+    assert orch.Orchestrator._visual_delivery_defer_active(
+        _ReferenceLookupRaises()) is False

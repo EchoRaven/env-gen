@@ -1,0 +1,26 @@
+{
+ "file": "agent/tests/test_1202eu_source_scanners_must_close_what_they_open.py",
+ "test": "tests/test_1202eu_source_scanners_must_close_what_they_open.py",
+ "mutations": [
+  {
+   "label": "PH1 string literals stop being blanked, so a docstring that quotes the pattern reads as a leak again -- the failure that produced #1203ph",
+   "find": "        if t.type not in (tokenize.COMMENT, tokenize.STRING):",
+   "replace": "        if t.type not in (tokenize.COMMENT,):"
+  },
+  {
+   "label": "PH2 an untokenisable file comes back EMPTY instead of comment-stripped, so it reads as a clean scan -- #1039: 'could not tell' must not look like 'nothing wrong'",
+   "find": "        return \"\\n\".join(l.split(\"#\")[0] for l in lines)",
+   "replace": "        return \"\""
+  },
+  {
+   "label": "PH3 the predicate needs only ONE half, so an `ast.walk` traversal beside a single open().read() is flagged again -- the false positive #1203d0 removed",
+   "find": "    return bool(re.search(_PAT_OPEN_READ, code)) and bool(re.search(_PAT_TREE_WALK, code))",
+   "replace": "    return bool(re.search(_PAT_OPEN_READ, code)) or bool(re.search(_PAT_TREE_WALK, code))"
+  },
+  {
+   "label": "PH4 the `ast.` negative lookbehind is dropped from the tree-walk pattern, which is exactly what made 262 of this directory's files one open().read() away from a false positive before #1203d0",
+   "find": "_PAT_TREE_WALK = r\"for \\w+ in .*(rglob|glob|(?<!ast\\.)walk)\"",
+   "replace": "_PAT_TREE_WALK = r\"for \\w+ in .*(rglob|glob|walk)\""
+  }
+ ]
+}

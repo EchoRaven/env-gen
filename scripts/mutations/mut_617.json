@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_remediation_round_counter_617.py",
+ "mutations": [
+  {
+   "label": "C1 the round counter is UNREACHABLE (a `False and` guard), so every visual-gate remediation task is titled identically again -- 280 of them across the corpus, which is the entire ticket. The quoted assignment is still in the source, verbatim",
+   "find": "            self._remediation_round = getattr(self, \"_remediation_round\", 0) + 1",
+   "replace": "            if False:\n                self._remediation_round = getattr(self, \"_remediation_round\", 0) + 1"
+  }
+ ]
+}

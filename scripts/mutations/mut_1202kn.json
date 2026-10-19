@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1202kn_will_retry_next_tick_had_no_next_tick.py",
+ "mutations": [
+  {
+   "label": "M1 the retry CALL is removed while every asserted string stays: the log line still promises the retake, `#1202kn` is still inside the failed-checks branch (the test asserts the MARKER, which the comment and the log string both carry), the guard and the except clause are untouched. This is #1202kn's original defect restored -- 'attempt refunded, will retry next tick' with no next tick",
+   "find": "                            sorted(str(c) for c in (gate.get(\"failed_checks\") or []))[:3])\n                        await self._maybe_run_visual_fidelity()",
+   "replace": "                            sorted(str(c) for c in (gate.get(\"failed_checks\") or []))[:3])"
+  },
+  {
+   "label": "M3 the 'nothing has been judged' precondition is widened to fire always. EXPECTED CAUGHT -- `test_r115s_recorded_state_would_have_triggered_it` evals the shipped guard against a judged gate and requires False. Here as the control for M1/M2",
+   "find": "                            and getattr(_vf1202kn, \"total_judgments\", 0) == 0",
+   "replace": "                            and getattr(_vf1202kn, \"total_judgments\", 0) >= 0"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_redispatch_nags_without_cloning_794.py",
+ "mutations": [
+  {
+   "label": "R1 the reuse branch is inverted: a twin that EXISTS gets a clone filed anyway, and when none exists `task` becomes None. Every string the test file asserts on survives verbatim, so this is a pure behaviour change under an unchanged source text",
+   "find": "                if _open794 is not None:\n                    task = _open794",
+   "replace": "                if _open794 is None:\n                    task = _open794"
+  },
+  {
+   "label": "R2 the status filter is inverted, so a `completed`/`cancelled` twin SUPPRESSES the refile and an open one does not -- exactly what the docstring says must not happen (1156 duplicated titles ended completed; a check that fails again must still file). `test_a_completed_twin_does_not_suppress_a_refile` only asserts the WORD is absent",
+   "find": "                                and str(_t.get(\"status\")) in (\"pending\", \"in_progress\", \"open\")):",
+   "replace": "                                and str(_t.get(\"status\")) not in (\"pending\", \"in_progress\", \"open\")):"
+  },
+  {
+   "label": "R3 the prefix match becomes an exact match. Titles now carry the #1202ss instance suffix, so no open twin is ever found and r130's 13 clones come back -- the code's own comment says the prefix is `Kept ... so #794's open-task lookup (prefix, below) still match`",
+   "find": "                                and str(_t.get(\"title\")).startswith(_base_title_1202ss)",
+   "replace": "                                and str(_t.get(\"title\")) == _base_title_1202ss"
+  }
+ ]
+}

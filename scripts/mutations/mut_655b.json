@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_unreachable_refund_is_bounded_655b.py",
+ "mutations": [
+  {
+   "label": "B1 the attempt is no longer given back, so an unreachable capture BURNS one of the 3 per-source attempts and still logs 'attempt refunded, will retry next tick'. The log line and the whole `if ... < _TRANSIENT_REFUND_CAP` statement are untouched, which is all the test file quotes",
+   "find": "                    self.unreachable_refunds += 1\n                    self.attempts = max(0, self.attempts - 1)",
+   "replace": "                    self.unreachable_refunds += 1"
+  },
+  {
+   "label": "B2 the refund arm is UNREACHABLE: a `return` above it means an unreachable capture is never refunded at all, while every quoted statement stays verbatim in the source. A whole-statement text assertion is nearly as strong as a structural one FOR THAT STATEMENT, and still completely blind to whether it runs",
+   "find": "                if self.unreachable_refunds < _TRANSIENT_REFUND_CAP:",
+   "replace": "                return\n                if self.unreachable_refunds < _TRANSIENT_REFUND_CAP:"
+  },
+  {
+   "label": "B3 the cap becomes a hardcoded 3. EXPECTED CAUGHT -- the file ratchets on exactly this (`assert not any(tok in body for tok in (\"< 3\", \"<= 3\", \"= 3\"))`). Control",
+   "find": "                if self.unreachable_refunds < _TRANSIENT_REFUND_CAP:\n                    self.unreachable_refunds += 1",
+   "replace": "                if self.unreachable_refunds < 3:\n                    self.unreachable_refunds += 1"
+  }
+ ]
+}

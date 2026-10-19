@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_checklist_blocker_explains_itself_585.py",
+ "mutations": [
+  {
+   "label": "C1 the note lists the components that ARE success while still calling them 'not success', so the sentence a lane acts on names exactly the wrong set (#1203nr). This was MISSED before #1203pg gave the content an owner: every assertion in the test file was about the WARNING above the call site",
+   "find": "                   if str(v or \"pending\") != \"success\")",
+   "replace": "                   if str(v or \"pending\") == \"success\")"
+  },
+  {
+   "label": "C2 the count becomes the SHOWN length instead of the total, so nine failing components are announced as six (#1034: a capped list must declare its cut, and the count beside it must be the real one)",
+   "find": "    return \"%d component(s) not success: %s\" % (\n        len(_pend), join_capped(_pend, len(_pend), cap=6))",
+   "replace": "    return \"%d component(s) not success: %s\" % (\n        min(len(_pend), 6), join_capped(_pend, len(_pend), cap=6))"
+  },
+  {
+   "label": "C3 a missing or empty status counts as success, so a component that was never recorded drops out of the list -- #1039: 'could not tell' must not read as a pass",
+   "find": "    _pend = sorted(\"%s=%s\" % (k, v) for k, v in (seen or {}).items()",
+   "replace": "    _pend = sorted(\"%s=%s\" % (k, v) for k, v in (seen or {}).items() if v"
+  }
+ ]
+}

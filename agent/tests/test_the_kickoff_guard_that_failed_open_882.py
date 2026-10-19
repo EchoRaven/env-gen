@@ -21,7 +21,9 @@ prevent — the one that cost r3 **146 idle stop-cycles** of model quota.
 The permissive default is kept: a hub hiccup must not wedge every lane. What was missing is that it
 was **indistinguishable from a healthy "kickoff is done"**.
 """
+import asyncio
 import inspect
+import types
 
 import pytest
 
@@ -101,3 +103,88 @@ def test_the_fail_closed_sibling_is_still_the_odd_one_out():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the announcement, DRIVEN -----------------------------------------------------------
+#
+# Every assertion above reads the SOURCE, and a mutation showed the cost: making the
+# announcement unreachable, or inverting the say-once-per-agent latch, leaves every asserted
+# string in place and returns the site to the silence #882 was written to end. Only the
+# permissive default had a real driver (the span contains `_pre_finalize = False` exactly once),
+# and it was the only mutation the file caught. Same finding as its sibling #888, same session.
+
+
+class _Lane:
+    """The minimum `self` that reaches the #882 try: a resident orchestrator lane."""
+
+    def __init__(self):
+        self.warnings = []
+        self.agent_id = "orchestrator"
+        self._is_resident_lane = True
+        self._hubs = None
+        self._logger = types.SimpleNamespace(
+            warning=self._record, error=lambda *a, **k: None,
+            info=lambda *a, **k: None, debug=lambda *a, **k: None)
+
+    def _record(self, *a, **k):
+        self.warnings.append((a[0] % a[1:]) if len(a) > 1 else str(a[0]))
+
+
+def _drive(lane, monkeypatch, times=1):
+    """Run the wakeup path with the kickoff check raising.
+
+    The method continues past the #882 arm into code that needs a fully built agent, so a
+    later fault is swallowed here deliberately -- it cannot mask the thing under test, because
+    every assertion below is about what the arm recorded BEFORE that point. If the arm never
+    ran, `lane.warnings` is empty and the test fails.
+    """
+    from env_generator.llm_generator.multi_agent.agents.runtime import preconditions as pc
+
+    def _boom(*a, **k):
+        raise RuntimeError("the hub hiccuped")
+
+    monkeypatch.setattr(pc, "kickoff_finalized_signal", _boom)
+    for _ in range(times):
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(m.AgentMessaging._maybe_schedule_resident_message_wakeup(
+                lane, object(), {"type": "update", "from": "verifier"}))
+        except Exception:
+            pass
+        finally:
+            loop.close()
+
+
+def test_a_failed_check_really_announces(monkeypatch):
+    lane = _Lane()
+    _drive(lane, monkeypatch)
+    assert len(lane.warnings) == 1, "the failed check was silent -- #882's whole subject"
+    assert "kickoff-finalized check FAILED" in lane.warnings[0]
+
+
+def test_the_announcement_says_which_way_it_failed(monkeypatch):
+    lane = _Lane()
+    _drive(lane, monkeypatch)
+    msg = lane.warnings[0]
+    assert "F2b retention is OFF" in msg
+    assert "permissive default" in msg and "NOT evidence" in msg
+    assert "RuntimeError" in msg, "the message must name the fault it reports"
+    assert "[orchestrator]" in msg, "a per-agent line has to say which agent"
+
+
+def test_it_really_says_it_once_per_agent(monkeypatch):
+    """This runs on every inbox message, so a per-message line would drown the log (#845)."""
+    lane = _Lane()
+    _drive(lane, monkeypatch, times=5)
+    assert len(lane.warnings) == 1, "announced %d times" % len(lane.warnings)
+    assert lane._said_kf_882 is True
+
+
+def test_a_second_lane_still_gets_its_own_line(monkeypatch):
+    """Say-once is per AGENT, not per process -- the flag lives on the instance."""
+    a, b = _Lane(), _Lane()
+    b.agent_id = "orchestrator-2"
+    _drive(a, monkeypatch, times=3)
+    _drive(b, monkeypatch, times=3)
+    assert len(a.warnings) == 1 and len(b.warnings) == 1
+    assert "[orchestrator-2]" in b.warnings[0]

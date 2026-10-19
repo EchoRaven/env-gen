@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_record_vs_live_fidelity_618.py",
+ "mutations": [
+  {
+   "label": "D1 the divergence flag is UNREACHABLE: a `False and` guard leaves every quoted expression verbatim in the source while `record_exceeds_live_by` is never written, so the one signal that the delivered number came from a best-of-captures MERGE and not from this capture disappears from the verdict",
+   "find": "            _verdict[\"record_exceeds_live_by\"] = round(_blocking_average - _live_average, 4)",
+   "replace": "            if False:\n                _verdict[\"record_exceeds_live_by\"] = round(_blocking_average - _live_average, 4)"
+  },
+  {
+   "label": "D2 the live average is computed over ALL screens, not the blocking ones, so the advisory and blank screens #618 excludes are back in the number it compares against the record. The two exclusions are quoted on the line above, which is unchanged",
+   "find": "        _live_average = (round(sum(_sim(s) for s in _live_blocking) / len(_live_blocking), 4)\n                         if _live_blocking else None)",
+   "replace": "        _live_average = (round(sum(_sim(s) for s in (results or [])) / len(_live_blocking), 4)\n                         if _live_blocking else None)"
+  },
+  {
+   "label": "D3 an empty blocking set yields 0.0 instead of None, so 'nothing was measured' becomes a recorded hard zero (#883: a reader cannot tell those apart). EXPECTED CAUGHT -- the file quotes `if _live_blocking else None`. Control",
+   "find": "                         if _live_blocking else None)",
+   "replace": "                         if _live_blocking else 0.0)"
+  }
+ ]
+}

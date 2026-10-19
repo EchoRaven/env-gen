@@ -2735,6 +2735,29 @@ def scroll_state_index_1202cu(screens: Any) -> Dict[str, int]:
     return out
 
 
+def _record_capture_error_1203pg(capture_errors: Any, screen: Any, exc: BaseException) -> None:
+    """#769/#935: persist WHY a screen could not be photographed, keyed by screen name.
+
+    #769 rescued the reason from a bare `except: continue` and put it in a log line — and r154's
+    run directory contains no `#769` line anywhere, because nothing in the run persists that
+    logger. So the reason existed, was caught, was written, and was still unavailable to anyone
+    holding only the artifacts. #935 added this out-parameter; #933 carries it to the ledger and
+    #949 reports it as `capture_errors`.
+
+    r154 is what the gap cost: `title_detail` was photographed ONCE at 17:19:57 and scored 0.00
+    every round after. That was diagnosed as judge noise and written into two tickets, and the
+    truth only came out of listing mtimes.
+
+    `None` means "this caller does not collect them" and is not an error. No try/except here on
+    purpose: a fault writing one key is a real fault, and swallowing it would put this back in
+    the class it was built to leave.
+    """
+    if capture_errors is None:
+        return
+    capture_errors[str((screen or {}).get("name") if isinstance(screen, dict) else screen)] = (
+        "%s: %s" % (type(exc).__name__, str(exc)[:200]))
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -3074,9 +3097,13 @@ async def capture_route_screenshots(
                     # 0.00 in every round after. I diagnosed that as judge noise, wrote it into two
                     # tickets, and only found the truth by listing mtimes. This dict is the fourth
                     # out-parameter's shape (#657, #740) and reaches the ledger via #933.
-                    if capture_errors is not None:
-                        capture_errors[str(screen.get("name"))] = (
-                            f"{type(_cap769).__name__}: {str(_cap769)[:200]}")
+                    # #1203pg: the recorder has ONE owner now. This arm runs only inside a
+                    # live browser capture, so no test could reach it; a mutation that made
+                    # the dict never populated -- leaving the reason in a logger the run
+                    # directory does not persist, which is the state #935 added it to end --
+                    # went undetected, and so did one that dropped the message and kept only
+                    # the exception type.
+                    _record_capture_error_1203pg(capture_errors, screen, _cap769)
                     continue
         finally:
             await browser.close()
@@ -3624,6 +3651,28 @@ def visual_min_similarity_1202nv() -> float:
         return VISUAL_MIN_DEFAULT_1202NV
 
 
+def _capture_unavailable_summary_1203pg(attempted: int, capture_errors: Any) -> str:
+    """#949's sentence for a round that photographed NOTHING, given one owner.
+
+    What is KNOWN, not a cause nobody checked. `heal_missing_browser` re-raises when a
+    playwright binary is missing and cannot be installed, so a browser-infra failure lands in
+    this branch; asserting "app not reachable" there is a MIS-ATTRIBUTION, and mis-attribution
+    is worse than silence because it sends the reader to the app.
+
+    Extracted at #1203pg because nothing could drive the choice between the two arms. The
+    dict it reads is filled only by the default `capture_route_screenshots` path, so a test
+    that injects `capture_fn` always sees it empty -- which means a mutation that INVERTED the
+    conditional (naming a raised exception when none was recorded, and claiming nothing was
+    recorded when one was) left all seven assertions green. They were about the source text.
+    """
+    _errs = dict(capture_errors or {})
+    _why = join_capped(["%s: %s" % (_k, _v) for _k, _v in _errs.items()], len(_errs), cap=3)
+    return ("capture unavailable — 0 of %d screen(s) photographed; not judged" % attempted
+            + (" — the capture raised %s" % _why if _why else
+               " — no capture exception was recorded, so the app most likely did "
+               "not serve (unverified)"))
+
+
 async def run_visual_fidelity(
     project_dir: Any,
     reference_images: List[Any],
@@ -4122,14 +4171,14 @@ async def run_visual_fidelity(
         # #935's `_cap_err935` is in scope and holds the actual exception per screen. Name it when
         # it exists, say plainly that nothing was recorded when it does not, and hand the dict out
         # so the caller can record it rather than re-deriving it from a sentence.
-        _why949 = join_capped([f"{_k}: {_v}" for _k, _v in _cap_err935.items()],
-                              len(_cap_err935), cap=3)
+        # #1203pg: the sentence has ONE owner now — `_capture_unavailable_summary_1203pg`.
+        # Both arms were reachable only through the default capture path (`_cap_err935` is
+        # filled by `capture_route_screenshots`, never by an injected `capture_fn`), so no
+        # test could drive the choice between them: inverting the conditional, so it named a
+        # raised exception when none was recorded, went undetected.
         return {"passed": False,
-                "summary": ("capture unavailable — 0 of "
-                            f"{len(judged_screens)} screen(s) photographed; not judged"
-                            + (f" — the capture raised {_why949}" if _why949 else
-                               " — no capture exception was recorded, so the app most likely did "
-                               "not serve (unverified)")),
+                "summary": _capture_unavailable_summary_1203pg(
+                    len(judged_screens), _cap_err935),
                 "screens": [], "skipped": skipped,
                 "capture_unavailable": True,
                 "capture_errors": dict(_cap_err935),

@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_fwval_early_return_checklist_502.py",
+ "mutations": [
+  {
+   "label": "F1 the loop never keeps running: a passing api_smoke run early-returns regardless of which checks still block, which is the outlook-seed1 / r80 wedge",
+   "find": "    return not (REVALIDATION_FIXABLE_CHECKS & set(failed_checks or []))",
+   "replace": "    return True"
+  },
+  {
+   "label": "F2 #502's half is dropped: `verification_checklist_not_ready` stops keeping the loop alive, so #492's api_smoke attempt-counter reset is wasted again (r80 reached the deliver tail with that as its ONLY blocker and cut no release)",
+   "find": "REVALIDATION_FIXABLE_CHECKS = frozenset({\n    \"business_chain_failing\", \"verification_checklist_not_ready\"})",
+   "replace": "REVALIDATION_FIXABLE_CHECKS = frozenset({\n    \"business_chain_failing\"})"
+  },
+  {
+   "label": "F3 #794's own half is dropped: `business_chain_failing` -- the #1 modern blocker -- stops keeping framework validation re-running",
+   "find": "    \"business_chain_failing\", \"verification_checklist_not_ready\"})",
+   "replace": "    \"verification_checklist_not_ready\"})"
+  },
+  {
+   "label": "F4 validation early-returns BEFORE api_smoke has ever passed",
+   "find": "    if not has_passing_run:\n        return False",
+   "replace": "    if not has_passing_run:\n        return True"
+  }
+ ]
+}

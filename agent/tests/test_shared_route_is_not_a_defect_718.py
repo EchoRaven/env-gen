@@ -26,6 +26,9 @@ same trade #713 declined. What changes is that the expected case stops being rep
 in the same words as the real one.
 """
 import inspect
+import json
+import pathlib
+import tempfile
 
 import pytest
 
@@ -146,3 +149,91 @@ def test_the_refusal_to_demote_is_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the branch, DRIVEN -----------------------------------------------------------------
+#
+# Every assertion above reads the SOURCE, and two mutations walked straight through:
+#
+#   * deleting the `continue` that ends the expected branch -- so a group that legitimately
+#     shares one route ALSO gets #713's defect warning and is recorded in
+#     `identical_captures_713`. The block still contains the word `continue` (the
+#     `len(_names713) < 2` guard uses one), so `assert "continue" in _block()` held.
+#   * `len(_names713) < 2` -> `< 3`, so a PAIR of byte-identical captures is never examined at
+#     all. No string any test asserts on changes.
+#
+# `_persist_verdict` is a module-level function with keyword arguments, and the grouping hashes
+# real PNG bytes, so the whole decision runs against a temp directory.
+#
+# Checked before writing these: the shared-route screens are NOT left blocking. #542a's
+# `_demote_duplicate_route_screens` groups by resolved route, keeps one canonical screen and
+# marks the rest advisory, which is the same case from the other side.
+
+
+def _verdict_for(routes, blob=b"IDENTICAL-BYTES"):
+    """Run `_persist_verdict` over screens whose captures are byte-identical.
+
+    `routes` maps screen name -> route. Every screen gets the SAME png bytes, which is what
+    puts them in one `_by713` group.
+    """
+    d = pathlib.Path(tempfile.mkdtemp())
+    vdir = d / "design" / "visual_gate"
+    vdir.mkdir(parents=True)
+    for name in routes:
+        (vdir / ("%s.png" % name)).write_bytes(blob)
+    results = [{"name": n, "route": r, "similarity": 0.4, "dimensions": {}}
+               for n, r in routes.items()]
+    vf._persist_verdict(d, passed=False, min_similarity=0.65, summary="s",
+                        coverage={}, results=results)
+    out = vdir / "verdict.json"
+    return json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+
+
+def test_differing_routes_are_still_recorded_as_a_defect():
+    """Non-vacuity first: without this, the suppression test below would pass against a
+    detector that records nothing at all."""
+    v = _verdict_for({"a": "/one", "b": "/two"})
+    rec = v.get("identical_captures_713") or []
+    assert rec, "a real fall-through was not recorded"
+    assert sorted(rec[0]["screens"]) == ["a", "b"]
+
+
+def test_a_shared_route_group_is_NOT_recorded_as_a_defect():
+    """#718's whole subject: the corpus's commonest sharing is one page, not a routing failure.
+
+    browse_home and card_hover_preview both resolve to /browse in 53 of 53 runs.
+    """
+    v = _verdict_for({"browse_home": "/browse", "card_hover_preview": "/browse"})
+    assert not (v.get("identical_captures_713") or []), (
+        "expected sharing was recorded as a routing defect")
+
+
+def test_a_PAIR_is_examined_not_only_a_larger_group():
+    """`len(_names713) < 2` is the floor. At `< 3` a pair of identical captures is invisible,
+    and a pair is the commonest shape there is."""
+    v = _verdict_for({"a": "/one", "b": "/two"})
+    assert len(((v.get("identical_captures_713") or [{}])[0]).get("screens") or []) == 2
+
+
+def test_a_group_with_NO_resolved_route_is_still_a_defect():
+    """An empty route is not agreement -- a missing route is exactly why the browser falls
+    through to a common page, so this must take the defect branch."""
+    v = _verdict_for({"a": "", "b": ""})
+    assert (v.get("identical_captures_713") or []), (
+        "two screens with no route agreed with each other and were excused"
+    )
+
+
+def test_distinct_captures_are_not_grouped_at_all():
+    """The other side of the floor: different bytes must not be reported as sharing."""
+    d = pathlib.Path(tempfile.mkdtemp())
+    vdir = d / "design" / "visual_gate"
+    vdir.mkdir(parents=True)
+    (vdir / "a.png").write_bytes(b"ONE")
+    (vdir / "b.png").write_bytes(b"TWO")
+    vf._persist_verdict(
+        d, passed=False, min_similarity=0.65, summary="s", coverage={},
+        results=[{"name": "a", "route": "/one", "similarity": 0.4, "dimensions": {}},
+                 {"name": "b", "route": "/two", "similarity": 0.4, "dimensions": {}}])
+    v = json.loads((vdir / "verdict.json").read_text(encoding="utf-8"))
+    assert not (v.get("identical_captures_713") or [])

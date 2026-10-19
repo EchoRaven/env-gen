@@ -25,7 +25,9 @@ if an identical-title task is still open, re-wake the owner against THAT task. P
 last 22 runs, and the fix is on the shared dispatch table, so it covers every gate-level check
 name, not just `business_chain_failing`.
 """
+import asyncio
 import inspect
+import types
 
 import pytest
 
@@ -141,3 +143,107 @@ def test_mapping_is_actually_imported():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: reuse-not-clone, DRIVEN ------------------------------------------------------------
+#
+# 18 of the 19 assertions above read the SOURCE, and a mutation showed that none of them can see
+# the decision. All three of these left every asserted string in place and went undetected:
+#
+#   * inverting `if _open794 is not None:`  -> a twin that EXISTS gets a clone filed anyway
+#   * inverting the status filter           -> a `completed` twin suppresses the refile and an
+#                                              open one does not, which is the exact behaviour
+#                                              the docstring above says must NOT happen
+#   * `startswith` -> `==`                  -> no open twin is ever found once titles carry the
+#                                              #1202ss instance suffix, so r130's 13 clones return
+#
+# `RemediationDispatcher` is stateless (`__init__(orch)`), so the dispatch runs against a stub.
+
+_BASE_794 = "Make business_chain pass (blocks delivery)"
+
+
+class _Workhub:
+    def __init__(self, tasks, raises=False):
+        self._tasks, self._raises = tasks, raises
+        self.created = []
+
+    def list_tasks(self):
+        if self._raises:
+            raise RuntimeError("the hub hiccuped")
+        return self._tasks
+
+    def create_task(self, **kw):
+        self.created.append(kw)
+        return {"id": "new-%d" % len(self.created), "title": kw.get("title")}
+
+
+def _dispatch(tasks, raises=False):
+    """Run the gate-level dispatch for `business_chain_failing` and report what it did."""
+    _noop = lambda *a, **k: None  # noqa: E731
+    wakes = []
+
+    class _Bus:
+        async def send(self, *a, **k):
+            wakes.append((a, k))
+            return None
+
+    wh = _Workhub(tasks, raises=raises)
+    orch = types.SimpleNamespace(
+        hubs=types.SimpleNamespace(workhub=wh, codehub=None, eventhub=None),
+        _logger=types.SimpleNamespace(info=_noop, warning=_noop, error=_noop, debug=_noop),
+        message_bus=_Bus(), output_dir=".", agents={}, _milestone_index=1,
+        _gate_dispatch_guard={}, _gate_decline_counts={})
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            rd.RemediationDispatcher(orch).dispatch_gate_level_checks(["business_chain_failing"]))
+    finally:
+        loop.close()
+    return wh.created, wakes
+
+
+def _task(status, title=_BASE_794):
+    return {"id": "t1", "title": title, "status": status}
+
+
+def test_with_no_open_twin_it_files():
+    """Non-vacuity: without this the suppression tests below would pass against a dispatcher
+    that never files anything at all."""
+    created, _ = _dispatch([])
+    assert len(created) == 1, "the P0 was not filed"
+    assert created[0]["title"].startswith(_BASE_794)
+
+
+@pytest.mark.parametrize("status", ["pending", "in_progress", "open"])
+def test_an_open_twin_suppresses_the_clone(status):
+    created, _ = _dispatch([_task(status)])
+    assert created == [], "r130's 13th clone was filed against an open %s twin" % status
+
+
+@pytest.mark.parametrize("status", ["completed", "cancelled"])
+def test_a_closed_twin_does_NOT_suppress_the_refile(status):
+    """1156 duplicated titles ended `completed`. A check that fails AGAIN after being fixed must
+    still file -- that is the correct behaviour the measurement identified, not waste."""
+    created, _ = _dispatch([_task(status)])
+    assert len(created) == 1, "a %s twin suppressed a legitimate refile" % status
+
+
+def test_the_match_is_a_PREFIX_so_an_instanced_title_still_finds_its_twin():
+    """#1202ss put the instance set in the title and kept it a PREFIX of the base so this
+    lookup still matches. With an exact match the twin is invisible and the clones come back."""
+    created, _ = _dispatch([_task("in_progress", _BASE_794 + " [chains: checkout, signup]")])
+    assert created == [], "an instanced twin was not recognised"
+
+
+def test_the_nag_is_still_sent_when_the_clone_is_suppressed():
+    """The whole point of re-dispatch is chasing a declined check. Suppressing the MESSAGE
+    would be a regression, not a fix -- only the duplicate ROW goes."""
+    created, wakes = _dispatch([_task("in_progress")])
+    assert created == []
+    assert wakes, "the nag was suppressed along with the duplicate"
+
+
+def test_a_lookup_fault_files_as_before():
+    """Losing a P0 is far worse than a duplicate, so any fault falls back to filing."""
+    created, _ = _dispatch([], raises=True)
+    assert len(created) == 1, "a hub fault swallowed the P0"

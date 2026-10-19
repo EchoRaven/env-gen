@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1202la_the_third_refund_kind.py",
+ "mutations": [
+  {
+   "label": "L1 #1202la's own half is dropped: the compose-race refund kind stops arming the retry, which is the r118 case (10 of the corpus's 74 refunds, 7 runs). Aimed at test_1202la rather than test_1202kn on purpose: #1202kn's own guard-eval fixture carries only total_judgments/unreachable_refunds/transient_refunds, so it would read MISSED there while the property is in fact owned -- \"MISSED by this file\" is not \"no test anywhere\".",
+   "find": "                                 or getattr(_vf1202kn, \"compose_race_refunds_1202dm\", 0))):",
+   "replace": "                                 )):"
+  }
+ ]
+}

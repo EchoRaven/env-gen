@@ -35,18 +35,41 @@ def test_the_capture_fn_accepts_the_out_parameter():
         "must default to None like its four siblings, so every existing caller is unchanged")
 
 
+def _fn(name):
+    return next((n for n in ast.walk(ast.parse(inspect.getsource(vf)))
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                 and n.name == name), None)
+
+
+def _writes_to(node, var):
+    return [n for n in ast.walk(node)
+            if isinstance(n, ast.Assign)
+            and any(isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
+                    and t.value.id == var for t in n.targets)]
+
+
 def test_the_except_populates_it():
     """AST, not text: the #769 comment block names the field in prose, and a substring check
-    would pass on the comment alone (three source-scanning instruments went wrong that way)."""
-    fn = [n for n in ast.walk(ast.parse(inspect.getsource(vf)))
-          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-          and n.name == "capture_route_screenshots"]
-    assert fn, "capture_route_screenshots not found"
-    writes = [n for n in ast.walk(fn[0])
-              if isinstance(n, ast.Assign)
-              and any(isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
-                      and t.value.id == "capture_errors" for t in n.targets)]
-    assert len(writes) == 1, f"expected one write to capture_errors, found {len(writes)}"
+    would pass on the comment alone (three source-scanning instruments went wrong that way).
+
+    #1203pg RE-AIMED this. The write moved into `_record_capture_error_1203pg`, which exists
+    because the write was unreachable from any test: this arm only runs inside a live browser
+    capture, so a mutation that stopped the dict being populated at all went undetected, and so
+    did one that kept only the exception type and dropped the message. Both halves are asserted
+    here now — the handler CALLS the recorder, and the recorder is the one place that writes.
+    """
+    handler = _fn("capture_route_screenshots")
+    assert handler, "capture_route_screenshots not found"
+    calls = [n for n in ast.walk(handler) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", "") == "_record_capture_error_1203pg"]
+    assert len(calls) == 1, f"expected one call to the recorder, found {len(calls)}"
+    assert not _writes_to(handler, "capture_errors"), (
+        "the write was inlined back into the handler, where no test can reach it")
+
+    rec = _fn("_record_capture_error_1203pg")
+    assert rec, "the recorder is gone; re-aim this test"
+    assert len(_writes_to(rec, "capture_errors")) == 1, (
+        "the recorder must be the ONE place that writes the dict (#1032)")
 
 
 def test_the_default_capture_threads_it():

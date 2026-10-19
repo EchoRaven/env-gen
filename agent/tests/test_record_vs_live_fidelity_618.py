@@ -19,6 +19,9 @@ runs on a capture artefact. The live number is recorded alongside so the diverge
 invisible.
 """
 import inspect
+import json
+import pathlib
+import tempfile
 
 import pytest
 
@@ -137,3 +140,110 @@ def test_the_measurements_are_recorded(src):
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: the divergence is really recorded, driven ------------------------------------------
+#
+# Every assertion above quotes an expression out of the source. Two mutations left all of them
+# verbatim and still changed what gets written:
+#
+#   * wrapping the `record_exceeds_live_by` assignment in `if False:` -- so the ONE signal that
+#     the delivered number came from a best-of-captures merge rather than from this capture
+#     vanishes from the verdict, which is #618's whole subject.
+#   * averaging over ALL screens instead of the blocking ones, putting the advisory and blank
+#     screens back into the number that gets compared against the record.
+#
+# `_persist_verdict` is a module-level keyword function that writes verdict.json, and #500's
+# merge keeps the MAX per screen -- so a high round followed by a low one produces the
+# divergence on disk.
+
+
+def _persist(routes_scores, project=None, blob=b"PNGBYTES"):
+    """Run `_persist_verdict` for one capture and return the verdict.json it wrote.
+
+    `routes_scores` maps screen name -> (route, similarity, advisory). Each screen gets its own
+    distinct png bytes so #713's identical-capture grouping stays out of the way.
+    """
+    d = pathlib.Path(project or tempfile.mkdtemp())
+    vdir = d / "design" / "visual_gate"
+    vdir.mkdir(parents=True, exist_ok=True)
+    results = []
+    for i, (name, (route, sim, advisory)) in enumerate(routes_scores.items()):
+        (vdir / ("%s.png" % name)).write_bytes(blob + bytes([i]))
+        row = {"name": name, "route": route, "similarity": sim, "dimensions": {}}
+        if advisory:
+            row["advisory"] = True
+        results.append(row)
+    vf._persist_verdict(d, passed=False, min_similarity=0.65, summary="s",
+                        coverage={}, results=results)
+    return json.loads((vdir / "verdict.json").read_text(encoding="utf-8")), d
+
+
+def test_the_live_average_is_on_the_record():
+    """Non-vacuity: #768r writes it, and the divergence tests below rest on it."""
+    v, _ = _persist({"a": ("/a", 0.5, False)})
+    assert v.get("blocking_average_live") == 0.5, v.get("blocking_average_live")
+
+
+def test_advisory_screens_are_excluded_from_the_live_average():
+    """The exclusions #618 quotes, driven.
+
+    The advisory score is deliberately NON-ZERO. The first version used 0.0, and a mutation
+    that summed over every screen while still dividing by the blocking count got the same
+    answer from it -- (0.6 + 0.0) / 1 is 0.6, so the fixture's own numbers agreed with the
+    expected result and the test could not see the change. Same trap as a fixture whose input
+    ORDER already agrees with the ordering under test.
+    """
+    v, _ = _persist({"a": ("/a", 0.6, False), "o": ("/o", 0.4, True)})
+    assert v["blocking_average_live"] == 0.6, (
+        "the advisory screen is in the live average: %s" % v["blocking_average_live"])
+
+
+def test_a_blank_screen_is_excluded_too():
+    """The second half of the same pair of exclusions, with a non-zero score for the same
+    reason: a 0.0 blank cannot distinguish "excluded" from "included"."""
+    d = pathlib.Path(tempfile.mkdtemp())
+    vdir = d / "design" / "visual_gate"
+    vdir.mkdir(parents=True)
+    for i, n in enumerate(("a", "z")):
+        (vdir / ("%s.png" % n)).write_bytes(b"PNG" + bytes([i]))
+    vf._persist_verdict(
+        d, passed=False, min_similarity=0.65, summary="s", coverage={},
+        results=[{"name": "a", "route": "/a", "similarity": 0.6, "dimensions": {}},
+                 {"name": "z", "route": "/z", "similarity": 0.4, "blank": True,
+                  "dimensions": {}}])
+    v = json.loads((vdir / "verdict.json").read_text(encoding="utf-8"))
+    assert v["blocking_average_live"] == 0.6, v["blocking_average_live"]
+
+
+def test_a_lower_second_capture_records_the_divergence():
+    """#500's merge keeps the MAX, so the delivered number can be better than the code."""
+    _, d = _persist({"a": ("/a", 0.9, False)})
+    v, _ = _persist({"a": ("/a", 0.3, False)}, project=d)
+    assert v["blocking_average"] == 0.9, "the merge stopped keeping the best"
+    assert v["blocking_average_live"] == 0.3, v["blocking_average_live"]
+    assert "record_exceeds_live_by" in v, (
+        "the record is 0.60 above this capture and the verdict says nothing about it")
+    assert abs(v["record_exceeds_live_by"] - 0.6) < 0.001, v["record_exceeds_live_by"]
+
+
+def test_the_note_says_which_number_was_delivered():
+    _, d = _persist({"a": ("/a", 0.9, False)})
+    v, _ = _persist({"a": ("/a", 0.3, False)}, project=d)
+    note = v.get("record_exceeds_live_note") or ""
+    assert "best-of-captures merge" in note, note
+    assert "worse than the recorded number" in note, note
+
+
+def test_an_improving_capture_records_no_divergence():
+    """It fires only when the RECORD is higher — an app that got better is not a caveat."""
+    _, d = _persist({"a": ("/a", 0.3, False)})
+    v, _ = _persist({"a": ("/a", 0.9, False)}, project=d)
+    assert "record_exceeds_live_by" not in v, v.get("record_exceeds_live_by")
+
+
+def test_a_divergence_under_the_threshold_is_not_flagged():
+    """0.01 is the floor, so judge jitter does not produce a caveat every round."""
+    _, d = _persist({"a": ("/a", 0.900, False)})
+    v, _ = _persist({"a": ("/a", 0.895, False)}, project=d)
+    assert "record_exceeds_live_by" not in v, v.get("record_exceeds_live_by")

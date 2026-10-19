@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/agents/runtime/messaging.py",
+ "test": "tests/test_the_kickoff_guard_that_failed_open_882.py",
+ "mutations": [
+  {
+   "label": "K1 the announcement is unreachable (`_pre_finalize = False` returns the arm to silence), so a failed kickoff-finalized check once again reads as a healthy 'kickoff is done'. Every asserted string survives in the source",
+   "find": "                if not getattr(self, \"_said_kf_882\", False):\n                    self._said_kf_882 = True",
+   "replace": "                _pre_finalize = False\n                if False and not getattr(self, \"_said_kf_882\", False):\n                    self._said_kf_882 = True"
+  },
+  {
+   "label": "K2 the say-once-per-agent latch is inverted, so the FIRST failure is suppressed and nothing else sets the flag -- it never announces. `src.count(\"_said_kf_882\") >= 2` holds either way",
+   "find": "                if not getattr(self, \"_said_kf_882\", False):",
+   "replace": "                if getattr(self, \"_said_kf_882\", False):"
+  },
+  {
+   "label": "K3 the permissive default flips, so a hub hiccup wedges every lane behind F2b retention. EXPECTED CAUGHT -- `test_the_permissive_default_survives` asserts `_pre_finalize = False` in the span; here as the control for K1/K2",
+   "find": "                        self.agent_id, type(_kf_exc).__name__, _kf_exc)\n                _pre_finalize = False",
+   "replace": "                        self.agent_id, type(_kf_exc).__name__, _kf_exc)\n                _pre_finalize = True"
+  }
+ ]
+}

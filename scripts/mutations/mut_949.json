@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_capture_unavailable_does_not_invent_a_cause_949.py",
+ "mutations": [
+  {
+   "label": "N1 the conditional is INVERTED: the sentence names a raised exception when none was recorded, and says 'no capture exception was recorded ... (unverified)' when one was -- #949's exact subject, mis-attribution, which is worse than silence because it sends the reader to the app. Both arms stay present, so the AST one-conditional check holds. RE-AIMED at #1203pg's owner.",
+   "find": "            + (\" \u2014 the capture raised %s\" % _why if _why else",
+   "replace": "            + (\" \u2014 the capture raised %s\" % _why if not _why else"
+  },
+  {
+   "label": "N2 the count is off by one, so '0 of M screen(s) photographed' understates what was attempted",
+   "find": "    return (\"capture unavailable \u2014 0 of %d screen(s) photographed; not judged\" % attempted",
+   "replace": "    return (\"capture unavailable \u2014 0 of %d screen(s) photographed; not judged\" % (attempted - 1)"
+  },
+  {
+   "label": "N3 the error list is capped at ZERO, so a round whose captures all raised reports 'the capture raised' followed by nothing but the cut note (#1034)",
+   "find": "    _why = join_capped([\"%s: %s\" % (_k, _v) for _k, _v in _errs.items()], len(_errs), cap=3)",
+   "replace": "    _why = join_capped([\"%s: %s\" % (_k, _v) for _k, _v in _errs.items()], len(_errs), cap=0)"
+  }
+ ]
+}

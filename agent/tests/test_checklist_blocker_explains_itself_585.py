@@ -88,3 +88,67 @@ def test_the_verdict_logic_is_unchanged():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #1203pg: what the note SAYS, driven --------------------------------------------------------
+#
+# A mutation inverted the filter -- so `N component(s) not success: ...` listed the components
+# that ARE success -- and every test in this file stayed green, because they all assert on the
+# WARNING above the call site, not on the note. #1202wi's AST pass owns the fact that the
+# blocker records an instance AT ALL (its own mutation confirmed that half is covered), and
+# nothing owned what the instance said.
+#
+# The content now lives in `_checklist_pending_note_1203pg`, which is a pure function, so the
+# sentence a lane acts on can be asserted directly instead of read off the source.
+
+
+def test_the_note_names_the_components_that_are_NOT_success():
+    note = dg._checklist_pending_note_1203pg(
+        {"build:frontend": "success", "build:backend": "failure",
+         "build:db": "success", "build:seed": "pending"})
+    assert "build:backend=failure" in note
+    assert "build:seed=pending" in note
+    assert "build:frontend" not in note, "a passing component was named as not-success"
+    assert "build:db" not in note
+    assert note.startswith("2 component(s) not success:"), note
+
+
+def test_an_all_success_checklist_names_nobody():
+    note = dg._checklist_pending_note_1203pg({"a": "success", "b": "success"})
+    assert note.startswith("0 component(s) not success:"), note
+    assert "a=" not in note and "b=" not in note
+
+
+def test_a_missing_status_counts_as_not_success():
+    """#1039/#883: "no status recorded" is not a pass."""
+    for absent in (None, "", 0):
+        note = dg._checklist_pending_note_1203pg({"build:seed": absent})
+        assert note.startswith("1 component(s) not success:"), (absent, note)
+
+
+def test_an_unknown_status_is_also_not_success():
+    note = dg._checklist_pending_note_1203pg({"build:seed": "weird"})
+    assert "build:seed=weird" in note
+    assert note.startswith("1 component(s) not success:"), note
+
+
+def test_the_count_is_the_TOTAL_even_when_the_list_is_cut():
+    """#1034: a capped list must declare its cut, and the count must not be the shown length."""
+    seen = {"c%02d" % i: "failure" for i in range(9)}
+    note = dg._checklist_pending_note_1203pg(seen)
+    assert note.startswith("9 component(s) not success:"), note
+    assert "more" in note, "nine components were cut to six with no note of the cut: %s" % note
+
+
+def test_an_unreadable_checklist_is_not_nine_passing_components():
+    """A fault must not read as "nothing is wrong"."""
+    assert dg._checklist_pending_note_1203pg(None).startswith("0 component(s)")
+
+
+def test_the_call_site_uses_the_owner():
+    """#1032: one owner. If the expression is inlined again the property loses its driver."""
+    import inspect
+    gate_src = inspect.getsource(dg.validate_delivery_gate)
+    assert "_checklist_pending_note_1203pg(" in gate_src
+    assert 'if str(v or "pending") != "success"' not in gate_src, (
+        "the filter was inlined back into the gate, where nothing reads it")

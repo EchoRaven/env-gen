@@ -58,6 +58,32 @@ def test_the_clean_path_is_the_else_of_the_stale_one():
     assert "else:" in p[i:j]
 
 
+def test_the_count_it_reports_is_the_count_it_CHECKED():
+    """#1203pg: `"len(known_routes)" in p` is satisfied by `len(known_routes) - 1`.
+
+    A mutation did exactly that, so "all N declared route(s) are present" understated the
+    bundle it had just verified, and every assertion in this file stayed green. Driving the
+    probe needs a served frontend and a real bundle, so this is structural rather than
+    behavioural -- and it is stated as such: the assertion is that the argument handed to the
+    log call is the bare `len(known_routes)`, with no arithmetic wrapped around it.
+    """
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(vf))
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and any(isinstance(a, ast.Constant) and isinstance(a.value, str)
+                     and "served build matches the source" in a.value
+                     for a in n.args)]
+    assert len(calls) == 1, "the clean-path log call moved or multiplied: %d" % len(calls)
+    args = [a for a in calls[0].args
+            if not (isinstance(a, ast.Constant) and isinstance(a.value, str))]
+    assert len(args) == 1, "expected exactly one formatted argument: %s" % [
+        ast.unparse(a) for a in args]
+    assert ast.unparse(args[0]) == "len(known_routes)", (
+        "the clean message reports %s, not the number of routes it checked"
+        % ast.unparse(args[0]))
+
+
 def test_it_reports_how_many_routes_were_checked():
     """'Clean' over zero routes is not the same claim as clean over fifteen."""
     p = _probe()

@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1202wi_every_blocking_check_names_its_instance.py",
+ "mutations": [
+  {
+   "label": "C2 the checklist blocker stops recording its instance at all. Aimed at test_1202wi rather than test_585: #1202wi owns 'every measured check records an instance' as an AST check over the whole gate, so this is the control proving the note HAS an owner -- just not one that reads what the note SAYS RE-AIMED the same day: #1203pg extracted the note content into `_checklist_pending_note_1203pg`, which rewrote the very line this anchored on. The census caught it as UNEXPLAINED within minutes -- the cross-session half of the discipline working inside one session.",
+   "find": "            _note1202wi(\"verification_checklist_not_ready\",\n                        _checklist_pending_note_1203pg(_seen))",
+   "replace": "            _unused1203pg = (\n                        _checklist_pending_note_1203pg(_seen))"
+  }
+ ]
+}

@@ -73,9 +73,38 @@ def test_the_branch_requires_both_photographs_and_refusals():
 
 def test_the_pre_existing_zero_capture_branch_still_comes_first():
     """A round that photographed nothing keeps its own #949 message, which names the actual
-    exception; #1202cc must not swallow that case."""
-    src = (LLM / "multi_agent" / "runtime" / "visual_fidelity.py").read_text(encoding="utf-8")
-    assert src.index('"capture unavailable — 0 of "') < src.index("_refused_1202cc = sorted(")
+    exception; #1202cc must not swallow that case.
+
+    #1203pg RE-AIMED this, structurally. The old form compared `src.index` of the message
+    literal against `src.index("_refused_1202cc = sorted(")`, and that literal moved into
+    `_capture_unavailable_summary_1203pg` when #949's sentence was given an owner. Switching
+    the landmark to the helper's NAME would have been worse than useless: the helper is DEFINED
+    above `run_visual_fidelity`, so the index would find the `def` and the assertion would hold
+    no matter where the branch sat. Compare the statements themselves.
+    """
+    import ast
+    import inspect
+    from multi_agent.runtime import visual_fidelity as _vf
+    fn = next(n for n in ast.walk(ast.parse(inspect.getsource(_vf)))
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+              and n.name == "run_visual_fidelity")
+    # BOTH branches return `capture_unavailable: True` — #1202cc's own does too, which is how
+    # the caller bounds its refund. So the key alone does not identify the zero-capture one;
+    # the first version of this re-aim asserted there was exactly one and was simply wrong.
+    # The zero-capture branch is the one that builds #949's sentence.
+    zero = [n for n in ast.walk(fn) if isinstance(n, ast.Return)
+            and isinstance(n.value, ast.Dict)
+            and "capture_unavailable" in {k.value for k in n.value.keys
+                                          if isinstance(k, ast.Constant)}
+            and any(getattr(c.func, "id", "") == "_capture_unavailable_summary_1203pg"
+                    for c in ast.walk(n) if isinstance(c, ast.Call))]
+    refused = [n for n in ast.walk(fn) if isinstance(n, ast.Assign)
+               and any(getattr(t, "id", "") == "_refused_1202cc" for t in n.targets)]
+    assert len(zero) == 1, (
+        "expected exactly one return built from #949's summary, found %d" % len(zero))
+    assert len(refused) == 1, "the #1202cc guard moved or multiplied: %d" % len(refused)
+    assert zero[0].lineno < refused[0].lineno, (
+        "#1202cc now runs before the zero-capture branch and would swallow it")
 
 
 def test_the_refund_stays_bounded():
