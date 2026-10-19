@@ -1147,8 +1147,42 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     fake_maps = [p["name"] for p in pages
                  if p.get("is_map_surface") and not p.get("map_rendered")
                  and not p.get("blank")]
+    # #1203ov: `if steps else False` turns "the walk recorded NOTHING" into "authentication
+    # failed", and the two have different causes and different owners. r191, the newest run,
+    # died exactly here: its squad ledger says `spawned 12, completed 4, timed_out 8,
+    # failed 0`, the browser walk therefore produced no steps, and the delivery hold read
+    #
+    #     browser_ui_unusable — "attempt 8; signals: auth_ok=False"
+    #
+    # so a frontend P0 was dispatched about an app whose login was never exercised. The run
+    # cut one release.
+    #
+    # MEASURED: 730 `auth_ok=False` lines across 101 run logs, of which 14 (13 logs, 4 of
+    # them modern: r183, r185, r191 x2) have EVERY other signal empty -- the signature of
+    # "nothing was observed".
+    #
+    # THE CONDITION IS ALREADY DOCUMENTED, by #1203kk in test_user_squad.py: over the modern
+    # era's 35 squad ledgers, "176 agents did not finish and every one of them TIMED OUT ...
+    # each row reading `did not finish within 300s`", and the ones that do not finish are
+    # "mostly `page_*` browser goals". Read per-run on the final ledger it is 169 of 399
+    # spawned (42%) against only 8 outright failures, 47 of 95 in the modern era, r190 83%
+    # and r191 67%; by agent KIND the browser modalities are the ones that stall -- `page` 49%
+    # of 276 and `ui_crud` 59% of 34, against 11% for `api_crud` and 27% for `api_smoke`.
+    #
+    # #1203kk fixed its OWN consequence (a goal whose agent timed out was recorded `passed`
+    # because a sibling finished) and was careful to say the 140 is "THE CONDITION, NOT THE
+    # OUTCOME". This is a different consequence of the same condition, with a different
+    # consumer: the browser GATE's reason. Changing the 300s budget is a wall-clock decision
+    # and is not what this touches.
+    #
+    # THE VERDICT IS NOT CHANGED -- `auth_ok` stays False and `browser_report_unusable` is
+    # untouched, so nothing that used to hold stops holding (#883 fails closed). What changes
+    # is that the step count is RECORDED, so the signal the operator and the P0 read can say
+    # which of the two it is. This file's own comments name a FALSE "unusable" six times
+    # (lines 283, 444, 604, 649, 716, 805); none of them could tell these apart.
     auth_ok = all(s["ok"] for s in steps) if steps else False
     report["auth_ok"] = auth_ok
+    report["auth_steps_1203ov"] = len(steps)
     report["blank_pages"] = blanks
     report["error_pages"] = errs
     report["auth_redirect_pages"] = redirected
@@ -1205,7 +1239,10 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     rd = report.get("real_data") or {}
     report["no_real_data"] = bool(rd.get("checked") and not rd.get("rendered"))
     report["summary"] = (
-        f"auth_ok={auth_ok}; pages={len(pages)}; "
+        # #1203ov: say WHICH kind of False this is, in the line a human reads first.
+        f"auth_ok={auth_ok}"
+        f"{'' if steps else ' (no login steps recorded — the walk observed nothing)'}; "
+        f"pages={len(pages)}; "
         f"blank={blanks or '∅'}; console_errors={errs or '∅'}; "
         f"login_wall={redirected or '∅'}; hollow={report['hollow_frontend']}; "
         f"fake_map={fake_maps or '∅'}; "
@@ -1479,7 +1516,14 @@ def browser_unusable_signals(report: Optional[Mapping[str, Any]]) -> Dict[str, A
         return out
     if not report.get("api_login_ok"):
         if not report.get("auth_ok"):
-            out["auth_ok"] = report.get("auth_ok")
+            # #1203ov: an empty step list is not a failed login. Name the one that is true,
+            # so the deferral message and the P0 it dispatches do not blame the app for a
+            # walk that never ran. The signal stays PRESENT either way -- the gate's verdict
+            # is unchanged, only its reason is now correct.
+            if report.get("auth_steps_1203ov") == 0:
+                out["auth_walk_recorded_no_steps"] = True
+            else:
+                out["auth_ok"] = report.get("auth_ok")
         for _k in ("auth_redirect_pages", "hollow_frontend"):
             if report.get(_k):
                 out[_k] = report.get(_k)

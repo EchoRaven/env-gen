@@ -1185,6 +1185,39 @@ def main(argv):
     except Exception as _e_ou:
         say("ou", "N-A", "the #1203ou criterion could not read this run (%s)" % _e_ou)
 
+    # --- #1203ov — "the walk observed nothing" must not read as "the login failed" --------
+    # READS: the run log (--log).
+    # FALSIFIED: a browser-gate line reports `auth_ok=False` with EVERY other signal empty
+    #   and says nothing about the step count -- the signature of a walk that recorded
+    #   nothing being reported as a failed authentication.
+    # CONFIRMED: no such line, or each one carries the no-steps wording / the
+    #   `auth_walk_recorded_no_steps` signal.
+    # CONTROL (pre-patch): 14 such lines in 13 of the 101 logs that have any `auth_ok=False`;
+    #   4 are modern (r183 1, r185 1, r191 2), and r191's was its terminal
+    #   `browser_ui_unusable — "attempt 8; signals: auth_ok=False"`.
+    try:
+        if not logtext:
+            say("ov", "N-A", "no run log given, and these lines live only in the log")
+        else:
+            _ov_sig = re.compile(r"auth_ok=False blank=\[\] console_errors=\[\] "
+                                 r"hollow=False login_wall=\[\] visual_mismatches=\[\]")
+            _ov_bad, _ov_ok = 0, 0
+            for _l in logtext.splitlines():
+                if "auth_ok=False" not in _l:
+                    continue
+                if "no login steps recorded" in _l or "auth_walk_recorded_no_steps" in _l:
+                    _ov_ok += 1
+                elif _ov_sig.search(_l):
+                    _ov_bad += 1
+            if not (_ov_bad or _ov_ok):
+                say("ov", "N-A", "this log has no all-empty auth_ok=False line")
+            else:
+                say("ov", "FALSIFIED" if _ov_bad else "CONFIRMED",
+                    "%d line(s) report a silent walk as a failed login, %d name it correctly"
+                    % (_ov_bad, _ov_ok))
+    except Exception as _e_ov:
+        say("ov", "N-A", "the #1203ov criterion could not read this run (%s)" % _e_ov)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

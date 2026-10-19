@@ -114,6 +114,10 @@ _CONTROLS = [
     # distinct kept-page decisions", r183 208/17, r185 110/14, r191 88/9.
     ("ou", "tiktok-web-r190", "N-A"),
     ("ou", "tiktok-web-r191", "N-A"),
+    # `ov` reads the LOG too. Verified by hand with it: r191 -> FALSIFIED "2 lines report a
+    # silent walk as a failed login", r183 1, r185 1; r190 -> N-A (no all-empty line).
+    ("ov", "tiktok-web-r191", "N-A"),
+    ("ov", "tiktok-web-r190", "N-A"),
 ]
 
 _cache = {}
@@ -201,6 +205,8 @@ _CONFIRM_REQUIRES = {
     "ot": [],
     # `ou` counts lines against distinct bodies in the log; nothing has to be emitted.
     "ou": [],
+    # `ov` CONFIRMED needs the wording the patched summary/signal emits.
+    "ov": ["no login steps recorded"],
 }
 
 
@@ -233,12 +239,22 @@ class ACriterionCanConfirmWhatItPredicts(unittest.TestCase):
         Without that, `"… recorded gate "` + `"evaluations; …"` on the next line is not
         contiguous text and the search misses a sentence the framework really does emit --
         which is how the first version of this test failed on #1203nn.
+
+        ★ EXCLUDED BY DIRECTORY, NOT BY NAME (#1203ov). `"test" in f.name` skipped TEN files,
+        and only seven of them are tests (`multi_agent/bundled_tests/oauth_contract/*`). The
+        other three -- `runtime/test_user_runner.py`, `runtime/test_user_squad.py`,
+        `runtime/test_user_validation.py` -- are framework modules, so every sentence they
+        emit was invisible to this check. It surfaced when #1203ov's required sentence lives
+        in `test_user_runner.py` and the checker reported no emitter for a line the framework
+        prints. Second time this checker's own reader was the bug (the first was calling the
+        script without `--log`). A filter has to key on the ROLE, which here is the
+        directory, not on the spelling of the filename.
         """
         import re as _re
         root = _ROOT / "agent" / "env_generator" / "llm_generator"
         out = []
         for f in root.rglob("*.py"):
-            if "test" in f.name or "node_modules" in f.parts:
+            if ({"tests", "bundled_tests", "node_modules"} & set(f.parts)):
                 continue
             try:
                 out.append(f.read_text(encoding="utf-8", errors="replace"))
@@ -246,6 +262,28 @@ class ACriterionCanConfirmWhatItPredicts(unittest.TestCase):
                 continue
         src = "\n".join(out)
         return _re.sub(r"""["']\s*\n\s*(?:f|r|rf|fr)?["']""", "", src)
+
+    def test_the_source_reader_keeps_the_test_user_modules(self):
+        """★ #1203ov: `runtime/test_user_runner.py` is framework source whose NAME starts with
+        `test`. A name filter dropped it and two siblings, so every sentence they emit read as
+        "no emitter". Pinned by content, not by the filter's shape."""
+        src = self._framework_source()
+        self.assertGreater(len(src), 100000)
+        for needle, why in (
+                ("no login steps recorded", "test_user_runner.py (#1203ov)"),
+                ("did not finish within", "test_user_squad.py (#1203kk)")):
+            with self.subTest(file=why):
+                self.assertIn(needle, src,
+                              "the reader is skipping %s again -- filter by DIRECTORY, not "
+                              "by filename" % why)
+
+    def test_the_source_reader_still_excludes_real_tests(self):
+        """...and the exclusion it does need is still in force: the bundled OAuth contract
+        tests under `bundled_tests/` must stay out, or a sentence that only a TEST contains
+        would count as an emitter."""
+        src = self._framework_source()
+        self.assertNotIn("WHATSAPP_EXPECTED_AUDIENCE", src)
+        self.assertNotIn("SLACK_EXPECTED_AUDIENCE", src)
 
     def test_every_required_sentence_has_an_emitter(self):
         src = self._framework_source()
@@ -329,7 +367,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 
