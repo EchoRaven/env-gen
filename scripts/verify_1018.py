@@ -1159,6 +1159,32 @@ def main(argv):
     except Exception as _e_ot:
         say("ot", "N-A", "the #1203ot criterion could not read this run (%s)" % _e_ot)
 
+    # --- #1203ou — a KEPT-PAGE decision must not repeat itself every pass ----------------
+    # READS: the run log (--log).
+    # FALSIFIED: `#1197 KEEPING the lane's auth page` appears more times than it has DISTINCT
+    #   raw bodies plus headroom -- the scaffolder re-announcing the same decision per tick.
+    # CONFIRMED: one line per distinct decision (page + the two line counts).
+    # ★ DISTINCT RAW lines, not normalised: normalising the numbers merges "15 lines" with
+    #   "14 lines", and the lane editing its own page between passes is exactly the change
+    #   that must still be reported.
+    # CONTROL (pre-patch): r190 212 lines / 5 distinct (the top one 92x), r183 208/17,
+    #   r185 110/14, r191 88/9.
+    try:
+        if not logtext:
+            say("ou", "N-A", "no run log given, and this line lives only in the log")
+        else:
+            _ou = [l for l in logtext.splitlines() if "#1197 KEEPING" in l]
+            _ou_b = {l.split("#1197", 1)[1].strip() for l in _ou}
+            if not _ou:
+                say("ou", "N-A", "this run kept no lane auth page")
+            else:
+                _ou_cap = max(3 * len(_ou_b), 3)
+                say("ou", "FALSIFIED" if len(_ou) > _ou_cap else "CONFIRMED",
+                    "%d line(s) for %d distinct kept-page decision(s)"
+                    % (len(_ou), len(_ou_b)))
+    except Exception as _e_ou:
+        say("ou", "N-A", "the #1203ou criterion could not read this run (%s)" % _e_ou)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

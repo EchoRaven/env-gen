@@ -110,6 +110,10 @@ _CONTROLS = [
     # r190 -> FALSIFIED "797 lines for 1 distinct resolution", r191 427/1, r185 607/1.
     ("ot", "tiktok-web-r190", "N-A"),
     ("ot", "tiktok-web-r191", "N-A"),
+    # `ou` reads the LOG too. Verified by hand with it: r190 -> FALSIFIED "212 lines for 5
+    # distinct kept-page decisions", r183 208/17, r185 110/14, r191 88/9.
+    ("ou", "tiktok-web-r190", "N-A"),
+    ("ou", "tiktok-web-r191", "N-A"),
 ]
 
 _cache = {}
@@ -195,6 +199,8 @@ _CONFIRM_REQUIRES = {
     # `ot` counts lines against distinct bodies in the log; nothing has to be emitted for it
     # to be able to confirm.
     "ot": [],
+    # `ou` counts lines against distinct bodies in the log; nothing has to be emitted.
+    "ou": [],
 }
 
 
@@ -323,7 +329,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

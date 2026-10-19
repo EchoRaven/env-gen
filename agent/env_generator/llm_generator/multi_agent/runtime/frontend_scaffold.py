@@ -12840,12 +12840,37 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     if (_prev1197.strip() and _prev1197 != _body and _env_flag_914()
                             and not _is_our_auth_projection_1197(frontend_dir, comp, _prev1197)
                             and _lane_auth_page_is_live_1197(_prev1197, target)):
-                        __import__("logging").getLogger(__name__).info(
-                            "#1197 KEEPING the lane's auth page: %s — %d lines, wired and "
-                            "drivable; the framework's %d-line projection is NOT written "
-                            "(r26 clobbered this page 87 times). Set "
-                            "ENVGEN_DEFER_TO_LANE_PAGE=0 to restore the overwrite.",
-                            comp, len(_prev1197.splitlines()), len(_body.splitlines()))
+                        # #1203ou: this DECISION is re-announced on every scaffold pass, and
+                        # the pass runs per tick. MEASURED on the modern run logs, counting
+                        # DISTINCT RAW lines: r190 212 lines for 5 of them (the top one 92
+                        # times byte for byte), r183 208/17, r185 110/14, r191 88/9 -- 1,115
+                        # lines across the r183+ logs for about 45 decisions. #1202ad's rule,
+                        # and the same shape #1203i3 and #1203ot fixed.
+                        #
+                        # The state is the pair of line counts, so the lane EDITING its page
+                        # is still news: r190 shows SignupPage at 15 lines (79x) and then at
+                        # 14 lines (22x), which is a real change inside one run.
+                        #
+                        # ★ `_body = None` STAYS OUTSIDE the announcement. It is the decision
+                        # -- "do not clobber the lane's page" -- and a memo that can change a
+                        # decision is far worse than the repetition it removes. r26 clobbered
+                        # this page 87 times, which is what that line is for.
+                        _say1203ou = True
+                        try:
+                            from .message_format import state_changed_1202ad as _sc1203ou
+                            _say1203ou = bool(_sc1203ou(
+                                "frontend_scaffold.kept_auth_page_1203ou:%s" % comp,
+                                "%d/%d" % (len(_prev1197.splitlines()),
+                                           len(_body.splitlines()))))
+                        except Exception:
+                            _say1203ou = True   # a memo failure must never silence the report
+                        if _say1203ou:
+                            __import__("logging").getLogger(__name__).info(
+                                "#1197 KEEPING the lane's auth page: %s — %d lines, wired and "
+                                "drivable; the framework's %d-line projection is NOT written "
+                                "(r26 clobbered this page 87 times). Set "
+                                "ENVGEN_DEFER_TO_LANE_PAGE=0 to restore the overwrite.",
+                                comp, len(_prev1197.splitlines()), len(_body.splitlines()))
                         _body = None
                 # Remember every auth page the framework writes — including the FIRST, when
                 # the file did not exist yet and the block above never ran. #1179b gives the
