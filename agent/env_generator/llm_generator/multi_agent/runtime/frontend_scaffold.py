@@ -14878,16 +14878,34 @@ def unstaged_seed_media_1202xn(output_dir) -> List[str]:
     missing video fails the same way for a viewer: the card renders, because its
     `thumbnail_url` IS an image and therefore IS staged, and the media only fails when played.
 
-    MEASURED across the 154 delivered runs carrying seeded `/assets` references: 246 of 10,227
-    point at a file that is not there, in 16 runs. Time-sliced it is live but thin -- of the
-    last fourteen tiktok runs, r124 (2), r129 (3) and r135 (1) each ship some, the rest none.
+    #1203pc CORRECTS THE NUMBER AND THE "THIN". It used to read: "MEASURED across the 154
+    delivered runs carrying seeded `/assets` references: 246 of 10,227 point at a file that is
+    not there, in 16 runs. Time-sliced it is live but thin -- of the last fourteen tiktok runs,
+    r124 (2), r129 (3) and r135 (1) each ship some, the rest none." Two things went stale:
+
+      * THE REST ARE NOT NONE. Re-measured on today's ledgers (`logs/unstaged_seed_media_
+        1202xn.jsonl`, 456 rows / 15 runs): distinct missing media per run runs 1 to 35, and
+        the MODERN era carries r187 with 9 and r190 with 7 -- both well past "thin", and both
+        after the sentence above was written. `#1203np`'s own docstring, 2,000 lines away in
+        `remediation_dispatcher`, already measured the delivered side at 135 references across
+        21 runs (r144 12, r169 12, r183 12, r181 9, r187 9, r186 8, r191 6) -- so the corrected
+        figure existed and this copy was never updated, which is exactly what #1202vs asks for
+        ("a correction must replace the number in EVERY copy").
+      * IT NO LONGER ONLY REPORTS. `#1203np` added `dispatch_unstaged_seed_media_1203np`,
+        which files a P1 task carrying `staged_alternatives_1203np`. Still never a gate check,
+        for the reason stated below, but "reports, never blocks" now understates it.
+
+    NEW, and the sharpest statement of the cause: of the 161 DISTINCT missing media across the
+    whole corpus, **160 are `.mp4` and one is `.jpg`**. That is the stager's regex
+    (`jpe?g|png|webp|gif`) with video outside it, measured end to end rather than argued.
     Confirmed against the running stacks rather than the filesystem alone: r135's
     `spencerx__7656058026427763973.mp4` answers 404, and r132 has two whose FILES exist on
     disk yet the container still 404s them -- a staging-versus-build-order fault this cannot
     see, and does not claim to.
 
-    REPORTS, NEVER BLOCKS, and deliberately does not synthesise a placeholder video: the
-    framework stages REAL media (71 files in r135), a grey stand-in would be worse than a
+    REPORTS AND FILES A P1 TASK (#1203np), NEVER BLOCKS, and deliberately does not synthesise
+    a placeholder video: the framework stages REAL media (71 files in r135), a grey stand-in
+    would be worse than a
     stated gap, and choosing between dropping the row and repointing it is a behaviour change
     that deserves a live run. Pure and best-effort: any fault returns []."""
     try:

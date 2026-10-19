@@ -1541,6 +1541,53 @@ def main(argv):
     except Exception as _e_pb:
         say("pb", "N-A", "the #1203pb criterion could not read this run (%s)" % _e_pb)
 
+    # --- #1203pd: the route-parameter finding now reaches a lane ------------------------
+    # Two halves, so two reads: the TASK store says a task was filed, and the log says the
+    # dispatcher ran. CONFIRMED needs the task, because that is the half #1041 is about --
+    # the log line already existed before this ticket.
+    try:
+        _pd_tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", None) or {}
+        _pd_filed = 0
+        for _k, _t in _pd_tasks.items():
+            if _k == "_meta" or not isinstance(_t, dict):
+                continue
+            _b = " ".join(str(_t.get(f) or "") for f in ("title", "description"))
+            if "URL parameter the page never reads" in _b:
+                _pd_filed += 1
+        _pd_log = logtext.count("#1203pd dispatched") if logtext else 0
+        if _pd_filed:
+            say("pd", "CONFIRMED",
+                "%d task(s) filed for routes whose page never reads its parameter"
+                " (%d dispatcher line(s) in the log)" % (_pd_filed, _pd_log))
+        elif _pd_log:
+            say("pd", "FALSIFIED",
+                "the dispatcher logged %d time(s) and no task carries its title -- the"
+                " #1041 half is still open" % _pd_log)
+        elif not _pd_tasks:
+            say("pd", "N-A", "this run has no workhub_tasks.json")
+        else:
+            # #883: the absence of a task is NOT evidence the condition was absent. Read the
+            # detector's own ledger before saying which it was -- the first version of this
+            # branch told r191 "no route carries a parameter its page ignores" while r191's
+            # ledger carries two.
+            _pd_ledger = run / "logs" / "route_params_ignored_1202uw.jsonl"
+            _pd_rows = 0
+            if _pd_ledger.exists():
+                for _l in _pd_ledger.read_text(errors="replace").split("\n"):
+                    if _l.strip():
+                        _pd_rows += 1
+            if _pd_rows:
+                say("pd", "N-A",
+                    "the condition IS present (%d ledger row(s)) and no task was filed, but"
+                    " no dispatcher line is in the log either -- this run predates #1203pd,"
+                    " so it cannot decide" % _pd_rows)
+            else:
+                say("pd", "N-A",
+                    "no route in this run carries a parameter its page ignores, so there was"
+                    " nothing to dispatch (corpus rate: 1-4 routes in each of 25 runs)")
+    except Exception as _e_pd:
+        say("pd", "N-A", "the #1203pd criterion could not read this run (%s)" % _e_pd)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

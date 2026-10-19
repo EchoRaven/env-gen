@@ -3121,6 +3121,92 @@ class RemediationDispatcher:
                 "close -- and #175's own bar stays enforced only against one-line fakes",
                 _e1203oc)
 
+    async def dispatch_route_params_ignored_1203pd(self) -> None:
+        """#1203pd: tell someone that every address under a route renders the same thing.
+
+        `#1202uw` has detected this since r135 and its finding reaches a `logger.warning` and
+        `logs/route_params_ignored_1202uw.jsonl` -- and nothing else. The dispatcher list in
+        this class has entries for unimplemented routes, route consolidation, frontend
+        navigability, unwired pages, unbuilt pages, list totals, seeded media, fabricated
+        arrays and never-matching filters, and NONE for a route parameter nothing reads. That
+        is #1041's shape and the one #1203np's docstring names in the same words one screen
+        above ("... and NONE for media"). Copying both halves (#1139/#1148), not the detector
+        half alone.
+
+        THE EVIDENCE IS IN: 299 ledger rows across 25 runs -- the detector re-runs on every
+        scaffold pass, so deduplicated it is 1 to 4 routes per run, which is thin per run and
+        unbroken across the arc. The newest two runs carry the IDENTICAL pair:
+
+            r189, r191   /:username -> ProfileOwnPage
+                         /@:username -> ProfileOwnPage
+
+        and #1202uw's own warning says what that costs a viewer: r135 delivered `/@:username`
+        "whose ProfileView takes the LOGGED-IN user from props and never reads the name, so
+        every profile URL showed an empty own-profile shell". The app serves, the page renders,
+        and the address is ignored -- the "UI with no real function" the user's standing rule
+        names, and invisible to every gate because nothing errors.
+
+        FRONTEND, always: the defect is a React page that does not read its own parameter. No
+        cause-routing like #1203np needs, because there is only one cause.
+
+        A TASK, not a gate check, on #1148's terms: "a task is worked, a check is a wall, and a
+        new wall cannot be validated without a run". P1, not P0 -- the app serves.
+
+        Per-milestone re-fire guard like its neighbours, so running every tick cannot storm,
+        and it re-reads its own detector rather than any gate key, so it cannot inherit a
+        caller's branch (#1203ii's bug).
+        """
+        try:
+            orch = self._orch
+            out_dir = getattr(orch, "output_dir", None)
+            if not out_dir:
+                return
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_rpi1203pd_dispatched", None) == milestone:
+                return
+            from .scaffolder import route_params_ignored_1202uw as _rpi1203pd
+            rows = [str(r).strip() for r in (_rpi1203pd(out_dir) or []) if str(r).strip()]
+            if not rows:
+                return
+            # sep="\n" for the same reason #1203np uses it: each row is "<route> -> <Page>"
+            # and ten of them on one line is unreadable. The cap declares itself (#1034).
+            _shown = join_capped(["- %s" % r for r in rows], total=len(rows), cap=10, sep="\n")
+            orch.hubs.workhub.create_task(
+                title=("Fix %d route(s) whose URL parameter the page never reads"
+                       % len(rows))[:180],
+                description=(
+                    "Each route below declares a parameter in its path, and the component "
+                    "subtree it renders never reads that parameter. The consequence is not an "
+                    "error: EVERY address under the route renders the same thing. A profile "
+                    "route that ignores `:username` shows the logged-in user's own profile "
+                    "for every name, which looks like a working page and is not one.\n"
+                    + _shown + "\n\n"
+                    "Do ONE of these per route:\n"
+                    "  * READ THE PARAMETER and let it decide what renders — in React Router "
+                    "that is `useParams()`, and the value has to reach the fetch or the "
+                    "filter, not just a heading.\n"
+                    "  * REMOVE THE PARAMETER from the route if what renders genuinely does "
+                    "not vary. A path that promises to address a thing must address it.\n\n"
+                    "Do NOT hardcode one entity to make the page look right, and do not read "
+                    "the parameter only to display it: the test is that two different "
+                    "addresses under the route render two different things."),
+                assignee="frontend",
+                agent="orchestrator",
+                priority="P1",
+            )
+            orch._rpi1203pd_dispatched = milestone
+            orch._logger.warning(
+                "#1203pd dispatched a frontend task for %d route(s) whose URL parameter the "
+                "page never reads, so every address under them renders the same thing: %s",
+                len(rows), _shown)
+        except Exception as _e1203pd:
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "dispatch_route_params_ignored_1203pd",
+                "the #1202uw route-parameter finding stays in a log line with nobody told, "
+                "which is the #1041 shape this exists to close",
+                _e1203pd)
+
     async def dispatch_never_matching_filters_1148(self) -> None:
         """#1148: tell the backend about a filter no seeded row can satisfy.
 

@@ -5929,6 +5929,16 @@ class Orchestrator:
                 await _RD1203np(self).dispatch_unstaged_seed_media_1203np()
             except Exception as _usm_exc:
                 self._logger.error("#1203np dispatch failed: %s", _usm_exc)
+            # #1203pd: the route-parameter finding, same class as its neighbours and for
+            # the same reason NOT behind the gate branch below -- a run whose `/@:username`
+            # ignores the name serves every page it is asked for, so its gate goes green and
+            # a call site inside `failed_checks` would never fire on the runs that have it.
+            # Its own try, its own per-milestone guard.
+            try:
+                from .runtime.remediation_dispatcher import RemediationDispatcher as _RD1203pd
+                await _RD1203pd(self).dispatch_route_params_ignored_1203pd()
+            except Exception as _rpi_exc:
+                self._logger.error("#1203pd dispatch failed: %s", _rpi_exc)
             # #1203oc: the fabricated-record finding, beside its neighbours and NOT behind the
             # gate branch below -- a run that ships invented rows is one whose gate goes green,
             # so a call site inside `failed_checks` would never fire on the runs that have it.
