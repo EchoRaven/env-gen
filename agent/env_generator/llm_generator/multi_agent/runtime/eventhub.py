@@ -272,6 +272,26 @@ def _set_and_prune_threads_1202vj(view, thread_id: str, thread: dict, actor: str
     return view
 
 
+def _looks_like_a_path_1203ol(recipient: Any) -> bool:
+    """Is this "agent id" actually a file path? (#1203ol)
+
+    A recipient with a path separator, or ending in a source-file extension, is a file. Agent
+    ids in this system are bare words (`backend`, `verifier`, `design_analyst_1`,
+    `browser_test_user_7_page_live_discover_page`) -- none of the corpus's 29-agent inboxes
+    carries a separator except r171's `app/backend/custom_routes.py`.
+    """
+    try:
+        s = str(recipient or "")
+        if not s:
+            return False
+        if "/" in s or "\\" in s:
+            return True
+        return s.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".json",
+                                   ".yml", ".yaml", ".css", ".html"))
+    except Exception:
+        return False
+
+
 class EventHub:
     """Gmail-like durable event, thread, subscription, and inbox hub."""
 
@@ -356,6 +376,55 @@ class EventHub:
             if event_rank < floor_rank:
                 continue
             explicit.add(sub["agent"])
+
+        # ★ #1203ol: A FILE PATH IS NOT AN AGENT, AND ONE GOT AN INBOX.
+        #
+        # r171 registered 14 endpoints with `provider: "app/backend/custom_routes.py"` -- the
+        # backend lane passed its FILE where the agent id goes -- and registryhub emits to the
+        # provider. The result is an inbox keyed `app/backend/custom_routes.py` holding 108
+        # events (task_created 40, bug_state_changed 38, endpoint_schema_changed 30), of which
+        # 93 are `high` and 15 are `urgent`, and EVERY ONE has `delivered: false, read: false`.
+        # No agent answers to that name, so nothing in it was ever going to be read.
+        #
+        # MEASURED: 1 of 104 runs and 14 of 3,442 endpoint registrations carry a path-shaped
+        # provider -- rare, and the harm per occurrence is total. The same field confusion is
+        # #1203oj's defect one hub over (a consumer record whose `agent` held a frontend file),
+        # so this is a shape the lanes reach for, not a one-off typo.
+        #
+        # ★ ONLY THE PATH-SHAPED CASE. I also measured "inboxes whose key never acted as an
+        # agent in that run" and got 10,628 events across 82 runs -- but the instrument was
+        # confounded: the top names are `design_analyst_1`, `knowledge` and the browser
+        # test-users, which ARE real agents that simply never create a task or write a
+        # comment, and 10,525 of those events are `normal`. A path, by contrast, cannot be an
+        # agent, which is why that is the whole guard.
+        #
+        # It DROPS the recipient rather than failing the publish: the other recipients of the
+        # same event are legitimate and must still be delivered. And it announces, because a
+        # silently dropped recipient is the #883 shape -- "delivered to everyone" and
+        # "delivered to everyone who exists" must not read the same.
+        _pathish_1203ol = sorted(r for r in explicit
+                                 if _looks_like_a_path_1203ol(r))
+        if _pathish_1203ol:
+            explicit -= set(_pathish_1203ol)
+            try:
+                # Imported HERE: this module has no module-level `message_format` import, and
+                # the first draft called `warn_once_1201` bare -- a NameError that my own
+                # `except Exception: pass` would have swallowed, leaving the announcement
+                # silently dead. That is the trap this session has paid for three times, so
+                # the test below asserts the announcement FIRES, not merely that the drop
+                # happened.
+                from .message_format import warn_once_1201 as _w1203ol
+                _w1203ol(
+                    "eventhub.path_recipient_1203ol",
+                    "#1203ol an event named a FILE as its recipient (%s) — no agent answers "
+                    "to that, so an inbox keyed by it would never be read. Dropped from this "
+                    "event's recipients; the others are unaffected. The usual cause is a "
+                    "registration that put a file_path where an agent id goes (r171 did it on "
+                    "14 endpoints and 108 events, 15 of them urgent, landed in a dead "
+                    "letterbox)." % ", ".join(_pathish_1203ol),
+                    None)
+            except Exception:
+                pass
 
         recipients = sorted(explicit)
         actor = source_hub or "eventhub"

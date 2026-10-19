@@ -65,6 +65,9 @@ _CONTROLS = [
     # the log: r190 -> CONFIRMED, "11 refusal(s); 0 of them hold a chain that never passed".
     ("ok", "tiktok-web-r190", "N-A"),
     ("ok", "tiktok-web-r191", "N-A"),
+    ("ol", "tiktok-web-r171", "FALSIFIED"),      # 1 path-keyed inbox, 108 events
+    ("ol", "tiktok-web-r190", "CONFIRMED"),
+    ("ol", "tiktok-web-r191", "CONFIRMED"),
 ]
 
 _cache = {}
@@ -131,6 +134,9 @@ _CONFIRM_REQUIRES = {
     "oj": ["this endpoint's consumer record was registered by"],
     # `ok` counts the freeze's own refusal sentence in the log.
     "ok": ["is frozen"],
+    # `ol` reads inbox KEYS, not a framework sentence -- CONFIRMED is the absence of a
+    # path-shaped one, which needs nothing emitted.
+    "ol": [],
 }
 
 
@@ -259,7 +265,7 @@ class TheCheckerStillBites(unittest.TestCase):
             self.skipTest("tiktok-web-r190 is not on this disk")
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
-                     "od", "of", "og", "oi", "oj", "ok"):
+                     "od", "of", "og", "oi", "oj", "ok", "ol"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

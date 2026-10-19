@@ -763,6 +763,43 @@ def main(argv):
     except Exception as _e_ok:
         say("ok", "N-A", "the #1203ok criterion could not read this run (%s)" % _e_ok)
 
+    # --- #1203ol — no event may be addressed to a file -----------------------------------
+    # READS: shared/hubs/eventhub_inboxes.json (the inbox keys) and registryhub_endpoints.json
+    #   (the `provider` field that caused it).
+    # FALSIFIED: an inbox is keyed by something path-shaped. No agent answers to that name, so
+    #   everything in it is undeliverable -- r171 holds 108 events there, 15 of them urgent.
+    # CONFIRMED: no path-keyed inbox. The detail also prints path-shaped `provider` values,
+    #   which the patch does NOT rewrite: it drops the recipient at publish time, so a
+    #   registration may still carry one and nothing is lost by it.
+    # CONTROL (pre-patch): tiktok-web-r171 FALSIFIED (1 inbox, 108 events); every other run
+    #   CONFIRMED.
+    try:
+        _ol_inb = _json(run / "shared" / "hubs" / "eventhub_inboxes.json", {}) or {}
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.eventhub import (
+            _looks_like_a_path_1203ol as _path_ol)
+        _ol_bad = {}
+        for _k, _box in _ol_inb.items():
+            if _k == "_meta" or str(_k).startswith(("version", "last_")):
+                continue
+            if not isinstance(_box, dict) or not _path_ol(_k):
+                continue
+            _ol_bad[str(_k)] = len(_box.get("items") or {})
+        _ol_eps = _json(run / "shared" / "hubs" / "registryhub_endpoints.json", {}) or {}
+        _ol_prov = sum(1 for _k, _e in _ol_eps.items()
+                       if _k != "_meta" and isinstance(_e, dict)
+                       and _path_ol(_e.get("provider")))
+        if not _ol_inb:
+            say("ol", "N-A", "this run has no event inboxes")
+        else:
+            say("ol", "FALSIFIED" if _ol_bad else "CONFIRMED",
+                "%d path-keyed inbox(es) holding %d event(s): %s; %d endpoint(s) registered "
+                "with a path as provider"
+                % (len(_ol_bad), sum(_ol_bad.values()),
+                   sorted(_ol_bad)[:2] or "none", _ol_prov))
+    except Exception as _e_ol:
+        say("ol", "N-A", "the #1203ol criterion could not read this run (%s)" % _e_ol)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")
