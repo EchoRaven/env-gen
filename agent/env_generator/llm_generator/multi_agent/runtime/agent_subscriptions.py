@@ -188,6 +188,83 @@ INBOX_ONLY_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
 }
 
 
+# --- #1203pb: a subscription nobody can satisfy ------------------------------------------
+# The table above wires agents to push-events "they previously could only see by polling",
+# and its first entry group says outright: "Stuck merges + failed agent tasks MUST reach
+# orchestrator." Four of those wires cannot carry anything, and both the code and the corpus
+# agree on each:
+#
+#   workhub/task_stale        NO emitter anywhere in the framework (0 literal emit sites) and
+#                             0 events in 104 corpus runs, while 530 subscriptions to it were
+#                             installed. A task going stale is exactly what this wire is for.
+#   codehub/pr_opened         same shape: no emitter, 0 events, 463 subscriptions.
+#   codehub/review_requested  an emitter EXISTS (hubs/codehub/service.py) but never runs:
+#                             0 events in 104 runs against 926 subscriptions.
+#   codehub/merge_conflict    the emitters are in step_runner.py and workflow_policies.py, so
+#                             the events carry source_hub=frontend (2299) or backend (569) --
+#                             never `codehub`. 2868 events exist and this subscription matches
+#                             none of them. It is NOT a delivery gap: those events reach the
+#                             orchestrator through explicit `recipients` (2766 urgent ones sit
+#                             in its inbox). The wire is dead, the signal arrives anyway.
+#
+# This is the mirror of #1203f6 ("a finding must reach a recipient"): a recipient waiting for
+# a finding nobody files. The remedy here is the one #1203ox's `validate_orphaned_tool_offerings`
+# uses for the same class on the tool side -- say it once, change no behaviour. Repointing
+# merge_conflict at `*` is deliberately NOT done: it would alter which events WAKE a resident
+# lane, and #1202w6 says a change to wake behaviour gets a live run before it ships.
+_NO_EMITTER_1203PB = {
+    ("workhub", "task_stale"): "no emitter anywhere; 0 events in 104 corpus runs",
+    ("codehub", "pr_opened"): "no emitter anywhere; 0 events in 104 corpus runs",
+    ("codehub", "review_requested"): "an emitter exists in hubs/codehub/service.py but never "
+                                     "runs; 0 events in 104 corpus runs",
+    ("codehub", "merge_conflict"): "emitted from step_runner/workflow_policies, so events "
+                                   "carry source_hub=frontend|backend, never codehub; the "
+                                   "2868 events reach their recipients explicitly instead",
+}
+_UNSATISFIABLE_SAID_1203PB: set = set()
+
+
+def unsatisfiable_subscriptions_1203pb(agent_id: str) -> List[Tuple[str, str, str]]:
+    """The agent's default subscriptions that no emitter can ever satisfy.
+
+    Pure, so it can be tested without a hub. Returns ``(source_hub, event_type, reason)``.
+
+    The list is frozen rather than derived: 25 of the framework's emit call sites pass a
+    NON-LITERAL event type, so a static scan cannot prove "nothing emits X" -- it can only
+    fail to find it, and per #883 that is "could not tell", not "clean". Each entry here was
+    confirmed twice, once from the emit sites and once from 104 runs of corpus events.
+    """
+    out = []
+    for source_hub, event_type, _floor in (DEFAULT_SUBSCRIPTIONS.get(agent_id) or []):
+        reason = _NO_EMITTER_1203PB.get((source_hub, event_type))
+        if reason:
+            out.append((source_hub, event_type, reason))
+    return out
+
+
+def warn_unsatisfiable_subscriptions_1203pb(agent_id: str) -> None:
+    """One consolidated line per agent, once per process. Never raises."""
+    try:
+        dead = unsatisfiable_subscriptions_1203pb(agent_id)
+        if not dead or agent_id in _UNSATISFIABLE_SAID_1203PB:
+            return
+        _UNSATISFIABLE_SAID_1203PB.add(agent_id)
+        import logging as _lg1203pb
+        _lg1203pb.getLogger(__name__).info(
+            "#1203pb %s installs %d default subscription(s) that NOTHING can satisfy, so the "
+            "events they wait for will never arrive by subscription: %s. This changes no "
+            "delivery -- it names wires that are already dead.",
+            agent_id, len(dead),
+            "; ".join("%s/%s (%s)" % (h, t, why) for h, t, why in dead))
+    except Exception as _e1203pb:                 # a reporter must never break the pulse
+        try:
+            from .message_format import warn_once_1201 as _w1203pb
+            _w1203pb("agent_subscriptions.unsatisfiable_1203pb",
+                     "the #1203pb dead-subscription report", _e1203pb)
+        except Exception:
+            pass
+
+
 def ensure_default_subscriptions(hubs, agent_id: str) -> None:
     """Idempotently register the agent's default subscriptions.
 
@@ -197,6 +274,11 @@ def ensure_default_subscriptions(hubs, agent_id: str) -> None:
     eventhub = getattr(hubs, "eventhub", None)
     if eventhub is None or not hasattr(eventhub, "subscribe"):
         return
+    # #1203pb: this is the one place that installs the table, so it is the one place that can
+    # say which of its wires are dead. Reported BEFORE subscribing, so the line appears even
+    # if a later subscribe raises; and it is idempotent per agent, so the per-step pulse does
+    # not repeat it.
+    warn_unsatisfiable_subscriptions_1203pb(agent_id)
     for source_hub, event_type, priority_floor in (DEFAULT_SUBSCRIPTIONS.get(agent_id) or []):
         try:
             # O14/Phase 4.1: agent subscribing on its own behalf at

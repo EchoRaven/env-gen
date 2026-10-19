@@ -148,6 +148,9 @@ _CONTROLS = [
     # netflix-r5 is the run that carries #893 instability records (11 of them), so this
     # triple also pins that the #893 half rides in p7's detail rather than its own row.
     ("p7", "netflix-local-r5", "FALSIFIED"),
+    # `pb` reads the log, so without one it is N-A on every corpus run -- it flips only
+    # when a run emits the line the #1203pb reporter now writes at subscription install.
+    ("pb", "tiktok-web-r190", "N-A"),
 ]
 
 _cache = {}
@@ -249,6 +252,7 @@ _CONFIRM_REQUIRES = {
     "p6": ["Two skills are about this exact job"],
     # `p7` CONFIRMED needs the key the tick now carries; `p7b` the two totals.
     "p7": ["failed_checks_total", "appeared_total"],
+    "pb": ["that NOTHING can satisfy"],
 }
 
 
@@ -410,7 +414,7 @@ class TheCheckerStillBites(unittest.TestCase):
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
                      "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov",
-                     "ox", "oy", "p2", "p4", "p6", "p7"):
+                     "ox", "oy", "p2", "p4", "p6", "p7", "pb"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 

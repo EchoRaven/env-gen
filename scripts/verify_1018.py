@@ -1514,6 +1514,33 @@ def main(argv):
     except Exception as _e_p7:
         say("p7", "N-A", "the #1203p7 criterion could not read this run (%s)" % _e_p7)
 
+    # --- #1203pb: the dead default subscriptions are named out loud ----------------------
+    # Log-reading. The line is one per agent per process, so a run that installs the table
+    # at all should carry two or three of them (orchestrator 2, verifier 1, frontend 1,
+    # backend 1 -- debugger and knowledge have none, which is why "all agents" is the wrong
+    # expectation). N-A without a log, because the line lives only there.
+    try:
+        if not logtext:
+            say("pb", "N-A", "no run log given, and this line lives only in the log")
+        else:
+            _pb_lines = [l for l in logtext.split("\n") if "#1203pb" in l]
+            _pb_named = sum(1 for l in _pb_lines if "task_stale" in l or "pr_opened" in l
+                            or "review_requested" in l or "merge_conflict" in l)
+            if not _pb_lines:
+                say("pb", "FALSIFIED",
+                    "the run installed default subscriptions and not one #1203pb line was "
+                    "emitted -- the reporter did not reach the installer")
+            elif _pb_named:
+                say("pb", "CONFIRMED",
+                    "%d #1203pb line(s), %d of them naming a dead wire"
+                    % (len(_pb_lines), _pb_named))
+            else:
+                say("pb", "FALSIFIED",
+                    "%d #1203pb line(s) but none names a dead wire -- the reasons were lost"
+                    % len(_pb_lines))
+    except Exception as _e_pb:
+        say("pb", "N-A", "the #1203pb criterion could not read this run (%s)" % _e_pb)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")
