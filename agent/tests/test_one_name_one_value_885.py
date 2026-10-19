@@ -97,7 +97,9 @@ def test_the_scan_sees_the_tree():
     no divergence and look identical to a clean tree."""
     defs, files = _defs()
     assert files >= 100, files
-    assert len(defs) >= 300, f"only {len(defs)} constants resolved — the matcher has drifted"
+    # #1203oz: 630 constants resolve today against a floor of 300 -- the matcher could drift
+    # past half the tree and this still would not say so. Re-derived at ~82%.
+    assert len(defs) >= 515, f"only {len(defs)} constants resolved — the matcher has drifted"
 
 
 def test_a_name_defined_twice_has_one_value():

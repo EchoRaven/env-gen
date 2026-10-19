@@ -314,7 +314,10 @@ def test_the_scan_looked_and_reached_memory_1203jx():
     it finds neither, the zero above means "did not look".
     """
     _found, visited = _scan_pkg_1203jx()
-    assert len(visited) >= 100, "the scan parsed only %d file(s); it did not look" % len(visited)
+    # #1203oz: 267 files are parsed today, so a floor of 100 could be met with 63% of the
+    # scan gone -- the failure message says "it did not look", and it could not have said so.
+    assert len(visited) >= 220, (                      # 267 on 2026-10-19, margin ~82%
+        "the scan parsed only %d file(s); it did not look" % len(visited))
     for must in (os.path.join("memory", "generator_memory.py"),
                  os.path.join("multi_agent", "runtime", "delivery_gate.py")):
         assert must in visited, (

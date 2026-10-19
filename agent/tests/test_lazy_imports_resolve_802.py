@@ -112,7 +112,13 @@ _IMPORTS = _function_level_imports()
 def test_the_scan_finds_something():
     """Non-vacuity. If a refactor moves these, this test must fail rather than silently pass —
     the sixth instrument-zero of this session is why that sentence is here."""
-    assert len(_IMPORTS) >= 300, len(_IMPORTS)   # 364 at the time of writing
+    # #1203oz: THIS FLOOR HAD ROTTED. The comment next to it recorded 364 sites "at the
+    # time of writing" and the floor was set at 300 -- an ~82% margin, which is a real
+    # check. The scan has since grown to 1103 (#1203n6 alone widened it 840 -> 945), and
+    # 300 against 1103 means this assertion cannot tell "looked at 1103" from "looked at
+    # 301": the scan could lose 73% of its reach and still read as non-vacuous, which is
+    # #883's shape one level in. Re-derived at the SAME margin the author chose.
+    assert len(_IMPORTS) >= 900, len(_IMPORTS)   # 1103 on 2026-10-19, margin ~82%
 
 
 def test_the_whole_tree_is_in_scope_1203nb():

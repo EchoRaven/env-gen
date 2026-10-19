@@ -40,7 +40,10 @@ _MODULES = [
 def test_the_scan_finds_the_tree():
     """Non-vacuity: a moved package would otherwise make every check below vacuously pass — the
     instrument-zero rule, applied to this file."""
-    assert len(_MODULES) >= 100, len(_MODULES)
+    # #1203oz: 100 was a round number, not a measurement -- 170 modules are compiled today,
+    # so the floor could be met while 41% of the tree went missing. Re-derived at ~82%, the
+    # margin test_lazy_imports_resolve_802 chose when it recorded its own count.
+    assert len(_MODULES) >= 135, len(_MODULES)   # 170 on 2026-10-19
 
 
 @pytest.mark.parametrize("path", _FILES, ids=[p.name for p in _FILES])
