@@ -6512,6 +6512,13 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             len(_audit.get("unused_mapped") or []), len(_emitted), _mandated_screens)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
+    lines.insert(1,                     # after the body's own header line
+        "\n## Two skills are about this exact job\n"
+        " `get_skill(\"frontend-design\")` — reference fidelity over novelty, which is what "
+        "this gate scores; `get_skill(\"ui-ux-review\")` — hierarchy, spacing and the "
+        "loading/empty/error states a screen can pass a smoke check without having. "
+        "Both ship with this env and are already granted to you; nothing else in this task "
+        "will point you at them.")
     # #680: name what did not fit, with its scores, so the omission is visible and the lane
     # knows it is a sequencing decision rather than a claim that these screens are fine.
     if _deferred:
@@ -6522,6 +6529,45 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             + "\n These are ordered behind the screens above, which are further from the bar. "
               "Remediation is re-issued every round, so they lead the next one — fix the ones "
               "above first rather than spreading effort across all of them.")
+    # #1203p6: NAME THE TWO SKILLS THAT ARE ABOUT EXACTLY THIS, BECAUSE NOTHING ELSE DOES.
+    # The framework ships 12 bundled skills with every run and allowlists three of them for
+    # the frontend lane (`agents_config.yaml`: ui-ux-review, ui-bootstrap, frontend-design).
+    # MEASURED over the corpus: `skill_consulted` fires 23,617 times, and those three are
+    # consulted **4 times each across 104 runs** -- 3 to 4 runs out of 104 -- while
+    # `verification-before-completion` is consulted 9,725 times and `release-readiness` 9,064.
+    #
+    # Three explanations were checked and two are wrong. It is NOT that the lane cannot reach
+    # them (all three are in its allowlist). It is NOT that only gated skills get consulted
+    # (`_require_skill_consulted` guards only release-readiness and api-contract-guard, and
+    # the most-consulted skill of all is guarded by neither). What is left is that nothing
+    # STEERS the choice: **the three UI skills are named in 0 of 25,903 corpus task bodies.**
+    #
+    # Which matters here specifically, because this body is the frontend lane's instruction
+    # after the VISUAL gate failed, and these skills are about that: `frontend-design` opens
+    # with "env-gen FIRST: reference fidelity outranks distinctiveness" (this gate's own
+    # subject), and `ui-ux-review` says "a flow that renders but has no empty/error state
+    # passes the smoke check yet is still a UX defect" -- which is #1203ny's finding in the
+    # skill's own words. Meanwhile iconography is the weakest of the judge's seven dimensions
+    # (mean 0.577, 67 of 251 PASSING screens below 0.50).
+    #
+    # NEAR THE TOP, NOT THE END, AND #680 ALREADY MEASURED WHY -- 150 lines above this, in
+    # this same function: "447 visual remediation tasks, median 8 screens and 57,815
+    # chars, max 15 and 126,047 ... `description` is 77.8% of ALL task bytes". #605 adds
+    # that this is the reason descriptions total 17 MB, naming this builder directly, and
+    # #679 traced check_inbox's 187.3M chars back to it. A sentence meant to be READ
+    # cannot sit after eight screens of per-screen notes. (Re-measured today for the
+    # record and it holds: 399 such tasks, median 48,322 chars, 95% over 10k.)
+    #
+    # #1203jhb made exactly this call for exactly this reason: "SHORT, AND BEFORE THE
+    # BITS, BECAUSE THE FIELD IS CAPPED." Index 1, not 0: `lines[0]` is the body's own
+    # "Visual fidelity below threshold" header, which several tests pin with
+    # `startswith` -- displacing it was the first draft's mistake and the suite said so.
+    #
+    # A POINTER, NOT A GATE. `preconditions.py` records what the gate route costs
+    # ("release-readiness gate blocked deliver_project forever"), and #1202w6 says a new wall
+    # needs a live run first. A sentence in a task body blocks nothing and is measurable:
+    # if `skill_consulted` for these three does not move after the next run, the pointer was
+    # not the lever and a wall can be argued for with that evidence in hand.
     return _regressed + _head + "\n".join(lines)   # #619/#620
 
 

@@ -1376,6 +1376,64 @@ def main(argv):
     except Exception as _e_p4:
         say("p4", "N-A", "the #1203p4 criterion could not read this run (%s)" % _e_p4)
 
+    # --- #1203p6 — the UI skills the task never named -----------------------------------
+    # READS: shared/hubs/workhub_tasks.json (did the pointer land in a task body?) and
+    #   shared/hubs/eventhub_events.json (did consultation move?). Both, because the pointer
+    #   and its effect are different questions and this criterion exists to decide whether a
+    #   GATE is warranted -- #1202w6 wants a live run before a new wall, and
+    #   `preconditions.py` records what the last skill gate cost ("release-readiness gate
+    #   blocked deliver_project forever").
+    # CONFIRMED: a task body names the skills AND `skill_consulted` for them is above the
+    #   corpus baseline of 4 per run-family -- the pointer is the lever, no wall needed.
+    # FALSIFIED: a visual-remediation task was dispatched and no body names them -- the
+    #   pointer did not reach the lane at all.
+    # N-A (an ANSWER, not a failure): bodies name them and consultation did NOT move -- the
+    #   pointer is not the lever, and a gate can be argued for with that in hand.
+    # CONTROL (pre-patch): 0 of 25,903 corpus task bodies name any of the three, and each is
+    #   consulted 4 times across 104 runs (vs `verification-before-completion` 9,725 and
+    #   `release-readiness` 9,064, the latter the only one of the two that a precondition
+    #   gates).
+    _P6_SKILLS = ("frontend-design", "ui-ux-review", "ui-bootstrap")
+    try:
+        _p6_tasks = _json(run / "shared" / "hubs" / "workhub_tasks.json", None) or {}
+        _p6_named = 0
+        _p6_visual = 0
+        for _k, _t in _p6_tasks.items():
+            if _k == "_meta" or not isinstance(_t, dict):
+                continue
+            _b = " ".join(str(_t.get(f) or "") for f in ("title", "description", "how"))
+            if "below the bar" in _b or "visual" in _b.lower():
+                _p6_visual += 1
+            if any(s in _b for s in _P6_SKILLS):
+                _p6_named += 1
+        _p6_ev = _json(run / "shared" / "hubs" / "eventhub_events.json", None) or {}
+        _p6_used = 0
+        for _k, _v in _p6_ev.items():
+            if _k == "_meta" or not isinstance(_v, dict):
+                continue
+            if str(_v.get("event_type") or "") != "skill_consulted":
+                continue
+            _pl = _v.get("payload") or {}
+            if str(_pl.get("skill") or _pl.get("name") or "") in _P6_SKILLS:
+                _p6_used += 1
+        if not _p6_tasks:
+            say("p6", "N-A", "this run has no workhub_tasks.json")
+        elif _p6_named and _p6_used > 4:
+            say("p6", "CONFIRMED",
+                "%d task body(ies) name a UI skill and they were consulted %d time(s) "
+                "(corpus baseline: 4 per skill over 104 runs)" % (_p6_named, _p6_used))
+        elif _p6_named:
+            say("p6", "N-A",
+                "%d task body(ies) name a UI skill and consultation did not move (%d) -- the "
+                "pointer is not the lever; a gate can be argued for from here" % (_p6_named, _p6_used))
+        elif _p6_visual:
+            say("p6", "FALSIFIED",
+                "%d visual/remediation task(s) and not one names a UI skill" % _p6_visual)
+        else:
+            say("p6", "N-A", "no visual remediation task in this run, so nothing to point at")
+    except Exception as _e_p6:
+        say("p6", "N-A", "the #1203p6 criterion could not read this run (%s)" % _e_p6)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

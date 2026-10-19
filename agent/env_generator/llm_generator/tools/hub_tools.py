@@ -947,8 +947,14 @@ class WorkHubUpdatePageTool(HubTool):
                 # that is by construction, not by chance. So whether #1203b0 ever fired, and
                 # whether it broke the loop it was written for, cannot be read off any
                 # artifact -- while `deliverability_page_apis_understated` CLEARS AND COMES
-                # BACK 43 times across the hold ledgers, 35 of them in the modern era (r167+),
-                # which is exactly the "fixed it 19 times over" shape #1203b0 names.
+                # BACK **59 times** across `logs/delivery_gate.jsonl` (83 runs, 8,698 gate
+                # evaluations), which is exactly the "fixed it 19 times over" shape #1203b0
+                # names. #1202vs: the number this line first carried was 43/35-modern, off
+                # `logs/delivery_hold.jsonl` -- not wrong, but that ledger covers 40 runs and
+                # only the ticks where a hold was written, where the gate ledger carries every
+                # evaluation's full `failed_checks`. The denser one is the number to quote,
+                # and #1203p4's comment already quotes it; a stale copy here would have had a
+                # reader under-count by a third.
                 # #1203or faced the same question yesterday and answered it by writing a
                 # ledger; one line is enough here.
                 # Keyed PER PAGE so two pages cannot silence each other, and carrying the

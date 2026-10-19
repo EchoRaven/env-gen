@@ -136,6 +136,10 @@ _CONTROLS = [
     # the artifact alone: every breaking change there had a consumer to tell.
     ("p4", "tiktok-web-r191", "N-A"),
     ("p4", "tiktok-web-r190", "N-A"),
+    # `p6` reads two artifacts and no log, so it answers with or without one. Both runs
+    # dispatched visual tasks (r191 9, r190 37) and named no UI skill in any of them.
+    ("p6", "tiktok-web-r191", "FALSIFIED"),
+    ("p6", "tiktok-web-r190", "FALSIFIED"),
 ]
 
 _cache = {}
@@ -233,6 +237,8 @@ _CONFIRM_REQUIRES = {
     "p2": ["omitted `apis_used` for the"],
     # `p4` CONFIRMED needs the no-consumer announcement.
     "p4": ["reached NO ONE"],
+    # `p6` CONFIRMED needs the pointer the remediation body now carries.
+    "p6": ["Two skills are about this exact job"],
 }
 
 
@@ -394,7 +400,7 @@ class TheCheckerStillBites(unittest.TestCase):
         for crit in ("n5", "n6", "n8", "n9", "nc", "nd", "ne", "nf", "nh", "ni",
                      "nm", "nn", "no", "np", "nq", "nr", "ns", "nt", "oc",
                      "od", "of", "og", "oi", "oj", "ok", "ol", "om", "oo", "op", "oq", "or", "os", "ot", "ou", "ov",
-                     "ox", "oy", "p2", "p4"):
+                     "ox", "oy", "p2", "p4", "p6"):
             with self.subTest(criterion=crit):
                 self.assertIn(crit, v)
 
