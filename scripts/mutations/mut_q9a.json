@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/agents/agents_config.yaml",
+ "test": "tests/test_1203q9_the_macro_the_config_promised.py",
+ "mutations": [
+  {
+   "label": "Q9A THE TICKET (task half): the config names a task macro the template does not define. render_macro logs a warning, returns '', and _build_task_prompt's `if prompt: return prompt` falls through -- the verifier silently gets a GENERIC task prompt instead of its 4078-char role prompt",
+   "find": "task_macro: \"verifier_task_prompt\"",
+   "replace": "task_macro: \"verifier_task_prompt_renamed\""
+  },
+  {
+   "label": "Q9B (system half, control -- #1202sp should also catch this): a declared system macro that does not exist. _get_system_prompt raises here, so this one is loud in production; the guard must still pin it",
+   "find": "system_macro: \"knowledge_system_prompt\"",
+   "replace": "system_macro: \"knowledge_system_prompt_renamed\""
+  }
+ ]
+}

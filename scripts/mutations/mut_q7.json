@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203q7_the_hint_that_stopped_counting.py",
+ "mutations": [
+  {
+   "label": "Q7A THE TICKET: back to the bare slice-join, so googlemaps-r16 again names three chains where 48 pass and the sentence's own argument (the count) is gone",
+   "find": "\"backend.\" % (join_capped(sorted(_sib), cap=3, sep=\", \"),",
+   "replace": "\"backend.\" % (\", \".join(sorted(_sib)[:3]),"
+  },
+  {
+   "label": "Q7B the list is sliced BEFORE the helper sees it, so `total` defaults to 3, the remainder is 0 and nothing is declared -- while the source still spells join_capped (#1203pl: the total must be what is being counted, not what is being shown)",
+   "find": "\"backend.\" % (join_capped(sorted(_sib), cap=3, sep=\", \"),",
+   "replace": "\"backend.\" % (join_capped(sorted(_sib)[:3], cap=3, sep=\", \"),"
+  },
+  {
+   "label": "Q7C the cap is lifted instead of declared, so a 48-sibling endpoint pastes 48 chain names into the lane task body (#1034 wants the cut declared, not removed)",
+   "find": "\"backend.\" % (join_capped(sorted(_sib), cap=3, sep=\", \"),",
+   "replace": "\"backend.\" % (join_capped(sorted(_sib), cap=999, sep=\", \"),"
+  }
+ ]
+}

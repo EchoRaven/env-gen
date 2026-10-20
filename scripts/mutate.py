@@ -113,6 +113,34 @@ def _sh_ok(path):
     return subprocess.run(["bash", "-n", path], capture_output=True).returncode == 0
 
 
+def _yaml_ok(path):
+    """#1203qa: `yaml.safe_load` is the exact parse `agents_config.yaml`'s real readers use
+    (configurable_agent and #1202sp both go through it), so its verdict is evidence about the
+    mutant rather than about a different language's grammar."""
+    import yaml
+    try:
+        with open(path, encoding="utf-8") as fh:
+            yaml.safe_load(fh)
+        return True
+    except Exception:
+        return False
+
+
+def _j2_ok(path):
+    """#1203qa: `Environment().parse` compiles the template TEXT -- it raises
+    TemplateSyntaxError on a broken tag and needs none of the render context, which is what
+    makes it usable as a syntax checker here. Renaming a macro stays valid Jinja on purpose:
+    that mutation is a CONTRACT break, not a syntax break, and the test is what must catch it.
+    """
+    import jinja2
+    try:
+        with open(path, encoding="utf-8") as fh:
+            jinja2.Environment().parse(fh.read())
+        return True
+    except Exception:
+        return False
+
+
 def _syntax_checker(path):
     """The syntax checker for THIS target, or None when there is no checker for its language.
 
@@ -134,6 +162,24 @@ def _syntax_checker(path):
         return _py_ok
     if ext in (".sh", ".bash"):
         return _sh_ok
+    # #1203qa: config and templates are a real mutation target -- agents_config.yaml names
+    # the (template, macro) pairs that every lane's prompt is built from, and nothing in
+    # Python spells those names. The import is checked HERE, not inside the checker: a
+    # missing pyyaml/jinja2 must leave this returning None so main() refuses to start, which
+    # is #1203jq's own lesson -- a checker that answers False for a reason that is not the
+    # mutant reports BROKEN while naming the wrong cause.
+    if ext in (".yaml", ".yml"):
+        try:
+            import yaml  # noqa: F401
+        except Exception:
+            return None
+        return _yaml_ok
+    if ext in (".j2", ".jinja", ".jinja2"):
+        try:
+            import jinja2  # noqa: F401
+        except Exception:
+            return None
+        return _j2_ok
     try:
         with open(path, encoding="utf-8", errors="ignore") as fh:
             first = fh.readline()

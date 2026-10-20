@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203q8_the_broken_step_never_had_to_arrive.py",
+ "mutations": [
+  {
+   "label": "Q8A THE TICKET: the payload is computed and thrown away while the source substring the two pre-existing guards pin ('_brk798 = _chain_broken_detail_798(orch)') stays BYTE-IDENTICAL, so the #1 modern blocker goes back to 'read the broken step' with no step named. CONTROL RUN: test_broken_step_is_named_798.py MISSED, test_action_endpoint_chain_dispatch.py MISSED, this file CAUGHT. (An earlier form inserted `None and ` after the `=`; that was CAUGHT for the WRONG reason -- test_the_action_404_branch_keeps_precedence does src.index() on that exact spelling and raised ValueError.)",
+   "find": "                        _brk798 = _chain_broken_detail_798(orch)",
+   "replace": "                        _brk798 = _chain_broken_detail_798(orch) and None"
+  },
+  {
+   "label": "Q8B the payload is computed and then the branch that files it is never taken -- #798's and #1135's whole content is dropped on the floor",
+   "find": "                        if _brk798:",
+   "replace": "                        if False and _brk798:"
+  },
+  {
+   "label": "Q8C the app's own answer stops travelling (#1202wx), leaving the verifier a status code where r2's discriminator was the body text 'profile_id does not belong to the caller'",
+   "find": "                        (\" — \" + _note_keeping_the_evidence_1202wx(note)) if note else \"\",",
+   "replace": "                        \"\","
+  }
+ ]
+}

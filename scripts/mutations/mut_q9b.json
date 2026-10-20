@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/prompts/v4/backend_agent.j2",
+ "test": "tests/test_1203q9_the_macro_the_config_promised.py",
+ "mutations": [
+  {
+   "label": "Q9C the v4 template stops defining the task macro its profile names, so ENVGEN_PROMPT_VERSION=v4 resolves (the FILE exists, which is all resolve_prompt_version checks) and then renders '' -- the version switch strands the macro",
+   "find": "{% macro backend_task_prompt(",
+   "replace": "{% macro backend_task_prompt_renamed("
+  },
+  {
+   "label": "Q9D same for the v4 system macro: the file resolves, the macro is gone, _get_system_prompt raises at run time rather than at review time",
+   "find": "{% macro backend_system_prompt(",
+   "replace": "{% macro backend_system_prompt_renamed("
+  }
+ ]
+}

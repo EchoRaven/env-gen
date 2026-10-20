@@ -860,12 +860,26 @@ def _chain_broken_detail_798(orch) -> List[str]:
                 note = str(st.get("note") or "").strip()
                 _sib = [c for c in _pass_idx.get(
                     _canon_endpoint_1135(st.get("method"), st.get("path")), ()) if c != name]
+                # #1203q7: this sentence argues from a COUNT -- "with THREE passing
+                # chains over it" is how #1135 above makes its own case -- and the
+                # render joined a bare three-item slice, so a reader could never
+                # see a number above three. MEASURED over the corpus with these very
+                # functions (`_passing_endpoint_index_1135` / `_canon_endpoint_1135` /
+                # `_step_is_actionable_1202gx` on 104 run trees): 775 actionable broken
+                # steps, 284 carry a passing sibling, and 137 of those 284 (48.2%) are
+                # above the cap -- 16 runs, 36 endpoints, 4 products, and 100 of the 137
+                # are not on an /auth/ endpoint. googlemaps-r16 named three where 48
+                # pass; tiktok-web-r90 three where 25 do (worse off-tiktok again, the
+                # #1203q3/q5/q6 shape). #811 declares ITS cut twenty lines below this
+                # one, in this function, citing #680 "no silent caps", and join_capped
+                # was already imported for #1034 and used at ten sites in this file --
+                # the #1139/#1148 shape: the precedent was copied by half.
                 _sib_txt = ""
                 if _sib:
                     _sib_txt = (
                         " ⚠ #1135: %s ALREADY PASS on this same endpoint (%s) — the endpoint "
                         "works, so compare THEIR step inputs against yours before touching the "
-                        "backend." % (", ".join(sorted(_sib)[:3]),
+                        "backend." % (join_capped(sorted(_sib), cap=3, sep=", "),
                                       _canon_endpoint_1135(st.get("method"), st.get("path"))))
                 out.append(
                     "%s -> step %r: %s %s returned %s, expected %s%s%s%s" % (
