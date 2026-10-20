@@ -1013,6 +1013,39 @@ def _record_own_words_1203fx(record: Any) -> str:
     return ""
 
 
+# #1203qs: ITS GUARD DROVE A COPY, AND THE TEXT ASSERTION WAS SATISFIED BY A DIFFERENT
+# OCCURRENCE OF THE SAME STRING.
+#
+# `#1029` fixed `#1017`'s defect -- it read `failed_records` (an INT) where it needed
+# `pages_failed` (the list), so all 269 firings across r170-r173 printed "on 0 record(s):
+# <unnamed records>" for the single most common live blocker. The fix is right; its guard
+# was not. `test_ui_evidence_failures_are_actually_named_1029.py` defined `_render`,
+# documented as "Mirror of the production expression", and its behavioural tests drove the
+# MIRROR; production was watched only by `'get("pages_failed")' in _site()` -- a substring
+# that occurs THREE times in this file, so re-pointing the real one at the count left that
+# assertion green (mutation T2, MISSED).
+#
+# The mirror had also drifted from what it mirrors: it rendered `"; ".join(names[:12])`
+# while production renders `join_capped(..., cap=12)`, which DECLARES the cut (#1034). A
+# copy that no longer matches is worse than no copy, because it still reads as coverage.
+#
+# The two collections stay deliberately separate: `failed_records` is the COUNT and
+# `pages_failed` is the LIST, so "N record(s): <list>" must never be read as "these are
+# the N" -- which is why the message prints both numbers.
+def _ui_evidence_names_1203qs(breadth: Any) -> List[str]:
+    """The failed UI pages NAMED, taken from the LIST -- never from the count."""
+    _b = breadth if isinstance(breadth, dict) else {}
+    return [str(p)[:44] for p in (_b.get("pages_failed") or [])]
+
+
+def _ui_evidence_named_detail_1203qs(breadth: Any):
+    """``(record_count, named_count, the named pages with their cut declared)``."""
+    _b = breadth if isinstance(breadth, dict) else {}
+    _names = _ui_evidence_names_1203qs(_b)
+    return (int(_b.get("failed_records") or 0), len(_names),
+            join_capped(_names, len(_names), cap=12) or "<unnamed records>")
+
+
 def _ui_evidence_breadth_739(validation_results: Any,
                              page_by_route: Any = None,
                              stale_before: float = 0.0) -> Dict[str, Any]:
@@ -4785,15 +4818,11 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 # most common live blocker (`validation_ui_evidence_failed`: 7 of the last 10
                 # STUCK runs, and what ended r173), so the flows it exists to name have never
                 # once been visible.
-                _names1017 = [str(p)[:44] for p in (_breadth739.get("pages_failed") or [])]
-                # #1034: the count is `failed_records` but the list is built from
-                # `pages_failed` — two different collections, so "N record(s): <list>" could
-                # never be read as "these are the N". Print both, and declare the cut.
+                _cnt1203qs, _nn1203qs, _shown1203qs = (
+                    _ui_evidence_named_detail_1203qs(_breadth739))
                 logger.warning("#1017 validation_ui_evidence_failed on %d record(s), "
                                "%d named page(s): %s",
-                               int(_breadth739.get("failed_records") or 0), len(_names1017),
-                               join_capped(_names1017, len(_names1017), cap=12)
-                               or "<unnamed records>")
+                               _cnt1203qs, _nn1203qs, _shown1203qs)
             except Exception as _e:
                 # #1202et: WITH the message. This block exists to NAME the failed UI
                 # records; reporting only "KeyError" tells the reader that naming failed

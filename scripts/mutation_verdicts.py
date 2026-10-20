@@ -63,6 +63,24 @@ def _touched_specs():
     return keep
 
 
+def _restore_if_dirty(target):
+    """`git checkout --` the spec's target if a killed mutate.py left a mutant behind.
+
+    Returns the path when something was restored, else "". Never raises: this runs in a
+    `finally` and must not mask the verdict it is protecting."""
+    if not target:
+        return ""
+    try:
+        dirty = subprocess.run(["git", "diff", "--quiet", "--", target],
+                               capture_output=True).returncode != 0
+        if not dirty:
+            return ""
+        subprocess.run(["git", "checkout", "--", target], capture_output=True)
+        return target
+    except Exception:
+        return ""
+
+
 def main(argv):
     specs = _touched_specs() if "--touched" in argv else [a for a in argv[1:]
                                                           if a.endswith(".json")]
@@ -83,6 +101,18 @@ def main(argv):
                                  capture_output=True, text=True, timeout=900).stdout
         except Exception as exc:
             broken.append((p, "run failed: %s" % exc))
+            out = ""
+        finally:
+            # RESTORE, ALWAYS. `mutate.py` edits the target in place and restores it on its
+            # own way out -- but only if it gets there. A timeout here, or the harness killing
+            # the parent, leaves the mutant ON DISK: 2026-10-20 ended one session with
+            # `DERIVED_VERDICTS_1203NA` missing "NOT_WALKED" and another with
+            # `auth_steps_1203ov = None`, both live defects sitting in the tree behind a single
+            # `M` in git status. This tool must never be the thing that leaves one.
+            _restored = _restore_if_dirty(d.get("file") or "")
+            if _restored:
+                broken.append((p, "left a mutant on disk and it was restored: %s" % _restored))
+        if not out:
             continue
         if "baseline: red" in out:
             broken.append((p, "RED BASELINE -- the spec's own test file does not pass clean"))

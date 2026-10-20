@@ -45,11 +45,43 @@ def test_breadth_returns_a_count_and_a_list_separately():
 
 
 def test_names_come_from_the_LIST():
-    assert 'get("pages_failed")' in _site()
+    """#1203qs: driven, not read as text. `'get("pages_failed")'` occurs THREE times in
+    delivery_gate.py, so asserting the substring let the real one be re-pointed at the
+    count while the assertion stayed green."""
+    assert dg._ui_evidence_names_1203qs(
+        {"failed_records": 9, "pages_failed": ["only_page"]}) == ["only_page"]
+    # the count must not be able to supply names, whatever it holds
+    assert dg._ui_evidence_names_1203qs({"failed_records": 9}) == []
 
 
 def test_the_count_comes_from_the_COUNT():
-    assert 'get("failed_records")' in _site()
+    count, _named, _shown = dg._ui_evidence_named_detail_1203qs(
+        {"failed_records": 7, "pages_failed": ["a", "b"]})
+    assert count == 7, "the record count must not be the length of the name list"
+
+
+def test_the_two_numbers_are_reported_separately_1203qs():
+    """#1034: "N record(s): <list>" must never read as "these are the N"."""
+    count, named, shown = dg._ui_evidence_named_detail_1203qs(
+        {"failed_records": 9, "pages_failed": ["p1", "p2"]})
+    assert (count, named) == (9, 2)
+    assert "p1" in shown and "p2" in shown
+
+
+def test_a_long_name_list_declares_its_cut_1203qs():
+    pages = ["page_%02d" % i for i in range(30)]
+    _count, named, shown = dg._ui_evidence_named_detail_1203qs(
+        {"failed_records": 30, "pages_failed": pages})
+    assert named == 30
+    assert "30" in shown or "more" in shown, (
+        "the cut is not declared, so a truncated list reads as the whole: %r" % shown)
+
+
+def test_nothing_named_says_so_rather_than_printing_empty_1203qs():
+    for b in ({}, None, {"failed_records": 4}, {"pages_failed": []}):
+        _c, named, shown = dg._ui_evidence_named_detail_1203qs(b)
+        assert named == 0
+        assert shown == "<unnamed records>", (b, shown)
 
 
 def test_it_no_longer_iterates_the_count():
@@ -69,10 +101,15 @@ def _breadth(records):
 
 
 def _render(breadth):
-    """Mirror of the production expression."""
-    names = [str(p)[:44] for p in (breadth.get("pages_failed") or [])]
-    return (int(breadth.get("failed_records") or 0),
-            "; ".join(names[:12]) or "<unnamed records>")
+    """#1203qs: the REAL expression, not a copy of it.
+
+    This was "Mirror of the production expression", and the two tests below drove the
+    mirror -- so re-pointing production at the count was invisible to them (mutation T2,
+    MISSED). The copy had drifted too: it rendered `"; ".join(names[:12])` while production
+    renders `join_capped(..., cap=12)`, which DECLARES the cut (#1034), so the copy would
+    have passed a message the real one never produces."""
+    count, _named, shown = dg._ui_evidence_named_detail_1203qs(breadth)
+    return count, shown
 
 
 def test_a_failing_flow_is_named():

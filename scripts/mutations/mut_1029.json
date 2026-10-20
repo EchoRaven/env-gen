@@ -8,9 +8,9 @@
    "replace": "            else:\n                pass"
   },
   {
-   "label": "T2 the #1017 defect reintroduced at the consumer: it reads the COUNT and tries to name it",
-   "find": "                _names1017 = [str(p)[:44] for p in (_breadth739.get(\"pages_failed\") or [])]",
-   "replace": "                _names1017 = [str(p)[:44] for p in (_breadth739.get(\"failed_records\") or [])]"
+   "label": "T2 the #1017 defect reintroduced at the consumer: it reads the COUNT and tries to name it  [RE-ANCHORED 2026-10-20 by #1203qs: the expression moved out of validate_delivery_gate into `_ui_evidence_names_1203qs` so the guard could DRIVE it instead of driving a copy. The old anchor read NOT APPLIED after the move -- which is the extraction cost this repo has paid before, now paid on a mutation spec.]",
+   "find": "    return [str(p)[:44] for p in (_b.get(\"pages_failed\") or [])]",
+   "replace": "    return [str(p)[:44] for p in (_b.get(\"failed_records\") or [])]"
   },
   {
    "label": "T3 the two shapes merge: the list becomes a count, which is the premise the test guards",
