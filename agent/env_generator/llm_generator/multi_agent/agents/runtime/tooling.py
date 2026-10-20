@@ -1519,6 +1519,29 @@ class AgentTooling:
 
     _FLUSH_EVERY_1202WL = 50
 
+    # #1203pn: AND A TIME-BASED FLUSH, because the count-based one loses the tail and its
+    # number reads as a budget.
+    #
+    # `_flush_tool_ms_1202wl` had exactly one caller -- the `% _FLUSH_EVERY_1202WL` branch
+    # below -- and no agent-end hook, so the artifact was only ever written on an exact
+    # 50-call boundary. Two consequences, both measured on the corpus's 300
+    # `browser_test_user_*` timing artifacts:
+    #
+    #   * `calls` is ALWAYS a multiple of 50. 295 of the 300 read exactly 50 and 5 read 100,
+    #     so an agent that made 99 calls is recorded as 50 and 49 calls of timing are lost.
+    #     The totals `read_tool_timings_1203ge` hands a reader are a systematic undercount.
+    #   * an agent that made fewer than 50 calls never hits the boundary and writes NO
+    #     artifact at all, so short-lived agents are invisible rather than cheap.
+    #
+    # And the shape misleads: a column of exact 50s reads as a ceiling. It cost me a wrong
+    # hypothesis within the hour -- "the browser walk is hitting a 50-call budget" -- which the
+    # per-tool counts then contradicted. #1039's family: a figure indistinguishable from a cap.
+    #
+    # Time-based rather than flush-every-call: the interval exists because this is on the hot
+    # path of every tool invocation. 30s bounds the tail without making the I/O per-call, and
+    # it fixes the under-50 agent too.
+    _FLUSH_SECONDS_1203PN = 30.0
+
 
     def _record_tool_ms_1202wl(self, tool_name: str, duration_ms: Any) -> None:
         """Accumulate per-tool wall clock and flush the totals periodically. Never raises."""
@@ -1541,8 +1564,13 @@ class AgentTooling:
         if ms > row["max_ms"]:
             row["max_ms"] = ms
         self._tool_ms_calls_1202wl = getattr(self, "_tool_ms_calls_1202wl", 0) + 1
-        if self._tool_ms_calls_1202wl % self._FLUSH_EVERY_1202WL:
+        # #1203pn: the count boundary OR a stale write, whichever comes first.
+        _now1203pn = time.time()
+        _last1203pn = getattr(self, "_tool_ms_flushed_at_1203pn", 0.0)
+        if (self._tool_ms_calls_1202wl % self._FLUSH_EVERY_1202WL
+                and (_now1203pn - _last1203pn) < self._FLUSH_SECONDS_1203PN):
             return
+        self._tool_ms_flushed_at_1203pn = _now1203pn
         self._flush_tool_ms_1202wl()
 
     def _flush_tool_ms_1202wl(self) -> bool:

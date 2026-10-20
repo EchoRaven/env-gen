@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/agents/runtime/tooling.py",
+ "test": "tests/test_1203pn_the_timing_artifact_lost_its_tail.py",
+ "mutations": [
+  {
+   "label": "PN1 the time-based trigger is removed, so the artifact is written only on an exact 50-call boundary again -- 295 of the corpus's 300 browser-walk artifacts read exactly 50, an agent at 99 calls is recorded as 50, and an agent under 50 writes nothing at all",
+   "find": "        if (self._tool_ms_calls_1202wl % self._FLUSH_EVERY_1202WL\n                and (_now1203pn - _last1203pn) < self._FLUSH_SECONDS_1203PN):",
+   "replace": "        if self._tool_ms_calls_1202wl % self._FLUSH_EVERY_1202WL:"
+  },
+  {
+   "label": "PN2 the flush timestamp is never advanced, so every single call writes the file -- this is on the hot path of every tool invocation and the interval exists to stop exactly that",
+   "find": "        self._tool_ms_flushed_at_1203pn = _now1203pn\n        self._flush_tool_ms_1202wl()",
+   "replace": "        self._flush_tool_ms_1202wl()"
+  },
+  {
+   "label": "PN3 the COUNT trigger is removed, so a busy agent only writes every 30s and a burst of calls inside one window is lost if the run ends in it. EXPECTED CAUGHT -- the file pins that 50 calls still writes. Control",
+   "find": "        if (self._tool_ms_calls_1202wl % self._FLUSH_EVERY_1202WL\n                and",
+   "replace": "        if (True\n                and"
+  },
+  {
+   "label": "PN4 a junk duration is recorded as a call, which the function's own rule forbids: 'an unknown duration recorded as 0 understates' OWNERSHIP SPLIT (#1203pn): running all four at both files shows #1202wl's re-aimed test owns the three FLUSH properties (PN1/PN2/PN3) and #1203pn's owns the junk-duration rule (PN4). Each spec carries the mutations its file actually owns.",
+   "find": "        if duration_ms is None or isinstance(duration_ms, bool):\n            return",
+   "replace": "        if False:\n            return"
+  }
+ ]
+}

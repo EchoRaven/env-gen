@@ -44,12 +44,28 @@ def _artifact(tmp_path, agent="tester"):
     return tmp_path / "logs" / "tool_timings_1202wl" / ("%s.json" % agent)
 
 
-def test_nothing_is_written_before_the_first_flush(tmp_path):
+def test_it_batches_rather_than_writing_once_per_call(tmp_path):
+    """The property this has always been about: "a write per call is the storm #1202sg removed;
+    it must batch".
+
+    #1203pn RE-AIMED the assertion, not the property. It used to read `not
+    _artifact(...).exists()` after 49 calls, which expressed batching as "nothing is written
+    before the 50-call boundary" -- and that boundary was the defect: the artifact was ONLY
+    ever written on an exact multiple of 50, so an agent at 99 calls was recorded as 50 and an
+    agent under 50 wrote nothing at all. Measured across the corpus's 300 browser-walk
+    artifacts: 295 read exactly 50 and 5 read 100.
+
+    So the first call now writes, which is what makes a short-lived agent visible without any
+    end-of-life hook, and the 48 after it are batched. One write for 49 calls is still batching
+    -- the storm was 49 writes.
+    """
     h = _Host(tmp_path)
     for _ in range(h._FLUSH_EVERY_1202WL - 1):
         h._record_tool_ms_1202wl("read", 5)
-    assert not _artifact(tmp_path).exists(), (
-        "a write per call is the storm #1202sg removed; it must batch")
+    row = json.loads(_artifact(tmp_path).read_text(encoding="utf-8"))
+    assert row["calls"] == 1, (
+        "a write per call is the storm #1202sg removed; it must batch -- 49 calls produced a "
+        "file recording %d" % row["calls"])
 
 
 def test_the_totals_land_on_the_flush(tmp_path):
