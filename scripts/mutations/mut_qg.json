@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203qg_the_last_three_diagnoses_had_to_arrive.py",
+ "mutations": [
+  {
+   "label": "QG auth_contradiction_1176 on validation_ui_evidence_failed (#2, 204 modern rows): value discarded, spelling and AST shape byte-identical so test_1188 stays green -- the lane loses the one sentence that says the 401 is the CONTRACT working, so it 'fixes' a handler that was already right",
+   "find": "                                  + auth_contradiction_1176(orch, _fp)",
+   "replace": "                                  + (auth_contradiction_1176(orch, _fp) and \"\")"
+  },
+  {
+   "label": "QG auth_contradiction_1176 on deliverability_ui_flow_failed (#3, 2503 red records / 81 runs): value discarded, spelling and AST shape byte-identical so test_1188 stays green -- the lane loses the one sentence that says the 401 is the CONTRACT working, so it 'fixes' a handler that was already right",
+   "find": "                                  + auth_contradiction_1176(orch, _ff)",
+   "replace": "                                  + (auth_contradiction_1176(orch, _ff) and \"\")"
+  },
+  {
+   "label": "QG control_absence_contradicted_1182 on validation_ui_evidence_failed (#2, 204 modern rows): value discarded, spelling and AST shape byte-identical so test_1188 stays green -- the lane is no longer shown that the page's own source declares the control the walk called missing -- r19 ended STUCK at $355 on one such record",
+   "find": "                                  + control_absence_contradicted_1182(orch, _fp)",
+   "replace": "                                  + (control_absence_contradicted_1182(orch, _fp) and \"\")"
+  },
+  {
+   "label": "QG control_absence_contradicted_1182 on deliverability_ui_flow_failed (#3, 2503 red records / 81 runs): value discarded, spelling and AST shape byte-identical so test_1188 stays green -- the lane is no longer shown that the page's own source declares the control the walk called missing -- r19 ended STUCK at $355 on one such record",
+   "find": "                                  + control_absence_contradicted_1182(orch, _ff)",
+   "replace": "                                  + (control_absence_contradicted_1182(orch, _ff) and \"\")"
+  },
+  {
+   "label": "QG two_step_login_1185 on validation_ui_evidence_failed (#2, 204 modern rows): value discarded, spelling and AST shape byte-identical so test_1188 stays green -- the lane is no longer told the app's login needs two submits, so a first-submit failure reads as an auth defect",
+   "find": "                                  + two_step_login_1185(orch, _fp)",
+   "replace": "                                  + (two_step_login_1185(orch, _fp) and \"\")"
+  },
+  {
+   "label": "QG two_step_login_1185 on deliverability_ui_flow_failed (#3, 2503 red records / 81 runs): value discarded, spelling and AST shape byte-identical so test_1188 stays green -- the lane is no longer told the app's login needs two submits, so a first-submit failure reads as an auth defect",
+   "find": "                                  + two_step_login_1185(orch, _ff)",
+   "replace": "                                  + (two_step_login_1185(orch, _ff) and \"\")"
+  }
+ ]
+}

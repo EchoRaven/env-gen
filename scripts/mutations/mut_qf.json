@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203qf_two_more_diagnoses_had_to_arrive.py",
+ "mutations": [
+  {
+   "label": "QF ui_smoke_refresh_1177 on validation_ui_evidence_failed (#2 blocker, 204 modern rows): value discarded, spelling and AST shape byte-identical, so test_1188's `in branch` assertion stays green -- the lane is told to re-run run_validation on a record run_validation cannot touch -- r17 spent 18 minutes doing exactly that while the page defect was already fixed",
+   "find": "                                  + ui_smoke_refresh_1177(orch, _fp)",
+   "replace": "                                  + (ui_smoke_refresh_1177(orch, _fp) and \"\")"
+  },
+  {
+   "label": "QF ui_smoke_refresh_1177 on deliverability_ui_flow_failed (#3 blocker, 2503 red records / 81 runs): value discarded, spelling and AST shape byte-identical, so test_1188's `in branch` assertion stays green -- same, on the branch #1203ft cannot cover because it reads validation:ui_flow rows and so never sees a ui_smoke record",
+   "find": "                                  + ui_smoke_refresh_1177(orch, _ff)",
+   "replace": "                                  + (ui_smoke_refresh_1177(orch, _ff) and \"\")"
+  },
+  {
+   "label": "QF name_keyed_supersede_1202su on validation_ui_evidence_failed: value discarded, spelling and AST shape byte-identical, so test_1188's `in branch` assertion stays green -- the note that the store is last-write-wins PER NAME disappears; measured when it landed: in 15 of 24 runs a pass was recorded after the failure under a different name and the failure still stood",
+   "find": "                                  + name_keyed_supersede_1202su(orch, _fp))",
+   "replace": "                                  + (name_keyed_supersede_1202su(orch, _fp) and \"\"))"
+  },
+  {
+   "label": "QF name_keyed_supersede_1202su on deliverability_ui_flow_failed: value discarded, spelling and AST shape byte-identical, so test_1188's `in branch` assertion stays green -- same; and 1202su is not in test_1188._DIAGNOSES at all, so this call site had NO wiring assertion of any kind before #1203qf",
+   "find": "                                  + name_keyed_supersede_1202su(orch, _ff))",
+   "replace": "                                  + (name_keyed_supersede_1202su(orch, _ff) and \"\"))"
+  }
+ ]
+}
