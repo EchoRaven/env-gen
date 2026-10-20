@@ -179,11 +179,32 @@ class TheAbortPathActuallyUsesIt(unittest.TestCase):
         self.assertEqual(summ.get("api_passed"), 5)
 
     def test_the_delivery_line_names_numbers_instead_of_none(self):
-        """The exact read heal_pipeline does: `summ["api_passed"]`/`summ["api_steps"]`."""
+        """#1203qn: ask the function heal_pipeline asks, rather than composing the line
+        here -- this test used to assemble that clause itself from the two counts, so a change to
+        the real clause was invisible to it."""
+        from env_generator.llm_generator.multi_agent.runtime.test_user_validation import (
+            journey_steps_clause_1203qn)
         summ = (self._run().get("summary") or {})
-        line = "%s/%s journey steps passed" % (summ.get("api_passed"), summ.get("api_steps"))
+        line = journey_steps_clause_1203qn(summ)
         self.assertEqual(line, "5/7 journey steps passed")
         self.assertNotIn("None", line)
+
+    def test_a_journey_that_never_started_says_so_1203qn(self):
+        """The state #1203d3 emits no key for. It must not reach the log as None/None --
+        r191 printed that nine times."""
+        from env_generator.llm_generator.multi_agent.runtime.test_user_validation import (
+            journey_steps_clause_1203qn)
+        for summ in ({}, None, {"verdict": "ERROR"}, {"api_steps": 7}, {"api_passed": 5}):
+            line = journey_steps_clause_1203qn(summ)
+            self.assertNotIn("None", line)
+            self.assertIn("no journey step counts were recorded", line)
+
+    def test_a_journey_that_drove_nothing_is_still_a_measurement_1203qn(self):
+        """0/0 is a CLAIM the journey earned; it must not be folded into the absent case."""
+        from env_generator.llm_generator.multi_agent.runtime.test_user_validation import (
+            journey_steps_clause_1203qn)
+        self.assertEqual("0/0 journey steps passed",
+                         journey_steps_clause_1203qn({"api_steps": 0, "api_passed": 0}))
 
     def test_the_step_that_never_ran_claims_nothing(self):
         """MCP raised, so there is no `complete` to carry -- absent, not False."""

@@ -1,24 +1,31 @@
 {
-  "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
-  "test": "tests/test_1203pd_every_address_rendered_the_same_thing.py",
-  "mutations": [
-    {"name": "PDA the per-milestone guard is never set, so every tick re-files",
-     "find": "            orch._rpi1203pd_dispatched = milestone\n",
-     "replace": "            pass  # guard not set\n"},
-    {"name": "PDB the task goes to the backend, which cannot fix a React page",
-     "find": "                assignee=\"frontend\",\n                agent=\"orchestrator\",\n                priority=\"P1\",\n            )\n            orch._rpi1203pd_dispatched",
-     "replace": "                assignee=\"backend\",\n                agent=\"orchestrator\",\n                priority=\"P1\",\n            )\n            orch._rpi1203pd_dispatched"},
-    {"name": "PDC the list is cut with a bare slice instead of declaring it",
-     "find": "            _shown = join_capped([\"- %s\" % r for r in rows], total=len(rows), cap=10, sep=\"\\n\")",
-     "replace": "            _shown = \"\\n\".join([\"- %s\" % r for r in rows][:10])"},
-    {"name": "PDD the anti-cheat sentence is dropped, so echoing the param passes",
-     "find": "                    \"Do NOT hardcode one entity to make the page look right, and do not read \"\n                    \"the parameter only to display it: the test is that two different \"\n                    \"addresses under the route render two different things.\"),",
-     "replace": "                    \"Read the parameter so the page reflects the address.\"),"},
-    {"name": "PDE the remove-the-parameter alternative is dropped",
-     "find": "                    \"  * REMOVE THE PARAMETER from the route if what renders genuinely does \"\n                    \"not vary. A path that promises to address a thing must address it.\\n\\n\"",
-     "replace": "\n"},
-    {"name": "PDF a failure stops announcing itself",
-     "find": "            from .message_format import warn_once_1201\n            warn_once_1201(\n                \"dispatch_route_params_ignored_1203pd\",",
-     "replace": "            return\n            warn_once_1201(\n                \"dispatch_route_params_ignored_1203pd\","}
-  ]
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_primary_dataless_needs_a_fetch_573.py",
+ "mutations": [
+  {
+   "label": "PD1 #1026b: `is False` becomes falsy, so an UNKNOWN route_seed_hit (None, older probe) fires a HARD hold that never escapes (FIX #152) -- the modern era's second-commonest blocker, 10 of 29 verdicts",
+   "find": "        and p.get(\"route_seed_hit\") is False and not p.get(\"blank\")",
+   "replace": "        and not p.get(\"route_seed_hit\") and not p.get(\"blank\")"
+  },
+  {
+   "label": "PD2 unknown request counts stop keeping the old behaviour: only a provable zero was meant to suppress the hold, and `is not None` makes an unknown suppress it too",
+   "find": "        and p.get(\"api_requests\") != 0",
+   "replace": "        and p.get(\"api_requests\") is not None"
+  },
+  {
+   "label": "PD3 the fetch requirement is dropped entirely, restoring the pre-#231d premise that netflix.com's fetch-free '/' is an empty shell",
+   "find": "        and p.get(\"api_requests\") != 0\n        for p in (pages or []))",
+   "replace": "        for p in (pages or []))"
+  },
+  {
+   "label": "PD4 a BLANK primary route is counted here too, so one page reports two blockers and the P0 names the wrong one -- blank_pages owns that case",
+   "find": "        and p.get(\"route_seed_hit\") is False and not p.get(\"blank\")",
+   "replace": "        and p.get(\"route_seed_hit\") is False"
+  },
+  {
+   "label": "PD5 ARRIVAL: the report stops asking the function and carries a constant, so the signal silently stops existing",
+   "find": "    report[\"primary_dataless\"] = _primary_dataless_1203qm(pages)",
+   "replace": "    report[\"primary_dataless\"] = _primary_dataless_1203qm(pages) and False"
+  }
+ ]
 }

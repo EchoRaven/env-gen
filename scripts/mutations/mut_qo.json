@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/workflow_policies.py",
+ "test": "tests/test_hub_consistency_gate_tools_present.py",
+ "mutations": [
+  {
+   "label": "QO1 THE LATENT RISK MADE REAL: one gap message stops backtick-quoting its tool, so that kind extracts an EMPTY tool set, every profile then demands nothing for it, and the global invariant passes while checking nothing (#983 / #1026b)",
+   "find": "                    f\"their provider. Call `registryhub_register_table(name=..., \"",
+   "replace": "                    f\"their provider. Call registryhub_register_table(name=..., \""
+  },
+  {
+   "label": "QO2 a kind is renamed in production but not in the gap-message map, so the extraction and the method disagree about which kinds exist -- the completeness half of the same guard",
+   "find": "        if kind == \"registryhub_tables\":",
+   "replace": "        if kind == \"registryhub_tables_renamed\":"
+  }
+ ]
+}

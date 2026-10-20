@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_1202mr_the_primary_route_data_check_sees_what_the_browser_renders.py",
+ "mutations": [
+  {
+   "label": "MR1 ARRIVAL: the corroborating sample is never recorded, so a hold that never escapes dispatches a P0 naming nothing -- r124 held M1 for hours on exactly that",
+   "find": "        report[\"primary_route_rendered\"] = _primary_route_sample_1203qm(pages)",
+   "replace": "        report[\"primary_route_rendered_disarmed_mr1\"] = _primary_route_sample_1203qm(pages)"
+  },
+  {
+   "label": "MR2 a page that DID render seed data is sampled, so the evidence contradicts the verdict it is attached to",
+   "find": "         if str(p.get(\"route\") or \"\").rstrip(\"/\") in (\"\", \"/\")\n         and p.get(\"route_seed_hit\") is False), \"\")",
+   "replace": "         if str(p.get(\"route\") or \"\").rstrip(\"/\") in (\"\", \"/\")), \"\")"
+  },
+  {
+   "label": "MR3 the sample cap goes, so an unbounded page dump lands in the P0 body",
+   "find": "        (str(p.get(\"sample\") or \"\")[:240] for p in (pages or [])",
+   "replace": "        (str(p.get(\"sample\") or \"\") for p in (pages or [])"
+  }
+ ]
+}

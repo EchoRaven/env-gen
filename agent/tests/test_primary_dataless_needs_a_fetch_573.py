@@ -23,14 +23,10 @@ def _page(route, *, seed_hit=False, blank=False, api_requests=None, name=None):
             "blank": blank, "api_requests": api_requests}
 
 
-def _primary_dataless(pages):
-    """Mirror of the report expression under test (kept in one place)."""
-    return any(
-        str(p.get("route") or "").rstrip("/") in ("", "/")
-        and p.get("route_seed_hit") is False and not p.get("blank")
-        and p.get("api_requests") != 0
-        for p in pages)
-
+# #1203qm: the real thing, not a copy of it. This file used to define a "mirror of the
+# report expression under test (kept in one place)" and drive the mirror, so a change to
+# production was invisible here -- mutation caught two such changes slipping through.
+_primary_dataless = tur._primary_dataless_1203qm
 
 def test_r137_a_landing_page_that_never_fetched_is_not_an_empty_shell():
     assert _primary_dataless([_page("/", api_requests=0, name="landing")]) is False
@@ -64,13 +60,65 @@ def test_the_probe_reports_api_request_counts():
     assert "apiReqs = -1" in tur._PROBE, "unsupported must degrade to UNKNOWN, not to zero"
 
 
-def test_the_report_expression_requires_a_fetch():
-    """Guard against the condition being dropped in a future edit."""
-    import inspect
-    src = inspect.getsource(tur)
-    i = src.index('report["primary_dataless"]')
-    assert 'p.get("api_requests") != 0' in src[i:i + 400], src[i:i + 400]
+def test_the_report_assembly_uses_the_one_owner():
+    """#1203qm: the report must ASK the function, not carry its own copy of the rule.
 
+    This replaces a source-text assertion that read a fixed 400-character window after
+    `report["primary_dataless"]` (#943) -- it saw the one substring it quoted and missed
+    both of the conjuncts below."""
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(tur))
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id in ("_primary_dataless_1203qm", "_primary_route_sample_1203qm")]
+    assert len(calls) == 2, "%d call site(s); the report must ask for both" % len(calls)
+
+
+def test_an_unknown_seed_hit_does_not_fire_a_hold_that_cannot_escape():
+    """#1026b on the modern era's second-commonest blocker. `route_seed_hit` is None when
+    the probe could not tell; `is False` is what keeps an unknown from becoming a verdict,
+    and FIX #152 means this hold never escapes."""
+    assert _primary_dataless([_page("/", seed_hit=None, api_requests=5)]) is False
+    assert _primary_dataless([_page("/", seed_hit=False, api_requests=5)]) is True
+
+
+def test_a_blank_primary_route_belongs_to_blank_pages_not_here():
+    """Two signals for one page would make the P0 name the wrong one."""
+    assert _primary_dataless([_page("/", seed_hit=False, blank=True, api_requests=5)]) is False
+    assert _primary_dataless([_page("/", seed_hit=False, blank=False, api_requests=5)]) is True
+
+
+
+def _report_assignment_1203qm(key):
+    """The AST node that writes `report[key]`, or None.
+
+    A call-site COUNT cannot see arrival: `f(pages) and False` keeps the call and
+    `report["other_key"] = f(pages)` keeps it too. So the WRITE is read structurally --
+    the lesson from the write-site assertion that its own read sites fed."""
+    import ast
+    import inspect
+    from env_generator.llm_generator.multi_agent.runtime import test_user_runner as _tur
+    for n in ast.walk(ast.parse(inspect.getsource(_tur))):
+        if not isinstance(n, ast.Assign) or len(n.targets) != 1:
+            continue
+        t = n.targets[0]
+        if (isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
+                and t.value.id == "report" and isinstance(t.slice, ast.Constant)
+                and t.slice.value == key):
+            return n
+    return None
+
+
+def test_the_signal_is_written_from_the_owner_1203qm():
+    """ARRIVAL. The mutation `_primary_dataless_1203qm(pages) and False` leaves the call in
+    place, so only the shape of the WRITE shows that the answer reaches the report."""
+    import ast
+    node = _report_assignment_1203qm("primary_dataless")
+    assert node is not None, "nothing writes report['primary_dataless']"
+    assert isinstance(node.value, ast.Call), ast.dump(node.value)[:200]
+    assert isinstance(node.value.func, ast.Name), ast.dump(node.value)[:200]
+    assert node.value.func.id == "_primary_dataless_1203qm", node.value.func.id
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

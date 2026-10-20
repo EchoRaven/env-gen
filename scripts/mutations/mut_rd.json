@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_real_data_assertion.py",
+ "mutations": [
+  {
+   "label": "RD1 #1026b ON THE COMMONEST LIVE SIGNAL: the `checked` conjunct goes, so a walk that NEVER RAN the real-data check reports no_real_data=True. Measured over 114 UNUSABLE verdicts in the run logs, no_real_data is on in 90 (79%) and is the ONLY signal on in 54 -- a false positive here is the single most expensive one in the gate",
+   "find": "    report[\"no_real_data\"] = bool(rd.get(\"checked\") and not rd.get(\"rendered\"))",
+   "replace": "    report[\"no_real_data\"] = bool(not rd.get(\"rendered\"))"
+  },
+  {
+   "label": "RD2 the `not rendered` conjunct goes, so merely HAVING checked reports no real data even when seed values did render -- every app with a working frontend is blocked",
+   "find": "    report[\"no_real_data\"] = bool(rd.get(\"checked\") and not rd.get(\"rendered\"))",
+   "replace": "    report[\"no_real_data\"] = bool(rd.get(\"checked\"))"
+  },
+  {
+   "label": "RD3 the test is inverted: real data RENDERING is reported as no real data and a mock twin passes -- googlemaps run-3's exact defect, which this gate exists to catch",
+   "find": "    report[\"no_real_data\"] = bool(rd.get(\"checked\") and not rd.get(\"rendered\"))",
+   "replace": "    report[\"no_real_data\"] = bool(rd.get(\"checked\") and rd.get(\"rendered\"))"
+  },
+  {
+   "label": "RD4 the signal is never written at all, so `browser_unusable_signals` cannot see it and the 79%-of-verdicts blocker silently stops existing -- the arrival half, distinct from computing it wrongly",
+   "find": "    report[\"no_real_data\"] = bool(rd.get(\"checked\") and not rd.get(\"rendered\"))",
+   "replace": "    report[\"no_real_data_disarmed_rd4\"] = bool(rd.get(\"checked\") and not rd.get(\"rendered\"))"
+  }
+ ]
+}

@@ -2026,11 +2026,12 @@ class HealPipeline:
                     # So every PARTIAL was structurally guaranteed to read "BROKEN: []" and name
                     # nothing: 84 of them across r1-r175, 100% of the PARTIAL verdicts. Report
                     # whichever cause actually produced the verdict.
-                    from .test_user_validation import describe_non_pass_1038
+                    from .test_user_validation import (describe_non_pass_1038,
+                                                       journey_steps_clause_1203qn)
                     orch._logger.warning(
-                        "TEST-USER validation (v%s): %s — %s/%s journey steps passed; %s",
-                        version, summ.get("verdict"), summ.get("api_passed"),
-                        summ.get("api_steps"),
+                        "TEST-USER validation (v%s): %s — %s; %s",
+                        version, summ.get("verdict"),
+                        journey_steps_clause_1203qn(summ),
                         describe_non_pass_1038(
                             summ, (report.get("mcp") or {}) if isinstance(report, dict) else {}))
                 # #1203c8: the LLM walk's own findings go to the lane, not just

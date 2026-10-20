@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203n9_the_facts_the_abort_threw_away.py",
+ "mutations": [
+  {
+   "label": "QN1 THE TICKET IN REVERSE: an absent count is folded into zero, so 'the journey never started' and 'the journey drove 0 steps' print the same sentence -- #1203d3 emits no key precisely because 0 would be a false claim",
+   "find": "    passed, total = _s.get(\"api_passed\"), _s.get(\"api_steps\")",
+   "replace": "    passed, total = _s.get(\"api_passed\") or 0, _s.get(\"api_steps\") or 0"
+  },
+  {
+   "label": "QN2 the absent test needs BOTH counts missing, so a half-recovered report (steps known, passed absent) interpolates None into the numbers again",
+   "find": "    if passed is None or total is None:",
+   "replace": "    if passed is None and total is None:"
+  },
+  {
+   "label": "QN3 the sentence stops naming which kind of nothing it is, returning the bare None/None the delivery line printed nine times in r191",
+   "find": "        return (\"no journey step counts were recorded -- the run aborted before the journey \"\n                \"drove anything, which is not the same as a journey that drove 0 steps\")",
+   "replace": "        return \"%s/%s journey steps passed\" % (passed, total)"
+  }
+ ]
+}

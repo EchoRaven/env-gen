@@ -99,8 +99,68 @@ def test_single_words_past_the_first_40_are_not_added():
         assert T.real_data_verdict([nav], vals[40:])["rendered"] is False
 
 
+def _pg(route, *, seed_hit=False, sample=""):
+    return {"name": route, "route": route, "route_seed_hit": seed_hit, "sample": sample}
+
+
+def test_the_sample_is_actually_recorded_1203qm():
+    """#1203qm, the PRODUCER half. The test below drives the CONSUMER with a report that
+    already carries the field, so neither "the sample is never written" nor "the wrong page
+    is sampled" was visible -- both mutations were MISSED. The hold never escapes (FIX
+    #152), so a P0 that names nothing is what r124 spent hours on."""
+    out = T._primary_route_sample_1203qm([_pg("/", sample="For You Shop Explore")])
+    assert out == "For You Shop Explore", out
+
+
+def test_only_a_page_that_missed_the_seed_is_sampled_1203qm():
+    """A sample lifted from a page that DID render seed data would contradict the verdict
+    it is attached to."""
+    assert T._primary_route_sample_1203qm(
+        [_pg("/", seed_hit=True, sample="Pinecrest Diner")]) == ""
+    assert T._primary_route_sample_1203qm(
+        [_pg("/", seed_hit=True, sample="rendered"),
+         _pg("", seed_hit=False, sample="empty shell")]) == "empty shell"
+
+
+def test_the_sample_is_capped_and_never_none_1203qm():
+    assert T._primary_route_sample_1203qm([]) == ""
+    assert T._primary_route_sample_1203qm([_pg("/", sample=None)]) == ""
+    assert len(T._primary_route_sample_1203qm([_pg("/", sample="x" * 400)])) == 240
+
+
 def test_the_hold_says_what_the_primary_route_rendered():
     report = {"ran": True, "api_login_ok": True, "auth_ok": True,
               "primary_dataless": True, "primary_route_rendered": "For You Shop Explore"}
     out = T.browser_unusable_signals(report)
     assert out.get("primary_route_rendered") == "For You Shop Explore", out
+
+
+def _report_assignment_1203qm(key):
+    """The AST node that writes `report[key]`, or None.
+
+    A call-site COUNT cannot see arrival: `f(pages) and False` keeps the call and
+    `report["other_key"] = f(pages)` keeps it too. So the WRITE is read structurally --
+    the lesson from the write-site assertion that its own read sites fed."""
+    import ast
+    import inspect
+    from env_generator.llm_generator.multi_agent.runtime import test_user_runner as _tur
+    for n in ast.walk(ast.parse(inspect.getsource(_tur))):
+        if not isinstance(n, ast.Assign) or len(n.targets) != 1:
+            continue
+        t = n.targets[0]
+        if (isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
+                and t.value.id == "report" and isinstance(t.slice, ast.Constant)
+                and t.slice.value == key):
+            return n
+    return None
+
+
+def test_the_sample_is_written_to_the_field_the_gate_reads_1203qm():
+    """ARRIVAL. Renaming the target key leaves every call-site count unchanged, so the
+    field name itself has to be asserted: `browser_unusable_signals` reads exactly
+    `primary_route_rendered`."""
+    import ast
+    node = _report_assignment_1203qm("primary_route_rendered")
+    assert node is not None, "nothing writes report['primary_route_rendered']"
+    assert isinstance(node.value, ast.Call), ast.dump(node.value)[:200]
+    assert node.value.func.id == "_primary_route_sample_1203qm", ast.dump(node.value)[:200]

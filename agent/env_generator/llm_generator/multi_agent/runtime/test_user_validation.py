@@ -1539,6 +1539,29 @@ def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
 DERIVED_VERDICTS_1203NA = ("PASS", "ISSUES", "PARTIAL", "NOT_WALKED")
 
 
+def journey_steps_clause_1203qn(summ: Any) -> str:
+    """The delivery line's step-count clause -- or what is true when there are no counts.
+
+    #1203n9 recovers the counts an aborted validation had already collected, and #1203d3
+    deliberately emits NO key when the error fired before the journey ran. Those are two
+    different states and they must stay different:
+
+        the journey ran and drove nothing   ->  "0/0 journey steps passed"
+        the journey never started           ->  no key at all
+
+    The delivery line interpolated the second one straight into `%s/%s`, so r191 logged
+    "None/None journey steps passed" nine times -- which reads as a formatting fault, not as
+    "the journey never started". #1203ov's rule applied to a sentence: say WHICH kind of
+    nothing this is. The verdict is untouched; only the words change.
+    """
+    _s = summ if isinstance(summ, Mapping) else {}
+    passed, total = _s.get("api_passed"), _s.get("api_steps")
+    if passed is None or total is None:
+        return ("no journey step counts were recorded -- the run aborted before the journey "
+                "drove anything, which is not the same as a journey that drove 0 steps")
+    return "%s/%s journey steps passed" % (passed, total)
+
+
 def collected_facts_1203n9(report: Any) -> Dict[str, Any]:
     """#1203n9: the facts an ABORTED validation had already collected. Never a judgement.
 

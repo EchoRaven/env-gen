@@ -1222,19 +1222,12 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     # cannot be an empty shell. r21's motivating case is preserved exactly — that feed DID
     # fetch (the API served 39 rows) and still rendered "No videos found", so it keeps firing.
     # api_requests is None/-1 when unknown (older probe, unsupported timing API) → unchanged.
-    report["primary_dataless"] = any(
-        str(p.get("route") or "").rstrip("/") in ("", "/")
-        and p.get("route_seed_hit") is False and not p.get("blank")
-        and p.get("api_requests") != 0
-        for p in pages)
+    report["primary_dataless"] = _primary_dataless_1203qm(pages)
     # #1202mr: this is a HARD hold that never escapes (FIX #152), so say what it looked at.
     # r124 held M1 for hours on `primary_dataless=True` alone; the P0 it sent the frontend
     # named nothing, and the page was in fact showing seeded data.
     if report["primary_dataless"]:
-        report["primary_route_rendered"] = next(
-            (str(p.get("sample") or "")[:240] for p in pages
-             if str(p.get("route") or "").rstrip("/") in ("", "/")
-             and p.get("route_seed_hit") is False), "")
+        report["primary_route_rendered"] = _primary_route_sample_1203qm(pages)
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
     # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
@@ -1509,6 +1502,52 @@ def clean_ui_flow_passes(report: Mapping[str, Any]) -> List[str]:
         seen.add(name)
         passes.append(name)
     return passes
+
+
+# #1203qm: THE TEST DROVE A COPY OF THIS, NOT THIS.
+#
+# `primary_dataless` is the modern era's second-commonest reason a delivery is deferred --
+# 10 of the 29 `found the app UNUSABLE` verdicts in r185+, against `auth_ok`'s 20 -- and it
+# is a HARD hold that never escapes (FIX #152). Its guard,
+# `test_primary_dataless_needs_a_fetch_573.py`, defined `_primary_dataless(pages)` as a
+# "mirror of the report expression under test (kept in one place)" and drove the MIRROR, so
+# five behavioural tests could not see a change to the real expression at all. The only
+# thing watching production was a source-text assertion reading a FIXED 400-CHARACTER
+# WINDOW after `report["primary_dataless"]` (the #943 shape), which notices a change to the
+# one substring it quotes and nothing else.
+#
+# Mutation proved it: dropping the fetch requirement was caught (that substring moved), but
+# relaxing `is False` to a falsy test and dropping the `not blank` exclusion were both
+# MISSED -- by this file and by the other test that mentions `route_seed_hit`.
+#
+# So the expression is a function the tests can drive. The two unknown-handling decisions
+# here are OPPOSITE on purpose and both now have drivers:
+#   * `route_seed_hit is False` -- strict, so an UNKNOWN (None, older probe) does NOT fire
+#     a hold that cannot escape (#1026b: absent is not zero).
+#   * `api_requests != 0` -- permissive, so an UNKNOWN (None/-1) keeps firing; only a
+#     provable ZERO suppresses it, because a route that never asked for data is not a data
+#     surface (r137's landing page) while r21's feed DID fetch and rendered nothing.
+def _primary_dataless_1203qm(pages: Any) -> bool:
+    """True iff the app's FACE is an empty shell: the primary route asked for data and
+    rendered none of the seed."""
+    return any(
+        str(p.get("route") or "").rstrip("/") in ("", "/")
+        and p.get("route_seed_hit") is False and not p.get("blank")
+        and p.get("api_requests") != 0
+        for p in (pages or []))
+
+
+def _primary_route_sample_1203qm(pages: Any) -> str:
+    """What the primary route actually rendered, for the P0 this hold dispatches.
+
+    #1202mr: r124 held M1 for hours on `primary_dataless` alone with a P0 that named
+    nothing, and the page was in fact showing seeded data. Only a page that did NOT hit the
+    seed is sampled -- a sample from a page that rendered data would contradict the verdict
+    it is attached to."""
+    return next(
+        (str(p.get("sample") or "")[:240] for p in (pages or [])
+         if str(p.get("route") or "").rstrip("/") in ("", "/")
+         and p.get("route_seed_hit") is False), "")
 
 
 def browser_unusable_signals(report: Optional[Mapping[str, Any]]) -> Dict[str, Any]:

@@ -210,6 +210,40 @@ def _profile_effective_tool_surface(profile: dict) -> set:
     return surface
 
 
+def test_every_kind_the_gate_checks_yields_a_tool_1203qo():
+    """#1203qo: the extraction must stay COMPLETE, and an empty result must be loud.
+
+    `_extract_check_hub_kind_tool_refs` derives the expectations from production source by
+    regex over the gap-message prose, which is legitimate -- it reads the real branches
+    rather than restating their rule. What it cannot survive silently is a branch whose
+    message stops backtick-quoting its tool: that kind extracts an EMPTY set, every profile
+    then "demands" nothing for it, and the invariant below passes while checking nothing
+    (#983 -- a check that fires naming nothing; #1026b -- could-not-extract is not none).
+
+    MEASURED when this landed: production's `_check_hub_kind` mentions 4 kinds
+    (codehub_commits, registryhub_endpoints, registryhub_tables, workhub_pages) and the
+    extraction returns exactly those 4, one tool each, 0 empty."""
+    import re
+    refs = _extract_check_hub_kind_tool_refs()
+    body = POLICIES_PATH.read_text(encoding="utf-8")
+    i = body.find("def _check_hub_kind")
+    assert i >= 0, "_check_hub_kind not found; the extraction's own guard should have fired"
+    j = body.find("\n    @staticmethod", i)
+    if j < 0:
+        j = body.find("\n    def ", i + 1)
+    span = body[i:j if j > 0 else len(body)]
+    mentioned = set(re.findall(r'kind\s*==\s*"([a-z_]+)"', span))
+    assert mentioned, "no hub kinds found in the method body -- the span regex went stale"
+    assert set(refs) == mentioned, (
+        "the extraction and the method disagree on which kinds exist: "
+        "extracted-only=%s mentioned-only=%s"
+        % (sorted(set(refs) - mentioned), sorted(mentioned - set(refs))))
+    empty = sorted(k for k, v in refs.items() if not v)
+    assert not empty, (
+        "these kinds extracted NO tool name, so the invariant below is vacuous for them "
+        "(a gap message probably stopped backtick-quoting its tool): %s" % empty)
+
+
 def _gate_demanded_tools_for_profile(
     profile: dict, gap_tools_by_kind: dict,
 ) -> set:
