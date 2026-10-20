@@ -3,7 +3,7 @@
  "test": "tests/_tmp_old_1202r.py",
  "mutations": [
   {
-   "label": "the original defect, judged by the OLD (fixture-supplied _sys) test",
+   "label": "the original defect, judged by the OLD (fixture-supplied _sys) test [NOT RUNNABLE 2026-10-20: judged against tests/_tmp_old_1202r.py, a TEMPORARY copy of the pre-fix test that was deleted after the one-off control run. The spec is kept as the record that the control WAS run and what it showed; it cannot be re-run, and `mutation_verdicts.py` now says so by name instead of reporting 'no verdict lines'.]",
    "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"",
    "replace": "        \"    try:\\n\""
   }

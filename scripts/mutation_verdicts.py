@@ -22,6 +22,7 @@ What this reports is the REST: a mutation that is not caught and offers no reaso
 is either a real coverage hole or an annotation somebody forgot to write.
 """
 import glob
+import io
 import json
 import os
 import re
@@ -35,6 +36,25 @@ import sys
 # NOT RUNNABLE 3, "null mutation" 3, BAD-ANCHOR 2, CARRIED 2.
 ANNOTATIONS = ("SUPERSEDED", "EXPECTED-MISSED", "NOT RUNNABLE", "BAD-ANCHOR",
                "CARRIED", "null mutation")
+
+# These two do not excuse a MISSED on their own: they say the property is guarded by a
+# DIFFERENT spec, which is only an answer if that spec exists. #1203pe's own lesson is that
+# an unverified carrier claim is itself the defect -- it reads as coverage and is not. So a
+# label carrying one of these is accepted only when every `mu_*.json` / `mut_*.json` name it
+# mentions is a file on disk.
+DEFERRING = ("CARRIED", "SPLIT")
+_SPEC_NAME = re.compile(r"\b((?:mu|mut)[A-Za-z0-9_]*\.json)\b")
+
+
+def _deferral_is_real(label, spec_dir):
+    """(ok, detail) for a label that defers the property to another spec."""
+    named = sorted(set(_SPEC_NAME.findall(label or "")))
+    if not named:
+        return False, "defers the property but names no spec to defer it to"
+    missing = [n for n in named if not os.path.exists(os.path.join(spec_dir, n))]
+    if missing:
+        return False, "defers to a spec that does not exist: %s" % ", ".join(missing)
+    return True, ""
 # The verdict lines mutate.py prints, in its own spelling.
 VERDICT = re.compile(r"^  (CAUGHT|MISSED|NOT APPLIED|BROKEN)\s+(.*)$")
 PY = sys.executable
@@ -63,19 +83,35 @@ def _touched_specs():
     return keep
 
 
-def _restore_if_dirty(target):
-    """`git checkout --` the spec's target if a killed mutate.py left a mutant behind.
+def _snapshot(target):
+    """The target's bytes before `mutate.py` touches it, or None."""
+    try:
+        with io.open(target, "rb") as fh:
+            return fh.read()
+    except Exception:
+        return None
 
-    Returns the path when something was restored, else "". Never raises: this runs in a
-    `finally` and must not mask the verdict it is protecting."""
-    if not target:
+
+def _restore_from_snapshot(target, before):
+    """Put `before` back if the file changed. Returns the path when it did, else "".
+
+    RESTORE TO THE SNAPSHOT, NEVER TO HEAD. The first version of this ran
+    `git checkout -- <target>`, reasoning that a dirty target meant `mutate.py` had been
+    killed and left a mutant. A dirty target means no such thing: it is just as likely to be
+    the author's own uncommitted patch. On 2026-10-20 that is exactly what happened -- it
+    discarded an uncommitted `#1203qu` change in heal_pipeline.py, silently, and the loss
+    looked identical to the mutant it was written to clean up. Comparing against the bytes
+    this tool itself read a moment earlier cannot make that mistake.
+
+    Never raises: this runs in a `finally` and must not mask the verdict it protects."""
+    if not target or before is None:
         return ""
     try:
-        dirty = subprocess.run(["git", "diff", "--quiet", "--", target],
-                               capture_output=True).returncode != 0
-        if not dirty:
-            return ""
-        subprocess.run(["git", "checkout", "--", target], capture_output=True)
+        with io.open(target, "rb") as fh:
+            if fh.read() == before:
+                return ""
+        with io.open(target, "wb") as fh:
+            fh.write(before)
         return target
     except Exception:
         return ""
@@ -96,6 +132,18 @@ def main(argv):
             broken.append((p, "spec unreadable: %s" % exc))
             continue
         labels = [(m.get("label") or "") for m in (d.get("mutations") or [])]
+        # A spec whose test file is gone can never run, and `mutate.py` then prints no
+        # verdict lines at all -- which this tool used to report as "did mutate.py change
+        # its output?", sending the reader after the wrong thing. Three specs are in that
+        # state (2026-10-20): one-off controls judged against a `_tmp_old_*.py` copy of the
+        # pre-fix test, deleted after the run. `mutation_census.py --strict` does not catch
+        # them because it verifies ANCHORS, not test paths. Split on `::` first: pytest
+        # accepts a nodeid there and `os.path.exists` on one is trivially False.
+        _tfile = (d.get("test") or "").split("::", 1)[0]
+        if not _tfile or not os.path.exists(os.path.join("agent", _tfile)):
+            broken.append((p, "test file does not exist: %s" % (_tfile or "<empty>")))
+            continue
+        _before = _snapshot(d.get("file") or "")
         try:
             out = subprocess.run([PY, "scripts/mutate.py", p],
                                  capture_output=True, text=True, timeout=900).stdout
@@ -109,9 +157,10 @@ def main(argv):
             # `DERIVED_VERDICTS_1203NA` missing "NOT_WALKED" and another with
             # `auth_steps_1203ov = None`, both live defects sitting in the tree behind a single
             # `M` in git status. This tool must never be the thing that leaves one.
-            _restored = _restore_if_dirty(d.get("file") or "")
+            _restored = _restore_from_snapshot(d.get("file") or "", _before)
             if _restored:
-                broken.append((p, "left a mutant on disk and it was restored: %s" % _restored))
+                broken.append((p, "the target differed from its pre-run bytes and was put "
+                                  "back: %s" % _restored))
         if not out:
             continue
         if "baseline: red" in out:
@@ -128,7 +177,14 @@ def main(argv):
                 caught += 1
                 continue
             label = next((l for l in labels if l.startswith(shown[:40])), shown)
-            if _annotated(label):
+            if any(t in label for t in DEFERRING):
+                ok, why = _deferral_is_real(label, os.path.dirname(p) or ".")
+                if ok:
+                    explained += 1
+                else:
+                    unexplained.append((os.path.basename(p), verdict,
+                                        "%s  <<< %s" % (label[:110], why)))
+            elif _annotated(label):
                 explained += 1
             else:
                 unexplained.append((os.path.basename(p), verdict, label[:150]))

@@ -2,7 +2,7 @@
  "file": "agent/env_generator/llm_generator/multi_agent/runtime/kickoff/authoring.py",
  "mutations": [
   {
-   "label": "behaviour-EQUIVALENT inline regex, docstring untouched",
+   "label": "behaviour-EQUIVALENT inline regex, docstring untouched [NOT RUNNABLE 2026-10-20: judged against tests/_tmp_old_m9_test.py, a TEMPORARY copy of the pre-fix test that was deleted after the one-off control run. The spec is kept as the record that the control WAS run and what it showed; it cannot be re-run, and `mutation_verdicts.py` now says so by name instead of reporting 'no verdict lines'.]",
    "find": "        from ..registryhub import RegistryHub as _RH1203m9\n        return _RH1203m9._canonical_path(str(raw)) or str(raw)",
    "replace": "        import re as _re9\n        return _re9.sub(r\"(?<=/):([A-Za-z_][A-Za-z0-9_]*)\", r\"{\\1}\", str(raw))"
   }

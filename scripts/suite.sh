@@ -58,7 +58,39 @@ if [ $# -eq 0 ]; then
   # shellcheck disable=SC2086  # word splitting is what builds the argv here
   set -- $ROOTS -q
 fi
+# #1203qt: A UNIQUE basetemp, unless the caller named one.
+#
+# `--basetemp` does not mean "put the temp dirs here". pytest's own tmpdir.py does
+#     if basetemp.exists(): rm_rf(basetemp)
+#     basetemp.mkdir(mode=0o700)
+# so ANY second pytest given the same path DELETES the first one's temp dirs mid-run. The
+# symptom is a FileNotFoundError out of `json_store._save_raw`'s `os.replace` -- the temp
+# file vanished between the write and the rename -- and it reads as a defect in the code
+# under test. 2026-10-20 spent a while on one such failure that passed 4/4 alone.
+#
+# The flock above already refuses a second SUITE. What it cannot see is a hand-typed
+# `python -m pytest ... --basetemp=<the shared path>`, which bypasses this script and so
+# bypasses the lock; conftest.py prints a banner for that case, but a banner at the TOP of
+# the output is invisible to anyone reading the tail. So the suite defends its own temp
+# directory instead of relying on that.
+#
+# Cleaned up on success only: a failing run's temp tree is the evidence for the failure, and
+# /data is a shared disk that nobody reclaims (#1202ap counted 5 orphaned partial writes on
+# it), so a passing run should not leave one behind.
+case " $* " in
+  *" --basetemp"*|*" --basetemp="*) _own_basetemp="" ;;
+  *)
+    _own_basetemp="${SUITE_BASETEMP_ROOT:-/data/common/haibotong/pytest_tmp}/suite.$$"
+    mkdir -p "$(dirname "$_own_basetemp")" 2>/dev/null
+    set -- "$@" "--basetemp=$_own_basetemp"
+    echo "[suite] basetemp: $_own_basetemp (unique per run; pytest rm_rf's whatever it is given)"
+    ;;
+esac
+
 "$PY" -m pytest "$@"
 rc=$?
+if [ -n "$_own_basetemp" ] && [ "$rc" = "0" ]; then
+  rm -rf -- "$_own_basetemp" 2>/dev/null
+fi
 echo "[suite] exit=$rc"
 exit $rc

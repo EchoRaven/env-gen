@@ -21,6 +21,11 @@
    "label": "T4 an unreachable-only run stops counting as failed, so a run where NOTHING passed reports no failures  [CARRIED ELSEWHERE: mutate.py takes ONE test path, and this property belongs to tests/test_1154_unreachable_origin_is_not_product_evidence.py. Reads MISSED here. VERIFIED 2026-10-19 by mut_1154_carrier.json, which runs this exact mutation against that file: CAUGHT. An unverified carrier claim is #1203pe's own defect, so the claim now has a carrier that exists and was run.]",
    "find": "    if unreachable and not passed:\n        failed.extend(unreachable)\n        unreachable = []",
    "replace": "    if unreachable and not passed:\n        unreachable = []"
+  },
+  {
+   "label": "T5 ARRIVAL: the gate stops asking the one owner and hard-codes the triple, so the #1017 message reports 0 record(s) and no names again -- the exact shape of the defect #1029 fixed, reintroduced at the call site rather than in the expression. A call-site count cannot see this: the call and the name both stay.",
+   "find": "                _cnt1203qs, _nn1203qs, _shown1203qs = (\n                    _ui_evidence_named_detail_1203qs(_breadth739))",
+   "replace": "                _cnt1203qs, _nn1203qs, _shown1203qs = (\n                    _ui_evidence_named_detail_1203qs(_breadth739) and (0, 0, \"\"))"
   }
  ]
 }
