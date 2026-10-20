@@ -65,8 +65,31 @@ def extract_sql_tables(db_dir: Path) -> Dict[str, set]:
             stripped = line.strip().strip(",")
             if not stripped or stripped.startswith("--"):
                 continue
-            first = stripped.split()[0].strip('"')
-            if first.upper() in {"CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "INDEX"}:
+            # #1203qj: THE QUOTES ARE THE SIGNAL, and stripping them before this test threw
+            # away the only thing that distinguishes the two cases.
+            #
+            # The skip list exists for TABLE-LEVEL CLAUSES, which postgres requires to be
+            # written UNQUOTED -- `UNIQUE (email, tenant_id)` (r188's 01_init.sql line 29).
+            # A COLUMN whose name collides with a reserved word must be QUOTED --
+            # `"unique" TEXT` (r171 line 84, in both `follows` and `comment_likes`). Testing
+            # the stripped token made the second look like the first, so the column vanished
+            # from `sql_tables` while sitting in plain sight in the DDL.
+            #
+            # WHAT IT COST: the contract check then reported `SQL table \`follows\` missing
+            # registered columns: unique` -- 690 of the 988 "missing registered columns"
+            # errors in the whole gate ledger (70%), r171 358 and r183 294, and 124 of them on
+            # gate rows that PASSED. The lane was told to add a column the DDL already had.
+            #
+            # Reproduced against the real artifact before fixing: `extract_sql_tables` on
+            # r171's own `app/database` returned `['created_at','follower_id','following_id',
+            # 'id']` for `follows`, with no `unique`, while r188's non-reserved
+            # `unique_follow` came back fine -- which is how the quoting, rather than the
+            # registration, was identified as the cause.
+            raw_first = stripped.split()[0]
+            first = raw_first.strip('"')
+            if (not raw_first.startswith('"')
+                    and first.upper() in {"CONSTRAINT", "PRIMARY", "FOREIGN",
+                                          "UNIQUE", "CHECK", "INDEX"}):
                 continue
             columns.add(first)
         tables[table] = columns

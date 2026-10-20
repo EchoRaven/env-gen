@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/delivery/contract_extract.py",
+ "test": "tests/test_1203qj_a_quoted_reserved_word_is_still_a_column.py",
+ "mutations": [
+  {
+   "label": "QJ1 THE TICKET: the quotes are stripped before the keyword test again, so a column named `unique` reads as a table-level clause and vanishes from sql_tables -- 690 of the 988 'missing registered columns' errors in the gate ledger (r171 358, r183 294), 124 of them on rows that PASSED, telling the lane to add a column the DDL already had",
+   "find": "            raw_first = stripped.split()[0]\n            first = raw_first.strip('\"')\n            if (not raw_first.startswith('\"')",
+   "replace": "            raw_first = stripped.split()[0]\n            first = raw_first.strip('\"')\n            if (True"
+  },
+  {
+   "label": "QJ2 the skip list is dropped entirely, so `UNIQUE (email, tenant_id)` becomes a column called `unique` on every spine table -- the opposite error, and the reason the skip list exists",
+   "find": "                    and first.upper() in {\"CONSTRAINT\", \"PRIMARY\", \"FOREIGN\",\n                                          \"UNIQUE\", \"CHECK\", \"INDEX\"}):\n                continue",
+   "replace": "                    and first.upper() in set()):\n                continue"
+  },
+  {
+   "label": "QJ3 the quote test is inverted, so quoted columns are skipped and unquoted clauses are kept -- both halves wrong at once, which a test asserting only one direction would miss",
+   "find": "            if (not raw_first.startswith('\"')",
+   "replace": "            if (raw_first.startswith('\"')"
+  }
+ ]
+}
