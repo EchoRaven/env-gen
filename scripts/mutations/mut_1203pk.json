@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203pk_the_profile_path_the_gate_leans_on.py",
+ "mutations": [
+  {
+   "label": "K1 the init script never reaches the CONTEXT, so the profile is applied to this page only and every FUTURE page load renders the logged-out view again -- #1139/#1148's shape: one half of a two-half mechanism",
+   "find": "            await ctx.add_init_script(_js)          # all future page loads",
+   "replace": "            pass          # all future page loads"
+  },
+  {
+   "label": "K2 the current page is never updated, so THIS capture still photographs the logged-out view even though future loads are fine -- the other half",
+   "find": "            await page.evaluate(\"() => { \" + _js + \" }\")  # the current page, immediately\n            ok = True",
+   "replace": "            ok = True"
+  },
+  {
+   "label": "K3 the id is NOT re-discovered: a previously-persisted id is reused, which a mid-run re-seed has invalidated -- exactly what #548a says it is robust to RE-ANCHORED: `_pid = await page.evaluate(_PROFILE_DISCOVER_JS, ...)` appears TWICE in this module (there is a second profile-discovery site at the capture entry), so the bare line read NOT APPLIED. Anchored on the enclosing try.",
+   "find": "    try:\n        _pid = await page.evaluate(_PROFILE_DISCOVER_JS, token or \"\")\n    except Exception:\n        _pid = None",
+   "replace": "    try:\n        _pid = \"stale-id\"\n    except Exception:\n        _pid = None"
+  },
+  {
+   "label": "K4 EXPECTED-MISSED (duplicated guard, not a gap): the call site writes `_profile_select_init_js(_pid) if _pid else \"\"`, and the function itself opens with `if not profile_id: return \"\"`. Removing the call-site half changes nothing because the callee half still returns \"\". Defence in depth, so no test can distinguish them; the behaviour IS covered by `test_no_id_means_no_init_script`, which the callee guard satisfies.",
+   "find": "    _js = _profile_select_init_js(_pid) if _pid else \"\"",
+   "replace": "    _js = _profile_select_init_js(_pid or \"\")"
+  },
+  {
+   "label": "K5 a failure anywhere propagates instead of being absorbed, so one bad profile probe loses the whole capture ROUND rather than one screen. The docstring's contract is 'each step best-effort; never raises'",
+   "find": "    try:\n        _pid = await page.evaluate(_PROFILE_DISCOVER_JS, token or \"\")\n    except Exception:\n        _pid = None",
+   "replace": "    _pid = await page.evaluate(_PROFILE_DISCOVER_JS, token or \"\")"
+  },
+  {
+   "label": "K6 an EMPTY table counts as settled, so the capture starts mid-re-seed and photographs an app with no data -- then the gate scores that as the app's fault. `0 == 0` is stable by arithmetic, which is why the `_n > 0` half exists",
+   "find": "        if _n > 0 and _prev is not None and _n == _prev:",
+   "replace": "        if _prev is not None and _n == _prev:"
+  },
+  {
+   "label": "K7 stability is no longer required: the FIRST non-empty count returns, so a count still climbing through a re-seed reads as ready",
+   "find": "        if _n > 0 and _prev is not None and _n == _prev:\n            return  # non-empty and stable",
+   "replace": "        if _n > 0:\n            return  # non-empty and stable"
+  },
+  {
+   "label": "K8 an app with NO profiles endpoint now waits out the whole poll budget instead of returning at once -- #548b promises such apps are byte-identical to before it existed",
+   "find": "        if _n < 0:\n            return  # no profiles endpoint",
+   "replace": "        if _n < -999:\n            return  # no profiles endpoint"
+  },
+  {
+   "label": "K9 an unreadable count propagates instead of returning, so a junk reply from the probe loses the capture round. 'Never raises' is the stated contract",
+   "find": "        try:\n            _n = int(_n)\n        except Exception:\n            return",
+   "replace": "        _n = int(_n)"
+  }
+ ]
+}

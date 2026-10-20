@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_source_edit_progress.py",
+ "mutations": [
+  {
+   "label": "N1 the completed-rebuild term is dropped from the progress signature, so a route already written to main.py but only now BUILT into the image moves nothing -- and building it is the only event that can flip the '404s' evidence the gate is failing on. r177 aborted 17 SECONDS after the rebuild that fixed its terminal blocker",
+   "find": "                _vc.get_version() if (_vc is not None and hasattr(_vc, \"get_version\")) else 0,\n                _builds,\n            )",
+   "replace": "                _vc.get_version() if (_vc is not None and hasattr(_vc, \"get_version\")) else 0,\n            )"
+  },
+  {
+   "label": "N2 the rebuild count is read but always reported as zero, so the term is present in the tuple and never moves -- the same blindness with the shape intact",
+   "find": "                from .runtime.validation_runner import builds_completed_1046 as _b1046\n                _builds = _b1046()",
+   "replace": "                from .runtime.validation_runner import builds_completed_1046 as _b1046\n                _builds = 0"
+  }
+ ]
+}

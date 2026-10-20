@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/coverage_audit.py",
+ "test": "tests/test_1203pj_a_decision_not_to_widen_needs_a_guard.py",
+ "mutations": [
+  {
+   "label": "E1 the endpoint-consumer scan is WIDENED to a status set, which is the change #1203e2 measured and refused: 26% false positives on a HARD blocker (20 of 27 candidates really unreferenced, 7 genuinely called including GET and POST /api/videos), against #1203a5's record of one false block costing a whole run",
+   "find": "        if (ep.get(\"status\") or \"defined\") != \"defined\":",
+   "replace": "        if (ep.get(\"status\") or \"defined\") in (\"defined\", \"implemented\"):"
+  },
+  {
+   "label": "E2 the MCP-tool scan is widened the same way, where the case against it is stronger still -- 2379 corpus tools are `implemented` against 9 `defined`",
+   "find": "        if (tool.get(\"status\") or \"defined\") != \"defined\":",
+   "replace": "        if (tool.get(\"status\") or \"defined\") in (\"defined\", \"implemented\"):"
+  },
+  {
+   "label": "E3 the `or \"defined\"` default is dropped, so a record with NO status reaches the scan -- and the consumers registry is known to be under-populated (#1203b0), so that turns straight into false blocks",
+   "find": "        if (ep.get(\"status\") or \"defined\") != \"defined\":\n",
+   "replace": "        if (ep.get(\"status\")) != \"defined\":\n"
+  }
+ ]
+}
