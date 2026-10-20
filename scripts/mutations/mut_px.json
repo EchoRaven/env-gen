@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1203px_the_ledger_that_never_landed.py",
+ "mutations": [
+  {
+   "label": "PX1 THE TICKET (uv writer): the failed write goes silent again, and since both callers ignore the return there is then NO trace at all",
+   "find": "        warn_once_1201(\"scaffolder.record_frontend_calls_without_backend_1202uv\",",
+   "replace": "        None and warn_once_1201(\"scaffolder.record_frontend_calls_without_backend_1202uv\","
+  },
+  {
+   "label": "PX2 THE TICKET (uw writer): same, on the ledger #1203pd's `/@:username` attribution was read out of",
+   "find": "        warn_once_1201(\"scaffolder.record_route_params_ignored_1202uw\",",
+   "replace": "        None and warn_once_1201(\"scaffolder.record_route_params_ignored_1202uw\","
+  },
+  {
+   "label": "PX3 the message stops naming the ledger, so a reader cannot tell what evidence is missing (#983)",
+   "find": "                       \"the route-parameter finding was not written to its ledger, so the \"",
+   "replace": "                       \"write failed, so the \""
+  }
+ ]
+}

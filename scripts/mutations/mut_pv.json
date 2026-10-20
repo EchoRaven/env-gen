@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1203pv_a_crash_is_not_a_clean_answer.py",
+ "mutations": [
+  {
+   "label": "PV1 THE TICKET: the live detector goes silent again -- #1203pd's `/@:username` finding rides it, and `[]` then means 'no route ignores its parameter'",
+   "find": "        from .message_format import warn_once_1201\n        warn_once_1201(\"scaffolder.route_params_ignored_1202uw\", _exc1203pv and",
+   "replace": "        from .message_format import warn_once_1201\n        None and warn_once_1201(\"scaffolder.route_params_ignored_1202uw\", _exc1203pv and"
+  },
+  {
+   "label": "PV2 the unserved-call detector goes silent again",
+   "find": "        warn_once_1201(\"scaffolder.frontend_calls_without_backend_1202uv\",",
+   "replace": "        None and warn_once_1201(\"scaffolder.frontend_calls_without_backend_1202uv\","
+  },
+  {
+   "label": "PV3 the exception is dropped and `None` passed instead -- #1203os reserves exc=None for 'a precondition was absent', so the cause clause would describe the wrong situation",
+   "find": "                       \"run\", _exc1203pv)",
+   "replace": "                       \"run\", None)"
+  },
+  {
+   "label": "PV4 the message stops naming the consequence, leaving a line that fires while saying nothing (#983)",
+   "find": "                       \"a route whose page never reads its URL parameter is not \"\n                       \"detected, so the gate reads clean about a check that did not \"\n                       \"run\", _exc1203pv)",
+   "replace": "                       \"scan fault\", _exc1203pv)"
+  }
+ ]
+}

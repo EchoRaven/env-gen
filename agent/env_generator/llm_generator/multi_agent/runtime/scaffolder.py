@@ -489,7 +489,18 @@ def frontend_calls_without_backend_1202uv(out_dir, endpoints):
                       if (m, q) not in have
                       and not q.startswith(("/auth/", "/oauth/"))
                       and q not in ("/auth", "/oauth"))
-    except Exception:
+    except Exception as _exc1203pv2:
+        # #1203pv: same shape, same file. "no service module yet" legitimately returns
+        # [] and is handled above by its own `if not svc` check, so reaching HERE means
+        # a real fault -- and its [] is indistinguishable from "every frontend call is
+        # served". Measured: this class is extinct outside two early runs (6 findings in
+        # r74 and r92, 0 across 53 mid and 7 modern), so the value is not in catching a
+        # live defect but in never again reading a crash as a clean app.
+        from .message_format import warn_once_1201
+        warn_once_1201("scaffolder.frontend_calls_without_backend_1202uv",
+                       "frontend calls that nothing serves are not detected, so the "
+                       "artifact a lane reads says the surface is complete",
+                       _exc1203pv2)
         return []
 
 
@@ -508,7 +519,21 @@ def record_frontend_calls_without_backend_1202uv(out_dir, calls) -> bool:
                                "count": len(calls or []),
                                "calls": [str(c) for c in (calls or [])][:50]}) + "\n")
         return True
-    except Exception:
+    except Exception as _exc1203px:
+        # #1203px: SAY SO. `False` already means "there was nothing to record" -- the
+        # guard above returns it for an empty finding list -- so the crash case is
+        # indistinguishable from the ordinary one, and BOTH callers invoke this as a
+        # statement and read neither (#1139: evidence computed that nothing consumes).
+        # The artifact's absence carries the same ambiguity: no file means either "the
+        # detector found nothing" or "the write threw", which is exactly the pair #883
+        # says must be distinguishable. This ledger is what a later reader greps -- it is
+        # how #1203pd attributed `/@:username -> ProfileOwnPage` in r189 and r191 -- so a
+        # missing one that reads as "clean" costs the next investigation, not this run.
+        from .message_format import warn_once_1201
+        warn_once_1201("scaffolder.record_frontend_calls_without_backend_1202uv",
+                       "the unserved-call finding was not written to its ledger, so the "
+                       "evidence a later reader greps is absent for a reason nothing records",
+                       _exc1203px)
         return False
 
 
@@ -615,7 +640,24 @@ def route_params_ignored_1202uw(out_dir):
             if resolved and not any_reads:
                 out.append("%s -> %s" % (path, "/".join(resolved)))
         return sorted(set(out))
-    except Exception:
+    except Exception as _exc1203pv:
+        # #1203pv: SAY SO. `[]` from here is byte-identical to "no route ignores its
+        # parameter", and this detector is live in the modern era -- #1203pd found
+        # `/@:username -> ProfileOwnPage` in BOTH r189 and r191, which makes any
+        # `/@someone` show the viewer their own profile. A raise here hands the gate a
+        # clean answer about a check that never ran (#883).
+        #
+        # The swallow stays: a scan fault must never crash the scaffolder. What ends is
+        # the silence -- the same disposition as #701, #790, #792 and #1152, which the
+        # framework already applies at 29 of these 41 handlers: 27 through one of its six
+        # swallow-announcing helpers and 2 by logging directly. `warn_once_1201` is
+        # used TWICE in this very file (persist_backfilled_apis_1202ub,
+        # isolation_scoped_tables) and was simply missing here.
+        from .message_format import warn_once_1201
+        warn_once_1201("scaffolder.route_params_ignored_1202uw", _exc1203pv and
+                       "a route whose page never reads its URL parameter is not "
+                       "detected, so the gate reads clean about a check that did not "
+                       "run", _exc1203pv)
         return []
 
 
@@ -634,7 +676,21 @@ def record_route_params_ignored_1202uw(out_dir, routes) -> bool:
                                "count": len(routes or []),
                                "routes": [str(r) for r in (routes or [])][:50]}) + "\n")
         return True
-    except Exception:
+    except Exception as _exc1203px:
+        # #1203px: SAY SO. `False` already means "there was nothing to record" -- the
+        # guard above returns it for an empty finding list -- so the crash case is
+        # indistinguishable from the ordinary one, and BOTH callers invoke this as a
+        # statement and read neither (#1139: evidence computed that nothing consumes).
+        # The artifact's absence carries the same ambiguity: no file means either "the
+        # detector found nothing" or "the write threw", which is exactly the pair #883
+        # says must be distinguishable. This ledger is what a later reader greps -- it is
+        # how #1203pd attributed `/@:username -> ProfileOwnPage` in r189 and r191 -- so a
+        # missing one that reads as "clean" costs the next investigation, not this run.
+        from .message_format import warn_once_1201
+        warn_once_1201("scaffolder.record_route_params_ignored_1202uw",
+                       "the route-parameter finding was not written to its ledger, so the "
+                       "evidence a later reader greps is absent for a reason nothing records",
+                       _exc1203px)
         return False
 
 

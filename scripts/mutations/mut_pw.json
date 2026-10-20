@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203pw_the_wiring_precheck_that_went_quiet.py",
+ "mutations": [
+  {
+   "label": "PW1 THE TICKET: the pre-check goes silent again, so a crash reads as 'every page is wired' and the judge spends an attempt scoring App.jsx's catch-all at ~0.00",
+   "find": "            from .message_format import warn_once_1201\n            warn_once_1201(\n                \"visual_fidelity._frontend_wiring_blockers\",",
+   "replace": "            from .message_format import warn_once_1201\n            None and warn_once_1201(\n                \"visual_fidelity._frontend_wiring_blockers\","
+  },
+  {
+   "label": "PW2 the exception is dropped for None -- #1203os reserves that for 'a precondition was absent', so the cause clause describes the wrong situation",
+   "find": "                \"catch-all renders\",\n                _exc1203pw)",
+   "replace": "                \"catch-all renders\",\n                None)"
+  },
+  {
+   "label": "PW3 the message stops naming the spent attempt, so a reader cannot tell why a clean answer here costs anything (#983)",
+   "find": "                \"the wiring pre-check faulted, so the judge cannot tell a wired app from \"\n                \"an unwired one and will spend an attempt scoring whatever App.jsx's \"\n                \"catch-all renders\",",
+   "replace": "                \"the wiring pre-check faulted\","
+  }
+ ]
+}

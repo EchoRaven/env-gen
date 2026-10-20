@@ -7467,7 +7467,26 @@ class VisualFidelityGate:
             if not src.exists():
                 src = _P(out) / "frontend" / "src"
             return ui_page_delivery_blockers(src, workhub) or []
-        except Exception:
+        except Exception as _exc1203pw:
+            # #1203pw: SAY SO. `[]` here does not mean "every page is wired" -- it is
+            # also what a fault returns, and the two are byte-identical to the caller.
+            # The consequence is written in this docstring already: the judge then scores
+            # a pre-wiring app whose routes fall through App.jsx's `*` catch-all and
+            # render a redirect/404, "and the judge scores the projected UI at ~0.00".
+            # That is #769's shape one layer up -- a harness failure producing a 0.00
+            # that reads as a verdict about the app -- and it also SPENDS an attempt,
+            # because the caller only skips `self.attempts + 1` when this returns rows.
+            #
+            # The `[]` stays: "an audit hiccup must never wedge the judge shut" is right,
+            # and this is #701's disposition -- keep the behaviour, end the silence. 29 of
+            # the 41 swallows in detector-shaped functions already do this.
+            from .message_format import warn_once_1201
+            warn_once_1201(
+                "visual_fidelity._frontend_wiring_blockers",
+                "the wiring pre-check faulted, so the judge cannot tell a wired app from "
+                "an unwired one and will spend an attempt scoring whatever App.jsx's "
+                "catch-all renders",
+                _exc1203pw)
             return []
 
     # ---- #1202ce: carry this gate's milestone progress across a --resume ------------
