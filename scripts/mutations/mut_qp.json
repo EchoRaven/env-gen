@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_retired_drift_check_says_so_1202by.py",
+ "mutations": [
+  {
+   "label": "QP1 #1202by's ORIGINAL DEFECT: the counts are read with a 0 default instead of only when present, so a retired check prints six zeros that read as a measurement showing perfect agreement -- two lines above `hub counts: pages=30`, in a report handed to lanes as remediation context",
+   "find": "    _counts = [(k, drift[k]) for k in\n               (\"spec_endpoints\", \"hub_endpoints\", \"spec_tables\",\n                \"hub_tables\", \"spec_pages\", \"hub_pages\") if k in drift]",
+   "replace": "    _counts = [(k, drift.get(k, 0)) for k in\n               (\"spec_endpoints\", \"hub_endpoints\", \"spec_tables\",\n                \"hub_tables\", \"spec_pages\", \"hub_pages\")]"
+  },
+  {
+   "label": "QP2 #983: findings with no measured counts stop being announced at all, so errors and warnings print under no heading and the reader cannot tell which check produced them",
+   "find": "    elif drift.get(\"errors\") or drift.get(\"warnings\"):\n        out.append(\"- Semantic hub drift (counts not measured):\")",
+   "replace": "    elif drift.get(\"errors\") and drift.get(\"warnings\") and None:\n        out.append(\"- Semantic hub drift (counts not measured):\")"
+  },
+  {
+   "label": "QP3 the ERROR/WARN lines are dropped -- exactly the half the test's copy omitted, so before #1203qp nothing in that file could have noticed",
+   "find": "    for item in (drift.get(\"errors\") or [])[:5]:\n        out.append(f\"  • ERROR: {item}\")",
+   "replace": "    for item in (drift.get(\"errors\") or [])[:0]:\n        out.append(f\"  • ERROR: {item}\")"
+  },
+  {
+   "label": "QP4 ARRIVAL: the report stops extending with the stanza, so the whole section silently vanishes from the gate report",
+   "find": "        lines.extend(_semantic_drift_lines_1203qp(semantic_drift))",
+   "replace": "        lines.extend(_semantic_drift_lines_1203qp(semantic_drift)[:0])"
+  }
+ ]
+}

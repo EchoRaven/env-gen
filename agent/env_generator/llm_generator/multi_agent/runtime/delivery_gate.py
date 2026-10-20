@@ -108,6 +108,81 @@ from typing import Any, Dict, List, Optional
 _UI_SMOKE_EVIDENCE_CHECKS = {"ui_smoke", "ui_page_reachable", "ui_flow"}
 
 
+# #1203qp: THE GUARD HELD A COPY OF THIS STANZA, NOT THIS STANZA.
+#
+# `test_retired_drift_check_says_so_1202by.py` defined `_render`, documented as "run just
+# the drift stanza the way delivery_gate builds it", and three of its five tests drove that
+# copy; the other two read `delivery_gate.py` as TEXT. No test drove the real stanza, so a
+# change here was invisible to all five -- and the copy was not even complete, covering the
+# counts while omitting the ERROR/WARN lines below them.
+#
+# #1202by's own finding is why this matters: the counts are printed only when they were
+# MEASURED, because a retired check printing `.get(..., 0)` defaults made "did not run" read
+# exactly like "found nothing" -- six zeros claiming perfect agreement two lines above
+# `hub counts: pages=30`. That report is handed to lanes as remediation context, so the
+# contradiction spent lane attention on a discrepancy that did not exist.
+def _semantic_drift_lines_1203qp(semantic_drift: Any) -> List[str]:
+    """The gate report's semantic-hub-drift stanza, in full. Empty input renders nothing."""
+    out: List[str] = []
+    # `dict`, not `Mapping`: this module imports only Any/Dict/List/Optional from
+    # typing, and its own note at the bottom of the file records that a `Mapping`
+    # here raises NameError. 64 isinstance(..., dict) sites, no Mapping ones.
+    drift = semantic_drift if isinstance(semantic_drift, dict) else {}
+    if not drift:
+        return out
+    _counts = [(k, drift[k]) for k in
+               ("spec_endpoints", "hub_endpoints", "spec_tables",
+                "hub_tables", "spec_pages", "hub_pages") if k in drift]
+    if _counts:
+        out.append("- Semantic hub drift: "
+                   + ", ".join(f"{k}={v}" for k, v in _counts))
+    elif drift.get("errors") or drift.get("warnings"):
+        out.append("- Semantic hub drift (counts not measured):")
+    for item in (drift.get("errors") or [])[:5]:
+        out.append(f"  • ERROR: {item}")
+    for item in (drift.get("warnings") or [])[:5]:
+        out.append(f"  • WARN: {item}")
+    return out
+
+
+# #1203qr: ITS GUARD HELD A COPY OF THIS REDUCTION, AND OF THE BUG IT REPLACED.
+#
+# `test_verification_checklist_multi_pr_566q.py` imports nothing but pytest. It defines
+# `_reduce_old` (the defective form) and `_reduce_new` (this one) and asserts that the old
+# AttributeErrors while the new does not -- which proves the ALGORITHM is right and says
+# nothing about what `validate_delivery_gate` actually runs. Production could drift back to
+# storing the status string and every assertion in that file would still pass.
+#
+# #566q is worth not re-living: `list_checks()` without a pr_id returns build:* across ALL
+# PRs, so a component gets more than one record; the old code stored the STATUS STRING and
+# then called `prev.get("updated_at")` on it, the AttributeError was swallowed by the outer
+# except, `ready_for_delivery` stayed False forever, and verification_checklist_not_ready
+# wedged M1 for 35-55 minutes while every build:* on disk read success.
+#
+# Both halves are functions so the test can drive them: the reduction keeps the latest check
+# DICT per component (#585 reads `by_component` for its diagnostic, so the dicts have to
+# survive), and the status is extracted at the end.
+def _latest_build_checks_1203qr(build_checks: Any) -> Dict[str, Any]:
+    """``{component: the latest build:<component> check DICT}``.
+
+    The DICT, never its status string -- comparing `updated_at` is the whole point."""
+    by: Dict[str, Any] = {}
+    for c in (build_checks or []):
+        if not isinstance(c, dict):
+            continue
+        comp = str(c.get("name", "")).removeprefix("build:")
+        prev = by.get(comp)
+        if prev is None or c.get("updated_at", 0) > (prev or {}).get("updated_at", 0):
+            by[comp] = c
+    return by
+
+
+def _build_status_1203qr(by_component: Any, comp: str) -> str:
+    """The status of one component's latest build check; 'pending' when there is none."""
+    _by = by_component if isinstance(by_component, dict) else {}
+    return (_by.get(comp) or {}).get("status", "pending")
+
+
 def _ui_smoke_pass(validation_results: Any) -> bool:
     """True iff any validation record is a passed UI-evidence check (see #287)."""
     return any(
@@ -2278,27 +2353,7 @@ def format_delivery_gate_report(gate: Dict[str, Any]) -> str:
 
     semantic_drift = gate.get("semantic_hub_drift", {})
     if semantic_drift:
-        # #1202by: print the counts only when they were actually MEASURED. This check was
-        # retired ("vestigial -- specs no longer exist as independent source") and now carries
-        # nothing but empty errors/warnings, so every `.get(..., 0)` fell through to its
-        # default and the report claimed, in every run, `spec_pages=0, hub_pages=0` two lines
-        # above `hub counts: pages=30`. Six zeros read as a measurement showing perfect
-        # agreement; they were a retired check printing defaults, and "did not run" looked
-        # exactly like "found nothing" -- the failure mode this repo has shipped seven times.
-        # It is not merely cosmetic: this report is handed to lanes as remediation context,
-        # so the contradiction burns lane attention on a discrepancy that does not exist.
-        _counts = [(k, semantic_drift[k]) for k in
-                   ("spec_endpoints", "hub_endpoints", "spec_tables",
-                    "hub_tables", "spec_pages", "hub_pages") if k in semantic_drift]
-        if _counts:
-            lines.append("- Semantic hub drift: "
-                         + ", ".join(f"{k}={v}" for k, v in _counts))
-        elif semantic_drift.get("errors") or semantic_drift.get("warnings"):
-            lines.append("- Semantic hub drift (counts not measured):")
-        for item in semantic_drift.get("errors", [])[:5]:
-            lines.append(f"  • ERROR: {item}")
-        for item in semantic_drift.get("warnings", [])[:5]:
-            lines.append(f"  • WARN: {item}")
+        lines.extend(_semantic_drift_lines_1203qp(semantic_drift))
 
     projection_errors = gate.get("projection_errors", {})
     if projection_errors:
@@ -4609,14 +4664,10 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # then called prev.get("updated_at") on it → AttributeError on the 2nd record → swallowed by
         # the outer except → ready_for_delivery=False FOREVER → verification_checklist_not_ready
         # wedged M1 despite every build:* being success (stuck 35-55min).
-        for c in build_checks:
-            comp = c.get("name", "").removeprefix("build:")
-            prev = by_component.get(comp)
-            if prev is None or c.get("updated_at", 0) > prev.get("updated_at", 0):
-                by_component[comp] = c
+        by_component = _latest_build_checks_1203qr(build_checks)
 
         def _st(_comp):
-            return (by_component.get(_comp) or {}).get("status", "pending")
+            return _build_status_1203qr(by_component, _comp)
         checklist_statuses_map = {
             "sql_syntax": _st("database"),
             "docker_build": _st("docker"),

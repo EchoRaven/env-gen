@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_verification_checklist_multi_pr_566q.py",
+ "mutations": [
+  {
+   "label": "QR1 #566q's ORIGINAL DEFECT: the reduction stores the STATUS STRING instead of the check dict, so the next record for that component calls prev.get(\"updated_at\") on a str -> AttributeError -> swallowed by the gate's outer except -> ready_for_delivery False forever -> verification_checklist_not_ready wedged M1 for 35-55 minutes while every build:* on disk read success",
+   "find": "            by[comp] = c\n    return by",
+   "replace": "            by[comp] = c.get(\"status\", \"pending\")\n    return by"
+  },
+  {
+   "label": "QR2 the latest record stops winning: the FIRST record per component is kept, so an older failure outranks the newer success and a green build never clears the checklist",
+   "find": "        if prev is None or c.get(\"updated_at\", 0) > (prev or {}).get(\"updated_at\", 0):",
+   "replace": "        if prev is None:"
+  },
+  {
+   "label": "QR3 a component with no record reads as success instead of pending, so a build check that never ran certifies the delivery",
+   "find": "    return (_by.get(comp) or {}).get(\"status\", \"pending\")",
+   "replace": "    return (_by.get(comp) or {}).get(\"status\", \"success\")"
+  },
+  {
+   "label": "QR4 ARRIVAL: the gate stops asking the reduction and keeps its own empty dict, so every component reads pending and the checklist can never clear",
+   "find": "        by_component = _latest_build_checks_1203qr(build_checks)",
+   "replace": "        by_component = _latest_build_checks_1203qr(build_checks) and {}"
+  }
+ ]
+}
