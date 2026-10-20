@@ -4811,6 +4811,51 @@ def _archive_capture_930(rec: Dict[str, Any], vdir: Any, code_state: Any) -> Dic
         return rec
 
 
+_REF_PRODUCT_RE_1203QH = re.compile(r"design_inputs/([^/]+)/")
+
+
+def reference_products_1203qh(screens) -> dict:
+    """{product: [screen names]} read off each screen's own `reference` path.
+
+    #1203qh: #500 merges verdict.json BY SCREEN NAME, keeping the best score per name. That
+    guard is right (a transient capture must not clobber a good verdict) but the key carries
+    no product, so screens scored against a DIFFERENT product's references survive into the
+    merge and the recorded Part-A average is computed across both sets.
+
+    MEASURED over the corpus: 78 of 79 verdicts use exactly one product's references. The one
+    exception is `googlemaps-r16`, whose 17 BLOCKING screens split 9 google_maps (mean 0.4611,
+    0.34-0.56) and 8 netflix (mean 0.1487, 0.05-0.35) -- the netflix ones carrying
+    missing-component lists that name "Netflix wordmark" and "Top 10 badge". Recomputing #542a's
+    formula over all 17 reproduces the recorded `blocking_average` of 0.3141 exactly, which is
+    how this was confirmed rather than inferred; over the google_maps screens alone it is
+    0.4611, so the persisted fidelity of that run understates itself by 1.47x.
+
+    #542a's own comment one line below states the intent this breaks: the average is taken
+    over blocking screens only "so a transient/advisory or duplicate-route screen never drags
+    the persisted fidelity". Another product's screens drag it exactly that way.
+
+    DELIBERATELY DETECT-AND-SAY, NOT ARITHMETIC. n=1 in the corpus and the likely cause is a
+    reused output directory, so dropping screens here would be a behavioural change on one
+    observation -- #1202w6 wants a live run for that, and #647 wants no guard wider than the
+    evidence. What is free is refusing to record a cross-product number in silence.
+
+    Returns {} when zero or one product is involved, so the caller stays silent in the 78.
+    Never raises: a verdict write must not be breakable by a path shape.
+    """
+    out: dict = {}
+    try:
+        for s in (screens or []):
+            if not isinstance(s, Mapping):
+                continue
+            m = _REF_PRODUCT_RE_1203QH.search(str(s.get("reference") or ""))
+            if not m:
+                continue
+            out.setdefault(m.group(1), []).append(str(s.get("name") or "?"))
+    except Exception:
+        return {}
+    return out if len(out) > 1 else {}
+
+
 def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                      milestone_label: Optional[str] = None,
                      summary: str, coverage: Any, results: List[Mapping[str, Any]],
@@ -5163,6 +5208,22 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # transient/advisory or duplicate-route screen never drags the persisted fidelity.
         _blocking_average = (round(sum(_sim(s) for s in _blocking_merged) / len(_blocking_merged), 4)
                              if _blocking_merged else 0.0)
+        # #1203qh: say so when this average spans more than one product's references.
+        _mixed_1203qh = reference_products_1203qh(_blocking_merged)
+        if _mixed_1203qh:
+            # #1203os's channel, NOT warn_once_1201: this is a thing that IS the case about
+            # the record, not a guarded mechanism that failed. That distinction is the whole
+            # of #1203os -- three sites reporting findings through #1201's template made 599
+            # of 602 `#1201` lines wrong answers to "which mechanisms were off this run".
+            from .message_format import announce_once_1203os
+            announce_once_1203os(
+                "visual_fidelity.reference_products_1203qh",
+                "the recorded Part-A average %.4f spans %d products' references (%s) -- "
+                "#500 merges verdict.json by SCREEN NAME, so screens scored against another "
+                "product survive into the merge and drag the persisted fidelity. This number "
+                "is not a statement about one app.",
+                _blocking_average, len(_mixed_1203qh),
+                "; ".join("%s=%d" % (k, len(v)) for k, v in sorted(_mixed_1203qh.items())))
 
         # #618 — THE RECORD CAN BE BETTER THAN THE CODE. #500 merges the BEST per-screen score
         # across captures, to stop a transient capture (env mid-rebuild → every page 0.00) from

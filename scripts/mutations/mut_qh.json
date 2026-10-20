@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/visual_fidelity.py",
+ "test": "tests/test_1203qh_a_number_that_spanned_two_products.py",
+ "mutations": [
+  {
+   "label": "QH1 THE TICKET: the announcement never fires, so a Part-A average taken across two products' screens is recorded in silence again -- googlemaps-r16's 0.3141 against 0.4611 over its own product's screens",
+   "find": "        _mixed_1203qh = reference_products_1203qh(_blocking_merged)\n        if _mixed_1203qh:",
+   "replace": "        _mixed_1203qh = reference_products_1203qh(_blocking_merged)\n        if False and _mixed_1203qh:"
+  },
+  {
+   "label": "QH2 the reader stops requiring MORE THAN ONE product, so all 78 single-product runs announce too -- a check that fires on everything says nothing (#983), and it would bury the one run that matters",
+   "find": "    return out if len(out) > 1 else {}",
+   "replace": "    return out"
+  },
+  {
+   "label": "QH3 the finding is reported through warn_once_1201 instead, which is #1203os's defect re-created one site over: #1201's population answers 'which guarded mechanisms were OFF this run' and three sites misusing it made 599 of 602 lines wrong",
+   "find": "            from .message_format import announce_once_1203os\n            announce_once_1203os(",
+   "replace": "            from .message_format import warn_once_1201 as announce_once_1203os\n            announce_once_1203os("
+  }
+ ]
+}
