@@ -2391,6 +2391,28 @@ class HealPipeline:
                     orch._logger.warning(
                         "#1203n0 %d more invisible icon reference(s) not listed (#1034)",
                         len(_inv1203n0) - 6)
+                # #1203pm: AND FILE IT. This finding was log-only, and the corpus says what
+                # that costs -- with a controlled comparison inside this same subsystem.
+                # `invisible_icon_task_1203pm` carries the evidence and the wording; this is
+                # only the wiring. Deduped per finding-set so a steady state does not re-file
+                # every tick (#1041), and it never raises -- losing the heal pass over a
+                # fidelity task would be a bad trade.
+                try:
+                    from .frontend_scaffold import invisible_icon_task_1203pm
+                    from .message_format import state_changed_1202ad as _sc1203pm
+                    if _sc1203pm("task:invisible_icons_1203pm",
+                                 tuple(sorted(map(str, _inv1203n0)))):
+                        _t1203pm, _b1203pm = invisible_icon_task_1203pm(_inv1203n0)
+                        orch.hubs.workhub.create_task(
+                            title=_t1203pm, description=_b1203pm,
+                            assignee="frontend", agent="heal_pipeline", priority="P1",
+                            kind="fidelity")
+                except Exception as _e1203pm:
+                    from .message_format import warn_once_1201 as _w1203pm
+                    _w1203pm("invisible_icons_task_1203pm",
+                             "#1203pm could not file the invisible-icon task (%s: %s) — the "
+                             "finding above is log-only again, which is what #1203pm exists "
+                             "to stop." % (type(_e1203pm).__name__, str(_e1203pm)[:120]))
             except Exception as _iv_err:
                 orch._logger.debug("#1203n0 invisible-icon scan skipped: %s", _iv_err)
             # #1203nw: the other way a staged icon fails -- not its colour, its GEOMETRY. Own

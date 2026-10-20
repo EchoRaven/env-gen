@@ -872,6 +872,45 @@ _ICON_SHAPE_1203NW = re.compile(
     r"<(path|rect|circle|polygon|ellipse|line|polyline|image|use|text)\b", re.I)
 
 
+def invisible_icon_task_1203pm(findings: Any) -> Tuple[str, str]:
+    """#1203pm: the lane's task for icons CSS colour cannot reach. Returns ``(title, body)``.
+
+    `#1203n0` found these from the first run it shipped in and only ever WARNED. The corpus
+    gives a controlled comparison inside this same subsystem, on the same axis, in the same era:
+
+        #1203kd  files a P1 task   31 tasks, 30 completed, all in r190/r191
+                                   -- the runs where its detector now finds ZERO
+        #1203n0  logs only         34 findings across the 7 modern runs, 9 in r190, 8 in r191
+                                   -- and ZERO tasks about the mechanism in 120391 records
+
+    The task channel converged and the log channel did not. #1203f6's rule with evidence: a
+    finding has to reach a recipient who can act on it, and the orchestrator's log is not one.
+
+    A pure function because the whole point is WHAT IT SAYS, and the call site lives 650 lines
+    into `repair_frontend_api` where nothing can drive it -- the same reason
+    `_capture_unavailable_summary_1203pg` and `_checklist_pending_note_1203pg` were extracted.
+    The remedy differs by MECHANISM (#1203nv), so the body explains both and the rows carry
+    which one each is.
+    """
+    rows = [str(x) for x in (findings or [])]
+    title = ("Make %d staged icon(s) visible: CSS colour cannot reach them through <img>"
+             % len(rows))[:180]
+    body = (
+        "These icons are in the DOM and invisible on screen. Each row names the file that "
+        "loads it and the MECHANISM, because the remedy differs:\n\n%s\n\n"
+        "`currentColor` -- the SVG paints with `currentColor`, which cannot inherit through an "
+        "<img>. INLINE the SVG and it resolves against the element's CSS `color`.\n"
+        "`no paint at all` -- the SVG names no paint, so SVG's initial `fill` (black) applies. "
+        "Inline it AND have the CSS set `fill`; a `color` alone leaves it invisible.\n\n"
+        "Measured in real Chromium at 48x48 on a #121212 nav: a no-paint icon under CSS "
+        "`fill:#fff` reads mean 7.9 with 0 bright pixels (still invisible), while a "
+        "currentColor icon inlined under `color` reads 151.3 with 1296. Pointing at an asset "
+        "that carries its own colours also works -- #551/#1203kw keep the <img> channel open "
+        "for those."
+        % join_capped(rows, total=len(rows), cap=8))
+    return title, body
+
+
 def unrenderable_img_icons_1203nw(frontend_dir) -> List[str]:
     """``["EmptyChatPane.jsx -> /assets/icons/x.svg (no viewBox …)", …]`` — referenced icons
     that cannot render AS an icon, whatever colour they are.

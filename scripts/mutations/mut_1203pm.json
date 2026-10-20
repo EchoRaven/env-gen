@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203pm_the_invisible_icon_was_only_logged.py",
+ "mutations": [
+  {
+   "label": "PM1 the title reports a constant instead of the count, so a lane triaging P1s cannot tell one invisible icon from nine (r190 has 9, r191 has 8)",
+   "find": "    title = (\"Make %d staged icon(s) visible: CSS colour cannot reach them through <img>\"\n             % len(rows))[:180]",
+   "replace": "    title = (\"Make %d staged icon(s) visible: CSS colour cannot reach them through <img>\"\n             % 1)[:180]"
+  },
+  {
+   "label": "PM2 the `no paint at all` remedy is dropped, so a lane told only about `currentColor` inlines the no-paint icons under a CSS `color` and they stay invisible -- measured 7.9 mean / 0 bright pixels in real Chromium (#1203nv)",
+   "find": "        \"`no paint at all` -- the SVG names no paint, so SVG's initial `fill` (black) applies. \"",
+   "replace": "        \"\" "
+  },
+  {
+   "label": "PM3 the row list is no longer capped and declares no cut, so twenty findings go into the body whole (#1034, and #1203pl is what the opposite costs on this axis)",
+   "find": "        % join_capped(rows, total=len(rows), cap=8))",
+   "replace": "        % \", \".join(rows))"
+  }
+ ]
+}

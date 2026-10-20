@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/heal_pipeline.py",
+ "test": "tests/test_1203pm_the_invisible_icon_was_only_logged.py",
+ "mutations": [
+  {
+   "label": "PM4 the task is never filed, so the finding is log-only again -- 34 across the modern runs, 9 in r190 and 8 in r191, and ZERO tasks in 120391 records",
+   "find": "                        orch.hubs.workhub.create_task(",
+   "replace": "                        None and orch.hubs.workhub.create_task("
+  },
+  {
+   "label": "PM5 the dedupe key stops depending on the finding set, so a CHANGED set never produces a second task and the first state is the only one the lane ever hears about",
+   "find": "                    if _sc1203pm(\"task:invisible_icons_1203pm\",\n                                 tuple(sorted(map(str, _inv1203n0)))):",
+   "replace": "                    if _sc1203pm(\"task:invisible_icons_1203pm\", \"said\"):"
+  },
+  {
+   "label": "PM6 a filing failure is swallowed, so the one thing #1203pm adds can fail silently and leave the finding log-only with nothing saying so (#1201)",
+   "find": "                    _w1203pm(\"invisible_icons_task_1203pm\",",
+   "replace": "                    None and _w1203pm(\"invisible_icons_task_1203pm\","
+  }
+ ]
+}
