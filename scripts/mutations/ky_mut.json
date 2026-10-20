@@ -13,7 +13,7 @@
    "replace": "        if Path(r).name == name and Path(r).is_file():"
   },
   {
-   "label": "M3 an empty reference now resolves to the references DIRECTORY  [anchor re-aimed 2026-10-19: comment inserted before the return; `pass` keeps the block compilable -- removing the line outright gave BROKEN, which is not evidence]",
+   "label": "M3 an empty reference now resolves to the references DIRECTORY  [anchor re-aimed 2026-10-19: comment inserted before the return; `pass` keeps the block compilable -- removing the line outright gave BROKEN, which is not evidence]  [EXPECTED-MISSED 2026-10-20, and the production code says so at the guard itself: \"A SEMANTIC NO-OP ... with the early return gone, `Path(\"\").name` is `\"\"`, the join yields the references DIRECTORY, `is_file()` is False, and the `resolved` loop cannot match an empty basename -- so None either way ... mutation cannot tell the difference.\" The guard is kept because \"no reference means None\" is the contract, not because a mutation can observe it.]",
    "find": "        return None\n    base = Path(name).name",
    "replace": "        pass\n    base = Path(name).name"
   },
