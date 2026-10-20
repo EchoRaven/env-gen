@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/agents/runtime/auto_commit.py",
+ "test": "tests/test_1203qd_the_conflict_list_that_hid_its_cut.py",
+ "mutations": [
+  {
+   "label": "QD1 THE TICKET: back to the bare slice-join, so the promotion-conflict detail again says '30 file(s)' and names six -- 12 of 12 occurrences in the kept run logs, on the only outcome this function has ever produced (#1151)",
+   "find": "                    len(_names), _jc1203qd(_names, total=len(_names), cap=6, sep=\", \"))",
+   "replace": "                    len(_names), \", \".join(_names[:6]))"
+  },
+  {
+   "label": "QD2 #1203pl's shape: the declared total becomes the SHOWN count, so the sentence is internally consistent and still hides 24 files. Behaviourally identical wherever nothing is cut, which is why the assertion is structural",
+   "find": "                    len(_names), _jc1203qd(_names, total=len(_names), cap=6, sep=\", \"))",
+   "replace": "                    len(_names), _jc1203qd(_names, total=6, cap=6, sep=\", \"))"
+  },
+  {
+   "label": "QD3 the cap is lifted instead of declared (#1034 wants the cut declared, not removed): a 30-file conflict pastes all 30 paths into the detail",
+   "find": "                    len(_names), _jc1203qd(_names, total=len(_names), cap=6, sep=\", \"))",
+   "replace": "                    len(_names), _jc1203qd(_names, total=len(_names), cap=999, sep=\", \"))"
+  }
+ ]
+}

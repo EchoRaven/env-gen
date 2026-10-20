@@ -86,9 +86,18 @@ def test_it_asks_git_for_the_unmerged_paths():
 
 
 def test_it_counts_and_caps_the_paths():
+    """#1203qd re-pointed the second assertion. It read `"_names[:6]" in b`, and the cut is
+    now rendered by `join_capped` -- which keeps the bound AND declares the remainder, the
+    thing #721's own log line was missing: 12 of 12 occurrences in the kept run logs say
+    17-30 files and name six. The property here is unchanged ("must not flood the log"), so
+    this asserts the bound in its new spelling rather than the old slice.
+    """
     b = _block()
     assert "len(_names)" in b
-    assert "_names[:6]" in b, "a hundred-file conflict must not flood the log"
+    assert "cap=6" in b, "a hundred-file conflict must not flood the log"
+    assert "_jc1203qd" in b, "the cut must be rendered by the shared owner (#1032)"
+    assert "_names[:6]" not in b, (
+        "a bare slice-join is the silent cut #1203qd removed; the cap belongs to join_capped")
 
 
 def test_the_fallback_order_puts_stdout_before_stderr():

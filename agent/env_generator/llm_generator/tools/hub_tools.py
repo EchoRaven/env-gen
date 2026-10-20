@@ -928,6 +928,8 @@ class WorkHubUpdatePageTool(HubTool):
         # #1203b0: SAY WHEN THE CALL DID NOT TOUCH THE FIELD THE GATE JUDGES. A re-registration
         # that omits `apis_used` preserves the old list and returns success, which is exactly
         # how r143's lane concluded it had fixed the blocker 19 times over.
+        from env_generator.llm_generator.multi_agent.runtime.message_format import (
+            join_capped as _jc1203qd)   # #1203qd
         if apis_used is None and isinstance(_rec1203b0, dict):
             _kept = list((_rec1203b0.get("apis_used")
                           or (_rec1203b0.get("metadata") or {}).get("apis_used") or []))
@@ -938,7 +940,14 @@ class WorkHubUpdatePageTool(HubTool):
                         "you did not pass `apis_used`, so the existing %d entry(ies) were KEPT: "
                         "%s. If you are here to fix a `page_apis_understated` blocker, this call "
                         "changed nothing — pass the full list."
-                        % (len(_kept), ", ".join(str(a) for a in _kept[:8]))),
+                        # #1203qd: the whole force of this note is the COUNT -- #1203b0
+                        # exists because a lane concluded it had fixed the blocker 19 times
+                        # over -- and the list was cut at 8 in silence. 45 of 1687 ui_page
+                        # records carry more than 8 `apis_used` (2.7%), up to 17
+                        # (tiktok-r164) and 16 (instagram-core-r176). Same #1034 blind spot
+                        # as the auto_commit site: a `%` format, not an f-string.
+                        % (len(_kept), _jc1203qd([str(a) for a in _kept],
+                                                 total=len(_kept), cap=8, sep=", "))),
                 }
                 # #1203p2: AND SAY IT WHERE A READER CAN COUNT IT. The note above rides in
                 # `ToolResult.data`, which reaches the model and nothing else -- tool RESULTS

@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_1203qd_the_conflict_list_that_hid_its_cut.py",
+ "mutations": [
+  {
+   "label": "QD4 THE TICKET: back to the bare slice-join, so the #1203b0 note again says '17 entry(ies) were KEPT' and lists eight -- and that note exists because a lane concluded it had fixed the blocker 19 times over",
+   "find": "                        % (len(_kept), _jc1203qd([str(a) for a in _kept],\n                                                 total=len(_kept), cap=8, sep=\", \"))),",
+   "replace": "                        % (len(_kept), \", \".join(str(a) for a in _kept[:8]))),"
+  },
+  {
+   "label": "QD5 #1203pl's shape on the hub_tools site: total becomes the shown count",
+   "find": "                        % (len(_kept), _jc1203qd([str(a) for a in _kept],\n                                                 total=len(_kept), cap=8, sep=\", \"))),",
+   "replace": "                        % (len(_kept), _jc1203qd([str(a) for a in _kept],\n                                                 total=8, cap=8, sep=\", \"))),"
+  },
+  {
+   "label": "QD6 the cap is lifted: a 17-entry page pastes all 17 into a note that rides in ToolResult.data straight to the model",
+   "find": "                        % (len(_kept), _jc1203qd([str(a) for a in _kept],\n                                                 total=len(_kept), cap=8, sep=\", \"))),",
+   "replace": "                        % (len(_kept), _jc1203qd([str(a) for a in _kept],\n                                                 total=len(_kept), cap=999, sep=\", \"))),"
+  }
+ ]
+}

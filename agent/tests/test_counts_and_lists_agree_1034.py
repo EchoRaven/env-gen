@@ -203,6 +203,38 @@ def _own_nodes_1203jx(scope):
     return out
 
 
+def _formats_a_string_1203qe(n) -> bool:
+    """An f-string OR a ``%`` format expression.
+
+    #1203qe: the hook below was `isinstance(n, JoinedStr)` alone, and this package formats
+    with `%` far more often than with f-strings -- so #1034's own subject could sit in scope
+    and unseen. Two did, and both were real:
+
+      * `auto_commit.py` built `"%d file(s): %s" % (len(_names), ", ".join(_names[:6]))` for
+        the promotion-conflict detail. In the kept run logs 12 of 12 occurrences are cut --
+        17, 18, 19, 20, 21x3, 22x2, 23, 27 and 30 files, every one showing SIX -- and #1151
+        records that this branch is the only outcome that function has ever produced.
+      * `hub_tools.py` said "the existing %d entry(ies) were KEPT: <eight of them>". 45 of
+        1687 ui_page records carry more than 8 `apis_used` (2.7%), up to 17 (tiktok-r164).
+        That note is #1203b0, which exists because a lane concluded it had fixed the blocker
+        19 times over -- the count IS the message.
+
+    Both are inside `_PKG_1203JX`, so this was a detector blind spot and not a scan gap.
+    Found by asking why this ratchet had not caught #1203q7's cap; that one turned out to be
+    a different shape (a cut with no count at all), and the question still paid.
+
+    `.format()` is deliberately NOT added: the package has no `len()`-beside-cut `.format()`
+    site today, and a detector arm with nothing to detect cannot be shown to work (#947).
+    """
+    if isinstance(n, _ast1203jx.JoinedStr):
+        return True
+    if isinstance(n, _ast1203jx.BinOp) and isinstance(n.op, _ast1203jx.Mod):
+        left = n.left
+        return ((isinstance(left, _ast1203jx.Constant) and isinstance(left.value, str))
+                or isinstance(left, _ast1203jx.JoinedStr))
+    return False
+
+
 def _count_beside_cut_list_1203jx(tree, ignore_markers=False):
     """f-strings carrying BOTH len(<whole>) and a joined, truncated rendering, unmarked."""
     def _has_len(node):
@@ -248,7 +280,7 @@ def _count_beside_cut_list_1203jx(tree, ignore_markers=False):
                     if isinstance(t, _ast1203jx.Name):
                         cut_vars[t.id] = _ast1203jx.unparse(st)
         for n in _own_nodes_1203jx(scope):
-            if not isinstance(n, _ast1203jx.JoinedStr) or not _has_len(n):
+            if not _formats_a_string_1203qe(n) or not _has_len(n):
                 continue
             txt = _ast1203jx.unparse(n)
             via = sorted({c.id for c in _ast1203jx.walk(n)

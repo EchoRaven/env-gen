@@ -1560,7 +1560,22 @@ def promote_integration_to_main(
             _rc_u, _out_u, _ = _run_git(["diff", "--name-only", "--diff-filter=U"], cwd=repo)
             if _rc_u == 0 and (_out_u or "").strip():
                 _names = [n for n in (_out_u or "").split("\n") if n.strip()]
-                _paths = "%d file(s): %s" % (len(_names), ", ".join(_names[:6]))
+                # #1203qd: this said "27 file(s)" and then listed SIX, declaring nothing.
+                # Measured over the kept run logs: 12 of 12 occurrences are cut -- 17, 18,
+                # 19, 20, 21x3, 22x2, 23, 27 and 30 files, every one showing exactly six --
+                # and per #1151 below this branch is the ONLY outcome this function has ever
+                # produced, so the cut text is the whole of what a lane ever reads here.
+                #
+                # #1034 ratchets this exact shape (a count beside a cut list) and could not
+                # see it: `_count_beside_cut_list_1203jx` walks `JoinedStr` nodes only, and
+                # this is a `%` format. #1203qe widens the detector, which is why this had
+                # to be fixed in the same change rather than left for the ratchet to find.
+                #
+                # Relative import, matching the siblings in this package (hub_pulse,
+                # tooling): #1203n6 is what an over-the-top absolute import costs here.
+                from ...runtime.message_format import join_capped as _jc1203qd
+                _paths = "%d file(s): %s" % (
+                    len(_names), _jc1203qd(_names, total=len(_names), cap=6, sep=", "))
         except Exception:
             _paths = ""
         _detail = _paths or (p.stdout or "").strip() or (p.stderr or "").strip() or "no detail"
