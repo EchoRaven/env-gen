@@ -230,7 +230,11 @@ class TheGuardsThisFoundAreNowDriven(unittest.TestCase):
         import glob
         import json
         tests = set()
-        for p in glob.glob(os.path.join(_ROOT, "scripts", "mutations", "*.json")):
+        specs = glob.glob(os.path.join(_ROOT, "scripts", "mutations", "*.json"))
+        # #1203pi: without this the loop below asserts nothing when the glob finds no specs,
+        # and this test was one of the 14 instances the ratchet's own blind spot hid.
+        self.assertTrue(specs, "no mutation specs found -- re-aim this test")
+        for p in specs:
             try:
                 # #1202eu: a handle per file, in a loop over a whole tree. The ratchet caught
                 # this version of the test on the run that landed it.

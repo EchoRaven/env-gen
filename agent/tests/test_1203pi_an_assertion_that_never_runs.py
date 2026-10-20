@@ -15,11 +15,24 @@ search quietly finds nothing and the test stops guarding while staying green. It
 failure as a mutation spec whose `find` anchor dies
 (`feedback_a_later_patch_can_destroy_an_earlier_mutations_anchor`), one level up.
 
-MEASURED when this landed, and the measurement is why the baseline is allowed rather than fixed:
-every one of the 34 entries below EXECUTES its assertion today. A line tracer ran each of them
-and recorded the assert line in all 34 -- **zero are vacuous now**. So this is a latent risk, not
-a present defect, and the cheap protection is to stop NEW ones arriving rather than to churn 34
-files over a hazard none of them currently has.
+MEASURED, and the measurement is why the baseline is allowed rather than fixed: every entry
+below EXECUTES its assertion today. A line tracer ran each one and recorded the assert line in
+all of them -- **zero are vacuous now**. So this is a latent risk, not a present defect, and the
+cheap protection is to stop NEW ones arriving rather than to churn the files over a hazard none
+of them currently has.
+
+The baseline grew once, from 34 to 47, and not because anything regressed: the first version of
+this scan counted only `ast.Assert`, so every `unittest.TestCase` test was invisible to it --
+637 of the repo's 2363 test files. Fixing that surfaced 14 more instances of this shape, one of
+them in the file that introduced the ranking this ratchet came out of (now fixed rather than
+baselined). #1203ow's lesson, again: filter by ROLE, not by spelling.
+
+A harness note worth keeping, because it nearly produced a false finding. Re-tracing the 14 by
+importing their modules directly reported FOUR as vacuous. They were not: imported without the
+suite's conftest the tests FAIL, so no assertion line runs, and "failed" looks exactly like
+"asserted nothing". Run under pytest with the real node id -- `file.py::Class::method` for a
+`unittest` method, which is also what made a first attempt report "no tests ran" -- all of them
+execute their assertion. Several use `subTest`, which is a legitimate way to write this shape.
 
 The scan narrowed three times, and each step removed a family of false positives, which is the
 reusable part: 682 tests have every assertion inside SOME loop; 179 of those iterate something
@@ -46,6 +59,8 @@ _SEARCH = re.compile(r"finditer|findall|ast\.walk|\.glob\(|\.rglob\(|\.iterdir\(
 # (file, test) pairs that carry the shape today. Every one was traced and DOES execute its
 # assertion -- see the module docstring. Shrink this list, never grow it.
 _BASELINE = frozenset([
+    ("test_1141_tool_batching_is_a_hyperparameter.py",
+     "test_every_use_carries_a_fallback"),
     ("test_1180_own_cap_is_not_blamed_on_the_provider.py",
      "test_no_message_claims_both_things"),
     ("test_1192_ticker_reports_the_real_tick_count.py",
@@ -74,6 +89,8 @@ _BASELINE = frozenset([
      "test_the_verdict_itself_is_unchanged"),
     ("test_1203c6_the_api_count_included_the_ui.py",
      "test_api_failed_is_not_read_from_the_rebound_name"),
+    ("test_1203fw_the_framework_served_register_and_the_apps_wanted_signup.py",
+     "test_both_keep_register_s_created_status"),
     ("test_1203gf_docker_up_was_one_undivided_number.py",
      "test_no_extra_check_was_added_to_the_twenty_six"),
     ("test_1203gg_the_stall_was_in_four_untimed_steps.py",
@@ -84,6 +101,10 @@ _BASELINE = frozenset([
      "test_the_free_path_reports_how_long_it_waited"),
     ("test_1203gv_the_reset_left_the_defect_count_behind.py",
      "test_the_reset_lives_behind_the_restore_guard"),
+    ("test_1203hv_the_count_was_flat_while_the_page_changed.py",
+     "test_it_is_its_own_if_not_nested_in_1138s"),
+    ("test_1203hx_the_chains_came_down_and_nothing_saw_it.py",
+     "test_each_depth_signal_keeps_its_own_if"),
     ("test_1203id_the_counter_said_retry_and_meant_exception.py",
      "test_the_recorder_is_not_called_above_the_guards"),
     ("test_1203ip_typed_inputs_are_filled_with_their_own_type.py",
@@ -100,6 +121,24 @@ _BASELINE = frozenset([
      "test_the_note_does_not_read_the_flag"),
     ("test_1203kf_which_of_the_three_causes.py",
      "test_the_binding_this_inference_rests_on_is_still_outside_the_loop_1203kf"),
+    ("test_1203mh_the_warning_said_every_screen.py",
+     "test_the_false_claim_is_in_no_literal"),
+    ("test_1203mj_the_warning_called_its_finding_inert.py",
+     "test_the_withdrawn_phrase_is_only_ever_quoted_never_asserted"),
+    ("test_1203nn_the_file_that_had_never_existed.py",
+     "test_no_such_file_matches_the_producers_output_shape"),
+    ("test_1203nn_the_file_that_had_never_existed.py",
+     "test_the_reason_is_empty_when_a_suite_exists"),
+    ("test_1203no_which_of_the_two_numbers_lied.py",
+     "test_the_priority_is_still_P1"),
+    ("test_1203np_the_card_that_plays_nothing.py",
+     "test_it_is_not_nested_inside_a_failed_checks_branch"),
+    ("test_1203nq_the_remap_the_asset_check_never_read.py",
+     "test_the_googlemaps_icons_stay_unannotated"),
+    ("test_1203ns_the_comment_that_shipped_with_no_text.py",
+     "test_only_reachable_two_column_tables_matter_and_the_fill_skips_them"),
+    ("test_1203nz_one_rendering_judged_as_five_screens.py",
+     "test_the_judging_of_a_collision_is_evidenced"),
     ("test_280_ui_flow_failed_has_owner.py",
      "test_ui_flow_failed_owner_spec_is_well_formed"),
     ("test_empty_page_is_distinct_from_no_probe_688.py",
@@ -117,6 +156,27 @@ _BASELINE = frozenset([
 ])
 
 
+_ASSERT_METHOD = re.compile(r"^assert[A-Z]")
+
+
+def _asserts_in(scope):
+    """Every assertion in `scope`, BOTH styles.
+
+    #1203pg: the first version counted only `ast.Assert`, so every `unittest.TestCase` test was
+    invisible -- 637 of this repo's 2363 test files, and 14 more instances of this very shape,
+    one of them in the file that introduced the ranking this ratchet came out of. Same mistake
+    as #1203ow's twelve ratchets filtering by file name: a filter keyed on spelling, not role.
+    """
+    out = []
+    for n in ast.walk(scope):
+        if isinstance(n, ast.Assert):
+            out.append(n)
+        elif (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and _ASSERT_METHOD.match(n.func.attr or "")):
+            out.append(n)
+    return out
+
+
 def _is_vacuous_shape(tree):
     """The (name) of every test in `tree` whose assertions could all be skipped."""
     out = []
@@ -128,11 +188,11 @@ def _is_vacuous_shape(tree):
         # a parametrized test's loop belongs to pytest, not to the test
         if "parametrize" in " ".join(ast.unparse(d) for d in fn.decorator_list):
             continue
-        asserts = [n for n in ast.walk(fn) if isinstance(n, ast.Assert)]
+        asserts = _asserts_in(fn)
         loops = [n for n in ast.walk(fn) if isinstance(n, (ast.For, ast.AsyncFor))]
         if not asserts or not loops:
             continue
-        in_loop = {id(n) for L in loops for n in ast.walk(L) if isinstance(n, ast.Assert)}
+        in_loop = {id(n) for L in loops for n in _asserts_in(L)}
         if len(in_loop) != len(asserts):
             continue                     # something asserts unconditionally; not this shape
         if not any(_SEARCH.search(ast.unparse(L.iter)) for L in loops):
@@ -182,6 +242,25 @@ class TheScanWorks(unittest.TestCase):
                "    for n in nodes:\n"
                "        assert not bad(n)\n")
         self.assertEqual(_is_vacuous_shape(ast.parse(src)), [])
+
+    def test_it_fires_on_the_shape_in_unittest_style(self):
+        """The sixth blind spot, pinned: `self.assertX` is an assertion too."""
+        s = ("import ast, unittest\n"
+             "class T(unittest.TestCase):\n"
+             "    def test_a(self):\n"
+             "        for n in ast.walk(self.tree):\n"
+             "            self.assertFalse(bad(n))\n")
+        self.assertEqual(_is_vacuous_shape(ast.parse(s)), ["test_a"])
+
+    def test_an_unconditional_unittest_assertion_clears_it(self):
+        s = ("import ast, unittest\n"
+             "class T(unittest.TestCase):\n"
+             "    def test_a(self):\n"
+             "        nodes = list(ast.walk(self.tree))\n"
+             "        self.assertTrue(nodes, 're-aim this test')\n"
+             "        for n in nodes:\n"
+             "            self.assertFalse(bad(n))\n")
+        self.assertEqual(_is_vacuous_shape(ast.parse(s)), [])
 
     def test_a_literal_iterable_is_not_the_shape(self):
         """A tuple written in the test cannot be empty, and 682 tests loop over one."""

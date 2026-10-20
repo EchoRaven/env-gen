@@ -26,6 +26,16 @@
    "label": "R5 the transitive propagation is removed (one pass only), so `_src()` -> `s` -> `blk` stops being followed -- the first detector bug, which scored #794 at 0.05 against a hand count of 18/19",
    "find": "    for _ in range(8):                      # bounded: the graph is tiny and must not spin",
    "replace": "    for _ in range(0):                      # bounded: the graph is tiny and must not spin"
+  },
+  {
+   "label": "R6 unittest-style assertions stop being counted, so every `unittest.TestCase` file scores (0, 0) and is dropped by the min_asserts filter -- 637 of 2363 test files, 27% of the suite, never ranked. The sixth detector bug and the widest in scope",
+   "find": "        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)\n              and _ASSERT_METHOD.match(node.func.attr or \"\")):",
+   "replace": "        elif False and (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)\n              and _ASSERT_METHOD.match(node.func.attr or \"\")):"
+  },
+  {
+   "label": "R7 EXPECTED-MISSED (redundant guard, not a gap): dropping the filter that removes an assertion's MESSAGE from the probe changes nothing, because `_code_text` already blanks string CONTENTS before the pattern runs and `_names_in` collects `ast.Name` ids, which a message literal is not. The real protection is the blanking, and R2 covers it. The filter is kept because it states the intent at the point the arguments are chosen, but it carries no behaviour of its own.",
+   "find": "            args = [a for a in node.args\n                    if not (isinstance(a, ast.Constant) and isinstance(a.value, str))]",
+   "replace": "            args = list(node.args)"
   }
  ]
 }

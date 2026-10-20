@@ -26,6 +26,11 @@
    "label": "PI5 EXPECTED-MISSED (self-reference, not a gap): this replaces the INPUT of the ratchet's own assertion with `[]`, and no test can catch a mutation that stops that same test from checking -- a ratchet cannot be verified by mutating itself. What IS verified is the function it calls: `stale_entries` has four driven tests covering both directions, added by #1203pg after a reversed-comparison mutation was MISSED because both set differences are empty in the healthy state.",
    "find": "        gone = stale_entries(_scan(), _BASELINE)",
    "replace": "        gone = []"
+  },
+  {
+   "label": "PI6 the ratchet stops seeing unittest-style assertions, which is how 14 instances of this very shape hid from its first version -- one of them in the file that introduced the ranking this ratchet came out of",
+   "find": "        elif (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)\n              and _ASSERT_METHOD.match(n.func.attr or \"\")):\n            out.append(n)",
+   "replace": "        elif False and (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)\n              and _ASSERT_METHOD.match(n.func.attr or \"\")):\n            out.append(n)"
   }
  ]
 }

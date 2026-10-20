@@ -30,6 +30,13 @@ counted as a source read) -> 64 (a text name spelled inside a STRING leaked and 
 32 (source that is EVALUATED is driven, not read) -> 9 (names were matched WITHOUT SCOPE, so a
 loop variable in one test poisoned another that reused the letter).
 
+The sixth was the widest in SCOPE and the narrowest in yield, which is worth separating: only
+`ast.Assert` was counted, so all 637 `unittest.TestCase` files -- 27% of this repo's tests --
+scored (0, 0) and were dropped by the `min_asserts` filter. Ranked files went 1722 -> 2303, and
+the 581 newly visible files produced exactly TWO candidates at ratio 1.00, both migration tests
+whose subject really is the source text. A blind spot can be large and still be empty; finding
+that out is the only way to know which.
+
 Worth being precise about what that means. At the point the ranking was first used it was
 over-reporting by roughly 3.5x -- and it still RANKED correctly: every file taken from the top
 of it (#794 at 0.95, #882 and #888 at 1.00) turned out to hold real gaps, 17 of which were
@@ -90,6 +97,26 @@ def test_c():
 def test_d():
     rows = open("fixture.json").read()
     assert len(rows) > 0
+""", 0, 1),
+    ("a unittest assertion is counted at all", """
+import unittest
+class T(unittest.TestCase):
+    def test_a(self):
+        self.assertEqual(add(1, 1), 2)
+        self.assertIn("x", render())
+""", 0, 2),
+    ("a unittest assertion ON SOURCE is counted as source", """
+import inspect, unittest
+class T(unittest.TestCase):
+    def test_a(self):
+        src = inspect.getsource(add)
+        self.assertIn("def add", src)
+""", 1, 1),
+    ("an assertion MESSAGE is not the thing asserted", """
+import inspect, unittest
+class T(unittest.TestCase):
+    def test_a(self):
+        self.assertEqual(add(1, 1), 2, "we used to read this with getsource")
 """, 0, 1),
     ("a STRING that spells a source pattern is not source", """
 def test_i():
@@ -254,6 +281,36 @@ def _mentions(node, names):
     return bool(_names_in(node) & names)
 
 
+_ASSERT_METHOD = re.compile(r"^assert[A-Z]")
+
+
+def _assertions(scope):
+    """Every assertion in `scope`, as (node, expression-to-classify) pairs.
+
+    BOTH styles. Counting only `ast.Assert` was the sixth detector bug and the widest one:
+    637 of this repo's 2363 test files are `unittest.TestCase` subclasses that assert through
+    `self.assertEqual(...)` / `self.assertIn(...)`, so 27% of the suite scored (0, 0) and was
+    dropped by the `total >= min_asserts` filter -- never ranked at all. Same shape as #1203ow,
+    where twelve ratchets filtered by FILE NAME and so could not see the three modules holding
+    the top blockers: a filter keyed on spelling rather than on role.
+
+    For a method call the expression to classify is the ARGUMENTS minus any string literal,
+    which is the assertion's message -- prose about the check, not part of it.
+    """
+    out = []
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Assert):
+            out.append((node, node.test))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and _ASSERT_METHOD.match(node.func.attr or "")):
+            args = [a for a in node.args
+                    if not (isinstance(a, ast.Constant) and isinstance(a.value, str))]
+            probe = args or list(node.args)
+            out.append((node, ast.Tuple(elts=probe, ctx=ast.Load()) if probe
+                        else ast.Constant(value=True)))
+    return out
+
+
 def ratio(path):
     """``(text_asserts, total_asserts)`` for one test file, or None if it will not parse."""
     try:
@@ -269,26 +326,22 @@ def _count(tree):
               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     owner = {}
     for s in scopes:
-        for node in ast.walk(s):
-            if isinstance(node, ast.Assert):
-                # innermost wins: a nested function is its own scope
-                cur = owner.get(node)
-                if cur is None or s.lineno > cur.lineno:
-                    owner[node] = s
+        for node, _ in _assertions(s):
+            cur = owner.get(id(node))
+            if cur is None or s.lineno > cur.lineno:
+                owner[id(node)] = s
     cache = {}
     total = text = 0
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assert):
-            continue
+    for node, probe in _assertions(tree):
         total += 1
-        s = owner.get(node)
+        s = owner.get(id(node))
         if s is None:
             names = module_names
         else:
             if id(s) not in cache:
                 cache[id(s)] = _text_names(tree, s)
             names = cache[id(s)]
-        if _mentions(node.test, names):
+        if _mentions(probe, names):
             text += 1
     return text, total
 
