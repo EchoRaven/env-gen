@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203qc_the_records_words_had_to_arrive.py",
+ "mutations": [
+  {
+   "label": "QC1 THE TICKET: the diagnosis is computed and its value discarded. The SPELLING `ui_evidence_failed_evidence_1203fx(orch, _fp)` is byte-identical, so test_1188_all_diagnoses_stay_wired and test_1203fx's `in branch` assertion both stay green while the record's own words never reach the lane",
+   "find": "                                  + ui_evidence_failed_evidence_1203fx(orch, _fp)",
+   "replace": "                                  + (ui_evidence_failed_evidence_1203fx(orch, _fp) and \"\")"
+  },
+  {
+   "label": "QC2 the cut stops being declared (#1034): eight pages are quoted and the remainder is silent, so the lane fixes eight, re-runs, and the check is still red for reasons the task never mentioned",
+   "find": "        if _cut > 0:\n            return (_head + \"\\n- \".join(lines[:8])\n                    + \"\\n\\n(%d more failing page(s) carry a recorded sentence too, not shown \"\n                      \"here — read them off the hub once these are fixed.)\" % _cut)",
+   "replace": "        if _cut > 0:\n            return _head + \"\\n- \".join(lines[:8])"
+  },
+  {
+   "label": "QC3 #1178 REPRODUCED at the hand-off: the breadth function is given nothing instead of the results the orchestrator really exposes, so every diagnosis hanging off a non-empty page list goes silent at once -- the defect that made this dispatcher emit the 789-char generic body on every call since #982 landed (r17, both sides of a resume, while the gate one line above printed '1 named page(s): landing_page')",
+   "find": "        if not _results:\n            _results = (getattr(orch, \"_last_validation_results\", None)\n                        or getattr(orch, \"_validation_results\", None))\n        return dict(_b(_results) or {})",
+   "replace": "        if not _results:\n            _results = (getattr(orch, \"_last_validation_results\", None)\n                        or getattr(orch, \"_validation_results\", None))\n        return dict(_b(None) or {})"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203qb_the_walks_words_had_to_arrive.py",
+ "mutations": [
+  {
+   "label": "QB1 THE TICKET: the diagnosis is computed and its VALUE discarded. Every structural fact test_1203ft asserts survives -- one Call, args [orch, _ff], inside the same _extra assignment beside the same four siblings -- and the walk's sentence is gone from the task body. CONTROL: test_1203ft_the_walks_own_words_stayed_in_the_hub MISSED this; this file CAUGHT it.",
+   "find": "                                  + ui_flow_failed_evidence_1203ft(orch, _ff)",
+   "replace": "                                  + (ui_flow_failed_evidence_1203ft(orch, _ff) and \"\")"
+  },
+  {
+   "label": "QB2 #981's flow naming is dropped while the quote stays, so the lane is told what broke but not where (the half #1203ft was built on top of)",
+   "find": "                        _extra = (_ui_flow_failed_extra(_ff)",
+   "replace": "                        _extra = (\"\""
+  },
+  {
+   "label": "QB3 the recomputed list is emptied, which is #1203fu's defect exactly: every diagnosis hanging off a non-empty list goes silent at once",
+   "find": "                    _ff = _ui_flow_failed_names(orch)",
+   "replace": "                    _ff = _ui_flow_failed_names(orch) and []"
+  }
+ ]
+}
