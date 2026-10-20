@@ -121,13 +121,46 @@ def test_a_text_only_app_gets_no_media_columns():
     assert media == {}, media
 
 
+def _emitted_floor_1202uu(tables):
+    """`_demo_floor_1203ql` out of the generated loader, plus the maps it reads.
+
+    #1203ql collapsed the floor expression into this ONE function (#1032) because it was
+    spelled at two sites and a second exception had to be added twice or they disagreed.
+    This test used to assert the expression's TEXT at both sites; it now drives the owner,
+    which is what it was really about. The emitted module imports the app's own packages, so
+    the function is sliced out by LANDMARK (to the next top-level `def`) and run alone."""
+    src = render_seed_data(tables)
+    i = src.index("def _demo_floor_1203ql(t):")
+    j = src.index("\ndef ", i + 1)
+    ns = {}
+    for name in ("_MEDIA_COL", "_ONE_PER_OWNER", "_DEMO_FLOOR"):
+        m = re.search(r"^%s = (.*)$" % name, src, re.M)
+        assert m, "%s assignment not found in the generated loader" % name
+        ns[name] = ast.literal_eval(m.group(1))
+    exec(compile(src[i:j], "seed_data.py", "exec"), ns)
+    return ns["_demo_floor_1203ql"], ns, src
+
+
 def test_the_floor_is_one_for_media_and_eight_otherwise():
     """★ The rule itself, read out of the generated loader rather than trusted."""
-    _media, src = _media_col(MEDIA_TABLES)
-    assert "_floor = 1 if _MEDIA_COL.get(t) else _DEMO_FLOOR" in src, src[:200]
+    floor, ns, src = _emitted_floor_1202uu(MEDIA_TABLES)
+    assert ns["_MEDIA_COL"].get("videos"), ns["_MEDIA_COL"]
+    assert floor("videos") == 1, "a table whose rows ARE an asset must not be topped up"
+    assert floor("comments") == 8, "an ordinary table lost #74's floor"
     assert "if have >= _floor:" in src
-    assert "need = (1 if _MEDIA_COL.get(t) else _DEMO_FLOOR) - have" in src
-    assert "_DEMO_FLOOR = 8" in src              # #74's value is unchanged
+    assert ns["_DEMO_FLOOR"] == 8                # #74's value is unchanged
+    # Both call sites must ask the one owner; reverting either reads as fixed and is not.
+    calls = [n for n in ast.walk(ast.parse(src))
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == "_demo_floor_1203ql"]
+    assert len(calls) == 2, "%d call site(s) ask the floor owner; both must" % len(calls)
+
+
+def test_a_text_only_app_keeps_the_floor_of_eight_1202uu():
+    """★ #74's original case, now asserted on the owner rather than on its spelling."""
+    floor, ns, _src = _emitted_floor_1202uu(TEXT_TABLES)
+    assert ns["_MEDIA_COL"] == {}, ns["_MEDIA_COL"]
+    assert floor("notes") == 8
 
 
 def test_r135s_case_produces_no_clone_at_all():

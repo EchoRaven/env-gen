@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203ix_what_the_loop_saw_was_never_recorded.py",
+ "mutations": [
+  {
+   "label": "IX1 the record carries an empty list instead of the rounds, so the verdict says nothing about what the loop saw -- the defect the ticket is named for",
+   "find": "                        \"fill_rounds\": _fill_rounds_1203ix,",
+   "replace": "                        \"fill_rounds\": [],"
+  },
+  {
+   "label": "IX2 REACHABILITY: the loop bound goes to zero, so the append is byte-identical in the source and never executes -- an AST assertion that the append sits inside a for loop cannot see this (the #1203pi / quoted-statement family)",
+   "find": "                    for _round in range(3):",
+   "replace": "                    for _round in range(0):"
+  },
+  {
+   "label": "IX3 the list is reassigned rather than appended, so only the final round survives and a form that reveals its password on round two is indistinguishable from one that never advanced",
+   "find": "                        _fill_rounds_1203ix.append(await _fill_visible_inputs())",
+   "replace": "                        _fill_rounds_1203ix = [await _fill_visible_inputs()]"
+  }
+ ]
+}

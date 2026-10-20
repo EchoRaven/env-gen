@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1202ur_a_squad_that_tested_nothing_is_not_a_pass.py",
+ "mutations": [
+  {
+   "label": "UR1 THE TICKET: the completion count stops being consulted, so a squad where no agent finished files no P0 and therefore passes -- r120 and r135's verdict, 12 agents spawned over three waves each logging '0 completed', verdict=PASS with by-source={}",
+   "find": "    if completed is not None and int(completed) <= 0:\n        return \"retry\"",
+   "replace": "    if completed is not None and int(completed) <= 0 and None:\n        return \"retry\""
+  },
+  {
+   "label": "UR2 the zero case maps to 'pass' instead of 'retry' -- the count IS consulted and the answer is still a pass from no evidence",
+   "find": "    if completed is not None and int(completed) <= 0:\n        return \"retry\"",
+   "replace": "    if completed is not None and int(completed) <= 0:\n        return \"pass\""
+  },
+  {
+   "label": "UR3 #1026b: an UNKNOWN completion (None, from a restored or older result shape) is read as a zero, so a squad whose report was never carried gets deferred for having tested nothing -- #1202tn's rule is that a fault-tolerant helper's 0 cannot be used as a fact",
+   "find": "    if completed is not None and int(completed) <= 0:",
+   "replace": "    if int(completed or 0) <= 0:"
+  },
+  {
+   "label": "UR4 P0s stop winning over zero-completion, so a squad that DID file defects is deferred instead of burning an attempt -- defects that were filed are real evidence",
+   "find": "    if int(p0 or 0) > 0:\n        return \"defect\"",
+   "replace": "    if int(p0 or 0) > 0 and None:\n        return \"defect\""
+  },
+  {
+   "label": "UR5 a squad that never ran at all is no longer routed to 'retry', so the not-ran case falls through to the P0 test and a squad that never launched passes",
+   "find": "    if not ran:\n        return \"retry\"",
+   "replace": "    if not ran and None:\n        return \"retry\""
+  }
+ ]
+}

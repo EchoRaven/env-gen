@@ -1,0 +1,46 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203ql_a_one_to_one_table.py",
+ "mutations": [
+  {
+   "label": "QL1 THE TICKET: the parent stops capping the row count, so #1202tz's 5..12 band writes 5-11 settings rows over 5 users again -- the shape all 7 corpus runs shipped",
+   "find": "            if _pn1203ql:\n                _n1203ql = min(_n1203ql, _pn1203ql)",
+   "replace": "            if _pn1203ql and None:\n                _n1203ql = min(_n1203ql, _pn1203ql)"
+  },
+  {
+   "label": "QL2 the cap stays but the values stop walking the parent, which is the half that capping alone did not fix -- r188 declared 5 rows over 5 users and still loaded 3",
+   "find": "                if _c1203ql in row:\n                    row[_c1203ql] = i + 1",
+   "replace": "                if _c1203ql in row and None:\n                    row[_c1203ql] = i + 1"
+  },
+  {
+   "label": "QL3 the cap is applied to the loop but NOT recorded in `counts`, so a child of this table draws its FK from the uncapped number and points at rows that were never written -- a dangling FK the seeder has never produced in 10112 measured values",
+   "find": "        counts[t] = _n1203ql",
+   "replace": "        counts[t] = counts.get(t, 6)"
+  },
+  {
+   "label": "QL4 the walk is applied to EVERY FK column, not only the UNIQUE one, which undoes #1202ue across the whole seed: every parent used exactly once again, the realism tell it was written to remove",
+   "find": "            for _c1203ql in _uqfk1203ql:\n                if _c1203ql in row:",
+   "replace": "            for _c1203ql in (fks or {}):\n                if _c1203ql in row:"
+  },
+  {
+   "label": "QL5 the PK is treated as a one-per-parent column, so a table whose PK is also an FK gets its SERIAL overwritten by the walk",
+   "find": "        if not c or c == pk:\n            continue",
+   "replace": "        if not c:\n            continue"
+  },
+  {
+   "label": "QL6 a UNIQUE column that is NOT an FK (users.username) starts capping the table, so FIX #74's territory is taken over and a table is thinned for a constraint that names no parent",
+   "find": "        parent = (fks or {}).get(c) or _seed_infer_fk(c, known_tables)\n        if parent:\n            out[c] = parent",
+   "replace": "        parent = (fks or {}).get(c) or _seed_infer_fk(c, known_tables) or \"users\"\n        if parent:\n            out[c] = parent"
+  },
+  {
+   "label": "QL7 the demo floor asks the helper at only ONE of its two sites, so the one-per-owner table still has eight rows demanded of it in the other -- the #1032 duplication that made this bug need two edits",
+   "find": "        \"                _floor = _demo_floor_1203ql(t)\\n\"",
+   "replace": "        \"                _floor = 1 if _MEDIA_COL.get(t) else _DEMO_FLOOR\\n\""
+  },
+  {
+   "label": "QL8 a one-per-owner table is no longer recognised, so the clone loop tries to reach eight rows by setting every clone's owner to the demo user and each insert after the first dies on the UNIQUE, silently, up to max_attempts times per boot",
+   "find": "            if c.get(\"unique\") and (c.get(\"references\") or c.get(\"fk\")):",
+   "replace": "            if c.get(\"unique\") and (c.get(\"references\") or c.get(\"fk\")) and None:"
+  }
+ ]
+}

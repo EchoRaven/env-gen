@@ -93,10 +93,20 @@ class TheVerdictIsReadWhenItExists(unittest.TestCase):
 
     def test_a_still_running_task_is_not_awaited(self):
         """`done()` must gate the `result()` call: asking a pending asyncio task for its
-        result raises InvalidStateError, and this runs inside the delivery tick."""
+        result raises InvalidStateError, and this runs inside the delivery tick.
+
+        THE TRIPWIRE IS A BaseException ON PURPOSE. It used to raise AssertionError, and
+        `squad_verdict_in_hand_1203fj`'s own `except Exception: return None` swallowed it --
+        so removing the `done()` gate produced the identical None and this test could not
+        tell the two apart. That is the #1203ov shape inside a test: a sentinel the code
+        under test is allowed to absorb proves nothing. BaseException is not caught by
+        `except Exception`, so a call to `result()` now escapes and fails the test."""
+        class _Tripwire(BaseException):
+            pass
+
         class _Pending(_Task):
             def result(self):
-                raise AssertionError("result() called on a task that is not done")
+                raise _Tripwire("result() called on a task that is not done")
         self.assertIsNone(in_hand(_Pending(done=False)))
 
 

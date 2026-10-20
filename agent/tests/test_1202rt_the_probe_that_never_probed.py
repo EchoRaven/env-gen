@@ -94,6 +94,23 @@ def test_an_operator_can_turn_it_off():
     assert sq.realism_probe_due_1202rt(0, enabled_env={"ENVGEN_REALISM_PROBE": "1"}) is True
 
 
+def test_a_negative_index_is_not_due():
+    """`i % n == 0` alone says a negative index is due: -1 % 1 is 0. The sentinel or
+    off-by-one that produces a negative milestone must decline, not dispatch a judge."""
+    for bad in (-1, -3, -12):
+        assert sq.realism_probe_due_1202rt(bad) is False, bad
+        assert sq.realism_probe_due_1202rt(bad, every_n=3) is False, bad
+
+
+def test_a_zero_interval_does_not_raise_out_of_a_pure_predicate():
+    """The contract is 'Pure; False on anything unreadable', and `max(1, ...)` is what keeps
+    it. Without the floor, every_n=0 raises ZeroDivisionError -- which the except clause does
+    NOT catch, since it names only TypeError and ValueError -- on the delivery tick."""
+    for n in (0, -1, -5):
+        assert sq.realism_probe_due_1202rt(0, every_n=n) is True, n
+        assert sq.realism_probe_due_1202rt(7, every_n=n) is True, n
+
+
 def test_unreadable_input_is_not_a_reason_to_run():
     for bad in (None, "x", object(), -1):
         assert sq.realism_probe_due_1202rt(bad) is False

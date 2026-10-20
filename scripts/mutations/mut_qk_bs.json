@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203qk_the_seed_broke_the_unique_it_declared.py",
+ "mutations": [
+  {
+   "label": "QK5 THE ARRIVAL: the dedupe is still spelled, still imported, still tested in isolation -- and never runs on the seed this function returns, which is exactly the shape of defect this file was written to catch",
+   "find": "    if _uq1203qk:",
+   "replace": "    if _uq1203qk and None:"
+  },
+  {
+   "label": "QK6 the existence check goes, so a declaration naming a column the table lacks becomes a declared set and the dedupe keys every row on a column that is never there",
+   "find": "            if not all(x in real for x in cols):",
+   "replace": "            if not all(x in real for x in []):"
+  },
+  {
+   "label": "QK7 the keyword/arity filter goes, so a composite PRIMARY KEY and a single-column UNIQUE both become composite sets -- the PK path's business re-done here, and FIX #74's job done twice",
+   "find": "            if kw != \"UNIQUE\" or len(cols) < 2:",
+   "replace": "            if False:"
+  },
+  {
+   "label": "QK8 the NULL guard goes, so two rows that are both NULL in a keyed column read as a collision -- under a SQL UNIQUE they never collide, so the seeder would re-roll rows the database would have accepted",
+   "find": "                if any(v is None for v in key):",
+   "replace": "                if False:"
+  },
+  {
+   "label": "QK9 the re-roll becomes a drop: every duplicate row is removed instead of moved to a free pair, paying for the constraint in rows and undoing #1202tz's deliberate 5..12 band",
+   "find": "                        fresh = cand",
+   "replace": "                        fresh = None"
+  }
+ ]
+}

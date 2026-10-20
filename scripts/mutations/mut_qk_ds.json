@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/database_scaffold.py",
+ "test": "tests/test_1203qk_the_seed_broke_the_unique_it_declared.py",
+ "mutations": [
+  {
+   "label": "QK1 shape B goes dark again -- the 7 corpus entries whose keyword and column list sit in the TYPE (`unique(user_id,video_id)`) name no columns, so the seeder learns nothing about the pair r144/r154/r188 declared unique",
+   "find": "        tb = _TYPE_KEYWORD_LIST_RE.match(ty)        # B: keyword AND list in the type",
+   "replace": "        tb = _TYPE_KEYWORD_LIST_RE.match(ty) and None"
+  },
+  {
+   "label": "QK2 shape C goes dark -- r183's `follower_id,following_id enforced in code` has a prose tail, so without the leading-list read its follows table declares nothing",
+   "find": "                lead = _LEADING_COLUMN_LIST_RE.match(ty)   # C: bare list + prose tail",
+   "replace": "                lead = _LEADING_COLUMN_LIST_RE.match(ty) and None"
+  },
+  {
+   "label": "QK3 THE GUARD AGAINST THE FIX: the PREDICATE is widened to shape B, so all 7 entries move onto the table-constraint path and the DDL emits a composite UNIQUE that the seed of all 8 tables violates -- initdb aborts as the seed loads (#32/#1031's whole-stack failure)",
+   "find": "    if (_CONSTRAINT_BARE_NAME_RE.match(cname)    # #1203gx: bare `unique` + `\"a,b\"` type",
+   "replace": "    if _TYPE_KEYWORD_LIST_RE.match(str(col.get(\"type\") or \"\")):\n        return True\n    if (_CONSTRAINT_BARE_NAME_RE.match(cname)    # #1203gx: bare `unique` + `\"a,b\"` type"
+  },
+  {
+   "label": "QK4 the extractor GUESSES from the label: `unique_user_video` is read as naming (user_id, video_id) -- plausible, reachable for all 5 entries whose type writes nothing down, and wrong for `unique_follow`, which names no columns at all",
+   "find": "            mm = _CONSTRAINT_MARKER_RE.match(raw) or _CONSTRAINT_BARE_NAME_RE.match(raw)\n            if not mm:\n                return None",
+   "replace": "            mm = _CONSTRAINT_MARKER_RE.match(raw) or _CONSTRAINT_BARE_NAME_RE.match(raw)\n            if not mm:\n                if raw.lower().startswith(\"unique_\"):\n                    return \"UNIQUE\", [w + \"_id\" for w in raw.split(\"_\")[1:]]\n                return None"
+  }
+ ]
+}

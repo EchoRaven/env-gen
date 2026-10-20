@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1202rt_the_probe_that_never_probed.py",
+ "mutations": [
+  {
+   "label": "RT1 the sampling stops starting with the FIRST milestone, which is the whole rationale: the first release is the one whose seed, copy and imagery every later milestone inherits, so a tell found there is a tell found before it propagates",
+   "find": "    return i >= 0 and i % n == 0",
+   "replace": "    return i > 0 and i % n == 0"
+  },
+  {
+   "label": "RT2 a negative milestone index is due, so an unreadable or sentinel index dispatches the judge instead of declining",
+   "find": "    return i >= 0 and i % n == 0",
+   "replace": "    return i % n == 0"
+  },
+  {
+   "label": "RT3 the floor on the interval goes, so every_n=0 raises ZeroDivisionError -- which the except clause does NOT catch (it names only TypeError and ValueError) -- out of a function whose contract is 'pure; False on anything unreadable'",
+   "find": "        n = max(1, int(every_n))",
+   "replace": "        n = int(every_n)"
+  },
+  {
+   "label": "RT4 the environment kill switch is ignored, so ENVGEN_REALISM_PROBE=0 still dispatches the judge",
+   "find": "        if str(env.get(\"ENVGEN_REALISM_PROBE\", \"1\")).strip().lower() in (\n                \"0\", \"false\", \"off\", \"no\"):\n            return False",
+   "replace": "        if str(env.get(\"ENVGEN_REALISM_PROBE\", \"1\")).strip().lower() in (\n                \"0\", \"false\", \"off\", \"no\") and None:\n            return False"
+  },
+  {
+   "label": "RT5 an unreadable index becomes DUE rather than not-due, so the judge is dispatched on garbage -- the fail-open direction of the same guard",
+   "find": "    except (TypeError, ValueError):\n        return False\n    return i >= 0 and i % n == 0",
+   "replace": "    except (TypeError, ValueError):\n        return True\n    return i >= 0 and i % n == 0"
+  }
+ ]
+}

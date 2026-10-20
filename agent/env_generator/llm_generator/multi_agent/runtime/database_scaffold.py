@@ -1016,37 +1016,94 @@ def _is_constraint_pseudo_column(col: Any) -> bool:
     return bool(_CONSTRAINT_NAME_RE.match(cname))
 
 
-def _render_table_constraint(col: Dict[str, Any]) -> Optional[str]:
-    """Turn a constraint-pseudo-column into a valid table-constraint clause.
+# #1203qk: WHICH COLUMNS a constraint entry names -- ONE owner for that question (#1032).
+#
+# `_render_table_constraint` answered it inline for the three spellings #32/#1031/#1203gx
+# reach, and that was all the DDL ever needed. The SEED path needs the same answer for two
+# spellings the DDL never sees, because `_is_constraint_pseudo_column` returns False for
+# them and the renderer is therefore never reached:
+#
+#   B  name is a composite LABEL, keyword + list sit in the TYPE
+#      -- 7 entries (r144 x3, r154, r188 x3)
+#   C  name is the bare keyword, the list has a PROSE TAIL
+#      -- 1 entry (r183 follows, "enforced in code")
+#
+# A full sweep of every table record on disk (104 runs, 1504 tables, 9910 column entries)
+# finds 15 constraint-label entries across 6 runs: the 2 the predicate already catches
+# (r171), B's 7, C's 1, and 5 whose type is a bare `string`/`text` where the columns are
+# NOT written down anywhere in the entry. For those 5 this function returns None rather
+# than reading columns out of the label -- `unique_user_video` does not say `user_id`, and
+# `unique_follow` does not say anything at all.
+#
+# This function is deliberately WIDER than `_is_constraint_pseudo_column`, and the
+# predicate is left exactly as it was. Widening THAT would move B and C onto the
+# table-constraint path and emit a real composite UNIQUE -- and all 8 of those tables ship
+# seed data that VIOLATES the very constraint they declare (1-3 duplicate keys each), so
+# the emitted UNIQUE would abort initdb as the seed loads: #32's and #1031's whole-stack
+# failure, taken on in exchange for removing a harmless no-op column. The seed is what has
+# to be fixed first, which is what `_dedupe_composite_seed_1203qk` does; emitting the
+# constraint is a separate change that needs a live run behind it (#1202w6).
+_TYPE_KEYWORD_LIST_RE = re.compile(
+    r"^\s*(unique|primary[\s_]*key)\s*\(\s*"
+    r"([A-Za-z_][A-Za-z_0-9]*(?:\s*,\s*[A-Za-z_][A-Za-z_0-9]*)+)\s*\)\s*$",
+    re.IGNORECASE)
+# A bare column list followed by PROSE -- `follower_id,following_id enforced in code`. The
+# tail is words only: anything with a comma or a paren in it is not prose and is left alone.
+_LEADING_COLUMN_LIST_RE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z_0-9]*(?:\s*,\s*[A-Za-z_][A-Za-z_0-9]*)+)"
+    r"\s+[A-Za-z][A-Za-z\s]*$")
 
-    Handles the common composite ``UNIQUE (...)`` / ``PRIMARY KEY (...)`` cases
-    precisely; returns None (skip — better a dropped constraint than broken DDL)
-    for FOREIGN KEY / CHECK / anything unparseable."""
+
+def constraint_columns_1203qk(col: Any) -> Optional[Tuple[str, List[str]]]:
+    """``(KEYWORD, [column, ...])`` that a constraint-pseudo-column names, else None.
+
+    None means the entry does not WRITE DOWN its columns -- this never guesses them from
+    the label."""
+    if not isinstance(col, dict):
+        return None
     raw = str(col.get("name") or "").strip()
+    ty = str(col.get("type") or "").strip()
     m = _CONSTRAINT_NAME_RE.match(raw)
     if m:
         kw_raw, cols_raw = m.group(1), m.group(2)
     else:
-        # #1031: the marker spelling — keyword in the NAME, column list in the TYPE. RENDER it
-        # rather than drop it: the contract asked for a real UNIQUE and we can honour it
-        # exactly, where the keyword-in-name branch above would have.
-        mm = _CONSTRAINT_MARKER_RE.match(raw) or _CONSTRAINT_BARE_NAME_RE.match(raw)
-        if not mm:
-            return None
-        _ty = str(col.get("type") or "")
-        # #1031 wraps the list in parens; #1203gx's spelling does not. Accept both and
-        # HONOUR the constraint either way -- dropping it is what left r171's `follows`
-        # table accepting duplicate rows.
-        lst = _MARKER_COLUMN_LIST_RE.match(_ty)
-        cols_raw = lst.group(1) if lst else (
-            _ty if _BARE_COLUMN_LIST_RE.match(_ty) else None)
-        if cols_raw is None:
-            return None
-        kw_raw = mm.group(1)
-    kw = re.sub(r"[\s_]+", " ", kw_raw.strip().upper())  # UNIQUE / PRIMARY KEY / ...
-    cols = [c.strip().strip('"').strip("`").strip() for c in cols_raw.split(",")]
+        tb = _TYPE_KEYWORD_LIST_RE.match(ty)        # B: keyword AND list in the type
+        if tb:
+            kw_raw, cols_raw = tb.group(1), tb.group(2)
+        else:
+            mm = _CONSTRAINT_MARKER_RE.match(raw) or _CONSTRAINT_BARE_NAME_RE.match(raw)
+            if not mm:
+                return None
+            kw_raw = mm.group(1)
+            lst = _MARKER_COLUMN_LIST_RE.match(ty)  # #1031 wraps the list in parens
+            if lst:
+                cols_raw = lst.group(1)
+            elif _BARE_COLUMN_LIST_RE.match(ty):    # #1203gx: bare list, no parens
+                cols_raw = ty
+            else:
+                lead = _LEADING_COLUMN_LIST_RE.match(ty)   # C: bare list + prose tail
+                if not lead:
+                    return None
+                cols_raw = lead.group(1)
+    kw = re.sub(r"[\s_]+", " ", str(kw_raw).strip().upper())  # UNIQUE / PRIMARY KEY / ...
+    cols = [c.strip().strip('"').strip("`").strip() for c in str(cols_raw).split(",")]
     cols = [c for c in cols if c]
-    if not cols or kw not in ("UNIQUE", "PRIMARY KEY"):
+    if not cols:
+        return None
+    return kw, cols
+
+
+def _render_table_constraint(col: Dict[str, Any]) -> Optional[str]:
+    """Turn a constraint-pseudo-column into a valid table-constraint clause.
+
+    Handles the common composite ``UNIQUE (...)`` / ``PRIMARY KEY (...)`` cases
+    precisely; returns None (skip -- better a dropped constraint than broken DDL)
+    for FOREIGN KEY / CHECK / anything unparseable."""
+    got = constraint_columns_1203qk(col)
+    if got is None:
+        return None
+    kw, cols = got
+    if kw not in ("UNIQUE", "PRIMARY KEY"):
         return None
     return "    " + kw + " (" + ", ".join(_quote_ident(c) for c in cols) + ")"
 

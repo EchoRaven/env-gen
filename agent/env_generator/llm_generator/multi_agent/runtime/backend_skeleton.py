@@ -26,9 +26,10 @@ import zlib   # #1202tv: crc32 is the stable digest; hash() is salted per proces
 from urllib.parse import quote as _quote
 import sys
 from pathlib import Path
-from typing import Iterable, Any, Dict, List, Mapping, Optional, Tuple
+from typing import Iterable, Any, Dict, List, Mapping, Optional, Set, Tuple
 
 from .database_scaffold import _columns_of, _is_constraint_pseudo_column
+from .database_scaffold import constraint_columns_1203qk
 from .database_scaffold import _quote_ident as _quote_ident_1202nb
 
 
@@ -4211,6 +4212,186 @@ def _seed_required_fallback(sa_type: Any, i: int) -> Any:
     return _SEED_OMIT
 
 
+# #1203qk: THE SEED VIOLATED THE UNIQUENESS ITS OWN CONTRACT DECLARED.
+#
+# FIX #74 built `_UNIQUE = {table: [unique string cols]}` and de-dupes those on clone, so
+# the seeder DOES have uniqueness machinery -- but that dict is filtered to String/Text
+# columns, which means an integer pair like `(user_id, video_id)` can never enter it, and
+# COMPOSITE uniqueness is nowhere in this module at all. What the corpus shows is worse
+# than a gap: in r144 and r188 the dict is pointed straight at the mis-modeled constraint
+# entry -- `'follows': ['unique_follower_following']` -- so the machinery spends its effort
+# keeping a no-op column distinct while the pair the contract actually declared unique goes
+# undefended.
+#
+# The cost is in the delivered app, not in the pipeline. Every one of the 8 tables that
+# declares a composite UNIQUE ships seed rows that break it (1-3 duplicate keys each):
+# r144 follows/video_likes/video_saves, r154 video_likes, r183 follows, r188
+# follows/video_likes/video_saves. So a delivered app opens with the same user having liked
+# the same video five times, and its like counts and follower counts are wrong on the first
+# page load -- which is also why emitting the real constraint (the other half of #1203qj)
+# would abort initdb instead of helping. The seed has to be honest first.
+#
+# Rows are RE-ROLLED, not dropped: #1202tz deliberately bands row counts 5..12 because
+# "every collection the same size is not a workspace", and thinning a feed to satisfy a
+# constraint would pay for correctness with the realism those counts were chosen to buy.
+# A re-roll only ever uses values ALREADY OBSERVED in that column, so every value it writes
+# is still a valid FK target.
+_COMPOSITE_REROLL_BUDGET_1203QK = 10000   # candidate combinations tried per duplicate row
+
+
+def _composite_unique_sets_1203qk(tables: Dict[str, Any]) -> Dict[str, List[Tuple[str, ...]]]:
+    """``{table: [(col, ...), ...]}`` -- the COMPOSITE UNIQUE each table DECLARES.
+
+    Two or more columns, and only columns the table actually HAS: a declaration naming a
+    column that does not exist is not something the seed can honour or report on."""
+    out: Dict[str, List[Tuple[str, ...]]] = {}
+    for name, table in (tables or {}).items():
+        if not isinstance(table, dict):
+            continue
+        entries = [c for c in _columns_of(table) if isinstance(c, dict)]
+        real = {str(c.get("name") or "").strip() for c in entries
+                if not _is_constraint_pseudo_column(c)}
+        sets: List[Tuple[str, ...]] = []
+        for c in entries:
+            got = constraint_columns_1203qk(c)
+            if not got:
+                continue
+            kw, cols = got
+            if kw != "UNIQUE" or len(cols) < 2:
+                continue        # a composite PRIMARY KEY is the PK path's business
+            if not all(x in real for x in cols):
+                continue
+            tup = tuple(cols)
+            if tup not in sets:
+                sets.append(tup)
+        if sets:
+            out[str(name).strip().lower()] = sets
+    return out
+
+
+def _dedupe_composite_seed_1203qk(
+        seed: Dict[str, List[Dict[str, Any]]],
+        usets: Dict[str, List[Tuple[str, ...]]]):
+    """Make the seed OBEY the composite uniqueness the contract declares.
+
+    Re-rolls every later row that repeats a declared composite key onto a free combination
+    of values already present in those columns, and drops a row only when the observed
+    domains hold no free combination at all. Returns ``(rerolled, dropped, detail)``."""
+    import itertools
+    rerolled = dropped = 0
+    detail: List[str] = []
+    for t, sets in sorted((usets or {}).items()):
+        rows = (seed or {}).get(t)
+        if not isinstance(rows, list) or not rows:
+            continue
+        for cset in sets:
+            if not all(any(c in r for r in rows if isinstance(r, dict)) for c in cset):
+                continue    # the seeder never emitted one of these columns
+            domains = [sorted({r[c] for r in rows
+                               if isinstance(r, dict) and r.get(c) is not None},
+                              key=lambda v: (type(v).__name__, str(v)))
+                       for c in cset]
+            if not all(domains):
+                continue
+            seen: Set[Tuple[Any, ...]] = set()
+            keep: List[Dict[str, Any]] = []
+            t_rr = t_dr = 0
+            for r in rows:
+                if not isinstance(r, dict):
+                    keep.append(r)
+                    continue
+                key = tuple(r.get(c) for c in cset)
+                if any(v is None for v in key):
+                    keep.append(r)      # a NULL never collides under a SQL UNIQUE
+                    continue
+                if key not in seen:
+                    seen.add(key)
+                    keep.append(r)
+                    continue
+                fresh = None
+                for n, cand in enumerate(itertools.product(*domains)):
+                    if n >= _COMPOSITE_REROLL_BUDGET_1203QK:
+                        break
+                    if cand not in seen:
+                        fresh = cand
+                        break
+                if fresh is None:
+                    t_dr += 1
+                    dropped += 1
+                    continue
+                for c, v in zip(cset, fresh):
+                    r[c] = v
+                seen.add(fresh)
+                keep.append(r)
+                t_rr += 1
+            if t_rr or t_dr:
+                rows[:] = keep
+                rerolled += t_rr
+                detail.append("%s(%s): %d re-rolled, %d dropped"
+                              % (t, ",".join(cset), t_rr, t_dr))
+    return rerolled, dropped, detail
+
+
+# #1203ql: A UNIQUE FK COLUMN MEANS ONE ROW PER PARENT, AND NOTHING CAPPED THE ROWS.
+#
+# `user_settings.user_id` is emitted as `integer references "users"("id") UNIQUE` -- the
+# contract saying one settings row per user. The row count came from #1202tz's 5..12 band,
+# which never consulted the parent, so the seeder wrote 5-11 rows over 5 users. All 7 runs
+# in the corpus that declare such a column break it, 7 of 7, in two table shapes
+# (`user_settings`, `user_notification_settings`) and two products: 24 rows generated only
+# for the loader's per-row SAVEPOINT to drop them, leaving 3-5 rows of the 5-11 declared and
+# #1202r reporting a shortfall whose stated cause ("a FK to a parent that itself failed") is
+# the wrong one.
+#
+# CAPPING ALONE IS NOT ENOUGH: r188 declared 5 rows over 5 users and still loaded 3, because
+# the FK draw repeats values. So the column also walks the parent's ids.
+#
+# THE SHAPE THIS WRITES IS THE ONE #1202ue DELETED, and that is correct here. #1202ue found
+# `comments.video_id = [1,2,3,4,5,6,7,8]` -- "each parent used exactly once ... a shape no
+# real table has" -- and skewed the draw to give participation a long tail. Under a UNIQUE
+# constraint that tail is not merely unrealistic, it is unrepresentable: one row per parent
+# is the only legal shape, and "every user has exactly one settings row" is also the honest
+# one. `test_1203ql_*` pins BOTH directions so neither rule is later applied to the other's
+# columns.
+def _unique_fk_parents_1203ql(meta_t: Dict[str, Any], fks: Dict[str, Any],
+                              known_tables) -> Dict[str, str]:
+    """``{column: parent_table}`` for each single-column UNIQUE that is also an FK.
+
+    The PK is excluded -- SERIAL already keeps it distinct, and it is the PK path's."""
+    out: Dict[str, str] = {}
+    pk = meta_t.get("pk")
+    for c in (meta_t.get("unique") or []):
+        if not c or c == pk:
+            continue
+        parent = (fks or {}).get(c) or _seed_infer_fk(c, known_tables)
+        if parent:
+            out[c] = parent
+    return out
+
+
+def _one_per_owner_1203ql(tables: Dict[str, Any],
+                          owner_col: Dict[str, Any]) -> Dict[str, bool]:
+    """``{table: True}`` where the table's OWNER column is a single-column UNIQUE FK.
+
+    Such a table holds one row per user by construction, so the demo floor of 8 is not
+    reachable: the clone loop sets every clone's owner to the demo user, and each insert
+    after the first died on the UNIQUE -- silently, up to `max_attempts` times per boot."""
+    out: Dict[str, bool] = {}
+    for name, table in (tables or {}).items():
+        if not isinstance(table, dict):
+            continue
+        key = str(name).strip().lower()
+        oc = (owner_col or {}).get(key)
+        if not oc:
+            continue
+        for c in _columns_of(table):
+            if not isinstance(c, dict) or str(c.get("name") or "").strip() != oc:
+                continue
+            if c.get("unique") and (c.get("references") or c.get("fk")):
+                out[key] = True
+    return out
+
+
 def _build_seed_rows(tables: Dict[str, Any], env_salt: str = ""):   # #1202tw
     """Build the deterministic default seed ``{table: [rows]}`` + the metadata the loader
     needs (class map, per-table owner column, whether the user PK is integer). Shared by
@@ -4249,7 +4430,20 @@ def _build_seed_rows(tables: Dict[str, Any], env_salt: str = ""):   # #1202tw
             _fk_ordinals[_c] = _seen_parents.get(_pt, 0)
             _seen_parents[_pt] = _fk_ordinals[_c] + 1
         rows: List[Dict[str, Any]] = []
-        for i in range(counts.get(t, 6)):
+        # #1203ql: one row per parent, so the count cannot exceed the parent's.
+        _uqfk1203ql = _unique_fk_parents_1203ql(meta[t], fks, known_tables)
+        _n1203ql = counts.get(t, 6)
+        for _p1203ql in sorted(set(_uqfk1203ql.values())):
+            _pn1203ql = len(seed.get(_p1203ql) or []) or counts.get(_p1203ql, 0)
+            if _pn1203ql:
+                _n1203ql = min(_n1203ql, _pn1203ql)
+        # A CHILD of this table draws its FK from `counts`, not from the rows that exist
+        # (`_seed_cell`: m = max(1, counts.get(fk_table, 1))). Capping the loop alone would
+        # leave children referencing rows this table never wrote -- the dangling FK that a
+        # sweep of 10112 FK values across 96 delivered seeds shows the seeder has never
+        # produced. So the cap is recorded where that draw reads it.
+        counts[t] = _n1203ql
+        for i in range(_n1203ql):
             row: Dict[str, Any] = {}
             for c in cols:
                 _fk = fks.get(c) or _seed_infer_fk(c, known_tables)
@@ -4281,10 +4475,29 @@ def _build_seed_rows(tables: Dict[str, Any], env_salt: str = ""):   # #1202tw
             if t == "users":
                 row.setdefault("password_hash", _seed_password_hash())
                 row.setdefault("tenant_id", "default")
+            # #1203ql: walk the parent's SERIAL ids (1..n, insertion order) for a UNIQUE FK.
+            # The cap above guarantees i < n. Only a column the generator actually emitted is
+            # touched: where it chose to omit one, the NULL is its answer and NULLs never
+            # collide under a SQL UNIQUE.
+            for _c1203ql in _uqfk1203ql:
+                if _c1203ql in row:
+                    row[_c1203ql] = i + 1
             if row:
                 rows.append(row)
         if rows:
             seed[t] = rows
+    # #1203qk: the seed now OBEYS the composite uniqueness the contract declared. Not
+    # wrapped in a swallow: this is dict/list work on data this function just built, so a
+    # raise here is a defect to see, not a condition to absorb.
+    _uq1203qk = _composite_unique_sets_1203qk(tables)
+    if _uq1203qk:
+        _rr1203qk, _dr1203qk, _dt1203qk = _dedupe_composite_seed_1203qk(seed, _uq1203qk)
+        if _rr1203qk or _dr1203qk:
+            from .message_format import announce_once_1203os
+            announce_once_1203os(
+                "backend_skeleton.composite_seed_1203qk",
+                "seed rows broke a declared composite UNIQUE: %d re-rolled, %d dropped (%s)",
+                _rr1203qk, _dr1203qk, "; ".join(_dt1203qk))
     # #1202ty: THE FALLBACK SEED HAD NO TIMESTAMPS AT ALL.
     #
     # `_seed_cell` omits every `_at` column ("DB default now()/nullable"), so in this path each
@@ -4515,10 +4728,20 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         f"_OWNER_CHILD_FK = {owner_child_fk!r}\n"   # FIX #74: {{table: {{fk_col: child_table}}}}
         f"_PK = {pk_meta!r}\n"                       # FIX #74: {{table: [pk_name, category]}}
         f"_UNIQUE = {unique_cols!r}\n"               # FIX #74: {{table: [unique string cols]}}
+        f"_ONE_PER_OWNER = {_one_per_owner_1203ql(tables, owner_col)!r}\n"  # #1203ql
         f"_DEMO_FLOOR = 8\n"                          # FIX #74: min rows the demo user owns
         f"_PASSWORD_SALT = {_SEED_PASSWORD_SALT!r}\n"
         f"_SEED = {seed!r}\n"
         f"_USER_BOOTSTRAP = {bootstrap_spec!r}\n\n\n"
+        "def _demo_floor_1203ql(t):\n"
+        "    # ONE owner for 'how many rows must the demo user hold' (#1032). The expression\n"
+        "    # was spelled twice, so a third exception had to be added twice or the two\n"
+        "    # disagreed. #1202uu: a table whose rows ARE an asset needs only one, or the\n"
+        "    # floor mints a byte-identical copy of someone else's item. #1203ql: a table\n"
+        "    # whose OWNER column is a UNIQUE FK can hold only one row per user at all.\n"
+        "    if _MEDIA_COL.get(t) or _ONE_PER_OWNER.get(t):\n"
+        "        return 1\n"
+        "    return _DEMO_FLOOR\n\n\n"
         "def _coerce_nested_for_string_cols(cls, vals):\n"
         "    # FIX #156 (gmrun3: routes 0/8 rows): a REAL-dataset value can be a nested\n"
         "    # list/dict (routes.steps = list-of-dict) while the contract typed the column\n"
@@ -5044,7 +5267,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                # actual complaint was screens that look EMPTY on first load, and one\n"
         "                # row answers that; eight only matters where rows differ by their text\n"
         "                # (inbox, calendar), which is exactly where _MEDIA_COL is empty.\n"
-        "                _floor = 1 if _MEDIA_COL.get(t) else _DEMO_FLOOR\n"
+        "                _floor = _demo_floor_1203ql(t)\n"
         "                if have >= _floor:\n"
         "                    continue\n"
         "                donors = db.query(cls).filter(ocol != demo_uid).all()\n"
@@ -5087,7 +5310,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                demo_by_kind[ctab] = bykind; demo_any[ctab] = anyids; kind_of[ctab] = kof\n"
         "            col_names = [c.name for c in cls.__table__.columns]\n"
         "            uniq = set(_UNIQUE.get(t, []))\n"
-        "            need = (1 if _MEDIA_COL.get(t) else _DEMO_FLOOR) - have   # #1202uu\n"
+        "            need = _demo_floor_1203ql(t) - have   # #1202uu / #1203ql\n"
         "            made, attempts = 0, 0\n"
         "            max_attempts = need * (len(donors) + 2) + 4\n"
         "            while made < need and attempts < max_attempts:\n"
@@ -5222,8 +5445,9 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "        if short:\n"
         "            _sys.stderr.write(\n"
         "                'SEED SHORTFALL (#1202r): %d table(s) hold fewer rows than the seed '\n"
-        "                'declares -- %s. Rows were dropped by their per-row SAVEPOINT, most '\n"
-        "                'often a FK to a parent that itself failed. Set FW_DEBUG=1 to see the '\n"
+        "                'declares -- %s. Rows were dropped by their per-row SAVEPOINT. This '\n"
+        "                'does not measure WHY: a FK to a parent that itself failed and a '\n"
+        "                'UNIQUE violation both land here (#1203ql). Set FW_DEBUG=1 to see the '\n"
         "                'per-row exceptions.\\n'\n"
         "                % (len(short), ', '.join('%s %d->%d' % r for r in short)))\n"
         "            _sys.stderr.flush()\n"

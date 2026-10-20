@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203fj_the_escape_threw_away_a_verdict_it_had.py",
+ "mutations": [
+  {
+   "label": "FJ1 THE FAMILY: a squad still running reports ZERO open P0 instead of 'no verdict', so the escape path reads an unfinished squad as a clean app -- the same substitution as #1203ov, where nothing-observed became a failed login",
+   "find": "        if not task.done():\n            return None",
+   "replace": "        if not task.done():\n            return 0"
+  },
+  {
+   "label": "FJ2 the done() check goes, so a running task's result is read on the release path -- either it raises into the swallow and the verdict is lost again, or it blocks a delivery",
+   "find": "        if not task.done():\n            return None",
+   "replace": "        if not task.done() and None:\n            return None"
+  },
+  {
+   "label": "FJ3 an unreadable verdict (cancelled, failed, raising) becomes zero open P0 rather than None, so the release path treats a squad that crashed as a squad that found nothing",
+   "find": "    except Exception:\n        return None\n    if not isinstance(result, dict):",
+   "replace": "    except Exception:\n        return 0\n    if not isinstance(result, dict):"
+  },
+  {
+   "label": "FJ4 a result that is not the report dict is read as zero P0, which is how a restored or older result shape would silently certify an app nobody tested",
+   "find": "    if not isinstance(result, dict):\n        return None",
+   "replace": "    if not isinstance(result, dict):\n        return 0"
+  },
+  {
+   "label": "FJ5 the wrong severity is read: the open-P1 count is returned as the open-P0 count, so a squad that filed blocking defects hands the escape path a clean number",
+   "find": "        return int((result.get(\"bugs\") or {}).get(\"p0\", 0))",
+   "replace": "        return int((result.get(\"bugs\") or {}).get(\"p1\", 0))"
+  },
+  {
+   "label": "FJ6 a task that was never created (None) reports zero open P0, so a squad that never launched reads as a clean app",
+   "find": "    if task is None:\n        return None",
+   "replace": "    if task is None:\n        return 0"
+  }
+ ]
+}
