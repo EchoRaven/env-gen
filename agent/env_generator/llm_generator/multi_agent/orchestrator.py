@@ -4576,6 +4576,40 @@ class Orchestrator:
                             "measured by %s (same design input) — skipping the design_analyst "
                             "spawn. ENVGEN_DESIGN_PREP_REUSE=0 re-measures instead.",
                             _donor1202hj.name)
+                        # #1203py: SAY WHAT THE ADOPTED MAPPING DOES NOT COVER. The analyst
+                        # is what maps staged assets to components, and this branch skips it,
+                        # so every asset staged since the donor measured is mapped to nothing
+                        # -- and `audit_asset_usage`, the check that tells a lane "you drew an
+                        # approximation instead of using the real asset", keys on
+                        # `screens[].components[].assets` and is therefore blind to exactly
+                        # those. Measured on r185/r189/r190/r191: 20-22 of 34-36 staged icons
+                        # unmapped, plus all 24 staged images. That is the first render the
+                        # judge then scores iconography 0.348 on.
+                        try:
+                            from .runtime.design_prep import (
+                                staged_assets_not_mapped_1203py)
+                            _unm1203py = staged_assets_not_mapped_1203py(self.output_dir)
+                            if _unm1203py:
+                                from .runtime.message_format import join_capped
+                                self._logger.warning(
+                                    "#1203py adopted design_system maps NONE of %d staged "
+                                    "chrome asset(s) the donor did not measure: %s. "
+                                    "`audit_asset_usage` only polices MAPPED assets, so these "
+                                    "are shipped to the app and mandated by nothing. "
+                                    "ENVGEN_DESIGN_PREP_REUSE=0 spawns the analyst and maps "
+                                    "them.",
+                                    sum(len(v) for v in _unm1203py.values()),
+                                    "; ".join(
+                                        "%s %d (%s)" % (k, len(v),
+                                                        join_capped(v, total=len(v), cap=3))
+                                        for k, v in sorted(_unm1203py.items())))
+                        except Exception as _exc1203py:
+                            from .runtime.message_format import warn_once_1201
+                            warn_once_1201(
+                                "orchestrator.staged_assets_not_mapped_1203py",
+                                "the adopted design_system was not compared with what is "
+                                "staged, so an unmapped asset reads as a mapped one",
+                                _exc1203py)
                     else:
                         agent_done = await self._spawn_design_analyst(resolved)
                         record_design_prep_input_1202bv(

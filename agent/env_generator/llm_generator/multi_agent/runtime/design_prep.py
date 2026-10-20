@@ -146,6 +146,92 @@ def _theme_from_palette(palette: Dict) -> Dict:
     return {"default": default, "themes": [default]}
 
 
+# #1203py: the asset kinds a COMPONENT renders, as opposed to the ones the seed carries.
+# Measured per directory -- see the function's docstring for the numbers that chose this list.
+_CHROME_ASSET_KINDS_1203PY = ("icons", "images", "fonts")
+
+
+def staged_assets_not_mapped_1203py(output_dir, design_system=None):
+    """Assets STAGED under design/assets/ that the design_system maps to no component.
+
+    #1203py: THE ADOPTED MAPPING DOES NOT COVER THE NEWLY STAGED ASSETS, AND NOTHING SAID SO.
+
+    `frontend_audit.audit_asset_usage` is the check that tells a lane "you drew an
+    approximation instead of using the real asset". It keys on `screens[].components[].assets`
+    ids, so it can only police assets the design_system MAPPED -- and the mapping is the
+    analyst's work (`"assets": []  # analyst maps real assets here`, a few hundred lines
+    below). `#1202hj` then adopts a donor run's enriched design_system and SKIPS the analyst
+    spawn, which is correct for everything the donor already measured and leaves every asset
+    staged since then mapped to nothing at all.
+
+    MEASURED on the four modern runs that reached a design (r185/r189/r190/r191):
+
+        staged icons        36   34   34   34
+        mapped by the ds    23   23   23   23      (only 14 of them are staged icons)
+        STAGED, UNMAPPED    22   20   20   20
+
+    So 20 of 34 real icons ship into `app/frontend/public/assets/icons/` -- reachable at
+    runtime -- while the one audit that would mandate them cannot see them, and the lane is
+    never told they exist. `feed-follow`, `for-you`, `get-app` and
+    `explore-card-like-container` are among them, which are plainly affordances the app has.
+    It lines up with the score: iconography is the weakest dimension at FIRST render (0.348,
+    against color's 0.610) and gains an ordinary +0.137 afterwards, so the deficit is in what
+    the first render was given, not in the heal loop.
+
+    A SET DIFFERENCE, deliberately -- basenames staged vs basenames mapped. The name-matching
+    route is the one `#1202uw`'s docstring warns off ("a NAME-based attempt ... ran at 32% and
+    both samples I checked were false"); trying to pair an icon FILENAME with a control's
+    label the other way round measured 0% recall. The design_system already carries the
+    structural join, so this needs no guessing: either a staged file is named by some
+    component's asset entry or it is not.
+
+    ADVISORY. It does not say the lane should have used all 20 -- image search stages
+    speculatively, and `close-toast`/`enter-full-screen` have no counterpart in this app.
+    What it ends is the silence about an adopted mapping that covers 14 of 34.
+
+    SCOPED TO CHROME KINDS, from the measurement rather than by taste. Per directory on
+    r191/r185, staged vs unmapped: icons 34/20 and 24/22, images 24/24 (the design_system maps
+    NOTHING under images -- a second instance of the same gap), fonts 5/2 -- against
+    real_videos 70/69 and real_avatars 9/5. Those last two are SEED DATA, not chrome: the
+    design_system's one video entry points at `backend/dataset/videos.json` and the rows reach
+    the app through the seed, so "unmapped" is their normal state and counting them would
+    swamp the signal 69-to-20 (#647: no wider than the evidence).
+
+    Returns {kind: [basename, ...]}; {} on any fault or when nothing is staged.
+    """
+    out = {}
+    try:
+        root = Path(str(output_dir)) / "design" / "assets"
+        if not root.is_dir():
+            return {}
+        staged = {}
+        for kind in _CHROME_ASSET_KINDS_1203PY:
+            d = root / kind
+            if not d.is_dir():
+                continue
+            for f in d.rglob("*"):
+                if f.is_file() and not f.name.startswith("."):
+                    staged[f.name] = kind
+        if not staged:
+            return {}
+        ds = design_system
+        if ds is None:
+            ds = load_valid_design_system(Path(str(output_dir)) / "design" / "design_system.json")
+        mapped = set()
+        for a in ((ds or {}).get("assets") or []):
+            if not isinstance(a, Mapping):
+                continue
+            f = str(a.get("file") or "").strip()
+            if f:
+                mapped.add(os.path.basename(f))
+        for n, kind in sorted(staged.items()):
+            if n not in mapped:
+                out.setdefault(kind, []).append(n)
+    except Exception:
+        return {}
+    return out
+
+
 def _load_component_specs(output_dir: Path) -> Dict[str, Dict]:
     """Load design/component_specs/<stem>.json (as reference_materials writes them), keyed by
     stem. Best-effort — a missing dir or unreadable file is skipped."""

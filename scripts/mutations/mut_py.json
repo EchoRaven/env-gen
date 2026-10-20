@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203py_the_adopted_mapping_covered_fourteen.py",
+ "mutations": [
+  {
+   "label": "PY1 THE TICKET: the difference inverts, so it reports the MAPPED assets and stays silent about the 20 nobody mandates",
+   "find": "        for n, kind in sorted(staged.items()):\n            if n not in mapped:\n                out.setdefault(kind, []).append(n)",
+   "replace": "        for n, kind in sorted(staged.items()):\n            if n in mapped:\n                out.setdefault(kind, []).append(n)"
+  },
+  {
+   "label": "PY2 the match becomes path-equality instead of basename, so every mapped asset (`icons/a.svg` vs the walked file) reads as unmapped -- 34 of 34 false findings",
+   "find": "            if f:\n                mapped.add(os.path.basename(f))",
+   "replace": "            if f:\n                mapped.add(f)"
+  },
+  {
+   "label": "PY3 the seed-data kinds come back in, so 69 unmapped videos swamp the 20 real icons (#647)",
+   "find": "_CHROME_ASSET_KINDS_1203PY = (\"icons\", \"images\", \"fonts\")",
+   "replace": "_CHROME_ASSET_KINDS_1203PY = (\"icons\", \"images\", \"fonts\", \"real_videos\", \"real_avatars\")"
+  },
+  {
+   "label": "PY4 only the first chrome kind is scanned, so the 24 images the design_system maps NOTHING under go unreported",
+   "find": "        for kind in _CHROME_ASSET_KINDS_1203PY:",
+   "replace": "        for kind in _CHROME_ASSET_KINDS_1203PY[:1]:"
+  }
+ ]
+}
