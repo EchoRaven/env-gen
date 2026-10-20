@@ -140,9 +140,26 @@ _NEVER_PROVIDED_1203PZ = {
     "hero": "no reader and no producer; the name survives only in a page-name vocabulary",
     "player": "no reader and no producer; the name survives in a page-name synonym table",
     "spacing": "no reader and no producer; the name survives in a prompt string",
-    "font_stack": "READ by frontend_scaffold and never produced -- a starved reader",
-    "grid": "READ by scaffolder and never produced -- a starved reader",
-    "header": "READ by verification_tools and never produced -- a starved reader",
+    # #1203q2 CORRECTS THE THREE ENTRIES BELOW. They first read "READ by <module> and never
+    # produced -- a starved reader", from an AST scan that counted `.get("k")` and `["k"]` on
+    # ANY receiver. That is the over-permissive end this file's own comment already warns
+    # about, and re-checking each site by hand shows only ONE of the three is a design_system
+    # reader:
+    #   font_stack  frontend_scaffold `_inner.get("font_stack")` where `_inner` IS the
+    #               design_system -- genuine, and it defaults to "" so the custom font-family
+    #               is simply never emitted;
+    #   grid        scaffolder `_ol.get("grid")` reads the return of
+    #               `wire_owned_list_shell_535()` -- a LOCAL dict, not a design doc;
+    #   header      no design_system reader at all. Its matches are `message.header` in
+    #               team_runtime/reasoning, a synonym-table value, a negative-terms tuple and
+    #               substring tests on component text.
+    # So grid and header belong with the four that nothing reads. Writing a per-key rationale
+    # off a scan whose imprecision I had just documented is how the wrong words got in.
+    "font_stack": "READ by frontend_scaffold (`_inner.get`) and never produced -- the one "
+                  "genuine starved reader; it defaults to \"\" so no font-family is emitted",
+    "grid": "no design_system reader (scaffolder reads `grid` off a LOCAL dict) and no producer",
+    "header": "no design_system reader (only `message.header`, synonym tables and substring "
+              "tests) and no producer",
 }
 
 

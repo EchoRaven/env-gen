@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203q3_the_binding_list_that_hid_its_cut.py",
+ "mutations": [
+  {
+   "label": "Q3A THE TICKET: the total becomes the SHOWN count, so the sentence is self-consistent and still hides 146 assets (#1203pl/#1203pa's exact defect)",
+   "find": "                     + _jc1203q3(_e1203q3[:_fit1203q3], total=len(_e1203q3),\n                                 cap=_fit1203q3, sep=\", \"))",
+   "replace": "                     + _jc1203q3(_e1203q3[:_fit1203q3], total=_fit1203q3,\n                                 cap=_fit1203q3, sep=\", \"))"
+  },
+  {
+   "label": "Q3B the entry cap is dropped, so a 170-asset netflix run sends every entry into a prompt the 1200-char budget existed to bound (#1202w6: that is a live-run decision, not a silent one)",
+   "find": "        _fit1203q3 = min(24, len(_e1203q3))",
+   "replace": "        _fit1203q3 = len(_e1203q3)"
+  },
+  {
+   "label": "Q3C the character budget stops being enforced, so long ids blow the block",
+   "find": "        while _fit1203q3 > 1 and len(\", \".join(_e1203q3[:_fit1203q3])) > 1200:",
+   "replace": "        while False and _fit1203q3 > 1:"
+  }
+ ]
+}

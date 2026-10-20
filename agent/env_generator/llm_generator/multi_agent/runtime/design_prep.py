@@ -2175,8 +2175,37 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
         lines.append("Material: " + str(dsys["material"])[:200])
     assets = [a for a in (ds.get("assets") or []) if isinstance(a, dict)]
     if assets:
-        lines.append("Real assets (STAGED at public/assets/ — reference them, do NOT draw): " + ", ".join(
-            f"{a.get('id')}→/assets/{a.get('file')}" for a in assets[:24])[:1200])
+        # #1203q3: SAY WHAT THIS LIST LEFT OUT. The line below is the BINDING instruction
+        # every lane reads -- its own words are "reference them, do NOT draw" -- and it was
+        # cut TWICE without declaring either: `[:24]` on the entries and then `[:1200]` on
+        # the joined string. Two caps for one rule is #1203pr's shape, and an undeclared cut
+        # is #1034's.
+        #
+        # MEASURED over the 104 design documents with a mapped-asset list: 91 of them (87.5%)
+        # are cut here, 5032 assets in total are never named to a lane, and all 7 modern runs
+        # are affected. The severity is wildly uneven, which is the generality half of it:
+        # several netflix-local runs map 170 assets and the lane is told about 24 of them
+        # (86% dropped), while modern tiktok maps 23 and loses 5 to the character cut (22%).
+        # The same code is far worse on the products we run less often.
+        #
+        # NOT the cause of the 14-of-36 icon mapping gap, and it took a re-read to see that:
+        # `assets` here is `ds.get("assets")`, the ALREADY-MAPPED set, so this is a second cut
+        # after that one. They stack -- 36 staged -> 14 mapped -> 18 of the 23 total mapped
+        # actually named.
+        #
+        # BOTH BOUNDS ARE KEPT. The entry cap and the character budget exist to bound a
+        # prompt, and raising either changes what every lane is sent, which #1202w6 says
+        # needs a live run before it lands. What changes here is only that the remainder is
+        # declared, through `join_capped` -- the owner of this format (#1032) -- so the
+        # sentence stops implying the list is complete.
+        from .message_format import join_capped as _jc1203q3
+        _e1203q3 = [f"{a.get('id')}→/assets/{a.get('file')}" for a in assets]
+        _fit1203q3 = min(24, len(_e1203q3))
+        while _fit1203q3 > 1 and len(", ".join(_e1203q3[:_fit1203q3])) > 1200:
+            _fit1203q3 -= 1
+        lines.append("Real assets (STAGED at public/assets/ — reference them, do NOT draw): "
+                     + _jc1203q3(_e1203q3[:_fit1203q3], total=len(_e1203q3),
+                                 cap=_fit1203q3, sep=", "))
     for s in screens[:12]:
         comps = [c for c in (s.get("components") or []) if isinstance(c, dict)]
         if not comps:
