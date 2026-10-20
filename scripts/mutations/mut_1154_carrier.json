@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1154_unreachable_origin_is_not_product_evidence.py",
+ "mutations": [
+  {
+   "label": "T4 carrier check: an unreachable-only run stops counting as failed (the mutation mut_1029.json declares is asserted HERE)",
+   "find": "    if unreachable and not passed:\n        failed.extend(unreachable)\n        unreachable = []",
+   "replace": "    if unreachable and not passed:\n        unreachable = []"
+  }
+ ]
+}

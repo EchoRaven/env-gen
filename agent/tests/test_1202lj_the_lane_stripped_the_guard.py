@@ -61,9 +61,9 @@ from multi_agent.runtime.backend_audit import (  # noqa: E402
 
 
 class _Backend:
-    def __init__(self, src):
+    def __init__(self, src, name="custom_routes.py"):
         self.d = Path(tempfile.mkdtemp(prefix="lj_"))
-        (self.d / "custom_routes.py").write_text(src, encoding="utf-8")
+        (self.d / name).write_text(src, encoding="utf-8")
 
     def __enter__(self):
         return self.d
@@ -80,6 +80,23 @@ class TheR120Shapes(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertIn("custom_routes.py:1", out[0])
         self.assertIn("reassigns app.router.routes", out[0])
+
+    def test_the_same_tampering_in_seed_data_is_also_found(self):
+        """#1203pu: the detector scans `custom_routes.py` AND `seed_data.py`, and only the
+        first had a fixture -- a mutation dropping `seed_data.py` from the scanned names was
+        MISSED.
+
+        No corpus run puts it there (101 `seed_data.py` files, zero matches for any of the
+        five patterns), so this drives an intentional choice rather than an observed shape:
+        seed_data.py is lane-writable and runs at import, so the same two lines do the same
+        thing one file over. Adding the driver widens nothing -- the behaviour is already
+        there; what was missing was anything that would notice its removal.
+        """
+        with _Backend("app.router.routes.insert(0, APIRoute(path='/api/x'))\n",
+                      name="seed_data.py") as d:
+            out = tamper(d)
+        self.assertEqual(len(out), 1, out)
+        self.assertTrue(out[0].startswith("seed_data.py:1 "), out[0])
 
     def test_removing_from_the_route_table(self):
         with _Backend("app.router.routes.remove(route)\n") as d:

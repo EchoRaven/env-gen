@@ -102,6 +102,27 @@ def test_a_passthrough_middleware_is_not_reported(tmp_path):
     assert _detect(_tree(tmp_path, **{"custom_routes.py": _PASSTHROUGH})) == []
 
 
+_PLAIN_HANDLER = (
+    "from fastapi import APIRouter\n"
+    "from fastapi.responses import JSONResponse\n"
+    "router = APIRouter()\n"
+    "@router.get('/api/videos/feed')\n"
+    "async def feed(request):\n"
+    "    return JSONResponse({'items': []})\n")
+
+
+def test_an_ORDINARY_handler_that_returns_a_response_is_not_middleware(tmp_path):
+    """#1203pu: the decorator test had no driver.
+
+    Every route handler in every app returns a Response -- that is what a handler IS -- so
+    without `if "middleware" not in decs: continue` the detector would report each one as
+    lane-installed middleware answering before the guard. A mutation removing that line was
+    MISSED, because no fixture here contained a plain handler: both existing cases are
+    decorated `@app.middleware("http")`, so the check could not matter either way.
+    """
+    assert _detect(_tree(tmp_path, **{"custom_routes.py": _PLAIN_HANDLER})) == []
+
+
 def test_an_auth_path_is_marked(tmp_path):
     hits = _detect(_tree(tmp_path, **{"custom_routes.py": _AUTH_SHORT_CIRCUIT}))
     assert hits[0]["auth_paths"], hits

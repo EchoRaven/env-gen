@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_1203pr_the_blocker_counted_one_thing_and_listed_another.py",
+ "mutations": [
+  {
+   "label": "PR1 THE TICKET: the page count disappears, so the lane sees a record count beside a page list again and cannot read one as the other",
+   "find": "    return \"%d failed UI record(s) on %d page(s); %s\" % (",
+   "replace": "    return \"%d failed UI record(s); %s\" % ("
+  },
+  {
+   "label": "PR2 the page count is printed as the RECORD count -- self-consistent and still false (netflix-r30: 4 records, 2 pages)",
+   "find": "        int(breadth.get(\"failed_records\") or 0), len(pages),\n        _jc1203pr(why, total=len(pages), cap=8, sep=\" | \"))",
+   "replace": "        len(pages), len(pages),\n        _jc1203pr(why, total=len(pages), cap=8, sep=\" | \"))"
+  },
+  {
+   "label": "PR3 the cut stops being declared by handing join_capped the LISTED rows as its total  [SUPERSEDED 2026-10-19 by PR5 in this same spec: once the redundant `pages[:8]` slice was removed (one cap, #1032), `why` holds one row per page, so len(why) == len(pages) ALWAYS and this mutation became a null edit -- byte-identical output, which mutate.py cannot verdict and no assertion could catch. The property it aimed at (the remainder is declared) is carried by PR4 (bypass the owner) and PR5 (widen the one cap), both CAUGHT. Kept as the record of why: removing a duplicate cap made one mutation catchable and this one null.]",
+   "find": "        _jc1203pr(why, total=len(pages), cap=8, sep=\" | \"))",
+   "replace": "        _jc1203pr(why, total=len(why), cap=8, sep=\" | \"))"
+  },
+  {
+   "label": "PR4 TEXT-PRESERVING: the shared owner is bypassed and the rows are joined raw, so the sentence keeps its words and loses the remainder",
+   "find": "        _jc1203pr(why, total=len(pages), cap=8, sep=\" | \"))",
+   "replace": "        \" | \".join(why) if _jc1203pr else \"\")"
+  },
+  {
+   "label": "PR5 the ONE cap is widened, so a 20-page blocker prints all 20 and the single line a lane reads becomes a wall (the cut is deliberate -- #649 measured 6.4 fix lines per blocking screen already)",
+   "find": "        _jc1203pr(why, total=len(pages), cap=8, sep=\" | \"))",
+   "replace": "        _jc1203pr(why, total=len(pages), cap=200, sep=\" | \"))"
+  }
+ ]
+}

@@ -3604,6 +3604,24 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
         return True  # any failure → conservative → keep the leak verdict
 
 
+# #1203ps: THE PHRASE A SECOND FILE MATCHES ON, OWNED HERE INSTEAD OF SPELLED TWICE.
+#
+# `remediation_dispatcher._step_is_actionable_1202gx` decides whether a skipped step is
+# unexplained starvation (#188's class, which it must report) or a row #78 already cleared
+# (which it must not), and it decided by testing the note below for this exact wording. Its
+# own docstring says so -- "only the rows #78 itself cleared, identified by the note it
+# writes" -- so the coupling is deliberate; what it lacked was an owner.
+#
+# MEASURED: 56 recorded steps across the corpus carry `kind="skipped"` AND this phrase, 1 of
+# them in the modern era, so the branch is live. Rewording this string would silently flip
+# those back into "fix THESE" lists -- and the test that covers the reader builds the note in
+# its OWN fixture, so it would stay green while the two files stopped agreeing.
+#
+# The precedent is 200 lines above the reader: `_route_ran_note_1052_1202wx` says "#1052's
+# warning, imported rather than restated". This is that, for the one string the reader keys on.
+FRESH_INTRUDER_REVERIFIED_1203PS = "re-verified with a FRESH intruder"
+
+
 def execute_chain(base: str, chain: Mapping[str, Any],
                   seed_ids: Optional[Mapping[str, Any]] = None,
                   endpoints: Optional[List[Mapping[str, Any]]] = None,
@@ -4380,7 +4398,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                         and _is_cross_user_denial(step)
                         and not _reverify_denial_via_fresh_intruder(base, method, path, body, expect)):
                     kind = "skipped"
-                    note = ("cross-user denial re-verified with a FRESH intruder → DENIED; the "
+                    note = ("cross-user denial " + FRESH_INTRUDER_REVERIFIED_1203PS
+                            + " → DENIED; the "
                             f"original {status} was a stale/owner-colliding probe token, not a "
                             "real cross-user leak (#78)")
             if is_transport_failure_1202od(res):

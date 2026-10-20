@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1202uv_the_frontend_calls_what_nobody_serves.py",
+ "mutations": [
+  {
+   "label": "UV1 the framework's own /auth surface stops being exempt, so r95 and r118's false `POST /auth/logout` finding comes back -- a finding about a deliberately-partial declaration, not about the app (#1202uz)",
+   "find": "        return sorted(\"%s %s\" % (m, q) for (m, q) in called\n                      if (m, q) not in have\n                      and not q.startswith((\"/auth/\", \"/oauth/\"))",
+   "replace": "        return sorted(\"%s %s\" % (m, q) for (m, q) in called\n                      if (m, q) not in have\n                      and not q.startswith((\"/nope/\",))"
+  },
+  {
+   "label": "UV2 the served set stops filtering, so every call the frontend makes is reported as unserved -- the inverse failure, and it would bury the real ones",
+   "find": "        return sorted(\"%s %s\" % (m, q) for (m, q) in called\n                      if (m, q) not in have\n                      and not q.startswith((\"/auth/\", \"/oauth/\"))",
+   "replace": "        return sorted(\"%s %s\" % (m, q) for (m, q) in called\n                      if (m, q) not in set()\n                      and not q.startswith((\"/auth/\", \"/oauth/\"))"
+  },
+  {
+   "label": "UV3 a bare `request(path)` stops defaulting to GET, so r135's plain reads vanish from the comparison entirely",
+   "find": "                elif not opts:\n                    called.add((\"GET\", q))",
+   "replace": "                elif not opts:\n                    pass"
+  },
+  {
+   "label": "UV4 a ternary method records only ONE of its two branches, so a call that may POST or DELETE is half-checked",
+   "find": "                if mt:\n                    called.add((mt.group(1).upper(), q))\n                    called.add((mt.group(2).upper(), q))",
+   "replace": "                if mt:\n                    called.add((mt.group(1).upper(), q))"
+  },
+  {
+   "label": "UV5 a non-path first argument is no longer skipped  [SUPERSEDED 2026-10-20: a NULL mutation, verified by driving `_norm_api_path_1202uv` directly -- it returns None for 'videoId', '${base}/x' and 'api/videos', so the very next `if not q: continue` catches everything this guard would have. Two guards that agree by construction, unlike #1203pr's two caps which could disagree; the startswith() is a cheap pre-filter, so it stays and the property is carried by the normaliser's own tests.]",
+   "find": "                if not raw.startswith(\"/\"):\n                    continue",
+   "replace": "                if not raw.startswith(\"/\"):\n                    pass"
+  }
+ ]
+}

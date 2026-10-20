@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203iz_a_flow_passed_and_nobody_logged_in.py",
+ "mutations": [
+  {
+   "label": "IZ1 the request half is dropped, so an httpOnly-cookie login that issued the request but stored no token is flagged -- the false failure this ticket exists to refuse",
+   "find": "                            ok and not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),",
+   "replace": "                            ok and not token and not _auth_resps\n                            and not _auth_failed),"
+  },
+  {
+   "label": "IZ2 the response half is dropped, so a cookie login that ANSWERED 200 is flagged",
+   "find": "                            ok and not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),",
+   "replace": "                            ok and not token\n                            and not _auth_reqs and not _auth_failed),"
+  },
+  {
+   "label": "IZ3 the unreachable-stack half is dropped, so #1203a6's ERR_CONNECTION_REFUSED case is read as 'nobody logged in' when it says nothing about the form",
+   "find": "                            ok and not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),",
+   "replace": "                            ok and not token and not _auth_resps\n                            and not _auth_reqs),"
+  },
+  {
+   "label": "IZ4 the flag is about passes; dropping `ok` flags a FAILING flow, which already has a note explaining itself",
+   "find": "                            ok and not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),",
+   "replace": "                            not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),"
+  },
+  {
+   "label": "IZ5 the flag is constant False -- r177's three records become invisible again, which is the whole point of recording it",
+   "find": "                            ok and not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),",
+   "replace": "                            False and ok and not token and not _auth_resps\n                            and not _auth_reqs and not _auth_failed),"
+  },
+  {
+   "label": "IZ6 #1126b's deliberate `or` becomes `and`: the mutation that SURVIVED the text assertion, because the comment 30 lines below quotes the line verbatim",
+   "find": "                            break\n                    ok = bool(token) or moved",
+   "replace": "                            break\n                    ok = bool(token) and moved"
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_audit.py",
+ "test": "tests/test_1202lj_the_lane_stripped_the_guard.py",
+ "mutations": [
+  {
+   "label": "LJ1 THE #1202zv REGRESSION: the reassign pattern narrows back to the SLICE form, so r136's plain `app.router.routes = [r for r in ...]` walks through -- the defect whose own comment says the sentence was true and the pattern did not implement it",
+   "find": "    (r\"app\\.router\\.routes\\s*(?:\\[\\s*:\\s*\\])?\\s*=(?!=)\",",
+   "replace": "    (r\"app\\.router\\.routes\\s*\\[\\s*:\\s*\\]\\s*=(?!=)\","
+  },
+  {
+   "label": "LJ2 the `(?!=)` goes away, so `if app.router.routes == x` is reported as tampering -- a comparison is not a write",
+   "find": "    (r\"app\\.router\\.routes\\s*(?:\\[\\s*:\\s*\\])?\\s*=(?!=)\",",
+   "replace": "    (r\"app\\.router\\.routes\\s*(?:\\[\\s*:\\s*\\])?\\s*=\","
+  },
+  {
+   "label": "LJ3 the insert-at-0 pattern is dropped, so r120's worked example is invisible unless the same function also reassigns the list",
+   "find": "    (r\"app\\.router\\.routes\\s*\\.\\s*insert\\s*\\(\\s*0\\s*,\",",
+   "replace": "    (r\"app\\.router\\.routes\\s*\\.\\s*insert\\s*\\(\\s*999\\s*,\","
+  },
+  {
+   "label": "LJ4 the index stops mattering, so an insert at any position is reported -- but `append` puts the lane route BEHIND the projected one where it can never match, which the comment says is a lane bug and deliberately NOT reported (3 runs)",
+   "find": "    (r\"app\\.router\\.routes\\s*\\.\\s*insert\\s*\\(\\s*0\\s*,\",",
+   "replace": "    (r\"app\\.router\\.routes\\s*\\.\\s*insert\\s*\\(\","
+  },
+  {
+   "label": "LJ5 seed_data.py stops being scanned, so the same tampering written one file over is invisible",
+   "find": "        for name in (\"custom_routes.py\", \"seed_data.py\"):",
+   "replace": "        for name in (\"custom_routes.py\",):"
+  },
+  {
+   "label": "LJ6 the guard's allow-list name stops being watched, so r117's alias route (`getattr(main_mod, \"_FW_PUBLIC_API_1202KH\")` then `.append`) is missed",
+   "find": "    (r\"_FW_PUBLIC_API_1202KH\",",
+   "replace": "    (r\"_FW_PUBLIC_API_NOPE\","
+  }
+ ]
+}

@@ -4372,7 +4372,11 @@ def _ui_evidence_prose_1203jg(validation_results: Any, breadth: Any) -> str:
     # own test rather than in production, so no run has paid for it.
     _rows = validation_results if isinstance(validation_results, (list, tuple)) else []
     why: List[str] = []
-    for page in pages[:8]:
+    # #1203pr: ONE cap, owned by `join_capped` below. This slice used to cap here too, and
+    # two caps for one rule is #1032's shape: a mutation that widened THIS one to 200 was
+    # byte-for-byte invisible, because the join re-capped at 8 and declared the same
+    # remainder -- so the property had no driver and could not have one while both existed.
+    for page in pages:
         summary = ""
         for rec in _rows:
             if not isinstance(rec, dict):
@@ -4419,8 +4423,41 @@ def _ui_evidence_prose_1203jg(validation_results: Any, breadth: Any) -> str:
                 if summary:
                     break
         why.append("%s: %s" % (page, summary or "no summary recorded"))
-    return "%d failed UI record(s); %s" % (
-        int(breadth.get("failed_records") or 0), " | ".join(why))
+    # #1203pr: SAY BOTH NUMBERS, AND DECLARE THE CUT -- the rule the `#1017` log line
+    # in this same file already follows, written out in its own comment: "the count is
+    # `failed_records` but the list is built from `pages_failed` -- two different
+    # collections, so 'N record(s): <list>' could never be read as 'these are the N'.
+    # Print both, and declare the cut." That fix landed on the LOG and not here, and
+    # this is the half a lane reads: `blocker_prose` is the only path this text has to
+    # one (#983), so it is the half that decides whether anybody fixes the page.
+    #
+    # MEASURED over the 4439 breadth records that carry a failure, with `pages_failed`
+    # confirmed to have a SOLE writer (so the rate is readable at all -- the trap
+    # #1203pa hit):
+    #   * the count disagreed with the number of pages in 325 (7.3%) -- netflix-r30 is
+    #     the plain shape, "4 record(s)" beside two page names;
+    #   * the 8-page cut was reached in 200 of 8580 page lists, up to 20 pages, so a
+    #     blocker could drop 12 pages with nothing saying it had.
+    #
+    # Both are ZERO in the modern era -- and that is the reason to fix it rather than
+    # not. All 525 occurrences are netflix, googlemaps and instagram; the modern era is
+    # 22 of 25 runs on one tiktok app whose screen count never reaches the cap. A
+    # sentence that is only true of the product we happen to run most is the thing
+    # generality means here.
+    #
+    # A SENTINEL rather than a count-only form, because the reader is a lane reading
+    # prose; #1203pa's split applies (a machine-read list takes a count field, prose
+    # takes a sentence) and nothing set-compares this string -- the dispatcher joins it
+    # into a task body verbatim.
+    # Through `join_capped`, which is the OWNER of this format (#1032) and already
+    # declares a cut as "(+N more not shown)" for 87 call sites, 52 of them lane-facing
+    # prose rather than logs. Hand-rolling the sentence here would be a second owner for
+    # one rule. `why` holds one entry per page (the duplicate cap above is gone), so the
+    # total and the row count agree and `join_capped` alone decides what is cut.
+    from .message_format import join_capped as _jc1203pr
+    return "%d failed UI record(s) on %d page(s); %s" % (
+        int(breadth.get("failed_records") or 0), len(pages),
+        _jc1203pr(why, total=len(pages), cap=8, sep=" | "))
 
 
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,

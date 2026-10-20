@@ -3295,6 +3295,10 @@ class Orchestrator:
                             # grepping the log to learn the run had simply run out of clock
                             # with $510 of its $900 and 22 of its 200 ticks unspent.
                             self._budget_stop_1202if = str(budget_exceeded)
+                            # #1203pq: and SAY which of the two stops this is. See
+                            # `_stop_status_1202ik` -- it used to re-derive this from the
+                            # sentence, and the sentence is not a reliable witness.
+                            self._budget_stop_kind_1203pq = "budget_exceeded"
                             self._write_run_budget(caps, loop_start, elapsed, tick_count,
                                                    "budget_exceeded", str(budget_exceeded))
                             break
@@ -3410,6 +3414,21 @@ class Orchestrator:
                                 # #1202if fixed the wall-clock/tick path and this one kept
                                 # the habit.
                                 self._budget_stop_1202if = str(_abort)
+                                # #1203pq: THE SAME FACT, WRITTEN TWICE, DISAGREED WITH
+                                # ITSELF. The `_write_run_budget` call just below passes
+                                # "stuck_abort" literally, and the terminal write at the
+                                # end of `run()` then recomputed the status from this
+                                # sentence via `_stop_status_1202ik` and got
+                                # "budget_exceeded" -- because that predicate tests for
+                                # the phrase "never SUCCEEDED", which only the
+                                # NO-CONVERGENCE abort writes. The DELIVER-STUCK abort
+                                # says "failing fast instead of spinning to wall-clock",
+                                # so it was filed as a cap it had explicitly stopped early
+                                # to avoid. r189 is the instance and the contradiction
+                                # survives in its ledger: status "budget_exceeded" beside
+                                # that sentence, with 13% of its $1000, 53% of its clock
+                                # and 11% of its ticks unspent.
+                                self._budget_stop_kind_1203pq = "stuck_abort"
                                 self._write_run_budget(
                                     caps, loop_start, time.time() - loop_start, tick_count,
                                     "stuck_abort", str(_abort))
@@ -7729,7 +7748,28 @@ class Orchestrator:
         "nothing converged in the time you gave it" — opposite advice from the same word.
         """
         try:
+            # #1203pq: ASK THE SITE THAT KNEW, instead of reading its prose. Both
+            # writers of `_budget_stop_1202if` record which stop it was, in the same
+            # statement, so there is nothing left to infer (#1032: one owner).
+            _kind = str(getattr(self, "_budget_stop_kind_1203pq", "") or "")
+            if _kind:
+                return _kind
             _r = str(getattr(self, "_budget_stop_1202if", "") or "")
+            # No kind recorded means a THIRD writer appeared and did not say which stop
+            # it was. The phrase test below is what this ticket exists to stop trusting,
+            # so using it is a guess and must not be a silent one (#883, #1201).
+            if _r:
+                from .runtime.message_format import warn_once_1201
+                warn_once_1201(
+                    "orchestrator._stop_status_1202ik.no_kind_1203pq",
+                    "a run stop was recorded without saying which stop it was, so the "
+                    "ledger status is being guessed from the sentence: " + _r[:160],
+                    # #1203os: `exc=None` is how a caller that checked a precondition and
+                    # found it absent says so. There is no exception here -- a writer simply
+                    # did not record the kind. `exc` has NO default, and passing two
+                    # arguments raised a TypeError that this method's own `except` turned
+                    # back into "budget_exceeded" -- the exact word the ticket is about.
+                    None)
             return "stuck_abort" if "never SUCCEEDED" in _r else "budget_exceeded"
         except Exception:
             return "budget_exceeded"

@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_audit.py",
+ "test": "tests/test_1203pt_a_shadowed_route_must_not_be_credited.py",
+ "mutations": [
+  {
+   "label": "BA1 a route defined TWICE is credited as served anyway -- FastAPI mounts only the first def, so a broken first handler ships green (audit #6)",
+   "find": "            if _nr in dups:",
+   "replace": "            if False:"
+  },
+  {
+   "label": "BA2 the duplicate audit is never run, so `out[\"duplicated\"]` is empty and #1202z4's task can never be filed",
+   "find": "        dups = duplicated_routes(backend_dir)",
+   "replace": "        dups = set()"
+  },
+  {
+   "label": "BA3 every route is treated as duplicated, so nothing is ever credited -- the inverse failure, and the reason the single-definition control exists",
+   "find": "            if _nr in dups:",
+   "replace": "            if True:"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1203ps_the_phrase_two_files_agreed_on.py",
+ "mutations": [
+  {
+   "label": "PS3 the reader stops importing and restates the literal -- today's behaviour, tomorrow's drift",
+   "find": "            and _fresh_intruder_phrase_1203ps() in str(st.get(\"note\") or \"\")):",
+   "replace": "            and \"re-verified with a FRESH intruder\" in str(st.get(\"note\") or \"\")):"
+  },
+  {
+   "label": "PS4 \u2605 THE SHARP EDGE: the fallback becomes \"\", so on an import failure `in` matches EVERY note and every skipped step is silenced -- #188's starvation class turned off",
+   "find": "        return \"re-verified with a FRESH intruder\"",
+   "replace": "        return \"\""
+  },
+  {
+   "label": "PS5 TEXT-PRESERVING: the fallback stops announcing itself, so matching a restated copy reads as success (#883)",
+   "find": "        warn_once_1201(\n            \"remediation_dispatcher._fresh_intruder_phrase_1203ps\",",
+   "replace": "        None and warn_once_1201(\n            \"remediation_dispatcher._fresh_intruder_phrase_1203ps\","
+  }
+ ]
+}

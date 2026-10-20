@@ -367,6 +367,32 @@ def _passing_endpoint_index_1135(chains) -> dict:
     return idx
 
 
+def _fresh_intruder_phrase_1203ps() -> str:
+    """The phrase #78 writes, imported rather than restated -- see
+    chain_executor.FRESH_INTRUDER_REVERIFIED_1203PS. (#1203ps, #1032)
+
+    Late import, mirroring `_route_ran_note_1052_1202wx` just above and this module's
+    `is_transport_failure_1202od` idiom.
+
+    The fallback is the literal rather than "", and deliberately: returning "" would make
+    `in` match every note and silence EVERY skipped step, which is the starvation class #188
+    exists to surface. Returning the literal keeps today's behaviour exactly. It is announced
+    because a restated copy is the thing this ticket removed, so falling back to one must not
+    look like success (#883, #1201).
+    """
+    try:
+        from .chain_executor import FRESH_INTRUDER_REVERIFIED_1203PS
+        return FRESH_INTRUDER_REVERIFIED_1203PS
+    except Exception as _exc1203ps:
+        from .message_format import warn_once_1201
+        warn_once_1201(
+            "remediation_dispatcher._fresh_intruder_phrase_1203ps",
+            "the fresh-intruder phrase could not be imported, so this skip classifier is "
+            "matching a restated copy that can drift from the writer",
+            _exc1203ps)
+        return "re-verified with a FRESH intruder"
+
+
 def _step_is_actionable_1202gx(st) -> bool:
     """Is this recorded step something the verifier can and should act on?
 
@@ -390,7 +416,7 @@ def _step_is_actionable_1202gx(st) -> bool:
     if st.get("ok") is True:
         return False
     if (str(st.get("kind") or "") == "skipped"
-            and "re-verified with a FRESH intruder" in str(st.get("note") or "")):
+            and _fresh_intruder_phrase_1203ps() in str(st.get("note") or "")):
         return False
     return True
 

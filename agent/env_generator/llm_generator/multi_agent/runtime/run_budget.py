@@ -200,6 +200,66 @@ def converging_at_the_gate_1202lo(output_dir, now=None) -> bool:
         return False
 
 
+# #1203pp: THE SPEND CAP IS NEVER COMPARED WITH WHAT A RUN COSTS.
+#
+# `_caps_1203fd` below reads `ENVGEN_MAX_SPEND_USD`, records it and the hard ceiling, and
+# the enforcement stops the run when it is reached. Nothing anywhere asks whether the
+# number an operator typed is an amount this generator has ever delivered a milestone
+# under. So a launch that cannot possibly finish looks exactly like one that can, and the
+# run spends its whole allowance and its wall clock discovering what the corpus already
+# knew.
+#
+# MEASURED over the 31 runs whose ledger records a cap (the field is #1203fd's, so older
+# runs cannot be counted -- 22 of the 31 delivered at least one milestone):
+#
+#     lowest cap that ever delivered   $150   tiktok-web-r163, 1 milestone
+#     caps below it                       2   r188 $12, r187 $45
+#     what those two delivered            0   both, and both stopped AT the cap
+#                                             (r188 $12.32 of $12 after ONE tick,
+#                                              r187 $46.52 of $45 after five)
+#
+# r163 is the floor and it only just cleared it: it spent $187.61, which is $0.11 past the
+# $187.50 that #1183's post-gate overshoot raised its effective ceiling to. So $150 is not
+# a comfortable figure, it is the one cap in the record that delivered at all, n=1.
+#
+# WHAT THIS DOES NOT DO: refuse, or adjust the cap. A cheap cap is a legitimate
+# instruction -- a smoke test that only has to reach the first tick wants exactly r188's
+# $12 -- and silently raising it would spend money the operator declined (and #1202ii's
+# rule is that an explicit env var is an instruction). It also does not predict: with two
+# runs below the floor and one at it, the honest claim is about what is RECORDED, which is
+# what the sentence says. #647: the guard stays as wide as its evidence.
+DELIVERING_CAP_FLOOR_USD_1203PP = 150.0
+_FLOOR_EVIDENCE_1203PP = ("tiktok-web-r163", 31, 22, 2)
+
+
+def cap_below_delivering_floor_1203pp(cap_usd, floor=DELIVERING_CAP_FLOOR_USD_1203PP):
+    """The sentence to say about a spend cap, or "" when there is nothing to say.
+
+    Pure, so the property has a driver: the caller it reaches from only runs with a live
+    run directory and an environment, which is what left #1203fd's own neighbours
+    unverifiable.
+
+    Absent is not zero (#1026b): no cap configured, 0.0 (how the enforcement spells
+    "unlimited") and an unparseable value all mean "nothing is capped here", and none of
+    them is a cap below the floor.
+    """
+    try:
+        cap = float(cap_usd)
+    except (TypeError, ValueError):
+        return ""
+    if not cap > 0 or cap >= float(floor):
+        return ""
+    run, capped, delivered, below = _FLOOR_EVIDENCE_1203PP
+    return (
+        "#1203pp spend cap $%.2f is below $%.2f, the lowest cap any recorded run has "
+        "delivered a milestone under (%s, and it needed #1183's post-gate overshoot to "
+        "get there). Of %d runs whose ledger records a cap, %d delivered; the %d capped "
+        "below $%.2f delivered nothing and both stopped AT the cap. This is what the "
+        "record says, not a prediction, and the cap is being obeyed as set -- if the run "
+        "is meant to deliver, it needs a bigger allowance than this."
+        % (cap, float(floor), run, capped, delivered, below, float(floor)))
+
+
 def _caps_1203fd(caps: Dict[str, Any]) -> Dict[str, Any]:
     """The run's ceilings, INCLUDING the spend cap, which this ledger never carried.
 
@@ -238,6 +298,13 @@ def _caps_1203fd(caps: Dict[str, Any]) -> Dict[str, Any]:
                 _shoot = 1.25
             _shoot = min(2.0, max(1.0, _shoot))
             out["max_spend_hard_ceiling_1203fd"] = round(_cap * _shoot, 2)
+        # #1203pp: RECORD IT BESIDE THE CAP, not only in the log. #1203fd's whole point one
+        # paragraph up is that a cap readable solely from the live environment is gone to
+        # anyone reading the finished run -- a note about that cap kept only in a log line
+        # has the same hole, so the ledger carries it too. None, not "", when there is
+        # nothing to say: #1026b, and so a reader can tell "checked, above the floor" from
+        # an older ledger that never checked.
+        out["below_delivering_floor_1203pp"] = cap_below_delivering_floor_1203pp(_cap) or None
     except Exception:
         out["max_spend_usd"] = None
     return out
@@ -415,9 +482,32 @@ class RunBudget:
                         "A resume inherits the first process's caps, so without this the "
                         "value you set would have been ignored silently.",
                         var, asked, stored)
+            self._say_cap_floor_1203pp()
             return out
         except Exception:
+            self._say_cap_floor_1203pp()
             return dict(env_defaults)
+
+    def _say_cap_floor_1203pp(self) -> None:
+        """Tell the operator, at the launch they can still change, and say it once.
+
+        `load_caps` is called on every tick to pick up a live cap raise (#1202ii), so a
+        bare log here is #1041's storm. Keyed on the cap VALUE rather than said once per
+        process, because an operator who raises the cap mid-run has changed the thing the
+        sentence is about and the new value is worth one more line -- while a cap that
+        stays put stays silent. Best-effort: accounting must never be the reason a run
+        fails to start (#1163's contract, which this file already follows twice).
+        """
+        try:
+            raw = (os.environ.get("ENVGEN_MAX_SPEND_USD") or "").strip()
+            said = cap_below_delivering_floor_1203pp(raw)
+            if not said or not self._logger:
+                return
+            from .message_format import state_changed_1202ad
+            if state_changed_1202ad("run_budget.cap_floor_1203pp", raw):
+                self._logger.warning("%s", said)
+        except Exception:
+            return
 
     def seal_abandoned_predecessor_1202ev(self) -> str:
         """Retire a `running` ledger left by a process that is gone. Returns what it did.

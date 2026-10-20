@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203jc_a_pass_for_a_journey_that_never_ran.py",
+ "mutations": [
+  {
+   "label": "JC1 the ladder consults steps before a finding, so an empty journey DOWNGRADES evidence somebody collected (the thing the branch was placed last to avoid)",
+   "find": "        if broken:\n            verdict = \"ISSUES\"",
+   "replace": "        if broken and steps:\n            verdict = \"ISSUES\""
+  },
+  {
+   "label": "JC2 only the UI half withdraws the PASS, so a 0-step API journey with a clean UI is a PASS again (r175 v1.1.0 exactly)",
+   "find": "        elif not steps or not _ui_ran_1203je:",
+   "replace": "        elif not _ui_ran_1203je:"
+  },
+  {
+   "label": "JC3 the cause sentence never fires, so NOT_WALKED renders as #1035's 'no cause recorded (report a framework defect)'",
+   "find": "    if summary.get(\"api_steps\") == 0:",
+   "replace": "    if summary.get(\"api_steps\") is None:"
+  },
+  {
+   "label": "JC4 the sentence is unconditional, so a journey that DID walk claims it was not walked",
+   "find": "    if summary.get(\"api_steps\") == 0:",
+   "replace": "    if True:"
+  },
+  {
+   "label": "JC5 CONTROL: PASS becomes unreachable -- the fix as a regression",
+   "find": "        else:\n            verdict = \"PASS\"",
+   "replace": "        else:\n            verdict = \"NOT_WALKED\""
+  }
+ ]
+}

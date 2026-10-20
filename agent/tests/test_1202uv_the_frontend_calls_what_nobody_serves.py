@@ -117,6 +117,30 @@ def test_no_contract_means_no_report(tmp_path):
     assert out == [], out
 
 
+def test_a_bare_call_is_read_as_a_GET_and_reported(tmp_path):
+    """#1203pu: `request(path)` with no options is the commonest call shape there is, and the
+    `elif not opts: called.add(("GET", q))` line that gives it a method had no driver.
+
+    The one existing bare call sits in `test_no_contract_means_no_report`, which passes an
+    EMPTY contract -- so the function returns at its own `if not have` guard and the default
+    never decides anything. A mutation deleting that line was MISSED.
+    """
+    out = frontend_calls_without_backend_1202uv(_app(tmp_path, """
+      export const go = () => request('/api/unserved');
+    """), EPS)
+    assert out == ["GET /api/unserved"], out
+
+
+def test_a_bare_call_to_a_SERVED_get_reports_nothing(tmp_path):
+    """★ The half that pins the method to GET specifically. If the default were POST (or
+    absent), this served path would be reported as unserved -- so this is what makes the
+    previous test about GET rather than about "some method"."""
+    out = frontend_calls_without_backend_1202uv(_app(tmp_path, """
+      export const feed = () => request('/api/feed/foryou');
+    """), EPS)
+    assert out == [], out
+
+
 def test_no_service_module_yet_is_silent(tmp_path):
     """The scaffolder runs before the frontend lane writes anything."""
     (tmp_path / "app" / "backend").mkdir(parents=True)

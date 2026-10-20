@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_1203ps_the_phrase_two_files_agreed_on.py",
+ "mutations": [
+  {
+   "label": "PS1 THE TICKET: the writer goes back to spelling the phrase itself, so the two files can drift again with every test still green",
+   "find": "                    note = (\"cross-user denial \" + FRESH_INTRUDER_REVERIFIED_1203PS",
+   "replace": "                    note = (\"cross-user denial re-verified with a FRESH intruder\""
+  },
+  {
+   "label": "PS2 the owned constant is reworded, which is the live scenario: 56 cleared probes would flip back into 'fix THESE' lists",
+   "find": "FRESH_INTRUDER_REVERIFIED_1203PS = \"re-verified with a FRESH intruder\"",
+   "replace": "FRESH_INTRUDER_REVERIFIED_1203PS = \"re-checked with a NEW intruder\""
+  }
+ ]
+}

@@ -1588,6 +1588,92 @@ def main(argv):
     except Exception as _e_pd:
         say("pd", "N-A", "the #1203pd criterion could not read this run (%s)" % _e_pd)
 
+    # --- #1203pp -- the spend cap is compared with what delivering has ever cost ---------
+    # READS: run_budget.json `caps` -- `max_spend_usd` (#1203fd) and the new
+    #   `below_delivering_floor_1203pp`.
+    # FALSIFIED: the KEY is absent while a cap is recorded. The check runs inside
+    #   `_caps_1203fd` on every write, so a ledger that carries a cap and not this field was
+    #   written by code that never looked -- and #883's rule is that "could not tell" must
+    #   not read as "clean". It is also FALSIFIED if the field contradicts the cap it sits
+    #   beside: a sentence present for a cap at or above the floor, or absent for one below.
+    # CONFIRMED: the key is present and agrees with the cap.
+    # CONTROL (pre-patch): every one of the 31 capped ledgers in the corpus -- r163 $150
+    #   through r190 $1700 -- has no such key, and the two below the floor (r188 $12, r187
+    #   $45) each burned their whole allowance to zero deliveries without the launch ever
+    #   being told. The floor itself is r163's $150, which delivered one milestone only by
+    #   spending $187.61 against the $187.50 that #1183's overshoot allowed it.
+    try:
+        _pp_caps = (_json(run / "run_budget.json", {}) or {}).get("caps") or {}
+        _pp_cap = _pp_caps.get("max_spend_usd")
+        if not isinstance(_pp_cap, (int, float)) or not _pp_cap > 0:
+            say("pp", "N-A",
+                "this run records no spend cap, so there is no number to compare with the "
+                "delivering floor")
+        elif "below_delivering_floor_1203pp" not in _pp_caps:
+            say("pp", "FALSIFIED",
+                "the ledger records a $%.2f cap and no below_delivering_floor_1203pp key at "
+                "all -- nothing compared it with the $150 floor" % float(_pp_cap))
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
+            from env_generator.llm_generator.multi_agent.runtime.run_budget import (
+                cap_below_delivering_floor_1203pp as _pp_say,
+                DELIVERING_CAP_FLOOR_USD_1203PP as _pp_floor)
+            _pp_want = _pp_say(_pp_cap) or None
+            _pp_got = _pp_caps.get("below_delivering_floor_1203pp")
+            if bool(_pp_want) != bool(_pp_got):
+                say("pp", "FALSIFIED",
+                    "the $%.2f cap and the recorded note disagree: the floor is $%.2f so the "
+                    "note should be %s and it is %s"
+                    % (float(_pp_cap), float(_pp_floor),
+                       "present" if _pp_want else "absent",
+                       "present" if _pp_got else "absent"))
+            elif _pp_got:
+                say("pp", "CONFIRMED",
+                    "the $%.2f cap is below the $%.2f delivering floor and the ledger says so"
+                    % (float(_pp_cap), float(_pp_floor)))
+            else:
+                say("pp", "CONFIRMED",
+                    "the $%.2f cap is at or above the $%.2f delivering floor, and the ledger "
+                    "carries the key as None -- checked, not merely silent"
+                    % (float(_pp_cap), float(_pp_floor)))
+    except Exception as _e_pp:
+        say("pp", "N-A", "the #1203pp criterion could not read this run (%s)" % _e_pp)
+
+    # --- #1203pq -- the recorded stop must not contradict its own sentence ---------------
+    # READS: run_budget.json `usage.status` and `usage.terminal_reason`.
+    # FALSIFIED: the sentence is a DELIVER-STUCK fail-fast ("failing fast instead of spinning
+    #   to wall-clock") while the status says the run exceeded a budget. Those are opposite
+    #   claims about the same stop: one says it stopped early on purpose, the other that it
+    #   ran out. #1202ik's docstring names the stake -- "opposite advice from the same word".
+    # CONFIRMED: a fail-fast sentence carries `stuck_abort` (or `delivered`, which wins under
+    #   #1202jg when the run cut a release).
+    # CONTROL (pre-patch): r189 -- status `budget_exceeded` beside that sentence, with 13% of
+    #   its $1000, 53% of its wall clock and 11% of its ticks unspent. r183 took the same path
+    #   and reads `delivered` because it released, which is correct and must stay CONFIRMED.
+    try:
+        _pq_u = (_json(run / "run_budget.json", {}) or {}).get("usage") or {}
+        _pq_r = str(_pq_u.get("terminal_reason") or "")
+        _pq_s = str(_pq_u.get("status") or "")
+        _pq_failfast = ("failing fast instead of spinning to wall-clock" in _pq_r
+                        or "failing fast instead of livelocking to wall-clock" in _pq_r)
+        if not _pq_r:
+            say("pq", "N-A",
+                "this ledger records no terminal_reason, so there is no sentence to contradict"
+                " (every run before #1202if)")
+        elif not _pq_failfast:
+            say("pq", "N-A",
+                "this run did not stop on a fail-fast abort (%s)" % _pq_s)
+        elif _pq_s in ("budget_exceeded", "aborted_budget"):
+            say("pq", "FALSIFIED",
+                "the run stopped EARLY on purpose and the ledger calls it %r: %s"
+                % (_pq_s, _pq_r[:110]))
+        else:
+            say("pq", "CONFIRMED",
+                "a fail-fast stop is recorded as %r, not as a budget it stopped short of"
+                % _pq_s)
+    except Exception as _e_pq:
+        say("pq", "N-A", "the #1203pq criterion could not read this run (%s)" % _e_pq)
+
     w = max(len(t) for t, _, _ in OUT)
     for t, v, d in OUT:
         print(f"  {t:<{w}}  {v:<10} {d}")

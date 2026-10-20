@@ -154,6 +154,24 @@ _CONTROLS = [
     # `pd` reads the task store: no corpus run can carry a task filed by a dispatcher that
     # did not exist when it ran, so every one of them answers N-A until a fresh run.
     ("pd", "tiktok-web-r191", "N-A"),
+    # `pp` reads `caps` in run_budget.json. Every capped ledger in the corpus was written
+    # before the comparison existed, so each one FALSIFIES on the missing key -- which is
+    # the point: the key's absence is what "nothing ever compared the cap with the cost of
+    # delivering" looks like on disk. r191 was capped at $1000, r190 at $1700, and the two
+    # that died of their own caps at $12 and $45 were never told. A fresh run flips these
+    # to CONFIRMED; a run with no cap at all answers N-A.
+    ("pp", "tiktok-web-r191", "FALSIFIED"),
+    ("pp", "tiktok-web-r190", "FALSIFIED"),
+    ("pp", "tiktok-web-r188", "FALSIFIED"),
+    ("pp", "tiktok-web-r96", "N-A"),
+    # `pq` compares the recorded status with the recorded sentence, so the corpus answers it
+    # directly: r189 is the contradiction (status `budget_exceeded` on a run that stopped
+    # early on purpose with 87% of its money unspent), r183 took the SAME fail-fast path and
+    # reads `delivered` because it cut a release -- which #1202jg makes correct, so it must
+    # stay CONFIRMED and is the control against a check that just flags the path.
+    ("pq", "tiktok-web-r189", "FALSIFIED"),
+    ("pq", "tiktok-web-r183", "CONFIRMED"),
+    ("pq", "tiktok-web-r191", "N-A"),
 ]
 
 _cache = {}
@@ -257,6 +275,13 @@ _CONFIRM_REQUIRES = {
     "p7": ["failed_checks_total", "appeared_total"],
     "pb": ["that NOTHING can satisfy"],
     "pd": ["URL parameter the page never reads"],
+    # `pp` CONFIRMED needs the ledger KEY, not a sentence: both of its confirming branches
+    # read `caps.below_delivering_floor_1203pp`, and its FALSIFIED branch is precisely that
+    # key being absent. So the string the framework must emit is the key itself.
+    "pp": ["below_delivering_floor_1203pp"],
+    # `pq` CONFIRMED needs the status word the fail-fast site now records for itself; the
+    # whole ticket is that this word used to be re-derived from prose and came out wrong.
+    "pq": ["stuck_abort"],
 }
 
 

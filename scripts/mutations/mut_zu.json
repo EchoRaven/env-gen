@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_audit.py",
+ "test": "tests/test_1202zu_lane_middleware_answers_before_the_guard.py",
+ "mutations": [
+  {
+   "label": "ZU1 the short-circuit test is dropped, so all 43 lane middlewares are reported instead of the 22 that answer before the guard -- 21 false findings, and the whole distinction the docstring rests on",
+   "find": "                if not early:\n                    continue",
+   "replace": "                if not early:\n                    pass"
+  },
+  {
+   "label": "ZU2 JSONResponse stops counting as answering the request -- r139's `_public_feed_edge_handler`, the worked example, returns exactly that",
+   "find": "                    if any(w in blob for w in (\"Response\", \"JSONResponse\",",
+   "replace": "                    if any(w in blob for w in (\"RedirectResponse\", \"PlainText\","
+  },
+  {
+   "label": "ZU3 main.py is scanned too, so the framework's OWN rendered guard is reported as lane-installed middleware (#647: the baseline is not a finding)",
+   "find": "            if f.name == \"main.py\":          # framework-rendered; its guard IS the baseline",
+   "replace": "            if False:          # framework-rendered; its guard IS the baseline"
+  },
+  {
+   "label": "ZU4 the auth paths lose their identity, so `auth_paths` is empty and the 6-of-22 that intercept authentication read like any other short-circuit",
+   "find": "                auth = [p for p in paths if _AUTHP.search(p)]",
+   "replace": "                auth = []"
+  },
+  {
+   "label": "ZU5 the decorator test goes away, so every function in every module is treated as middleware",
+   "find": "                if \"middleware\" not in decs:\n                    continue",
+   "replace": "                if False:\n                    continue"
+  }
+ ]
+}

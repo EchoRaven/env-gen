@@ -88,7 +88,8 @@ class TheWordsReachTheBlocker(unittest.TestCase):
 
     def test_the_count_is_still_declared(self):
         got = _ui_evidence_prose_1203jg(_normalised(), BREADTH)
-        self.assertTrue(got.startswith("4 failed UI record(s);"), got[:60])
+        # #1203pr: still declared, still first; the page count now follows it.
+        self.assertTrue(got.startswith("4 failed UI record(s)"), got[:60])
 
 
 class ItStillMatchesThePageEveryWayItIsSpelled(unittest.TestCase):

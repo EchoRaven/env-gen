@@ -1,0 +1,51 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/run_budget.py",
+ "test": "tests/test_1203pp_a_cap_nothing_ever_delivered_under.py",
+ "mutations": [
+  {
+   "label": "PP1 the floor test loses its boundary: $150 itself is flagged, so the one cap in the record that DID deliver reads as doomed (#647, a guard wider than its evidence)",
+   "find": "    if not cap > 0 or cap >= float(floor):\n        return \"\"",
+   "replace": "    if not cap > 0 or cap > float(floor):\n        return \"\""
+  },
+  {
+   "label": "PP2 absent/unlimited becomes a finding: 0.0 is how the enforcement spells unlimited, so every uncapped run would be told it cannot deliver",
+   "find": "    if not cap > 0 or cap >= float(floor):\n        return \"\"",
+   "replace": "    if cap >= float(floor):\n        return \"\""
+  },
+  {
+   "label": "PP3 TEXT-PRESERVING: the ledger field is computed and discarded, so a reader of a finished run is back to #1203fd's hole",
+   "find": "        out[\"below_delivering_floor_1203pp\"] = cap_below_delivering_floor_1203pp(_cap) or None",
+   "replace": "        None and cap_below_delivering_floor_1203pp(_cap)"
+  },
+  {
+   "label": "PP4 the empty sentence is stored as \"\" rather than None, so 'checked and clean' is indistinguishable from an older ledger that never checked (#883)",
+   "find": "        out[\"below_delivering_floor_1203pp\"] = cap_below_delivering_floor_1203pp(_cap) or None",
+   "replace": "        out[\"below_delivering_floor_1203pp\"] = cap_below_delivering_floor_1203pp(_cap)"
+  },
+  {
+   "label": "PP5 the fresh-run path goes silent: a new run has no ledger, so load_caps returns through its except and the launch the operator could still fix says nothing",
+   "find": "        except Exception:\n            self._say_cap_floor_1203pp()\n            return dict(env_defaults)",
+   "replace": "        except Exception:\n            return dict(env_defaults)"
+  },
+  {
+   "label": "PP6 the say-once becomes say-always: load_caps runs every tick, so this is #1041's storm",
+   "find": "if state_changed_1202ad(\"run_budget.cap_floor_1203pp\", raw):",
+   "replace": "if True:"
+  },
+  {
+   "label": "PP7 the key stops carrying the cap VALUE, so an operator who RAISES the cap mid-run is never told about the new one",
+   "find": "if state_changed_1202ad(\"run_budget.cap_floor_1203pp\", raw):",
+   "replace": "if state_changed_1202ad(\"run_budget.cap_floor_1203pp\", \"once\"):"
+  },
+  {
+   "label": "PP8 the measured floor is silently wrong by 10x: $15 would clear r188's $12 and r187's $45 both",
+   "find": "DELIVERING_CAP_FLOOR_USD_1203PP = 150.0",
+   "replace": "DELIVERING_CAP_FLOOR_USD_1203PP = 15.0"
+  },
+  {
+   "label": "PP9 the denominator disappears from the sentence, so three runs read as a general law (#647)",
+   "find": "_FLOOR_EVIDENCE_1203PP = (\"tiktok-web-r163\", 31, 22, 2)",
+   "replace": "_FLOOR_EVIDENCE_1203PP = (\"tiktok-web-r163\", 0, 0, 0)"
+  }
+ ]
+}

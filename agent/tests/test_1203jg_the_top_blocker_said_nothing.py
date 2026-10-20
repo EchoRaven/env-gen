@@ -58,7 +58,11 @@ def test_it_names_the_page_and_the_reason():
     assert "login_page" in out and "signup_page" in out, out
     assert "401" in out, "the reason did not reach the prose: %r" % out
     assert "auth/me" in out, out
-    assert out.startswith("2 failed UI record(s);"), out
+    # #1203pr: the record count still LEADS the sentence; what follows it now also
+    # states how many pages those records are spread over, because the two are
+    # different collections. Asserted without the punctuation that used to follow.
+    assert out.startswith("2 failed UI record(s)"), out
+    assert "on 2 page(s)" in out, out
 
 
 def test_a_page_the_records_do_not_mention_still_contributes_its_name():

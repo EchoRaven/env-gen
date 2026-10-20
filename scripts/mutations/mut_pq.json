@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_1203pq_the_stop_that_said_the_opposite.py",
+ "mutations": [
+  {
+   "label": "PQ1 THE TICKET REINTRODUCED: the fail-fast site stops saying which stop it is, so the terminal write re-derives it from prose and files r189's abort as a cap it stopped early to avoid",
+   "find": "                                self._budget_stop_kind_1203pq = \"stuck_abort\"",
+   "replace": "                                pass"
+  },
+  {
+   "label": "PQ2 the fail-fast site records the WRONG kind -- the same contradiction, written deliberately",
+   "find": "                                self._budget_stop_kind_1203pq = \"stuck_abort\"",
+   "replace": "                                self._budget_stop_kind_1203pq = \"budget_exceeded\""
+  },
+  {
+   "label": "PQ3 the cap site stops saying which stop it is, so a genuine cap depends on prose again",
+   "find": "                            self._budget_stop_kind_1203pq = \"budget_exceeded\"",
+   "replace": "                            pass"
+  },
+  {
+   "label": "PQ4 the predicate ignores what the site recorded and goes back to reading the sentence",
+   "find": "            _kind = str(getattr(self, \"_budget_stop_kind_1203pq\", \"\") or \"\")\n            if _kind:\n                return _kind",
+   "replace": "            _kind = str(getattr(self, \"_budget_stop_kind_1203pq\", \"\") or \"\")\n            if False:\n                return _kind"
+  },
+  {
+   "label": "PQ5 TEXT-PRESERVING: the guess goes silent again -- the fallback is the thing this ticket stopped trusting, so using it unannounced is #883",
+   "find": "            if _r:\n                from .runtime.message_format import warn_once_1201",
+   "replace": "            if False and _r:\n                from .runtime.message_format import warn_once_1201"
+  },
+  {
+   "label": "PQ6 the warning fires for a stop that never happened (#983: a check that fires while naming nothing)",
+   "find": "            if _r:\n                from .runtime.message_format import warn_once_1201",
+   "replace": "            if True:\n                from .runtime.message_format import warn_once_1201"
+  }
+ ]
+}
