@@ -436,6 +436,29 @@ def test_a_cut_variable_from_another_function_is_not_attributed_1203jx():
     assert len(hits) == 0, hits
 
 
+def test_a_cut_variable_from_an_INNER_scope_is_not_attributed_1203jx():
+    """#1203qi: the scope rule has TWO halves and only one of them was driven.
+
+    `_own_nodes_1203jx` is used twice -- once to COLLECT `cut_vars` and once to ITERATE the
+    formatting nodes. The fixture above puts the assignment in `build` and the f-string in
+    `report`, so it distinguishes the second use only: let the collection leak and the
+    iteration still never meets a module-level f-string to attribute `s` to. A mutation
+    replacing the COLLECTION walk with `ast.walk` therefore survived it (verified: MISSED in
+    mut_jx3 and mut_jx5).
+
+    Putting the f-string at MODULE level and the truncating assignment INSIDE a function
+    separates them: correct code reports nothing, and a collection that ignores scope
+    reports `f'Found {len(errors)} issues: {s}'` as a count beside a cut list -- a false
+    positive on code that declares nothing of the sort.
+    """
+    src = ("def build(errors):\n"
+           "    s = '; '.join(str(e) for e in errors[:5])\n"
+           "    return s\n"
+           "msg = f'Found {len(errors)} issues: {s}'\n")
+    assert _count_beside_cut_list_1203jx(_ast1203jx.parse(src)) == [], (
+        "a truncated variable from an inner scope was attributed to a module-level f-string")
+
+
 def test_a_hash_prefix_is_not_a_cut_list_1203jx():
     """`hexdigest()[:8]` is a slice and not a truncated list; the first predicate flagged it."""
     src = 'msg = f"{h.hexdigest()[:8]}:{len(lines)}L"\n'

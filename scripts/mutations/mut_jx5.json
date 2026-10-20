@@ -1,16 +1,26 @@
-{"file": "agent/tests/test_counts_and_lists_agree_1034.py",
+{
+ "file": "agent/tests/test_counts_and_lists_agree_1034.py",
  "test": "tests/test_counts_and_lists_agree_1034.py",
  "mutations": [
-   {"label": "the cross-statement shape is not followed (inline-only, the original gap)",
-    "find": "            if not (_joined_trunc(n) or via):",
-    "replace": "            if not (_joined_trunc(n)):"},
-   {"label": "scope is ignored, so one function's variable implicates another's f-string",
-    "find": "        for st in _own_nodes_1203jx(scope):",
-    "replace": "        for st in _ast1203jx.walk(scope):"},
-   {"label": "the build-site text is dropped, so a remainder declared there is missed",
-    "find": "            whole = txt + \"\".join(cut_vars[v] for v in via)",
-    "replace": "            whole = txt"},
-   {"label": "the scan reaches nothing, so the ceiling is vacuous",
-    "find": "    for dirpath, _dirs, files in os.walk(_PKG_1203JX):",
-    "replace": "    for dirpath, _dirs, files in []:"}
- ]}
+  {
+   "label": "the cross-statement shape is not followed (inline-only, the original gap)  [SUPERSEDED 2026-10-20 by mut_jx3.json: mut_jx5 is a STRICT SUBSET -- all four of its `find` strings are byte-identical to four of mut_jx3's five, against the same file and the same test, and mut_jx3 additionally covers #1202eu's open handle. Kept as record; mut_jx3 is the one to run.]",
+   "find": "            if not (_joined_trunc(n) or via):",
+   "replace": "            if not (_joined_trunc(n)):"
+  },
+  {
+   "label": "scope is ignored, so one function's variable implicates another's f-string  [SUPERSEDED 2026-10-20 by mut_jx3.json: mut_jx5 is a STRICT SUBSET -- all four of its `find` strings are byte-identical to four of mut_jx3's five, against the same file and the same test, and mut_jx3 additionally covers #1202eu's open handle. Kept as record; mut_jx3 is the one to run.]",
+   "find": "        for st in _own_nodes_1203jx(scope):",
+   "replace": "        for st in _ast1203jx.walk(scope):"
+  },
+  {
+   "label": "the build-site text is dropped, so a remainder declared there is missed  [SUPERSEDED 2026-10-20 by mut_jx3.json: mut_jx5 is a STRICT SUBSET -- all four of its `find` strings are byte-identical to four of mut_jx3's five, against the same file and the same test, and mut_jx3 additionally covers #1202eu's open handle. Kept as record; mut_jx3 is the one to run.]",
+   "find": "            whole = txt + \"\".join(cut_vars[v] for v in via)",
+   "replace": "            whole = txt"
+  },
+  {
+   "label": "the scan reaches nothing, so the ceiling is vacuous  [SUPERSEDED 2026-10-20 by mut_jx3.json: mut_jx5 is a STRICT SUBSET -- all four of its `find` strings are byte-identical to four of mut_jx3's five, against the same file and the same test, and mut_jx3 additionally covers #1202eu's open handle. Kept as record; mut_jx3 is the one to run.]",
+   "find": "    for dirpath, _dirs, files in os.walk(_PKG_1203JX):",
+   "replace": "    for dirpath, _dirs, files in []:"
+  }
+ ]
+}

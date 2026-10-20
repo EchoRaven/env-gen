@@ -8,7 +8,7 @@
    "replace": "    assert True, ("
   },
   {
-   "label": "the marked-site positive control is removed  [gate corrected 2026-10-19: this property is now held by #1203oz's meta-ratchet, not by the file being mutated -- a test cannot catch its own assertion being deleted]",
+   "label": "the marked-site positive control is removed  [gate corrected 2026-10-19: this property is now held by #1203oz's meta-ratchet, not by the file being mutated -- a test cannot catch its own assertion being deleted]  [MISSED BY THIS FILE IS CORRECT 2026-10-20: `assert True or X` is an assertion that cannot fail, owned by test_1203gb_an_assertion_that_cannot_fail -- verified CAUGHT there, and MISSED by both test_1203oz and test_1203pi.]",
    "find": "    assert {\"commit_gate.py\", \"hub_pulse.py\"} <= names, (",
    "replace": "    assert True or {\"commit_gate.py\", \"hub_pulse.py\"} <= names, ("
   }
