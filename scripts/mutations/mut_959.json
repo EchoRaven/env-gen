@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/deliverability.py",
+ "test": "tests/test_duplicate_routes_reach_an_artifact_959.py",
+ "mutations": [
+  {
+   "label": "J1 the artifact is never written, so the #615 finding is log-only again -- which is the state #959 exists to end, and it is 153 of 154 corpus runs because #780 can only file when the framework can derive WHICH filter each route should pass",
+   "find": "                _f959.write_text(  # raw: design/, outside app/ (#1202ts)",
+   "replace": "                None and _f959.write_text(  # raw: design/, outside app/ (#1202ts)"
+  },
+  {
+   "label": "J2 `task_filed` is always True, so the artifact cannot distinguish the 153 log-only runs from the 1 where a task was filed -- the single question it was added to answer",
+   "find": "                    \"task_filed\": bool(_f708),",
+   "replace": "                    \"task_filed\": True,"
+  },
+  {
+   "label": "J3 the previous file is not read back, so each tick OVERWRITES and the artifact holds only whatever the last tick saw",
+   "find": "                if _f959.is_file():",
+   "replace": "                if False and _f959.is_file():"
+  },
+  {
+   "label": "J4 the endpoints are dropped from the record, so a reader cannot tell WHY the routes are duplicates. EXPECTED CAUGHT: the file asserts the record carries them, over the AST. Control",
+   "find": "                    \"endpoints\": list(_g.get(\"endpoints\") or []),",
+   "replace": "                    \"endpoints\": [],"
+  }
+ ]
+}
