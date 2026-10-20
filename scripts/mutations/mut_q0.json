@@ -1,0 +1,21 @@
+{
+ "file": "agent/tests/test_configurable_agent_workspace_dir_no_abs_path.py",
+ "test": "tests/test_configurable_agent_workspace_dir_no_abs_path.py",
+ "mutations": [
+  {
+   "label": "Q0A THE TICKET: the owner goes back to a hardcoded \"/tmp/\", so a leak of the real temp root is invisible under any other TMPDIR",
+   "find": "    root = (temp_root if temp_root is not None else tempfile.gettempdir()).rstrip(\"/\") + \"/\"",
+   "replace": "    root = \"/tmp/\""
+  },
+  {
+   "label": "Q0B the owner ignores the caller's root and always reads the live one, so the driver can no longer relocate temp",
+   "find": "    root = (temp_root if temp_root is not None else tempfile.gettempdir()).rstrip(\"/\") + \"/\"",
+   "replace": "    root = tempfile.gettempdir().rstrip(\"/\") + \"/\""
+  },
+  {
+   "label": "Q0C the production assertion stops consulting the owner, so the prefix check is back to being spelled in two places (#1032)",
+   "find": "            self.assertFalse(\n                leaks_host_temp_prefix_1203q0(ws_dir),",
+   "replace": "            self.assertFalse(\n                str(ws_dir).startswith(\"/tmp/\"),"
+  }
+ ]
+}

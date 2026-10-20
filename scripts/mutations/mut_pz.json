@@ -1,0 +1,26 @@
+{
+ "file": "agent/tests/test_unconsumed_design_keys_643.py",
+ "test": "tests/test_unconsumed_design_keys_643.py",
+ "mutations": [
+  {
+   "label": "PZ1 the DOCUMENT ROOT level is dropped, so `screens` (104 docs, root-level only) reads as never produced",
+   "find": "    seen.update(doc)",
+   "replace": "    seen.update({})"
+  },
+  {
+   "label": "PZ2 the COMPONENT level is dropped -- the single-level mistake that reported 12 never-produced keys instead of 7 (`brand` 2343, `geometry` 8971 live on components)",
+   "find": "            for comp in (sc.get(\"components\") or []):",
+   "replace": "            for comp in ():"
+  },
+  {
+   "label": "PZ3 the SCREEN level is dropped, so `layout_metrics` (575 per-screen) and `layout` (1477) read as never produced",
+   "find": "    screens = doc.get(\"screens\") or inner.get(\"screens\") or []",
+   "replace": "    screens = []"
+  },
+  {
+   "label": "PZ4 a declared fiction stops saying WHICH half is missing, leaving a blanket waiver (#983)",
+   "find": "    \"hero\": \"no reader and no producer; the name survives only in a page-name vocabulary\",",
+   "replace": "    \"hero\": \"n/a\","
+  }
+ ]
+}

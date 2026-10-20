@@ -4577,14 +4577,18 @@ class Orchestrator:
                             "spawn. ENVGEN_DESIGN_PREP_REUSE=0 re-measures instead.",
                             _donor1202hj.name)
                         # #1203py: SAY WHAT THE ADOPTED MAPPING DOES NOT COVER. The analyst
-                        # is what maps staged assets to components, and this branch skips it,
-                        # so every asset staged since the donor measured is mapped to nothing
-                        # -- and `audit_asset_usage`, the check that tells a lane "you drew an
-                        # approximation instead of using the real asset", keys on
-                        # `screens[].components[].assets` and is therefore blind to exactly
-                        # those. Measured on r185/r189/r190/r191: 20-22 of 34-36 staged icons
-                        # unmapped, plus all 24 staged images. That is the first render the
-                        # judge then scores iconography 0.348 on.
+                        # is what maps staged assets to components, and this branch skips it.
+                        # #1203q1: the skip does not create the gap -- r166 through r191 every
+                        # run stages 36 icons and maps 14, so the mapping has been frozen for
+                        # twenty-five generations of adoption. What the skip guarantees is
+                        # that nobody ever re-measures it. Either way `audit_asset_usage`, the
+                        # check that tells a lane "you drew an approximation instead of using
+                        # the real asset", keys on `screens[].components[].assets` and is
+                        # blind to the unmapped ones: 20-22 of 34-36 staged icons on
+                        # r185/r189/r190/r191, plus all 24 staged images. Measured cost --
+                        # MAPPED icons are referenced by the frontend 47/56 = 84% of the time,
+                        # UNMAPPED ones 2/82 = 2%. That is the first render the judge then
+                        # scores iconography 0.348 on.
                         try:
                             from .runtime.design_prep import (
                                 staged_assets_not_mapped_1203py)

@@ -29,6 +29,7 @@ This test pins:
 
 from __future__ import annotations
 
+import ast
 import sys
 import tempfile
 import unittest
@@ -64,6 +65,102 @@ def _make_bare_agent(base_dir: Path) -> ConfigurableAgent:
     return agent
 
 
+def leaks_host_temp_prefix_1203q0(ws_dir, temp_root=None):
+    """Does `workspace_dir` carry the host temp prefix? (#1203q0)
+
+    ONE OWNER, so the production assertion and its driver cannot disagree. The prefix was
+    spelled `"/tmp/"` inline, which is true-by-accident under any other TMPDIR -- a leak of
+    `/data/.../envgen_ctx_var_x/` sailed straight through it, and the suite is run with
+    TMPDIR on a roomier filesystem whenever the root disk is tight. The first attempt at a
+    driver for this did its own prefix arithmetic on synthetic strings instead of calling
+    the code under test, so mutating the real prefix was MISSED twice.
+    """
+    root = (temp_root if temp_root is not None else tempfile.gettempdir()).rstrip("/") + "/"
+    return str(ws_dir).startswith(root)
+
+
+class TheLeakIsCaughtWhereverTempLives(unittest.TestCase):
+    # #1203q0: the anti-leak assertion must not depend on temp being /tmp.
+    #
+    # The original spelling (startswith("/tmp/")) is true-by-accident under any other
+    # TMPDIR, so it would pass while a /data/.../envgen_ctx_var_x/ leak sailed through.
+    # The suite is run with TMPDIR on a roomier filesystem whenever the root disk is
+    # tight, which makes that the normal case rather than the exception -- #1203pi's
+    # family: an assertion that cannot fail is not an assertion.
+    #
+    # THIS CASE IS WHAT MAKES THE FIX VERIFIABLE. Reverting the prefix to the literal
+    # "/tmp/" is behaviour-identical whenever temp happens to BE /tmp, so a mutation
+    # would read MISSED and the fix would look untested.
+
+    def test_a_leak_under_a_NON_tmp_temp_root_is_still_caught(self):
+        # ★ Drives the OWNER, with the temp root moved off /tmp. Reverting the owner to a
+        # hardcoded "/tmp/" makes this fail, which is what the earlier synthetic-string
+        # version could not do.
+        for root in ("/data/common/haibotong/tmp", "/var/folders/zz/T"):
+            self.assertTrue(
+                leaks_host_temp_prefix_1203q0(root + "/envgen_ctx_var_abc", temp_root=root),
+                "a leak of the host temp root went undetected for root=%r" % root)
+            self.assertFalse(
+                leaks_host_temp_prefix_1203q0(".", temp_root=root),
+                "the post-fix value '.' must never read as a leak")
+
+    def test_the_production_assertion_CALLS_the_owner(self):
+        """★ Structural, because it has to be. Re-spelling the prefix inline in the
+        production test is behaviour-identical today -- `workspace_dir` is "." post-fix, so
+        both spellings answer False -- which is why a mutation doing exactly that read
+        MISSED. Only the parse tree can see "one owner" (#1032), the same lesson #1203ps
+        learned about its predicate.
+        """
+        import inspect as _i
+        src = _i.getsource(
+            ConfigurableAgentWorkspaceDirNoAbsPath.test_workspace_dir_does_not_leak_abs_base_dir)
+        tree = ast.parse(src.lstrip())
+        called = {getattr(n.func, "id", "") for n in ast.walk(tree)
+                  if isinstance(n, ast.Call)}
+        self.assertIn("leaks_host_temp_prefix_1203q0", called,
+                      "the production assertion stopped consulting the owner")
+        spelled = [c.value for c in ast.walk(tree)
+                   if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                   and c.value.startswith("/tmp")]
+        self.assertEqual(spelled, [], spelled)
+
+    def test_the_owner_defaults_to_the_LIVE_temp_root(self):
+        real = tempfile.gettempdir
+        tempfile.gettempdir = lambda: "/somewhere/else"
+        try:
+            self.assertTrue(
+                leaks_host_temp_prefix_1203q0("/somewhere/else/envgen_x"),
+                "the default path ignored tempfile.gettempdir()")
+            self.assertFalse(leaks_host_temp_prefix_1203q0("/tmp/envgen_x"),
+                             "it is still hardcoded to /tmp")
+        finally:
+            tempfile.gettempdir = real
+
+    def test_unused_legacy_case(self):
+        # A SYNTHETIC root, not a real TemporaryDirectory: the first version of this used
+        # `tempfile.TemporaryDirectory(prefix="q0_root_")`, which creates its directory
+        # INSIDE the current temp root -- so under the default TMPDIR the "alternative"
+        # root was `/tmp/q0_root_xxxx`, still under /tmp, and this test's own guard caught
+        # it. Only the prefix arithmetic is under test here, so no directory is needed.
+        for alt in ("/data/common/haibotong/tmp", "/var/folders/zz/T"):
+            real = tempfile.gettempdir
+            tempfile.gettempdir = lambda: alt
+            try:
+                prefix = tempfile.gettempdir().rstrip("/") + "/"
+                self.assertFalse(
+                    prefix.startswith("/tmp/"),
+                    "the fixture failed to move the temp root off /tmp")
+                leaked = prefix + "envgen_ctx_var_abc/"
+                self.assertTrue(
+                    leaked.startswith(prefix),
+                    "the derived prefix no longer matches its own temp root")
+                self.assertFalse(
+                    leaked.startswith("/tmp/"),
+                    "this leak is exactly what the /tmp/ spelling cannot see")
+            finally:
+                tempfile.gettempdir = real
+
+
 class ConfigurableAgentWorkspaceDirNoAbsPath(unittest.TestCase):
     """Smoke #24 follow-on: plug the prompt-template leak at source."""
 
@@ -77,9 +174,19 @@ class ConfigurableAgentWorkspaceDirNoAbsPath(unittest.TestCase):
             ctx = agent._get_context_vars()
 
             ws_dir = ctx["workspace_dir"]
+            # #1203q0: the host temp ROOT, not the literal "/tmp/". This assertion exists to
+            # catch `workspace_dir` leaking the host prefix, and it was spelled against
+            # `/tmp/` -- so under any other TMPDIR it is true no matter what, and a leak of
+            # `/data/.../envgen_ctx_var_x/` would sail through it. Not academic: the suite is
+            # run with TMPDIR on a roomier filesystem whenever the root disk is tight, which
+            # makes the weakening the normal case. Exactly one other test in this suite
+            # already derives the prefix this way (#1202xr); the sibling
+            # `test_codehub_worktree_event_no_absolute_path` survives only because it ORs the
+            # hardcoded prefix with the real repo root.
             self.assertFalse(
-                ws_dir.startswith("/tmp/"),
-                f"workspace_dir leaks host /tmp/ prefix: {ws_dir!r}. "
+                leaks_host_temp_prefix_1203q0(ws_dir),
+                f"workspace_dir leaks the host temp prefix "
+                f"{tempfile.gettempdir()!r}: {ws_dir!r}. "
                 f"Agent system prompt would render 'Workspace scope: "
                 f"`{ws_dir}`' and the agent would join the prefix onto "
                 f"every relative path in its briefing.",

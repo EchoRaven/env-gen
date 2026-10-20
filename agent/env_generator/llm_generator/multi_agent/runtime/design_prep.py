@@ -161,8 +161,18 @@ def staged_assets_not_mapped_1203py(output_dir, design_system=None):
     ids, so it can only police assets the design_system MAPPED -- and the mapping is the
     analyst's work (`"assets": []  # analyst maps real assets here`, a few hundred lines
     below). `#1202hj` then adopts a donor run's enriched design_system and SKIPS the analyst
-    spawn, which is correct for everything the donor already measured and leaves every asset
-    staged since then mapped to nothing at all.
+    spawn.
+
+    #1203q1 CORRECTS WHAT THIS PARAGRAPH FIRST CLAIMED. It said the skip "leaves every asset
+    staged since then mapped to nothing", which is false: the adoption chain runs r185<-r184,
+    r186<-r185, r189<-r188, r190<-r189, r191<-r190 and back past r166, and over that whole
+    stretch EVERY run stages 36 icons and maps 14. The count never moved, so there is no
+    "staged since then". The mapping was 14 of 36 when it was first made, and twenty-five
+    generations of adoption have copied it forward unchanged. Skipping the analyst therefore
+    does not CREATE the shortfall -- it guarantees the shortfall is never re-measured, which
+    is a different defect and points at a different remedy (`ENVGEN_DESIGN_PREP_REUSE=0`, or
+    running the analyst for the asset delta alone, rather than mapping "new" assets that do
+    not exist).
 
     MEASURED on the four modern runs that reached a design (r185/r189/r190/r191):
 

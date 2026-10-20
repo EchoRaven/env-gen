@@ -29,6 +29,10 @@ four consumed keys unconsumed.
 """
 import subprocess
 
+import json
+
+from pathlib import Path
+
 import pytest
 
 from env_generator.llm_generator.multi_agent.runtime.design_prep import (
@@ -91,17 +95,147 @@ def test_junk_input_never_raises():
 
 # --- the list must not rot ---------------------------------------------------------------------
 
-def test_every_key_claimed_as_consumed_is_really_read():
-    """The whole point is a truthful list. If a name here stops being read, this becomes a second
-    fiction — so the claim is checked against the source, not trusted."""
-    unread = []
-    for k in sorted(CONSUMED):
-        r = subprocess.run(["grep", "-rl", "-e", f'"{k}"', "-e", f"'{k}'",
-                            "--include=*.py", "env_generator/"],
-                           capture_output=True, text=True)
-        if not [x for x in r.stdout.split() if x.strip()]:
-            unread.append(k)
-    assert not unread, f"claimed consumed but read nowhere: {unread}"
+# #1203pz: WHAT THE LIST CLAIMS, PINNED AGAINST THE ARTIFACTS INSTEAD OF AGAINST ITS OWN TEXT.
+#
+# The check below grepped every claimed key as a quoted string anywhere under
+# `env_generator/`. It fails only for a key whose name appears in NO .py file at all -- and
+# these are ordinary words describing UI, so that never happens: `hero` matches a page-name
+# vocabulary in completeness_audit and a backdrop synonym table in delivery_gate, `spacing`
+# matches a prompt string and a comment about TAILWIND's spacing keys, `player` a page-name
+# synonym table, `fonts` the `public/assets/fonts` directory path. In the limit it is
+# satisfied by `_CONSUMED_DESIGN_KEYS_643` ITSELF, which lives under `env_generator/` and
+# spells every key as a quoted string. Its docstring said "If a name here stops being read,
+# this becomes a second fiction -- so the claim is checked against the source, not trusted":
+# the check could not tell being READ from being MENTIONED, which is #826's shape -- and
+# four of the keys it passes are read by nothing at all.
+#
+# A SMARTER GREP DOES NOT FIX IT, and both ends were tried before settling this:
+#   * three access mechanisms (`.get("k")`, `["k"]`, a literal in an iterated tuple) with no
+#     restriction on the receiver -> 17 of 21 pass, but `fonts` passes on the strength of a
+#     DIRECTORY name (`public/assets/fonts`) and nothing reads a `fonts` design key;
+#   * the same, restricted to document-shaped receivers (`ds`/`doc`/`sds`/`eds`/`_inner`) ->
+#     10 of 21, rejecting `geometry`, `grid`, `header` and `notes`, which are genuinely read
+#     off differently-named locals.
+# A syntactic test cannot separate "reads the design key `fonts`" from "names a directory
+# `fonts`". So the pin moves to the produced ARTIFACTS, where a word in a comment or a
+# synonym table cannot satisfy it.
+#
+# MEASURED over the 104 design documents in this corpus, at ALL FOUR levels a key can live at
+# (document root, inside `design_system`, per screen, per component -- a single-level check
+# falsely reports 0 for five of them: `brand` 2343 at component level, `geometry` 8971,
+# `layout` 1477 per screen, `layout_metrics` 575, `screens` 104 at the root):
+#
+#     never produced at ANY level   font_stack, fonts, grid, header, hero, player, spacing
+#     of those, read by nothing     fonts, hero, player, spacing
+#     of those, read but starved    font_stack, grid, header   (dead reader paths)
+#
+# Today that costs nothing: none of the seven appears at the level `unconsumed_design_keys_643`
+# inspects, so the blind spot is latent. The point is that the guard can now fail.
+_LEVELS_1203PZ = ("document root", "design_system", "screen", "component")
+
+# Claimed consumed and never produced anywhere in the corpus. An entry here is a DECLARED
+# fiction rather than a silent one; each says which half is missing.
+_NEVER_PROVIDED_1203PZ = {
+    "fonts": "no reader and no producer -- `font_stack` is the one that is read",
+    "hero": "no reader and no producer; the name survives only in a page-name vocabulary",
+    "player": "no reader and no producer; the name survives in a page-name synonym table",
+    "spacing": "no reader and no producer; the name survives in a prompt string",
+    "font_stack": "READ by frontend_scaffold and never produced -- a starved reader",
+    "grid": "READ by scaffolder and never produced -- a starved reader",
+    "header": "READ by verification_tools and never produced -- a starved reader",
+}
+
+
+def _design_docs_1203pz():
+    root = Path(__file__).resolve().parents[2] / "generated"
+    return sorted(root.glob("*/design/design_system.json")) if root.is_dir() else []
+
+
+def _keys_at_every_level_1203pz(doc):
+    """Every key the document mentions, at any of the four levels #1203pz measures."""
+    seen = set()
+    if not isinstance(doc, dict):
+        return seen
+    seen.update(doc)
+    inner = doc.get("design_system")
+    inner = inner if isinstance(inner, dict) else {}
+    seen.update(inner)
+    screens = doc.get("screens") or inner.get("screens") or []
+    if isinstance(screens, list):
+        for sc in screens:
+            if not isinstance(sc, dict):
+                continue
+            seen.update(sc)
+            for comp in (sc.get("components") or []):
+                if isinstance(comp, dict):
+                    seen.update(comp)
+    return seen
+
+
+def test_every_key_claimed_as_consumed_is_really_PRODUCED():
+    """★ THE PIN THAT CAN FAIL. Corpus-dependent by nature, like
+    tests/test_verify_1018_measures_something.py -- it skips when the corpus is gone rather
+    than passing vacuously, because "I could not look" is not "I looked and found nothing"
+    (#883)."""
+    docs = _design_docs_1203pz()
+    if len(docs) < 10:
+        pytest.skip("needs the generated/ corpus (%d design doc(s) on this disk)" % len(docs))
+    produced = set()
+    for p in docs:
+        try:
+            produced |= _keys_at_every_level_1203pz(json.loads(p.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    missing = sorted(k for k in CONSUMED
+                     if k not in produced and k not in _NEVER_PROVIDED_1203PZ)
+    assert not missing, (
+        "claimed consumed and produced by NOTHING in %d design document(s), and not declared "
+        "in _NEVER_PROVIDED_1203PZ: %s" % (len(docs), missing))
+
+
+def test_the_declared_fictions_are_still_fictions():
+    """The other direction: if one of the seven starts being produced, the allowance is stale
+    and must shrink. #1203oa -- a parked measurement rots."""
+    docs = _design_docs_1203pz()
+    if len(docs) < 10:
+        pytest.skip("needs the generated/ corpus")
+    produced = set()
+    for p in docs:
+        try:
+            produced |= _keys_at_every_level_1203pz(json.loads(p.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    stale = sorted(k for k in _NEVER_PROVIDED_1203PZ if k in produced)
+    assert not stale, (
+        "these are declared never-produced but the corpus now has them: %s" % stale)
+
+
+def test_every_declared_fiction_is_a_claimed_key():
+    """An allowance for a key that is not even claimed would be noise."""
+    assert set(_NEVER_PROVIDED_1203PZ) <= set(CONSUMED), (
+        sorted(set(_NEVER_PROVIDED_1203PZ) - set(CONSUMED)))
+
+
+def test_each_declared_fiction_says_which_half_is_missing():
+    """#983: an allowance that names nothing is a waiver, not a record."""
+    for k, why in _NEVER_PROVIDED_1203PZ.items():
+        assert "read" in why.lower() or "producer" in why.lower(), (k, why)
+
+
+def test_the_four_levels_are_all_checked():
+    """A single-level check reported 12 never-produced keys instead of 7, because `brand` and
+    `geometry` live on COMPONENTS and `layout_metrics` on SCREENS. Driven on a synthetic
+    document so the property does not depend on the corpus."""
+    doc = {"screens": [{"layout_metrics": {}, "components": [{"brand": {}}]}],
+           "design_system": {"theme": "dark"}}
+    got = _keys_at_every_level_1203pz(doc)
+    for k in ("screens", "design_system", "theme", "layout_metrics", "brand"):
+        assert k in got, (k, sorted(got))
+
+
+def test_an_unreadable_document_does_not_count_as_produced():
+    assert _keys_at_every_level_1203pz(None) == set()
+    assert _keys_at_every_level_1203pz("garbage") == set()
 
 
 def test_the_warning_fires_at_the_write_boundary():
