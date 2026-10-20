@@ -346,6 +346,29 @@ def _count(tree):
     return text, total
 
 
+# THE RANKING'S MAIN RESIDUAL FALSE POSITIVE, and the only method that settles it.
+#
+# Measured four times in one session: a test whose subject is a SENTENCE scores high while the
+# BEHAVIOUR is owned by a different ticket's test.
+#
+#     #604  flagged 1.00, 0 of 3 mutations -- owned by #302's test   (12 behavioural asserts)
+#     #612  flagged 0.90, 0 of 4           -- owned by #1203g1's test (4 of 4 mutations)
+#     #1197b                               -- owned by #1202bs's test
+#     #1195 / #1202f                       -- ownership SPLIT between the two files
+#
+# Three attempts were made to print a "check this file first" hint beside each row, and all
+# three are gone. Matching on a correction keyword in the docstring missed #604 and #612, whose
+# docstrings never say "corrects". Intersecting imported module names suggested the same two
+# files for every row, because `inspect` and `pytest` match everywhere. Restricting to real
+# framework modules and ranking by behavioural-assertion count then named the biggest neighbour
+# rather than the relevant one -- for #612 it suggested three files, none of them #1203g1.
+#
+# A hint that fires with confident wrong names is worse than no hint (#983), so there is none.
+# What actually works, every time, is cheap: take the SAME mutation spec and run it against each
+# candidate test file. 0 of 4 here and 4 of 4 there settles ownership in two commands, and it is
+# the only method that distinguishes "nobody owns this" from "someone else does".
+
+
 def _rows(min_asserts):
     out = []
     for d in _TEST_DIRS:
@@ -428,6 +451,11 @@ def main(argv=None):
         print("  %.2f  %2d/%2d  %s" % (r, text, total, p.relative_to(_ROOT)))
     if len(hi) > args.limit:
         print("  ... and %d more not shown (#1034)" % (len(hi) - args.limit))
+    if hi:
+        print("\nA high ratio is a reason to MUTATE, not a verdict. Before calling a MISSED a "
+              "gap,\nrun the same spec against the neighbouring ticket's test -- four times this "
+              "session\nthe behaviour was owned there and the flagged file was simply not the "
+              "owner.")
     return 0
 
 

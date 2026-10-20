@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_1203g1_the_note_contradicted_its_own_evidence.py",
+ "mutations": [
+  {
+   "label": "L1 the #1203g1 branch loses its `token` condition, so a stored token with no observed auth response falls through to 'submit sent NO /auth request ... not wired to the API' -- the exact false claim #612 removed and #1203g1 corrected. Checked against every run whose UI login flow failed, that claim was false in all 12: POST /auth/login answered 200 in each (r142 logged 54 successful logins) OWNER ESTABLISHED BY RUNNING ALL FOUR AT ALL THREE CANDIDATES (#1203pg): test_login_failure_attribution_612.py was flagged at ratio 0.90 and catches 0 of 4 -- its subject was REMOVING a false claim, so its assertions are about prose. test_1203iw... catches 2 of 4. test_1203g1_the_note_contradicted_its_own_evidence.py catches 4 of 4: it calls `auth_note_1203g1` directly, which is what that function was extracted for (its docstring says so). Nothing was missing; the flagged file simply is not the owner.",
+   "find": "    elif not auth_status and token:",
+   "replace": "    elif not auth_status and not token:"
+  },
+  {
+   "label": "L2 a WORKING auth flow gets a failure note, so a run that logged in fine is attributed a login problem RE-ANCHORED: `if ok_auth:\\n return \"\"` appears twice in this module, so the bare form read NOT APPLIED; anchored on the docstring tail. OWNER ESTABLISHED BY RUNNING ALL FOUR AT ALL THREE CANDIDATES (#1203pg): test_login_failure_attribution_612.py was flagged at ratio 0.90 and catches 0 of 4 -- its subject was REMOVING a false claim, so its assertions are about prose. test_1203iw... catches 2 of 4. test_1203g1_the_note_contradicted_its_own_evidence.py catches 4 of 4: it calls `auth_note_1203g1` directly, which is what that function was extracted for (its docstring says so). Nothing was missing; the flagged file simply is not the owner.",
+   "find": "    Returns \"\" when the auth flow worked. Never raises.\n    \"\"\"\n    if ok_auth:\n        return \"\"",
+   "replace": "    Returns \"\" when the auth flow worked. Never raises.\n    \"\"\"\n    if not ok_auth:\n        return \"\""
+  },
+  {
+   "label": "L3 a 4xx is attributed to WIRING instead of credentials/backend, which sends the frontend lane at a form that is wired correctly OWNER ESTABLISHED BY RUNNING ALL FOUR AT ALL THREE CANDIDATES (#1203pg): test_login_failure_attribution_612.py was flagged at ratio 0.90 and catches 0 of 4 -- its subject was REMOVING a false claim, so its assertions are about prose. test_1203iw... catches 2 of 4. test_1203g1_the_note_contradicted_its_own_evidence.py catches 4 of 4: it calls `auth_note_1203g1` directly, which is what that function was extracted for (its docstring says so). Nothing was missing; the flagged file simply is not the owner.",
+   "find": "    elif auth_fault_owner_1203h0(ok_auth=ok_auth, auth_status=auth_status) == \"backend\":",
+   "replace": "    elif auth_fault_owner_1203h0(ok_auth=ok_auth, auth_status=auth_status) == \"zzz\":"
+  },
+  {
+   "label": "L4 the 'landed on the signed-out page' branch is skipped, so a login that stored a token and bounced back to '/' is reported as something else entirely OWNER ESTABLISHED BY RUNNING ALL FOUR AT ALL THREE CANDIDATES (#1203pg): test_login_failure_attribution_612.py was flagged at ratio 0.90 and catches 0 of 4 -- its subject was REMOVING a false claim, so its assertions are about prose. test_1203iw... catches 2 of 4. test_1203g1_the_note_contradicted_its_own_evidence.py catches 4 of 4: it calls `auth_note_1203g1` directly, which is what that function was extracted for (its docstring says so). Nothing was missing; the flagged file simply is not the owner.",
+   "find": "    elif token and navigated and not landed:",
+   "replace": "    elif False and token and navigated and not landed:"
+  }
+ ]
+}
