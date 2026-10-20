@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203pl_the_lane_was_told_twelve.py",
+ "mutations": [
+  {
+   "label": "PL1 the cap goes back to returning early, so the true count is never reached and `total_out` reports only what was shown -- r185's 28 glyphs become 12 again",
+   "find": "                _total1203pl += 1\n                if len(out) < limit:",
+   "replace": "                _total1203pl += 1\n                if len(out) >= limit:\n                    break\n                if len(out) < limit:"
+  },
+  {
+   "label": "PL2 the counter never advances, so every total is 0 and the task says 'Replace 0 text character(s)' about a real finding",
+   "find": "                _total1203pl += 1",
+   "replace": "                _total1203pl += 0"
+  },
+  {
+   "label": "PL3 the project-level gate (any real icon library imported) stops reporting a zero total, so a caller cannot tell 'excused by the gate' from 'never looked' (#883)",
+   "find": "        if any(_ICON_LIB_1203KD.search(t) for _f, t in texts):",
+   "replace": "        if False and any(_ICON_LIB_1203KD.search(t) for _f, t in texts):"
+  }
+ ]
+}

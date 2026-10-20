@@ -2426,13 +2426,18 @@ volumes:
             try:
                 from .frontend_audit import glyph_icon_findings_1203kd
                 from .message_format import join_capped as _jc1203kd
-                _gi1203kd = glyph_icon_findings_1203kd(fe / "src")
+                # #1203pl: the TRUE count, not the capped one. `glyph_icon_findings_1203kd`
+                # stops collecting at its limit (12), and this title used `len(findings)` --
+                # so r185's 28 glyphs would have been announced to the lane as 12.
+                _tot1203pl = []
+                _gi1203kd = glyph_icon_findings_1203kd(fe / "src", total_out=_tot1203pl)
+                _n1203pl = _tot1203pl[0] if _tot1203pl else len(_gi1203kd)
                 if _gi1203kd:
                     from .message_format import state_changed_1202ad as _sc1203kd
                     if _sc1203kd("task:glyph_icons", tuple(sorted(map(str, _gi1203kd)))):
                         orch.hubs.workhub.create_task(
                             title=("Replace %d text character(s) used as icons with real icons"
-                                   % len(_gi1203kd))[:180],
+                                   % _n1203pl)[:180],
                             description=(
                                 "These are text characters doing an icon's job, in a frontend "
                                 "that imports no icon library — a `\u2337` where a QR code "
@@ -2443,7 +2448,7 @@ volumes:
                                 "curated set. Keep a character only where it IS the content "
                                 "(a rating star beside a number), never where the design shows "
                                 "an icon."
-                                % _jc1203kd(_gi1203kd, total=len(_gi1203kd), cap=6)),
+                                % _jc1203kd(_gi1203kd, total=_n1203pl, cap=6)),
                             assignee="frontend", agent="scaffolder", priority="P1",
                             kind="fidelity")
             except Exception as _e1203kd:

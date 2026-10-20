@@ -3576,7 +3576,8 @@ def _glyph_fragment_1203kd(text: str, m) -> str:
         "…" if hi < len(raw) else "")
 
 
-def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
+def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12,
+                               total_out: Optional[list] = None) -> List[str]:
     """Text characters used as icons in a frontend that imports no icon library. (#1203kd)
 
     The user's standing requirement is two-sided — a UI needs real behaviour AND icons that
@@ -3613,11 +3614,28 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
     changes neither the return value nor #1201's warning, because `Path.rglob` on a missing
     directory yields nothing instead of raising (checked on this interpreter, 3.11). Said here
     so the next reader does not spend a round trying to pin it.
+
+    #1203pl: COUNT PAST THE CAP, AND HAND THE TRUE TOTAL OUT. The cap used to `return out` the
+    moment it filled, silently, and `scaffolder` builds the lane's task title from
+    `len(findings)` -- so the capped number was presented as the total, and `join_capped`'s
+    `total=` was the capped length too. Measured on the runs' own source with this detector:
+    r185 reports 12 at the default cap and has **28**, so the task would have said "Replace 12
+    text character(s)" about 28 of them. #1034's rule, and #1203pa's shape exactly -- there the
+    lane was told fifteen.
+
+    An out-parameter rather than a changed return type, which is this module's own idiom for
+    the same problem (#657's `picker_screens`, #740's `console_errors`, #935's
+    `capture_errors`): every existing caller is unchanged, and a caller that wants the truth
+    passes a list. A COUNT, not a sentinel appended to `out` -- #1203pa: a sentinel poisons
+    `len()` and the `state_changed_1202ad` tuple that decides whether to re-file.
     """
     out: List[str] = []
+    _total1203pl = 0
     try:
         root = Path(frontend_src)
         if not root.is_dir():
+            if total_out is not None:          # #1203pl
+                total_out.append(_total1203pl)
             return out
         # #1203kt: `.css` included. A project whose icons are entirely CSS pseudo-elements was
         # invisible here, which is a structural blind spot rather than a volume question:
@@ -3636,6 +3654,8 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
             except Exception:
                 continue
         if any(_ICON_LIB_1203KD.search(t) for _f, t in texts):
+            if total_out is not None:          # #1203pl
+                total_out.append(_total1203pl)
             return out
         for f, text in texts:
             for m in _GLYPH_ICON_1203KD.finditer(text):
@@ -3654,14 +3674,16 @@ def glyph_icon_findings_1203kd(frontend_src: Any, limit: int = 12) -> List[str]:
                 # searching the matched text inside the line: a minified stylesheet can carry
                 # the same `content:"♡"` twice, and `find` would centre both findings on the
                 # first one.
-                _frag = _glyph_fragment_1203kd(text, m)
-                out.append("%s:%d: %s" % (f.name, line, _frag))
-                if len(out) >= limit:
-                    return out
+                _total1203pl += 1
+                if len(out) < limit:
+                    _frag = _glyph_fragment_1203kd(text, m)
+                    out.append("%s:%d: %s" % (f.name, line, _frag))
     except Exception as _exc:
         from .message_format import warn_once_1201
         warn_once_1201("glyph_icon_findings_1203kd",
                        "the scan for text characters used as icons (#1203kd)", _exc)
+    if total_out is not None:          # #1203pl
+        total_out.append(_total1203pl)
     return out
 
 

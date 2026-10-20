@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1203pl_the_lane_was_told_twelve.py",
+ "mutations": [
+  {
+   "label": "PL4 the task title goes back to the CAPPED length, which is the defect: r185 would be told to replace 12 of its 28",
+   "find": "                                   % _n1203pl)[:180],",
+   "replace": "                                   % len(_gi1203kd))[:180],"
+  },
+  {
+   "label": "PL5 `join_capped`'s total goes back to the capped length, so the 'and N more' note undercounts too (#1034)",
+   "find": "                                % _jc1203kd(_gi1203kd, total=_n1203pl, cap=6)),",
+   "replace": "                                % _jc1203kd(_gi1203kd, total=len(_gi1203kd), cap=6)),"
+  }
+ ]
+}
