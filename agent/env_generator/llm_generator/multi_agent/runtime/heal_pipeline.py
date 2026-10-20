@@ -1490,6 +1490,37 @@ def _file_shadowed_route_task_1202z4(orch, duplicated) -> None:
         except Exception:
             pass
 
+# #1203qv: the advice is a CONSTANT so its guard can read the words instead of the file.
+#
+# `#1203n0`'s warning is the only thing that tells a frontend lane WHY a staged icon it can
+# see in the DOM does not appear on screen, and the measurement is the point: 48x48 on
+# #121212, real Chromium, an `<img src>` icon whose only paint is `currentColor` reads mean
+# 14.3 / max 18 / **0 bright pixels** -- all 2304 px background-dark -- against the same file
+# inlined, which reads 66.2 / 255 / 418 bright. r190 shipped six such rows in
+# `LeftSidebar.jsx` and the visual judge named exactly them, unprompted.
+#
+# Mutation N08 deleted the clause "in the DOM and invisible on screen" and nothing noticed.
+# The guard DID extract this message by AST and assert "invisible" was in it -- but the word
+# occurs TWICE, so "`color` alone leaves it invisible" survived the deletion and the
+# assertion stayed green. Another assertion fed by a second occurrence of its own search
+# term. As a module constant the guard reads the WORDS the lane receives, and the anchor
+# stops moving (it had already been re-aimed by hand after #1203nv and #1203nx). This is the
+# shape `#1203p9` already uses for `_BEST_ROUND_SHORTFALL_1203P9`.
+#
+# `%s` is the staged-icon row and stays lazily formatted by the logger (#1203b1: a literal
+# percent in one of these swallowed the warning once).
+INVISIBLE_ICON_ADVICE_1203QV = (
+    "#1203n0 %s loads a staged icon CSS colour cannot reach through "
+    "<img>/url() — real Chromium paints it background-dark on a #121212 "
+    "nav, i.e. the icon is in the DOM and invisible on screen. INLINE the "
+    "SVG or point at an asset that carries its own colours (#551/#1203kw "
+    "keep the <img> channel open for those). The row says which mechanism "
+    "it is: `currentColor` inlines correctly under a CSS `color`, while "
+    "`no paint at all` needs the CSS to set `fill` — measured, `color` "
+    "alone leaves it invisible (mean 7.9, 0 bright px) and `fill` makes it "
+    "visible (151.3, 1296).")
+
+
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
     orchestrator (output_dir / hubs / logger / llm) live."""
@@ -2378,16 +2409,7 @@ class HealPipeline:
                     # / 0 bright (still invisible) -- while a currentColor icon inlined under
                     # `color` alone reads 151.3 / 1296. So inlining fixes both, but a no-paint
                     # icon needs the CSS to set `fill`, not just `color`.
-                    orch._logger.warning(
-                        "#1203n0 %s loads a staged icon CSS colour cannot reach through "
-                        "<img>/url() — real Chromium paints it background-dark on a #121212 "
-                        "nav, i.e. the icon is in the DOM and invisible on screen. INLINE the "
-                        "SVG or point at an asset that carries its own colours (#551/#1203kw "
-                        "keep the <img> channel open for those). The row says which mechanism "
-                        "it is: `currentColor` inlines correctly under a CSS `color`, while "
-                        "`no paint at all` needs the CSS to set `fill` — measured, `color` "
-                        "alone leaves it invisible (mean 7.9, 0 bright px) and `fill` makes it "
-                        "visible (151.3, 1296).", _iv1203n0)
+                    orch._logger.warning(INVISIBLE_ICON_ADVICE_1203QV, _iv1203n0)
                 if len(_inv1203n0) > 6:
                     orch._logger.warning(
                         "#1203n0 %d more invisible icon reference(s) not listed (#1034)",

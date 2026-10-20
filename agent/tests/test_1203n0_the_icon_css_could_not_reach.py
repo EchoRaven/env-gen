@@ -376,6 +376,15 @@ class TheReportReachesTheLane(unittest.TestCase):
                     for a in inner.args:
                         if isinstance(a, ast.Constant) and isinstance(a.value, str):
                             return a.value
+                        # #1203qv: the message is a module constant now, so the loop passes a
+                        # NAME. Resolve it, because the property this guards is "the loop over
+                        # _inv1203n0 hands THIS text to warning" -- which a Name satisfies just
+                        # as a literal did. Returning None here instead would have reported
+                        # "nothing reports the invisible icons" about a pipeline that does.
+                        if isinstance(a, ast.Name):
+                            val = getattr(heal_pipeline, a.id, None)
+                            if isinstance(val, str):
+                                return val
         return None
 
     def test_the_heal_pipeline_announces_it(self):
@@ -424,6 +433,55 @@ class TheReportReachesTheLane(unittest.TestCase):
                 guards.append(bool(said))
         self.assertTrue(guards, "no length guard over the invisible-icon list")
         self.assertTrue(all(guards), "the cap guard does not announce the cut")
+
+
+# --- #1203qv: the advice is read as WORDS, not as a line of the source file ----------------
+
+def _advice_1203qv():
+    from env_generator.llm_generator.multi_agent.runtime import heal_pipeline as _hp
+    return _hp.INVISIBLE_ICON_ADVICE_1203QV
+
+
+def test_the_advice_says_the_icon_is_invisible_1203qv():
+    """Mutation N08 deleted exactly this clause and nothing noticed, because the only guard
+    was a source-text read whose anchor had already been re-aimed twice (#1203nv/#1203nx).
+
+    The clause is the whole value of the message: a lane that reads "loads a staged icon CSS
+    colour cannot reach" and nothing else has been told a mechanism, not a symptom. It can
+    see the icon in the DOM, so without these words the report contradicts what it sees."""
+    a = _advice_1203qv()
+    assert "in the DOM and invisible on screen" in a, a
+    assert "background-dark" in a, a
+
+
+def test_the_advice_names_the_remedy_and_the_exception_1203qv():
+    a = _advice_1203qv()
+    assert "INLINE the" in a
+    assert "carries its own colours" in a, "the #551/#1203kw <img> exception is not stated"
+
+
+def test_the_advice_separates_the_two_mechanisms_1203qv():
+    """#1203nv: the remedy DIFFERS by mechanism -- `currentColor` inlines under CSS `color`,
+    a no-paint SVG needs the CSS to set `fill`. Collapsing them is what the old wording did,
+    and it was false for the no-paint case."""
+    a = _advice_1203qv()
+    assert "currentColor" in a and "no paint at all" in a
+    assert "fill" in a and "color" in a
+
+
+def test_the_advice_carries_its_measurement_1203qv():
+    """A number a reader can check is what makes this actionable rather than an opinion."""
+    a = _advice_1203qv()
+    assert "0 bright px" in a, a
+    assert "151.3" in a and "1296" in a, a
+
+
+def test_the_advice_is_lazily_formatted_1203qv():
+    """#1203b1: a literal percent in one of these swallowed the warning once. Exactly one
+    placeholder, for the staged-icon row."""
+    a = _advice_1203qv()
+    assert a.count("%") == 1 and "%s" in a, a
+    assert (a % "src/components/LeftSidebar.jsx").startswith("#1203n0 src/")
 
 
 if __name__ == "__main__":

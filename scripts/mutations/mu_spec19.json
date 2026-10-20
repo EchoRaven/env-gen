@@ -8,9 +8,9 @@
    "replace": "                for _iv1203n0 in []:"
   },
   {
-   "label": "N08 the warning stops saying the icon is invisible  [anchor re-aimed 2026-10-19: the warning was rewritten by #1203nv/#1203nx; the 'in the DOM and invisible on screen' clause is the property this mutation is about]",
-   "find": "\"<img>/url() — real Chromium paints it background-dark on a #121212 \"\n                        \"nav, i.e. the icon is in the DOM and invisible on screen. INLINE the \"",
-   "replace": "\"<img>/url(). INLINE the \""
+   "label": "N08 the warning stops saying the icon is invisible  [RE-ANCHORED 2026-10-20 by #1203qv: the message is a module constant now, so this mutation edits the constant and the guard reads the WORDS instead of a line of the file. The anchor had already been re-aimed by hand twice (#1203nv, #1203nx) and still read MISSED.]",
+   "find": "    \"<img>/url() — real Chromium paints it background-dark on a #121212 \"\n    \"nav, i.e. the icon is in the DOM and invisible on screen. INLINE the \"",
+   "replace": "    \"<img>/url(). INLINE the \""
   },
   {
    "label": "N09 the capped list stops declaring the cut",

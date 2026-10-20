@@ -164,5 +164,34 @@ def test_the_measurement_travels_with_the_fix():
         "why this instrument matters must stay attached to it")
 
 
+def test_the_gate_asks_for_the_detail_rather_than_building_it_1203qs():
+    """ARRIVAL, and this guard was missing from #1203qs's own first draft.
+
+    Every other test here drives `_ui_evidence_named_detail_1203qs` directly, which says the
+    function is right and nothing about whether the gate uses it. A call-site COUNT would not
+    settle it either: `f(x) and (0, 0, "")` keeps the call and the name. So the WRITE is read
+    structurally -- the three names must come from a Call to this function, in
+    validate_delivery_gate."""
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(dg.validate_delivery_gate))
+    calls = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Assign) or len(n.targets) != 1:
+            continue
+        if not isinstance(n.targets[0], ast.Tuple):
+            continue
+        v = n.value
+        if (isinstance(v, ast.Call) and isinstance(v.func, ast.Name)
+                and v.func.id == "_ui_evidence_named_detail_1203qs"):
+            calls.append(n)
+    assert len(calls) == 1, (
+        "%d assignment(s) take the named detail from the one owner; the gate must take it "
+        "from there or the #1017 message goes back to building its own" % len(calls))
+    assert len(calls[0].targets[0].elts) == 3, (
+        "the gate must unpack all three -- the record COUNT, the NAMED count and the shown "
+        "list -- because #1034 is why both numbers are printed")
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
