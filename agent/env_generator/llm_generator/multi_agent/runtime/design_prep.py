@@ -2148,6 +2148,30 @@ def adopt_design_prep_1202hj(donor, output_dir, design_input, resolved) -> bool:
         return False
 
 
+# #1203q6: the truncation idiom #1203nj already uses, lifted out so the other two prose
+# lines in the briefing can share it (#1032: one owner). #1203nj's own words for why the
+# naive form is wrong -- it "declares itself now instead of slicing mid-token".
+#
+# MEASURED over the 104 design docs, for the two lines that had the naive `[:N]`:
+#   material   cap 200, longest 440  -> cut in 79 docs (76%)
+#   palette    cap 800, longest 1951 -> cut in 6
+#   type_scale cap 400, longest 299  -> cut in 0, so it is left exactly as it is (#647)
+# `material` is PROSE carrying real instructions ("do not sample wallpaper bleed as panel
+# color"), and the lane was handed sentences that stop mid-word: "account popover is a light
+# ", "Login has s". Checked for the worse failure and did NOT find it: 0 of the 79 cuts land
+# immediately after a negation, so this is information loss rather than inverted meaning.
+def _bounded_prose_1203q6(text, cap: int) -> str:
+    """`text` cut to `cap` on a WORD boundary, saying so when it cut. Never raises."""
+    try:
+        t = str(text or "")
+        if len(t) <= cap:
+            return t
+        head = t[:cap].rsplit(" ", 1)[0] or t[:cap]
+        return head + " … (truncated at %d chars; full text in design/design_system.json)" % cap
+    except Exception:
+        return str(text or "")[:cap]
+
+
 def design_system_summary_for_requirements(ds: Dict) -> str:
     """Compact BINDING block appended to the requirements every lane reads (mirrors
     reference_materials.spec_summary_for_requirements) — so the measured design system drives the
@@ -2163,7 +2187,7 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
     pal = dsys.get("palette") or {}
     pal_txt = ", ".join(f"{k}={v}" for k, v in pal.items() if isinstance(v, str))
     if pal_txt:
-        lines.append("Palette (measured): " + pal_txt[:800])
+        lines.append("Palette (measured): " + _bounded_prose_1203q6(pal_txt, 800))
     theme = dsys.get("theme") or {}
     if theme.get("default"):
         lines.append(f"Theme: {theme.get('default')} ({', '.join(theme.get('themes') or [])})")
@@ -2172,7 +2196,7 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
             f"{t.get('role')} {t.get('size_px')}px/{t.get('weight')}"
             for t in dsys["type_scale"] if isinstance(t, dict))[:400])
     if dsys.get("material"):
-        lines.append("Material: " + str(dsys["material"])[:200])
+        lines.append("Material: " + _bounded_prose_1203q6(dsys["material"], 200))
     assets = [a for a in (ds.get("assets") or []) if isinstance(a, dict)]
     if assets:
         # #1203q3: SAY WHAT THIS LIST LEFT OUT. The line below is the BINDING instruction
@@ -2206,7 +2230,37 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
         lines.append("Real assets (STAGED at public/assets/ — reference them, do NOT draw): "
                      + _jc1203q3(_e1203q3[:_fit1203q3], total=len(_e1203q3),
                                  cap=_fit1203q3, sep=", "))
-    for s in screens[:12]:
+    # #1203q5: THE SCREEN CAP, DECLARED. Three lines below, `#1203nj` named the per-screen
+    # COMPONENT cap "so the cut can be declared against" it and wrote "a cut list that does
+    # not say so is the harm #1034 exists for, in the channel where it costs most". The cap
+    # ENCLOSING that loop was never given the same treatment, and it is the coarser one: a
+    # dropped component costs a detail, a dropped screen costs the whole page.
+    #
+    # MEASURED over the 104 design docs: 32 carry more than 12 screens. googlemaps runs carry
+    # 29 (17 never mentioned -- 59% of the app), netflix 20 (8 hidden); tiktok's 11-12 fit,
+    # which is why this never showed up on the product we run most. Same skew as #1203q3 and
+    # #1203q4: the block is worst on the products that get run least.
+    #
+    # The cap is NOT raised, for #1203nj's reason: this is a prompt, 12 screens of component
+    # inventory is already the bulk of the block, and nothing measured says the lane needs
+    # more. What was missing is that it could not tell there WERE more.
+    _screens_shown_1203q5 = screens[:12]
+    for s in _screens_shown_1203q5:
+        # #1203q5: the SIBLING guard. The next line already filters components with
+        # `isinstance(c, dict)` -- the author expected junk at that level because this
+        # document is written by an LLM -- while the screens it iterates were unguarded, so
+        # one non-dict entry raised AttributeError here. That exception is caught by the
+        # caller, which logs "Design-Prep phase failed (continuing)" and leaves
+        # `_design_system_req_suffix` unset: the phase did NOT fail, and the cost is that
+        # EVERY lane loses the whole binding block, silently. #1035's rule for this exact
+        # shape -- "a spawned LLM that wrote MALFORMED JSON must not discard the whole
+        # phase".
+        #
+        # LATENT, and said so plainly: 0 of 1477 screen entries across the 104 corpus docs
+        # are non-dict. This is not a guard wider than its evidence (#647) -- it is the same
+        # guard the same statement already applies one list down.
+        if not isinstance(s, dict):
+            continue
         comps = [c for c in (s.get("components") or []) if isinstance(c, dict)]
         if not comps:
             continue
@@ -2235,6 +2289,11 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
             _ln1203nj = (_ln1203nj[:_BRIEF_LINE_CHARS_1203NJ].rsplit(" ", 1)[0]
                          + " … (line truncated at %d chars)" % _BRIEF_LINE_CHARS_1203NJ)
         lines.append(f"{s.get('name')}: " + _ln1203nj)
+    # #1203q5: and say how many screens this block never described at all.
+    _hidden1203q5 = len(screens) - len(_screens_shown_1203q5)
+    if _hidden1203q5 > 0:
+        lines.append("(+%d further screen(s) are in the design and NOT described above — "
+                     "read design/design_system.json for them.)" % _hidden1203q5)
     lines.append("Full doc: design/design_system.json (+ .md); crops: design/crops/. "
                  "MEASURE, DON'T GUESS — the colors are sampled truth.")
 

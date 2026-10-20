@@ -530,8 +530,29 @@ def spec_summary_for_requirements(spec: Mapping[str, Any]) -> str:
             f"{e.get('method')} {e.get('path')}" for e in spec["endpoints"]
             if isinstance(e, Mapping))[:2000])
     if spec.get("entities"):
+        # #1203q4: SAY WHEN AN ENTITY'S FIELD LIST WAS CUT. This block is headed
+        # "binding" and exists, per the docstring, so "the lanes design against the
+        # compiled spec from the first turn" -- i.e. precisely so they need not go and
+        # read design/reference_spec.json. Then each entity's fields were sliced at 10
+        # with nothing saying so, which makes a partial data model look like the whole one.
+        #
+        # MEASURED over the 102 reference_spec.json docs (1119 entities): 99 of them (97%)
+        # have at least one entity past 10 fields, and 316 fields in total are never shown
+        # to a lane. As with #1203q3 the damage is worst away from tiktok -- googlemaps
+        # `places` carries 22 fields (12 hidden), `place` 18, `route_legs` 16, while
+        # tiktok's fattest is `videos` at 13.
+        #
+        # The four CHARACTER caps in this function are left exactly as they are: measured
+        # across the same 102 docs, none of them is ever reached (screens 1500, endpoints
+        # 2000, entities 2000, mcp_tools 800 -- zero exceedances), so a cap that never
+        # bites needs no declaration, and moving a prompt bound is a live-run decision
+        # (#1202w6).
+        def _fields1203q4(e):
+            _f = [str(x) for x in (e.get("fields") or [])]
+            _shown = ", ".join(_f[:10])
+            return _shown + (" +%d more" % (len(_f) - 10) if len(_f) > 10 else "")
         lines.append("Entities: " + "; ".join(
-            f"{e.get('name')}[{', '.join(map(str, (e.get('fields') or [])[:10]))}]"
+            f"{e.get('name')}[{_fields1203q4(e)}]"
             for e in spec["entities"] if isinstance(e, Mapping))[:2000])
     if spec.get("mcp_tools"):
         lines.append("Required MCP tools: " + "; ".join(

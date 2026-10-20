@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/reference_materials.py",
+ "test": "tests/test_1203q4_the_binding_spec_cut_each_entity.py",
+ "mutations": [
+  {
+   "label": "Q4A THE TICKET: the cut goes silent again, so a 22-field entity reads as a 10-field one in a block headed 'binding'",
+   "find": "            return _shown + (\" +%d more\" % (len(_f) - 10) if len(_f) > 10 else \"\")",
+   "replace": "            return _shown"
+  },
+  {
+   "label": "Q4B the remainder becomes the TOTAL, so `places[... +22 more]` claims 32 fields exist (#1203pl/#1203pa's shape)",
+   "find": "            return _shown + (\" +%d more\" % (len(_f) - 10) if len(_f) > 10 else \"\")",
+   "replace": "            return _shown + (\" +%d more\" % len(_f) if len(_f) > 10 else \"\")"
+  },
+  {
+   "label": "Q4C the declaration fires for every entity, so a 3-field entity claims '+-7 more' (#983: a clause that fires while naming nothing)",
+   "find": "            return _shown + (\" +%d more\" % (len(_f) - 10) if len(_f) > 10 else \"\")",
+   "replace": "            return _shown + (\" +%d more\" % (len(_f) - 10))"
+  },
+  {
+   "label": "Q4D the field cap itself vanishes, so the whole list goes into the prompt -- the bound exists and moving it is a live-run decision (#1202w6)",
+   "find": "            _shown = \", \".join(_f[:10])",
+   "replace": "            _shown = \", \".join(_f)"
+  }
+ ]
+}

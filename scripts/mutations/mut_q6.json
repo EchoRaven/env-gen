@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203q6_the_prose_that_stopped_mid_word.py",
+ "mutations": [
+  {
+   "label": "Q6A THE TICKET: back to slicing mid-token, so the lane reads 'Login has s' again",
+   "find": "        head = t[:cap].rsplit(\" \", 1)[0] or t[:cap]",
+   "replace": "        head = t[:cap]"
+  },
+  {
+   "label": "Q6B the truncation goes silent, so a 440-char instruction reads as a complete 200-char one",
+   "find": "        return head + \" \u2026 (truncated at %d chars; full text in design/design_system.json)\" % cap",
+   "replace": "        return head"
+  },
+  {
+   "label": "Q6C the marker fires for text that was never cut (#983: a clause that names nothing)",
+   "find": "        if len(t) <= cap:\n            return t",
+   "replace": "        if False:\n            return t"
+  },
+  {
+   "label": "Q6D the Material line stops using the owner, so the two prose lines diverge again (#1032)",
+   "find": "        lines.append(\"Material: \" + _bounded_prose_1203q6(dsys[\"material\"], 200))",
+   "replace": "        lines.append(\"Material: \" + str(dsys[\"material\"])[:200])"
+  }
+ ]
+}

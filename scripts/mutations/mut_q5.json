@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/design_prep.py",
+ "test": "tests/test_1203q5_the_screens_the_briefing_never_mentioned.py",
+ "mutations": [
+  {
+   "label": "Q5A THE TICKET: the screen cut goes silent again, so googlemaps' 29-screen design reads as a 12-screen one in a block every lane treats as binding",
+   "find": "    _hidden1203q5 = len(screens) - len(_screens_shown_1203q5)",
+   "replace": "    _hidden1203q5 = 0"
+  },
+  {
+   "label": "Q5B the remainder becomes the TOTAL, so a 29-screen design claims 29 further screens exist beyond the 12 described (#1203pl/#1203pa's shape)",
+   "find": "    _hidden1203q5 = len(screens) - len(_screens_shown_1203q5)",
+   "replace": "    _hidden1203q5 = len(screens)"
+  },
+  {
+   "label": "Q5C the screen cap vanishes, so all 29 screens' component inventories go into a prompt the cap existed to bound -- #1203nj declined to raise it for that reason, and moving it is a live-run decision (#1202w6)",
+   "find": "    _screens_shown_1203q5 = screens[:12]",
+   "replace": "    _screens_shown_1203q5 = screens"
+  },
+  {
+   "label": "Q5D the sibling isinstance guard is removed, so one non-dict screen raises AttributeError, the caller blames 'Design-Prep phase failed' and EVERY lane loses the whole binding block",
+   "find": "        if not isinstance(s, dict):\n            continue\n        comps = [c for c in (s.get(\"components\") or []) if isinstance(c, dict)]",
+   "replace": "        comps = [c for c in (s.get(\"components\") or []) if isinstance(c, dict)]"
+  }
+ ]
+}
