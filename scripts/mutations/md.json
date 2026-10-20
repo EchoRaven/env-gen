@@ -1,1 +1,26 @@
-{"file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py", "test": "tests/test_1203md_the_shortfall_report_could_not_print.py", "mutations": [{"label": "M1 the import is dropped again (the original defect)", "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"", "replace": "        \"    try:\\n\""}, {"label": "M2 the alias does not match the use", "find": "        \"    import sys as _sys\\n\"", "replace": "        \"    import sys as _system\\n\""}, {"label": "M3 the import moves inside the branch, after the write", "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"", "replace": "        \"    try:\\n\"\n        \"        import sys as _sys\\n\""}, {"label": "M4 the message stops naming the counts", "find": "        \"                % (len(short), ', '.join('%s %d->%d' % r for r in short)))\\n\"", "replace": "        \"                % (len(short), '(not shown)'))\\n\""}]}
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/backend_skeleton.py",
+ "test": "tests/test_1203md_the_shortfall_report_could_not_print.py",
+ "mutations": [
+  {
+   "label": "M1 the import is dropped again (the original defect)",
+   "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"",
+   "replace": "        \"    try:\\n\""
+  },
+  {
+   "label": "M2 the alias does not match the use",
+   "find": "        \"    import sys as _sys\\n\"",
+   "replace": "        \"    import sys as _system\\n\""
+  },
+  {
+   "label": "M3 EXPECTED-MISSED (null mutation, not a gap): the import moves to the TOP OF THE TRY, not after the write. Emitted order is `import sys as _sys` (41), `try:` (42), `if short:` (57), `_sys.stderr.write` (58), `except Exception:` (66) -- so inside the try the import still precedes the write and behaviour is identical. The old label claimed 'after the write', which the emitted order contradicts (#1203j2: a false sentence is its own defect). M1 already covers the real defect (the import dropped entirely) and is CAUGHT; a single find/replace cannot move the import past the write without duplicating M1's territory.",
+   "find": "        \"    import sys as _sys\\n\"\n        \"    try:\\n\"",
+   "replace": "        \"    try:\\n\"\n        \"        import sys as _sys\\n\""
+  },
+  {
+   "label": "M4 the message stops naming the counts",
+   "find": "        \"                % (len(short), ', '.join('%s %d->%d' % r for r in short)))\\n\"",
+   "replace": "        \"                % (len(short), '(not shown)'))\\n\""
+  }
+ ]
+}

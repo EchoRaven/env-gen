@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203is_the_suffix_is_bound_once_outside_the_route_loop.py",
+ "mutations": [
+  {
+   "label": "IS1 the #1203is binding is moved INSIDE the route loop. Carrier spec: mutate.py takes ONE test path and this property belongs to test_1203is_*, not to test_1203kf_*. Shadowing `sfx` per iteration hands /signup and /login suffixes seconds apart, so every login reads 'login user not registered' -- 19 of this corpus's 270 failed ui_flows.",
+   "find": "            for route, label in ((\"/signup\", \"signup\"), (\"/login\", \"login\")):",
+   "replace": "            for route, label in ((\"/signup\", \"signup\"), (\"/login\", \"login\")):\n                sfx = str(int(time.time()))[-6:]"
+  }
+ ]
+}
