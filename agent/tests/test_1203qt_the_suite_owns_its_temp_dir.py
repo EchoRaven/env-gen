@@ -104,8 +104,14 @@ def _tmpdir_after_block(args, env_tmpdir=None, root=None):
     matters -- that is when mkdtemp() falls through to /tmp."""
     block = _basetemp_block()
     pre = 'SUITE_TMPDIR_ROOT=%s\n' % root if root else ''
-    script = (pre + 'set -- ' + ' '.join("'%s'" % a for a in args) + '\n'
-              + block + '\necho "TMPDIR=$TMPDIR"\necho "OWNTMP=$_own_tmpdir"')
+    # `set -u` BECAUSE PRODUCTION HAS IT. suite.sh runs under `set -uo pipefail`, and the
+    # first version of this helper drove the block in a plain `bash -c` without it -- a more
+    # permissive shell than the real one. So `[ -n "$TMPDIR" ]` passed five green tests here
+    # and then aborted the suite with `TMPDIR: unbound variable` on its first real run, on
+    # the unset-TMPDIR path these tests are entirely about. Driving the shell is only
+    # stronger than reading it if the shell is the same shell.
+    script = ('set -u\n' + pre + 'set -- ' + ' '.join("'%s'" % a for a in args) + '\n'
+              + block + '\necho "TMPDIR=${TMPDIR:-}"\necho "OWNTMP=$_own_tmpdir"')
     cmd = ["bash", "-c", script]
     if env_tmpdir is None:
         cmd = ["env", "-u", "TMPDIR"] + cmd

@@ -26,6 +26,11 @@
    "label": "QY5 the un-creatable temp root falls through to /tmp QUIETLY -- the fallback that masks the failure (user's standing rule)",
    "find": "WARNING: could not create",
    "replace": "note: could not create"
+  },
+  {
+   "label": "QY6 the naive `$TMPDIR` comes back -- under `set -uo pipefail` that aborts the suite on the UNSET path this block exists to handle (it did, on the first real run)",
+   "find": "if [ -n \"${TMPDIR:-}\" ]; then",
+   "replace": "if [ -n \"$TMPDIR\" ]; then"
   }
  ]
 }

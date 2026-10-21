@@ -108,7 +108,10 @@ esac
 # Same treatment as basetemp: a per-run directory on the roomy disk, removed on success, and
 # an explicit caller choice is left alone. #1203qw did this for mutate.py's child pytest;
 # the suite needs it for the same reason.
-if [ -n "$TMPDIR" ]; then
+# `${TMPDIR:-}`, not `$TMPDIR`: this script runs under `set -u`, and the whole point of
+# this block is the case where TMPDIR is UNSET -- so the naive spelling aborts the suite on
+# the exact path it exists to handle. It did, immediately, the first time it ran for real.
+if [ -n "${TMPDIR:-}" ]; then
   echo "[suite] TMPDIR left as the caller set it: $TMPDIR"
   _own_tmpdir=""
 else
