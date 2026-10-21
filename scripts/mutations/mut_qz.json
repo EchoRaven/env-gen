@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203qz_a_button_bound_to_nothing.py",
+ "mutations": [
+  {
+   "label": "QZ1 THE TICKET: the per-control question is dropped, so the file-level `any` is back and r187's TikTokUI.jsx (13 of 32 buttons dead) reads clean again",
+   "find": "    return dead_control_count_1203qz(text) > 0",
+   "replace": "    return False"
+  },
+  {
+   "label": "QZ2 the count stops looking at the TAG and goes back to the whole file, so one onClick anywhere exempts every button",
+   "find": "    for tag in _BUTTON_TAG_RE_1203QZ.findall(text or \"\"):",
+   "replace": "    for tag in [text or \"\"]:"
+  },
+  {
+   "label": "QZ3 `disabled` stops exempting, so a deliberately inert control is reported as a defect (#647: no guard wider than the evidence)",
+   "find": "        if \"disabled\" in tag:\n            continue",
+   "replace": "        if False:\n            continue"
+  },
+  {
+   "label": "QZ4 a {...spread} button is counted, although the handler can arrive from the parent and this function cannot see it -- a false positive by construction",
+   "find": "        if \"{...\" in tag:\n            continue",
+   "replace": "        if \"@@never@@\" in tag:\n            continue"
+  },
+  {
+   "label": "QZ5 the ORIGINAL file-level rule is dropped, so a <form> with no handler anywhere stops being reported -- the behaviour that predates this ticket",
+   "find": "    if interactive and not bound:\n        return True",
+   "replace": "    if False:\n        return True"
+  },
+  {
+   "label": "QZ6 the message stops naming the count, so the lane is told a file is wrong and nothing about where to look (#983: a check that fires naming nothing)",
+   "find": "f\"(dead controls\" + (f\": {_dead_n} of {_total_n} <button> tags carry no \"",
+   "replace": "f\"(dead controls\" + (f\": some <button> tags carry no \""
+  }
+ ]
+}

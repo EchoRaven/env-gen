@@ -176,10 +176,87 @@ def _norm_api(entry: str) -> str:
     return parts[-1] if parts else ""
 
 
+# #1203qz: a <button> tag and the handler attributes that make it do something.
+# Matched on the TAG, not the file, because the file-level test below cannot tell a page
+# with one live button and ten dead ones from a page where everything works.
+_BUTTON_TAG_RE_1203QZ = re.compile(r"<button\b[^>]*?>", re.I | re.S)
+# ACTIVATION handlers only. `onFocus`/`onBlur` are deliberately NOT here: a button whose
+# only handler is onBlur does nothing when clicked, so treating it as bound would exempt a
+# dead control. Measured before narrowing, so this is evidence and not taste -- of the 366
+# <button> tags in modern deliveries, ZERO have a passive handler and no activation one, so
+# the exclusion costs nothing today and keeps the check honest for the case that shows up.
+_HANDLER_ATTR_RE_1203QZ = re.compile(
+    r"on(?:Click|Submit|Change|Input|KeyDown|KeyUp|KeyPress|MouseDown|MouseUp|Toggle)"
+    r"\s*=", re.I)
+_SUBMIT_TYPE_RE_1203QZ = re.compile(r"""type\s*=\s*["']?submit""", re.I)
+
+
+def dead_control_count_1203qz(text: str) -> int:
+    """How many <button>s in this source carry no handler OF THEIR OWN.
+
+    WHY PER-TAG. `_page_dead_controls` below asks two file-level questions -- is there
+    interactive markup, and is there a handler ANYWHERE in the file -- and both are too
+    coarse to see the thing the standing rule forbids. Measured over the delivered
+    frontends (2026-10-20):
+
+        modern (r185+)   85 files carry a <button>,  366 buttons,  37 with no handler
+        ...of those 85, 67 (79%) have NO <form> and no type="submit", so `interactive`
+           is False and the check never ran on them at all
+        early 77.9% wired -> mid 79.6% -> modern 89.9%, so this is improving, not settled
+
+    The two worst are not polish gaps, they are pages where EVERY control is dead:
+    r189's `ProfileOwnPage.jsx` (4 of 4) and `NotificationsActivityPage.jsx` (6 of 6).
+    Both files contain no handler of any kind, no <form>, no parent handler near any
+    button, and their buttons are explicitly `<button type="button">` -- including a
+    `<button type="button" aria-label="Close">` that closes nothing. Both pages DO call
+    the API, so they fetch and render real data behind controls that do nothing.
+    r187's `TikTokUI.jsx` is the file-level blindness on its own: 32 buttons, 13 of them
+    dead, and because one `onClick` exists elsewhere in the file `bound` is True, so the
+    old check returns False -- it would return False if all 32 were dead.
+
+    FOUR EXEMPTIONS, each because the button really does do something or is meant not to:
+    its own handler attribute; `type="submit"` (a form submit acts through the form);
+    `disabled` (deliberately inert); and a `{...spread}`, where the handler can arrive
+    from the parent and this function cannot see it. The spread case is 0 of 37 in the
+    modern era, so it costs nothing to concede.
+    """
+    n = 0
+    for tag in _BUTTON_TAG_RE_1203QZ.findall(text or ""):
+        if _HANDLER_ATTR_RE_1203QZ.search(tag):
+            continue
+        if _SUBMIT_TYPE_RE_1203QZ.search(tag):
+            continue
+        if "disabled" in tag:
+            continue
+        if "{..." in tag:
+            continue
+        n += 1
+    return n
+
+
 def _page_dead_controls(text: str) -> bool:
+    # The original file-level question, unchanged: form markup with no handler anywhere.
     interactive = ("<form" in text) or ('type="submit"' in text)
     bound = any(tok in text for tok in _HANDLER_TOKENS)
-    return interactive and not bound
+    if interactive and not bound:
+        return True
+    # #1203qz: and the per-control question the file-level one cannot ask.
+    #
+    # SOFT, DELIBERATELY. This verdict reaches `pages_pending` and the remediation prompt
+    # and flips a component between `implemented` and `defined`; it does NOT reach the
+    # delivery gate (the call site at #1089 says so in as many words). So widening it costs
+    # remediation churn, not blocked runs -- which is the right trade here, because the
+    # remediation loop demonstrably works: held to the same screens, every judged dimension
+    # gains +0.13 to +0.17 over five rounds. Blocking instead would violate the framework's
+    # own rule that blocking delivery over something dispatches a lane that cannot fix it
+    # (#1202tm), and the cost of blocking was measured before this was written: 4 of the 7
+    # modern runs carry at least one dead control, so a hard gate here would stop more than
+    # half of them.
+    #
+    # Measured the way #1202vg measured the same shape of change -- how many pages GAIN a
+    # criterion that was vacuous, against how many actually flip: 67 modern files gain it,
+    # 7 of them flip.
+    return dead_control_count_1203qz(text) > 0
 
 
 def _is_generic_fallback_page(text: str) -> bool:
@@ -932,8 +1009,16 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         if pat and not re.search(pat, all_src):
             missing.append(f"declared API `{api}` never referenced in frontend src")
     if comp_file_text and _page_dead_controls(comp_file_text):
-        missing.append(f"component `{component}` renders interactive markup "
-                       "with no bound handler (dead controls)")
+        # #983/#1203qz: say WHICH and HOW MANY. "renders interactive markup with no bound
+        # handler" told the lane a file was wrong and nothing about where to look; with 13
+        # of 32 buttons dead in one file, the count is the whole actionable part.
+        _dead_n = dead_control_count_1203qz(comp_file_text)
+        _total_n = len(_BUTTON_TAG_RE_1203QZ.findall(comp_file_text))
+        missing.append(
+            f"component `{component}` renders interactive markup with no bound handler "
+            f"(dead controls" + (f": {_dead_n} of {_total_n} <button> tags carry no "
+                                 f"handler, no type=submit and are not disabled)"
+                                 if _dead_n else ")"))
     # PROPOSAL #39 (G2): catch PLACEHOLDER/STUB pages that _page_dead_controls misses.
     # A pure placeholder ("This section is being set up", no form/button) has
     # interactive=False so dead_controls doesn't fire — yet it ships a blank/empty page.
