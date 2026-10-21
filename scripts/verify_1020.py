@@ -1,4 +1,4 @@
-"""Pre-registered checks for the 2026-10-20 batch.
+"""Pre-registered checks for the 2026-10-20 batch (sections A-D, 13 checks).
 
     python scripts/verify_1020.py generated/<run> [--log gm_<run>.log]
 
@@ -170,6 +170,40 @@ def check_log_only(logtext, nlines):
     short = len(re.findall(r"table\(s\) hold fewer rows", logtext))
     say("#1203md", "CONFIRMED" if short else "NOT MEASURED",
         "%d shortfall line(s); absent is fine if no table actually loaded short" % short)
+
+    # #1203qs -- the #1017 message must name the pages, and must keep the COUNT and the
+    # LIST as two numbers. The defect it replaced printed "on 0 record(s): <unnamed
+    # records>" 269 times across r170-r173 for the commonest live blocker, so the check is
+    # on the SHAPE of the line, not on whether it appears.
+    ui = re.findall(r"#1017 validation_ui_evidence_failed on (\d+) record\(s\), "
+                    r"(\d+) named page\(s\): ([^\n]*)", logtext)
+    blind = [t for t in ui if t[0] == "0" and "<unnamed records>" in t[2]]
+    # NOT a defect signal: `failed_records` is len(failed) and `pages_failed` is
+    # sorted(set(failed)), so the two numbers are EQUAL whenever no page failed twice --
+    # which is the common case. The first draft of this check called that "the COUNT and the
+    # LIST merged again" and would have reported r191's 10 correct messages as suspect. What
+    # would be wrong is the LIST being longer than the COUNT, which set() makes impossible
+    # unless something upstream swapped the two fields.
+    inverted = [t for t in ui if int(t[1]) > int(t[0])]
+    old_shape = len(re.findall(r"#1017 validation_ui_evidence_failed on \d+ record\(s\): ",
+                               logtext))
+    say("#1203qs",
+        "FALSIFIED" if (blind or old_shape or inverted)
+        else ("CONFIRMED" if ui else "NOT MEASURED"),
+        "%d message(s) in the two-number shape, %d in the OLD one-number shape, %d reported "
+        "0 records with no names, %d named MORE pages than records (the fields swapped)"
+        % (len(ui), old_shape, len(blind), len(inverted)))
+
+    # #1203qv -- the invisible-icon advice must carry its MECHANISM, not just the symptom.
+    # A lane that reads "CSS colour cannot reach" and nothing else can still see the icon in
+    # the DOM, so the report contradicts what it sees. Never firing is NOT falsification:
+    # it needs an <img src> row pointing at a fill="currentColor" SVG to trigger at all.
+    icon = re.findall(r"#1203n0 ([^\n]*)", logtext)
+    mute = [t for t in icon if "in the DOM and invisible on screen" not in t]
+    say("#1203qv", "FALSIFIED" if mute else ("CONFIRMED" if icon else "NOT MEASURED"),
+        "%d invisible-icon advice line(s), %d missing the mechanism clause%s"
+        % (len(icon), len(mute),
+           "" if icon else " (absent is fine: needs an <img> + currentColor row)"))
 
     # #1203qr -- a wedge while every build check is green.
     #
