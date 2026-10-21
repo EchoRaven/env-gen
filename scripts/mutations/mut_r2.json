@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_login_failure_attribution_612.py",
+ "mutations": [
+  {
+   "label": "R2A THE REACHABILITY ONE, and the reason this spec exists: an early return makes the WHOLE ladder unreachable. `_ladder_strings` walks every ast.Return regardless of whether control can reach it, so every source-text assertion in this file stays green while the function always answers \"\" -- a login failure with no note at all.",
+   "find": "    Returns \"\" when the auth flow worked. Never raises.\n    \"\"\"\n    if ok_auth:",
+   "replace": "    Returns \"\" when the auth flow worked. Never raises.\n    \"\"\"\n    return \"\"\n    if ok_auth:"
+  },
+  {
+   "label": "R2B the #1203g1 branch's CONDITION is inverted while its string is left untouched, so a stored token is routed to the unwired branch again -- exactly #1203g1's defect, and invisible to an assertion that only counts strings",
+   "find": "    elif not auth_status and token:",
+   "replace": "    elif not auth_status and not token:"
+  },
+  {
+   "label": "R2C a working auth stops being silent, so every passing login emits a failure note",
+   "find": "    if ok_auth:\n        return \"\"\n    elif token and navigated and not landed:",
+   "replace": "    if ok_auth:\n        return \"auth failed\"\n    elif token and navigated and not landed:"
+  },
+  {
+   "label": "R2D the backend-fault branch stops being reachable, so a 4xx falls through to the shape branch and a credentials failure is reported as a response-shape problem",
+   "find": "    elif auth_fault_owner_1203h0(ok_auth=ok_auth, auth_status=auth_status) == \"backend\":",
+   "replace": "    elif auth_fault_owner_1203h0(ok_auth=ok_auth, auth_status=auth_status) == \"@@never@@\":"
+  }
+ ]
+}

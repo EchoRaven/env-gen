@@ -171,3 +171,81 @@ def test_the_module_still_parses_and_imports():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+# --- #1203r2: DRIVE the ladder, do not only read it ---------------------------------------
+#
+# Every assertion above reads `inspect.getsource(test_user_runner)`. That was defensible once
+# -- the browser path cannot run under pytest -- but #1203g1 ALREADY FIXED THAT by extracting
+# the ladder into `auth_note_1203g1`, a pure function with keyword-only arguments whose own
+# docstring says it was extracted "so the HOLLOW verdict is unit-testable with a synthetic
+# report". The extraction happened; the driving never did. So the guard for the function that
+# attributes the #1 delivery blocker still cannot see:
+#
+#   * an early `return` that makes the whole ladder unreachable -- `_ladder_strings` walks
+#     every `ast.Return` in the function regardless of whether control can get there, so the
+#     strings are all still present and every assertion above stays green;
+#   * a branch CONDITION inverted while its string is left alone.
+#
+# Measured context for why this ladder matters (2026-10-20, over the persisted reports at
+# /ui_flows/flows/[]/auth_status): `[]` -- no /auth response at all -- is 48.8% of 166 flows,
+# and `submit sent NO /auth request` is 64% of the 84 auth notes. Mis-attributing that is what
+# #612 was filed for.
+
+_BASE = dict(ok_auth=False, token=None, navigated=False, landed=False,
+             path="/login", url="http://x/login", auth_status=[])
+
+
+def _note(**over):
+    kw = dict(_BASE)
+    kw.update(over)
+    return r.auth_note_1203g1(**kw)
+
+
+def test_a_working_auth_says_nothing():
+    assert _note(ok_auth=True) == ""
+
+
+def test_no_auth_request_and_no_token_is_the_unwired_branch():
+    note = _note(auth_status=[])
+    assert "submit sent NO /auth request" in note, note
+    assert "not wired to the API" in note, note
+
+
+def test_a_stored_token_with_no_request_is_not_called_unwired():
+    """#1203g1's branch, driven: token present, no /auth seen."""
+    note = _note(token="abc123", auth_status=[])
+    assert "NOT evidence the form is unwired" in note, note
+    assert "not wired to the API" not in note, note
+
+
+def test_a_4xx_is_attributed_to_credentials_and_not_to_wiring():
+    note = _note(auth_status=[401])
+    assert "the form IS wired but /auth returned" in note, note
+    assert "NOT a wiring bug" in note, note
+    assert "not wired to the API" not in note, note
+
+
+def test_a_2xx_without_a_token_is_attributed_to_shape():
+    note = _note(auth_status=[200])
+    assert note, "a 2xx with no token produced no note at all"
+    assert "not wired to the API" not in note, note
+
+
+def test_a_wrong_destination_is_its_own_branch():
+    note = _note(token="abc123", navigated=True, landed=False)
+    assert note, "token+navigated+not landed produced no note"
+    assert "not wired to the API" not in note, note
+
+
+def test_exactly_one_driven_note_blames_wiring():
+    """The #612 property, asserted over DRIVEN outputs rather than over source strings: of
+    the six reachable branches, only the no-request-no-token one may blame the wiring."""
+    notes = [_note(ok_auth=True),
+             _note(token="t", navigated=True, landed=False),
+             _note(token="t", auth_status=[]),
+             _note(auth_status=[]),
+             _note(auth_status=[401]),
+             _note(auth_status=[200])]
+    blaming = [n for n in notes if "not wired to the API" in n]
+    assert len(blaming) == 1, blaming
+    assert "submit sent NO /auth request" in blaming[0], blaming[0]
