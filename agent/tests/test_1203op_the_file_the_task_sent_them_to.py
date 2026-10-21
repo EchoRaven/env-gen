@@ -414,8 +414,13 @@ class WhatTheCorpusSays(unittest.TestCase):
                 if fp not in ever:
                     bad += 1
                     runs.add(root.name)
+        # #1203r8 (2026-10-21): `tot` is the DENOMINATOR and already has its floor on the
+        # line above; pinning it exactly as well meant one new run in the corpus broke this --
+        # 6552 -> 6641 registrations while `bad` and `runs` returned 26 and 8, unchanged. The
+        # bad registrations are the claim; the number of registrations read is just how big
+        # the corpus is that day.
         self.assertGreater(tot, 6000, "only %d registrations read" % tot)
-        self.assertEqual((tot, bad, len(runs)), (6552, 26, 8))
+        self.assertEqual((bad, len(runs)), (26, 8))
 
 
 if __name__ == "__main__":

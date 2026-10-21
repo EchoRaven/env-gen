@@ -252,8 +252,42 @@ class WhatTheCorpusSays(unittest.TestCase):
                            for d in n.decorator_list):
                     continue
                 early = False
+                # #1203r8 (2026-10-21): A HOISTED RESPONSE STILL COUNTS.
+                #
+                # r46 builds the 401 into a local before returning it --
+                #     _fw_401 = _FWJSONResponse(status_code=401, content={...})
+                #     _fw_401.headers["Access-Control-Allow-Origin"] = _fw_origin
+                #     return _fw_401
+                # -- and it does that precisely so it can attach the CORS headers #1203om
+                # asked for. Requiring the Response to BE the returned Call made that guard
+                # invisible, and the corpus count fell to 101 of 102 with r46 as the lone
+                # "exception" -- which read like the defect had been fixed somewhere.
+                #
+                # It had not: r46 still registers CORS at line 882 and the 401-returning guard
+                # at 1018, which is the ordering this test measures. THE FRAMEWORK'S OWN REMEDY
+                # WAS ERASING THE MEASUREMENT THAT JUSTIFIES IT, and every backend that adopts
+                # the header-attaching fix would have eroded it further, silently, one run at a
+                # time. Matching the PROPERTY (this middleware can answer 4xx) instead of one
+                # SPELLING (the Response is the return expression) is what keeps it honest.
+                _4xx_1203r8 = set()
+                for _a in [x for x in ast.walk(n) if isinstance(x, ast.Assign)]:
+                    _v = _a.value
+                    if not isinstance(_v, ast.Call):
+                        continue
+                    _nm = getattr(_v.func, "id", getattr(_v.func, "attr", "")) or ""
+                    if "Response" not in _nm:
+                        continue
+                    if any(kw.arg == "status_code" and isinstance(kw.value, ast.Constant)
+                           and isinstance(kw.value.value, int)
+                           and 400 <= kw.value.value < 500 for kw in _v.keywords):
+                        for _t in _a.targets:
+                            if isinstance(_t, ast.Name):
+                                _4xx_1203r8.add(_t.id)
                 for r in [x for x in ast.walk(n) if isinstance(x, ast.Return)]:
                     v = r.value
+                    if isinstance(v, ast.Name) and v.id in _4xx_1203r8:
+                        early = True
+                        continue
                     if not isinstance(v, ast.Call):
                         continue
                     nm = getattr(v.func, "id", getattr(v.func, "attr", "")) or ""
@@ -267,8 +301,74 @@ class WhatTheCorpusSays(unittest.TestCase):
                 guards.append((n.lineno, early))
         return cors, guards
 
+    def test_the_order_detector_discriminates_1203r8(self):
+        """SYNTHETIC ANCHORS for `_order`, because the corpus cannot prove it discriminates.
+
+        On today's corpus the `early` flag is True for all 102 backends -- which is exactly
+        what this ticket claims, and therefore also exactly what a BROKEN detector that
+        returned True unconditionally would produce. The two are indistinguishable from the
+        corpus alone, so the negative cases have to be written by hand.
+
+        The last case is the one that matters: a function that builds a 401 and returns
+        SOMETHING ELSE must not count. Without it, "a 4xx is assigned somewhere in this
+        function" would pass every case here and still be wrong."""
+        import tempfile
+        cases = [
+            ("no 4xx anywhere", False, """
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+@app.middleware("http")
+async def g(request, call_next):
+    return await call_next(request)
+"""),
+            ("hoisted 500 is not a 4xx", False, """
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+@app.middleware("http")
+async def g(request, call_next):
+    boom = JSONResponse(status_code=500, content={})
+    if bad: return boom
+    return await call_next(request)
+"""),
+            ("hoisted 401 -- r46's shape, the whole point of #1203r8", True, """
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+@app.middleware("http")
+async def g(request, call_next):
+    deny = JSONResponse(status_code=401, content={})
+    deny.headers["Access-Control-Allow-Origin"] = o
+    if bad: return deny
+    return await call_next(request)
+"""),
+            ("inline 403 -- the original shape must still count", True, """
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+@app.middleware("http")
+async def g(request, call_next):
+    if bad: return JSONResponse(status_code=403, content={})
+    return await call_next(request)
+"""),
+            ("builds a 401 but returns a DIFFERENT name", False, """
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+@app.middleware("http")
+async def g(request, call_next):
+    deny = JSONResponse(status_code=401, content={})
+    other = await call_next(request)
+    return other
+"""),
+        ]
+        d = Path(tempfile.mkdtemp())
+        for label, want, src in cases:
+            f = d / "m.py"
+            f.write_text(src, encoding="utf-8")
+            cors, guards = self._order(f)
+            self.assertIsNotNone(cors, "%s: the CORS line must still be found" % label)
+            self.assertEqual(len(guards), 1, "%s: expected exactly one guard" % label)
+            self.assertEqual(guards[0][1], want,
+                             "%s: `early` should be %s, got %s" % (label, want, guards[0][1]))
+
     def test_every_delivered_backend_has_the_order(self):
-        """101 of 101 -- so this is not a product or era quirk."""
+        """102 of 102 -- so this is not a product or era quirk.
+
+        The count only stays truthful because `_order` sees a HOISTED 4xx response as well as
+        an inline one (#1203r8): r46 hoists its 401 to attach CORS headers, and the earlier
+        Call-only test read that as the defect having disappeared."""
         total = affected = 0
         for f in sorted(self.corpus.glob("*/app/backend/main.py")):
             cors, guards = self._order(f)

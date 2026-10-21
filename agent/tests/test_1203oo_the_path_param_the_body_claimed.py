@@ -255,8 +255,22 @@ class TheCorpus(unittest.TestCase):
             if not b["Body fields"] and not b["Headers"]:
                 only_path += 1
                 only_runs.add(run)
-        self.assertEqual((len(self.eps), clashing, len(runs), only_path, len(only_runs)),
-                         (899, 93, 37, 30, 13))
+        # #1203r8 (2026-10-21): THE POPULATION IS A DENOMINATOR, NOT THE CLAIM.
+        #
+        # This was one tuple pinning all five numbers, so adding ONE run to the corpus broke
+        # it: 899 -> 905 endpoints while `clashing`, `runs`, `only_path` and `only_runs` came
+        # back 93 / 37 / 30 / 13, byte-identical. The finding had not moved an inch; only the
+        # denominator grew, and the failure said nothing about which of the two had happened.
+        #
+        # A measurement that fails every time the corpus grows gets re-pinned by whoever is
+        # holding the broken suite, and re-pinning is indistinguishable from erasing a real
+        # regression. So the DEFECT counts stay exact -- they are what the ticket asserts --
+        # and the population is floored at the value it had when measured.
+        self.assertGreaterEqual(
+            len(self.eps), 899,
+            "the endpoint population SHRANK to %d (was 899 when measured); a corpus that "
+            "loses endpoints is a different problem from this ticket" % len(self.eps))
+        self.assertEqual((clashing, len(runs), only_path, len(only_runs)), (93, 37, 30, 13))
 
     def test_the_modern_era_is_in_the_population(self):
         """Not an old-era artifact: r184/r187/r189/r190 each carry at least one."""

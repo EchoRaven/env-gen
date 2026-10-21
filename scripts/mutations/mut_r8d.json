@@ -1,0 +1,21 @@
+{
+ "file": "agent/tests/test_1203om_the_401_that_looked_like_cors.py",
+ "test": "tests/test_1203om_the_401_that_looked_like_cors.py",
+ "mutations": [
+  {
+   "label": "R8J the hoisted-response branch is removed, which is the exact state the corpus was in before #1203r8: r46's `return _fw_401` becomes invisible, the count silently drops to 101 of 102, and the framework's own CORS-header remedy keeps eroding the measurement that justifies it. The `_4xx_1203r8` set is still BUILT, so a source-text assertion mentioning it still reads as coverage.",
+   "find": "                    if isinstance(v, ast.Name) and v.id in _4xx_1203r8:\n                        early = True\n                        continue\n",
+   "replace": ""
+  },
+  {
+   "label": "R8K the 4xx range check on the HOISTED assignment is widened to any status, so a hoisted 500 would count as an early 4xx. Only the synthetic negative case can see this -- the corpus is all-True either way.",
+   "find": "                    if any(kw.arg == \"status_code\" and isinstance(kw.value, ast.Constant)\n                           and isinstance(kw.value.value, int)\n                           and 400 <= kw.value.value < 500 for kw in _v.keywords):",
+   "replace": "                    if any(kw.arg == \"status_code\" and isinstance(kw.value, ast.Constant)\n                           and isinstance(kw.value.value, int)\n                           and 100 <= kw.value.value < 600 for kw in _v.keywords):"
+  },
+  {
+   "label": "R8L the returned-name check is loosened to 'a 4xx was assigned ANYWHERE in this function', which passes every positive case and is still wrong -- the 'returns a different name' anchor is the only thing that refuses it.",
+   "find": "                    if isinstance(v, ast.Name) and v.id in _4xx_1203r8:",
+   "replace": "                    if _4xx_1203r8:"
+  }
+ ]
+}
