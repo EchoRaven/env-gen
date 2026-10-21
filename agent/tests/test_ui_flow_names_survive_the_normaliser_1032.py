@@ -168,3 +168,53 @@ def test_both_normalisers_emit_the_same_key_set():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+# --- #1203r7: the key ARRIVING, not just being spelled ---------------------------------------
+#
+# `test_the_orchestrator_record_carries_name` pins the assignment as a literal:
+#
+#     assert '"name": c.get("name", "")' in src
+#
+# and #1202fv independently asserts the key is in the emitted key SET of both normalisers. So
+# removing the key is guarded twice. What neither sees is the value failing to ARRIVE: write
+# the key exactly as pinned and blank it one line later, and both assertions stay green while
+# every failing flow collapses to "?" again -- r174's live defect, six distinct flows becoming
+# one. mut_1032 measured it: F1 (blank after the append) MISSED, F2 (key removed) CAUGHT.
+#
+# The behavioural tests in this file cannot see it either, because they feed `breadth()` with
+# records built by `_orch_record` -- this file's OWN copy of the orchestrator's record shape.
+# A guard against "two copies drifted on one key" containing a third copy of that shape is
+# the same risk one level up, so the assertion below is about the producer, not about a copy.
+#
+# `_get_validation_results` is an Orchestrator method over a hub graph, so this asserts the
+# structural property that makes arrival safe: the appended dict is the LAST word on the
+# record. Nothing afterwards in that function may reach back into it.
+
+def test_nothing_rewrites_the_record_after_it_is_appended_1203r7():
+    import ast
+    from env_generator.llm_generator.multi_agent import orchestrator as orch
+    tree = ast.parse(inspect.getsource(orch))
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == "_get_validation_results"), None)
+    assert fn is not None, "the orchestrator's normaliser is gone or renamed"
+    appends = [n for n in ast.walk(fn)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "append"
+               and n.args and isinstance(n.args[0], ast.Dict)]
+    assert len(appends) == 1, "expected one record-building append, found %d" % len(appends)
+    keys = [k.value for k in appends[0].args[0].keys
+            if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+    assert "name" in keys, "the appended record does not carry `name` at all: %s" % sorted(keys)
+    # ...and no later statement reaches back into the list it was appended to.
+    rewrites = []
+    for node in ast.walk(fn):
+        if not isinstance(node, (ast.Assign, ast.AugAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for tg in targets:
+            if isinstance(tg, ast.Subscript) and "records" in ast.unparse(tg):
+                rewrites.append(ast.unparse(node))
+    assert not rewrites, (
+        "something rewrites the record after it is appended, so a key can be spelled "
+        "correctly and still not arrive: %s" % rewrites)

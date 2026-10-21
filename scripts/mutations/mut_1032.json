@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/orchestrator.py",
+ "test": "tests/test_ui_flow_names_survive_the_normaliser_1032.py",
+ "mutations": [
+  {
+   "label": "F1 ARRIVAL, not spelling: the `\"name\"` key is still written exactly as the guard pins it, and then blanked right after the append. Every failing UI flow collapses to \"?\" again -- #1032's live defect in r174, where six distinct flows became one -- while `assert '\"name\": c.get(\"name\", \"\")' in src` stays green.",
+   "find": "                \"recorded_at\": c.get(\"updated_at\", 0),\n            })",
+   "replace": "                \"recorded_at\": c.get(\"updated_at\", 0),\n            })\n            records[-1][\"name\"] = \"\""
+  },
+  {
+   "label": "F2 CONTROL, expected CAUGHT: the key is removed outright, which the literal pin covers",
+   "find": "                \"name\": c.get(\"name\", \"\"),\n",
+   "replace": ""
+  }
+ ]
+}
