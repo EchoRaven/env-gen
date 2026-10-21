@@ -87,10 +87,50 @@ case " $* " in
     ;;
 esac
 
+# #1203qy: `--basetemp` DOES NOT GOVERN `tempfile.mkdtemp()`. #1203qt above fixed where
+# pytest's own `tmp_path`/`tmpdir` fixtures live, and stopped there -- which left the larger
+# half open, because 299 test files under agent/tests, tests/ and multi_agent/tests call
+# `tempfile.mkdtemp()` directly. Those honour TMPDIR, not --basetemp, and pytest never
+# cleans them: nothing it did not create is its to remove.
+#
+# MEASURED 2026-10-20, and it had already happened: /tmp held 1,474,363 entries totalling
+# 177G, and `/` was down to 77M of 1.8T. The leaked names map one-to-one onto the tests that
+# make them -- glob_nopath_* from test_glob_no_path.py, appr_* from test_approval_gate.py,
+# refmat_* from test_reference_materials.py, runbudget_shim_* from
+# test_run_budget_extraction.py, pending_stale_* from test_pipeline_edge_cases.py -- plus
+# the anonymous tmpXXXXXXXX from every bare mkdtemp(). The framework itself is clean: zero
+# mkdtemp under agent/env_generator, so this is the suite leaking, not the product.
+#
+# A full root filesystem is the worst shape of failure here, because it is SILENT in the
+# wrong direction: the harness loses every command's stdout while the commands still run, so
+# a scan returns nothing and reads exactly like a clean result. That already cost a session.
+#
+# Same treatment as basetemp: a per-run directory on the roomy disk, removed on success, and
+# an explicit caller choice is left alone. #1203qw did this for mutate.py's child pytest;
+# the suite needs it for the same reason.
+if [ -n "$TMPDIR" ]; then
+  echo "[suite] TMPDIR left as the caller set it: $TMPDIR"
+  _own_tmpdir=""
+else
+  _own_tmpdir="${SUITE_TMPDIR_ROOT:-/data/common/haibotong/pytest_tmp}/tmp.$$"
+  if mkdir -p "$_own_tmpdir" 2>/dev/null; then
+    export TMPDIR="$_own_tmpdir"
+    echo "[suite] TMPDIR: $_own_tmpdir (299 test files call tempfile.mkdtemp() directly)"
+  else
+    # Do not silently fall back to /tmp: that is the condition this block exists to prevent.
+    echo "[suite] WARNING: could not create $_own_tmpdir -- tempfile.mkdtemp() will land in" \
+         "${TMPDIR:-/tmp} and is NOT cleaned by pytest. Check df before trusting this run."
+    _own_tmpdir=""
+  fi
+fi
+
 "$PY" -m pytest "$@"
 rc=$?
 if [ -n "$_own_basetemp" ] && [ "$rc" = "0" ]; then
   rm -rf -- "$_own_basetemp" 2>/dev/null
+fi
+if [ -n "$_own_tmpdir" ] && [ "$rc" = "0" ]; then
+  rm -rf -- "$_own_tmpdir" 2>/dev/null
 fi
 echo "[suite] exit=$rc"
 exit $rc

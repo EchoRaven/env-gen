@@ -97,6 +97,72 @@ class SuiteOwnsItsBasetemp(unittest.TestCase):
         self.assertLess(tail.find("rc=$?"), m.start(), "cleanup reads rc before it is set")
 
 
+def _tmpdir_after_block(args, env_tmpdir=None, root=None):
+    """What suite.sh does to TMPDIR, by RUNNING its own block.
+
+    `env_tmpdir=None` means TMPDIR is UNSET for the child (`env -u`), which is the case that
+    matters -- that is when mkdtemp() falls through to /tmp."""
+    block = _basetemp_block()
+    pre = 'SUITE_TMPDIR_ROOT=%s\n' % root if root else ''
+    script = (pre + 'set -- ' + ' '.join("'%s'" % a for a in args) + '\n'
+              + block + '\necho "TMPDIR=$TMPDIR"\necho "OWNTMP=$_own_tmpdir"')
+    cmd = ["bash", "-c", script]
+    if env_tmpdir is None:
+        cmd = ["env", "-u", "TMPDIR"] + cmd
+    else:
+        cmd = ["env", "TMPDIR=%s" % env_tmpdir] + cmd
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
+    g = lambda k: next((l[len(k) + 1:] for l in out.splitlines() if l.startswith(k + "=")), "")
+    return g("TMPDIR"), g("OWNTMP")
+
+
+class SuiteOwnsItsTmpdir(unittest.TestCase):
+    """#1203qy: --basetemp governs the FIXTURES; 299 test files call tempfile.mkdtemp()
+    directly, and those honour TMPDIR. On 2026-10-20 that had already put 1,474,363 entries
+    and 177G into /tmp, leaving `/` with 77M -- the failure that makes the harness lose every
+    command's stdout while the commands still run, so a scan returns nothing and reads
+    exactly like a clean result."""
+
+    def test_tmpdir_is_pointed_off_the_root_filesystem(self):
+        root = "/data/common/haibotong/pytest_tmp"
+        got, own = _tmpdir_after_block(["tests", "-q"], env_tmpdir=None, root=root)
+        self.assertTrue(own, "TMPDIR was left unset: mkdtemp() would land in /tmp")
+        self.assertTrue(got.startswith(root),
+                        "TMPDIR is %r, not under %r -- mkdtemp() still fills /" % (got, root))
+        self.assertNotEqual("/tmp", got)
+
+    def test_two_runs_get_different_tmpdirs(self):
+        root = "/data/common/haibotong/pytest_tmp"
+        _g1, o1 = _tmpdir_after_block(["tests"], env_tmpdir=None, root=root)
+        _g2, o2 = _tmpdir_after_block(["tests"], env_tmpdir=None, root=root)
+        self.assertTrue(o1 and o2)
+        self.assertNotEqual(o1, o2, "both runs share a TMPDIR: %r" % o1)
+
+    def test_a_caller_who_set_tmpdir_keeps_it(self):
+        got, own = _tmpdir_after_block(["tests"], env_tmpdir="/tmp/caller_picked_this")
+        self.assertEqual("/tmp/caller_picked_this", got, "overrode the caller's TMPDIR")
+        self.assertEqual("", own, "claimed ownership of a TMPDIR it did not create")
+
+    def test_the_tmpdir_cleanup_also_requires_success(self):
+        src = SUITE_SH.read_text(encoding="utf-8")
+        i = src.find('"$PY" -m pytest')
+        tail = src[i:]
+        m = re.search(r'if \[ -n "\$_own_tmpdir" \] && \[ "\$rc" = "0" \]', tail)
+        self.assertIsNotNone(m, "the TMPDIR cleanup no longer requires BOTH an owned path "
+                                "and rc=0:\n%s" % tail[:500])
+        self.assertLess(tail.find("rc=$?"), m.start(), "cleanup reads rc before it is set")
+
+    def test_a_failed_mkdir_warns_instead_of_falling_back_quietly(self):
+        """The user's standing rule: no fallback that masks a failure. Falling back to /tmp
+        without saying so is exactly the condition this block prevents."""
+        block = _basetemp_block()
+        self.assertIn("WARNING", block,
+                      "no warning when the temp root cannot be created")
+        i = block.find("WARNING")
+        self.assertIn("NOT cleaned", block[i:i + 400],
+                      "the warning does not say the consequence")
+
+
 class TheVerdictsToolRestoresWhatItDirties(unittest.TestCase):
     """The guard restores to the SNAPSHOT it read, never to HEAD.
 
