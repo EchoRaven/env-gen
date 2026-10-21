@@ -1,0 +1,31 @@
+{
+ "file": "scripts/suite.sh",
+ "test": "tests/test_1203qt_the_suite_owns_its_temp_dir.py",
+ "mutations": [
+  {
+   "label": "QY1 THE TICKET: TMPDIR is never exported, so tempfile.mkdtemp() keeps landing in /tmp (the 1.47M entries / 184G that left / with 68M)",
+   "find": "export TMPDIR=\"$_own_tmpdir\"",
+   "replace": ":"
+  },
+  {
+   "label": "QY2 the temp root goes back onto the ROOT filesystem -- the per-run dir exists and is cleaned, but it is on the disk that fills",
+   "find": "_own_tmpdir=\"${SUITE_TMPDIR_ROOT:-/data/common/haibotong/pytest_tmp}/tmp.$$\"",
+   "replace": "_own_tmpdir=\"/tmp/suite_tmp.$$\""
+  },
+  {
+   "label": "QY3 a TMPDIR the caller chose is overridden anyway (the #1203qt lesson in reverse: an explicit choice must be left alone)",
+   "find": "if [ -n \"$TMPDIR\" ]; then",
+   "replace": "if false; then"
+  },
+  {
+   "label": "QY4 the temp tree is deleted even when the run FAILED, destroying the evidence for the failure",
+   "find": "if [ -n \"$_own_tmpdir\" ] && [ \"$rc\" = \"0\" ]; then",
+   "replace": "if [ -n \"$_own_tmpdir\" ]; then"
+  },
+  {
+   "label": "QY5 the un-creatable temp root falls through to /tmp QUIETLY -- the fallback that masks the failure (user's standing rule)",
+   "find": "WARNING: could not create",
+   "replace": "note: could not create"
+  }
+ ]
+}
