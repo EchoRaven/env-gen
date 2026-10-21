@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203r9_a_declaration_is_not_a_call.py",
+ "mutations": [
+  {
+   "label": "R9A the #912 split goes back to `[^}]+`, the original defect: `{}` stops splitting, the pattern collapses to an unmatchable literal, and every shape-formed path is reported `never referenced` however the code is written. The split EXPRESSION survives, so a source-text assertion about it still reads as coverage.",
+   "find": "        segs = re.split(r\"\\{[^}]*\\}|:[A-Za-z_]\\w*\", api)  # #1203r9: `*`, so `{}` splits too",
+   "replace": "        segs = re.split(r\"\\{[^}]+\\}|:[A-Za-z_]\\w*\", api)"
+  },
+  {
+   "label": "R9B the #918 split goes back to `[^}]+`. This is the SECOND site, and nothing in the #912 tests can see it -- the per-site detector is `test_918_sees_a_real_call_through_the_shape_form`. Today's lesson, twice earned: a patch touching two places needs a detector per place.",
+   "find": "                    _segs = re.split(r\"\\{[^}]*\\}|:[A-Za-z_]\\w*\", _a)  # #1203r9",
+   "replace": "                    _segs = re.split(r\"\\{[^}]+\\}|:[A-Za-z_]\\w*\", _a)"
+  },
+  {
+   "label": "R9C the #912 probe reads the WHOLE source again, so a page satisfies `this API is referenced` by listing the string -- r46's `TITLE_DETAIL_API_COVERAGE` array becomes sufficient. The strip helper is still DEFINED and still called at the #918 site, so the symbol exists and only behaviour differs.",
+   "find": "        if pat and not re.search(pat, _api_src_1203r9):",
+   "replace": "        if pat and not re.search(pat, all_src):"
+  },
+  {
+   "label": "R9D the #918 probe stops stripping. #918 is the site the declaration trick satisfies most easily, because the gamed array sits in the page file and therefore inside the page's OWN closure.",
+   "find": "                _blob = calls_only_1203r9(\"\\n\".join(_reach.values()))  # #1203r9",
+   "replace": "                _blob = \"\\n\".join(_reach.values())"
+  },
+  {
+   "label": "R9E the strip's method list is widened to any word, so `'GETTING /api/x'` -- or any prose string that happens to start with a word and a path -- is eaten as if it were a declaration. That silently deletes real source before the search, which can only FALSELY SILENCE findings.",
+   "find": "    r\"\"\"(['\"`])(?:GET|POST|PUT|PATCH|DELETE)\\s+/[^\\s'\"`]*\\1\"\"\")",
+   "replace": "    r\"\"\"(['\"`])(?:\\w+)\\s+/[^\\s'\"`]*\\1\"\"\")"
+  },
+  {
+   "label": "R9F CONTROL, expected CAUGHT: the strip is a no-op, which is the state before #1203r9's second half. Every positive case still passes; only the declaration-array cases fail.",
+   "find": "    return _API_DECL_LITERAL_1203R9.sub('\"\"', src or \"\")",
+   "replace": "    return src or \"\""
+  },
+  {
+   "label": "R9G CONTROL, expected CAUGHT: the strip eats EVERYTHING, so no API is ever referenced. A guard that reports every API missing is as useless as one that reports none, and `test_the_strip_leaves_genuine_call_sites_alone` is what refuses it.",
+   "find": "    return _API_DECL_LITERAL_1203R9.sub('\"\"', src or \"\")\n",
+   "replace": "    return \"\"\n"
+  }
+ ]
+}

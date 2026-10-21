@@ -170,6 +170,58 @@ def _has_real_api_call(text: str) -> bool:
     return False
 
 
+# #1203r9: A DECLARATION IS NOT A CALL, AND `{}` IS NOT A LITERAL.
+#
+# Two defects in the same matcher, pulling opposite ways.
+#
+# FALSE NEGATIVE. The split below expanded `{id}` into a one-segment wildcard, but its class
+# was `\{[^}]+\}` -- at least ONE character inside the braces. The framework's own canonical
+# shape form for a path param is the EMPTY `{}` (`backend_skeleton.py`, `kickoff/contract.py`,
+# `control_exercise.py`, `delivery_gate.py` all produce it, so two paths differing only in the
+# param NAME compare equal). `{}` therefore never split, and the pattern collapsed to the
+# literal `/api/titles/\{\}/episodes`, which working source can never contain -- so the check
+# fired unconditionally on every shape-formed path. The repo already spells it correctly
+# elsewhere: `backend_skeleton.py:201` and `deliverability.py:1307` both use `[^}]*`.
+#
+#     r46, last lifecycle line     8 of 8 `never referenced` findings FALSE
+#                                  4 of its 6 pending pages held on nothing else
+#     corpus (a LOWER bound)       43 APIs across 11 runs, both products
+#
+# The bound is a floor because the only APIs enumerable this way are the ones a lane wrote
+# into a declaration array -- and that set is biased toward exactly the affected ones.
+# r46's four were all genuinely called, with the safest spelling there is:
+# `/api/titles/${encodeURIComponent(id)}/episodes` (api.js:97).
+#
+# FALSE POSITIVE, and it is the FIRST defect that caused it. A bare `'METHOD /path'` string
+# literal counted as a reference, so the check was satisfiable by DECLARING the string. The
+# lane could not silence the false finding by writing code -- the code was already right --
+# so it listed the strings instead:
+#
+#     const TITLE_DETAIL_API_COVERAGE = ['GET /api/titles', 'GET /api/titles/{}', ...];
+#     export default function TitleDetailPage() { void TITLE_DETAIL_API_COVERAGE;
+#
+# in the framework's own shape form, named after the framework's own field, with a `void` to
+# quiet the linter. 385 such literals across 21 runs; identifiers include `apis_used` (16x),
+# `API_DEPENDENCIES`, `CONTRACT_APIS`, `IMPLEMENTED_ROUTE`. Not cynicism -- a lane doing the
+# only thing left that makes the finding go away.
+#
+# HONESTLY SCOPED: of 168 APIs named in those literals, ZERO are satisfied ONLY by their own
+# declaration -- every one has a genuine call elsewhere. So nothing is hidden today; this
+# closes a mechanism that WOULD mask a real miss, and the measurement is recorded as 0 rather
+# than dressed up. Stripping is risk-free in the other direction too: 0 of 2048 genuine call
+# sites put the method inside the quoted path, because the method rides in `options.method`
+# or the helper's name.
+_API_DECL_LITERAL_1203R9 = re.compile(
+    r"""(['"`])(?:GET|POST|PUT|PATCH|DELETE)\s+/[^\s'"`]*\1""")
+
+
+def calls_only_1203r9(src: str) -> str:
+    '''Source with `\'METHOD /path\'` DECLARATION literals blanked, so a page cannot satisfy
+    "this API is referenced" by listing the string. Only the reference probes use this --
+    component resolution still reads the whole file.'''
+    return _API_DECL_LITERAL_1203R9.sub('""', src or "")
+
+
 def _norm_api(entry: str) -> str:
     """'GET /api/posts' → '/api/posts'; '/api/posts' stays."""
     parts = str(entry or "").strip().split()
@@ -974,6 +1026,10 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                 r"element=\{\s*<" + re.escape(component or "") + r"[\s/>]")
             if not (component and _elem_re.search(app_jsx)):
                 missing.append(f"route `{route}` not wired in App.jsx")
+    # #1203r9: computed ONCE -- the reference probe must not be satisfied by a
+    # page listing the API string. `all_src` itself stays whole for the component
+    # checks above, which legitimately look for declarations.
+    _api_src_1203r9 = calls_only_1203r9(all_src)
     for api in reach_apis:
         # Match the declared path against the source allowing each {param}/:param to be
         # ANY single path segment. The lane writes the call as `/api/posts/${postId}/like`
@@ -985,7 +1041,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # auto-completed, and the pages depending on them stayed blocked → the lane
         # abandoned 5 components it had actually built. Build a regex: literal segments
         # escaped, each param → one path-segment wildcard.
-        segs = re.split(r"\{[^}]+\}|:[A-Za-z_]\w*", api)
+        segs = re.split(r"\{[^}]*\}|:[A-Za-z_]\w*", api)  # #1203r9: `*`, so `{}` splits too
         if not any(s.strip("/") for s in segs):
             continue
         # #912: the wildcard standing in for a path param used to be `[^/'"`\s)]*` — it excluded
@@ -1006,7 +1062,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # honest expression of "one path segment, however it is spelled" is "anything but a
         # slash", bounded so a pathological line cannot backtrack.
         pat = r"[^/\n]{0,80}".join(re.escape(s) for s in segs).rstrip("/")
-        if pat and not re.search(pat, all_src):
+        if pat and not re.search(pat, _api_src_1203r9):
             missing.append(f"declared API `{api}` never referenced in frontend src")
     if comp_file_text and _page_dead_controls(comp_file_text):
         # #983/#1203qz: say WHICH and HOW MANY. "renders interactive markup with no bound
@@ -1784,15 +1840,43 @@ def _registered_paths(registryhub: Any) -> Optional[set]:
         if str(ep.get("status") or "").lower() == "deprecated":
             continue
         m = str(ep.get("method") or "GET").upper()
-        p = re.sub(r"\{[^}]+\}|:[A-Za-z_]\w*", "*", str(ep.get("path") or "")).rstrip("/")
+        # #1203r9: `[^}]*` here too. `register_endpoint` refuses the empty form, so today
+        # this side is always named and the change is a no-op -- it is made anyway so the two
+        # halves of one comparison cannot drift apart, which is how the mismatch arose.
+        p = re.sub(r"\{[^}]*\}|:[A-Za-z_]\w*", "*", str(ep.get("path") or "")).rstrip("/")
         out.add((m, p))
     return out
 
 
 def _api_registered(api: str, registered: set) -> bool:
+    """Is this DECLARED api in the live contract?
+
+    #1203r9: `[^}]*`, not `[^}]+`. The class required a character inside the braces, so the
+    framework's own EMPTY shape form never normalised to `*` and never matched a contract
+    entry that did. Driven, against a contract holding `/api/titles/*/episodes`:
+
+        GET /api/titles/{}/episodes       False      <-- the form pages actually carry
+        GET /api/titles/{id}/episodes     True
+
+    This is the HARD half of #1203r9. The reference probe's miss is soft -- it feeds
+    `pages_pending` and the remediation prompt -- but `_contract_misses` sets `ok = False`
+    outright, so a page declaring a shape-formed api could never reach `implemented` no
+    matter what anyone built. r46 carried 8 of these findings and every distinct api in them
+    was shape-formed: `GET /api/titles/{}/episodes` x4, `DELETE /api/my-list/{}` x3,
+    `GET /api/titles/{}` x1 -- all three present in its contract under named params.
+
+    WHY THE EMPTY FORM EXISTS AT ALL, because it is not a typo: `{}` is the framework's
+    param-NAME-agnostic IDENTITY KEY (`kickoff/contract.py` says so in as many words, and
+    `registryhub.endpoint_id` agrees), so `/api/titles/{id}` and `/api/titles/{titleId}`
+    resolve to one id. It is meant to be COMPARED, not read as a path. What went wrong is
+    that the key form reached `ui_page.apis_used`, where four consumers read it as a path
+    template. The producer of that leak is NOT identified -- `register_endpoint` refuses
+    `{}` outright ("every {...} must be a NAMED identifier") while `register_ui_page`
+    accepts it, and the backfill writer uses named params -- so the fix is at the CONSUMERS,
+    which is correct whichever writer turns out to be responsible."""
     parts = str(api).strip().split()
     m, pth = (parts[0].upper(), parts[1]) if len(parts) == 2 else ("GET", parts[0] if parts else "")
-    pth = re.sub(r"\{[^}]+\}|:[A-Za-z_]\w*", "*", pth).rstrip("/")
+    pth = re.sub(r"\{[^}]*\}|:[A-Za-z_]\w*", "*", pth).rstrip("/")
     return (m, pth) in registered
 
 
@@ -1972,10 +2056,10 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
             _apis_918 = [str(a).split()[-1] for a in (page.get("apis_used") or []) if "/" in str(a)]
             if _apis_918:
                 _reach = _page_closure_918(page, cache)
-                _blob = "\n".join(_reach.values())
+                _blob = calls_only_1203r9("\n".join(_reach.values()))  # #1203r9
                 _unreachable = []
                 for _a in _apis_918:
-                    _segs = re.split(r"\{[^}]+\}|:[A-Za-z_]\w*", _a)
+                    _segs = re.split(r"\{[^}]*\}|:[A-Za-z_]\w*", _a)  # #1203r9
                     _pat = r"[^/\n]{0,80}".join(re.escape(s) for s in _segs).rstrip("/")
                     if _pat and not re.search(_pat, _blob):
                         _unreachable.append(_a)

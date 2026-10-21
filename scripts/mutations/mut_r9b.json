@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203r9_a_declaration_is_not_a_call.py",
+ "mutations": [
+  {
+   "label": "R9H site 4 goes back to `[^}]+`: the HARD gate returns. A page declaring the framework's own shape form fails the contract check against a contract that DOES hold the endpoint, `_contract_misses` sets ok=False, and the page can never reach `implemented` however much anyone builds. r46 carried 8 of these.",
+   "find": "    pth = re.sub(r\"\\{[^}]*\\}|:[A-Za-z_]\\w*\", \"*\", pth).rstrip(\"/\")",
+   "replace": "    pth = re.sub(r\"\\{[^}]+\\}|:[A-Za-z_]\\w*\", \"*\", pth).rstrip(\"/\")"
+  },
+  {
+   "label": "R9I site 3 goes back to `[^}]+`. `register_endpoint` refuses the empty form, so this is a no-op on today's data and the CORPUS cannot see it -- only the stub in `test_registered_paths_normalises_the_endpoint_side`, which feeds an endpoint carrying `{}` directly, can. That test exists because the two halves of one comparison drifting apart is how the original mismatch arose.",
+   "find": "        p = re.sub(r\"\\{[^}]*\\}|:[A-Za-z_]\\w*\", \"*\", str(ep.get(\"path\") or \"\")).rstrip(\"/\")",
+   "replace": "        p = re.sub(r\"\\{[^}]+\\}|:[A-Za-z_]\\w*\", \"*\", str(ep.get(\"path\") or \"\")).rstrip(\"/\")"
+  },
+  {
+   "label": "R9J CONTROL, expected CAUGHT: the METHOD is dropped from the contract comparison, so `POST /api/titles/{}/episodes` matches a contract that only registered the GET. Normalising the path must not turn this check into a rubber stamp, and the wrong-method case is what refuses it.",
+   "find": "    return (m, pth) in registered",
+   "replace": "    return any(p == pth for _m, p in registered)"
+  }
+ ]
+}
