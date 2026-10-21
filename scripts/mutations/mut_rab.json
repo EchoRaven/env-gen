@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/scaffolder.py",
+ "test": "tests/test_1203ra_the_dead_control_finding_gets_an_owner.py",
+ "mutations": [
+  {
+   "label": "RAF the dedupe guard is NEGATED. The call stays nested, so a nesting-only assertion still passes, and the task then files only while the finding is UNCHANGED -- never on the pass that discovers it. #1203r4's shape; the polarity assertion is what refuses it.",
+   "find": "                    if _sc1203ra(\"task:dead_controls_1203ra\",",
+   "replace": "                    if not _sc1203ra(\"task:dead_controls_1203ra\","
+  },
+  {
+   "label": "RAG the guard is widened into a tautology, so a task is filed every scaffold pass. r32 ran the scaffold 117 times; 462 of the corpus's 838 cancelled tasks (55%) were already cancelled as duplicates, which is the cost this guard exists to avoid.",
+   "find": "                    if _sc1203ra(\"task:dead_controls_1203ra\",\n                                 tuple(sorted(map(str, _pg1203ra)))):",
+   "replace": "                    if True or _sc1203ra(\"task:dead_controls_1203ra\",\n                                 tuple(sorted(map(str, _pg1203ra)))):"
+  },
+  {
+   "label": "RAH the consumer reads a key nobody writes, which is #1139's defect verbatim: the evidence is placed in the result and NOTHING reads that key. The create_task call and its guard both survive untouched.",
+   "find": "                _dc1203ra = _pa.get(\"dead_controls\") or {}",
+   "replace": "                _dc1203ra = _pa.get(\"dead_controls_pages\") or {}"
+  },
+  {
+   "label": "RAI CONTROL, expected CAUGHT: the task is filed to a lane that cannot act on frontend pages (#1128's defect -- telling the agent who cannot act).",
+   "find": "                            assignee=\"frontend\", agent=\"scaffolder\", priority=\"P2\",\n                            kind=\"fidelity\")",
+   "replace": "                            assignee=\"backend\", agent=\"scaffolder\", priority=\"P2\",\n                            kind=\"fidelity\")"
+  }
+ ]
+}

@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_audit.py",
+ "test": "tests/test_1203ra_the_dead_control_finding_gets_an_owner.py",
+ "mutations": [
+  {
+   "label": "RAA the surfacing is removed, which is the state the finding was in for 105 runs: computed, correct, and reachable by nobody. `_page_dead_controls` still fires and the pending reason is still printed, so every existing test stays green.",
+   "find": "            if any(DEAD_CONTROL_MARK_1203RA in m for m in missing):\n                out.setdefault(\"dead_controls\", {})[name] = [\n                    m for m in missing if DEAD_CONTROL_MARK_1203RA in m]\n",
+   "replace": ""
+  },
+  {
+   "label": "RAB the consumer stops using the shared constant and retypes the sentence slightly wrong -- exactly the drift the constant exists to prevent. Nothing about the producer changes, so the finding is still emitted and still printed; it simply stops being surfaced.",
+   "find": "            if any(DEAD_CONTROL_MARK_1203RA in m for m in missing):",
+   "replace": "            if any(\"renders interactive markup with no bound handlers\" in m for m in missing):"
+  },
+  {
+   "label": "RAC the surfaced entry loses the COUNTS and keeps only the page name (#983's defect: a finding that says WHICH but not HOW MANY sends the lane hunting through the file).",
+   "find": "                out.setdefault(\"dead_controls\", {})[name] = [\n                    m for m in missing if DEAD_CONTROL_MARK_1203RA in m]",
+   "replace": "                out.setdefault(\"dead_controls\", {})[name] = []"
+  },
+  {
+   "label": "RAD the surfacing fires for EVERY page, not only pages with a dead control. A key that is always populated is as useless as one never populated, and a test that only checks the dead case passes either way.",
+   "find": "            if any(DEAD_CONTROL_MARK_1203RA in m for m in missing):\n                out.setdefault",
+   "replace": "            if True:\n                out.setdefault"
+  },
+  {
+   "label": "RAE null mutation, correctly MISSED -- and the prediction that was wrong. I labelled this 'CONTROL, expected CAUGHT' and it came back MISSED, which is right: the constant is read by BOTH the producer and the consumer, so renaming its value renames both sides together and nothing observable changes. That internal consistency is the entire reason the constant exists. The meaningful twin is RAB, which makes the CONSUMER retype the sentence slightly wrong instead -- that is drift, and it is CAUGHT. Pinning the literal wording here would be the fixed-width text assertion this session has spent its time deleting, so it is deliberately not done.",
+   "find": "DEAD_CONTROL_MARK_1203RA = \"renders interactive markup with no bound handler\"",
+   "replace": "DEAD_CONTROL_MARK_1203RA = \"has unbound interactive markup\""
+  }
+ ]
+}

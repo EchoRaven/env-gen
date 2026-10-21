@@ -1654,6 +1654,54 @@ volumes:
                 from .message_format import warn_once_1201 as _w1202bc
                 _w1202bc("component_drift_1202bc",
                          "the component-drift report (#1202bc)", _e1202bc)
+            # #1203ra: FILE THE DEAD CONTROLS. `_page_dead_controls` has been right and
+            # unheard -- its sentence appears in 0 of 26001 tasks across 105 runs, and every
+            # one of its log lines is this orchestrator talking to itself. r46 caught both
+            # landing-page CTAs ("Get Started", "Learn More" -- dead controls: 2 of 2), said
+            # so five times, told no one, and shipped them inert.
+            #
+            # BOTH HALVES OF THE PRECEDENT, not just the first (#1139's lesson): the sibling
+            # above files on a CHANGED finding via `state_changed_1202ad`, and that guard is
+            # the whole reason it is affordable. `create_task` has no duplicate check -- #672
+            # only REPORTS a twin and says so -- and the scaffold ran 117 times in r32, so an
+            # unguarded finding that persists until a lane fixes it files 117 tasks. The
+            # corpus already prices that: of 838 cancelled tasks, 462 (55%, across 79 of 144
+            # runs) were cancelled as duplicates.
+            #
+            # P2/fidelity matches the sibling deliberately. A dead control is not in
+            # `_HARD_MISS_MARKERS`, so it never blocks DELIVERY; the pressure it already
+            # applies is holding the page out of `implemented`. Raising the priority is a
+            # separate judgement and is not smuggled in here.
+            try:
+                _dc1203ra = _pa.get("dead_controls") or {}
+                if _dc1203ra:
+                    from .message_format import join_capped as _jc1203ra
+                    from .message_format import state_changed_1202ad as _sc1203ra
+                    _pg1203ra = sorted(_dc1203ra)
+                    if _sc1203ra("task:dead_controls_1203ra",
+                                 tuple(sorted(map(str, _pg1203ra)))):
+                        orch.hubs.workhub.create_task(
+                            title=("Wire the %d page(s) whose controls do nothing when clicked"
+                                   % len(_pg1203ra))[:180],
+                            description=(
+                                "A static audit of the delivered source found interactive "
+                                "markup with no bound handler. These controls RENDER and do "
+                                "NOTHING when a user clicks them, which is the one thing a "
+                                "built UI may not do.\n\n%s\n\nFor each: give the control a "
+                                "handler that performs the action its label promises -- a "
+                                "primary call to action must reach the flow it names, not "
+                                "merely exist. A control that is genuinely decorative should "
+                                "not be a <button>; render it as the non-interactive element "
+                                "it is, so the audit and the reader agree."
+                                % _jc1203ra(
+                                    ["%s: %s" % (n, "; ".join(_dc1203ra[n])) for n in _pg1203ra],
+                                    total=len(_pg1203ra), cap=6)),
+                            assignee="frontend", agent="scaffolder", priority="P2",
+                            kind="fidelity")
+            except Exception as _e1203ra:
+                from .message_format import warn_once_1201 as _w1203ra
+                _w1203ra("dead_controls_1203ra",
+                         "the dead-control task report (#1203ra)", _e1203ra)
             if _pa.get("implemented") or _pa.get("regressed"):
                 # #1203n1: SAY WHY EACH PENDING PAGE IS PENDING. `sync_ui_page_statuses`
                 # computes a per-page reason list -- `out["pending"][name] = missing`, the

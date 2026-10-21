@@ -243,6 +243,14 @@ _HANDLER_ATTR_RE_1203QZ = re.compile(
 _SUBMIT_TYPE_RE_1203QZ = re.compile(r"""type\s*=\s*["']?submit""", re.I)
 
 
+# #1203ra: THE SENTENCE, AS A CONSTANT, because two places now need it.
+#
+# `sync_ui_page_statuses` has to recognise this finding to surface it, and recognising a
+# finding by retyping its text is how a consumer silently stops matching when the producer is
+# reworded. One constant, used to BUILD the message and to TEST for it, cannot drift.
+DEAD_CONTROL_MARK_1203RA = "renders interactive markup with no bound handler"
+
+
 def dead_control_count_1203qz(text: str) -> int:
     """How many <button>s in this source carry no handler OF THEIR OWN.
 
@@ -1071,7 +1079,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         _dead_n = dead_control_count_1203qz(comp_file_text)
         _total_n = len(_BUTTON_TAG_RE_1203QZ.findall(comp_file_text))
         missing.append(
-            f"component `{component}` renders interactive markup with no bound handler "
+            f"component `{component}` {DEAD_CONTROL_MARK_1203RA} "
             f"(dead controls" + (f": {_dead_n} of {_total_n} <button> tags carry no "
                                  f"handler, no type=submit and are not disabled)"
                                  if _dead_n else ")"))
@@ -2123,6 +2131,36 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                 out["regressed"].append(name)
             elif not ok:
                 out["pending"][name] = missing
+            # #1203ra: SURFACE THE DEAD CONTROLS SO SOMEBODY CAN BE ASSIGNED THEM.
+            #
+            # `_page_dead_controls` is right, and nobody is told. Measured over every task
+            # store on disk: its sentence appears in 0 of 26001 tasks across 105 runs, and
+            # all 10 of its log lines are the orchestrator's own UI-PAGE LIFECYCLE warning --
+            # 0 in a prompt, a task, or any message to a lane. The sibling channel (the
+            # browser walkthrough) DOES file work, 598 tasks' worth, which is what made the
+            # silence hard to see: a broad grep for "dead control" finds those and reads like
+            # coverage. Only the exact sentence is zero.
+            #
+            # netflix-local-r46 is the cost in one line. The audit caught BOTH landing-page
+            # CTAs -- `LandingPage` dead controls: 2 of 2, which are "Get Started" and "Learn
+            # More" -- said so five times across five passes, and the frontend lane was never
+            # told. The run shipped with its two primary calls to action inert. #780's "a
+            # finding nobody is assigned", on the rule that a built UI must actually work.
+            #
+            # Reported only, exactly like #909 and #918: `ok` is untouched, so no page's
+            # status changes here.
+            #
+            # ★ IT SITS AFTER THE STATUS CHAIN ON PURPOSE. #909's own ratchet slices this
+            # function as `src[index("_decl_909") : index("if ok and status")]` and asserts
+            # `"missing" not in` that region -- its churn guard, because an assignment to `ok`
+            # in there would flip 45% of pages to `defined` every tick. Placed before the
+            # chain, this block reads `missing` INSIDE that window and trips a guard belonging
+            # to another ticket (#1203ph's shape, from the other direction). Past the
+            # landmark it is outside the window, reads the same `missing`, and leaves #909's
+            # guard measuring exactly what it was written to measure.
+            if any(DEAD_CONTROL_MARK_1203RA in m for m in missing):
+                out.setdefault("dead_controls", {})[name] = [
+                    m for m in missing if DEAD_CONTROL_MARK_1203RA in m]
     except Exception:
         pass
     return out
