@@ -24,7 +24,7 @@ screen as 0.0). A detector that stops finding its own seed case has drifted.
     python scripts/defect_shapes.py [--self-test]
 """
 import ast
-import collections, pathlib, sys, re
+import collections, json, os, pathlib, sys, re   # json/os: #1203re's corpus probe
 
 ROOT = pathlib.Path('agent/env_generator')
 MEASURED = re.compile(r'similarity|score|budget|left|elapsed|count|total|duration|'
@@ -160,6 +160,77 @@ def d3(path, tree, src):
 
 
 SELFTEST = "--self-test" in sys.argv
+WITH_CORPUS = "--with-corpus" in sys.argv
+
+# #1203re: ASK THE ARTIFACTS WHETHER THE FIELD CAN EVEN BE ABSENT.
+#
+# D1 reports a candidate per `float(x.get(<field>) or 0)`. Reading the guard above it settles
+# some of them, but not all: on 2026-10-21 all 26 D1 candidates were triaged by hand and the
+# two kinds needed DIFFERENT evidence. `visual_fidelity.py:8172` fell to its guard (the line
+# above excludes advisory and blank screens). `:5321` has no such guard, and only the data
+# cleared it -- 3667 screen records on disk, ZERO missing `similarity`. A guard-only reading
+# would have left it open; a data-only reading would have missed why 8172 is safe.
+#
+# So the deciding fact for the second kind is measurable, and this bakes it in rather than
+# leaving it to whoever next runs the tool. It is NOT a name heuristic: guessing "fields called
+# *_count are counts" is brittle in the direction that hides defects. Absence is counted.
+#
+# WHAT COUNTS AS ABSENT, defined so it cannot be argued: SIBLINGS. Within one array of record
+# dicts, if at least one element carries the field, the elements lacking it are exactly the
+# cases the `or 0` fallback fires on. An array where every element has it cannot fire. That is
+# the same question the hand triage asked of `screens[]`.
+#
+# Opt-in, because the default run is a fast source scan and the corpus lives on a slow disk.
+_CORPUS_CACHE_1203RE = {}
+
+
+def _field_absence_1203re(field, cap_files=2000):
+    """(present, absent, files, anywhere) for `field` across the corpus.
+
+    `present`/`absent` are the SIBLING test: within one array of record dicts, how many
+    carry the field and how many do not. `anywhere` counts every dict holding it, in an
+    array or not -- because a field nested as `{"llm": {"usd": ...}}` has no siblings, and
+    reporting "never seen" for it would be false. The first draft did exactly that for
+    `usd`, which is present in 76 of 102 run_budget.json records."""
+    if field in _CORPUS_CACHE_1203RE:
+        return _CORPUS_CACHE_1203RE[field]
+    import glob as _g
+    present = absent = seen = anywhere = 0
+    # NOT `ROOT / "generated"`: ROOT is `agent/env_generator` (the source tree this file
+    # scans), while the run artifacts live in `generated/` at the REPO root. The first draft
+    # used ROOT and scanned 0 files, reporting "field never seen" for every candidate -- a
+    # zero that looked exactly like an answer. It was caught on sight only because this probe
+    # prints its denominator, which is the whole reason it does.
+    for f in _g.glob("generated/*/**/*.json", recursive=True):
+        if seen >= cap_files:
+            break
+        try:
+            if os.path.getsize(f) > 5_000_000:
+                continue
+            d = json.loads(open(f, encoding="utf-8", errors="replace").read())
+        except Exception:
+            continue
+        seen += 1
+        stack = [d]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if field in node:
+                    anywhere += 1
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                recs = [x for x in node if isinstance(x, dict)]
+                if recs and any(field in r for r in recs):
+                    for r in recs:
+                        if field in r:
+                            present += 1
+                        else:
+                            absent += 1
+                stack.extend(x for x in node if not isinstance(x, dict))
+    out = (present, absent, seen, anywhere)
+    _CORPUS_CACHE_1203RE[field] = out
+    return out
+
 _seed_seen = False
 
 
@@ -463,7 +534,22 @@ for p in sorted(ROOT.rglob('*.py')):
                     and 'similarity' in str(h[1]) and '_sim' in h[2]:
                 _seed_seen = True
             if SELFTEST: continue
-            print(f"[{name.upper()}] {p.relative_to(ROOT)}:{h[0]}  {h[1]}")
+            _note = ""
+            if WITH_CORPUS and name == "d1":
+                _fld = str(h[1]).strip()
+                _p, _a, _n, _any = _field_absence_1203re(_fld)
+                if _p or _a:
+                    _note = ("   [corpus: %d of %d sibling record(s) lack `%s`%s]"
+                             % (_a, _p + _a, _fld,
+                                " -- CANNOT FIRE" if _a == 0 else ""))
+                elif _any:
+                    # present, but never inside an array -- no siblings to compare against,
+                    # so this probe cannot answer and must say so rather than imply absence
+                    _note = ("   [corpus: seen in %d dict(s) but never inside a record array "
+                             "-- sibling test N/A, read the guard]" % _any)
+                else:
+                    _note = "   [corpus: field never seen in %d file(s)]" % _n
+            print(f"[{name.upper()}] {p.relative_to(ROOT)}:{h[0]}  {h[1]}{_note}")
             if name=='d1': print(f"        {h[2]}")
             elif name=='d4': print(f"        keys={h[2]}")
             elif name in ('d5','d6'): print(f"        {h[2]}")

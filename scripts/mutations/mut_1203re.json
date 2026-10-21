@@ -1,0 +1,26 @@
+{
+ "file": "scripts/defect_shapes.py",
+ "test": "tests/test_1203re_the_probe_that_says_what_it_cannot_answer.py",
+ "mutations": [
+  {
+   "label": "REA the sibling counter stops counting absences, so EVERY candidate reports `0 of N lack it -- CANNOT FIRE` and the probe retires all 26 of them. A probe that always answers 'cannot fire' is worse than no probe: it launders every candidate into a clearance.",
+   "find": "                        else:\n                            absent += 1",
+   "replace": "                        else:\n                            pass"
+  },
+  {
+   "label": "REB the `anywhere` counter is removed, so a field nested as {\"llm\": {\"usd\": ...}} reports `never seen` -- the exact falsehood the first draft shipped, since `usd` is in 76 of 102 run_budget.json records. Saying 'never seen' when the truth is 'present but not comparable' is a silence read as an answer.",
+   "find": "                if field in node:\n                    anywhere += 1",
+   "replace": "                if False and field in node:\n                    anywhere += 1"
+  },
+  {
+   "label": "REC the sibling test no longer requires a member to CARRY the field, so any array of dicts counts every element as absent -- turning unrelated record arrays into fabricated absences and making real candidates look firable for the wrong reason.",
+   "find": "                if recs and any(field in r for r in recs):",
+   "replace": "                if recs:"
+  },
+  {
+   "label": "RED CONTROL, expected CAUGHT: the probe scans the source tree root (`ROOT / \"generated\"`) again instead of the repo-relative `generated/`. ROOT is `agent/env_generator`, which holds no run artifacts, so every answer becomes `never seen in 0 file(s)` -- a zero that reads exactly like an answer, caught on sight only because the note prints its denominator.",
+   "find": "    for f in _g.glob(\"generated/*/**/*.json\", recursive=True):",
+   "replace": "    for f in _g.glob(str(ROOT / \"generated\" / \"*\" / \"**\" / \"*.json\"), recursive=True):"
+  }
+ ]
+}
