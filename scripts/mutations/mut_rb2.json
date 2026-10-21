@@ -1,0 +1,26 @@
+{
+ "file": "scripts/verify_shipped_fixes.py",
+ "test": "tests/test_1203r8_a_criterion_that_cannot_fire.py",
+ "mutations": [
+  {
+   "label": "RBD the no-log fallback is promoted to CONFIRMED, which turns silence into a pass -- exactly the defect #1202z5 fixed one module over, and the reason this script refuses to collapse the two. Three corpus runs are in that state (logs at the repo root, not under the run), so this is not hypothetical.",
+   "find": "        return _say(ticket, UNMEASURED, \"no logs/%s\" % artifact,\n                    \"Either the check found nothing at every cut, or it never ran. The two \"",
+   "replace": "        return _say(ticket, CONFIRMED, \"no logs/%s\" % artifact,\n                    \"Either the check found nothing at every cut, or it never ran. The two \""
+  },
+  {
+   "label": "RBE the announcement test is INVERTED, so a run that announced it could not measure is read as a finding of zero and a run that said nothing is read as unmeasured -- precisely backwards. Both strings survive; only behaviour flips.",
+   "find": "            _n = _log.count(unmeasured_says)\n            if _n:",
+   "replace": "            _n = _log.count(unmeasured_says)\n            if not _n:"
+  },
+  {
+   "label": "RBF the sentence is no longer passed at the #1202zb call site, so the disambiguation is dead and every absent artifact falls back to the old ambiguous UNMEASURED. The helper still SUPPORTS it, so a source-text assertion mentioning `unmeasured_says` still reads as coverage.",
+   "find": "                     unmeasured_says=\"unreachable-twin-table check could not run\")",
+   "replace": "                     )"
+  },
+  {
+   "label": "RBG the needle becomes the TICKET ID instead of the emitted sentence. A lane grepping for the id puts the id in the log -- the sibling marker `SEED SHORTFALL` has 12 such lines across 9 runs, every one a search and not a sighting -- so this would read a lane's search as the probe failing to measure.",
+   "find": "unmeasured_says=\"unreachable-twin-table check could not run\")",
+   "replace": "unmeasured_says=\"1202zb\")"
+  }
+ ]
+}

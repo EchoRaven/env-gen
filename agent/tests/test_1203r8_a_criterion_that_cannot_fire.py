@@ -101,3 +101,61 @@ def test_the_log_only_needle_is_the_emitted_sentence_not_the_marker():
     body = src[i:]
     assert 'r"table\\(s\\) hold fewer rows"' in body, (
         "the #1203md needle must stay the emitted sentence, not `SEED SHORTFALL`")
+
+
+# ===================================================== the companion: an ABSENT artifact
+# `verify_shipped_fixes.py` printed "this file cannot tell them apart -- read the run log for
+# the ticket id to decide", and then did not read a log it already held (it is given the run
+# directory, and the log is `<run>/logs/*.log`).
+#
+# These reporters write ONLY when they have findings, and announce through `warn_once_1201`
+# when they cannot measure. So an absent artifact is two different answers, and the code
+# leaves a sentence for one of them. Measured for #1202zb: the artifact exists in 0 of 107
+# runs -- which next to siblings firing in 15-38 runs each reads like a reporter that shipped
+# disabled -- while the announcement appears in exactly 3 runs. `warn_once_1201` speaks once
+# per process, so 3 runs could not measure and SAID so and 104 measured and found nothing.
+#
+# The corpus cannot exercise the announcing branch, because those 3 runs keep their logs at
+# the repo root rather than under `<run>/logs/`. So both directions are driven by hand.
+SHIPPED = ROOT / "scripts" / "verify_shipped_fixes.py"
+
+
+def _shipped():
+    spec = importlib.util.spec_from_file_location("verify_shipped_fixes", SHIPPED)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def _zb_verdict(tmp_path, logline=None):
+    m = _shipped()
+    m._RUNLOG_CACHE_1203R8.clear()
+    (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
+    if logline is not None:
+        (tmp_path / "logs" / "generation.log").write_text(logline, encoding="utf-8")
+    out = []
+    m._say = lambda ticket, verdict, headline, detail="": out.append((ticket, verdict)) or verdict
+    m.check_1202zb(tmp_path)
+    return out[0][1] if out else None
+
+
+def test_an_absent_artifact_with_no_announcement_is_a_finding_of_zero(tmp_path):
+    m = _shipped()
+    assert _zb_verdict(tmp_path, "nothing interesting here\n") == m.CONFIRMED
+
+
+def test_an_absent_artifact_WITH_the_announcement_stays_unmeasured(tmp_path):
+    """★ THE COUNTER-PROOF. Without this, the new branch would read every absent artifact as
+    a finding of zero -- turning the exact silence-as-a-pass that #1202z5 fixed back on."""
+    m = _shipped()
+    line = ("12:00:00 [W] multi_agent.runtime.message_format: #1201 the unreachable-twin-table "
+            "check could not run (no live row counts from this validation cycle)\n")
+    assert _zb_verdict(tmp_path, line) == m.UNMEASURED
+
+
+def test_with_no_log_on_disk_the_old_ambiguity_stands(tmp_path):
+    """Silence alone must never be promoted: with no log there is nothing to decide from,
+    and three of the corpus's runs are in exactly that state (their logs sit at the repo
+    root, not under the run)."""
+    m = _shipped()
+    assert _zb_verdict(tmp_path, None) == m.UNMEASURED

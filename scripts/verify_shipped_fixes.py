@@ -123,13 +123,74 @@ def check_1202za(run):
 
 
 # ── #1202zb / #1202ze / #1202zf: did the new reporters fire? ─────────────────────
-def _reporter(run, ticket, artifact, what, expect_measured_key=None):
+_RUNLOG_CACHE_1203R8 = {}
+
+
+def _runlog_1203r8(run) -> str:
+    """The run's own log text, concatenated, or "" when none is on disk.
+
+    #1203r8: this file used to tell the reader "read the run log for the ticket id to
+    decide", and then not read it -- while holding the run directory the log lives in. The
+    log needs no new flag; it is `<run>/logs/*.log`."""
+    key = str(run)
+    if key not in _RUNLOG_CACHE_1203R8:
+        parts = []
+        try:
+            for f in sorted((Path(run) / "logs").glob("*.log")):
+                try:
+                    parts.append(f.read_text(encoding="utf-8", errors="ignore"))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        _RUNLOG_CACHE_1203R8[key] = "\n".join(parts)
+    return _RUNLOG_CACHE_1203R8[key]
+
+
+def _reporter(run, ticket, artifact, what, expect_measured_key=None,
+              unmeasured_says=None):
     rows = _jsonl(run, artifact)
     if not rows:
+        # #1203r8: AN ABSENT ARTIFACT IS TWO DIFFERENT ANSWERS, AND THE CODE SAYS WHICH.
+        #
+        # These reporters write only when they have findings, and when they CANNOT measure
+        # they announce it through `warn_once_1201`. So "no artifact" means either "measured,
+        # found nothing" or "never measured" -- and the second one leaves a sentence in the
+        # log. This used to print "this file cannot tell them apart -- read the run log",
+        # which was true only because the file declined to read a log it already had.
+        #
+        # Measured over 107 runs for #1202zb: the artifact exists in ZERO of them, which next
+        # to siblings firing in 15-38 runs each reads like a reporter that shipped disabled.
+        # It did not. The announcement `unreachable-twin-table check could not run (no live
+        # row counts from this validation cycle)` appears in exactly 3 runs, and
+        # `warn_once_1201` speaks once per process -- so 3 runs could not measure and SAID
+        # so, and the other 104 measured and genuinely found nothing.
+        #
+        # Absence of the announcement is reported as CONFIRMED for an INSTRUMENT ticket,
+        # because running and finding nothing is what a working reporter looks like. It is
+        # never inferred from silence alone: without a log on disk the old ambiguity stands
+        # and the verdict stays UNMEASURED (#1202z5 -- a check that cannot tell "looked and
+        # found nothing" from "never looked" reports a silence as a pass).
+        _log = _runlog_1203r8(run) if unmeasured_says else ""
+        if unmeasured_says and _log:
+            _n = _log.count(unmeasured_says)
+            if _n:
+                return _say(ticket, UNMEASURED,
+                            "no logs/%s, and the probe ANNOUNCED it could not measure "
+                            "(%d line(s))" % (artifact, _n),
+                            "so this run says nothing about %s -- the probe never got a "
+                            "reading, which is a different answer from finding none" % what)
+            return _say(ticket, CONFIRMED,
+                        "no logs/%s, and NO 'could not measure' announcement in %d log "
+                        "line(s)" % (artifact, _log.count("\n") + 1),
+                        "the probe ran and found no %s. Absence of the artifact is a "
+                        "finding of zero here, not a silence: these reporters write only "
+                        "when they have findings and announce it when they cannot measure."
+                        % what)
         return _say(ticket, UNMEASURED, "no logs/%s" % artifact,
                     "Either the check found nothing at every cut, or it never ran. The two "
-                    "are not the same and this file cannot tell them apart -- read the run "
-                    "log for the ticket id to decide.")
+                    "are not the same and this file cannot tell them apart -- no run log on "
+                    "disk to decide from (#1203r8 reads it when there is one).")
     if expect_measured_key:
         blind = [r for r in rows if r.get(expect_measured_key) is False]
         if blind and len(blind) == len(rows):
@@ -146,7 +207,12 @@ def _reporter(run, ticket, artifact, what, expect_measured_key=None):
 
 def check_1202zb(run):
     return _reporter(run, "#1202zb", "unreachable_twin_table_1202zb.jsonl",
-                     "table(s) holding rows no endpoint reads", "measured")
+                     "table(s) holding rows no endpoint reads", "measured",
+                     # the exact sentence heal_pipeline emits when it has no row counts --
+                     # matched on the EMITTED text, never on the ticket id, because a lane
+                     # grepping for the id puts the id in the log (12 such lines for the
+                     # sibling marker `SEED SHORTFALL`, every one a search, not a sighting).
+                     unmeasured_says="unreachable-twin-table check could not run")
 
 
 def check_1202ze(run):
