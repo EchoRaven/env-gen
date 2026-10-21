@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_ui_evidence_breadth_739.py",
+ "mutations": [
+  {
+   "label": "B1 THE ANNOUNCEMENT NEVER FIRES: the say-once gate is forced false, so the #739 warning is emitted zero times. Every string the guard asserts stays in the source, and the only test that LOOKS like it checks the emission takes `caplog`, opens at_level(WARNING), and then merely REFERENCES validate_delivery_gate without calling it.",
+   "find": "if _sc1202ad(\"ui_smoke_existential_739\",",
+   "replace": "if False and _sc1202ad(\"ui_smoke_existential_739\","
+  },
+  {
+   "label": "B2 the warning is demoted to debug, so it disappears from the operator's log at WARNING level while the text is untouched",
+   "find": "         logger.warning(\n            \"#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed \"",
+   "replace": "         logger.debug(\n            \"#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed \""
+  },
+  {
+   "label": "B3 CONTROL, expected CAUGHT: the guarding condition is removed, which the guard pins as a whole literal string",
+   "find": "if ui_smoke_pass and _breadth739[\"failed_records\"]:",
+   "replace": "if ui_smoke_pass:"
+  }
+ ]
+}

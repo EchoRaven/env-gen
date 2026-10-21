@@ -169,3 +169,57 @@ def test_the_287_rationale_is_not_overwritten():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+# --- #1203r6: the announcement's DELIVERY, which `caplog` only looked like it checked ---------
+#
+# `test_a_true_verdict_over_failures_is_announced` takes the `caplog` fixture, opens
+# `caplog.at_level(logging.WARNING)` -- and then merely REFERENCES `validate_delivery_gate`
+# (the `noqa: B018` on that line admits the statement does nothing) before asserting on
+# `inspect.getsource`. So the log-capture machinery is set up and never used, and the test
+# reads as a behavioural check of the emission while being purely textual.
+#
+# mut_739 measured what that costs. Two mutations leave every asserted string in place:
+#
+#   B1  `if _sc1202ad("ui_smoke_existential_739", ...)` -> `if False and _sc1202ad(...)`
+#       the warning is emitted ZERO times                                        MISSED
+#   B2  `logger.warning(...)` -> `logger.debug(...)` at that site
+#       it vanishes from the operator's log at WARNING level                     MISSED
+#   B3  the guarding condition removed (pinned as a whole literal)               CAUGHT
+#
+# `validate_delivery_gate` needs a populated hub set and an output tree, so it cannot be
+# called from here; these assert on the AST instead, and -- per #1203r4 -- on what the code
+# MEANS rather than on which identifiers appear in it.
+
+def test_the_739_warning_is_emitted_at_warning_level_1203r6():
+    """A diagnostic demoted to debug is invisible where it is meant to be read."""
+    import ast
+    tree = ast.parse(inspect.getsource(dg.validate_delivery_gate).lstrip())
+    sites = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and node.args):
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str) \
+                and first.value.startswith("#739 ui_smoke_pass=True rests on"):
+            sites.append(node)
+    assert len(sites) == 1, "expected exactly one #739 announcement, found %d" % len(sites)
+    fn = sites[0].func
+    assert isinstance(fn, ast.Attribute), ast.unparse(fn)
+    assert fn.attr == "warning", (
+        "the #739 announcement is emitted with logger.%s -- at that level the operator never "
+        "sees that a True ui_smoke verdict rests on failing records" % fn.attr)
+
+
+def test_the_739_announcement_is_not_gated_off_1203r6():
+    """The say-once gate decides WHETHER it is ever emitted, so the gate must be the whole
+    condition -- not one term of an `and` whose other term can switch it off."""
+    import ast
+    tree = ast.parse(inspect.getsource(dg.validate_delivery_gate).lstrip())
+    guards = [n for n in ast.walk(tree)
+              if isinstance(n, ast.If) and "ui_smoke_existential_739" in ast.unparse(n.test)]
+    assert len(guards) == 1, [ast.unparse(g.test) for g in guards]
+    test = guards[0].test
+    assert isinstance(test, ast.Call), (
+        "the say-once gate is no longer the whole condition -- something else can suppress "
+        "the announcement without touching its text: %s" % ast.unparse(test))
+    assert "_sc1202ad" in ast.unparse(test.func), ast.unparse(test)
