@@ -88,8 +88,28 @@ def _run_test(test_rel):
     file (#1203ji's M3). pytest's codes are the mechanical answer: 0 passed, 1 tests
     failed, 2/3/4 interrupted or internal, 5 nothing collected.
     """
+    # #1203qw: pytest's temp dirs go somewhere with room, and NOT into the repo.
+    #
+    # This runs pytest with `cwd=agent/` and used to pass no temp location at all, so
+    # `tmp_path` and friends landed wherever the ambient TMPDIR pointed. On 2026-10-20 a
+    # 348-spec sweep left **126 `agent/tmp*/` directories plus `agent/pytest-of-haibotong/`**
+    # as untracked junk in the working tree -- which pollutes `git status`, gets swept into a
+    # `git add -A`, and (because pytest then tries to COLLECT the test files copied inside
+    # them) made later specs report BROKEN for a reason that had nothing to do with their
+    # mutation. The same sweep filled the root filesystem, whose own failure mode is that the
+    # harness loses every command's stdout to ENOSPC while the commands still run.
+    #
+    # `/data` is the roomy disk here, so that is where the temp tree goes unless the caller
+    # has already chosen one. SWEEP_TMPDIR overrides it for a machine laid out differently.
+    _env = dict(os.environ)
+    _tmp = _env.get("SWEEP_TMPDIR") or "/data/common/haibotong/mut_tmp"
+    try:
+        os.makedirs(_tmp, exist_ok=True)
+        _env["TMPDIR"] = _tmp
+    except Exception:
+        pass            # a read-only or missing /data is not a reason to refuse to mutate
     p = subprocess.run([_PY, "-m", "pytest", test_rel, "-q", "--no-header"],
-                       cwd=os.path.join(_ROOT, "agent"),
+                       cwd=os.path.join(_ROOT, "agent"), env=_env,
                        capture_output=True, text=True, timeout=900)
     out = (p.stdout or "") + (p.stderr or "")
     tail = " ".join(out.strip().splitlines()[-2:])[:200]

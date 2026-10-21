@@ -1,1 +1,16 @@
-{"file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py", "test": "tests/test_1203mr_the_stub_outlived_its_reason.py", "mutations": [{"label": "MR3b the stub itself counts as a real declaration (so a lone stub self-retracts)", "find": "                              and not _AUTO_STUB_LINE_1203MR.match(l + \"\\n\")]", "replace": "                              ]"}, {"label": "MR6b the write loses its declared clobber ticket (compiles)", "find": "                    clobber_ok=(\"#1203mr: removes ONLY this module's own auto-stub lines, and \"", "replace": "                    clobber_ok=(\"\" \""}]}
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/frontend_scaffold.py",
+ "test": "tests/test_1203mr_the_stub_outlived_its_reason.py",
+ "mutations": [
+  {
+   "label": "MR3b the stub itself counts as a real declaration (so a lone stub self-retracts)",
+   "find": "                              and not _AUTO_STUB_LINE_1203MR.match(l + \"\\n\")]",
+   "replace": "                              ]"
+  },
+  {
+   "label": "MR6b the write loses its declared clobber ticket  [RE-ANCHORED 2026-10-20: the old anchor took only the FIRST line of a three-line implicit string concatenation and replaced it with `clobber_ok=(\"\" \"`, which opens a quote that never closes -- an unterminated string literal, so mutate.py reported BROKEN and the probe never ran. The old label asserted \"(compiles)\", which the file contradicts (#1203j2: a false sentence is its own defect). The anchor now spans the whole string and the replacement drops one paren with it, verified by compiling the mutant in memory.",
+   "find": "                    clobber_ok=(\"#1203mr: removes ONLY this module's own auto-stub lines, and \"\n                                \"only for a name the file really declares elsewhere -- the \"\n                                \"duplicate `export const` hard-fails Rollup (r190: 8 builds)\")):",
+   "replace": "                    clobber_ok=\"\"):"
+  }
+ ]
+}
