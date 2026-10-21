@@ -167,6 +167,24 @@ def check_log_only(logtext, nlines):
         "%d drift stanza(s), %d printing the six zeros" % (stanzas, zeros))
 
     # #1203md -- the shortfall line should now be able to print at all.
+    # #1203r8 (2026-10-21): WHY THIS IS 0 EVERYWHERE, AND WHY THE 12 HITS ARE NOT IT.
+    #
+    # Audited over 455 logs: this needle appears ZERO times. `SEED SHORTFALL` -- the prefix
+    # of the same sentence -- appears 12 times, and every one is a LANE GREPPING FOR IT
+    # (`GREP: pattern=SEED SHORTFALL|missing_seed|seed_audit ...`). Not one is an emission.
+    # Matching the marker name instead of the emitted text would have read those 12 as proof
+    # the mechanism fires; the full sentence is what distinguishes a search from a sighting.
+    #
+    # The emission lives in a GENERATED code string (`backend_skeleton` writes
+    # `_sys.stderr.write('SEED SHORTFALL (#1202r): %d table(s) hold fewer rows ...')` into
+    # the app's own seeder), so it is the container that prints it, and container stderr does
+    # reach the framework log -- which is why the 12 grep lines are there at all. So 0 means
+    # no seeded table has ever actually loaded short, not that the check reads the wrong
+    # stream. Correctly waiting; absent stays NOT MEASURED.
+    #
+    # ★ Worth noting for whoever picks this up: the lanes grep for this string 12 times
+    # across 9 runs. They are looking for an answer about seed shortfalls, and nothing
+    # answers -- the same shape as the dropped `uses` parameter on register_endpoint.
     short = len(re.findall(r"table\(s\) hold fewer rows", logtext))
     say("#1203md", "CONFIRMED" if short else "NOT MEASURED",
         "%d shortfall line(s); absent is fine if no table actually loaded short" % short)
@@ -257,8 +275,11 @@ def check_log_only(logtext, nlines):
         % (len(observed), len(wedged), wedged[:2] or "none"))
 
 
-def check_reports(run):
-    """#1203ix / #1203ov / #1203n9 -- fields the walk should now leave behind."""
+def check_reports(run, logtext=""):
+    """#1203ix / #1203ov / #1203n9 -- fields the walk should now leave behind.
+
+    `logtext` is needed because #1203ov's observable is a LOG signal, not an artifact one --
+    see the comment at that check for why its artifact spelling could never fire."""
     d = run / "test_user_reports"
     files = sorted(d.glob("*.json")) if d.is_dir() else []
     if not files:
@@ -277,8 +298,34 @@ def check_reports(run):
             recovered += 1
     say("#1203ix", "CONFIRMED" if fill else "NOT MEASURED",
         "%d of %d report(s) carry fill_rounds" % (fill, len(files)))
-    say("#1203ov", "CONFIRMED" if steps else "NOT MEASURED",
-        "%d of %d report(s) carry auth_steps_1203ov" % (steps, len(files)))
+    # #1203r8 (2026-10-21): THIS CRITERION COULD NEVER FIRE, AND THAT WAS MY BUG.
+    #
+    # It looked for `auth_steps_1203ov` in `test_user_reports/*.json`. Measured over every
+    # such file on disk -- 188 files, 107 runs -- that key appears ZERO times, and so does
+    # `"auth_ok"`. The walkthrough's structured verdict is never persisted: what reaches
+    # `report["ui"]` is a DIGEST (`ran` / `screens` / `top_issues` / `reason`), and that
+    # `reason` belongs to the VISUAL GATE, not the walk -- its only values across the corpus
+    # are judge failures ("no screenshots or no llm", RateLimitError, JSONDecodeError). So
+    # the field this asked about exists in-process and in prose, never as queryable data,
+    # and the check was condemned to print NOT MEASURED forever while looking diligent.
+    #
+    # The OBSERVABLE that can actually appear is the key #1203ov emits when it distinguishes
+    # the two Falses: `auth_walk_recorded_no_steps`. Its consumer sits in the same module
+    # (`if report.get("auth_steps_1203ov") == 0`), so the fix is not inert -- the distinction
+    # reaches the gate's reason, and the reason is logged.
+    #
+    # It is 0 everywhere today, in logs AND artifacts, and that is CORRECTLY WAITING rather
+    # than broken: the branch needs an auth walk that recorded nothing, r191 died of exactly
+    # that BEFORE the fix existed, and r46 -- the only run since -- authenticated fine
+    # (`auth_ok=True`, 15 pages). So absence is reported as NOT MEASURED with the reason,
+    # never as CONFIRMED, and a sighting is what proves the fix end to end.
+    _ov = logtext.count("auth_walk_recorded_no_steps") if logtext else 0
+    say("#1203ov", "CONFIRMED" if _ov else "NOT MEASURED",
+        "%d log mention(s) of auth_walk_recorded_no_steps -- the key #1203ov emits when a "
+        "walk recorded NO steps (0 is correctly waiting: the branch needs an unobserved "
+        "auth walk, and r46 authenticated fine). The old spelling of this check read "
+        "auth_steps_1203ov out of test_user_reports/*.json, where it appears 0 times in "
+        "188 files across 107 runs, so it could never fire" % _ov)
     say("#1203n9", "CONFIRMED" if recovered else "NOT MEASURED",
         "%d ERROR report(s) carry recovered api_steps" % recovered)
 
@@ -362,7 +409,7 @@ def main(argv):
         print("!! no --log given; the log-only checks will all read NOT MEASURED")
     check_qk(run)
     check_ql(run)
-    check_reports(run)
+    check_reports(run, logtext)
     check_releases(run)
     check_skills(run)
     check_log_only(logtext, nlines)

@@ -1,0 +1,21 @@
+{
+ "file": "scripts/verify_1020.py",
+ "test": "tests/test_1203r8_a_criterion_that_cannot_fire.py",
+ "mutations": [
+  {
+   "label": "RBA the #1203ov verdict goes back to the per-file `steps` counter -- the dead spelling. `auth_steps_1203ov` appears 0 times in 188 test_user_reports files across 107 runs, so the check can only ever print NOT MEASURED while looking diligent. The log-derived `_ov` count is still COMPUTED, so the symbol survives and only the verdict changes.",
+   "find": "    say(\"#1203ov\", \"CONFIRMED\" if _ov else \"NOT MEASURED\",",
+   "replace": "    say(\"#1203ov\", \"CONFIRMED\" if steps else \"NOT MEASURED\","
+  },
+  {
+   "label": "RBB the #1203md needle becomes the MARKER NAME instead of the emitted sentence. `SEED SHORTFALL` appears 12 times across 9 runs and every one is a lane GREPPING for it, so this flips a true 0 into a false 12 -- the marker-name-is-a-search trap, reintroduced.",
+   "find": "    short = len(re.findall(r\"table\\(s\\) hold fewer rows\", logtext))",
+   "replace": "    short = len(re.findall(r\"SEED SHORTFALL\", logtext))"
+  },
+  {
+   "label": "RBC CONTROL, expected CAUGHT: the #1203ov verdict is forced CONFIRMED, dressing absence as a positive result (#883 forbids exactly this). Only the 'stays NOT MEASURED when absent' test refuses it.",
+   "find": "    say(\"#1203ov\", \"CONFIRMED\" if _ov else \"NOT MEASURED\",",
+   "replace": "    say(\"#1203ov\", \"CONFIRMED\","
+  }
+ ]
+}
