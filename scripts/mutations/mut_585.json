@@ -16,6 +16,11 @@
    "label": "C3 a missing or empty status counts as success, so a component that was never recorded drops out of the list -- #1039: 'could not tell' must not read as a pass",
    "find": "    _pend = sorted(\"%s=%s\" % (k, v) for k, v in (seen or {}).items()",
    "replace": "    _pend = sorted(\"%s=%s\" % (k, v) for k, v in (seen or {}).items() if v"
+  },
+  {
+   "label": "C4 #1203r5: THE CONDITION IS INVERTED, so the diagnostic fires on a checklist that IS ready and stays SILENT on a blocked one -- #585's original defect ('the gate never said what it saw') restored. The guard locates this `If` by `\"ready_for_delivery\" in ast.unparse(n.test)`, which an inverted condition still satisfies, so the locator keeps matching and the try/except assertion keeps passing.",
+   "find": "if any_recorded and not checklist.get(\"ready_for_delivery\", False):",
+   "replace": "if any_recorded and checklist.get(\"ready_for_delivery\", False):"
   }
  ]
 }
