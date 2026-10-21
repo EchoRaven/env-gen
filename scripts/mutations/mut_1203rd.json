@@ -1,0 +1,26 @@
+{
+ "file": "scripts/verify_1015.py",
+ "test": "tests/test_1203rd_a_criterion_must_read_what_the_framework_says.py",
+ "mutations": [
+  {
+   "label": "RDA the adoption check is removed, so an adopting run is reported as a FAILED prediction again -- r46's false FALSIFIED returns. A false FALSIFIED is worse than a false N-A: it sends a reader after a defect that is not there.",
+   "find": "        if not _withcopy_kz and _adopt_kz:",
+   "replace": "        if False and not _withcopy_kz and _adopt_kz:"
+  },
+  {
+   "label": "RDB the N-A arm stops requiring an empty result, so a run that ADOPTED and nevertheless carries copy is reported as unexercised -- throwing away a working claim. Only the 'copy present on an adopting run' test refuses it.",
+   "find": "        if not _withcopy_kz and _adopt_kz:",
+   "replace": "        if _adopt_kz:"
+  },
+  {
+   "label": "RDC the needle becomes the TICKET ID instead of #1203nl's emitted sentence. A lane or an auditor grepping for the id puts the id in the log, so this would read a search as an adoption -- the same trap `SEED SHORTFALL` sprang 12 times.",
+   "find": "        _adopt_kz = re.search(r\"design system was ADOPTED from '([^']+)'\", logtext or \"\")",
+   "replace": "        _adopt_kz = re.search(r\"(#1203nl)\", logtext or \"\")"
+  },
+  {
+   "label": "RDD CONTROL, expected CAUGHT: the verdict stops naming the donor run, so a reader cannot tell WHICH design system was adopted -- the log names it and #983 says to pass the actionable part through.",
+   "find": "                \"from %s without spawning the design_analyst (#1202hj, announced by #1203nl) \"",
+   "replace": "                \"from another run without spawning the design_analyst (#1202hj) \""
+  }
+ ]
+}

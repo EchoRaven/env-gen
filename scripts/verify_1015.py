@@ -166,9 +166,38 @@ def main(argv):
     if _comps_kz:
         _withcopy_kz = [c for c in _comps_kz
                         if isinstance(c.get("copy"), str) and c["copy"].strip()]
-        say("kz", "CONFIRMED" if _withcopy_kz else "FALSIFIED",
-            "components in the DELIVERED design_system.json carrying verbatim copy: %d/%d"
-            % (len(_withcopy_kz), len(_comps_kz)))
+        # #1203rd: DEFER TO THE FRAMEWORK'S OWN ANNOUNCEMENT THAT THE PRECONDITION DID NOT
+        # HOLD, instead of reporting the fix as failed.
+        #
+        # netflix-local-r46 came back FALSIFIED here -- 0 of 530 delivered components carry
+        # `copy` -- and the run log already explains why, in the framework's words:
+        #
+        #     ...has nothing measured behind it (#1203kz). THIS RUN NEVER ASKED: the design
+        #     system was ADOPTED from 'netflix-local-r41' and the design_analyst was not
+        #     spawned (#1202hj)
+        #
+        # #1202hj's adoption reuses a donor run's `design_system.json` and skips the analyst,
+        # so no pass ever authored copy. The claim was never exercised, which is N-A by this
+        # script's own definition ("the artifact is absent or empty, so this run says NOTHING
+        # either way") -- not a failed prediction. A false FALSIFIED is worse than a false
+        # N-A: it sends a reader after a defect that is not there, which is exactly what it
+        # did to me before I read the log line sitting next to it.
+        #
+        # Keyed on #1203nl's EMITTED sentence, so this only speaks for runs where the
+        # framework actually said it. Adoption is common (r178 onward) but the announcement
+        # is recent, so older runs have no such line and their verdict is unchanged -- the
+        # criterion never INFERS adoption it cannot read.
+        _adopt_kz = re.search(r"design system was ADOPTED from '([^']+)'", logtext or "")
+        if not _withcopy_kz and _adopt_kz:
+            say("kz", "N-A",
+                "0/%d delivered components carry copy, and this run ADOPTED its design system "
+                "from %s without spawning the design_analyst (#1202hj, announced by #1203nl) "
+                "-- no pass ever authored copy, so the claim was never exercised"
+                % (len(_comps_kz), _adopt_kz.group(1)))
+        else:
+            say("kz", "CONFIRMED" if _withcopy_kz else "FALSIFIED",
+                "components in the DELIVERED design_system.json carrying verbatim copy: %d/%d"
+                % (len(_withcopy_kz), len(_comps_kz)))
     elif not re.findall(r"(\d+) carrying verbatim copy", logtext):
         say("kz", "N-A", "no delivered components and no completion-pass line")
     else:
