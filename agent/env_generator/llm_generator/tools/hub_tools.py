@@ -996,6 +996,69 @@ class WorkHubUpdatePageTool(HubTool):
                                  "recording that a re-registration omitted `apis_used`", _e1203p2)
                     except Exception:
                         pass
+            else:
+                # #1203rc: AND SAY IT WHEN THERE WAS NOTHING TO KEEP, WHICH IS THE CASE THE
+                # GATE ACTUALLY BLOCKS ON.
+                #
+                # Everything above -- #1203b0's note and #1203p2's counter -- sits inside
+                # `if _kept:`, so it speaks only when a PREVIOUS non-empty `apis_used`
+                # existed to preserve. Its sentence says so in as many words: "the existing
+                # %d entry(ies) were KEPT". A page that has NEVER declared its APIs has
+                # nothing to keep, so `_kept` is empty, so the lane is told nothing at all --
+                # no note in the tool result, no line in the log -- while
+                # `deliverability_page_apis_understated` keeps failing.
+                #
+                # netflix-local-r46 is that case end to end, and it is what FALSIFIED
+                # #1203p2's own pre-registered criterion:
+                #
+                #     registryhub_register_ui_page calls           320
+                #     ...of which named `apis_used`                  0
+                #     page_apis_understated failures                 3
+                #     #1203p2 lines emitted                          0
+                #
+                # The logged signature is literally
+                # `registryhub_register_ui_page(name,path,route,component` (88 of them), so
+                # the field the gate judges was never passed even once. Corpus-wide the
+                # recorder has emitted 0 lines in 455 logs -- not because the channel is
+                # broken (`tools.*` INFO reaches 253 run logs) but because its branch has
+                # never been reachable in a run where no page ever declared an API.
+                #
+                # Keyed exactly like #1203p2: PER PAGE, carrying the repeat ordinal.
+                # Said precisely, because the obvious reading is wrong -- this is NOT a volume
+                # reduction. `state_changed_1202ad` suppresses only when the value it is given
+                # stops changing, and the ordinal increments on every call, so every omission
+                # is a change and none are collapsed. r46's 320 omissions would produce 320
+                # lines, each with its own ordinal. That is the attribution this ticket is for
+                # (which page, how many times), and it is the same choice #1203p2 made for the
+                # same event class. What the keying buys is that two pages cannot silence each
+                # other.
+                #
+                # NO VERDICT CHANGES. This adds a sentence to the tool result and one
+                # countable line; the registration itself, and every gate, behave as before.
+                _rec1203b0 = {
+                    **_rec1203b0,
+                    "_apis_used_still_empty_1203rc": (
+                        "you did not pass `apis_used` and this page has NONE recorded, so it "
+                        "still declares no APIs. If you are here to fix a "
+                        "`page_apis_understated` blocker, this call changed nothing and the "
+                        "blocker will come back -- pass the full list of endpoints this page "
+                        "calls."),
+                }
+                try:
+                    _m1203rc = _APIS_UNCHANGED_SEEN_1203P2.get("rc:" + str(name), 0) + 1
+                    _APIS_UNCHANGED_SEEN_1203P2["rc:" + str(name)] = _m1203rc
+                    from multi_agent.runtime.message_format import (
+                        state_changed_1202ad as _sc1203rc)
+                    if _sc1203rc("hub_tools.apis_used_still_empty_1203rc:%s" % name, _m1203rc):
+                        _lg1203p2.getLogger(__name__).info(
+                            "#1203rc register_ui_page(%s) omitted `apis_used` for the %d%s "
+                            "time AND the page has none recorded, so it still declares no "
+                            "APIs -- a `page_apis_understated` blocker cannot clear this way",
+                            name, _m1203rc,
+                            {1: "st", 2: "nd", 3: "rd"}.get(_m1203rc % 10, "th")
+                            if _m1203rc % 100 not in (11, 12, 13) else "th")
+                except Exception:
+                    pass
         return ToolResult(data=_rec1203b0)
 
 

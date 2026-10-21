@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_1203rc_a_page_that_never_declared_its_apis.py",
+ "mutations": [
+  {
+   "label": "RCA the note is not attached, which is the state r46 shipped in: a page that never declared its APIs gets nothing in the tool result while `page_apis_understated` keeps failing. The log line below still fires, so a check that only counts log lines would see no change.",
+   "find": "                    \"_apis_used_still_empty_1203rc\": (",
+   "replace": "                    \"_apis_used_still_empty_1203rc_disabled\": ("
+  },
+  {
+   "label": "RCB the branch becomes unconditional on `_kept`, so the 'nothing recorded' note also fires on a page that HAD a list preserved -- telling the lane its APIs are missing when #1203b0 just said they were kept. Two contradictory notes on the same call.",
+   "find": "            else:\n                # #1203rc: AND SAY IT WHEN THERE WAS NOTHING TO KEEP",
+   "replace": "            if True:\n                # #1203rc: AND SAY IT WHEN THERE WAS NOTHING TO KEEP"
+  },
+  {
+   "label": "RCC the countable line is removed while the tool-result note stays, which is #1203p2's own defect restored: the note reaches the model and nothing else, so whether this ever fires cannot be read off any artifact.",
+   "find": "                        _lg1203p2.getLogger(__name__).info(\n                            \"#1203rc register_ui_page(%s) omitted `apis_used` for the %d%s \"",
+   "replace": "                        _ = (\n                            \"#1203rc register_ui_page(%s) omitted `apis_used` for the %d%s \""
+  },
+  {
+   "label": "RCD the say-once key loses the page name, so two pages share one latch: the first page logs and the second is silenced because the count it offers has already been seen. #1203p2's comment names this exact hazard as the reason for keying per page.",
+   "find": "if _sc1203rc(\"hub_tools.apis_used_still_empty_1203rc:%s\" % name, _m1203rc):",
+   "replace": "if _sc1203rc(\"hub_tools.apis_used_still_empty_1203rc\", _m1203rc):"
+  },
+  {
+   "label": "RCE CONTROL, expected CAUGHT: the message drops the clause naming the blocker, so a lane reading it cannot tell which gate failure this is about (#983 -- say the actionable part).",
+   "find": "                        \"`page_apis_understated` blocker, this call changed nothing and the \"\n                        \"blocker will come back -- pass the full list of endpoints this page \"\n                        \"calls.\"),",
+   "replace": "                        \"blocker, this call changed nothing.\"),"
+  }
+ ]
+}
