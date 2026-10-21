@@ -18,6 +18,34 @@ route already claims, so it can never be shown as wired.
 
 The direction of the component test is the whole safety argument, and it is asymmetric.
 """
+#1203r8 AUDIT (2026-10-21): THIS FILE SEES ONLY TEXT, AND THAT IS NOT A GAP -- BUT THE
+# REASON IT IS NOT MUST BE WRITTEN DOWN, BECAUSE IT IS INVISIBLE FROM HERE.
+#
+# `scripts/text_assertion_ratio.py` ranks this file at 1.00 (12 of 12 assertions are source
+# text), and the instrument's advice is to mutate rather than conclude. Mutated
+# (`scripts/mutations/mut_1195_audit.json`), with every substring this file asserts left
+# intact:
+#
+#   M95A  `name not in _live` INVERTED -- the dedup then fires only for names already
+#         registered and never for the SECOND name, which is the entire case #1195 exists
+#         for (r26's login / login_page pair)          -> MISSED here
+#   M95B  the path comparison inverted -- a record merges into the first page whose file
+#         DIFFERS, over-merging the five distinct pages the comment below says the first
+#         draft collapsed                               -> MISSED here
+#   M95C  `_path1195 and` removed -- a substring this file asserts directly
+#                                                        -> CAUGHT here
+#
+# So the behavioural half is owned elsewhere, and it IS owned: the same spec aimed at
+# `test_a_path_merge_needs_agreement_1202f.py` catches M95A and M95B. Checked against the
+# other candidates too -- `test_1193_route_collision_resolved_under_lock.py` and
+# `test_page_api_declarations_are_reconciled_1199.py` catch none of the three -- so #1202f is
+# the sole behavioural owner, not a guess.
+#
+# WHY SAY IT HERE: a carrier claim that nobody verified is itself a defect
+# (`mutation_verdicts.py` refuses a CARRIED label whose named spec does not exist). If
+# #1202f's test is ever deleted or re-aimed, this file keeps passing and the dedup becomes
+# unguarded in silence. The pointer makes that dependency auditable from the file that looks
+# like the guard.
 import inspect
 
 from env_generator.llm_generator.multi_agent.runtime import registryhub as R

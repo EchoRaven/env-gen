@@ -1,0 +1,21 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1195_routeless_component_dedup.py",
+ "mutations": [
+  {
+   "label": "M95A the `name not in _live` clause is INVERTED, so the dedup fires only for names already registered and never for the second name -- which is the entire case #1195 exists for (r26's login / login_page pair). Every string the test asserts survives: `_path1195 and`, `not str(route or \"\").strip()`, `_v1195.get(\"path\")` and `m.set(_k1195, _rec, actor)` are all still there.",
+   "find": "                if _path1195 and not str(route or \"\").strip() and name not in _live:",
+   "replace": "                if _path1195 and not str(route or \"\").strip() and name in _live:"
+  },
+  {
+   "label": "M95B the PATH comparison is inverted, so a record is merged into the first page whose file DIFFERS -- over-merging exactly the five distinct pages the comment says the first draft collapsed. The asserted substring `_v1195.get(\"path\")` is untouched.",
+   "find": "                                and str(_v1195.get(\"path\") or \"\").strip() == _path1195):",
+   "replace": "                                and str(_v1195.get(\"path\") or \"\").strip() != _path1195):"
+  },
+  {
+   "label": "M95C CONTROL, expected CAUGHT: the `_path1195 and` guard goes, so a route-less record with NO path matches anything path-less -- the test asserts that substring directly, so this one must be seen.",
+   "find": "                if _path1195 and not str(route or \"\").strip() and name not in _live:",
+   "replace": "                if not str(route or \"\").strip() and name not in _live:"
+  }
+ ]
+}

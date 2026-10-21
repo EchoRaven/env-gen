@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/communication_tools.py",
+ "test": "tests/test_durable_inbox_read_preview_604.py",
+ "mutations": [
+  {
+   "label": "M604A the preview threshold is raised past any real body, so NO message is ever previewed and #604's entire saving disappears -- check_inbox is 63% of all tool-io tokens (68.9M of 108.6M over 45 runs). Every asserted substring survives: `len(body) > _INBOX_PREVIEW_LEN` is untouched.",
+   "find": "_INBOX_PREVIEW_LEN = 240",
+   "replace": "_INBOX_PREVIEW_LEN = 10 ** 9"
+  },
+  {
+   "label": "M604B `and` becomes `or`, so a long UNREAD body is truncated -- data loss on first delivery, which is exactly what `test_an_unread_body_is_still_delivered_WHOLE` claims to guard. The asserted prefix `is_preview = bool(msg.get(\"_was_read\"))` survives VERBATIM because the assertion is a substring check.",
+   "find": "            is_preview = bool(msg.get(\"_was_read\")) and len(body) > _INBOX_PREVIEW_LEN",
+   "replace": "            is_preview = bool(msg.get(\"_was_read\")) or len(body) > _INBOX_PREVIEW_LEN"
+  },
+  {
+   "label": "M604C the preview keeps NONE of the body, so a read message is replaced by its own footer. The asserted `search_messages` / `eventhub_get_thread` strings are in the footer and survive.",
+   "find": "                content = (body[:_INBOX_PREVIEW_LEN].rstrip()",
+   "replace": "                content = (body[:0].rstrip()"
+  },
+  {
+   "label": "M604D CONTROL, expected CAUGHT: the recovery hint loses `search_messages`, which the test asserts directly -- so this one must be seen and proves the spec is wired to a live test.",
+   "find": "                             f\"Full body: search_messages or eventhub_get_thread(id=\"",
+   "replace": "                             f\"Full body: eventhub_get_thread(id=\""
+  }
+ ]
+}

@@ -17,6 +17,34 @@ So `_was_read` was always False on exactly the messages that are never cleared â
 event is stamped `persist: True` right there â€” while **81%** of the arc's 33130 inbox pointers
 are in fact marked read. The state to act on was present the whole time, one level down.
 """
+#1203r8 AUDIT (2026-10-21): 1.00 TEXT RATIO HERE IS A DIVISION OF LABOUR, NOT A GAP --
+# AND THE OTHER HALF IS NAMED SO IT STAYS AUDITABLE.
+#
+# `scripts/text_assertion_ratio.py` ranks this file at 1.00 (10 of 10 assertions are
+# `in getsource`). Mutated rather than concluded (`scripts/mutations/mut_604_audit.json`),
+# and the result is exactly complementary with `test_302_check_inbox_read_preview.py`:
+#
+#                                                      this file   #302's test
+#   A  `_INBOX_PREVIEW_LEN` raised past any body
+#      (nothing is ever previewed; check_inbox is 63%
+#      of all tool-io tokens, 68.9M of 108.6M)           MISSED      CAUGHT
+#   B  `and` -> `or`, so a long UNREAD body is
+#      truncated -- data loss on first delivery          MISSED      CAUGHT
+#   C  the preview keeps NONE of the body                MISSED      CAUGHT
+#   D  the recovery hint loses `search_messages`         CAUGHT      MISSED
+#
+# Union 4/4, overlap zero. #302 owns the BEHAVIOUR and owns it well: it drives the tool (no
+# `getsource` at all) and its `test_read_long_message_is_previewed` asserts `"R" in
+# m["content"]` -- a real snippet -- which is what refuses C. This file owns the durable-event
+# WIRING TEXT, which is a text property and correctly asserted as one: B's mutation survives
+# every substring asserted here because `is_preview = bool(msg.get("_was_read"))` is a PREFIX
+# of the mutated line.
+#
+# So the ratio is a pointer, not a verdict -- the instrument's own footer says to run the spec
+# against the neighbouring ticket's test first, and that has now been right six times. The
+# dependency is written down because an unverified carrier claim is itself a defect: if #302's
+# test is deleted or re-aimed, this file keeps passing while the preview behaviour -- and the
+# guarantee that unread bodies are never truncated -- goes unguarded in silence.
 import inspect
 
 import pytest
