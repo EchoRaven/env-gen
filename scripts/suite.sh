@@ -80,7 +80,14 @@ fi
 case " $* " in
   *" --basetemp"*|*" --basetemp="*) _own_basetemp="" ;;
   *)
-    _own_basetemp="${SUITE_BASETEMP_ROOT:-/data/common/haibotong/pytest_tmp}/suite.$$"
+    # #1203r0: ON THE SSD, for the same reason as TMPDIR below. #1203qt picked this path
+    # for UNIQUENESS -- so a second pytest cannot rm_rf the first one's tree -- and the
+    # disk was incidental. It should not have been: basetemp is where pytest's `tmp_path`
+    # fixtures live, and 573 test files use `tmp_path` against 300 that call mkdtemp(), so
+    # this is the BIGGER half of the suite's temp I/O. /data is a spinning disk
+    # (/sys/block/sdb/queue/rotational = 1) and measured 20-30x slower than / (an SSD) at
+    # mkdtemp+fsync. The pid keeps the uniqueness, which was the whole point.
+    _own_basetemp="${SUITE_BASETEMP_ROOT:-/tmp/forgingground_suite_tmp}/suite.$$"
     mkdir -p "$(dirname "$_own_basetemp")" 2>/dev/null
     set -- "$@" "--basetemp=$_own_basetemp"
     echo "[suite] basetemp: $_own_basetemp (unique per run; pytest rm_rf's whatever it is given)"
@@ -115,7 +122,29 @@ if [ -n "${TMPDIR:-}" ]; then
   echo "[suite] TMPDIR left as the caller set it: $TMPDIR"
   _own_tmpdir=""
 else
-  _own_tmpdir="${SUITE_TMPDIR_ROOT:-/data/common/haibotong/pytest_tmp}/tmp.$$"
+  # #1203r0 CORRECTS #1203qy's choice of disk. The first version pointed this at
+  # /data, reading the problem as "temp is on the wrong filesystem". It was not: the
+  # problem was that NOTHING EVER CLEANED UP, and /tmp is both the right place and the
+  # fast one. Measured on this machine, 150 and 300 iterations of the exact shape the
+  # tests produce (tempfile.mkdtemp() + a 4KB write + fsync):
+  #
+  #       /tmp                                0.41s / 0.67s / 0.54s
+  #       /data/common/haibotong/pytest_tmp  13.10s / 10.94s / 16.01s   <- 20-30x slower
+  #
+  # 299 test files do that, so the whole suite went from ~31min to over 50, with pytest
+  # sitting in D state (I/O wait) at ~24% CPU for most of it.
+  #
+  # AND THE REASON IS STRUCTURAL, not a full-disk artifact: on this machine
+  #     /      is /dev/sda2, /sys/block/sda/queue/rotational = 0   -> SSD
+  #     /data  is /dev/sdb1, /sys/block/sdb/queue/rotational = 1   -> spinning disk
+  # A seek per fsync on rotating media is exactly where 20-30x comes from, so no amount
+  # of free space would fix it. /data is the right home for the 3.4T of `generated/`
+  # and the wrong home for a scratch tree. (/data is also 99% full.)
+  #
+  # What #1203qy got right and this keeps: a directory PER RUN, removed on success only,
+  # a caller's TMPDIR left alone, and a loud warning rather than a silent fall-through.
+  # SUITE_TMPDIR_ROOT still overrides, for a machine whose / really is small.
+  _own_tmpdir="${SUITE_TMPDIR_ROOT:-/tmp/forgingground_suite_tmp}/tmp.$$"
   if mkdir -p "$_own_tmpdir" 2>/dev/null; then
     export TMPDIR="$_own_tmpdir"
     echo "[suite] TMPDIR: $_own_tmpdir (299 test files call tempfile.mkdtemp() directly)"

@@ -78,6 +78,21 @@ class SuiteOwnsItsBasetemp(unittest.TestCase):
         self.assertNotEqual(own1, own2,
                             "two invocations got the same basetemp: %r" % own1)
 
+    def test_the_default_basetemp_root_is_on_the_fast_disk(self):
+        """#1203r0: basetemp is where `tmp_path` lives, and 573 test files use it against
+        300 that call mkdtemp() -- the bigger half of the suite's temp I/O. #1203qt chose
+        this path for uniqueness and took the disk incidentally; /data is a spinning disk
+        and measured 20-30x slower than / at mkdtemp+fsync, which put the suite in I/O wait
+        for 30 extra minutes and tripped three timing-sensitive SSE tests. The pid still
+        carries the uniqueness."""
+        argv, own = _argv_after_block(["tests", "-q"])
+        self.assertTrue(own, "no basetemp was injected")
+        self.assertTrue(own.startswith("/tmp/"),
+                        "the default basetemp is %r -- back on the spinning disk" % own)
+        self.assertNotEqual("/tmp", own.rstrip("/"),
+                            "basetemp is the bare shared /tmp, which pytest would rm_rf")
+        self.assertIn("suite.", own, "no per-run component in %r" % own)
+
     def test_an_explicit_basetemp_is_left_alone(self):
         argv, own = _argv_after_block(["tests", "--basetemp=/tmp/caller_chose"],
                                       env_root="/tmp/qt_probe")
@@ -129,18 +144,34 @@ class SuiteOwnsItsTmpdir(unittest.TestCase):
     command's stdout while the commands still run, so a scan returns nothing and reads
     exactly like a clean result."""
 
-    def test_tmpdir_is_pointed_off_the_root_filesystem(self):
-        root = "/data/common/haibotong/pytest_tmp"
-        got, own = _tmpdir_after_block(["tests", "-q"], env_tmpdir=None, root=root)
-        self.assertTrue(own, "TMPDIR was left unset: mkdtemp() would land in /tmp")
-        self.assertTrue(got.startswith(root),
-                        "TMPDIR is %r, not under %r -- mkdtemp() still fills /" % (got, root))
-        self.assertNotEqual("/tmp", got)
+    def test_tmpdir_is_a_per_run_dir_and_never_the_bare_tmp(self):
+        """#1203r0 INVERTED THIS TEST'S PREMISE, on purpose.
+
+        It used to assert TMPDIR lands "off the root filesystem", because #1203qy read the
+        184G in /tmp as a wrong-disk problem. It was a no-cleanup problem, and /data turned
+        out to be 20-30x slower for exactly this workload (mkdtemp + fsync), which put the
+        whole suite in I/O wait. So living on / is now CORRECT; what must never happen is
+        TMPDIR being the bare shared /tmp, because then the per-run tree cannot be removed
+        without touching other processes' files."""
+        got, own = _tmpdir_after_block(["tests", "-q"], env_tmpdir=None)
+        self.assertTrue(own, "TMPDIR was left unset: mkdtemp() would land in the shared /tmp")
+        self.assertNotEqual("/tmp", got.rstrip("/"),
+                            "TMPDIR is the bare shared /tmp: a cleanup here would delete "
+                            "other processes' temp files, so it can never be cleaned")
+        self.assertTrue(got.startswith("/tmp/"),
+                        "TMPDIR %r is not under /tmp -- #1203r0 measured /data at 20-30x "
+                        "slower for mkdtemp+fsync" % got)
+        self.assertIn("tmp.", got, "no per-run component in %r" % got)
+
+    def test_an_explicit_root_still_wins(self):
+        """SUITE_TMPDIR_ROOT exists for a machine whose / really is small."""
+        got, own = _tmpdir_after_block(["tests"], env_tmpdir=None, root="/tmp/qt_probe_root")
+        self.assertTrue(own)
+        self.assertTrue(got.startswith("/tmp/qt_probe_root/"), got)
 
     def test_two_runs_get_different_tmpdirs(self):
-        root = "/data/common/haibotong/pytest_tmp"
-        _g1, o1 = _tmpdir_after_block(["tests"], env_tmpdir=None, root=root)
-        _g2, o2 = _tmpdir_after_block(["tests"], env_tmpdir=None, root=root)
+        _g1, o1 = _tmpdir_after_block(["tests"], env_tmpdir=None)
+        _g2, o2 = _tmpdir_after_block(["tests"], env_tmpdir=None)
         self.assertTrue(o1 and o2)
         self.assertNotEqual(o1, o2, "both runs share a TMPDIR: %r" % o1)
 

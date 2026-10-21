@@ -8,9 +8,9 @@
    "replace": ":"
   },
   {
-   "label": "QY2 the temp root goes back onto the ROOT filesystem -- the per-run dir exists and is cleaned, but it is on the disk that fills",
-   "find": "_own_tmpdir=\"${SUITE_TMPDIR_ROOT:-/data/common/haibotong/pytest_tmp}/tmp.$$\"",
-   "replace": "_own_tmpdir=\"/tmp/suite_tmp.$$\""
+   "label": "QY2 RE-AIMED by #1203r0, whose meaning inverted: this used to mutate the root back onto / and call that the defect. Living on / is now correct (/data measured 20-30x slower for mkdtemp+fsync). The defect is TMPDIR being the BARE SHARED /tmp -- no per-run component, so the tree can never be cleaned without deleting other processes' files.",
+   "find": "_own_tmpdir=\"${SUITE_TMPDIR_ROOT:-/tmp/forgingground_suite_tmp}/tmp.$$\"",
+   "replace": "_own_tmpdir=\"/tmp\""
   },
   {
    "label": "QY3 a TMPDIR the caller chose is overridden anyway (the #1203qt lesson in reverse: an explicit choice must be left alone). ANCHOR RE-AIMED: the #1203qy fix rewrote this very line ($TMPDIR -> ${TMPDIR:-}) and silently turned QY3 into NOT APPLIED while the suite stayed green -- the patch-destroys-its-own-anchor hazard, inside one session.",
@@ -31,6 +31,11 @@
    "label": "QY6 the naive `$TMPDIR` comes back -- under `set -uo pipefail` that aborts the suite on the UNSET path this block exists to handle (it did, on the first real run)",
    "find": "if [ -n \"${TMPDIR:-}\" ]; then",
    "replace": "if [ -n \"$TMPDIR\" ]; then"
+  },
+  {
+   "label": "QY7 basetemp goes back onto the spinning disk -- the half of the temp I/O that #1203qy left behind (573 test files use tmp_path, 300 use mkdtemp)",
+   "find": "_own_basetemp=\"${SUITE_BASETEMP_ROOT:-/tmp/forgingground_suite_tmp}/suite.$$\"",
+   "replace": "_own_basetemp=\"${SUITE_BASETEMP_ROOT:-/data/common/haibotong/pytest_tmp}/suite.$$\""
   }
  ]
 }
