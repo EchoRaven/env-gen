@@ -36,6 +36,21 @@
    "label": "QY7 basetemp goes back onto the spinning disk -- the half of the temp I/O that #1203qy left behind (573 test files use tmp_path, 300 use mkdtemp)",
    "find": "_own_basetemp=\"${SUITE_BASETEMP_ROOT:-/tmp/forgingground_suite_tmp}/suite.$$\"",
    "replace": "_own_basetemp=\"${SUITE_BASETEMP_ROOT:-/data/common/haibotong/pytest_tmp}/suite.$$\""
+  },
+  {
+   "label": "QY8 THE SWEEP'S SCOPE GUARD is removed, so pointing SUITE_TMPDIR_ROOT at /tmp would delete other processes' temp files",
+   "find": "  /tmp|/tmp/|/|\"\") : ;;   # never sweep a shared or empty root",
+   "replace": "  \"@@never@@\") : ;;   # never sweep a shared or empty root"
+  },
+  {
+   "label": "QY9 the age gate goes, so a CONCURRENT run's temp tree is deleted underneath it",
+   "find": "-mtime \"+${SUITE_TMP_KEEP_DAYS:-3}\" -exec rm -rf -- {} + 2>/dev/null",
+   "replace": "-exec rm -rf -- {} + 2>/dev/null"
+  },
+  {
+   "label": "QY10 the sweep stops naming what it removed (#983: a check that fires naming nothing)",
+   "find": "echo \"[suite] swept $_swept abandoned temp tree(s) older than ${SUITE_TMP_KEEP_DAYS:-3}d from $_sweep_root\"",
+   "replace": ":"
   }
  ]
 }

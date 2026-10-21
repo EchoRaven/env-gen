@@ -62,6 +62,25 @@ def _argv_after_block(args, env_root=None):
     return [l for l in lines if not l.startswith("OWN=")], own
 
 
+def _sweep_block() -> str:
+    """suite.sh's #1203r1 sweep, sliced by landmark (not a fixed window, #943)."""
+    src = SUITE_SH.read_text(encoding="utf-8")
+    i = src.find("# #1203r1:")
+    assert i >= 0, "suite.sh no longer carries the #1203r1 sweep"
+    j = src.find('"$PY" -m pytest', i)
+    assert j > i, "the #1203r1 sweep no longer sits immediately before the pytest call"
+    return src[i:j]
+
+
+def _run_sweep(root, keep_days="3"):
+    """Execute the real sweep against `root`; return its stdout."""
+    script = ('set -u\n'
+              'SUITE_TMPDIR_ROOT=%s\n'
+              'SUITE_TMP_KEEP_DAYS=%s\n' % (root, keep_days)
+              + _sweep_block())
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True).stdout
+
+
 class SuiteOwnsItsBasetemp(unittest.TestCase):
 
     def test_a_basetemp_is_injected_when_the_caller_gave_none(self):
@@ -198,6 +217,95 @@ class SuiteOwnsItsTmpdir(unittest.TestCase):
         i = block.find("WARNING")
         self.assertIn("NOT cleaned", block[i:i + 400],
                       "the warning does not say the consequence")
+
+
+class TheSweepIsBoundedAndScoped(unittest.TestCase):
+    """#1203r1: the success-only cleanup leaves a tree behind for every FAILED or killed
+    run, so the pile grows back -- slower than the 1,474,363 entries / 184G that #1203qy
+    was written for, but without a bound. The sweep bounds it. What it must never do is
+    touch anything outside the prefix this script creates."""
+
+    def _mk(self, root, name, age_days):
+        import os
+        import time
+        d = Path(root) / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "inner").write_text("x", encoding="utf-8")
+        old = time.time() - age_days * 86400
+        os.utime(d, (old, old))
+        return d
+
+    def test_an_old_abandoned_tree_is_removed_and_counted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            old = self._mk(root, "suite.999999", 10)
+            out = _run_sweep(root)
+            self.assertFalse(old.exists(), "a 10-day-old abandoned tree survived")
+            self.assertIn("swept", out, "the sweep removed a tree and said nothing: %r" % out)
+            self.assertIn("1", out, "the count is missing from %r" % out)
+
+    def test_a_recent_tree_is_left_alone_even_when_an_old_one_is_swept(self):
+        """A concurrent run's tree must survive -- the whole reason for the age gate.
+
+        BOTH trees are needed, and the first version of this test had only the fresh one.
+        The sweep counts old trees first and deletes only if the count is non-zero, so with
+        no old tree present the delete never runs at all, and a mutation that strips the age
+        gate OFF THE DELETE would have come back MISSED -- a fixture that already agrees
+        with the conclusion."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            fresh = self._mk(root, "tmp.123456", 0)
+            old = self._mk(root, "tmp.999999", 10)
+            _run_sweep(root)
+            self.assertFalse(old.exists(), "the old tree survived, so the sweep did nothing")
+            self.assertTrue(fresh.exists(),
+                            "today's tree was deleted alongside the old one: a concurrent "
+                            "suite would lose its temp mid-run")
+
+    def test_a_foreign_name_is_never_touched(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            foreign = self._mk(root, "someone_elses_data", 30)
+            _run_sweep(root)
+            self.assertTrue(foreign.exists(),
+                            "the sweep removed a directory that is not ours")
+
+    def test_a_shared_root_is_refused(self):
+        """The guard that matters: pointed at /tmp itself the sweep must do NOTHING, or it
+        would delete other processes' files -- the same reason the bare /tmp is refused as
+        a TMPDIR.
+
+        PINNED STRUCTURALLY, AND THIS IS THE DOCUMENTED EXCEPTION to driving the shell
+        rather than reading it. The behavioural version cannot be written safely: to observe
+        the guard failing, the test would have to run a DESTRUCTIVE sweep against the real
+        shared /tmp and watch it delete something, and a test may not do that. Observed
+        while writing it -- removing the guard and sweeping /tmp is SILENT today, because
+        the 421,207 leaked names there are `tmpXXXXXXXX` with no dot and so match neither
+        `suite.*` nor `tmp.*`. That silence is luck, not safety: the next process to leave a
+        `tmp.<pid>` in /tmp would be inside the blast radius. So the guard is pinned on the
+        `case` arm itself."""
+        block = _sweep_block()
+        m = re.search(r"case\s+\"\$_sweep_root\"\s+in(.*?)esac", block, re.S)
+        self.assertIsNotNone(m, "the sweep no longer guards its root with a case:\n%s" % block)
+        arms = m.group(1)
+        first = arms.split(";;")[0]
+        for shared in ("/tmp", "/"):
+            self.assertIn(shared, first,
+                          "the shared root %r is no longer refused before the find runs; "
+                          "arm was %r" % (shared, first))
+        self.assertRegex(first, r":\s*$|:\s*;*\s*$",
+                         "the shared-root arm does something instead of nothing: %r" % first)
+        # and corroborate behaviourally: nothing is announced for a shared root
+        for shared in ("/tmp", "/tmp/", "/"):
+            self.assertNotIn("swept", _run_sweep(shared),
+                             "the sweep announced work against the shared root %r" % shared)
+
+    def test_nothing_is_said_when_there_is_nothing_to_sweep(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            out = _run_sweep(root)
+            self.assertNotIn("swept", out,
+                             "announced a sweep of an empty root: %r" % out)
 
 
 class TheVerdictsToolRestoresWhatItDirties(unittest.TestCase):

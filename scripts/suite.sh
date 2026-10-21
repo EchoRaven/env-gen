@@ -156,6 +156,34 @@ else
   fi
 fi
 
+# #1203r1: AND SWEEP OUR OWN OLD TREES, or the leak comes back slowly.
+#
+# The cleanup below is success-only ON PURPOSE -- a failing run's temp tree is the evidence
+# for the failure. The consequence is that every failed or killed run leaves one behind, so
+# the pile grows again, just slower than the 1,474,363 entries / 184G that #1203qy was
+# written for. (One is already sitting there from a run killed minutes ago.)
+#
+# So each run first removes trees under OUR OWN prefix older than SUITE_TMP_KEEP_DAYS (3).
+# Scoped to the prefix this script creates, never to /tmp itself: a sweep of the shared /tmp
+# would delete other processes' files, which is exactly why the bare /tmp is refused above.
+# `-maxdepth 1` so a long-running sibling's inner files are never walked, and failures are
+# ignored -- not being able to tidy up is not a reason to refuse to run the suite.
+_sweep_root="${SUITE_TMPDIR_ROOT:-/tmp/forgingground_suite_tmp}"
+case "$_sweep_root" in
+  /tmp|/tmp/|/|"") : ;;   # never sweep a shared or empty root
+  *) if [ -d "$_sweep_root" ]; then
+       _swept=$(find "$_sweep_root" -mindepth 1 -maxdepth 1 \
+                     \( -name 'suite.*' -o -name 'tmp.*' \) \
+                     -mtime "+${SUITE_TMP_KEEP_DAYS:-3}" -print 2>/dev/null | wc -l)
+       if [ "${_swept:-0}" -gt 0 ]; then
+         find "$_sweep_root" -mindepth 1 -maxdepth 1 \
+              \( -name 'suite.*' -o -name 'tmp.*' \) \
+              -mtime "+${SUITE_TMP_KEEP_DAYS:-3}" -exec rm -rf -- {} + 2>/dev/null
+         echo "[suite] swept $_swept abandoned temp tree(s) older than ${SUITE_TMP_KEEP_DAYS:-3}d from $_sweep_root"
+       fi
+     fi ;;
+esac
+
 "$PY" -m pytest "$@"
 rc=$?
 if [ -n "$_own_basetemp" ] && [ "$rc" = "0" ]; then
