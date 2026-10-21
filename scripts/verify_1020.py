@@ -1,4 +1,4 @@
-"""Pre-registered checks for the 2026-10-20 batch (sections A-D, 13 checks).
+"""Pre-registered checks for the 2026-10-20 batch (sections A-D, 16 checks).
 
     python scripts/verify_1020.py generated/<run> [--log gm_<run>.log]
 
@@ -171,6 +171,42 @@ def check_log_only(logtext, nlines):
     say("#1203md", "CONFIRMED" if short else "NOT MEASURED",
         "%d shortfall line(s); absent is fine if no table actually loaded short" % short)
 
+    # #1203ip -- does the browser walk still report a malformed fill value?
+    #
+    # CALIBRATION (2026-10-20, over the modern logs): r185 printed 10 of these while
+    # exercising `Locator.fill` 25 times; r190 (11 fills) and r191 (4 fills) printed NONE.
+    # So the emission is gone from the two newest runs but the PATH is still walked, which
+    # is exactly the pair of numbers this check needs: the fill count is the quantity that
+    # cannot be zero in a run that got as far as typing into a form, so an empty Malformed
+    # scan cannot read as clean on a run that never typed anything.
+    fills = len(re.findall(r"Locator\.fill", logtext))
+    malformed = len(re.findall(r"Locator\.fill: Error: Malformed value", logtext))
+    say("#1203ip",
+        "NOT MEASURED" if not fills else ("FALSIFIED" if malformed else "CONFIRMED"),
+        "%d Locator.fill call(s), %d reporting a malformed value "
+        "(r185 negative control: 25 fills / 10 malformed)" % (fills, malformed))
+
+    # #1203qo -- an agent must not stop because the tool it needs is off its surface.
+    #
+    # WHAT THIS DOES AND DOES NOT MEASURE. `#1203qo`'s own guard
+    # (test_hub_consistency_gate_tools_present.py) is static: it pins that every tool a gap
+    # message NAMES is in the matching bundle, and that an empty extraction is loud rather
+    # than vacuously green. This check measures a different thing -- the LIVE symptom in the
+    # same family: an agent stopping at delivery because the tool it was told to call is not
+    # on its surface. A clean log here does NOT prove that guard holds, and the guard holding
+    # does not predict this count; the gap-message path and the delivery path are offered
+    # their tools separately. Both are reported because only one of them can see a run.
+    #
+    # CALIBRATION: present in EVERY modern log -- r185 1, r190 2, r191 1 -- and the three
+    # sentences name three DIFFERENT tools ("final delivery tool", "delivery tool calls",
+    # "final release tool calls"), so the check matches the shared tail rather than any one
+    # of them. Each occurrence is a delivery that stopped with the gate already green.
+    surface = len(re.findall(r"not available in this tool surface", logtext))
+    say("#1203qo",
+        "NOT MEASURED" if not nlines else ("FALSIFIED" if surface else "CONFIRMED"),
+        "%d delivery stop(s) blamed on a missing tool surface across %d log line(s) "
+        "(r185/r190/r191 controls: 1/2/1)" % (surface, nlines))
+
     # #1203qs -- the #1017 message must name the pages, and must keep the COUNT and the
     # LIST as two numbers. The defect it replaced printed "on 0 record(s): <unnamed
     # records>" 269 times across r170-r173 for the commonest live blocker, so the check is
@@ -262,6 +298,53 @@ def check_releases(run):
         "without it" % (len(recs), marked, lying))
 
 
+def check_skills(run):
+    """#1203p6 -- did naming the UI skills in the gate's task text get them read?
+
+    BASELINE, measured over all 104 `eventhub_events.json` files (2026-10-20): 23617
+    `skill_consulted` events naming 12 distinct skills, and the three UI skills sit at the
+    very bottom with FOUR consults each -- half the next-lowest (`mcp-server-bootstrap`, 8)
+    against `verification-before-completion`'s 9725.
+
+    Per RUN the floor is starker still: only 7 of 104 runs consult a UI skill even once, and
+    in the modern era six of seven runs are a flat ZERO (r185/186/187/188/189/190) while
+    r191 managed exactly 1. A run consulting 439-1055 skills and none of them about the UI
+    is the shape this ticket describes.
+
+    So: 2+ UI consults is the patch working, 0 against a healthy consult total is the defect
+    standing, and 1 is inside the noise this baseline already contains -- it is reported as
+    NOT MEASURED rather than dressed up as either answer (#883)."""
+    ui = ("frontend-design", "ui-ux-review", "ui-bootstrap")
+    d = _json(run / "shared" / "hubs" / "eventhub_events.json", {}) or {}
+    total = 0
+    seen = {}
+    for key, ev in (d.items() if isinstance(d, dict) else []):
+        # `_meta` is a top-level bookkeeping key, not an event. Counting it as one is how a
+        # scan of this file reports a shape it never actually read.
+        if key == "_meta" or not isinstance(ev, dict):
+            continue
+        if str(ev.get("event_type")) != "skill_consulted":
+            continue
+        total += 1
+        pay = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        name = str(pay.get("skill") or pay.get("name") or pay.get("skill_name") or "?")
+        if name in ui:
+            seen[name] = seen.get(name, 0) + 1
+    hits = sum(seen.values())
+    if not total:
+        verdict = "NOT MEASURED"
+    elif hits >= 2:
+        verdict = "CONFIRMED"
+    elif hits == 0 and total >= 200:
+        verdict = "FALSIFIED"
+    else:
+        verdict = "NOT MEASURED"
+    say("#1203p6", verdict,
+        "%d skill_consulted event(s) this run, %d naming a UI skill %s "
+        "(modern-era control: 6 of 7 runs at 0, r191 at 1)"
+        % (total, hits, sorted(seen.items()) or "[]"))
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -281,6 +364,7 @@ def main(argv):
     check_ql(run)
     check_reports(run)
     check_releases(run)
+    check_skills(run)
     check_log_only(logtext, nlines)
     width = max(len(t) for t, _v, _d in OUT)
     bad = 0
