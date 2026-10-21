@@ -13,8 +13,8 @@
    "replace": "_own_tmpdir=\"/tmp/suite_tmp.$$\""
   },
   {
-   "label": "QY3 a TMPDIR the caller chose is overridden anyway (the #1203qt lesson in reverse: an explicit choice must be left alone)",
-   "find": "if [ -n \"$TMPDIR\" ]; then",
+   "label": "QY3 a TMPDIR the caller chose is overridden anyway (the #1203qt lesson in reverse: an explicit choice must be left alone). ANCHOR RE-AIMED: the #1203qy fix rewrote this very line ($TMPDIR -> ${TMPDIR:-}) and silently turned QY3 into NOT APPLIED while the suite stayed green -- the patch-destroys-its-own-anchor hazard, inside one session.",
+   "find": "if [ -n \"${TMPDIR:-}\" ]; then",
    "replace": "if false; then"
   },
   {
