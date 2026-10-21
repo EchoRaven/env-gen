@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/hubs/workhub/service.py",
+ "test": "tests/test_1203r8_a_lane_write_must_not_un_audit_a_page.py",
+ "mutations": [
+  {
+   "label": "R8H the workhub ui_page delegate supplies its own \"defined\" default again. The registry fix alone does not save this path: the delegate states the status explicitly, so it demotes through the very method the framework audit uses.",
+   "find": "            path=data.pop(\"path\", \"\"),\n            status=data.pop(\"status\", \"\"),   # #1203r8: silence must not demote",
+   "replace": "            path=data.pop(\"path\", \"\"),\n            status=data.pop(\"status\", \"defined\"),"
+  }
+ ]
+}

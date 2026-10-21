@@ -1,0 +1,11 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_1203r8_a_lane_write_must_not_un_audit_a_page.py",
+ "mutations": [
+  {
+   "label": "R8I the tool advertises `default: \"defined\"` again -- the PRODUCTION trigger. A model filling a call from this schema states `defined` explicitly on every registration, which is why the registry has to guard the value as well as the entry path.",
+   "find": "            \"status\": {\"type\": \"string\", \"enum\": [\"defined\", \"deprecated\"]},",
+   "replace": "            \"status\": {\"type\": \"string\", \"enum\": [\"defined\", \"deprecated\"], \"default\": \"defined\"},"
+  }
+ ]
+}

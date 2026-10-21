@@ -887,7 +887,13 @@ class WorkHubUpdatePageTool(HubTool):
             "route": {"type": "string", "description": "Router path this page is reachable at (e.g. '/feed'). The delivery gate skips a page with no '/'-rooted route, so set it."},
             "component": {"type": "string", "description": "React component name this page renders (e.g. 'HomeFeedPage')"},
             "apis_used": {"type": "array", "items": {"type": "string"}, "description": "EVERY endpoint this page's component tree calls, as 'METHOD /path' (e.g. 'GET /api/videos/feed'). The delivery gate compares this against the source and blocks when it understates. OMITTING it KEEPS the existing list unchanged — pass the full list to change it, and drop entries no endpoint actually serves."},
-            "status": {"type": "string", "enum": ["defined", "deprecated"], "default": "defined"},
+            # #1203r8: NO DEFAULT. This field used to default to "defined", and the
+            # registry merged it over whatever the framework audit had written, so every
+            # lane registration silently un-audited the page (67% of pages were announced
+            # "newly implemented" more than once; `for_you_page` 57 times in one run).
+            # Omitting it now means "leave the status alone"; the registry guards the value
+            # as well, so an explicit "defined" from a lane cannot demote either.
+            "status": {"type": "string", "enum": ["defined", "deprecated"]},
             "components": {"type": "array", "items": {"type": "string"}, "description": "Optional component names this page renders"},
             "reference_image": {"type": "string", "description": "Optional screenshot filename from list_reference_images()"},
             "notes": {"type": "string"},
@@ -902,7 +908,7 @@ class WorkHubUpdatePageTool(HubTool):
         route: str = "",
         component: str = "",
         apis_used: Optional[list] = None,
-        status: str = "defined",
+        status: str = "",
         components: Optional[list] = None,
         reference_image: str = "",
         notes: str = "",
@@ -2017,7 +2023,7 @@ class RegistryHubRegisterEndpointTool(HubTool):
             }, "provider": {"type": "string"}, "status": {"type": "string"}}, "uses": {"type": "array", "items": {"type": "string"}, "description": "endpoints this endpoint's logic builds on, e.g. ['GET /api/items'] — orders implementation and feeds verifier chain design"},
         "required": ["method", "path"]}
 
-    async def _run(self, method: str, path: str, schema=None, provider: str = "", status: str = "defined") -> ToolResult:
+    async def _run(self, method: str, path: str, schema=None, provider: str = "", status: str = "") -> ToolResult:
         coerced = _coerce_dict_param(schema, "schema")
         if isinstance(coerced, ToolResult):
             return coerced
@@ -2447,7 +2453,7 @@ class RegistryHubRegisterTableTool(HubTool):
         "required": ["name", "schema"],
     }
 
-    async def _run(self, name: str, schema=None, status: str = "defined") -> ToolResult:
+    async def _run(self, name: str, schema=None, status: str = "") -> ToolResult:
         coerced = _coerce_dict_param(schema, "schema")
         if isinstance(coerced, ToolResult):  # error case
             return coerced

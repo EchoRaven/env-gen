@@ -1805,7 +1805,7 @@ class WorkHub:
             apis_used=data.pop("apis_used", None),
             components=data.pop("components", None),
             path=data.pop("path", ""),
-            status=data.pop("status", "defined"),
+            status=data.pop("status", ""),   # #1203r8: silence must not demote
             agent=agent,
             **{k: v for k, v in data.items() if not str(k).startswith("_")},
         )
@@ -1823,7 +1823,7 @@ class WorkHub:
             name,
             component=data.pop("component", ""),
             apis_used=data.pop("apis_used", None),
-            status=data.pop("status", "defined"),
+            status=data.pop("status", ""),   # #1203r8: silence must not demote
             agent=agent,
             **{k: v for k, v in data.items() if not str(k).startswith("_")},
         )

@@ -1110,7 +1110,18 @@ class RegistryHub:
         single = m != "GET" or last == "me" or is_param
         return "item" if single else "items"
 
-    def register_endpoint(self, method: str, path: str, schema: Optional[dict] = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:
+    def register_endpoint(self, method: str, path: str, schema: Optional[dict] = None, provider: str = "", agent: str = "", status: str = "", **metadata: Any) -> dict:
+        """#1203r8 SCOPE NOTE. `status` defaults to "" here, not "defined", so a caller that
+        says nothing keeps the stored status -- the merge below always claimed that and the
+        truthy default made the claim dead (driven: register implemented, re-register with an
+        identical schema, and it came back `defined`).
+
+        The stronger guard register_ui_page carries -- only the orchestrator may move a record
+        OFF `implemented` -- is deliberately NOT applied to endpoints or tables. There the
+        backend lane is the lifecycle authority (hub_pulse tells it to
+        `register_endpoint(status='implemented')` for the endpoints it owns), so an explicit
+        `status="defined"` from a lane is a caller stating intent, not a write that forgot to
+        restate it. Measured and left alone: that case still demotes, on purpose."""
         # Ownership: backend owns endpoint registration; the kickoff
         # coordinator (actor='orchestrator') also registers the
         # canonical contract during finalize_kickoff. Frontend signals
@@ -2459,7 +2470,7 @@ class RegistryHub:
         schema: Optional[dict] = None,
         provider: str = "",
         agent: str = "",
-        status: str = "defined",
+        status: str = "",      # #1203r8: silence preserves; "" lets the merge fall back
         **metadata: Any,
     ) -> dict:
         from ._role_gate import require_allowed_actor
@@ -2825,7 +2836,7 @@ class RegistryHub:
 
     def register_ui_page(self, name: str, route: str = "", component: str = "",
                          apis_used: Optional[list] = None, components: Optional[list] = None,
-                         path: str = "", status: str = "defined",
+                         path: str = "", status: str = "",
                          agent: str = "", **metadata: Any) -> dict:
         from ._role_gate import require_allowed_actor
         require_allowed_actor(
@@ -2988,6 +2999,60 @@ class RegistryHub:
                     _alias, name = name, _k       # keep the FIRST-registered key stable
                     break
         existing = _pages_now.get(name) or {}
+        # #1203r8: ONLY THE LIFECYCLE AUTHORITY MAY UN-AUDIT A PAGE.
+        #
+        # `status` merges as `status or existing.get("status") or "defined"` -- written to mean
+        # "a caller that says nothing keeps what is there". The signature defaulted `status` to
+        # the TRUTHY string `"defined"`, so the `or existing` arm was unreachable: every write
+        # that did not restate the status demoted the record. Driven, not inferred -- register a
+        # page `implemented` as the orchestrator, then re-register it with BYTE-IDENTICAL route /
+        # component / apis_used / components as the frontend lane, and it comes back `defined`.
+        # Even the orchestrator attaching a `reference_image` demoted it.
+        #
+        # The tool is the production trigger, at schema level: `registryhub_register_ui_page`
+        # declares `status: {enum: [defined, deprecated], default: "defined"}` -- `implemented`
+        # is correctly absent (mechanism #54), but the DEFAULT means every lane registration
+        # explicitly un-audits the page. So fixing the Python default alone would not hold; the
+        # value has to be guarded where it lands ([[feedback_guard_the_value_not_just_the_entry_path]],
+        # the same argument #1202ly makes two hundred lines up).
+        #
+        # WHAT IT COST, measured over 216 runs with a UI-PAGE LIFECYCLE line:
+        #
+        #     (run, page) pairs announced `implemented`            3081
+        #     total "newly implemented" announcements             10795
+        #   ★ pairs announced more than once               2059    67% of pairs
+        #   ★ announcements that are RE-announcements      7714    71% of all
+        #   ★ repeats with NO `regressed` line for that page 1326  64% of repeats
+        #
+        # `for_you_page` was announced newly-implemented 57 times in one run. The audit's
+        # `implemented` / `regressed` / `pending` are TRANSITION lists, so a demoted page cannot
+        # reach the `regressed` arm (`not ok and status == "implemented"`) -- it falls to
+        # `pending` instead, and the one line that reports page lifecycle says `regressed=[]`
+        # while the state demonstrably moved backwards. netflix-local-r46 is the shape: five
+        # passes, `landing_page` implemented in the first and `pending` in the next four, and
+        # `login_page` / `signup_page` re-announced in all five. r46 shipped with its two
+        # primary CTAs ("Get Started", "Learn More") dead, and the audit HAD caught them --
+        # `LandingPage` dead controls: 2 of 2.
+        #
+        # HOW FAR THE COST ACTUALLY REACHES, measured rather than assumed -- because the
+        # churn above is mostly SELF-HEALING. Of 242 runs with a lifecycle line, only ONE ends
+        # with a page that was announced `implemented` and is still `pending` at the last line:
+        # r46, with `landing_page` and `profiles_page`. Every other demotion was re-flipped on
+        # a later pass. So this is a REPORTING and ANNOUNCEMENT-NOISE defect, not a delivery
+        # blocker, and it is written down that way on purpose: r46's dead CTAs were real, the
+        # audit held the page correctly, and the gate was not fooled. What the demotion broke
+        # was the NARRATIVE -- `regressed=[]` while the state moved backwards, and a page
+        # misfiled as "never implemented" instead of "lost it" -- plus ~7700 spurious
+        # `ui_page_implemented` emissions and `sync_impl_page_completed` cascades.
+        #
+        # Mechanism #54 already names the orchestrator the lifecycle authority; this states the
+        # other half of it positively. The #54 self-claim downgrade above is untouched: it only
+        # rewrites an incoming `implemented`, and on a record that is ALREADY implemented the
+        # page was audited, so keeping it is not a self-claim.
+        if (str(existing.get("status") or "").lower() == "implemented"
+                and str(status or "").lower() != "implemented"
+                and str(agent or "") != "orchestrator"):
+            status = "implemented"
         _refused_1202ud = ""
         # #1202ud: A PAGE WITH NEITHER A ROUTE NOR A COMPONENT CANNOT BE "IMPLEMENTED".
         #
@@ -3219,11 +3284,19 @@ class RegistryHub:
         return self._ui_pages.value().get(self._ui_snake(name))
 
     def register_ui_component(self, name: str, component: str = "",
-                              apis_used: Optional[list] = None, status: str = "defined",
+                              apis_used: Optional[list] = None, status: str = "",
                               agent: str = "", **metadata: Any) -> dict:
         actor = agent or "registryhub"
         now = time.time()
         existing = self._ui_components.value().get(name) or {}
+        # #1203r8: same guard as register_ui_page -- a component the audit marked
+        # `implemented` is not un-audited by a lane re-registering it. The page rollup in
+        # `sync_ui_page_statuses` reads these ("referenced component `X` not implemented
+        # yet"), so a demoted component drags its pages back to `pending` too.
+        if (str(existing.get("status") or "").lower() == "implemented"
+                and str(status or "").lower() != "implemented"
+                and str(agent or "") != "orchestrator"):
+            status = "implemented"
         rec = {
             **existing,
             "id": f"component:ui:{name}", "name": name, "kind": "ui_component",

@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/registryhub.py",
+ "test": "tests/test_1203r8_a_lane_write_must_not_un_audit_a_page.py",
+ "mutations": [
+  {
+   "label": "R8A the ui_page default goes back to the truthy \"defined\", which is the whole original defect: the `or existing.get(\"status\")` arm below becomes unreachable and every write that does not restate the status demotes the record. The merge EXPRESSION is untouched, so a source-text assertion about it still reads as coverage.",
+   "find": "                         path: str = \"\", status: str = \"\",\n                         agent: str = \"\", **metadata: Any) -> dict:",
+   "replace": "                         path: str = \"\", status: str = \"defined\",\n                         agent: str = \"\", **metadata: Any) -> dict:"
+  },
+  {
+   "label": "R8B the ui_page chokepoint guard is inverted on the ACTOR, so a lane write demotes again while the orchestrator's own write is the only one protected -- exactly backwards. The guard still exists, still mentions `implemented` and `orchestrator`, and still assigns.",
+   "find": "                and str(agent or \"\") != \"orchestrator\"):\n            status = \"implemented\"\n        _refused_1202ud = \"\"",
+   "replace": "                and str(agent or \"\") == \"orchestrator\"):\n            status = \"implemented\"\n        _refused_1202ud = \"\""
+  },
+  {
+   "label": "R8C CONTROL, expected CAUGHT: the actor check is dropped so the guard protects `implemented` from EVERYONE, including the framework audit -- which makes the `regressed` arm permanently unreachable. That is the same blindness from the other side, and `test_the_audit_can_still_demote_a_page` is the test that must refuse it.",
+   "find": "                and str(status or \"\").lower() != \"implemented\"\n                and str(agent or \"\") != \"orchestrator\"):\n            status = \"implemented\"\n        _refused_1202ud = \"\"",
+   "replace": "                and str(status or \"\").lower() != \"implemented\"):\n            status = \"implemented\"\n        _refused_1202ud = \"\""
+  },
+  {
+   "label": "R8D the ui_component default goes back to \"defined\". Components roll up into pages (\"referenced component `X` not implemented yet\"), so a demoted component drags its pages back to pending too.",
+   "find": "                              apis_used: Optional[list] = None, status: str = \"\",\n                              agent: str = \"\", **metadata: Any) -> dict:",
+   "replace": "                              apis_used: Optional[list] = None, status: str = \"defined\",\n                              agent: str = \"\", **metadata: Any) -> dict:"
+  },
+  {
+   "label": "R8E the ui_component chokepoint guard is neutered while its text survives.",
+   "find": "                and str(agent or \"\") != \"orchestrator\"):\n            status = \"implemented\"\n        rec = {",
+   "replace": "                and str(agent or \"\") == \"orchestrator\"):\n            status = \"implemented\"\n        rec = {"
+  },
+  {
+   "label": "R8F the endpoint default goes back to \"defined\" -- the half of the fix that applies to endpoints (silence preserves). The stronger actor guard is deliberately absent there, so only this half is claimed.",
+   "find": "def register_endpoint(self, method: str, path: str, schema: Optional[dict] = None, provider: str = \"\", agent: str = \"\", status: str = \"\", **metadata: Any) -> dict:",
+   "replace": "def register_endpoint(self, method: str, path: str, schema: Optional[dict] = None, provider: str = \"\", agent: str = \"\", status: str = \"defined\", **metadata: Any) -> dict:"
+  },
+  {
+   "label": "R8G the table default goes back to \"defined\".",
+   "find": "        status: str = \"\",      # #1203r8: silence preserves; \"\" lets the merge fall back",
+   "replace": "        status: str = \"defined\","
+  }
+ ]
+}
