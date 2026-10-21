@@ -20,11 +20,42 @@ MEASURED, over all 104 `design/design_system.json` in `generated/` (2026-10-20):
     icons/call_24.svg -- median 28 paths per run (min 2, max 128), in 104 of 104 runs. The
     delivered files are real: 4245 SVGs carrying genuine Material Symbols path data.
 
-So the framework puts 28 named icons on the table, states their stroke width and their
-colour, and never says which element uses which. The model guesses -- and 96% of the 1521
-recorded icon deviations are exactly a wrong pairing ("reference uses a red traffic/car
-icon; implementation uses a red exclamation icon"). The one thing never specified is the one
-thing that goes wrong.
+CORRECTED 2026-10-20, SAME DAY, TWICE. The first version of this file said identity is
+specified NEVER, and that "the one thing never specified is the one thing that goes wrong".
+Both halves were wrong.
+
+1. IDENTITY IS SPECIFIED -- rarely. It does not live under a key matching icon|glyph|symbol,
+   which is all the first scan looked at. It lives in a component's `assets` list, as
+   values: `utility-nav-controls -> ["assets/icons/netflix/search.svg",
+   "assets/icons/netflix/bell.svg"]`. That IS an element -> icon mapping. The rate is
+   103 of 10146 components (1.02%), in 12 of 102 runs -- and every one of those 12 is an
+   EARLY netflix run (r2..r45). In the mid and modern eras it is zero. So the schema already
+   has a place for the mapping, the capability was exercised, and it has since lapsed. The
+   fix needs no schema change, which makes it cheaper than the first version claimed.
+
+2. BUT THERE IS NO EVIDENCE THAT FILLING IT HELPS, and the first version implied there was.
+   Within netflix alone (same product, and the run numbers interleave -- WITH: 2,5,6,8,13,
+   19,21,26,37,43,44,45; without: 1,3,7,9,10,11,12,14,15,16,30,32,35,38,41 -- so this is not
+   the era confound), runs that name icon assets do score better on iconography: 0.615
+   against 0.540 over 129 and 155 screens. That looks like a result until you ask whether
+   the advantage is SPECIFIC. It is not:
+
+       copy        +0.106        typography  +0.061
+       components  +0.084        color       +0.055
+       layout      +0.077        style       +0.050
+       iconography +0.076  <-- the only dimension actually specified
+
+   The mean gain across the six dimensions that were NOT specified is +0.072, against
+   iconography's +0.076, and two of them beat it. These runs are simply better at
+   everything; naming icons is a marker of a thorough run, not a cause of better icons.
+   A specificity test like this is the minimum before reading a correlation as a mechanism.
+
+What survives, and is still worth acting on: iconography is the lowest-STARTING dimension
+(0.349 at round 1), the remediation loop lifts it at the normal rate, and 96% of the 1521
+recorded deviations are a wrong pairing. The mapping field exists and is used by 1% of
+components. Whether populating it moves the score is UNANSWERED by this corpus and needs a
+run that varies it deliberately -- which is why this tool reports the rate rather than
+asserting a cause.
 
 THREE LEVELS, NOT ONE. Checking only the top level reports "iconography: present, 104/104"
 and reads as covered. `layout_metrics` taught this already: it is a per-SCREEN field, and a
@@ -44,6 +75,9 @@ import sys
 ICONISH = re.compile(r"icon|glyph|symbol", re.I)
 HEX = re.compile(r"^#[0-9a-fA-F]{3,8}$")
 SVG_PATH = re.compile(r"[\w/\-\.]+\.svg")
+# An element -> icon mapping, as it is actually written: an icon path among a
+# component's `assets`. Keyed on the VALUE, because the key is just "assets".
+ICON_ASSET = re.compile(r"icon[\w/\-\.]*\.svg", re.I)
 
 
 def _docs(target):
@@ -116,11 +150,19 @@ def measure(docs):
                 # turn out to be sizes and booleans (glyph_px, icon_only, icon_label_gap_px),
                 # not identities, and the tool has to show that rather than assert it.
                 vals["%s = %s" % (key, json.dumps(val)[:30])] += 1
-            # components under this screen, for the denominator
+            # components under this screen, for the denominator -- and the identity the
+            # first version of this tool could not see, because it is a VALUE in `assets`
+            # and not a key named after an icon.
             for k in ("components", "component_specs", "elements"):
                 v = s.get(k)
-                if isinstance(v, list):
-                    r["components"] += sum(1 for c in v if isinstance(c, dict))
+                if not isinstance(v, list):
+                    continue
+                for c in v:
+                    if not isinstance(c, dict):
+                        continue
+                    r["components"] += 1
+                    if ICON_ASSET.search(json.dumps(c.get("assets"))):
+                        r["identity_via_assets"] += 1
         inv = SVG_PATH.findall(json.dumps(d.get("assets") if isinstance(d, dict) else None))
         icons = [x for x in inv if "icon" in x.lower()]
         r["inventory_paths"] += len(icons)
@@ -150,6 +192,11 @@ def main(argv):
           % (r["components"], r["component_fields"], r["screen_colour_fields"]))
     print("  inventory      : %d icons/*.svg path(s) across %d doc(s)"
           % (r["inventory_paths"], r["docs_with_inventory"]))
+    print("  IDENTITY       : %d of %d component(s) name an icon file in `assets` (%.2f%%)"
+          % (r["identity_via_assets"], r["components"],
+             100.0 * r["identity_via_assets"] / max(1, r["components"])))
+    print("                   corpus baseline 103/10146 = 1.02%, all in early netflix runs;"
+          " zero in mid and modern")
     print()
     for k, n in sorted(r.items()):
         if k.startswith("doc_iconography_at_"):
@@ -160,9 +207,9 @@ def main(argv):
         for k, n in vals.most_common(20):
             print("   %-48s %d" % (k, n))
     else:
-        print("IDENTITY FIELDS: none. The design system names no icon for any element, while")
-        print("staging %d named icon file(s). E1 of the pre-registration holds."
-              % r["inventory_paths"])
+        print("No icon-NAMED field carries an identity. Check the IDENTITY line above before")
+        print("concluding anything: the mapping lives in `assets` values, not in a key whose")
+        print("name contains 'icon', and reading only key names is what made this tool wrong.")
     # E2: inventory present at all? A missing inventory is a DIFFERENT cause.
     if r["docs"] and not r["inventory_paths"]:
         print("\nE2 FALSIFIED: no staged icon inventory either. The cold start is then 'no")
