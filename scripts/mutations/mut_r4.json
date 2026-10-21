@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_1203a6_a_request_with_no_response_is_not_an_unwired_form.py",
+ "mutations": [
+  {
+   "label": "A6A the request listener's URL FILTER IS INVERTED, so auth requests are never recorded and non-auth ones are. Every string the guard asserts survives verbatim (`_is_auth_url_1203it`, `url`, `_auth_reqs.append`), so a source-text assertion cannot see it -- and the request-aware branch then fires on the wrong traffic.",
+   "find": "                            if _is_auth_url_1203it(_q.url):\n                                _auth_reqs.append(str(_q.url))",
+   "replace": "                            if not _is_auth_url_1203it(_q.url):\n                                _auth_reqs.append(str(_q.url))"
+  },
+  {
+   "label": "A6B the flow record's `auth_requests` is always 0 while the KEY stays present -- the guard checks that the key exists, never that it carries the count, so the grounds #1203a6 added become unauditable again (which was the whole defect: 378 notes none of which could be audited)",
+   "find": "\"auth_requests\": len(_auth_reqs),",
+   "replace": "\"auth_requests\": 0,"
+  },
+  {
+   "label": "A6C CONTROL, expected CAUGHT: the request-aware branch condition is forced false, which is what `_eval_branch` exists to evaluate",
+   "find": "elif not _auth_resps and (_auth_reqs or _auth_failed):",
+   "replace": "elif False and not _auth_resps and (_auth_reqs or _auth_failed):"
+  },
+  {
+   "label": "A6D CONTROL, expected CAUGHT: the recording call is removed outright, which the source-text assertion does cover",
+   "find": "                                _auth_reqs.append(str(_q.url))",
+   "replace": "                                pass"
+  }
+ ]
+}

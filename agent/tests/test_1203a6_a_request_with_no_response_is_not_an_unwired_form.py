@@ -228,3 +228,77 @@ def test_the_verdict_itself_is_unchanged():
             for t in sub.targets:
                 assert getattr(t, "id", "") != "ok", (
                     "the note chain now assigns `ok` — a diagnosis must not flip the verdict")
+
+# --- #1203r4: the shape was asserted, the CONTENT was not -----------------------------------
+#
+# mut_r4 ran the two tests above against mutations that keep every asserted string and key in
+# place, and both escaped:
+#
+#   A6A  `if _is_auth_url_1203it(_q.url)` -> `if not _is_auth_url_1203it(_q.url)`
+#        `test_the_listeners_filter_to_auth_urls` unparses each `If.test` and asserts that some
+#        condition MENTIONS `_is_auth_url_1203it` and `url`. The inverted condition unparses to
+#        `not _is_auth_url_1203it(_q.url)`, which mentions both -- so it pinned "the listener
+#        DECIDES on the url" and an inverted decision still decides. Auth requests then go
+#        unrecorded and every other request is recorded instead, which is worse than the defect
+#        #1203a6 fixed: the request-aware branch fires on unrelated traffic.
+#
+#   A6B  `"auth_requests": len(_auth_reqs)` -> `"auth_requests": 0`
+#        `test_the_flow_record_carries_the_grounds` collects dict KEYS and asserts the key is
+#        present. A hardcoded 0 keeps the key and makes the record say "no request was
+#        attempted" forever -- which returns the 378 notes that commit measured to being
+#        unauditable, the exact defect it was filed for.
+#
+# The listeners are closures inside the Playwright path and cannot be called from here, so
+# these assert on the AST -- but on what the code MEANS, not on which identifiers appear in it.
+
+def test_the_listener_condition_is_not_negated_1203r4():
+    """The filter must select auth urls, not exclude them."""
+    tree = ast.parse(_SRC)
+    checked = 0
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef)
+                and node.name in ("_on_req_1203a6", "_on_reqfail_1203a6")):
+            continue
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.If):
+                continue
+            t = sub.test
+            assert not (isinstance(t, ast.UnaryOp) and isinstance(t.op, ast.Not)), (
+                "%s's filter is NEGATED, so it records every NON-auth request and no auth "
+                "one: %s" % (node.name, ast.unparse(t)))
+            if isinstance(t, ast.Call) and "_is_auth_url_1203it" in ast.unparse(t.func):
+                checked += 1
+    assert checked == 2, (
+        "expected both listeners to gate on a direct _is_auth_url_1203it(...) call, found %d"
+        % checked)
+
+
+def test_the_record_carries_the_COUNT_not_a_constant_1203r4():
+    """`auth_requests` must be derived from `_auth_reqs`, not a literal.
+
+    The key being present is what made 378 verdicts look auditable; the VALUE is what makes
+    them actually auditable."""
+    tree = ast.parse(_SRC)
+    seen = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        ks = [k.value for k in node.keys
+              if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+        if not ("flow" in ks and "note" in ks):
+            continue
+        for k, val in zip(node.keys, node.values):
+            if not (isinstance(k, ast.Constant) and k.value == "auth_requests"):
+                continue
+            seen += 1
+            src = ast.unparse(val)
+            assert not isinstance(val, ast.Constant), (
+                "auth_requests is the constant %r -- the record claims the same thing on "
+                "every flow and the grounds are gone again" % (val.value,))
+            assert "_auth_reqs" in src, (
+                "auth_requests is not derived from _auth_reqs: %s" % src)
+        for k, val in zip(node.keys, node.values):
+            if isinstance(k, ast.Constant) and k.value == "auth_failed":
+                assert not isinstance(val, ast.Constant), ast.unparse(val)
+                assert "_auth_failed" in ast.unparse(val), ast.unparse(val)
+    assert seen >= 1, "no flow record assigns auth_requests at all"
