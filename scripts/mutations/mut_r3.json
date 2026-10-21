@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_validation.py",
+ "test": "tests/test_mcp_not_built_is_timing_616.py",
+ "mutations": [
+  {
+   "label": "R3A the probe CLAIMS TO HAVE SEEN what it did not -- server_found starts True. The function's own docstring forbids this ('the probe must not claim to have seen something it did not') and no source-text assertion in the guard checks it.",
+   "find": "{\"server_found\": False, \"tools_expected\": len(business_eps),",
+   "replace": "{\"server_found\": True, \"tools_expected\": len(business_eps),"
+  },
+  {
+   "label": "R3B REACHABILITY: the missing-directory branch can never be taken, so a tree with no mcp_server/ falls through and is reported as 'present but no main.py' -- a note that is simply false, while every source string stays in place",
+   "find": "        if not srv_root.exists():",
+   "replace": "        if False and not srv_root.exists():"
+  },
+  {
+   "label": "R3C the timing scope goes, so the note reads as a permanent gap again -- #616's original defect",
+   "find": "out[\"note\"] = (\"no mcp_server/ AT THIS MOMENT \u2014 the framework scaffolds it \"",
+   "replace": "out[\"note\"] = (\"no mcp_server/ \u2014 the framework scaffolds it \""
+  },
+  {
+   "label": "R3D the expected tool count stops following the contract, so a complete surface can never be distinguished from an empty one",
+   "find": "\"tools_expected\": len(business_eps),",
+   "replace": "\"tools_expected\": 0,"
+  }
+ ]
+}

@@ -82,3 +82,64 @@ def test_the_timestamp_claim_is_backed_by_a_CONTROL(src):
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+# --- #1203r3: DRIVE the probe ------------------------------------------------------------
+#
+# Every assertion above reads `inspect.getsource(v._mcp_test_user)`, and the text-assertion
+# ratio put this file at 1.00 -- the highest in the corpus among guards over the three
+# end-stage blocking modules. The function needs nothing but a directory: its signature is
+# `_mcp_test_user(project_dir: Path, business_eps: list) -> dict`, so a tempdir drives it.
+#
+# One property its own docstring states is checked NOWHERE above: "`server_found` stays
+# False -- the probe must not claim to have seen something it did not". A mutation that sets
+# it True while leaving the note alone passes every source-text assertion in this file.
+#
+# And the branch where `mcp_server/` EXISTS but is incomplete has no coverage here at all.
+
+import tempfile
+from pathlib import Path
+
+
+def _probe(make=None, eps=None):
+    """Run the real probe against a fresh tree; `make` may create files inside it."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        if make:
+            make(root)
+        return v._mcp_test_user(root, eps if eps is not None else
+                                [{"path": "/api/items", "method": "GET"},
+                                 {"path": "/api/items", "method": "POST"}])
+
+
+def test_a_missing_server_is_reported_as_this_moment_not_as_never_built():
+    out = _probe()
+    assert "AT THIS MOMENT" in out["note"], out["note"]
+    assert "MCP surface not built" not in out["note"], out["note"]
+
+
+def test_the_probe_does_not_claim_to_have_seen_what_it_did_not():
+    """The docstring's own rule, which no assertion above enforces."""
+    out = _probe()
+    assert out["server_found"] is False, out
+    assert out["complete"] is False, out
+    assert out["tools_found"] == 0, out
+
+
+def test_the_expected_tool_count_follows_the_contract():
+    assert _probe(eps=[])["tools_expected"] == 0
+    assert _probe(eps=[{"path": "/a", "method": "GET"}])["tools_expected"] == 1
+    assert _probe()["tools_expected"] == 2
+
+
+def test_a_present_but_empty_server_is_a_different_verdict():
+    """The second branch, which had no coverage at all: the directory exists, so the
+    timing note would be a lie, and the probe must say what is actually missing."""
+    out = _probe(make=lambda root: (root / "mcp_server").mkdir())
+    assert "AT THIS MOMENT" not in out["note"], out["note"]
+    assert "main.py" in out["note"], out["note"]
+    assert out["server_found"] is False, out
+
+
+def test_the_note_is_never_empty_when_something_is_wrong():
+    for out in (_probe(), _probe(make=lambda root: (root / "mcp_server").mkdir())):
+        assert out["note"].strip(), "a failing probe produced no note: %r" % out
