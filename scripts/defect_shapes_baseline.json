@@ -1,0 +1,41 @@
+{
+ "_what": "The defect_shapes candidate set as triaged on 2026-10-21 (#1203rf).",
+ "_why": "All 39 came back NOT a defect, so reprinting them every run buries any new shape. `--new-only` reports the delta against this file. Keyed on (filename|label|count) so an edit above a hit does not make it look new.",
+ "_triage_2026_10_21": {
+  "D1 similarity (11)": "data: 0 of 3667 screen records lack the field -> cannot fire",
+  "D1 usd/elapsed_sec (4)": "era: absent only in runs 1..92 (legacy, no spend recorded); modern 12/12 have it; :401 needs BOTH clocks absent (0 cases)",
+  "D1 counts (8)": "semantics: absent means none occurred, so `or 0` is correct",
+  "D1 other (3)": "avg_min is log-only via subscript access; `total`'s zero is documented intent with the owning gate (no_endpoints_in_hub) verified to exist",
+  "D3 (2)": "stage-completion records (executed=True) owe no reason; metadata carries the detail",
+  "D5 (7)": "the exclusion split is deliberate; the one site that excludes says why (already caught by blank_pages)",
+  "D6 (4)": "frontend_scaffold: non-recursing branches require v to be a str (a leaf); material_prep: per-type staging where every branch stages"
+ },
+ "counts": {
+  "action.py|mark_stage(metadata=...)": 1,
+  "deliverability.py|total": 1,
+  "delivery_gate.py|failed_count": 1,
+  "delivery_gate.py|retry_pending_count": 1,
+  "framework_validation.py|_chains_restore_count": 1,
+  "frontend_scaffold.py|_walk() guards branch 3/3": 2,
+  "material_prep.py|warning() guards branch 2/3": 1,
+  "material_prep.py|write_text() guards branch 2/3": 1,
+  "orchestrator.py|_fwdeliver_stuck_count": 1,
+  "orchestrator.py|_fwval_stuck_count": 1,
+  "orchestrator.py|avg_min": 1,
+  "orchestrator.py|blocking_judged": 1,
+  "run_budget.py|elapsed_sec": 2,
+  "run_budget.py|open_p0_bug_count": 1,
+  "run_budget.py|usd": 2,
+  "run_snapshot.py|total_judgments": 1,
+  "step_runner.py|_mark_stage(metadata=...)": 1,
+  "test_user_runner.py|`pages` excludes on `blank` at [879, 1158, 1204, 1209, 1533]": 1,
+  "test_user_runner.py|similarity": 1,
+  "visual_fidelity.py|`merged` excludes on `blank` at [5200]": 1,
+  "visual_fidelity.py|`results` excludes on `advisory` at [921, 1583, 3623, 4479, 4586, 5244]": 1,
+  "visual_fidelity.py|`results` excludes on `blank` at [921, 5244]": 1,
+  "visual_fidelity.py|`rs` excludes on `advisory` at [1314]": 1,
+  "visual_fidelity.py|`screens` excludes on `advisory` at [3951, 4494, 7356, 7391, 8170]": 1,
+  "visual_fidelity.py|`screens` excludes on `blank` at [8170]": 1,
+  "visual_fidelity.py|similarity": 11
+ }
+}

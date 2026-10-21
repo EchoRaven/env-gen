@@ -523,13 +523,63 @@ def d6(path, tree, src):
     return hits
 
 
+NEW_ONLY = "--new-only" in sys.argv
+BASELINE = pathlib.Path(__file__).with_name("defect_shapes_baseline.json")
+
+# #1203rf: A DETECTOR WITH 39 KNOWN-CLEAN HITS IS NOT A MONITOR.
+#
+# All 39 candidates were triaged on 2026-10-21 and every one came back "cannot fire" or
+# "branches legitimately differ" (D1 similarity: 0 of 3667 records lack the field; D1
+# usd/elapsed_sec: era-retired at r92; D1 counts: `or 0` is correct for a count; D3: stage
+# records owe no reason; D5: the exclusion split is deliberate and the one site that excludes
+# says why; D6: the non-recursing branches are string leaves / per-type staging). Useful work,
+# and it leaves the tool unusable for its actual job: every run reprints the same 39, so a
+# genuinely NEW shape arrives invisible inside the noise.
+#
+# So the triaged set is written down as a baseline and `--new-only` reports the DELTA. Both
+# directions are reported, because both are information: a new shape is a candidate to triage,
+# and a VANISHED one means either someone fixed it or the detector drifted -- #1202jn's own
+# lesson, where the repair was to hoist the call above the chain and the right response was
+# for D6 to go quiet.
+#
+# KEYED ON (file, label, count), NOT ON LINE NUMBERS. A line-keyed baseline goes stale the
+# first time anyone edits above a hit, and then "new" means "someone touched this file". The
+# count matters because one file can hold several hits under one label -- run_budget.py has
+# two `usd` and two `elapsed_sec` -- so a second `usd` appearing there must register as new.
+def _baseline_key_1203rf(path, label):
+    return "%s|%s" % (pathlib.Path(path).name, str(label).strip())
+
+
+def _baseline_delta_1203rf(seen, base):
+    """(new_count, {key: n_vanished}) for a seen-counter against a baseline.
+
+    Extracted so a test can DRIVE it. Inline in the summary it could only be tested by a
+    copy of the same arithmetic, which would agree with itself no matter what the tool did --
+    the copy-of-the-rule trap this repo has been closing all session."""
+    new = sum(max(0, c - base.get(k, 0)) for k, c in seen.items())
+    gone = {k: base[k] - seen.get(k, 0) for k in base if base[k] > seen.get(k, 0)}
+    return new, gone
+
+
+def _load_baseline_1203rf():
+    try:
+        return {k: int(v) for k, v in json.loads(
+            BASELINE.read_text(encoding="utf-8")).get("counts", {}).items()}
+    except Exception:
+        return None
+
+
 tot={'d1':0,'d3':0,'d4':0,'d5':0,'d6':0}
+_seen_1203rf = collections.Counter()
+_base_1203rf = _load_baseline_1203rf() if NEW_ONLY else None
 for p in sorted(ROOT.rglob('*.py')):
     try: src=p.read_text(errors='ignore'); tree=ast.parse(src)
     except Exception: continue
     for name,fn in (('d1',d1),('d3',d3),('d4',d4),('d5',d5),('d6',d6)):
         for h in fn(p,tree,src):
             tot[name]+=1
+            _k1203rf = _baseline_key_1203rf(p, h[1])
+            _seen_1203rf[_k1203rf] += 1
             if name=='d1' and p.name=='visual_fidelity.py' and '_best_by_screen' in src \
                     and 'similarity' in str(h[1]) and '_sim' in h[2]:
                 _seed_seen = True
@@ -549,6 +599,9 @@ for p in sorted(ROOT.rglob('*.py')):
                              "-- sibling test N/A, read the guard]" % _any)
                 else:
                     _note = "   [corpus: field never seen in %d file(s)]" % _n
+            if NEW_ONLY and _base_1203rf is not None \
+                    and _seen_1203rf[_k1203rf] <= _base_1203rf.get(_k1203rf, 0):
+                continue          # in the triaged baseline; not news
             print(f"[{name.upper()}] {p.relative_to(ROOT)}:{h[0]}  {h[1]}{_note}")
             if name=='d1': print(f"        {h[2]}")
             elif name=='d4': print(f"        keys={h[2]}")
@@ -597,3 +650,15 @@ if SELFTEST:
 else:
     print(f"\n合计 D1={tot['d1']}  D3={tot['d3']}  D4={tot['d4']}  D5={tot['d5']}  D6={tot['d6']}"
           f"  (候选, 每条都要读周边守卫)")
+    if NEW_ONLY:
+        if _base_1203rf is None:
+            print("!! --new-only given but %s is unreadable -- every hit above is printed, "
+                  "which is the safe direction" % BASELINE.name)
+        else:
+            _new, _gone = _baseline_delta_1203rf(_seen_1203rf, _base_1203rf)
+            print("baseline %s: %d new hit(s) above; %d baseline hit(s) VANISHED%s"
+                  % (BASELINE.name, _new, sum(_gone.values()),
+                     (" -- " + ", ".join(sorted(_gone))) if _gone else ""))
+            if _gone:
+                print("   a vanished hit is either a fix or detector drift; #1202jn's repair "
+                      "made D6 go quiet on purpose, so check which before assuming either")

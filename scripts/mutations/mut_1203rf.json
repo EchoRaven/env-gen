@@ -1,0 +1,26 @@
+{
+ "file": "scripts/defect_shapes.py",
+ "test": "tests/test_1203re_the_probe_that_says_what_it_cannot_answer.py",
+ "mutations": [
+  {
+   "label": "RFA the `max(0, ...)` becomes a bare subtraction, so a VANISHED hit subtracts from the new count and a run that fixes one shape while introducing another nets to ZERO new -- the monitor reports 'nothing new' on the one run that matters.",
+   "find": "    new = sum(max(0, c - base.get(k, 0)) for k, c in seen.items())",
+   "replace": "    new = sum(c - base.get(k, 0) for k, c in seen.items())"
+  },
+  {
+   "label": "RFB the baseline is compared on KEY PRESENCE instead of count, so a second hit under an existing label is invisible: run_budget.py already holds two `usd` candidates, and a third would be swallowed. This is why the baseline stores counts.",
+   "find": "    new = sum(max(0, c - base.get(k, 0)) for k, c in seen.items())",
+   "replace": "    new = sum(1 for k in seen if k not in base)"
+  },
+  {
+   "label": "RFC vanished baseline hits stop being reported, so a detector that has DRIFTED (or a shape someone fixed) both read as a clean run. #1202jn's repair made D6 go quiet on purpose, so going quiet is information, not silence.",
+   "find": "    gone = {k: base[k] - seen.get(k, 0) for k in base if base[k] > seen.get(k, 0)}",
+   "replace": "    gone = {}"
+  },
+  {
+   "label": "RFD CONTROL, expected CAUGHT: the key drops the label and keys on the filename alone, so every hit in one file collapses into one bucket and a NEW shape in an already-flagged file never registers.",
+   "find": "    return \"%s|%s\" % (pathlib.Path(path).name, str(label).strip())",
+   "replace": "    return \"%s\" % (pathlib.Path(path).name,)"
+  }
+ ]
+}
