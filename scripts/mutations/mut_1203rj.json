@@ -1,0 +1,36 @@
+{
+ "file": "agent/tests/test_1203rj_the_era_filter_is_spelled_not_measured.py",
+ "test": "tests/test_1203rj_the_era_filter_is_spelled_not_measured.py",
+ "mutations": [
+  {
+   "label": "RJA the plausibility window rejects every timestamp, so no run can be dated and the guard quietly covers nothing. A guard that cannot date anything reports no offenders, which looks exactly like a clean corpus.",
+   "find": "            if 1.6e9 < v < 2.0e9 and (best is None or v < best):",
+   "replace": "            if v > 2.0e9 and (best is None or v < best):"
+  },
+  {
+   "label": "RJB THE IMPORTANT ONE: the offender comparison can never be true, so the offender set empties. The first assertion then passes vacuously and only the `gone` half notices -- which is why that half exists. A guard going blind must not look like the defect being fixed.",
+   "find": "            if d is not None and d >= floor:",
+   "replace": "            if d is not None and d >= 2.0e9:"
+  },
+  {
+   "label": "RJC `_artifact_date` falls back to filesystem mtime, which is the mistake this module is written against: the googlemaps trees read 2026-09-19 by mtime and 2026-07-14 by their own artifacts because the directories were copied later. The two hub-less outlook trees would then become datable and the undatable baseline would no longer hold.",
+   "find": "    best = None\n    for f in glob.glob(str(_CORPUS / run / \"shared\" / \"hubs\" / \"*.json\")):",
+   "replace": "    best = os.path.getmtime(str(_CORPUS / run))\n    for f in glob.glob(str(_CORPUS / run / \"shared\" / \"hubs\" / \"*.json\")):"
+  },
+  {
+   "label": "RJD the baseline comparison drops the `unexpected` half, so a run that is newly undatable (or a newly unplaceable-modern run) passes silently -- the blind spot grows and nothing says so. The first version of this mutation weakened the live `==` to a subset test and came back MISSED, because the observed and baselined sets agree today; the comparison was extracted so the branch could be driven at all (#1203rf's precedent).",
+   "find": "    return sorted(set(observed) - set(baseline)), sorted(set(baseline) - set(observed))",
+   "replace": "    return [], sorted(set(baseline) - set(observed))"
+  },
+  {
+   "label": "RJE the product key is cut at the first hyphen, so `tiktok-web-r183` reads as `tiktok` and the single-product claim is asserted against a label that is not the product. The composition this test pins is the REASON the guard exists, so the label has to be the real one.",
+   "find": "        products = {r.split(\"-r\")[0] for r in named_modern}",
+   "replace": "        products = {r.split(\"-\")[0] for r in named_modern}"
+  },
+  {
+   "label": "RJF the `vanished` half is dropped instead, so the guard going BLIND reads as the defect being fixed -- RJB's failure mode reached through the comparison rather than through the scan.",
+   "find": "    return sorted(set(observed) - set(baseline)), sorted(set(baseline) - set(observed))",
+   "replace": "    return sorted(set(observed) - set(baseline)), []"
+  }
+ ]
+}
