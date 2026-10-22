@@ -118,6 +118,16 @@ def test_a_blind_reporter_says_so(seen, monkeypatch):
     assert "not because every page is wired" in out, (
         "the message must name the CONSEQUENCE — an empty list is indistinguishable from a "
         "clean app without it")
+    # #1203rn: AND THE CAUSE. Mutation TF stripped the exception type and text from the
+    # announcement and nothing here noticed, though the consequence clause above survived.
+    # #1201's own wording — which this site's comment cites — is that a reader must be able
+    # to tell a framework defect from an environment hiccup, and "the reporter raised" alone
+    # cannot: an ImportError from a refactor and a FileNotFoundError from a half-built tree
+    # want different responses from whoever reads the log.
+    assert "RuntimeError" in out, (
+        "the announcement must name the exception TYPE: %r" % out)
+    assert "simulated reporter fault" in out, (
+        "the announcement must carry the exception's own message, not just its type: %r" % out)
 
 
 def test_it_says_so_once_per_process(seen, monkeypatch):

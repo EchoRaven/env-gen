@@ -1,0 +1,36 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/deliverability.py",
+ "test": "tests/test_1202tm_the_unwired_page_reporter_says_when_it_is_blind.py",
+ "mutations": [
+  {
+   "label": "TA the announcement becomes unreachable, restoring the bare `return []`: the producer of `deliverability_ui_page_unwired` -- the most frequent blocker in the corpus, 1862 evaluations over 62 runs -- reports ZERO unwired pages when it could not look, and 'could not look' reaches every reader as 'nothing to find'. One of the two mutations that are always valid against a say-once announcement.",
+   "find": "        if not _WIRING_REPORT_FAILED_1202TM[\"said\"]:\n            _WIRING_REPORT_FAILED_1202TM[\"said\"] = True",
+   "replace": "        if False:\n            _WIRING_REPORT_FAILED_1202TM[\"said\"] = True"
+  },
+  {
+   "label": "TB the say-once latch is inverted, so the FIRST blind pass is the one that stays silent and the announcement can only appear after it has already been suppressed. The other always-valid mutation for this family: the flag still exists and is still set, so the code reads correct.",
+   "find": "        if not _WIRING_REPORT_FAILED_1202TM[\"said\"]:",
+   "replace": "        if _WIRING_REPORT_FAILED_1202TM[\"said\"]:"
+  },
+  {
+   "label": "TC the clause that distinguishes the two states goes. `#1202tm ui_page wiring report SKIPPED` alone tells a reader something was skipped; the fix is the sentence saying the run has no findings BECAUSE THE REPORTER RAISED, not because every page is wired -- which is the whole content of the ticket.",
+   "find": "                \"unaffected, but this run has no unwired-page findings because the reporter \"\n                \"raised, not because every page is wired. Logged once per process.\",",
+   "replace": "                \"unaffected. Logged once per process.\","
+  },
+  {
+   "label": "TD the latch is never set, so a blind gate tick announces EVERY time. The deliverability sweep runs on every tick and #1202bu measured what that costs on a sibling finding: 382 copies of two findings in one run, which buries every other warning and makes a count meaningless.",
+   "find": "            _WIRING_REPORT_FAILED_1202TM[\"said\"] = True\n            _LOG_700.warning(\n                \"#1202tm ui_page wiring report SKIPPED",
+   "replace": "            _LOG_700.warning(\n                \"#1202tm ui_page wiring report SKIPPED"
+  },
+  {
+   "label": "TE CONTROL on the decision this ticket deliberately did NOT make: the detector fault becomes a blocker. #1067 left the verdict alone for a stated reason -- wedging a run on the framework's own error is the opposite of what a gate is for -- so the verdict staying [] is load-bearing and must stay pinned while the silence goes.",
+   "find": "                type(_wiring_exc_1202tm).__name__, str(_wiring_exc_1202tm)[:200])\n        return []",
+   "replace": "                type(_wiring_exc_1202tm).__name__, str(_wiring_exc_1202tm)[:200])\n        return [\"ui_page wiring detector fault\"]"
+  },
+  {
+   "label": "TF PROBE: the announcement stops naming the CAUSE, so a reader cannot tell a framework defect from an environment hiccup -- #1201's rule, which this very site cites. FIRST VERSION WAS AN INVALID MUTATION: it appended `\"%s%s\"` to a message that already carried `%s: %s`, giving four placeholders for two args, so the mutant died on TypeError and reported CAUGHT for a reason that had nothing to do with the cause clause. A mutant that breaks the code is not a mutation.",
+   "find": "            _LOG_700.warning(\n                \"#1202tm ui_page wiring report SKIPPED: %s: %s. The gate verdict below is \"\n                \"unaffected, but this run has no unwired-page findings because the reporter \"\n                \"raised, not because every page is wired. Logged once per process.\",\n                type(_wiring_exc_1202tm).__name__, str(_wiring_exc_1202tm)[:200])",
+   "replace": "            _LOG_700.warning(\n                \"#1202tm ui_page wiring report SKIPPED. The gate verdict below is \"\n                \"unaffected, but this run has no unwired-page findings because the reporter \"\n                \"raised, not because every page is wired. Logged once per process.\")"
+  }
+ ]
+}
