@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_runner.py",
+ "test": "tests/test_240_deterministic_ui_flow_pass.py",
+ "mutations": [
+  {
+   "label": "YA the auth_ok requirement goes, so an UNAUTHENTICATED walk emits passes. That is the r29/r30 failure inverted: a logged-out nav bounces every route to /login, and this function is PASS-ONLY, so without the gate it would mark a login-walled app as having rendered every flow cleanly. `deliverability_ui_flow_failed` has 2028 gate evaluations across 64 runs.",
+   "find": "    if not isinstance(report, dict) or not report.get(\"ran\") or not report.get(\"auth_ok\"):",
+   "replace": "    if not isinstance(report, dict) or not report.get(\"ran\"):"
+  },
+  {
+   "label": "YB the `ran` requirement goes, so a walk that never happened emits passes for whatever pages were listed -- nothing observed read as everything clean, which is the shape #1203ov is about.",
+   "find": "    if not isinstance(report, dict) or not report.get(\"ran\") or not report.get(\"auth_ok\"):\n        return []",
+   "replace": "    if not isinstance(report, dict) or not report.get(\"auth_ok\"):\n        return []"
+  },
+  {
+   "label": "YC a page that did NOT render cleanly still counts as a pass. This function can only unblock, so every exclusion in it is the only thing standing between a broken page and a passing `validation:ui_flow:<name>` record.",
+   "find": "        if not p.get(\"ok\"):\n            continue",
+   "replace": "        if False:\n            continue"
+  },
+  {
+   "label": "YD the generic live FALLBACK dom counts as a clean render, so a page showing the framework's placeholder is recorded as a passing content flow.",
+   "find": "        if p.get(\"fallback_dom\"):\n            continue",
+   "replace": "        if False:\n            continue"
+  },
+  {
+   "label": "YE a map surface that never rendered a map counts as clean -- the one content check this function makes beyond `ok`, and the reason a map page cannot pass on an empty canvas.",
+   "find": "        if p.get(\"is_map_surface\") and not p.get(\"map_rendered\"):\n            continue",
+   "replace": "        if False:\n            continue"
+  },
+  {
+   "label": "YF the auth-route exclusion goes, so /login and /signup are recorded as passing content flows. They are validated separately; counting them inflates ui_flow coverage with the two routes that render for an unauthenticated user by definition. (anchored with the `route =` line above it: the same auth-route test appears at line 1849 in a sibling walker, so the bare two-line anchor matched twice.)",
+   "find": "        route = str(p.get(\"route\") or \"\")\n        if any(seg in route for seg in _AUTH_ROUTE_SEGS):\n            continue",
+   "replace": "        route = str(p.get(\"route\") or \"\")\n        if False:\n            continue"
+  },
+  {
+   "label": "YG the dedup goes, so one page walked twice emits its name twice. The caller writes one record per name, so a duplicate is churn rather than a false pass -- the mildest of these and included as a control on the exclusions above.",
+   "find": "        if not name or name in seen:\n            continue",
+   "replace": "        if not name:\n            continue"
+  }
+ ]
+}

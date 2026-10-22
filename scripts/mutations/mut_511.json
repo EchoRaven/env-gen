@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/framework_validation.py",
+ "test": "tests/test_checklist_record_truth_511.py",
+ "mutations": [
+  {
+   "label": "XA THE SAFETY GATE GOES: stale build checks are re-recorded as success with NO passing api_smoke run behind them. #511 re-records a stale opinion as success on purpose, so this one condition is the whole difference between 'outranks a stale opinion with runtime proof' and 'fabricates success'. verification_checklist_not_ready blocks 66 corpus runs.",
+   "find": "    if not passing:\n        return 0  # no proof the app built + booted + served → do NOT fabricate success",
+   "replace": "    if False:\n        return 0  # no proof the app built + booted + served → do NOT fabricate success"
+  },
+  {
+   "label": "XB a run that FAILED after the passing one no longer invalidates it, so a build broken since the proof still reads as success. The pass is evidence about a moment, not a standing fact.",
+   "find": "                    return 0  # a later run broke the build → the earlier pass is stale",
+   "replace": "                    pass      # a later run broke the build → the earlier pass is stale"
+  },
+  {
+   "label": "XC the name filter admits every check, so unrelated checks are re-recorded as success off an api_smoke pass that says nothing about them.",
+   "find": "        if not _BUILD_TRUTH_CHECK_RE.match(name):\n            continue",
+   "replace": "        if False:\n            continue"
+  },
+  {
+   "label": "XD the already-success skip goes, so every matching check is rewritten on every pass. #1202bu's shape: re-recording a check that is already success is churn the checklist reader cannot distinguish from a real transition.",
+   "find": "        if str((c or {}).get(\"status\") or \"\").strip().lower() in _passok:",
+   "replace": "        if False:"
+  },
+  {
+   "label": "XE the deterministic-evidence marker goes, so the re-record no longer OUTRANKS the stale opinion it was written to override (#258). The record lands and changes nothing.",
+   "find": "                evidence={\"deterministic_runtime_evidence\": True, \"source\": \"#511\",",
+   "replace": "                evidence={\"source\": \"#511\","
+  }
+ ]
+}

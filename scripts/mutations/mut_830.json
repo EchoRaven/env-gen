@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_ui_evidence_kind_from_name_830.py",
+ "mutations": [
+  {
+   "label": "WA #830 REVERTED: the name fallback goes, so a record carrying its kind only in the NAME (`validation:ui_flow:landing`) is invisible again. 645 such records in the corpus, 36 runs called 'no UI evidence' while HOLDING ui_flow records (up to 13 each), and the detector feeds `validation_ui_evidence_failed` -- the check with the most gate evaluations of any (3399).",
+   "find": "        if not _kind830:\n            _m830 = _re_830.search(str(r.get(\"name\") or \"\"))",
+   "replace": "        if False:\n            _m830 = _re_830.search(str(r.get(\"name\") or \"\"))"
+  },
+  {
+   "label": "WB `metadata.check` is ignored, so the NAME decides even when the record declares its kind. The name is a FALLBACK by design: a misleading name would otherwise silently reclassify a record that was already correct, and #752 blocks on the resulting counts.",
+   "find": "        _kind830 = (r.get(\"metadata\", {}) or {}).get(\"check\")",
+   "replace": "        _kind830 = None"
+  },
+  {
+   "label": "WC the regex loses both boundaries, so `validation:my_ui_flowchart:x` reads as a ui_flow record. A fallback that matches substrings turns unrelated records into UI evidence, which inflates exactly the counts #752 blocks on -- the opposite failure from WA and just as wrong.",
+   "find": "_re_830 = re.compile(r\"(?:^|:)(\" + \"|\".join(sorted(_UI_SMOKE_EVIDENCE_CHECKS)) + r\")(?::|$)\")",
+   "replace": "_re_830 = re.compile(r\"(\" + \"|\".join(sorted(_UI_SMOKE_EVIDENCE_CHECKS)) + r\")\")"
+  },
+  {
+   "label": "WD the regex requires a trailing colon, so a name that ENDS in the kind (`validation:ui_smoke`) is not recovered -- a shape the corpus writes and the narrower of the two boundary errors.",
+   "find": "+ r\")(?::|$)\")",
+   "replace": "+ r\")(?::)\")"
+  },
+  {
+   "label": "WE the membership check after recovery goes, so any `metadata.check` at all counts as UI evidence -- an api_smoke record included. The recovery and the admission are two separate decisions and this one is what keeps non-UI records out.",
+   "find": "        if _kind830 not in _UI_SMOKE_EVIDENCE_CHECKS:\n            continue",
+   "replace": "        if False:\n            continue"
+  }
+ ]
+}
