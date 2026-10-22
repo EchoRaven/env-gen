@@ -108,8 +108,48 @@ def test_missing_names_never_raises(monkeypatch):
     assert rd._ui_flow_missing_names(object()) == []
 
 
-def test_280_owner_mapping_still_present():
-    """This fix only ADDS specificity — #280's owner entries must survive."""
-    src = Path(rd.__file__).read_text(encoding="utf-8")
-    assert "deliverability_ui_flow_missing" in src
-    assert "deliverability_ui_flow_failed" in src
+def test_the_dispatch_branch_that_wires_this_fix_still_exists():
+    """#1203rm: what THIS file actually depends on — the branch that calls the helpers.
+
+    This test used to read
+
+        src = Path(rd.__file__).read_text(...)
+        assert "deliverability_ui_flow_missing" in src
+        assert "deliverability_ui_flow_failed" in src
+
+    and it could not fail. Those strings occur 7 and 10 times in the dispatcher, 4 and 3 of
+    them on COMMENT or docstring lines — including `_ui_flow_missing_extra`'s own docstring,
+    which names the gate it serves. Delete every real mapping entry and branch and the
+    assertion stays green, in the guard for the check that appears in 84 corpus runs, more
+    than any other.
+
+    THE OWNER MAP IS NOT THIS FILE'S JOB. `test_280_ui_flow_failed_has_owner` already
+    extracts the `_GATE_OWNER` dict literal BY AST and asserts both keys structurally, so
+    re-asserting it here would duplicate an invariant that has a real owner. What this file
+    needs is the WIRING: a branch keyed on the gate name that calls `_ui_flow_missing_names`,
+    because every other test here drives the two helpers directly and none of them would
+    notice if nothing called them.
+    """
+    import ast as _ast
+    tree = _ast.parse(Path(rd.__file__).read_text(encoding="utf-8"))
+    wired = []
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.If):
+            continue
+        test = node.test
+        if not (isinstance(test, _ast.Compare)
+                and isinstance(test.left, _ast.Name) and test.left.id == "name"
+                and len(test.comparators) == 1
+                and isinstance(test.comparators[0], _ast.Constant)
+                and test.comparators[0].value == "deliverability_ui_flow_missing"):
+            continue
+        called = {c.func.id for c in _ast.walk(node)
+                  if isinstance(c, _ast.Call) and isinstance(c.func, _ast.Name)}
+        wired.append(called)
+    assert wired, (
+        "no `if name == \"deliverability_ui_flow_missing\":` branch in the dispatcher, so "
+        "#284's specific text is computed by nothing — the generic #280 body that let r68 "
+        "idle 40 minutes is what the verifier would receive")
+    assert any("_ui_flow_missing_names" in c for c in wired), (
+        "the branch exists but never calls `_ui_flow_missing_names`, so the flow names this "
+        "file's other tests verify are never derived: %r" % (wired,))

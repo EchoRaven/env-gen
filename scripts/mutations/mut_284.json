@@ -1,0 +1,31 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_284_ui_flow_missing_names_the_flows.py",
+ "mutations": [
+  {
+   "label": "UA the body stops naming the flows and falls back to #280's generic text, which is the r68 defect itself: 40+ minutes idled on `deliverability_ui_flow_missing` -- the check that appears in 84 corpus runs, more than any other -- while the remediation said 'RECORD each named flow (e.g. login / signup / search)' and never named the ones THIS run was missing.",
+   "find": "    names = \"\\n- \".join(missing)",
+   "replace": "    names = \"login / signup / search\""
+  },
+  {
+   "label": "UB the contradiction notice goes, so a verifier that has broadcast 'already recorded' reads a message that does not contradict it. r68's verifier claimed twice that both flows were status=success and nothing in the text said otherwise.",
+   "find": "        \"hub RIGHT NOW — re-read the hub before claiming otherwise; a broadcast that they were \"\n        \"'already recorded' does not make the record exist (r68 idled 40min on exactly that \"\n        \"false claim):\\n- \" + names +",
+   "replace": "        \"hub RIGHT NOW:\\n- \" + names +"
+  },
+  {
+   "label": "UC an empty missing set still emits the gate-specific body, so #280's generic text is replaced by a list of nothing on every run where the check is not the problem.",
+   "find": "    if not missing:\n        return \"\"",
+   "replace": "    if False:\n        return \"\""
+  },
+  {
+   "label": "UD #1203fu RESTORED: the RegistryHub is passed where the HUBS CONTAINER is required. `_derive_ui_spec_from_hub` opens by reading `.workhub` and returns None without it, so this yielded source=\"none\" and an EMPTY missing list on every call -- 0 of 26 ui_flow_missing tasks in r14x-r16x named a single flow. The test that was supposed to catch it passed a stand-in accepting any object. (anchored on the `missing` loop: the `failed` sibling 900 lines down is a near-copy with a byte-identical call line, so the short anchor matched twice.)",
+   "find": "        report = _cfc(orch.hubs)\n        seen: set = set()\n        out: List[str] = []\n        for f in (getattr(report, \"missing\", None) or []):",
+   "replace": "        report = _cfc(orch.hubs.registryhub)\n        seen: set = set()\n        out: List[str] = []\n        for f in (getattr(report, \"missing\", None) or []):"
+  },
+  {
+   "label": "UF the dispatch branch keyed on the gate name is renamed, so nothing calls the helpers and the verifier receives #280's generic text again -- r68's exact condition. HOLLOW BEFORE #1203rm: the old assertion was `\"deliverability_ui_flow_missing\" in src`, and that string sits on 4 comment/docstring lines in this module, so deleting the branch left it green.",
+   "find": "                if name == \"deliverability_ui_flow_missing\":",
+   "replace": "                if name == \"deliverability_ui_flow_missing_RENAMED\":"
+  }
+ ]
+}

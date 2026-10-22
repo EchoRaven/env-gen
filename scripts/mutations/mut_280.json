@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_280_ui_flow_failed_has_owner.py",
+ "mutations": [
+  {
+   "label": "VA the _GATE_OWNER key is renamed, so `deliverability_ui_flow_missing` has no owner entry and falls back to 'NO remediation owner' -- the state #280 fixed. Owned by THIS file, which extracts the dict literal by AST; `test_284`'s `\"...\" in src` line cannot see it, because the same string sits on 4 comment/docstring lines in that module (including `_ui_flow_missing_extra`'s own docstring). A MISSED only ever says THIS file did not catch it, so the owner had to be found before calling it a gap.",
+   "find": "            \"deliverability_ui_flow_missing\": (",
+   "replace": "            \"deliverability_ui_flow_missing_RENAMED\": ("
+  },
+  {
+   "label": "VB the owner spec stops being a 3-tuple, so a consumer unpacking (owner, title, body) raises inside the dispatcher instead of dispatching. test_280 asserts the shape by AST, which is why the shape can be asserted at all.",
+   "find": "            \"deliverability_ui_flow_failed\": (",
+   "replace": "            \"deliverability_ui_flow_failed\": (None, "
+  }
+ ]
+}
