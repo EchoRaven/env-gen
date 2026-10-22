@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/validation_runner.py",
+ "test": "tests/test_1063_unwired_pages_have_a_live_owner.py",
+ "mutations": [
+  {
+   "label": "ZE the producer of the `frontend_navigable` check name goes, so `dispatch_frontend_navigable` becomes UNREACHABLE rather than merely unexercised -- and _COVERED_ELSEWHERE still suppresses the 'NO remediation owner' log for that name.",
+   "find": "    _add(\"frontend_navigable\", _fe_ok, _fe_detail)",
+   "replace": "    _add(\"frontend_navigable_RENAMED\", _fe_ok, _fe_detail)"
+  },
+  {
+   "label": "ZF the check records a BOOLEAN where the dispatcher compares status == 'fail', so the guard silently stops matching. The test reads this expression out of `_add`'s own span, which is why a change here is visible at all.",
+   "find": "        _rec = {\"name\": name, \"status\": \"pass\" if ok else \"fail\", \"detail\": detail}",
+   "replace": "        _rec = {\"name\": name, \"status\": bool(ok), \"detail\": detail}"
+  }
+ ]
+}

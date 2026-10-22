@@ -1,0 +1,26 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/remediation_dispatcher.py",
+ "test": "tests/test_1063_unwired_pages_have_a_live_owner.py",
+ "mutations": [
+  {
+   "label": "ZA `deliverability_ui_page_unwired` leaves _COVERED_ELSEWHERE, so the gate stops claiming the blocker is owned and starts logging 'NO remediation owner' again for a condition that fires 320 times across the corpus. The set is read BY AST here, not by counting to the next bracket (#923).",
+   "find": "            \"deliverability_ui_page_unwired\", \"ui_page_unwired\", \"frontend_navigable\",",
+   "replace": "            \"ui_page_unwired\", \"frontend_navigable\","
+  },
+  {
+   "label": "ZB the live helper is renamed, so _COVERED_ELSEWHERE claims a bespoke owner that no longer exists -- the gate declares the condition handled while nobody is dispatched. #1041/#1042/#1049/#1050's shape, and the risk this file was written to pin.",
+   "find": "    async def dispatch_unwired_ui_pages(self, blockers) -> None:",
+   "replace": "    async def dispatch_unwired_ui_pages_RENAMED(self, blockers) -> None:"
+  },
+  {
+   "label": "ZC the helper stops taking the gate's BLOCKER list. Reading data['checks'] instead is exactly what left the sibling `dispatch_frontend_navigable` unexercised in 201 runs, so the parameter is the difference between the live path and the dead one.",
+   "find": "    async def dispatch_unwired_ui_pages(self, blockers) -> None:",
+   "replace": "    async def dispatch_unwired_ui_pages(self, data) -> None:"
+  },
+  {
+   "label": "ZD the task title changes, so the corpus evidence this file cites (195 filings across 48 logs, matched by that exact title) no longer identifies the task the live path files.",
+   "find": "                title=\"Make the declared pages deliverable: fill stubs + wire routes (blocks delivery)\",",
+   "replace": "                title=\"Fix the pages (blocks delivery)\","
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_chain_status_success_family.py",
+ "mutations": [
+  {
+   "label": "BA a step with NO expectation passes whatever it returns, so a 5xx on a step that authored no expect scores PASS. The empty-expect default is what makes 'no expectation' mean 'must succeed' rather than 'anything goes'. Owned HERE, not by test_business_chain_auth_401_553, where it came back MISSED: that file is the integration guard and these are the unit invariants.",
+   "find": "    if not expect:\n        return bool(status and 200 <= status < 300)",
+   "replace": "    if not expect:\n        return True"
+  },
+  {
+   "label": "BB the family rule drops its 2xx-IN-EXPECT requirement, so a 200 satisfies a PURE DENIAL probe ([401] / [403,404]) -- the invariant the docstring states outright, 'a 200 must never satisfy an expected-denial probe'. Owned HERE by `_status_ok(200, [403, 404]) is False`; MISSED from the 553 file because its negative-test case sends 401 against [401], which passes by exact membership.",
+   "find": "    return (isinstance(status, int) and 200 <= status < 300\n            and any(isinstance(e, int) and 200 <= e < 300 for e in expect))\n",
+   "replace": "    return isinstance(status, int) and 200 <= status < 300\n"
+  }
+ ]
+}

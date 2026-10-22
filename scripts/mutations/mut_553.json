@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/chain_executor.py",
+ "test": "tests/test_business_chain_auth_401_553.py",
+ "mutations": [
+  {
+   "label": "AB exact membership goes, so a negative-test step that EXPECTS 401 and gets 401 no longer passes: 401 is not 2xx, so the family rule below cannot rescue it. r105 exited rc=1 with no release on business_chain_failing while the app had delivered six times -- business_chain_failing blocks 76 corpus runs, more than any other check.",
+   "find": "    if status in expect:\n        return True",
+   "replace": "    if False:\n        return True"
+  },
+  {
+   "label": "AD the 2xx family rule drops its 2xx-ACTUAL requirement, so any status passes whenever the expect list contains a 2xx -- a 2xx-expected step returning 4xx scores PASS, which is the genuine failure #553 insists must still fail.",
+   "find": "    return (isinstance(status, int) and 200 <= status < 300\n            and any(isinstance(e, int) and 200 <= e < 300 for e in expect))",
+   "replace": "    return any(isinstance(e, int) and 200 <= e < 300 for e in expect)"
+  }
+ ]
+}
