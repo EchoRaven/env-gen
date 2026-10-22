@@ -252,12 +252,35 @@ def check_log_only(logtext, nlines):
     # A lane that reads "CSS colour cannot reach" and nothing else can still see the icon in
     # the DOM, so the report contradicts what it sees. Never firing is NOT falsification:
     # it needs an <img src> row pointing at a fill="currentColor" SVG to trigger at all.
-    icon = re.findall(r"#1203n0 ([^\n]*)", logtext)
-    mute = [t for t in icon if "in the DOM and invisible on screen" not in t]
-    say("#1203qv", "FALSIFIED" if mute else ("CONFIRMED" if icon else "NOT MEASURED"),
-        "%d invisible-icon advice line(s), %d missing the mechanism clause%s"
-        % (len(icon), len(mute),
-           "" if icon else " (absent is fine: needs an <img> + currentColor row)"))
+    # #1203rg -- this read EVERY `#1203n0` line as advice, but the marker has a SECOND
+    # emitter: the `#1034` overflow notice ("N more invisible icon reference(s) not listed"),
+    # which is a COUNT of what the 6-row log cap dropped. It is not advice and cannot carry a
+    # mechanism clause, so it was reported as advice with the clause missing. Measured over
+    # 213 logs: 82 advice lines, ALL carrying the clause, and all 12 clause-less lines are
+    # that notice -- the criterion had 0 true and 12 false positives. A false FALSIFIED is
+    # worse than a false NOT MEASURED: it sends a reader after a defect that is not there.
+    # (The actionable channel loses nothing to that cap -- `invisible_icon_task_1203pm` is
+    # handed the FULL `_inv1203n0` and `join_capped(total=len(rows))` states the total.)
+    #
+    # CLASSIFY, do not filter: a third shape under this marker means an emitter nobody has
+    # read, so it falsifies too rather than being silently dropped into the advice bucket.
+    # Explicit if/elif/else because a `(cond and a or b).append(...)` dispatch routed a whole
+    # branch into the wrong list earlier in this series when one list was empty.
+    advice, overflow, unknown = [], [], []
+    for _t in re.findall(r"#1203n0 ([^\n]*)", logtext):
+        if "loads a staged icon CSS colour cannot reach" in _t:
+            advice.append(_t)
+        elif re.match(r"^\d+ more invisible icon reference\(s\) not listed", _t):
+            overflow.append(_t)
+        else:
+            unknown.append(_t)
+    mute = [t for t in advice if "in the DOM and invisible on screen" not in t]
+    say("#1203qv", "FALSIFIED" if (mute or unknown)
+        else ("CONFIRMED" if advice else "NOT MEASURED"),
+        "%d advice line(s), %d missing the mechanism clause, %d #1034 overflow notice(s) "
+        "(a count, not advice), %d line(s) in NO shape read here%s"
+        % (len(advice), len(mute), len(overflow), len(unknown),
+           "" if advice else " (absent is fine: needs an <img> + currentColor row)"))
 
     # #1203qr -- a wedge while every build check is green.
     #

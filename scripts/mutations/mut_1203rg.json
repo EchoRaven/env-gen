@@ -1,0 +1,26 @@
+{
+ "file": "scripts/verify_1020.py",
+ "test": "tests/test_1203rg_one_marker_two_emitters.py",
+ "mutations": [
+  {
+   "label": "RGA the advice needle is loosened to the word `icon`, which the #1034 cap notice also contains (`N more invisible icon reference(s)`) -- so the notice is classified as advice and reported as advice missing its mechanism clause. THIS IS THE ORIGINAL BUG, restated: 12 false positives across 213 logs.",
+   "find": "        if \"loads a staged icon CSS colour cannot reach\" in _t:",
+   "replace": "        if \"icon\" in _t:"
+  },
+  {
+   "label": "RGB the cap-notice branch is removed, so the notice falls through to `unknown` and falsifies for a different wrong reason. Exempting it is not enough -- it has to be RECOGNISED, or the criterion still fires on a healthy run.",
+   "find": "        elif re.match(r\"^\\d+ more invisible icon reference\\(s\\) not listed\", _t):",
+   "replace": "        elif False:"
+  },
+  {
+   "label": "RGC the clause test is inverted, so advice that CARRIES the mechanism is reported as missing it and advice that lacks it passes. The check's whole subject reverses while the line count stays right.",
+   "find": "    mute = [t for t in advice if \"in the DOM and invisible on screen\" not in t]",
+   "replace": "    mute = [t for t in advice if \"in the DOM and invisible on screen\" in t]"
+  },
+  {
+   "label": "RGD `unknown` stops counting toward the verdict, so a #1203n0 line in a shape nobody here has read is silently dropped -- the classifier becomes a filter, which is what made the old version wrong in the first place.",
+   "find": "    say(\"#1203qv\", \"FALSIFIED\" if (mute or unknown)",
+   "replace": "    say(\"#1203qv\", \"FALSIFIED\" if mute"
+  }
+ ]
+}

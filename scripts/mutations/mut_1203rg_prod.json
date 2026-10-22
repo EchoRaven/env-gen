@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/heal_pipeline.py",
+ "test": "tests/test_1203rg_one_marker_two_emitters.py",
+ "mutations": [
+  {
+   "label": "RGE MUTATION N08 AGAIN -- the mechanism clause is deleted from the shipped advice. This escaped once: the old guard asserted `\"invisible\" in` the message, and the word occurs TWICE, so `\"`color` alone leaves it invisible\"` kept the assertion green. The clause is now read from the constant the lane receives.",
+   "find": "    \"nav, i.e. the icon is in the DOM and invisible on screen. INLINE the \"",
+   "replace": "    \"nav. INLINE the \""
+  },
+  {
+   "label": "RGF the advice is reworded past the substring verify_1020 finds it by. Nothing in production breaks -- the lane reads the same meaning -- but every advice line stops being counted and the criterion reads as `never fired`, which is the way a parked text-matching measurement rots.",
+   "find": "    \"#1203n0 %s loads a staged icon CSS colour cannot reach through \"",
+   "replace": "    \"#1203n0 %s uses a staged icon whose colour cannot arrive through \""
+  }
+ ]
+}
