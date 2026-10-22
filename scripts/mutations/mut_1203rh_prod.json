@@ -1,0 +1,16 @@
+{
+ "file": "agent/env_generator/llm_generator/tools/hub_tools.py",
+ "test": "tests/test_1203rh_a_criterion_may_not_infer_an_argument.py",
+ "mutations": [
+  {
+   "label": "RHE the #1203p2 line stops being logged, leaving only #1203b0's note in ToolResult.data -- the model is told and the operator is not, which is the exact state #1203p2 was written to end. Production has never emitted this line, so without a test that drives it the criterion rests on nothing.",
+   "find": "                        _lg1203p2.getLogger(__name__).info(\n                            \"#1203p2 register_ui_page(%s) omitted `apis_used` for the %d%s time; \"",
+   "replace": "                        _lg1203p2.getLogger(__name__).debug(\n                            \"#1203p2 register_ui_page(%s) omitted `apis_used` for the %d%s time; \""
+  },
+  {
+   "label": "RHF the kept-entry COUNT drops out of the line, so a lane reading it cannot tell whether one stale entry or seventeen were preserved -- #1203qd's whole point, and the reason the note is a count rather than a flag.",
+   "find": "                            len(_kept))",
+   "replace": "                            0)"
+  }
+ ]
+}

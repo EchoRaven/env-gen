@@ -1320,20 +1320,55 @@ def main(argv):
             _p2_pages = {l.split("register_ui_page(", 1)[1].split(")", 1)[0]
                          for l in _p2_lines if "register_ui_page(" in l}
             _p2_blocked = "page_apis_understated" in logtext
+            # #1203rh -- the old FALSIFIED arm inferred "pages were re-registered WITHOUT
+            # `apis_used`" from `"registryhub_register_ui_page" in logtext`, and that string
+            # cannot carry the fact. It is satisfied by the tool MENU: a lane's offered tool
+            # set renders as `registryhub_register_ui_page(name,path,route,component)`, 23
+            # times in instagram-core-di alone, and the `Tool calls:` summary prints parameter
+            # NAMES too. TWO PRINTER FORMATS, SEPARATED FIRST (#572's rule -- blending them
+            # is how a count like this goes wrong): the modern one renders `name=... path=...`
+            # and shows at most `name,path,status`, so `apis_used` appears in 0 of its 6913
+            # invocation lines across 92 logs (2026-08-24 onward, both post-patch runs among
+            # them). The legacy one rendered `args=['status','name','path']` -- a real list of
+            # the parameters passed -- and `apis_used` is absent from all 5662 of those too,
+            # but that era ended 2026-07-29, three months before #1203p2 existed, so it says
+            # nothing about the recorder. For every run this criterion can be asked about, the
+            # log structurally cannot say whether the argument was passed, so this arm fired on
+            # any run where the blocker appears at all.
+            #
+            # THE RECORDER ITSELF IS FINE, driven end to end -- real RegistryHub + WorkHub +
+            # the real tool, one call with `apis_used` then one omitting it -- returns
+            # #1203b0's note in `ToolResult.data` AND logs the #1203p2 line, on the logger
+            # production emits 189 `[W] tools.hub_tools` lines from. Its silence in both
+            # post-patch runs (netflix-r46, instagram-core-di) is the no-op not happening: all
+            # 8 instagram pages ended with a NON-EMPTY `apis_used`, and the blocker failed
+            # ONCE with one remediation dispatch -- not the "fixed it 19 times over" loop.
+            #
+            # So FALSIFIED now needs an observable that implies failure: #1201's announcement
+            # that the recorder did not run. That reaches the log on `message_format` (595
+            # `#1201` lines across 67 logs prove the channel) and is 0 for this site
+            # corpus-wide. Everything else is N-A WITH THE BLIND SPOT NAMED, because an absent
+            # line cannot be told from an absent condition -- #1203rd's rule, and the same
+            # shape as #1203rg one marker later.
+            _p2_broke = "#1201 recording that a re-registration omitted" in logtext
             if _p2_lines:
                 say("p2", "CONFIRMED",
                     "%d omission(s) recorded over %d page(s)%s"
                     % (len(_p2_lines), len(_p2_pages),
                        " -- and `page_apis_understated` is in this run, so these are the "
                        "calls that changed nothing" if _p2_blocked else ""))
-            elif _p2_blocked and "registryhub_register_ui_page" in logtext:
+            elif _p2_broke:
                 say("p2", "FALSIFIED",
-                    "`page_apis_understated` is in this run and pages were re-registered, "
-                    "yet the #1203p2 recorder said nothing")
+                    "#1201 says the #1203p2 recorder did NOT run in this process, so the "
+                    "no-op it records is happening unobserved")
             else:
                 say("p2", "N-A",
-                    "no re-registration omitted `apis_used` in this run (the no-op #1203b0 "
-                    "reports did not happen), so the returns have another cause")
+                    "no #1203p2 line, and the log cannot distinguish `apis_used` being "
+                    "omitted from it being passed (the modern tool-call printer shows at "
+                    "most name/path/status: 0 of 6913 invocation lines print that argument)%s"
+                    % (" -- `page_apis_understated` IS in this run, so if it keeps returning "
+                       "the cause is understatement rather than the #1203b0 no-op"
+                       if _p2_blocked else ""))
     except Exception as _e_p2:
         say("p2", "N-A", "the #1203p2 criterion could not read this run (%s)" % _e_p2)
 

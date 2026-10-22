@@ -1,0 +1,26 @@
+{
+ "file": "scripts/verify_1018.py",
+ "test": "tests/test_1203rh_a_criterion_may_not_infer_an_argument.py",
+ "mutations": [
+  {
+   "label": "RHA THE ORIGINAL BUG RESTORED: FALSIFIED is inferred from the tool NAME appearing in the log, which the tool MENU puts there in every run (23 times in instagram-core-di). Fires on any run where the blocker appears at all.",
+   "find": "            elif _p2_broke:",
+   "replace": "            elif _p2_blocked and \"registryhub_register_ui_page\" in logtext:"
+  },
+  {
+   "label": "RHB the falsifier matches the `#1201` MARKER instead of this site's sentence. #1201 is a shared channel -- 595 lines across 67 logs -- so any run reporting any guarded mechanism being off would falsify p2. Counting an emitter by its marker rather than its words is the mistake this session made twice.",
+   "find": "            _p2_broke = \"#1201 recording that a re-registration omitted\" in logtext",
+   "replace": "            _p2_broke = \"#1201\" in logtext"
+  },
+  {
+   "label": "RHC the N-A verdict stops saying WHY the log cannot answer, so a reader sees a bare N-A and cannot tell it apart from `not checked`. The number is the whole point: 0 of 6913 modern invocation lines print the argument.",
+   "find": "                    \"omitted from it being passed (the modern tool-call printer shows at \"\n                    \"most name/path/status: 0 of 6913 invocation lines print that argument)%s\"",
+   "replace": "                    \"omitted from it being passed%s\""
+  },
+  {
+   "label": "RHD the surviving-cause clause becomes unconditional, so a run with no blocker at all is told its blocker is caused by understatement -- an explanation asserted where there is nothing to explain.",
+   "find": "                       if _p2_blocked else \"\"))",
+   "replace": "                       ))"
+  }
+ ]
+}
