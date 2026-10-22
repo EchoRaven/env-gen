@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/test_user_squad.py",
+ "test": "tests/test_1203rk_the_goal_that_was_never_exercised.py",
+ "mutations": [
+  {
+   "label": "RKA the announcement is removed, restoring the original defect exactly: a goal goes unexercised and no counter and no log line says so. 8 agents in the corpus reached this path and 0 of 213 run logs mention it.",
+   "find": "            if logger is not None:\n                logger.warning(\n                    \"#1203rk test-user goal %r (%s) was NEVER EXERCISED -- %s. Counted as a \"",
+   "replace": "            if False:\n                logger.warning(\n                    \"#1203rk test-user goal %r (%s) was NEVER EXERCISED -- %s. Counted as a \""
+  },
+  {
+   "label": "RKB the line is demoted to debug. `[D]` appears in 4 of the 213 corpus run logs and `[I]` in essentially all, so this deletes the announcement from 209 runs out of 213 while the code still visibly 'logs it'. The first version of this test's logger fake collapsed every level into one list and would have called this MISSED.",
+   "find": "                logger.warning(\n                    \"#1203rk test-user goal %r (%s) was NEVER EXERCISED -- %s. Counted as a \"",
+   "replace": "                logger.debug(\n                    \"#1203rk test-user goal %r (%s) was NEVER EXERCISED -- %s. Counted as a \""
+  },
+  {
+   "label": "RKC the goal and its kind drop out, leaving a line that says a goal was skipped without saying WHICH. The squad runs up to twelve goals per milestone, so a reader cannot act on the count alone.",
+   "find": "                    \"checked.\", name, goal.get(\"kind\") or \"?\", rec[\"error\"])",
+   "replace": "                    \"checked.\", \"a goal\", \"?\", rec[\"error\"])"
+  },
+  {
+   "label": "RKD the cause drops out, so an operator cannot tell a framework defect from an environment hiccup -- #1201's rule, which this site had been violating by saying nothing at all.",
+   "find": "                    \"failure, not a timeout: no agent ran, so nothing about this goal was \"\n                    \"checked.\", name, goal.get(\"kind\") or \"?\", rec[\"error\"])",
+   "replace": "                    \"failure, not a timeout: no agent ran, so nothing about this goal was \"\n                    \"checked.\", name, goal.get(\"kind\") or \"?\", \"\")"
+  },
+  {
+   "label": "RKE the CONSEQUENCE clause goes, leaving only the error. A reader then concludes 'one agent had a bad start' instead of 'this goal was never checked', which is the difference the ticket exists for.",
+   "find": "                    \"#1203rk test-user goal %r (%s) was NEVER EXERCISED -- %s. Counted as a \"",
+   "replace": "                    \"#1203rk test-user goal %r (%s) hit a snag -- %s. Counted as a \""
+  },
+  {
+   "label": "RKF the return moves ABOVE the announcement, so the source still contains the line and the mechanism is dead. #1203's reachability lesson: quoting a statement cannot see whether it runs.",
+   "find": "            rec[\"error\"] = f\"spawn failed: {type(exc).__name__}: {exc}\"\n            # #1203rk: AND SAY SO.",
+   "replace": "            rec[\"error\"] = f\"spawn failed: {type(exc).__name__}: {exc}\"\n            return rec\n            # #1203rk: AND SAY SO."
+  },
+  {
+   "label": "RKG CONTROL on the classification this ticket only pins: the refused agent is counted as spawned, which overstates how much of the app was exercised and moves it out of `failed`.",
+   "find": "            return rec\n        report[\"spawned\"] += 1",
+   "replace": "            report[\"spawned\"] += 1\n            return rec\n        report[\"spawned\"] += 1"
+  }
+ ]
+}

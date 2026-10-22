@@ -850,6 +850,31 @@ async def run_test_user_squad(
             ))
         except Exception as exc:  # spawn failure for this goal only
             rec["error"] = f"spawn failed: {type(exc).__name__}: {exc}"
+            # #1203rk: AND SAY SO. This was the one way a goal could go unexercised in
+            # total silence. Returning here without counting the agent as spawned is
+            # correct -- it never ran -- but it also leaves every counter in the report
+            # silent about it, so the sole record was the per-agent error inside
+            # `test_user_squad_1202wn.jsonl`.
+            #
+            # MEASURED: 8 such agents in the corpus, 6 in r170 and 2 in r169, spanning
+            # page / ui_crud / isolation / mcp_parity -- and the wording the raise carries
+            # appears in 0 of 213 run logs, so no operator has ever been told that a goal
+            # was dropped on the floor. The other site that can report this condition does
+            # log it, and has never fired, which is how the raising path stayed invisible.
+            #
+            # #1203hf already treated THIS failure as worth preparing for: it records the
+            # briefing before the spawn so "what was this agent told" survives a spawn
+            # that dies. It preserved the evidence and stopped short of announcing it --
+            # both halves of a precedent, and only one was taken.
+            #
+            # These records are classified as failures rather than timeouts, because the
+            # gather keys timeouts off the timeout wording. So the report's failure count
+            # has never meant "ran and failed"; corpus-wide it is exactly these 8.
+            if logger is not None:
+                logger.warning(
+                    "#1203rk test-user goal %r (%s) was NEVER EXERCISED -- %s. Counted as a "
+                    "failure, not a timeout: no agent ran, so nothing about this goal was "
+                    "checked.", name, goal.get("kind") or "?", rec["error"])
             return rec
         report["spawned"] += 1
         ev = getattr(res, "task_done_event", None)
