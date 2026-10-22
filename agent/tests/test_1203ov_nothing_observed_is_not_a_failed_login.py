@@ -178,7 +178,18 @@ class WhatTheCorpusSays(unittest.TestCase):
                 mod_s += s
                 mod_t += t
         self.assertGreater(runs, 30, "only %d squad ledgers read" % runs)
-        self.assertEqual((tot_s, tot_t, tot_f), (399, 169, 8))
+        # #1203ri (2026-10-21): the CLAIM here is the relationship, not the three numbers.
+        # `instagram-core-di` joining the corpus moved 399/169 -> 409/170 (it spawned 10 and
+        # timed out 1) while `failed` stayed 8, so the finding got STRONGER and the test went
+        # red anyway. A corpus total can only grow, so pinning it exactly means every new run
+        # re-pins it, and a re-pin is indistinguishable from erasing a regression.
+        # Floors for the totals, and the ratio stated as the assertion it always was.
+        self.assertGreaterEqual(tot_s, 399, "spawn total SHRANK to %d" % tot_s)
+        self.assertGreaterEqual(tot_t, 169, "timeout total SHRANK to %d" % tot_t)
+        self.assertGreater(
+            tot_t, 10 * tot_f,
+            "the point of this test is that unfinished agents TIME OUT rather than fail; "
+            "%d timeouts against %d failures no longer shows that" % (tot_t, tot_f))
         self.assertEqual((mod_s, mod_t), (95, 47))
 
     def test_the_signature_of_observing_nothing_is_in_the_logs(self):

@@ -270,7 +270,14 @@ class TheCorpus(unittest.TestCase):
             len(self.eps), 899,
             "the endpoint population SHRANK to %d (was 899 when measured); a corpus that "
             "loses endpoints is a different problem from this ticket" % len(self.eps))
-        self.assertEqual((clashing, len(runs), only_path, len(only_runs)), (93, 37, 30, 13))
+        # #1203ri (2026-10-21): RE-MEASURED after `instagram-core-di` entered the corpus.
+        # 93/37 -> 94/38, and the delta is entirely that one run: it contributes exactly 1
+        # clashing endpoint (`PATCH /api/posts/{post_id}`) and nothing else moved. Kept EXACT
+        # per the rule above -- these are the ticket's claim, not a denominator -- and the new
+        # instance is benign for the reason this class is named after: the sibling test drives
+        # the real invariant per case, and its `assertLess(include, handler)` PASSED for the
+        # instagram case too, so the lane handler still shadows the projected one.
+        self.assertEqual((clashing, len(runs), only_path, len(only_runs)), (94, 38, 30, 13))
 
     def test_the_modern_era_is_in_the_population(self):
         """Not an old-era artifact: r184/r187/r189/r190 each carry at least one."""
@@ -327,9 +334,20 @@ class WhyItIsNotADataBug(unittest.TestCase):
                             "%s %s %s: the projected handler is registered BEFORE the lane "
                             "router, so the re-keyable body reaches the DB" % (run, m, path))
             checked.append((run, m, path))
-        self.assertEqual(len(checked), 7,
-                         "expected the 7 measured PUT/PATCH cases, scanned %d: %r"
-                         % (len(checked), checked))
+        # #1203ri: THE SAME TRAP THE CLASS ABOVE ALREADY FIXED, ONE METHOD LOWER DOWN.
+        # The claim of this test is the `assertLess` inside the loop -- every re-keyable
+        # PUT/PATCH is registered after the lane router, so FastAPI matches the lane's handler
+        # and the body never reaches the DB. That ran, and passed, for all 8 cases. Only this
+        # trailing count failed, because `instagram-core-di` added an 8th case that the
+        # loop had already cleared. Pinning the population next to the claim means every run
+        # that merely EXHIBITS the shape turns the suite red, and whoever re-pins it cannot
+        # tell that from erasing a regression -- which is exactly what the comment 60 lines up
+        # says, written the same day. So this is a FLOOR: a scan that stops finding the known
+        # cases is a real problem, a scan that finds more is the corpus growing.
+        self.assertGreaterEqual(
+            len(checked), 7,
+            "the scan found only %d of the 7 measured PUT/PATCH cases, so it stopped seeing "
+            "cases it used to see: %r" % (len(checked), checked))
 
     def test_the_only_clients_that_send_it_send_the_same_value_and_only_an_fk(self):
         """The framework's own verification chains: 27 write steps in 14 runs repeat a path
