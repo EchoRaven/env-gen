@@ -1,0 +1,41 @@
+{
+ "file": "agent/env_generator/llm_generator/multi_agent/runtime/delivery_gate.py",
+ "test": "tests/test_business_chain_never_run_not_blocking_510.py",
+ "mutations": [
+  {
+   "label": "LA #510 REVERTED: nothing counts as never-run, so a re-authored chain that never ran blocks exactly like one that ran and broke. This is the r84 defect itself -- 11 chains PASSED, 5 were re-authored at the deliver tail and never ran, and business_chain_failing stuck forever, so the milestone gate never cleared and main() exited 1. business_chain_failing blocks in 76 of the corpus runs, more than any other check.",
+   "find": "    def _never_ran(_rec):\n        return (not _rec.get(\"last_result\")",
+   "replace": "    def _never_ran(_rec):\n        return False and (not _rec.get(\"last_result\")"
+  },
+  {
+   "label": "LB everything counts as never-run, so a chain that RAN AND BROKE is excluded from not_passing and stops blocking -- the false-pass this fix had to avoid while excluding the indeterminate ones.",
+   "find": "    def _never_ran(_rec):\n        return (not _rec.get(\"last_result\")\n                and str(_rec.get(\"status\") or \"\").lower()",
+   "replace": "    def _never_ran(_rec):\n        return True or (not _rec.get(\"last_result\")\n                and str(_rec.get(\"status\") or \"\").lower()"
+  },
+  {
+   "label": "LC the >=1-passing guard is removed. not_passing already excludes never-run chains, so an authored set that is ALL never-run falls through to GREEN with nothing actually verified -- shipping on the strength of chains that were only ever registered.",
+   "find": "    if not any(rec.get(\"status\") in (\"passing\", \"framework_blocked\")\n               and not (rec.get(\"last_result\") or {}).get(\"broken\")\n               for rec in authored):",
+   "replace": "    if False:"
+  },
+  {
+   "label": "LD the not_passing test becomes a conjunction, so a chain whose STATUS says failing stops blocking unless its last run also recorded broken steps. `failing` is outside _NOT_A_LANE_FAILURE_1202OF precisely so the status alone is enough.",
+   "find": "        if not _never_ran(rec) and (\n            (rec.get(\"status\") not in _NOT_A_LANE_FAILURE_1202OF)\n            or (rec.get(\"last_result\") or {}).get(\"broken\"))",
+   "replace": "        if not _never_ran(rec) and (\n            (rec.get(\"status\") not in _NOT_A_LANE_FAILURE_1202OF)\n            and (rec.get(\"last_result\") or {}).get(\"broken\"))"
+  },
+  {
+   "label": "LE the >=1-passing guard accepts a merely REGISTERED chain as evidence of passing, which is the same hole as removing it: an all-never-run set satisfies the guard that exists to catch exactly that set.",
+   "find": "    if not any(rec.get(\"status\") in (\"passing\", \"framework_blocked\")",
+   "replace": "    if not any(rec.get(\"status\") in (\"passing\", \"framework_blocked\", \"registered\")"
+  },
+  {
+   "label": "LF the guard stops requiring that the passing chain's last run was not broken, so a chain still LABELLED passing while its last_result recorded broken steps satisfies the guard -- the clause between 'labelled passing' and 'passed'. First run came back MISSED: no fixture built that pairing, and the corpus never produces it (0 of 100 chain registries; observed states are all self-consistent). Defensive, not a live defect -- and given a ratchet anyway (#1203rl).",
+   "find": "    if not any(rec.get(\"status\") in (\"passing\", \"framework_blocked\")\n               and not (rec.get(\"last_result\") or {}).get(\"broken\")\n               for rec in authored):\n        return {",
+   "replace": "    if not any(rec.get(\"status\") in (\"passing\", \"framework_blocked\")\n               for rec in authored):\n        return {"
+  },
+  {
+   "label": "LG the blocker detail stops quoting the broken step, leaving a message that counts chains but cannot say which step failed -- the only actionable sentence in the gate that blocks more corpus runs than any other. UNREACHABLE BEFORE #1203rl: this file's fixture built `broken` as a BOOL where production writes a LIST (3134 of 3134), so `_first_broken_step_1202ox` raised TypeError, warn_once_1201 swallowed it, and the detail path was never exercised.",
+   "find": "                       + _first_broken_step_1202ox(authored, not_passing)",
+   "replace": "                       + \"\""
+  }
+ ]
+}

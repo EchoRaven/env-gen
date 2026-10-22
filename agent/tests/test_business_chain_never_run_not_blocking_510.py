@@ -50,12 +50,29 @@ class _FakeHubs:
 _ENDPOINTS = {"e1": {"method": "GET", "path": "/api/titles"}}
 
 
+_BROKEN_STEP = "GET /api/titles \u2192 500 (expected 200)"
+
+
 def _chain(name, status, ran=None):
-    """ran=None → never ran (no last_result). ran='ok'|'broken' → ran with a result."""
+    """ran=None → never ran (no last_result). ran='ok'|'broken' → ran with a result.
+
+    #1203rl: `broken` is a LIST of broken-step descriptions, which is what production
+    writes -- 3134 of 3134 `last_result["broken"]` values in the corpus chain registries are
+    lists, and none is a bool. This helper used to build `{"broken": (ran == "broken")}`, a
+    BOOL, and every assertion in this file still passed because the paths under test only ask
+    it for truthiness.
+
+    What the wrong shape cost: the blocker's detail is built with
+    `_first_broken_step_1202ox(...)`, which ITERATES the list to name which step broke -- the
+    one actionable sentence in the message. Handed a bool it raises TypeError, the
+    `warn_once_1201` guard swallows it, and the detail silently loses the step name. So this
+    file drove the gate for months without ever exercising that path. #1046's shape: a stub's
+    return value drifted from production's, and nothing says so.
+    """
     rec = {"name": name, "steps": [{"method": "GET", "path": "/api/titles"}],
            "status": status}
     if ran is not None:
-        rec["last_result"] = {"broken": (ran == "broken")}
+        rec["last_result"] = {"broken": [_BROKEN_STEP] if ran == "broken" else []}
     return rec
 
 
@@ -83,6 +100,27 @@ def test_ran_and_broke_still_blocks():
     assert _blockers(chains).get("reason") == "business_chain_failing"
 
 
+def test_the_blocker_names_which_step_broke():
+    """#1203rl: the detail is the only part a lane can act on, and this file never reached it.
+
+    `_first_broken_step_1202ox` iterates `last_result["broken"]` to quote the failing step.
+    With the old bool fixture it raised TypeError, `warn_once_1201` swallowed it, and the
+    blocker still read as a pass of this test file -- a message that says N chains have not
+    passed and cannot say which step, in the gate that blocks more corpus runs than any other
+    (business_chain_failing: 76 runs).
+    """
+    chains = {
+        "title_flow": _chain("title_flow", "passing", ran="ok"),
+        "broken_flow": _chain("broken_flow", "failing", ran="broken"),
+    }
+    b = _blockers(chains)
+    assert b.get("reason") == "business_chain_failing", b
+    assert "broken_flow" in str(b.get("detail") or ""), b
+    assert _BROKEN_STEP in str(b.get("detail") or ""), (
+        "the detail must quote the broken step, not just count the chains: %r"
+        % (b.get("detail"),))
+
+
 def test_status_failing_still_blocks():
     chains = {
         "title_flow": _chain("title_flow", "passing", ran="ok"),
@@ -105,6 +143,28 @@ def test_passing_only_not_blocked():
     chains = {"title_flow": _chain("title_flow", "passing", ran="ok")}
     b = _blockers(chains)
     assert b.get("reason") != "business_chain_failing", b
+
+
+# ---- the >=1-passing guard's `not broken` clause: a DEFENSIVE case ----
+def test_a_passing_status_over_broken_steps_does_not_satisfy_the_guard():
+    """A chain still LABELLED passing while its last run recorded broken steps must block.
+
+    #1203rl. This is NOT a test of the >=1-passing guard's `not broken` clause, though that is
+    what it looks like. Mutation LF deletes that clause and stays MISSED, and the reason is
+    reachability, not a missing assertion: `not_passing` is evaluated FIRST and admits any
+    chain whose last run recorded broken steps, whatever its status, so by the time the guard
+    runs there is no such chain left to distinguish. An earlier layer already handled it.
+
+    Also measured: the pairing never occurs in the corpus (0 of 100 chain registries; the
+    observed states are all self-consistent). So the clause is unreachable AND the input is
+    synthetic -- it is kept because what it asserts is still the right answer, and it pins
+    which branch delivers it.
+    """
+    chains = {"stale_label": _chain("stale_label", "passing", ran="broken")}
+    b = _blockers(chains)
+    assert b.get("reason") == "business_chain_failing", (
+        "a chain whose status says passing while its last run recorded broken steps must not "
+        "count as the one passing chain the guard demands: %r" % (b,))
 
 
 # ---- no authored chain at all → business_chain_missing (unchanged) ----
