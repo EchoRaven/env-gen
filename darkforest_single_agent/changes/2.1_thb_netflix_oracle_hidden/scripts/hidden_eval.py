@@ -54,7 +54,11 @@ def main(ws, tag, parts, repeats=None, screens=None):
                     summary["errors"]["api"] = traceback.format_exc()[-1500:]
             if "ui" in parts:
                 try:
-                    r = ui_walk.Walk(be, fe, os.path.join(out, "ui")).run()
+                    ud = os.path.join(out, "ui")
+                    for f in (os.listdir(ud) if os.path.isdir(ud) else []):
+                        if f.startswith("fail_") and f.endswith(".png"):  # an earlier walk's failure screenshots
+                            os.remove(os.path.join(ud, f))
+                    r = ui_walk.Walk(be, fe, ud).run()
                     summary["ui"] = {"passed": r["passed"], "total": r["total"],
                                      "failed": [c["name"] for c in r["checks"] if not c["ok"]]}
                 except Exception:

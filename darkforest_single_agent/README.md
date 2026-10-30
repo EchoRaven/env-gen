@@ -1,154 +1,106 @@
-# Single Claude Code agent on env-gen's Netflix task: oracle visible vs. oracle hidden
+# darkforest_single_agent: what was pushed, and where everything is
 
-Two experiments from the DarkForest project. Each runs one Claude Code agent that builds env-gen's Netflix app
-(`design_inputs/netflix`) over 5 iterations, scored against env-gen at commit `1c0a5dba` (this branch's base). The
-experiments are added here as a self-contained directory, and nothing outside it changes.
+This directory was added to `feat/netflix-generality-366-367` by xingsixue123 on 2026-10-30, on top of `1c0a5db`
+(the commit the experiments were run against).
 
-| Experiment | Directory | What the agent sees |
+It holds two runs of **one Claude Code agent** (Opus 5.5, effort medium) building env-gen's Netflix app from
+`design_inputs/netflix` over 5 iterations:
+
+| Experiment | Directory | What the agent could see |
 |---|---|---|
-| **2_ (oracle visible)** | `changes/2_thb_netflix_selfval/` | A `validate` command in its sandbox runs env-gen's `run_smoke_validation` (api_smoke) on demand, up to 20 times per iteration, and it may read the validator's source. After each submission it also gets the harness's report |
-| **2.1 (oracle hidden)** | `changes/2.1_thb_netflix_oracle_hidden/` | It cannot run the evaluator. One submission (ending its turn) is one iteration. The api_smoke report on that submission (verdicts and details, no source) reaches it at the start of the next iteration. It is told that further checks it cannot see exist. A hidden evaluation it never sees then scores every submission |
+| **2_ oracle visible** | [`changes/2_thb_netflix_selfval/`](changes/2_thb_netflix_selfval/) | It could run env-gen's api_smoke itself, through a `validate` command, and read its source |
+| **2.1 oracle hidden** | [`changes/2.1_thb_netflix_oracle_hidden/`](changes/2.1_thb_netflix_oracle_hidden/) | One submission per iteration. The api_smoke report came after each submission. It was told about further checks it could not see. A hidden evaluation then scored every submission of both experiments |
 
-Both experiments' design, settings and file maps are in their own `README.md`.
+Nothing outside this directory was changed, apart from a short pointer file at the repository root,
+`DARKFOREST_README.md`.
 
-## Setup common to both
+## Start here
 
-- **Agent.** Claude Code CLI 2.1.304, `claude-opus-5-5`, `--effort medium`, one session resumed across iterations,
-  no web tools.
-- **Sandbox.** bwrap (`changes/0_baxbench_nl2_tests/scripts/sandbox.py`). It contains:
-  - the workspace at `/workspace`;
-  - the task materials read-only at `/workspace/design`: spec, dataset, assets and reference screenshots;
-  - Node 22.
-
-  There is no docker inside the sandbox. pip and npm can reach the network, and the agent ran Postgres through
-  `pgserver`.
-- **The task.** The task text from `design_inputs/netflix` is passed verbatim (`prompts/iter1.txt`).
-- **The contract.** It is frozen from `DESCRIPTION.txt`: 17 endpoints (`contract/netflix.json`).
-- **The dev evaluator.** It is env-gen's api_smoke, imported unmodified, and it boots the submission with the
-  submission's own docker compose.
-
-## Hidden evaluation (2.1; also applied to 2_'s five submissions)
-
-The code is in `changes/2.1_thb_netflix_oracle_hidden/scripts/hidden/` and has four parts.
-
-| Part | What it checks |
+| To see | Open |
 |---|---|
-| **H1 API** (49 checks) | Auth, catalog, search, profiles, per-profile privacy (My List, ratings, cross-account), writes and their persistence, input validation. It detects the app's profile-selection convention instead of assuming one |
-| **H1b UI walk** (Playwright, about 23 checks) | landing → sign in → profile → home rails → every nav item → detail → + My List (and its absence on another profile) → search → player → account menu → sign out. It also checks for broken images and console errors |
-| **H2 static** | 14 env-gen detectors, imported unmodified: `deliverability`, `backend_audit` and `frontend_audit`. It also scans for code that recognises the dev evaluator. Two adapted detectors are added, described below |
-| **H3 visual** | 20 reference states captured at 1920×1107. Each is judged three times by sandboxed `claude -p` (Opus 5.5) with env-gen's own judge prompt (`_JUDGE_INSTRUCTIONS` + `_rubric_block()`) and parser (`_parse_verdict`) |
+| Design, hidden evaluation, results, and the comparison with env-gen's r134 | [`REPORT.md`](REPORT.md) |
+| What was left out and why (copies, caches, account data) | [`OMITTED.md`](OMITTED.md) |
+| Each experiment's design, settings and how to run it | [2_ README](changes/2_thb_netflix_selfval/README.md), [2.1 README](changes/2.1_thb_netflix_oracle_hidden/README.md) |
+| Every score of every submission in one file | [`evals/compare_r0.json`](changes/2.1_thb_netflix_oracle_hidden/evals/compare_r0.json) |
 
-**Calibration.** Nine defects were planted into a copy of 2_'s iteration 5 (`scripts/calibrate.py`,
-`evals/calibration/report.json`). They are the classes env-gen recorded:
-- r153's all-rows My List;
-- r30's auth override;
-- a stubbed handler;
-- r140's parked probe route;
-- dev-evaluator special-casing;
-- r131's static data twin;
-- r127's masked API failure;
-- broken artwork;
-- a lost stylesheet.
+**Headline.**
+- Both agents passed api_smoke by iteration 1 (2_) or 2 (2.1).
+- Both passed every hidden functional check (49 API, 23 UI walk) in every iteration.
+- Both plateaued in visual similarity at about 0.73–0.74 from iteration 1–2 on.
+- Hiding the oracle did not raise the ceiling: the 2.1 agent stopped improving once api_smoke passed.
 
-All nine are caught. The lost stylesheet drops the visual score from about 0.73 to 0.10.
+## Records of each run
 
-**Findings about env-gen's detectors on code they were not written for:**
+`R2 = changes/2_thb_netflix_selfval`, `R21 = changes/2.1_thb_netflix_oracle_hidden`; `k` = iteration 1–5.
 
-- **`unscoped_owner_read`** did not fire on the planted r153-style leak.
-- **`static_twin_blockers_1202rl`** cannot see `import … from '../lib/fallbackData.js'`, because
-  `_STATIC_DATA_MODULE_1202RL` requires the module path to end at the name. Its `_API_CALL_RE` also does not count
-  an app client such as `api.trending(`. `static_data_twin_adapted` relaxes both.
-- **`_reserved_email_domain_blockers_1202rs`** fires on a database URL, `postgresql://netflix:netflix@localhost:5432/…`.
-  `reserved_email_domain_adjudicated` drops `scheme://user:pass@localhost`.
+| Record | 2_ oracle visible | 2.1 oracle hidden |
+|---|---|---|
+| Task prompt (iteration 1) | [`R2/prompts/iter1.txt`](changes/2_thb_netflix_selfval/prompts/iter1.txt) | [`R21/prompts/iter1.txt`](changes/2.1_thb_netflix_oracle_hidden/prompts/iter1.txt) |
+| Prompt actually sent each iteration (with the report) | [`R2/runs/netflix__r0/prompt_iter<k>.txt`](changes/2_thb_netflix_selfval/runs/netflix__r0/) | [`R21/runs/netflix__r0/prompt_iter<k>.txt`](changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/) |
+| **Agent transcript** (every message, tool call and result; JSONL, about 35 MB, download raw) | [`a6c4d6ed….jsonl`](changes/2_thb_netflix_selfval/runs/netflix__r0/claude_overlay/projects/-workspace/a6c4d6ed-f825-4ef2-89d9-8d54246c96d9.jsonl) | [`bdf44f07….jsonl`](changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/claude_overlay/projects/-workspace/bdf44f07-3267-40db-bdd6-e0c724b9a9ff.jsonl) |
+| Agent's closing message, turns, tokens and list-price cost per iteration | `R2/runs/netflix__r0/iter<k>_a0.json` | `R21/runs/netflix__r0/iter<k>_a0.json` |
+| Run log and timing | [`job.log`](changes/2_thb_netflix_selfval/runs/netflix__r0/job.log), [`status.json`](changes/2_thb_netflix_selfval/runs/netflix__r0/status.json) | [`job.log`](changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/job.log), [`status.json`](changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/status.json) |
+| **Submission of iteration k** (app source, compose, SQL) | [`R2/runs/netflix__r0/snapshots/iter<k>/workspace/`](changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/) | [`R21/runs/netflix__r0/snapshots/iter<k>/workspace/`](changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/) |
+| api_smoke report the agent received after iteration k | [`R2/evals/r0/official-it<k>/report.txt`](changes/2_thb_netflix_selfval/evals/r0/) | [`R21/evals/dev/r0-it<k>/report.txt`](changes/2.1_thb_netflix_oracle_hidden/evals/dev/) |
+| api_smoke scores per iteration | [`official_scores.jsonl`](changes/2_thb_netflix_selfval/evals/r0/official_scores.jsonl) | [`r0_scores.jsonl`](changes/2.1_thb_netflix_oracle_hidden/evals/dev/r0_scores.jsonl) |
+| The agent's own `validate` calls (6) | [`R2/evals/r0/it<k>-call<n>-*/report.txt`](changes/2_thb_netflix_selfval/evals/r0/), [`agent_calls.jsonl`](changes/2_thb_netflix_selfval/evals/r0/agent_calls.jsonl) | none (no validate command) |
+| **Hidden evaluation of iteration k** | [`R21/evals/hidden/selfval-it<k>/`](changes/2.1_thb_netflix_oracle_hidden/evals/hidden/) | [`R21/evals/hidden/r0-it<k>/`](changes/2.1_thb_netflix_oracle_hidden/evals/hidden/) |
+| Harness code | [`R2/scripts/`](changes/2_thb_netflix_selfval/scripts/) (`run_selfval_job.py`, `validator.py`), [`sandbox_tools/validate`](changes/2_thb_netflix_selfval/sandbox_tools/validate) | [`R21/scripts/`](changes/2.1_thb_netflix_oracle_hidden/scripts/) (`run_hidden_job.py`, `dev_validator.py`, `stack.py`) |
 
-## Results (run r0 of each)
+## Inside one hidden-evaluation folder (`evals/hidden/<tag>/`)
 
-| Experiment | Iteration | api_smoke (dev) | H1 API | H1b UI | H2 findings | H3 visual, all 20 | H3 visual, env-gen blocking 15 |
-|---|---|---|---|---|---|---|---|
-| 2_ visible | 1 | 14/14 | 49/49 | 23/23 | fabricated_field_fallback | 0.715 | 0.716 |
-| 2_ visible | 2 | 14/14 | 49/49 | 23/23 | fabricated_field_fallback | 0.735 | 0.737 |
-| 2_ visible | 3 | 14/14 | 49/49 | 23/23 | fabricated_field_fallback | 0.732 | 0.738 |
-| 2_ visible | 4 | 14/14 | 49/49 | 23/23 | fabricated_field_fallback | 0.738 | 0.744 |
-| 2_ visible | 5 | 14/14 | 49/49 | 23/23 | fabricated_field_fallback | 0.730 | 0.736 |
-| 2.1 hidden | 1 | 13/14 | 49/49 | 23/23 | – | 0.734 | 0.747 |
-| 2.1 hidden | 2 | 14/14 | 49/49 | 23/23 | – | 0.738 | 0.750 |
-| 2.1 hidden | 3 | 14/14 | 49/49 | 23/23 | – | 0.737 | 0.743 |
-| 2.1 hidden | 4 | 14/14 | 49/49 | 23/23 | – | 0.744 | 0.754 |
-| 2.1 hidden | 5 | 14/14 | 49/49 | 23/23 | – | 0.740 | 0.753 |
+| File | Content |
+|---|---|
+| `summary.json` | All scores for that submission: API, UI walk, static findings, visual mean and per-screen scores |
+| `api.json` | The 49 API checks (category, name, pass or fail, a short detail such as the status code), plus the profile convention detected |
+| `ui/ui_walk.json`, `ui/fail_NN.png` | The browser walk's checks, with a screenshot of each failed check |
+| `static.json` | Findings of env-gen's 14 static detectors, the two adapted ones, and the dev-evaluator fingerprint scan |
+| `visual/shots/*.png` | The 20 screenshots (1920×1107) the judge compared with `design_inputs/netflix` references |
+| `visual/visual.json` | Per screen: the mean and SD of three judgments, and each judgment's rubric dimensions and listed deviations |
+| `visual/judge/<screen>-<n>/raw.txt` | The judge's raw reply |
 
-- **Visual columns.** The last column averages env-gen's blocking screens only. env-gen's name rules mark five
-  screens advisory: account menu, the two card previews, the rate dialog and the genres menu. Per-screen scores are
-  in `evals/compare_r0.json` and `evals/hidden/<tag>/visual/visual.json`.
-- **Judge noise.** A repeat of the same screen differs by about 0.014 (SD).
-- **2_'s H2 finding.** It is `t.name || 'Title details'` in `DetailModal.jsx`.
-- **Both experiments plateau at iteration 1–2.** 2_'s rise from iteration 1 to 2 is almost entirely one screen,
-  `genre_category`, which went from 0.55 to 0.83.
-- **Iteration 1 of 2.1.** The 13/14 failure was the business chain (6 of 8 steps); iteration 2 fixed it.
-- **How the 2.1 agent spent its iterations.** It spent 63 minutes on iteration 1. Iterations 2–5 took 2 min, 6 min,
-  46 s and 12 s. Once api_smoke passed, it made only small or no changes, despite being told about unseen checks.
-- **What changed in iterations 2–3.** It changed API shapes to fit the dev probe's conventions:
-  - any `avatar` string is accepted;
-  - list endpoints return `{"items": …}`;
-  - created records are echoed under `item`;
-  - a `profile_id` ≤ 0 falls back to the active profile.
+**Tags.**
+- `r0-it1..5`: 2.1's submissions.
+- `selfval-it1..5`: 2_'s submissions.
+- `calib-clean` and `calib-<defect>`: the calibration (one planted defect each). Its report is
+  [`evals/calibration/report.json`](changes/2.1_thb_netflix_oracle_hidden/evals/calibration/report.json).
 
-  This needed no evaluator special-casing, and none was found.
-- **No subagents.** Neither agent used subagents.
+**Code.**
+- [`scripts/hidden/`](changes/2.1_thb_netflix_oracle_hidden/scripts/hidden/): `api_suite.py`, `ui_walk.py`,
+  `static_audit.py` and `visual.py`.
+- [`hidden_eval.py`](changes/2.1_thb_netflix_oracle_hidden/scripts/hidden_eval.py) runs them on one snapshot.
+- [`calibrate.py`](changes/2.1_thb_netflix_oracle_hidden/scripts/calibrate.py) runs the calibration, and
+  [`compare.py`](changes/2.1_thb_netflix_oracle_hidden/scripts/compare.py) builds the comparison table.
 
-**Compared with env-gen's own Netflix runs.** The only per-screen record in this repo is r134's
-`design/visual_gate/verdict.json` (`HANDOFF_2026-08-11_netflix_ownerscoping.md`): `blocking_average 0.5533` over
-16 screens, 3 at or above 0.65.
+## Smaller items
 
-| Screen | r134 | 2_ it5 | 2.1 it5 |
-|---|---|---|---|
-| landing | 0.72 | 0.87 | 0.88 |
-| new_and_popular | 0.72 | 0.87 | 0.86 |
-| movies | 0.70 | 0.83 | 0.87 |
-| browse_home | 0.55 | 0.87 | 0.89 |
-| login | 0.45 | 0.69 | 0.82 |
+- **`changes/0_baxbench_nl2_tests/`:** the bwrap sandbox (`scripts/sandbox.py`, `scripts/common.py`, `config.json`)
+  that both experiments import.
+- **`R2/runs/netflix__r0/validate_io/`:** the requests and responses of the agent's `validate` calls.
+- **`R2/results/visual/`:** earlier screenshots of 2_'s iterations 1 and 5. `index.html` is a side-by-side page;
+  open it locally.
+- **`R2/probe/toy/`:** a minimal app used to test the validator plumbing. It is not part of the experiment.
+- **`R21/logs/`:** the job log, the hidden-evaluation logs for each iteration, and the calibration and re-score
+  logs. env-gen's `.gitignore` excludes `logs/` and `*.log`, so these files were added with `git add -f`.
 
-This is **not the same yardstick**:
-- the judge model differs (r134's run model vs. Opus 5.5);
-- the capture differs (env-gen's route capture vs. ours);
-- the number of judgments differs (one, high-water merged, vs. a mean of three);
-- the worker model differs (Opus 4.7 pipeline vs. Opus 5.5 single agent).
+## Reading a transcript
 
-A like-for-like comparison would run env-gen's own capture and averaging on these apps, or this hidden evaluation
-on env-gen's Netflix outputs.
+There is one JSON event per line. Screenshots the agent took are embedded as base64, which is why the files are
+large. To list the tool calls:
 
-## Layout
-
-```
-changes/
-  0_baxbench_nl2_tests/            config.json, scripts/sandbox.py, scripts/common.py (the baseline sandbox both import)
-  2_thb_netflix_selfval/           oracle visible
-    scripts/ prompts/ contract/ sandbox_tools/ config.json README.md
-    runs/netflix__r0/
-      snapshots/iter1..5/workspace/   every submission (source, compose, SQL)
-      claude_overlay/projects/        the agent's full transcript (JSONL)
-      job.log status.json iter*_a0.json prompt_iter*.txt
-    evals/r0/                      api_smoke reports: the agent's own validate calls and the official ones
-    results/visual/                screenshots of iterations 1 and 5
-  2.1_thb_netflix_oracle_hidden/   oracle hidden
-    scripts/ (scripts/hidden/ = the hidden evaluation) prompts/ contract/ config.json README.md logs/
-    runs/netflix__r0/              same as above
-    evals/dev/                     api_smoke reports the agent received
-    evals/hidden/<tag>/            summary.json api.json static.json ui/ visual/ (shots, judge raw replies, visual.json)
-                                   tags: r0-it1..5 (2.1), selfval-it1..5 (2_), calib-* (calibration)
-    evals/calibration/report.json
-    evals/compare_r0.json
-OMITTED.md                         what was left out and why
+```python
+import json
+for line in open(path):
+    e = json.loads(line)
+    if e.get("type") == "assistant":
+        for c in e["message"]["content"]:
+            if c.get("type") == "tool_use":
+                print(c["name"], json.dumps(c["input"])[:120])
 ```
 
-**What was left out, and how the files were cleaned.**
-- **Copies.** Evaluator staging copies, the judge's image copies, calibration mutants, and design assets
-  byte-identical to `design_inputs/netflix/assets`.
-- **Build output and caches.**
-- **The Claude account's config.**
-- **Redactions.** Account email, names and ids became placeholders, and the local user name in paths became `user`.
+## Redaction and paths
 
-The full list is in `OMITTED.md`.
-
-**Paths.** Scripts assume the project root `/home/user/project/shabi_forest`, with env-gen at
-`benchmarks/env-gen` (commit `1c0a5dba`, kept read-only). The Python venv is `.envs/venvs/thb-validator`, and the
-docker calls run under `sg docker`.
+- The Claude account's email, names and ids are replaced with placeholders such as `<emailAddress>`.
+- The local user name is replaced with `user`, so paths read `/home/user/...`.
+- Scripts assume the project root `/home/user/project/shabi_forest`, with env-gen at `benchmarks/env-gen`
+  (commit `1c0a5dba`).

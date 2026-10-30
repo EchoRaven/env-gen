@@ -5,8 +5,8 @@
 | the judge's copies of the reference and the screenshot (both kept elsewhere) | 618 | 1061 MB |
 | staged copy of the snapshot the hidden evaluation ran | 20 | 943 MB |
 | staged copy of the snapshot the dev evaluator ran | 16 | 754 MB |
+| this export | 1 | 594 MB |
 | the agent's home: pip/npm/playwright caches and the per-job ~/.claude.json (account data) | 2 | 445 MB |
-| this export | 1 | 389 MB |
 | design asset byte-identical to env-gen design_inputs/netflix/assets | 1700 | 212 MB |
 | calibration mutants; calibrate.py re-plants them | 9 | 194 MB |
 | copy of the snapshot the dev evaluator ran | 6 | 150 MB |
