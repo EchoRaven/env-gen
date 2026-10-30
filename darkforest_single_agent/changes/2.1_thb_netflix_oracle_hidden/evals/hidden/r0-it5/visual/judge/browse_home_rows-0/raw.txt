@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The basic structure matches. Both have a fixed top nav with the logo on the left, the text links, and utilities on the right. Rows are left-aligned at a ~67px gutter, each with a heading, a 16:9 tile carousel that bleeds off the right edge and a segmented page indicator top-right. The differences: the reference starts the first row directly under the nav, but the implementation shows the bottom of a rounded hero card with Play and More Info above the rows. The implementation also adds a text-only 'Continue Watching' section, and its rows are spaced more loosely (~300px row pitch vs ~287px, with a larger heading-to-row gap).",
+      "fix": "For this state, start the scroll with the first row right below the nav and no hero card visible. Remove or hide the empty 'Continue Watching' block. Tighten the gap between rows to ~285px pitch, with ~20px between heading and tiles."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "Present: the nav with 7 links and the Home pill as the active state, search, bell, Kids avatar plus label, profile avatar with caret, row headings, tile carousels, TOP 10 corner badges, red status badges at bottom center and page indicators. Different: the reference pairs a red 'New Episode' badge with a white 'Watch Now' badge; the implementation only shows single red badges. The reference has a row heading with an outlined 'BETA' chip (Games), which doesn't appear here. Invented: the hero Play/More Info buttons, the empty-state text row and a ranked-number Top 10 row, none of which the reference shows.",
+      "missing": [
+        "white 'Watch Now' companion badge next to the red status badge",
+        "outlined 'BETA' chip beside a row heading (Games row)"
+      ],
+      "fix": "Support a two-part badge: a red status chip plus a white chip with black text ('Watch Now'). Render a pill-outlined, letter-spaced 'BETA' chip next to the Games row heading. Drop the empty 'Continue Watching' placeholder."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat, dark, cinematic style: rounded tiles (~6–8px), no shadows, whitespace between sections and full-bleed artwork. The implementation's badges are smaller and tighter than the reference's taller chips, and its overall vertical rhythm is airier.",
+      "fix": "Enlarge the status badges to ~24px tall with ~10px horizontal padding and 15px semibold text, sitting flush on the tile's bottom edge. Reduce the space between rows."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a near-black #141414 page, Netflix red for the logo, badges and TOP 10, white text and a grey active pill in the nav. In the reference the nav bar is slightly darker than the page; in the implementation it blends into the page. The white 'Watch Now' chip color is missing.",
+      "fix": "Make the nav bar background a touch darker (~#0b0b0b) than the page (#141414). Add a white badge variant."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use a sans UI font, and the nav sizing matches. The reference's row headings are semibold at ~26px; the implementation's are lighter-weight and a bit larger (~30px). The implementation also lays condensed display-font titles over the tiles as text, while the reference's titles are part of the artwork itself. The badge text is smaller than in the reference.",
+      "fix": "Set row headings to ~26px, weight 600. Don't overlay generated title text on the tiles; rely on artwork, or use it only when there is no logo art. Set badge text to ~15px, weight 600."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The outline search and bell icons, the Kids gradient tile, the blue smiley avatar with caret, the TOP 10 badge and 16:9 cover-cropped tiles with rounded corners all match. The synthetic text overlay on the tiles differs from the reference's artwork-integrated titles.",
+      "fix": "Keep the tiles as pure 16:9 cover art and remove the synthetic title text overlay and its bottom gradient."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. The badge wording differs: 'New Episodes' vs the reference's 'New Episode', and there's no 'Watch Now'. The implementation adds the helper copy '— Nothing in progress yet…', which the reference doesn't have.",
+      "fix": "Use the singular 'New Episode' and add the 'Watch Now' companion label. Remove the empty-state helper sentence."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "top of content: the implementation shows the bottom of a rounded hero card with Play/More Info buttons under the nav; the reference goes straight into the 'TV Action & Adventure' row",
+    "middle: the implementation has an extra 'Continue Watching' heading with an empty-state text line instead of a tile row; the reference shows no such text-only section",
+    "tile badges: the reference shows a red 'New Episode' chip paired with a white 'Watch Now' chip; the implementation only shows single, smaller red chips",
+    "tiles: the implementation overlays condensed text titles with a dark gradient on every tile; the reference's tiles are clean artwork with no added text layer",
+    "row headings: the implementation's headings are lighter weight and larger than the reference's semibold ~26px headings",
+    "row heading chip: the reference has an outlined 'BETA' chip next to a row heading (Games); the implementation has no heading chip treatment",
+    "vertical rhythm: the implementation's spacing between rows and between heading and tiles is larger than the reference's tight spacing",
+    "nav bar: the reference's nav background is darker than the page; the implementation's nav matches the page color"
+  ],
+  "fixes": [
+    "Make the browse-rows state start with a tile row directly under the nav (no hero visible), and hide sections that have no items instead of rendering empty-state text",
+    "Add a two-part badge component, red status chip plus white 'Watch Now' chip, sized ~24px tall with 15px semibold text, centered on the tile's bottom edge; use singular 'New Episode'",
+    "Remove the synthetic title-text overlay and gradient from the row tiles",
+    "Set row headings to ~26px semibold and reduce the heading-to-tiles gap (~20px) and the row-to-row gap (~285px pitch)",
+    "Add support for an outlined, letter-spaced 'BETA' pill next to a row heading (Games row)",
+    "Make the nav bar background slightly darker than the #141414 page"
+  ],
+  "summary": "The Netflix chrome and row-carousel structure are faithfully reproduced, but the implementation shows hero and empty-state sections the reference state lacks, overlays text titles on tiles, and lacks the paired 'Watch Now' badge and the 'BETA' heading chip."
+}
+```

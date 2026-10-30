@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The page skeleton matches. The transparent top nav sits over a full-bleed hero, with the 'Movies' heading and Genres dropdown at top-left. The left-aligned hero stack runs from the Netflix badge to the title lockup, Top 10 rank, synopsis and buttons, with the mute and maturity-rating cluster at mid-right and a horizontal 'Gems for You' carousel below. The vertical rhythm is different. The hero block runs taller because of an extra metadata row, so the carousel heading sits at about y=935 instead of about y=843. The tiles are cropped at the bottom of the viewport, and the next row heading that peeks in at the bottom of the reference is not visible.",
+      "fix": "Remove the extra metadata line and reduce the hero height so 'Gems for You' sits at about 76% of the viewport height. Full tiles (about 165px tall) should be visible, with the next row heading just peeking at the bottom."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "The nav has all 7 items, with a pill highlight on Movies, plus search, bell, Kids and avatar with caret. The Movies heading, Genres dropdown, Netflix badge, title lockup, Top 10 badge with rank text, synopsis, Play and More Info buttons, mute button, TV-14 rating tab, row title, carousel tiles, page indicator dashes and peeking next tile are all present. Two components differ. The implementation adds a metadata row (genre · year · runtime · rating) that the reference does not have. The tile badges also differ: the reference mixes a corner TOP 10 badge with a bottom-centered red 'Recently Added' pill on some tiles. The implementation puts TOP 10 on every tile, and its bottom badges are cut off, so they can't be judged.",
+      "missing": [
+        "'Recently Added' bottom pill badge on carousel tiles (not visible)",
+        "next row heading peeking below the first carousel"
+      ],
+      "fix": "Remove the hero metadata row. Show TOP 10 corner badges only on qualifying tiles, and render a visible red 'Recently Added' pill centered at the bottom edge of the relevant tiles."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "The flat cinematic dark style matches. Buttons are slightly rounded (white Play, translucent grey More Info), the Genres dropdown has a square outline, tiles have tiny radii and tight gutters, and the hero has a left and bottom vignette. The buttons are slightly smaller and tighter in the implementation.",
+      "fix": "Enlarge the Play and More Info buttons to about 58px tall with wider horizontal padding (Play about 157px wide, More Info about 213px wide)."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Same palette: dark base, Netflix red wordmark and badges, white primary CTA, translucent grey secondary CTA, white text, and a grey highlight pill on the active nav item. The vignette gradients match. In the reference the inactive nav items are a softer grey than in the implementation.",
+      "fix": "Dim the inactive nav links to about #e5e5e5 at reduced opacity so the active Movies item stands out as it does in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif UI font and a condensed display title lockup. The Movies heading (about 44px), rank text, synopsis size and 'Gems for You' heading all match. The implementation's nav labels are slightly heavier and brighter. Its synopsis runs wider with ellipsis truncation, where the reference wraps at about 680px with no truncation. The added metadata line creates an extra type level the reference doesn't have.",
+      "fix": "Set the synopsis max-width to about 680px and drop the ellipsis clamp. Use regular weight at lower contrast for the nav labels, and remove the metadata text level."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Line icons for search and bell, a square Kids badge, a blue smiley avatar, a filled play triangle, an outlined info circle, a circular outlined mute button and red TOP 10 badges all match. Tiles are 16:9 with cover crop and title artwork over the image. The only difference is how badges are distributed on tiles.",
+      "fix": "Match the per-tile badge mix: a corner TOP 10 on some tiles and a bottom 'Recently Added' pill on others."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "The nav labels, Movies, Genres, Play, More Info, '#N in Movies Today', Kids, TV-14 and 'Gems for You' all match. The only extra chrome copy is the metadata row.",
+      "fix": "Remove the 'Genre · Year · Runtime · Rating' line under the rank."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Hero, under the '#1 in Movies Today' row: the implementation adds a metadata line (genre · year · runtime · TV-14) that the reference does not have.",
+    "Bottom of the screen: the 'Gems for You' row sits about 90px lower, so the tiles are cut off at the viewport edge. The reference shows full tiles and the next row heading peeking below.",
+    "Carousel tiles: every tile carries a TOP 10 corner badge. The reference uses TOP 10 on only some tiles and a bottom-centered red 'Recently Added' pill on others, and those pills are not visible in the implementation.",
+    "Hero synopsis: runs wider (about 760px) and is truncated with an ellipsis. The reference wraps at about 680px with the full text shown.",
+    "Hero CTAs: the Play and More Info buttons are slightly smaller than in the reference.",
+    "Top nav: inactive links are slightly brighter and bolder than the reference's soft grey."
+  ],
+  "fixes": [
+    "Remove the hero metadata row under the Top 10 rank line.",
+    "Shorten the hero so the 'Gems for You' heading sits at about y=843 of a 1110px viewport, with full 16:9 tiles visible and the next row heading peeking at the bottom.",
+    "Make tile badges conditional: TOP 10 in the top-right corner only for top-10 titles, and a red 'Recently Added' pill centered on the tile's bottom edge for new titles.",
+    "Constrain the synopsis to about 680px wide and stop truncating it with an ellipsis.",
+    "Increase the Play and More Info button size to about 58px tall with more horizontal padding.",
+    "Soften the inactive nav link color and weight."
+  ],
+  "summary": "A near-faithful Netflix Movies hero and carousel. The main gaps are an invented metadata row, a taller hero that pushes the carousel partly off-screen, and uniform TOP 10 tile badges instead of the reference's mixed TOP 10 and 'Recently Added' badges."
+}

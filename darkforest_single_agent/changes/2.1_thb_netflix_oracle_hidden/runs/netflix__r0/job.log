@@ -1,0 +1,21 @@
+[2026-10-29T21:38:45] iter 1 attempt 0 (new session)
+[2026-10-29T22:41:54] iter 1 submitted: turns=1 wall=3788.7s list_cost=$6.6983545999999965
+[2026-10-29T22:42:26] dev evaluation of iter 1: passed=False {'checks_passed': 13, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 6, 'chain_steps_total': 8}
+[2026-10-29T22:42:26] hidden evaluation of iter 1 started (results stay outside the sandbox)
+[2026-10-29T22:42:26] iter 2 attempt 0 (resume)
+[2026-10-29T22:44:18] iter 2 submitted: turns=14 wall=112.1s list_cost=$7.777141799999995
+[2026-10-29T22:44:32] dev evaluation of iter 2: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-10-29T22:44:32] hidden evaluation of iter 2 started (results stay outside the sandbox)
+[2026-10-29T22:44:32] iter 3 attempt 0 (resume)
+[2026-10-29T22:50:25] iter 3 submitted: turns=15 wall=352.6s list_cost=$9.0339514
+[2026-10-29T22:50:40] dev evaluation of iter 3: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-10-29T22:50:40] hidden evaluation of iter 3 started (results stay outside the sandbox)
+[2026-10-29T22:50:40] iter 4 attempt 0 (resume)
+[2026-10-29T22:51:25] iter 4 submitted: turns=3 wall=45.8s list_cost=$9.2875068
+[2026-10-29T22:51:39] dev evaluation of iter 4: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-10-29T22:51:39] hidden evaluation of iter 4 started (results stay outside the sandbox)
+[2026-10-29T22:51:39] iter 5 attempt 0 (resume)
+[2026-10-29T22:51:50] iter 5 submitted: turns=2 wall=11.6s list_cost=$9.456604199999997
+[2026-10-29T22:52:01] dev evaluation of iter 5: passed=True {'checks_passed': 14, 'checks_total': 14, 'endpoints_2xx': 11, 'endpoints_total': 15, 'chain_steps_ok': 8, 'chain_steps_total': 8}
+[2026-10-29T22:52:01] hidden evaluation of iter 5 started (results stay outside the sandbox)
+[2026-10-29T23:05:12] job done

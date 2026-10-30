@@ -1,0 +1,38 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/privacy_unscoped_my_list/workspace",
+ "tag": "calib-privacy_unscoped_my_list",
+ "parts": [
+  "api",
+  "ui"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 32,
+  "total": 36,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 2,
+    "total": 3
+   },
+   "privacy": {
+    "passed": 0,
+    "total": 3
+   }
+  },
+  "convention": null,
+  "note": "no profile convention isolates profiles; per-profile checks recorded as failed"
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ }
+}

@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same skeleton: full-bleed tilted poster collage hero, top bar with the logo on the left and the language selector plus Sign In on the right, a centered hero text block with an email+CTA row, a curved red arc divider, and a promo banner card below. Differences: the hero text block sits about 50px higher in the implementation (headline starts ~y265 vs ~y315). In the reference the promo banner card starts at ~x275 with the popcorn illustration outside the card on its left; in the implementation the card spans ~x163–1757 with the popcorn inside it. The arc region below the curve is taller in the implementation.",
+      "fix": "Move the hero text block down ~50px so the headline starts near 29% of viewport height. Rebuild the promo row so the popcorn illustration sits outside the card on the left (~x175–260) and the card starts at ~x275 and ends ~x1755."
+    },
+    "components": {
+      "score": 0.9,
+      "missing": [],
+      "notes": "All the reference components are present: wordmark logo, language selector with a translate icon and caret, red Sign In button, headline, subheadline, helper line, email input, Get Started button with a chevron, curved arc divider, promo banner with an icon, a title and subtitle, and a Learn More button. The only placement difference is the popcorn icon, which is inside the banner card rather than outside it.",
+      "fix": "Place the popcorn icon as a sibling to the left of the banner card, not as a child inside it."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same dark cinematic style, heavy vignette over the collage, small-radius buttons and input, and a rounded promo card. The reference collage uses strongly perspective-skewed, wide landscape-ish tiles with light borders arranged in a 3D tilted plane. The implementation uses taller portrait tiles with a milder rotation and less of the 3D skew. The reference has a navy/blue glow under the arc; the implementation's glow is more purple and spreads wider.",
+      "fix": "Apply a stronger 3D perspective transform to the poster grid (rotateX/rotateZ with perspective), use wider ~16:10 tiles in a denser grid, and switch the under-arc glow to a dark navy radial gradient."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The Netflix red (#E50914) is used on the logo, Sign In and Get Started. The page is near-black with white text, the banner card is deep indigo/purple, and the Learn More button is grey. The arc glow is purple-magenta in the implementation and navy-blue in the reference, and the implementation's banner card is slightly more saturated purple.",
+      "fix": "Change the under-arc gradient to a deep navy (#0f1a3d-ish) fading to black, and tone the banner card to a muted indigo (#2a2550 → #1d1a3a)."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same bold sans headline at a similar size, a bold subheadline, a regular helper line and a large Get Started label. The headline breaks after 'Unlimited movies,' in the implementation and after 'Unlimited movies, TV' in the reference, which comes from a narrower max-width. The banner title and subtitle sizes match closely.",
+      "fix": "Raise the headline max-width (or lower the letter-spacing) so it wraps as 'Unlimited movies, TV / shows, and more'."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "The wordmark logo, translate icon, dropdown caret and chevron on Get Started all match. The reference popcorn is a glossy 3D illustration with a star badge and a soft glow; the implementation uses a flat emoji-like popcorn. The implementation's dropdown caret sits tight against the label rather than spaced away from it.",
+      "fix": "Replace the popcorn emoji with a 3D popcorn illustration (a red-striped bucket with a star) and add spacing before the selector caret."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Matching copy: the headline, 'Ready to watch? Enter your email to create or restart your membership.', the 'Email address' placeholder, 'Get Started', 'Sign In', 'English' and 'Learn More'. The subheadline differs: the reference has 'Starts at $8.99. Cancel anytime.' and the implementation has 'Watch on any device. Every profile keeps its own list.' The banner copy is also different: the reference is a price-plan message ('The Netflix you love for just $8.99.' / ad-supported plan) and the implementation is a catalog message.",
+      "fix": "Change the subheadline to the price + 'Cancel anytime.' pattern, and the banner title/subtitle to a plan-pricing promo ('The Netflix you love for just $X.' / 'Get our most affordable, ad-supported plan.')."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "promo banner row: the reference puts the 3D popcorn illustration outside and to the left of the card (card starts ~x275); the implementation puts an emoji popcorn inside a full-width card starting at ~x163",
+    "hero background: the reference collage is strongly perspective-tilted with wide landscape tiles; the implementation uses taller portrait tiles with a weaker 3D tilt",
+    "hero subheadline: the reference shows a price + 'Cancel anytime.' line; the implementation shows 'Watch on any device. Every profile keeps its own list.'",
+    "hero text block: it sits ~50px higher in the implementation, and the headline wraps after 'movies,' instead of after 'TV'",
+    "under-arc glow: the reference is dark navy-blue; the implementation is purple-magenta and spreads wider",
+    "banner copy: the reference is an ad-supported plan price promo; the implementation is a catalog-count message",
+    "language selector: the caret sits tight against 'English' in the implementation; the reference leaves a gap"
+  ],
+  "fixes": [
+    "Restructure the promo row: put the popcorn illustration (3D style, not emoji) outside the card on the left, and narrow the card to ~x275–1755",
+    "Increase the perspective/skew on the poster collage and use wider tiles to match the tilted 3D wall",
+    "Change the hero subheadline to 'Starts at $X. Cancel anytime.'",
+    "Move the hero text block down ~50px and widen the headline max-width so it wraps 'Unlimited movies, TV / shows, and more'",
+    "Recolor the under-arc gradient to dark navy",
+    "Rewrite the banner title/subtitle as a cheaper-plan promo",
+    "Add spacing between 'English' and the dropdown caret"
+  ],
+  "summary": "A very close recreation of the Netflix landing hero. The main gaps are the popcorn placement and style in the promo banner, a flatter poster collage, and different subheadline and banner copy."
+}

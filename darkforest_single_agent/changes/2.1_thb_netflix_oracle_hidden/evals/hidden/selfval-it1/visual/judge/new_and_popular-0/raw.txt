@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "The page has the same structure as the reference. It uses a transparent top nav with the logo on the left, the nav links next to it, and the utility icons on the right. Below that, a full-bleed vertical stack of horizontal carousels runs in the same order: a landscape 16:9 row, a Top 10 TV row, a Top 10 Movies row, then a fourth row. The 67px left gutter, the tile widths and the overflow peek on the right edge all match. The section headings sit about 18px higher than in the reference.",
+      "fix": "Add about 18px of top padding above the first row heading so 'New on Netflix' sits near y≈165 like the reference."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "Every nav item from the reference is present (Home, Shows, Movies, Games, New & Popular as a pill, My List, Browse by Languages), along with search, bell, the Kids avatar, the profile avatar and the caret. Row page-indicator dashes, TOP 10 corner badges, red status badges and ranked numeral tiles are all there. The differences: the reference uses several badge variants ('New Season', 'New Episode' paired with a white 'Watch Now' chip), but the implementation only renders 'Recently Added'. The implementation also adds a visible right-chevron paging arrow on the Top 10 TV row, which the reference does not show. One movie tile ('Backrooms') renders as a flat colour field with plain grey text instead of poster art.",
+      "missing": [
+        "'New Season' / 'New Episode' badge variants",
+        "white 'Watch Now' secondary chip paired with the red badge"
+      ],
+      "fix": "Support multiple status-badge labels ('New Season', 'New Episode', 'Recently Added') and a white 'Watch Now' chip next to the red badge. Hide the row chevron when the row is not hovered. Make sure every ranked tile renders a real poster image."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The flat, dark, cinematic style matches: tiles have slight radii, there are no shadows, rows are separated by whitespace, and badges are square-ish red tabs at the bottom centre of each tile. The rank numerals differ. In the reference they are heavy, black-filled glyphs with a thin grey outline that read as solid shapes. In the implementation they are hollow, thin outline strokes with no fill, so they look lighter and more wireframe.",
+      "fix": "Render the rank numerals as heavy-weight glyphs with a near-black fill (#000 or close to it) and a 2–3px #595959 stroke, sized to the full tile height."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The colour system matches: #141414 page background, Netflix red for the logo and badges, white text, a grey pill for the active nav item, and a grey numeral outline. The numerals have no black fill, so the Top 10 rows look slightly lighter and lower in contrast than the reference.",
+      "fix": "Fill the numerals with black so they contrast with the #141414 background the way the reference does."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif UI font with nav labels at similar sizes. Row headings in the implementation are semibold/bold, while the reference uses a regular/medium weight that looks lighter. The numerals in the reference are a heavy display weight; in the implementation they are thin. Badge text is bold and small in both.",
+      "fix": "Set row headings to font-weight 400–500 at about 28px. Set rank numerals to a heavy (800–900) weight."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The outline search and bell icons, the Kids avatar, the blue smiley profile avatar with caret, the TOP 10 corner badges, landscape 16:9 tiles with cover crop, and portrait 2:3 tiles next to the numerals all match. One portrait tile shows a placeholder-like flat image with plain grey title text, and the numeral glyph rendering differs as described under style.",
+      "fix": "Replace the fallback text tile with real poster art. Match the numeral glyph treatment (solid black fill, grey outline)."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels match exactly, as does 'New on Netflix'. Headings differ: the reference says 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today', while the implementation drops 'in the U.S.'. The fourth row is 'Coming This Week' in the reference but 'Worth the Wait' in the implementation.",
+      "fix": "Rename the headings to 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today', and rename the fourth row to 'Coming This Week'."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: the rank numerals are thin hollow outlines; the reference has heavy, black-filled numerals with a grey stroke",
+    "Row headings: the implementation says 'Top 10 TV Shows Today' / 'Top 10 Movies Today'; the reference says '…in the U.S. Today'",
+    "Fourth row heading: the implementation says 'Worth the Wait'; the reference says 'Coming This Week'",
+    "Tile badges: the implementation only uses 'Recently Added'; the reference also shows 'New Season', 'New Episode' and a white 'Watch Now' chip",
+    "Top 10 TV row, right edge: the implementation shows a chevron paging arrow that the reference does not have",
+    "Row headings: the implementation uses a bolder weight than the reference's regular-weight headings",
+    "Top 10 Movies row, tile #3: a flat image with plain grey 'Backrooms' text where the reference shows full poster art"
+  ],
+  "fixes": [
+    "Restyle the rank numerals: heavy weight, black fill, about 2–3px grey (#595959) stroke",
+    "Change the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'",
+    "Add the 'New Season' and 'New Episode' badge variants and the white 'Watch Now' chip next to the red badge",
+    "Only show the row chevron arrows on hover",
+    "Reduce the row heading weight to regular/medium",
+    "Make sure every portrait tile renders poster artwork instead of a fallback text tile",
+    "Add about 18px of top padding before the first row"
+  ],
+  "summary": "Nearly identical Netflix New & Popular layout. The main gaps are hollow rank numerals instead of black-filled ones, shortened or renamed row headings, a single badge variant, and an extra chevron on the Top 10 TV row."
+}
+```

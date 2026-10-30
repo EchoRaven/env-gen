@@ -1,0 +1,56 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The top-nav skeleton, the left gutter of about 67px, and the section order (New on Netflix → Top 10 TV → Top 10 Movies → Coming This Week) all match. The rows are full-bleed horizontal carousels that peek past the right edge, with page indicators at the top right, as in the reference. Differences: the implementation has a large hover-preview card open over the middle of the Top 10 rows, roughly x=878–1307 and y=385–820. It hides tiles 3–5 in both ranked rows, and the reference shows no such overlay. The whole layout also sits about 25px higher: the first heading is at y≈137 versus y≈165, and the first row of tiles is at y≈168 versus y≈193.",
+      "fix": "Render the default, non-hovered state with no preview card open. Add about 28px of top padding above 'New on Netflix' so the first heading starts at about y=165."
+    },
+    "components": {
+      "score": 0.8,
+      "missing": [],
+      "notes": "The inventory matches: the Netflix wordmark, 7 nav items with 'New & Popular' as the active pill, search, bell, the Kids avatar plus label, a profile avatar with caret, 'TOP 10' corner badges, red status pills at the bottom center of tiles, big ranked numerals with portrait posters, and row pagination dashes. Extra in the implementation: an expanded preview card with play, add, thumbs and expand buttons, a mute toggle, a TV-14 rating, a seasons count, an HD badge and genre tags. The reference does not show this card.",
+      "fix": "Don't auto-open the hover preview card. Show it only on real pointer hover, so the default screen shows the plain tiles."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The flat, dark streaming look matches: small corner radius on tiles, tight gaps of about 8px between tiles, and no borders. The ranked numerals are dark with a gray outline in both, but in the implementation they are noticeably smaller compared with the posters, about 160px tall against about 215px posters. In the reference the numerals are as tall as the poster (about 210px) and extend further left. The preview card adds a raised surface with a shadow, which the reference does not have.",
+      "fix": "Make the ranked numerals about 100% of the poster height, roughly 210px, with a thick gray stroke, so they fill the space to the left of each poster as in the reference."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both use a near-black #141414 base, a red Netflix wordmark, red status pills and TOP 10 badges, a gray active pill in the nav, and white text. The reference also has a white 'Watch Now' secondary pill next to a red one, which is a minor difference.",
+      "fix": "Where a tile has two statuses, add a white pill with black text next to the red one."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans serif with matching headings in regular to medium weight at about 28px, and bold condensed text in the pills. The implementation's section headings are slightly larger and bolder. In 'New on Netflix', the implementation prints the same condensed bold title lockup at the bottom left of every tile, while the reference uses each title's own artwork logo. That partly comes down to content, but the uniform text overlay is a different treatment.",
+      "fix": "Set section headings to about 26px, weight 400–500. Use title-logo artwork on landscape tiles where available, and drop the generic condensed text overlay."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Outline search and bell icons, square avatars, 16:9 landscape tiles, 2:3 posters and the TOP 10 badges all match. The ranked numerals are smaller in the implementation.",
+      "fix": "Scale up the ranked numerals as described under style."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels, section headings and pill wording ('New Season', 'New Episode' vs 'New Episodes', 'Recently Added') are the same in substance.",
+      "fix": "Use the singular 'New Episode' wording for the pill, as in the reference."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "Center of the Top 10 TV and Movies rows: the implementation shows an open hover-preview card (artwork, play/add/like/expand buttons, maturity rating, genres). It hides ranked tiles 3–5, and the reference has no overlay.",
+    "Ranked rows: the implementation's numerals are about 75% of the poster height. In the reference they are as tall as the poster and more dominant.",
+    "Vertical rhythm: in the implementation, all sections sit about 25px higher than in the reference, with less space between the nav and 'New on Netflix'.",
+    "New on Netflix tiles: the implementation adds a uniform condensed bold text title at the bottom left of every tile. The reference uses each title's own logo artwork.",
+    "Status pills: the reference has a combined red 'New Episode' and white 'Watch Now' pill pair. The implementation only uses single red pills."
+  ],
+  "fixes": [
+    "Remove the open preview card from the default render; show it only on real hover.",
+    "Scale the ranked numerals to about the full poster height (~210px) with a thick gray outline and dark fill, overlapping behind the left edge of the poster.",
+    "Add about 28px of top padding so 'New on Netflix' starts at about y=165.",
+    "Use logo artwork instead of a generic text overlay on landscape tiles, and support a red-plus-white status pill pair."
+  ],
+  "summary": "The implementation closely matches the reference's chrome, rows and badge system. The biggest gaps are an open hover-preview card the reference doesn't show and ranked numerals that are too small."
+}

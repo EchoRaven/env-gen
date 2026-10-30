@@ -1,0 +1,66 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both use a full-bleed, chrome-free video stage with a back arrow at top-left and one bottom control row: transport controls on the left, centered text, fullscreen at bottom-right. The reference is an ad-break state, and its top-right holds a flag icon and an 'Ad 12' countdown badge. The implementation leaves the top-right empty. It adds a full-width scrubber row above the controls, a large left-side 'You're watching' paused-info block over the middle of the frame, and an error toast at top-center. None of these appear in the reference.",
+      "fix": "Render the ad-break state: drop the scrubber row and the paused-info overlay, and keep one bottom row (pause and volume on the left, centered caption, fullscreen on the right). Add a top-right cluster with a flag icon and an 'Ad N' countdown badge, aligned with the back arrow."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Matching: the back arrow, the play/pause toggle at bottom-left, the volume icon next to it, the centered caption at bottom and the fullscreen icon at bottom-right. Missing: the report/flag icon and the 'Ad 12' countdown badge with its yellow left accent bar, both at top-right. Invented relative to the reference: the progress scrubber with red thumb and time, the 10s rewind and forward buttons, next-episode, episodes and subtitles icons at bottom-right, the 'You're watching' title, episode and synopsis overlay, and the error toast. The play icon shows a paused state where the reference shows a pause icon (playing).",
+      "missing": [
+        "flag/report icon (top-right)",
+        "'Ad N' countdown badge with yellow accent bar (top-right)",
+        "ad-break caption '<Title> begins after ads' (center bottom)",
+        "playing state pause icon"
+      ],
+      "fix": "Add a top-right flag icon and an 'Ad 12' pill on a dark translucent background with a 4px yellow left bar. Hide the rewind/forward, next-episode, episodes and subtitles buttons and the scrubber during the ad state. Show a pause icon while playing."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both use flat, minimal overlay controls drawn directly on the video with no cards. The implementation dims the whole frame heavily and stacks a dense text overlay over the video. The reference leaves the video bright and unobstructed, with only thin edge gradients.",
+      "fix": "Remove the full-frame dim and the synopsis overlay. Keep only subtle top and bottom gradients behind the controls."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Both are dark with white icons and text. The reference's only accent is the yellow bar on the ad badge. The implementation adds red accents (scrubber thumb, toast bar) where the reference has none, and is missing the yellow badge accent.",
+      "fix": "Use a yellow (#E5B13A-ish) accent bar on the ad badge, and drop the red scrubber and toast accents in this state."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans font. The reference's bottom caption is one regular-weight, medium-size line, centered. The implementation's caption mixes a bold title with regular episode text, and it adds a large bold title plus subtitle and body-text hierarchy that the reference doesn't have.",
+      "fix": "Show the bottom caption as one regular-weight centered line (~20px). Remove the large title, episode and synopsis text block."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Both use a white outline/line icon set at similar sizes: back arrow, volume with waves, and a corner-bracket fullscreen icon. The implementation is missing the flag icon and the pause glyph (it shows play). Its extra icons (rewind 10, forward 10, next, episodes, subtitles) do not appear in the reference.",
+      "fix": "Add an outline flag icon at top-right, use the two-bar pause glyph while playing, and hide the extra transport icons."
+    },
+    "copy": {
+      "score": 0.35,
+      "notes": "The reference copy is '<Title> begins after ads' and 'Ad 12'. The implementation shows 'Overdo E1 Episode 1', 'You're watching', the 'Season 1: Ep. 1 …' line and an error message, none of which match the reference's chrome wording.",
+      "fix": "Center caption: '<Title> begins after ads'. Badge: 'Ad <seconds>'. Remove 'You're watching' and the error text."
+    }
+  },
+  "similarity": 0.52,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference shows a flag/report icon and an 'Ad 12' countdown badge with a yellow left bar; implementation has nothing there",
+    "center-left: implementation overlays a 'You're watching' title, episode and synopsis block on a heavily dimmed frame; reference shows the video bright and unobstructed",
+    "bottom: implementation adds a full-width red-thumb progress scrubber with a timestamp; the reference has none",
+    "bottom-left: implementation adds 10s rewind and forward buttons between play and volume; reference has only pause and volume",
+    "bottom-right: implementation adds next-episode, episodes and subtitles icons before fullscreen; reference has only fullscreen",
+    "bottom-center: caption reads '<Title> E1 Episode 1' with a bold title; reference reads '<Title> begins after ads' in regular weight",
+    "top-center: implementation shows a red-barred error toast that is not in the reference",
+    "bottom-left: play icon (paused) where the reference shows a pause icon (playing)"
+  ],
+  "fixes": [
+    "Implement the ad-break player state and make it the default render for this route",
+    "Add a top-right cluster: outline flag icon plus an 'Ad <n>' pill (dark translucent background, yellow 4px left bar, white text)",
+    "Set the bottom-center caption to '<Title> begins after ads', regular weight, one line",
+    "Hide the scrubber/timestamp, the rewind/forward-10 buttons, and the next-episode, episodes and subtitles buttons in this state",
+    "Remove the 'You're watching' paused-info overlay and the full-frame dim",
+    "Show the pause glyph while playing, and suppress or hide the playback error toast"
+  ],
+  "summary": "Same full-bleed player skeleton (back arrow, bottom control row, fullscreen icon), but it renders a paused, full-control state instead of the reference's ad break: no flag icon, no Ad countdown badge, no 'begins after ads' caption, and it adds a scrubber, extra transport buttons and an info overlay."
+}

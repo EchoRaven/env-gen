@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Same full-bleed player skeleton with no shared chrome: a back arrow at top-left, a flag at top-right, a full-width scrubber with the time on the right, and a bottom control row. That row has the transport controls on the left, the title centred and the utilities on the right. In the reference the whole video area is empty black. The implementation fills it with full-bleed backdrop artwork and puts a large left-aligned 'You're watching' info block across the upper-middle of the screen. That block is a different screen state from the reference. The bottom row also sits a little lower (scrubber at ~1017px vs ~968px), and the left icon group is packed more tightly.",
+      "fix": "Remove the 'You're watching' info overlay so the area between the top icons and the scrubber is empty video. Raise the scrubber and control row to about 88% and 94% of the height, and space the left icons about 90px apart, as in the reference."
+    },
+    "components": {
+      "score": 0.68,
+      "missing": [
+        "pause button (playing state); a play button is shown instead",
+        "buffered-progress segment (light grey) on the scrubber",
+        "chapter/marker ticks on the scrubber",
+        "played-progress red fill with the scrubber thumb set into the track"
+      ],
+      "notes": "Present: back arrow, flag/report, scrubber with red thumb, remaining-time label, back-10 and forward-10, volume, centred title/episode lockup, next episode, episodes stack, subtitles/audio, fullscreen. Everything in the reference's inventory has a counterpart. Differences: the play/pause control shows the paused state (play triangle) where the reference shows pause bars. The scrubber has no red played fill, no buffered segment and no marker ticks. Invented: the paused-info overlay (eyebrow, big title, season/episode line, synopsis) and a red/pink codec error message.",
+      "fix": "Render the playing state: pause icon, a red played fill up to the thumb, a light-grey buffered segment, a darker grey remaining track, and small amber marker ticks. Remove the info overlay and the error line."
+    },
+    "style": {
+      "score": 0.62,
+      "notes": "Both are minimal, flat player UIs with thin white line icons and a hairline scrubber. The reference is stark, with icons on pure black and nothing decorative. The implementation adds a full-bleed photographic backdrop with a vignette and a large text block, which makes it much busier and more cinematic.",
+      "fix": "Use a plain black video surface, or a frame with no extra gradient and no text block, so the controls float on black as in the reference."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both are dark, with white icons and text and Netflix red for the scrubber thumb. The reference is almost entirely black with a red/grey/light-grey progress track and small amber ticks. The implementation is dominated by saturated blue and red artwork and uses a pink-red error line. The scrubber's grey track is uniform, so the red progress fill and buffered tone are missing.",
+      "fix": "Make the background #000. Give the scrubber three tones: #E50914 for played, ~#BDBDBD for buffered and ~#5A5A5A for remaining, plus amber markers. Remove the pink error text."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "The bottom title lockup matches: a bold show name, then a regular 'E1' and episode title in a white sans font, centred. The time label is a small white sans in both. The overlay adds text levels the reference doesn't have: an eyebrow, a ~60px bold title, a semibold subtitle, body copy and an error caption.",
+      "fix": "Delete the overlay typography and keep only the centred bottom lockup and the time label, at the reference's size (~22px)."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The icon set matches closely: an outline arrow, a flag, circular arrows with '10', a speaker with waves, skip-next, stacked episodes, a subtitles bubble and fullscreen corners. In the implementation the icons render a bit smaller and lighter (~36px vs ~48px), and the left group is tighter. The play glyph is filled where the reference shows filled pause bars. The full-bleed key art is imagery the reference doesn't show.",
+      "fix": "Scale the bottom-row icons to ~48px with a ~3px stroke, swap the play icon for filled pause bars, and remove the backdrop key art."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The lockup pattern '<Show> E1 <Episode>' matches. The implementation adds copy the reference doesn't have: 'You're watching', 'Season 1: Ep. 1 \"…\"', a synopsis, and 'This clip can't be played in this browser (H.264/MP4 support is required).' The time shows 0:00 where the reference shows the remaining duration.",
+      "fix": "Remove the overlay copy and the error message. Show the remaining duration (e.g. '32:57') in the time label."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "center/upper-left of video area: implementation shows a large 'You're watching / title / Season-Ep / synopsis' info overlay; reference video area is empty black",
+    "full video area: implementation shows full-bleed colourful backdrop artwork; reference is plain black",
+    "below synopsis: implementation shows a pink error line 'This clip can't be played in this browser…'; reference has no such message",
+    "bottom-left: implementation shows a play triangle (paused state); reference shows pause bars (playing state)",
+    "scrubber: implementation has a uniform grey track with the thumb at 0; reference has a red played fill, a light-grey buffered segment and small amber marker ticks",
+    "time label right of scrubber: implementation shows '0:00'; reference shows the remaining duration",
+    "bottom control row: icons are smaller and the left group is tighter than in the reference; the row sits slightly lower"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' info overlay and the codec error message from the controls state",
+    "Make the video surface plain black (no backdrop artwork or vignette) when the reference state is shown",
+    "Render the playing state: filled pause-bars icon at bottom-left",
+    "Style the scrubber with a red played fill up to the thumb, a light-grey buffered segment, a dark-grey remaining track and amber chapter ticks",
+    "Show the remaining duration in the time label at the right end of the scrubber",
+    "Enlarge the bottom-row icons to ~48px, space the left group ~90px apart, and move the scrubber and row up slightly"
+  ],
+  "summary": "The bottom and top control chrome matches closely, but the implementation adds a paused-state info overlay, backdrop art and an error line, and its scrubber has no played or buffered styling. The reference shows a clean black playing state."
+}
+```

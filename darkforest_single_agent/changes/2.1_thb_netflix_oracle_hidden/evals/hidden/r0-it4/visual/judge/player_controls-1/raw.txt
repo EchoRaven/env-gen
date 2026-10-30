@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The skeleton matches. Both have a full-bleed player with no shared app chrome, a back arrow at top-left, a full-width scrubber with the time on its right, and a bottom control row: left cluster, centred title, right cluster. The difference is the middle of the screen. The reference shows an empty black video area. The implementation fills it with a dimmed poster backdrop and a large left-aligned 'You're watching' info block, and puts an error toast near the top centre. Those two additions change which region dominates. The scrubber also sits about 20px lower and the control row is slightly lower.",
+      "fix": "Remove the paused info overlay and the poster backdrop from the controls-visible state. Leave the video area plain black or video-only. Move the error toast out of the main canvas, or show it only as a transient. Put the scrubber at about 87% of the height (y≈968/1106) with the controls row at y≈1038."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "Present: back arrow, scrubber with red progress and red thumb, time readout, pause/play, replay 10, forward 10, volume, centred title/episode lockup, next episode, episodes, subtitles/audio, fullscreen. That is 8 of 8 bottom controls. Missing: the flag/report icon at top-right, the lighter buffered segment on the track, and the small chapter-marker ticks. The reference is in the playing state and shows a pause button. The implementation shows play. Invented: a 'You're watching' title, season/episode and synopsis overlay, and a red-accented error toast.",
+      "missing": ["top-right flag/report-a-problem icon", "buffered-progress segment on scrubber", "chapter/marker ticks on scrubber track", "pause icon (playing state)"],
+      "fix": "Add an outline flag icon at the top-right (about 44px, inset to match the back arrow). Draw the buffered range as a light-grey segment ahead of the red progress, plus small marker ticks. Show the pause glyph while controls are up during playback. Delete the info overlay and the error banner from this state."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both use the same flat, minimal style: white glyphs, no buttons with a visible container, a thin scrubber with a round thumb. But the implementation layers a heavy darkened image and a big text block over the canvas, and adds a toast card with a red left border. The result looks much busier than the reference's stark black canvas.",
+      "fix": "Keep the canvas clean, with nothing behind the controls but black or video. Drop the toast card treatment and the overlay typography block."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both are dark with white icons and text, a red progress fill and thumb, and a grey track. The reference is pure black throughout. The implementation adds a warm reddish-brown image wash. Its track is darker grey, and it lacks the lighter buffered grey and the yellow-orange marker ticks.",
+      "fix": "Use a pure #000 background. Set the track to mid-grey (#808080-ish), the buffered segment to light grey (#bfbfbf), and add the small amber marker ticks. Keep the progress Netflix red."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The centred bottom title uses the same lockup: show title in bold, then a regular episode code and episode name. The time readout is small, white and sans-serif in both. The implementation adds three extra levels from the overlay: a grey caption, a large bold title, and body text. The reference has none of these.",
+      "fix": "Remove the overlay text levels. Keep only the bottom lockup (about 22px, bold title plus regular episode text) and the small time label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Icon style matches: white line icons for the replay-10 and forward-10 circular arrows, volume with waves, next episode, stacked episodes, subtitles speech bubble and fullscreen corners. Differences: the implementation's icons are noticeably smaller, about 32px against the reference's roughly 50px. The play/pause glyph is filled play rather than the reference's bold pause bars. The flag icon is absent.",
+      "fix": "Scale the control icons to about 48–52px with matching stroke weight. Use the filled pause bars while playing. Add the outline flag at the top-right."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The bottom lockup follows the reference's 'Title E1 EpisodeName' format. The time readout format matches. The implementation adds chrome copy the reference lacks: 'You're watching' and the 'This clip could not be loaded in this browser (H.264/MP4).' error string.",
+      "fix": "Remove the 'You're watching' label and keep the codec error message off this screen state."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "centre-left canvas: implementation adds a large 'You're watching' / title / season-episode / synopsis overlay over a dimmed poster; reference shows a plain black video area with no overlay",
+    "top centre: implementation shows an error toast card with a red left border; reference has nothing there",
+    "top-right: reference has an outline flag (report) icon; implementation has none",
+    "bottom-left: implementation shows a play glyph; reference shows a pause glyph (playing state)",
+    "scrubber: reference shows a lighter-grey buffered segment and small amber marker ticks on the track; implementation's track is plain grey",
+    "bottom control row: implementation's icons are about 35% smaller than the reference's roughly 50px glyphs",
+    "background: implementation shows a warm image wash; reference is pure black"
+  ],
+  "fixes": [
+    "Remove the paused 'You're watching' info overlay and the poster backdrop from the controls state, leaving the canvas black",
+    "Remove the error toast from the canvas, or keep it off this view",
+    "Add an outline flag icon at the top-right, mirroring the back arrow's inset and size",
+    "Show the filled pause glyph when controls are visible during playback",
+    "Render the buffered range as a light-grey segment and the amber chapter ticks on the scrubber track",
+    "Enlarge all bottom control icons to about 48–52px and move the scrubber and row up slightly (track at y≈968, icons at y≈1038)"
+  ],
+  "summary": "The control bar is the reference's design: same layout, same icon set and the same red scrubber. The implementation adds a synopsis overlay, a poster backdrop and an error toast, and lacks the top-right flag icon, the buffered and marker scrubber detail, and the pause state."
+}
+```

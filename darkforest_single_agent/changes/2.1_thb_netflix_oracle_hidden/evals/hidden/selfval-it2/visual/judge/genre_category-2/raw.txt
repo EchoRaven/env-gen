@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.82,
+      "notes": "The skeleton matches: a transparent top nav over a full-bleed hero, a breadcrumb plus large genre title at top-left, a hero title lockup with synopsis and Play/More Info buttons on the left, the mute/maturity badge on the right edge, then the 'Your Next Watch' carousel with a page indicator. The difference is vertical rhythm. The implementation's hero title wraps onto two lines, which pushes the synopsis, buttons and row down by about 80px. The carousel tiles end up cropped at the bottom of the viewport. In the reference the full tile row and the next row heading ('TV Comedies') are visible above the fold.",
+      "fix": "Keep the hero title lockup to one line, or a capped height of about 110px (scale it down or clamp it), so the synopsis starts at about y=570, the buttons sit at about y=680-740, and the carousel row starts at about y=868. That leaves the full tile row and the next row heading visible."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Present: Netflix wordmark, 7 nav items, search, bell, Kids profile chip, avatar with caret, breadcrumb with title, hero title art, synopsis, Play and More Info buttons, mute button, TV-14 maturity flag, row heading, carousel with page indicator, tiles with TOP 10 and 'Recently Added' badges, and a peeking partial tile. Missing: the active nav state. The reference shows a grey pill highlight behind the current section ('Shows'), but no item is highlighted in the implementation. The small caption tag next to the hero synopsis ('All American' label chip) is also missing.",
+      "missing": ["active nav item pill highlight", "small caption/label chip beside hero synopsis", "next row heading peeking below first carousel"],
+      "fix": "Add a rounded grey pill (rgba(255,255,255,0.2), about 36px tall, fully rounded) behind the nav item for the current section. Render a small grey label chip to the right of the synopsis's last line."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Both use the same cinematic dark style: a full-bleed hero with a bottom fade into black, slightly rounded buttons, flat tiles with small radius and tight gaps, and pill-shaped red badges at the bottom-centre of tiles. In the implementation the top-of-page gradient behind the nav is heavier (an almost solid black band) than in the reference's lighter scrim.",
+      "fix": "Lighten the top nav scrim to a soft gradient (about rgba(0,0,0,0.6) fading to transparent over about 120px) so the hero image shows through behind the nav as in the reference."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same dark scheme, Netflix red wordmark and badges, white Play button, translucent grey More Info button, and white text on imagery. The breadcrumb parent link in the reference is a dimmer grey than in the implementation.",
+      "fix": "Set the breadcrumb parent link to a muted grey (about #8c8c8c) so the current genre title stands out more."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "Sans-serif UI with a condensed red display title matches. Several sizes are smaller in the implementation. The hero synopsis is about 17px with tight leading, against about 22px in the reference. Play/More Info labels are slightly smaller. The genre title is close to the reference. The breadcrumb separator is a chevron rather than the reference's thin '>'. The hero title lockup is set larger and wraps where the reference's stays on one line.",
+      "fix": "Raise the hero synopsis to about 22px / 1.35 line-height, with max-width about 680px. Set the button labels to about 22px. Scale the hero title lockup so it fits on one line. Use a thin '>' breadcrumb separator in grey."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The icon set matches: outlined search, bell, Kids tile icon, smiley avatar, filled play triangle, circled 'i', mute icon in a circle, and TOP 10 badges. Tile imagery has the same 16:9 crop and gaps. The tiles overlay their titles in a generic condensed font instead of title-art logos. The reference's mute circle is subtler (thin outline, partly transparent).",
+      "fix": "Make the mute button a thin-outline, semi-transparent circle. Where title art is not available, place the tile title overlays bottom-left with a smaller size so they read like logo art rather than large text blocks."
+    },
+    "copy": {
+      "score": 0.93,
+      "notes": "Nav labels, 'Play', 'More Info', 'Your Next Watch', 'Recently Added', 'TOP 10', 'Kids' and 'TV-14' all match. The breadcrumb parent reads 'Home' where the reference uses the section name ('TV Shows'), so the breadcrumb should name the parent catalogue section.",
+      "fix": "Make the breadcrumb parent the section name (e.g. 'TV Shows' or 'Movies'), matching the highlighted nav item, rather than 'Home'."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Top nav: the reference highlights the current section ('Shows') with a rounded grey pill; the implementation has no active nav state",
+    "Hero: the implementation's title lockup wraps to two lines, pushing the synopsis, buttons and carousel about 80px down, so the tile row is cut off at the bottom; the reference shows the full tile row and the next row heading",
+    "Hero synopsis: the implementation's text is noticeably smaller (about 17px vs about 22px) with tighter leading",
+    "Hero: the reference has a small grey caption chip beside the synopsis's last line; the implementation has none",
+    "Breadcrumb: the implementation uses 'Home' with a chevron separator; the reference uses the section name with a thin grey '>'",
+    "Nav background: the implementation has a heavier solid-black top band; the reference shows a light scrim with the hero image visible behind the nav",
+    "Mute control: the implementation's circle is more opaque and pronounced than the reference's thin translucent outline"
+  ],
+  "fixes": [
+    "Add an active-state pill (rgba(255,255,255,0.2), fully rounded, about 36px tall, with horizontal padding) behind the nav item for the current section",
+    "Clamp the hero title lockup to one line and a height of about 110px, so the synopsis, buttons and the 'Your Next Watch' row move up and the full tile row plus the next row heading show above the fold",
+    "Increase the hero synopsis to about 22px with a line-height of about 1.35 and a max-width of about 680px; bump the Play/More Info labels to about 22px",
+    "Change the breadcrumb parent to the section name with a thin grey '>' separator",
+    "Soften the top nav background to a transparent-to-dark gradient instead of a solid band",
+    "Add a small grey label chip next to the end of the hero synopsis",
+    "Make the mute button a thin translucent outline circle"
+  ],
+  "summary": "The Netflix genre page structure and treatments are reproduced closely. The main gaps are the missing active nav pill, an oversized two-line hero title that pushes the carousel below the fold, and smaller synopsis text."
+}
+```

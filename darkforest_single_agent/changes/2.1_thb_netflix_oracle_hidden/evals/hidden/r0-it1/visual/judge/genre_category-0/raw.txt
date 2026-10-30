@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The top nav and the breadcrumb-plus-title row sit in the right places, and the 'Your Next Watch' row is a horizontal carousel with the same left gutter and a partial tile at the right edge. The big difference is the full-bleed hero billboard. In the reference it fills about 75% of the viewport, the header floats transparently over it, and the first row starts near the bottom of the screen. The implementation has no billboard. Its header is a solid black band of about 175px, and three stacked rows begin right under it, so the rows take over the whole screen.",
+      "fix": "Add a full-bleed hero billboard behind the header and breadcrumb, about 780px tall, with the nav and title overlaid on it. Put 'Your Next Watch' at about y=820, so the row tiles sit at the bottom of the first viewport and overlap the hero's bottom fade."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Matches: logo, 7 nav links, search, bell, Kids profile chip, avatar with caret, breadcrumb and title, row heading, thumbnail tiles with TOP 10 badges and red 'Recently Added' pills, and row pagination dashes. Missing from the hero: title-artwork lockup, synopsis paragraph, white Play button, grey 'More Info' button, mute/replay circle, TV-14 maturity flag on the right edge, and the small caption chip. The active pill on 'Shows' is missing; no nav item looks selected. Extra: a hover preview card is open (play, +, thumb, expand chevron, rating/duration/HD, genre list), and two extra rows ('New on Netflix', 'All Action Movies & TV') appear where the reference has none.",
+      "missing": ["hero billboard backdrop", "hero title-artwork lockup", "hero synopsis text", "Play button (white, filled)", "More Info button (translucent grey with info icon)", "mute/replay circular button", "maturity rating flag (TV-14) at right edge", "active-nav pill highlight", "hero caption chip"],
+      "fix": "Build a billboard component with a logo image, a 3-line synopsis, Play and More Info buttons, and a right-aligned mute circle next to a rating flag with a left border. Give the current section's nav item a rounded grey pill background. Don't open the hover preview card on initial render."
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Same cinematic, dark, flat streaming style. Tiles have slight radius and pills are small and square-ish. The reference gets its immersive feel from full-bleed photography with gradient fades. The implementation is a dense grid of tiles on a dim blurred backdrop, with an opaque header band that breaks the immersion.",
+      "fix": "Make the header transparent with a top-to-bottom dark gradient over the hero. Add a left-side vignette and a bottom fade so the hero blends into the page background."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Dark scheme, Netflix red for the logo and badges, and white text all match. The reference's top area takes its colour from the hero photo. The implementation has a flat pure-black header and a reddish blurred backdrop behind the rows. There are no white Play or grey More Info buttons, so there is no high-contrast CTA.",
+      "fix": "Replace the solid #000 header with rgba gradient transparency over the hero. Use a white Play button with black text and a rgba(109,109,110,0.7) More Info button."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same sans family. The large title, mid-size row headings, regular nav text and grey breadcrumb parent all match. The breadcrumb separator differs: a heavier '›' chevron instead of a light '>'. The hero synopsis (about 22px regular, white) and the button labels (about 22px medium) are absent.",
+      "fix": "Add the hero synopsis at about 22px regular with 1.35 line-height, max-width about 660px. Render the breadcrumb separator as a thin, muted grey '>'."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Search, bell, Kids tile, smiley avatar and caret all match the reference's outline icons. Tiles are 16:9 with similar crops and badge treatments. The hero imagery and the logo-art treatment are missing, as are the filled play triangle, the circled-i info icon and the mute icon.",
+      "fix": "Use a filled black play triangle on the Play button, a circled 'i' outline on More Info, and an outline speaker icon in a bordered circle at the bottom right of the hero."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, 'Kids' and the 'Your Next Watch' heading match. The breadcrumb parent reads 'Home'; the reference uses the parent category ('TV Shows'). 'Play' and 'More Info' are missing because the hero is missing. The extra row headings aren't in the reference.",
+      "fix": "Make the breadcrumb parent the parent section label (e.g. 'TV Shows' or 'Movies'), not 'Home'. Add 'Play' and 'More Info' button labels."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "Main area (y≈175–800): the reference has a full-bleed hero billboard with a title-artwork lockup, a synopsis, Play and More Info buttons, and a mute circle plus TV-14 flag. The implementation has no hero and shows stacked carousel rows instead.",
+    "Header: the reference's nav and breadcrumb float transparently over the hero image. The implementation puts them on an opaque black band about 175px tall.",
+    "Centre: the implementation shows an expanded hover preview card (Mandalorian art, action buttons, metadata) covering the rows. The reference has no open overlay.",
+    "Nav: the reference highlights the active section ('Shows') with a rounded grey pill. In the implementation no nav item looks active.",
+    "Row position: in the reference 'Your Next Watch' sits at the bottom of the viewport (y≈840), overlapping the hero fade. In the implementation it sits at the top (y≈250).",
+    "Below the first row: the implementation adds 'New on Netflix' and 'All Action Movies & TV' rows inside the first viewport. In the reference the hero takes that space and only the next heading starts at the very bottom.",
+    "Breadcrumb: the parent reads 'Home' with a bold '›'. The reference uses the parent category name and a thin muted '>'."
+  ],
+  "fixes": [
+    "Add a full-bleed hero billboard about 780px tall behind the nav and breadcrumb, with a backdrop image, left and bottom gradient fades, a title-logo image, a 3-line synopsis, a white 'Play' button (filled triangle), a grey translucent 'More Info' button (circled i), and a mute circle plus a 'TV-14' flag with a left border at the right edge.",
+    "Make the header transparent over the hero (gradient only), not a solid black band.",
+    "Move 'Your Next Watch' to the bottom of the hero so the tiles overlap the hero fade at about y=840.",
+    "Don't render the hover preview card on load; show it only on real hover.",
+    "Add a rounded grey pill highlight on the active nav item ('Shows' or 'Movies' to match the genre's section).",
+    "Change the breadcrumb parent from 'Home' to the parent section label and use a thin muted '>' separator."
+  ],
+  "summary": "The nav chrome, breadcrumb title and carousel tiles match, but the hero billboard (art lockup, synopsis, Play/More Info, rating flag) that dominates the reference is missing, the header is opaque instead of transparent, and a hover card is open that the reference doesn't show."
+}

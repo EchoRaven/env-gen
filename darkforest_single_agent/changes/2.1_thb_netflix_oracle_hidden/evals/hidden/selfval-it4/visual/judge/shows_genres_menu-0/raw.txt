@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. There is a transparent top nav over a full-bleed hero, and a 'TV Shows' heading with a Genres dropdown on the left. The genres panel is anchored under the dropdown. The hero lockup sits bottom-left with Play/More Info, and a mute + maturity tag sits at right. The 'Today's Top Picks' carousel bleeds off the right edge. The differences: the genres panel is much shorter (5 rows vs 9), and the hero block is taller because an extra metadata row and synopsis were added. That pushes the CTAs down (~760px vs ~712px) and the carousel down (~920px vs ~840px), so less of the tile row shows.",
+      "fix": "Remove the synopsis/metadata block so the Play/More Info row sits at ~y=712 and the 'Today's Top Picks' header at ~y=840. Let the genres panel run as 3 columns of up to 9 rows (~470px wide × ~270px tall)."
+    },
+    "components": {
+      "score": 0.78,
+      "notes": "Present: logo, 7 nav items with a pill-highlighted 'Shows', search, bell, Kids avatar + label, profile avatar with caret, 'TV Shows' title, Genres dropdown, a dark multi-column genres menu, Play and More Info buttons, mute button, maturity rating tag, carousel with TOP 10 and 'Recently Added' badges, and page indicator dashes. Invented: a metadata row (genre · year · seasons · rating) and a synopsis paragraph under the hero title, neither of which the reference has. The genre menu has 13 entries vs ~25 in the reference. It shows no hovered/underlined item like the reference's 'K-Dramas'. The hero title is plain text, not a logo artwork lockup with a small 'NETFLIX' series badge above it.",
+      "missing": [
+        "Hero title-artwork lockup with the small red 'NETFLIX' original badge above it",
+        "Full-height genres list (3 columns × ~9 rows)",
+        "Hover/underlined state on a genre menu item"
+      ],
+      "fix": "Delete the metadata row and synopsis under the hero title. Render the hero title as a logo image (or a stylised lockup) with a small red 'NETFLIX' wordmark badge above it. Fill the genres menu to ~25 entries in 3 columns and add an underline hover style to the items."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same cinematic, flat Netflix treatment. Both have square-cornered tiles, a translucent grey More Info button, a white Play button, a pill-highlighted active nav item, a dark translucent genre panel with a hairline border, and a bordered Genres dropdown. The hero bottom gradient is similar. The extra synopsis block makes the hero feel denser than in the reference.",
+      "fix": "Drop the synopsis/metadata so the hero keeps the reference's sparse lockup-plus-buttons composition. Make the Play/More Info buttons slightly wider (~158px / ~214px) to match their proportions."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both are dark with white text, a red Netflix logo, red TOP 10 and 'Recently Added' badges, a grey translucent More Info button, and a near-black genres panel at similar opacity. The maturity tag has a dark translucent box with a light left border in both. They match.",
+      "fix": "No significant change needed. Keep the genres panel at roughly rgba(0,0,0,0.9) with a 1px grey border."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Both use a sans UI font with a matching size hierarchy for nav, 'TV Shows' title, dropdown, genre items and the row header. The hero title is a condensed all-caps text block rather than a brand artwork lockup. The added metadata and synopsis text adds a type level that is absent from the reference.",
+      "fix": "Replace the condensed text hero title with a title-art image at ~410×130px. Remove the extra body-text level (synopsis/metadata)."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Icons match: outline search and bell, Kids gradient tile, blue smiley profile avatar with caret, filled play triangle, outlined info circle, and muted-speaker circle. Tiles are 16:9 with tight gaps, carry TOP 10 corner badges, and use title art on the artwork. The hero lacks the logo-art treatment and the small 'NETFLIX' badge.",
+      "fix": "Add the small red 'NETFLIX' series badge and an image-based title logo to the hero."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info', 'Today's Top Picks for You', 'Kids', 'TOP 10' and 'Recently Added' all match. The genre taxonomy differs: it uses generic TMDB-style labels ('Action & Adventure', 'Soap', 'Talk', 'News') instead of Netflix's ('Action', 'AMC Collection', 'Anime', 'British', 'Classic & Cult', 'K-Dramas', 'Stand-Up & Talk Shows', 'USA 250!', etc.).",
+      "fix": "Change the genre menu labels to the Netflix taxonomy shown in the reference (Action … Dramas / Emmys® … Romance / Sci-Fi & Fantasy … USA 250!)."
+    }
+  },
+  "similarity": 0.83,
+  "empty_state": false,
+  "deviations": [
+    "Hero, below the title: the implementation adds a metadata row ('Mystery · 2026 · 2 Seasons · TV-14') and a two-line synopsis. The reference has neither and goes straight from title art to the Play/More Info buttons.",
+    "Hero title: the implementation renders a plain condensed all-caps text title. The reference uses a title-artwork logo lockup with a small red 'NETFLIX' badge above it.",
+    "Genres dropdown panel: the implementation shows 13 items in 5 rows (~415px wide). The reference shows ~25 items in 3 columns × 9 rows, so the panel is much taller.",
+    "Genres panel labels use generic taxonomy (Action & Adventure, Soap, Talk, News) instead of the reference's Netflix genre list (Anime, British, K-Dramas, Stand-Up & Talk Shows, …).",
+    "Genres panel: the reference shows a hovered item with an underline ('K-Dramas'). The implementation shows no hover/underline state.",
+    "Vertical rhythm: because of the extra hero copy, the Play/More Info buttons sit ~48px lower and the 'Today's Top Picks for You' row ~80px lower than in the reference, cropping the tile row."
+  ],
+  "fixes": [
+    "Remove the metadata row and synopsis paragraph from the hero block.",
+    "Render the hero title as an image logo lockup (~410px wide) with a small red 'NETFLIX' wordmark badge above it.",
+    "Fill the genres menu with the Netflix genre list (~25 entries) laid out in 3 columns of up to 9 rows.",
+    "Add an underline-on-hover style to genre menu items.",
+    "Re-tune vertical positions: Play/More Info buttons at ~y=712, carousel header at ~y=840, so the full tile row is visible above the fold."
+  ],
+  "summary": "The chrome, nav, Genres dropdown, CTAs and carousel closely match the reference. The main gaps are the invented synopsis/metadata in the hero, a text title instead of a title-art lockup, and a genres menu that is about half the size with the wrong labels."
+}

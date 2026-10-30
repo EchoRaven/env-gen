@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The structure matches. The transparent top nav runs across a full-bleed hero, with the 'Movies' heading and Genres dropdown below it. Hero copy and CTAs sit in the left third, the mute and rating badge sit on the right edge, and a 'Gems for You' carousel with page indicators follows. The hero is taller in the implementation: the row title starts at about y=920 versus about y=843. Because of that, only the top of the tiles shows, and the next row heading that the reference shows peeking in at the bottom is pushed off-screen. The title block also starts lower (about y=480 versus about y=200 for the brand label).",
+      "fix": "Cut the hero height so 'Gems for You' sits at about 76% of the viewport (y≈843 at 1110px). That lets the full tile row and the top of the next row heading show. Anchor the title block so it starts higher, at about y≈200."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "These are present and match: the nav with 7 links and the pill-highlighted active 'Movies', search, bell, Kids avatar and label, the profile avatar with caret, the 'Movies' title, the Genres dropdown, Play and More Info buttons, the mute button, the TV-14 badge, row page indicators, TOP 10 corner badges and the 'Recently Added' pills. Missing from the hero: the red NETFLIX brand label above the title, and the TOP 10 badge with its '#N in Movies Today' ranking line. In their place the implementation adds a metadata row (genre · year · Movie · TV-14) that the reference does not have.",
+      "missing": [
+        "Red brand label ('NETFLIX' wordmark) above the hero title",
+        "Hero TOP 10 badge + '#N in Movies Today' ranking row"
+      ],
+      "fix": "Above the hero title, add the small red condensed brand label. Replace the genre/year/type/rating metadata row with a red TOP 10 square badge followed by '#3 in Movies Today' in about 28px medium white."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, cinematic Netflix look: a full-bleed backdrop with a bottom-left scrim gradient, slightly rounded rectangular buttons, a pill-shaped active nav item, square-cornered tiles with tight gaps, and a flat outlined dropdown. Spacing and density are close. The implementation's More Info button is a bit narrower and more translucent.",
+      "fix": "Make Play and More Info a little larger (about 58px tall, More Info about 215px wide) to match the reference proportions."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Dark scheme over the hero image, white text, Netflix red for the logo and badges, a semi-transparent grey More Info button, a solid white Play button, and a translucent grey pill for the active nav item. All of these match. The reference fades to near-black (#141414) below the hero; the implementation's page base is similar.",
+      "fix": "No major change needed. Make sure the bottom gradient fades fully to #141414 behind the row."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The sans UI font, nav sizing, the 'Movies' heading and the row headings match. The hero title is condensed display type, similar in character to the reference's logo artwork. The hero synopsis is smaller and lighter (about 17px) than the reference (about 22px regular), and it is truncated with an ellipsis rather than running in full over 3 lines. The ranking line at about 28px is missing, and an invented metadata row takes its place.",
+      "fix": "Set the hero synopsis to about 22px with about 1.35 line-height, pure white, and limit it to 3 lines without an ellipsis cut mid-thought. Add the 28px '#3 in Movies Today' line."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The outline icons match: search, bell, the speaker-mute circle, and the circled 'i' in More Info. The filled play triangle matches, and so do the Kids gradient tile and the blue smiley profile avatar. The Netflix wordmark in red condensed type matches. Tiles use 16:9 cover crops with TOP 10 badges at the top-right, matching the reference. The tile titles are overlaid text, not title art, but the treatment is close. The reference's hero brand-label artwork is absent.",
+      "fix": "Add the red Netflix brand label image above the hero title, and the TOP 10 badge icon beside the ranking line."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "The nav labels (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), 'Kids', 'Movies', 'Genres', 'Play', 'More Info', 'Gems for You', 'Recently Added' and 'TV-14' all match exactly. The ranking copy '#N in Movies Today' is missing.",
+      "fix": "Add the '#N in Movies Today' ranking text to the hero."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Hero, below the title: the reference shows a red TOP 10 badge with '#3 in Movies Today'. The implementation shows a genre · year · Movie · TV-14 metadata row there instead.",
+    "Hero, above the title: the reference has a red NETFLIX brand label over the title artwork. The implementation has none.",
+    "Vertical proportions: the implementation's hero is taller. 'Gems for You' sits at about y=920 versus about y=843, so the tiles are cropped at the bottom, and the next row heading visible in the reference is pushed off-screen.",
+    "Hero title block: it starts around y=480 in the implementation versus about y=200 in the reference, so the text stack sits lower and is more compressed.",
+    "Hero synopsis: about 17px and truncated with an ellipsis in the implementation, versus about 22px over 3 full lines in the reference.",
+    "Hero CTAs: Play and More Info are slightly smaller and narrower than in the reference."
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a TOP 10 red badge plus '#N in Movies Today' (about 28px, medium weight, white).",
+    "Add a small red Netflix brand label above the hero title.",
+    "Reduce the hero height so the 'Gems for You' heading lands at about 76% of the viewport, the full 16:9 tiles show, and the next row title peeks in.",
+    "Move the hero title block up so the brand label starts at about 18% of the viewport height.",
+    "Increase the hero synopsis to about 22px with 3-line wrapping, and drop the aggressive ellipsis truncation.",
+    "Enlarge Play and More Info slightly (about 58px tall, More Info about 215px wide)."
+  ],
+  "summary": "The chrome, layout and styling are very close; the gaps are in the hero, which lacks the brand label and the TOP 10 ranking line (an invented metadata row sits in its place) and is too tall, which pushes the carousel down."
+}
+```

@@ -1,0 +1,102 @@
+{
+ "duration_api_ms": 1567950,
+ "stop_reason": "end_turn",
+ "session_id": "a6c4d6ed-f825-4ef2-89d9-8d54246c96d9",
+ "total_cost_usd": 11.710554400000005,
+ "usage": {
+  "input_tokens": 38,
+  "cache_creation_input_tokens": 18885,
+  "cache_read_input_tokens": 6328436,
+  "output_tokens": 13687,
+  "output_tokens_details": {
+   "thinking_tokens": 4961
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 18885,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 2,
+    "output_tokens": 786,
+    "cache_read_input_tokens": 341959,
+    "cache_creation_input_tokens": 348,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 348
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-opus-5-5": {
+   "inputTokens": 256,
+   "outputTokens": 160849,
+   "thinkingTokens": 27763,
+   "cacheReadInputTokens": 28770472,
+   "cacheCreationInputTokens": 342307,
+   "webSearchRequests": 0,
+   "costUSD": 11.710554400000005,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 21,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "The final version passes all 14 api_smoke checks and all 8 business-chain steps. 13 of 15 contract endpoints return 2xx to the validator's empty-body probes; the other two correctly return 422. This round fixed a bug that lost playback progress.\n\n**The bug:** your place in a video wasn't being saved when you left the player.\n- Leaving through the app (e.g. the Back arrow after opening from a title) never saved. React clears the link to the `<video>` element before the leave handler runs, so the handler found no video.\n- Leaving by unloading the page never saved either: opening a player link directly then pressing the browser's Back, or closing the tab.\n- In both cases Continue Watching kept an older position, or nothing. The periodic save every 5 seconds and the save on pause did work.\n\n**The fix:**\n- The player now tracks the position separately from the video element and saves it when you leave, when you switch episodes, and when the page is closed or navigated away.\n- Progress saves are sent so they still go through while the page is unloading.\n\n**Checked:**\n- I confirmed in Firefox that the close-the-page case now saves (10s where it used to stay at 6s).\n- I couldn't test the in-app case with real video, because this sandbox's browsers can't decode the clips reliably. The fix there comes from the same change, which I checked by reading the code.\n- The full end-to-end browser flow passes with no console errors. It covers signup, profiles, My List per profile, rating, the hover preview, search, all section pages, the genre billboard, episode playback and next episode, reporting a problem, Back, and sign-out.\n- All six trailer clips are H.264, which Chrome, Firefox and Safari decode, so they should play for a real user.\n\n**Still missing or limited:**\n- `POST /api/profiles` without a name and `POST /api/my-list` without a title return 422. That's the correct response, so I left them.\n- The dataset has no runtimes, cast, episode details or games:\n  - Durations shown are the real clip lengths (7\u201315 seconds).\n  - Episodes are numbered, with only Episode 1 carrying the show's real synopsis.\n  - The Games page, \"Coming This Week\" and Dubbing/Subtitles show empty states.\n- Title logos are drawn as text in the Anton font, since no logo artwork was provided.\n- I never watched frames actually play, because of the sandbox's missing codecs.",
+ "ttft_ms": 4196,
+ "type": "result",
+ "duration_ms": 314430,
+ "uuid": "7a9e5229-0cf4-4aac-98f2-55447171ed3f",
+ "ttft_stream_ms": 2979,
+ "time_to_request_ms": 235,
+ "first_content_frame_ms": 2979,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_rc": 0,
+ "_timed_out": false,
+ "_wall_s": 315.1
+}

@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same structure. A centered dark modal sits over a dimmed Netflix home page with the top nav and hero still visible behind it. The synopsis and metadata use two columns, followed by an 'Episodes' header and a vertical list of full-width rows (number, 16:9 thumbnail, title/duration line, description). Proportions, gutters and dividers line up closely. Differences: the implementation adds a 'Season 1: TV-14' sub-line and a divider between the header and the first row. In the reference, the first row is a highlighted card that starts right below the header.",
+      "fix": "Remove the 'Season 1: [TV-14]' sub-line and the top divider above row 1, so the first episode row starts about 20px below the 'Episodes' header, as in the reference."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Present: episode rows with index number, thumbnail, bold title, right-aligned duration, a hover/active row highlight, a play overlay on hover, and row dividers. Differences: the right side of the header is a bordered 'Season 1' dropdown, where the reference shows plain text (the show title). There is an extra rating sub-line. Episodes 2 to 5 have no description, so those rows collapse to a single title line. The play overlay is a bare triangle; the reference uses a circle-outlined play button.",
+      "missing": [
+        "episode description text in rows 2+ (two-line synopsis under each title)",
+        "circle-outlined play button overlay on the hovered thumbnail",
+        "plain-text label on the right of the Episodes header (implementation shows a dropdown control instead)"
+      ],
+      "fix": "When the show has only one season, render the header's right side as plain white text instead of the bordered dropdown. Always render a two-line description under each episode title. Draw the hover play icon inside a white circular outline with a translucent dark fill."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dark, minimal Netflix modal. Rows have slight rounding and a lighter grey highlight, with hairline dividers between rows and generous spacing. The bordered select box adds a boxed-control look that the reference header doesn't have. Without descriptions, rows look sparse.",
+      "fix": "Remove the bordered select box and keep the header right side borderless. Restore the description lines so the row density matches."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Matches: #181818-ish modal surface, #2f2f2f highlighted row, white titles, light grey descriptions, and a black backdrop that dims the page. The background page in both is dimmed to a similar level.",
+      "fix": "Keep as is. If the select is kept anywhere, make sure no border or contrasting surface appears in the header."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Same sans family (Netflix Sans style). 'Episodes' is a bold ~26px heading, episode titles are bold ~17px, durations are regular and right-aligned, descriptions are regular ~15px light grey, and index numbers are large and light. Implementation description text is slightly smaller and tighter. The header's right side uses dropdown text styling rather than the reference's ~20px plain white label.",
+      "fix": "Set the header right label to ~20px regular white. Set row descriptions to ~15px with a ~1.5 line height."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Thumbnails use the same 16:9 cover crop at about the same size with slight rounding. The hover play icon is a plain filled triangle; the reference shows a triangle inside a thin white circle on a translucent fill. The implementation also has a caret icon for the dropdown, which the reference doesn't have.",
+      "fix": "Replace the bare play triangle with a ~56px circular outlined play button (white 1.5px ring, dark translucent fill, centered triangle). Drop the dropdown caret."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "'Episodes' heading matches, and durations use the same 'Xm' style (seconds here only because of seed data). The header's right side reads 'Season 1' in a selector, where the reference shows a plain label. 'Season 1: TV-14' is extra copy the reference doesn't show.",
+      "fix": "Remove the 'Season 1: TV-14' line. For single-season titles, show the plain label in the header instead of 'Season 1 ▾'."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: implementation shows a bordered 'Season 1 ▾' dropdown box. The reference shows plain borderless white text.",
+    "Below the Episodes header: implementation adds a 'Season 1: [TV-14]' line with a boxed rating badge and a divider. The reference goes straight into the first highlighted episode row.",
+    "Episode rows 2–5: implementation shows no description text, so rows show only title and duration. The reference shows a two-line grey synopsis under every title.",
+    "Hovered thumbnail: implementation's play icon is a bare white triangle. The reference uses a triangle inside a circular white outline with a dark translucent fill.",
+    "Row highlight: the reference highlights the first episode row as a lighter-grey card. The implementation highlights row 2 (a hover state) and puts a divider above row 1."
+  ],
+  "fixes": [
+    "Replace the 'Season 1' bordered dropdown with plain ~20px white text when only one season exists (keep the dropdown only for multi-season shows).",
+    "Delete the 'Season 1: TV-14' sub-line and the divider above the first episode row.",
+    "Always render the two-line description under each episode title (use a fallback synopsis if per-episode data is empty).",
+    "Restyle the thumbnail hover play icon as a circle-outlined play button (white ring, translucent black fill).",
+    "Give the first or current episode row the lighter #2f2f2f highlighted-card background by default, as the reference does."
+  ],
+  "summary": "The episodes list in the More Info modal closely matches the reference in structure, palette and type. It falls short on the header's season dropdown, the extra rating line, missing per-row descriptions, and the plain play icon."
+}
+```

@@ -1,0 +1,102 @@
+{
+ "duration_api_ms": 1147273,
+ "stop_reason": "end_turn",
+ "session_id": "bdf44f07-3267-40db-bdd6-e0c724b9a9ff",
+ "total_cost_usd": 9.2875068,
+ "usage": {
+  "input_tokens": 6,
+  "cache_creation_input_tokens": 4952,
+  "cache_read_input_tokens": 904277,
+  "output_tokens": 1653,
+  "output_tokens_details": {
+   "thinking_tokens": 356
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 4952,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 2,
+    "output_tokens": 457,
+    "cache_read_input_tokens": 303174,
+    "cache_creation_input_tokens": 608,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 608
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-opus-5-5": {
+   "inputTokens": 206,
+   "outputTokens": 140646,
+   "thinkingTokens": 21511,
+   "cacheReadInputTokens": 20217534,
+   "cacheCreationInputTokens": 303782,
+   "webSearchRequests": 0,
+   "costUSD": 9.2875068,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 3,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "The last round passed all 14 automated checks with the full 8-step chain, so this round is one small change. The Home page used to hide the Continue Watching and My List rails when they were empty. Now they stay visible with a \"\u2014\" message, which is what the spec asks for:\n- **Continue Watching:** \"\u2014 Nothing in progress yet. Titles you start playing will appear here.\"\n- **My List:** \"\u2014 Your list is empty. Use + on any title to add it.\"\n\nI re-ran my local tests after the change and they pass. The contract chain behaves as before. The full UI run works: sign up, pick a profile, add a title to My List, rate it, and add a profile, with no page errors. A brand-new account's Home page shows both messages. I didn't re-run the full click-every-control check or compare screenshots this round, and I still can't boot the Docker stack here.\n\nThese gaps are unchanged:\n- **Trailer playback:** I never saw a clip actually play, because headless Chromium can't decode the MP4s. In that case the player shows an error message instead.\n- **Generated data:** the dataset has no runtimes or top-10 ranks, so I generated them. Episodes are named \"Episode N\" and cast shows \"\u2014\".\n- **Games:** the catalog has no games, and the Games page says so.\n- **Languages:** the \"Dubbing\" and \"Subtitles\" options show an empty state, since the dataset has no audio or subtitle track data.",
+ "ttft_ms": 4885,
+ "type": "result",
+ "duration_ms": 45198,
+ "uuid": "ccd058cd-631e-479f-aa6e-2a168d55fca4",
+ "ttft_stream_ms": 1316,
+ "time_to_request_ms": 246,
+ "first_content_frame_ms": 1316,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_rc": 0,
+ "_timed_out": false,
+ "_wall_s": 45.8
+}

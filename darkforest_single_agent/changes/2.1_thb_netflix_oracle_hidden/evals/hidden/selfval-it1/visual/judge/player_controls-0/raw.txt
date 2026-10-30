@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The overall skeleton matches. The video fills the screen, with the back arrow top-left, a full-width scrubber with the time on the right, and one bottom control row: transport controls on the left, the title in the centre and utility controls on the right. Differences: the implementation adds a large left-aligned info block in the middle of the screen, which the reference does not have (its video area is empty). There is a thin black strip across the top edge. The scrubber and control row sit about 40px lower than in the reference.",
+      "fix": "Remove the mid-screen 'You're watching' info block so the video area is clear. Make the player truly full-bleed with no top strip. Move the scrubber up to about 87% of the height, with the control row about 60px below it."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "Present: back arrow, scrubber with red thumb, time readout, play/pause, back 10, forward 10, volume, centre title, next episode, episodes, subtitles, fullscreen. Missing: the flag/report icon at top-right. The scrubber has no buffered segment (light-grey fill ahead of the playhead) and no chapter tick marks. Invented: the 'You're watching' heading, the large title, the season/episode line, the synopsis and the red playback error message. The state differs too: the reference shows a pause button mid-playback, and the implementation shows a play button at 0:00.",
+      "fix": "Add an outline flag icon at the top-right, matching the back arrow's inset. Add a buffered-range fill and small chapter tick marks to the scrubber. Remove the info/synopsis overlay and the error text.",
+      "missing": ["top-right flag/report-problem icon", "scrubber buffered-progress segment", "scrubber chapter/marker ticks"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "The minimal, flat, chromeless player style matches: white icons, a thin hairline scrubber and a round red thumb. The large overlay text block and the full-colour poster behind the controls make the screen busier than the reference's stark, empty video area.",
+      "fix": "Show plain video, or black, behind the controls, with no text overlay. Keep only a subtle bottom gradient if one is needed for legibility."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use white controls on a dark background with a red progress fill and thumb. The reference is pure black. The implementation shows saturated blue and red poster artwork, and its error line is red/pink text that the reference does not have. The reference track has grey layers: dim grey for the full track, lighter grey for the buffer, and red for the played part. The implementation has only one grey.",
+      "fix": "Use a black backdrop when no video frame is rendering. Make the scrubber three-tone: red for played, light grey (#bbb-ish) for buffered, dim grey for the rest. Remove the red error text."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The centre title lockup matches: the bold show name, then the episode code and episode title in regular weight. The time readout is in the same small white sans. The extra large display headings in the overlay (about 56px bold title, 26px subtitle, body text) bring in a type hierarchy the reference does not have.",
+      "fix": "Remove the overlay headings. Keep the bottom title at about 22px, bold for the show name and regular for 'E1 <episode title>'."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The icon set matches in style: outline/line icons for the replay-10 and forward-10 circles, volume, next episode, stacked episodes, subtitles and fullscreen corners. Differences: the implementation's icons are noticeably smaller (about 36px versus about 48px). It shows a filled play triangle where the reference shows a pause icon. The flag icon is missing.",
+      "fix": "Scale the control icons to about 48px, with spacing of about 90px between left-group icons. Show the pause glyph while playing. Add the outline flag icon at the top-right."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The bottom title format matches the reference ('<Show> E1 <Episode title>'), and so does the time readout format. The implementation adds copy the reference does not have: 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"', a synopsis, and a browser codec error message.",
+      "fix": "Remove the 'You're watching' label, the season/episode line, the synopsis and the codec error message from the player view."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "center-left of video area: the implementation overlays a 'You're watching' block (large title, season/episode line, synopsis, red codec error); the reference's video area is empty",
+    "top-right: the reference's outline flag/report icon is missing from the implementation",
+    "background: the implementation shows full-colour poster artwork behind the controls, and a thin black strip at the top; the reference is a clean black full-bleed frame",
+    "scrubber: the reference shows a light-grey buffered segment and small chapter tick marks; the implementation has a single grey track",
+    "bottom-left: the implementation shows a play icon at 0:00; the reference shows a pause icon mid-playback",
+    "bottom control row: the implementation's icons are smaller (about 36px vs about 48px) and the row sits lower; the gap between the episodes and subtitles icons differs"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' / title / season line / synopsis / error overlay from the player",
+    "Add an outline flag (report problem) icon at the top-right, about 48px, matching the back arrow's inset",
+    "Render a black, full-bleed video surface with no top strip and no poster artwork",
+    "Add a buffered-range light-grey fill and chapter tick marks to the scrubber track",
+    "Increase the control icons to about 48px and move the scrubber and control row up to the reference's vertical position",
+    "Show the pause glyph in the playing state"
+  ],
+  "summary": "The bottom control bar and scrubber closely match the reference. The implementation adds a large title/synopsis/error overlay on poster art, is missing the top-right flag icon, and has no buffered segment or tick marks on the scrubber."
+}

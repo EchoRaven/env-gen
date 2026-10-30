@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Matches: a sticky black top bar with the wordmark on the left, nav pills, and utilities on the right; a 67px left gutter; full-bleed horizontal rows of 16:9 tiles that run off the right edge; row titles on the left with page indicators on the right. Differs: the reference frame is all stacked rows starting right under the nav. The implementation's frame starts with the bottom of a rounded, inset hero card (Play/More Info), then has a text-only 'Continue Watching' row with no tiles, then a numbered 'Top 10' row with big rank digits. None of these appear in the reference frame, so the row rhythm breaks.",
+      "fix": "In this browse-rows state, start the first standard row (title + 5.x tile carousel) directly under the nav at ~y=100. Hide rows that have no data instead of rendering them. Space rows evenly, about 286px from one title to the next."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Present: nav with 7 items and the Home pill active, search, bell, Kids tile with label, profile avatar with caret, row headings, horizontal tile carousels with a peek tile, segmented page indicators, TOP 10 corner badges, and red status chips centered at the bottom of tiles. Missing or different: the 'Games' row with its outlined 'BETA' chip; the paired chip pattern (red 'New Episode' followed by a white 'Watch Now' chip); a Games row with game artwork. Extra: the hero Play/More Info buttons, the empty Continue Watching message, and the large-numeral Top 10 row.",
+      "missing": ["Games row heading with outlined 'BETA' badge", "white 'Watch Now' secondary chip next to the red status chip", "game tiles row"]
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat, dark, cinematic look: tiles slightly rounded at about 6-8px, no shadows, separated by whitespace, with narrow gaps between tiles. The implementation adds a heavily rounded inset hero card and pill buttons that the reference frame doesn't show. Tiles are a bit shorter (about 193px vs 197px), which is close.",
+      "fix": "Drop the rounded hero card from this state. Keep tile radius at about 6px with about 9px gaps."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both use a near-black #141414 page, a black nav, white text, Netflix-red chips and TOP 10 badges, and a grey active nav pill. The reference's white 'Watch Now' chip and purple BETA outline accent are absent.",
+      "fix": "Add the white chip with black text next to the red status chip, and add the purple-outlined BETA badge on the Games row."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use a geometric sans with the same nav sizing. Row headings in the implementation are larger and lighter (about 28px regular) than the reference's (about 26px medium/semibold). The implementation renders tile titles as condensed bold text overlays where the reference uses artwork logos; this is close enough to count as a title lockup. The grey helper sentence under Continue Watching has no counterpart in the reference.",
+      "fix": "Set row headings to about 26px, weight 500-600. Remove the grey helper copy."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, the rounded-square Kids and smiley avatars, and the red TOP 10 badge match. Tiles are 16:9 with cover crop and small radius. The extra large rank numerals in the Top 10 row and the play icon in the hero button are not in the reference frame.",
+      "fix": "Remove the numeral-rank tile treatment from this screen state, or move it below the standard rows."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. Chip wording differs ('New Episodes' vs 'New Episode'/'New Season'), and there is no 'Watch Now' chip. Extra copy appears: 'Nothing in progress yet…', 'Play', 'More Info'.",
+      "fix": "Use the singular 'New Episode' and add a 'Watch Now' secondary chip. Drop the empty-state sentence."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "top of content: the implementation shows the bottom of a rounded hero card with Play/More Info buttons; the reference frame goes straight from the nav into a row of tiles",
+    "middle: the implementation renders 'Continue Watching' as a heading plus a grey empty-state sentence with no tiles; every reference row is a populated tile carousel",
+    "bottom: the implementation shows a 'Top 10' row with oversized rank numerals and narrow portrait posters; the reference's bottom row ('Top Searches') uses the same 16:9 landscape tiles as the other rows",
+    "second row in the reference: 'Games' heading with an outlined BETA chip and game artwork tiles; the implementation has no equivalent",
+    "tile badges: the reference pairs a red status chip with a white 'Watch Now' chip; the implementation shows only the red chip",
+    "row headings: the implementation's are slightly larger and lighter weight than the reference's medium-weight 26px titles",
+    "row spacing: uneven in the implementation because of the empty row; the reference has a regular cadence of about 286px"
+  ],
+  "fixes": [
+    "In the /browse rows state, render only standard 16:9 tile carousels stacked directly under the nav, without the hero card",
+    "Don't render rows that have no data (Continue Watching), or populate them with tiles",
+    "Add a 'Games' row whose heading carries an outlined, letter-spaced 'BETA' chip",
+    "Add the white 'Watch Now' secondary chip next to the red 'New Episode' chip at the bottom center of tiles",
+    "Render the bottom row with regular landscape tiles (e.g. 'Top Searches') instead of the numeral-rank layout",
+    "Set row headings to about 26px semibold and space rows evenly, about 286px apart"
+  ],
+  "summary": "The nav, tile carousels and badge system match closely, but the frame adds a hero, an empty Continue Watching row and a numeral Top 10 row, and it lacks the Games/BETA row and the paired 'Watch Now' chips."
+}
+```

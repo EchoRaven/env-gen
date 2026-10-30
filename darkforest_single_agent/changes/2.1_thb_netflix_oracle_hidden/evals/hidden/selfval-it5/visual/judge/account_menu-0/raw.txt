@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.65,
+      "notes": "The header is the same in both: NETFLIX wordmark on the left, inline text nav, and search, bell, Kids, avatar and caret on the right. In both, the dropdown is anchored under the avatar at the right edge, about 275px wide, and overlaps the content. The page under the menu differs. The reference opens the menu over the 'Browse by Languages' page, which has a page title, a 'Select Your Preferences' and 'Original Language' dropdown, and a 6-column grid of 16:9 tiles with a hover preview card open. The implementation opens it over Home, which has a full-width rounded hero and a 'Trending Now' row.",
+      "fix": "Show the account menu over the Browse by Languages screen: the 'Browse by Languages' H1 on the left, the preference selector on the right, and a 6-column tile grid below. Leave the dropdown anchored where it is."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Both have the dropdown panel with a Kids profile row, Manage Profiles, Account, a divider, and 'Sign out of Netflix'. The implementation is missing the 'Transfer Profile' and 'Help Center' rows. It also adds the current profile ('Visual Checker') and a third profile at the top of the list. The reference lists only the other profiles (Kids), not the active one. The page under the menu also lacks the language-preference dropdown and the hover preview card.",
+      "missing": ["Transfer Profile menu item", "Help Center menu item", "Browse by Languages page title + 'Select Your Preferences' / 'Original Language' selector behind the menu"],
+      "fix": "Remove the active profile from the profile list. Add the 'Transfer Profile' row (icon of a screen with an arrow) after Manage Profiles, and the 'Help Center' row (question mark in a circle) after Account, both above the divider."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both menus are a dark, slightly rounded panel with a hairline border, a full-width divider above Sign out, and about 58px of row spacing. In the reference, the row gap between Manage Profiles, Transfer Profile, Account and Help Center is a little more even and roomier. The implementation's Manage Profiles to Account gap is tighter, about 48px.",
+      "fix": "Make every row the same height, about 58px, so the action rows match the profile rows."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use the same near-black panel on a dark page, white menu text, a grey hairline divider, and the Netflix red wordmark. The nav-pill highlight is the same grey pill, but it sits on a different item because the page is different.",
+      "fix": "Keep the colours as they are. Highlight the 'Browse by Languages' nav pill when that page is shown."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a regular-weight sans serif in white at about 17px for menu items. The implementation's menu text is slightly lighter and more compact.",
+      "fix": "Set menu labels to about 17–18px, regular weight, pure white."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The Kids avatar is a rounded-square gradient tile in both, and both use outline person and pencil icons. In the reference, the pencil and person icons are larger, at about 24px. The implementation's icons are smaller and thinner and sit offset from the avatar column. The transfer and help-circle icons are missing because their rows are missing.",
+      "fix": "Make the outline icons about 24px with a stroke of about 1.5px, centred in the same 36px column as the avatars. Add the transfer-profile and help-circle icons."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "'Kids', 'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Transfer Profile' and 'Help Center' are missing.",
+      "fix": "Add the menu labels 'Transfer Profile' and 'Help Center'."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "account dropdown: the 'Transfer Profile' row between Manage Profiles and Account is missing",
+    "account dropdown: the 'Help Center' row between Account and the divider is missing",
+    "account dropdown: the implementation lists the active profile ('Visual Checker') at the top; the reference lists only the other profiles (Kids)",
+    "page behind the menu: the implementation shows the Home hero and 'Trending Now' row; the reference shows the Browse by Languages page with its H1, the 'Select Your Preferences / Original Language' selector, a 6-column tile grid and a hover preview card",
+    "header nav: the active pill is on 'Home' in the implementation and on 'Browse by Languages' in the reference",
+    "account dropdown: the action-row icons are smaller and thinner than the reference's roughly 24px outline icons"
+  ],
+  "fixes": [
+    "Add the 'Transfer Profile' row (screen-with-arrow outline icon) after Manage Profiles",
+    "Add the 'Help Center' row (question mark in a circle outline icon) after Account, above the divider",
+    "Remove the active profile from the dropdown's profile list",
+    "Make all dropdown rows about 58px high with 24px outline icons aligned to the avatar column",
+    "Render this state over the Browse by Languages page: the H1, the preference selector on the right, the 6-column grid, and 'Browse by Languages' as the active nav pill"
+  ],
+  "summary": "The dropdown shell, position, colours and core items match, but the menu is missing the Transfer Profile and Help Center rows, lists the active profile, and opens over Home instead of the Browse by Languages page."
+}
+```

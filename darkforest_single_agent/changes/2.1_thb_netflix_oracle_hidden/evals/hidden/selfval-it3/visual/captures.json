@@ -1,0 +1,82 @@
+{
+ "landing": {
+  "route": "/",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/landing.png"
+ },
+ "login": {
+  "route": "/login",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/login.png"
+ },
+ "browse_home": {
+  "route": "/browse",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/browse_home.png"
+ },
+ "browse_home_rows": {
+  "route": "/browse",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/browse_home_rows.png"
+ },
+ "shows": {
+  "route": "/shows",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/shows.png"
+ },
+ "movies": {
+  "route": "/movies",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/movies.png"
+ },
+ "games": {
+  "route": "/games",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/games.png"
+ },
+ "new_and_popular": {
+  "route": "/new",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/new_and_popular.png"
+ },
+ "genre_category": {
+  "route": "/browse/genre/1",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/genre_category.png"
+ },
+ "browse_by_languages": {
+  "route": "/browse/languages",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/browse_by_languages.png"
+ },
+ "my_list": {
+  "route": "/my-list",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/my_list.png"
+ },
+ "title_detail": {
+  "route": "modal: More Info",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/title_detail.png"
+ },
+ "title_episodes": {
+  "route": "modal: More Info, scrolled",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/title_episodes.png"
+ },
+ "rate_dialog": {
+  "route": "modal: rate control",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/rate_dialog.png"
+ },
+ "player": {
+  "route": "/watch/21",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/player.png"
+ },
+ "player_controls": {
+  "route": "/watch/21 (controls)",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/player_controls.png"
+ },
+ "account_menu": {
+  "route": "header account menu",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/account_menu.png"
+ },
+ "card_hover_preview": {
+  "route": "hover a rail poster",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/card_hover_preview.png"
+ },
+ "card_preview": {
+  "route": "hover a rail poster (held)",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/card_preview.png"
+ },
+ "shows_genres_menu": {
+  "route": "/shows Genres menu",
+  "shot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/hidden/selfval-it3/visual/shots/shows_genres_menu.png"
+ }
+}

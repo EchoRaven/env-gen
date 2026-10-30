@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches the reference: a transparent header over a full-bleed tilted poster mosaic, the logo top-left, the language selector and Sign In top-right, a centred hero stack (headline, subline, prompt, email + CTA row), then a curved divider and a promo banner on a black base. One clear difference: in the reference the popcorn icon sits outside the banner card to its left, and the card starts around x≈275. In the implementation the card spans x≈168–1752 and the popcorn is inside its left edge.",
+      "fix": "Move the popcorn illustration out of the banner card so it sits to the card's left, then shift the card's left edge in to about x≈275 so the icon and card read as two side-by-side elements."
+    },
+    "components": {
+      "score": 0.92,
+      "notes": "Every component in the reference is present and works the same way: the NETFLIX wordmark, a language dropdown with a translate icon, the red Sign In button, the headline, the price subline, the prompt text, the email input with placeholder, the red Get Started button with a chevron, the curved divider, and a promo banner with the popcorn icon, title, subtitle and grey Learn More button. Nothing extra has been added. The dropdown indicator is a chevron, where the reference uses a small filled caret.",
+      "fix": "Change the language dropdown indicator from a chevron to a small filled down-triangle caret.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "The corner radii (slightly rounded inputs and buttons, rounded banner card), flat surfaces and tilted poster mosaic all match. The curved divider is different: in the reference a pink-red arc runs the full width from edge to edge, with a blue-purple glow beneath it. In the implementation the red line only shows across the middle third and fades out toward the sides, so the arc is much weaker.",
+      "fix": "Render the divider as a full-width elliptical arc with a continuous pink-red (#e50914→pink) stroke that reaches both screen edges, and keep the radial blue-purple glow underneath."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a dark scheme with Netflix red for CTAs and the logo, a dark navy-purple banner card and a grey Learn More button. The implementation's poster mosaic is noticeably brighter and more saturated, because its dark overlay is lighter. In the reference the posters are heavily dimmed, so the hero text stands out much more.",
+      "fix": "Darken the hero overlay to about rgba(0,0,0,0.6–0.7) with a stronger vignette toward the top and bottom so the posters look as muted as in the reference."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "Both use a bold sans headline of about 64px on two centred lines, a bold subline of about 20px, a regular prompt line, a bold Get Started label, and a bold banner title over a regular subtitle. The hierarchy matches. The implementation's subline and prompt look slightly lighter in weight and a little wider in tracking.",
+      "fix": "Set the 'Starts at…' subline to weight 700 at about 20px, and use the Netflix Sans or Inter fallback with tighter tracking."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "The wordmark, translate icon and chevron in Get Started all match. The reference's popcorn is a glossy, shaded 3D illustration on a dark circular backdrop; the implementation's popcorn is flatter, with no backdrop. The language caret also differs, as noted under components.",
+      "fix": "Replace the popcorn with a shaded 3D-style illustration on a subtle dark circular backdrop, positioned outside the banner card."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All the UI wording matches exactly: 'English', 'Sign In', 'Unlimited movies, TV shows, and more', 'Starts at $8.99. Cancel anytime.', the prompt line, 'Email address', 'Get Started', the banner title and subtitle, and 'Learn More'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero background: the poster mosaic is much brighter and more saturated in the implementation; the reference dims it heavily under a dark overlay",
+    "curved divider: the reference's pink-red arc runs the full width edge to edge; the implementation's red line only shows across the centre and fades out at the sides",
+    "promo banner: the reference places the popcorn icon outside the card to its left, with the card starting further in; the implementation puts the popcorn inside the card's left edge and the card is wider",
+    "popcorn icon: the reference uses a glossy 3D illustration on a dark circular backdrop; the implementation's is flatter, with no backdrop",
+    "header language dropdown: the reference uses a small filled caret; the implementation uses an outline chevron"
+  ],
+  "fixes": [
+    "Darken the hero overlay to about 60–70% black with top and bottom vignette gradients",
+    "Make the curved divider's pink-red stroke span the full viewport width, with a blue-purple glow below it",
+    "Pull the popcorn icon out of the banner card and place it to the card's left; inset the card's left edge to match",
+    "Swap in a 3D-shaded popcorn illustration with a dark circular backdrop",
+    "Replace the language dropdown chevron with a small filled down-triangle caret"
+  ],
+  "summary": "A near-faithful Netflix landing hero with the same structure, copy and components; the remaining gaps are a too-bright poster mosaic, a weak divider arc, and the popcorn icon's placement and style in the promo banner."
+}
+```

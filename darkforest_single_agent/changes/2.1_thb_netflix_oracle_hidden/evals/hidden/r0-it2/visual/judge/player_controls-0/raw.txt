@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Full-bleed player with no app chrome, matching the reference. The back arrow is top-left, the scrubber spans the full width with the time at the right end, and the bottom control row has the same grouping: four controls on the left, a centred title and four controls on the right. The differences: the implementation adds a large left-aligned 'You're watching' text block over the video area and a toast at the top centre. Its scrubber sits slightly lower (~990px vs ~968px). The top-right corner is empty, but the reference has an icon there.",
+      "fix": "Remove the 'You're watching' synopsis overlay and the top-centre error toast from the controls state. Put a top-right icon slot at the same inset as the back arrow. Move the scrubber up so it sits ~70px above the control row, as in the reference."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Present: back arrow, red scrubber with thumb, time label, play/pause, back 10s, forward 10s, volume, centred title/episode label, next episode, episodes stack, subtitles/audio, fullscreen. Missing: the report-a-problem flag at top right, and the buffered-progress segment (lighter grey) plus the chapter/marker ticks on the track. The reference shows the playing state (pause icon); the implementation shows play. Added elements the reference doesn't have: the 'You're watching' / title / season-episode / synopsis panel and the codec error toast.",
+      "missing": ["top-right report/flag icon button", "buffered-progress segment on scrubber", "marker ticks on progress track"],
+      "fix": "Add a flag icon button at top-right (~40px, white outline). Render a buffered segment (light grey #bbb) over the darker grey track, and add small marker ticks. Show the pause icon while the controls overlay is in its playing state. Hide the paused-info panel and the error toast."
+    },
+    "style": {
+      "score": 0.72,
+      "notes": "Both are flat and minimal: white icons straight on the video surface, a thin hairline scrubber and a round red thumb. The reference is a stark, empty black frame. The implementation adds a heavy text block and a dark toast with a red left border, which makes it busier.",
+      "fix": "Keep the overlay to the controls only: no panels, toasts or synopsis text. Keep the scrubber at about 3px with a ~16px round thumb."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Same system: dark surface, white icons and text, Netflix red (#E50914) for played progress and the thumb, grey for the remaining track. The reference's background is pure black. The implementation dims the artwork underneath, which is acceptable as video content. The buffered light-grey tone and the yellow marker ticks are missing.",
+      "fix": "Use three track tones: red for played, light grey (#bcbcbc) for buffered, dark grey (#6d6d6d) for remaining. Add small yellow/orange marker ticks."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "The centred title row matches: show name in bold, then 'E1' and the episode title in regular weight, sans-serif, about 20px. The time label is small, white and right-aligned in both. The implementation adds large display text (the ~50px bold title, the semibold episode line and a body synopsis) that is not in the reference.",
+      "fix": "Remove the large title/synopsis text. Keep only the centred '<Show> E# <Episode title>' row and the small time label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Same set of white line icons in matching positions. In the implementation, the 10s replay/forward icons are noticeably smaller and thinner than the reference's bold ~50px circular arrows with '10' inside. The play glyph is shown instead of the reference's chunky two-bar pause. The flag icon is missing at top right.",
+      "fix": "Scale the rewind/forward-10 icons to ~50px with a heavier stroke and a bold '10' inside. Use a filled two-bar pause glyph when playing. Add the outline flag icon at top right. Keep all icons at ~44–50px."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The title row format matches. The implementation adds copy the reference doesn't have: 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"' and the error message 'This clip could not be loaded in this browser (H.264/MP4).' The time label shows elapsed time (0:00), where the reference shows remaining time (32:57).",
+      "fix": "Drop the 'You're watching' overlay copy and the error toast text. Show remaining time in the right-hand time label."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "centre-left of video area: implementation shows a large 'You're watching' / title / 'Season 1: Ep. 1' / synopsis overlay block; reference shows only empty video with controls",
+    "top-centre: implementation shows a dark error toast with red left accent ('This clip could not be loaded…'); reference has nothing there",
+    "top-right: reference has a flag (report a problem) icon; implementation has none",
+    "bottom-left: reference shows a bold two-bar pause icon (playing state); implementation shows a play triangle",
+    "bottom-left: the rewind/forward-10 icons are much smaller and thinner in the implementation than the reference's bold ~50px circular icons",
+    "scrubber: reference has a light-grey buffered segment and small marker ticks on the track; implementation has a single uniform grey track",
+    "scrubber position: implementation's track sits ~20px lower and closer to the control row than in the reference",
+    "time label: reference shows remaining time; implementation shows 0:00 elapsed"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' info panel (label, title, season/episode line, synopsis) from the controls overlay state",
+    "Hide or suppress the top-centre codec error toast in the controls view",
+    "Add an outline flag/report icon button at top-right, mirroring the back arrow's inset",
+    "Show the filled two-bar pause icon in the play/pause slot while controls are shown over playing content",
+    "Enlarge the rewind/forward-10 icons to ~50px with a heavier stroke and a bold '10' numeral",
+    "Add a light-grey buffered segment and small marker ticks to the progress track; move the track up to ~y=968",
+    "Show remaining time (e.g. 32:57) in the right-hand time label"
+  ],
+  "summary": "The control row, scrubber and back arrow closely match the reference. The main gaps are the added paused-info synopsis overlay and error toast, the missing top-right flag icon, the play icon where the reference shows pause, the undersized skip icons, and no buffered segment or marker ticks on the scrubber."
+}
+```

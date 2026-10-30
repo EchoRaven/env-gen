@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Matches the reference. Both have a top nav bar with the wordmark on the left, the links, and the search, bell, Kids and avatar controls on the right. Both use the same 67px left gutter and stack full-bleed horizontal carousels in the same order: a landscape 'New on' row, then two Top-10 ranked rows, then a fourth row cut off at the bottom. Tile widths and gaps match, with a peeking tile at the right edge. The page indicator dashes sit top-right of each row. The rows start about 18px higher than in the reference (heading at y≈147 vs 165).",
+      "fix": "Add about 18px of top padding before the first row heading so 'New on…' sits at the reference's vertical position."
+    },
+    "components": {
+      "score": 0.86,
+      "missing": ["Filled dark rank numerals in the Top 10 rows (only outlines are rendered)", "'Watch Now' secondary badge next to the red status badge", "Status badges on some Top 10 TV tiles (ranks 2, 4, 5, 6 have none; every reference tile has one)"],
+      "notes": "Nav inventory matches: 7 links, an active pill on 'New & Popular', search, bell, Kids, avatar and caret. The TOP 10 corner badges and red status pills are present. Row page indicators are present. One component is invented: a right-chevron paging arrow over the Top 10 TV row, which the reference does not show. Status pill variety is lost: every pill reads 'Recently Added', while the reference mixes 'New Season', 'New Episode' and 'Recently Added'. One Top 10 Movies tile (rank 3) shows a plain text fallback ('Backrooms') instead of a poster lockup.",
+      "fix": "Remove the always-visible chevron (or show it on hover only). Render a status pill on every ranked tile. Support the pill variants 'New Season', 'New Episode' and 'Watch Now'. Replace the plain-text poster fallback with title-art styling."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat, dark, dense streaming style. Tiles are slightly rounded with no shadows and separated by whitespace, and the red pills sit bottom-center. The big difference is the rank numerals. In the reference they are heavy, black-filled glyphs with a thin gray stroke that read as solid shapes behind the posters. In the implementation they are thin hollow outlines in a lighter weight, which looks much airier.",
+      "fix": "Render the rank numerals in a heavy weight (~900) with fill #000/#141414 and a ~3px #595959 stroke. Size them so they fill the tile height and overlap behind the poster."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same #141414 page base, darker nav band, Netflix red on the wordmark, pills and TOP 10 badges, gray active pill and white text. The only difference is that the numerals use gray outlines on the page color instead of black fills with a gray edge.",
+      "fix": "Give the numerals a black fill so they read as darker than the page, as in the reference."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Sans-serif throughout and nav sizes match. Row headings are noticeably bolder in the implementation (semibold) than in the reference (regular/medium, about 28px). The rank numeral typeface is a light, geometric outline instead of a heavy, condensed black glyph. The Netflix wordmark renders slightly larger.",
+      "fix": "Set row headings to ~28px at weight 500. Use a heavy display weight for the rank numerals. Shrink the wordmark to ~84px wide."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Outline search and bell icons, a rounded-square Kids badge and a blue smiley avatar with a caret all match. Image aspect ratios match: 16:9 landscape in 'New on', 2:3 posters in the ranked rows. Title lockups over the landscape art are present. One tile uses a plain-text placeholder instead of artwork. The chevron icon is extra.",
+      "fix": "Drop the chevron overlay and make sure every poster shows its key art and title treatment rather than fallback text."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly, and 'New on Netflix' matches. Headings differ: 'Top 10 TV Shows Today' vs 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies Today' vs 'Top 10 Movies in the U.S. Today', and the fourth row is 'Worth the Wait' vs 'Coming This Week'.",
+      "fix": "Rename the headings to 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today', and rename the fourth row to 'Coming This Week'."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: rank numerals are thin hollow gray outlines; the reference uses heavy black-filled numerals with a subtle gray stroke",
+    "Row headings: 'Top 10 TV Shows Today' and 'Top 10 Movies Today' drop the reference's 'in the U.S.'; the fourth row reads 'Worth the Wait' instead of 'Coming This Week'",
+    "Top 10 TV row: an invented right-chevron paging arrow sits over the right edge; the reference has none",
+    "Top 10 TV row: tiles at ranks 2, 4, 5 and 6 have no red status pill; every reference tile has one",
+    "Status pills: all read 'Recently Added'; the reference mixes 'New Season' and 'New Episode' with a white 'Watch Now' companion badge",
+    "Top 10 Movies rank 3: the poster shows plain gray fallback text instead of a title-art lockup",
+    "Row headings render in a heavier weight than the reference's regular-weight headings; the first row sits about 18px higher"
+  ],
+  "fixes": [
+    "Restyle the rank numerals: heavy weight, black fill, ~3px #595959 stroke, full tile height, behind the poster's left edge",
+    "Change the row headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'",
+    "Remove the persistent chevron arrow from the Top 10 row (show it on hover only, if at all)",
+    "Always render a red status pill on ranked tiles, and support the 'New Season' and 'New Episode' variants plus the white 'Watch Now' badge",
+    "Lighten the row headings to weight ~500 at ~28px and add ~18px of top padding above the first row",
+    "Replace the plain-text poster fallback with a styled title lockup"
+  ],
+  "summary": "A near-faithful Netflix New & Popular clone. The main gaps are the hollow, thin rank numerals, the shortened or renamed row headings, an invented chevron arrow and the uniform status pills."
+}
+```

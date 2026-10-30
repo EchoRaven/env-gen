@@ -1,0 +1,64 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed dark video players with no app chrome. Both put a back arrow top-left, a bottom control row with the left cluster, centred text and fullscreen at the bottom-right, and the frame fills the viewport. The implementation adds things the reference doesn't have: a full-width scrubber above the controls, a large 'You're watching' synopsis overlay in the left-centre, and an error toast at the top centre. The top-right cluster (flag icon + Ad badge) is missing.",
+      "fix": "Remove the progress scrubber row and the left 'You're watching' synopsis overlay for the ad state. Put a top-right cluster (report-flag icon + 'Ad 12' countdown badge) level with the back arrow. Keep a single bottom row: pause, volume, centred caption, fullscreen."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Matches: back arrow, play/pause toggle, volume, centred caption text, fullscreen. Missing: the top-right report flag and the 'Ad 12' countdown badge with a gold left bar. Invented relative to the reference: the scrubber with red knob and time, ±10s skip buttons, next-episode, episodes, subtitles/audio, the synopsis overlay, and the error toast. The play/pause shows 'play' where the reference shows 'pause' (playing state).",
+      "missing": [
+        "report/flag icon (top-right)",
+        "Ad countdown badge 'Ad 12' with gold accent bar (top-right)",
+        "'<Title> begins after ads' centred caption"
+      ],
+      "fix": "Add the top-right flag icon button and the Ad countdown pill (dark translucent box, 4px gold left bar, 'Ad' + seconds). In the ad state, hide the rewind/forward-10, next-episode, episodes, subtitles and scrubber controls. Show the pause icon while playing."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are minimal, flat, cinematic players with white controls straight on the video and no cards. The implementation's dark scrim and dense text overlay make it heavier than the clean, unobstructed reference frame. The error toast's red-bar box roughly echoes the ad badge, but it's in the wrong role.",
+      "fix": "Drop the full-frame dimming scrim and the synopsis block so the video reads unobstructed. Use a single subtle bottom gradient only behind the control row."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Dark scheme with white icons and text in both. The implementation adds a Netflix-red scrubber and a red toast accent, which the reference doesn't show. The reference's only accent is the gold/yellow bar on the Ad badge, and the implementation doesn't have it.",
+      "fix": "Remove the red scrubber in the ad state and add the gold (#E5B53A-ish) accent bar on the Ad badge."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Same sans family and white regular-weight centred caption in the bottom bar. The implementation's centre text uses a bold title + regular episode lockup instead of a single regular-weight sentence. It also adds a large bold title, a subtitle and body paragraph levels that the reference doesn't have.",
+      "fix": "Render the centre caption as one regular-weight ~20px line '<Title> begins after ads', and remove the large title, subtitle and synopsis type levels."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Line-style white icons for back arrow, volume (with sound waves) and fullscreen corners match well. The play icon replaces pause. The flag icon is missing, and extra icons are present (replay-10, forward-10, next, episodes, subtitles).",
+      "fix": "Add an outline flag icon at top-right matching the stroke weight, show the filled pause bars, and remove the extra transport icons in this state."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference copy is 'All American begins after ads' plus 'Ad 12'. The implementation shows 'Overdo E1 Episode 1', 'You're watching', and the error message 'This clip could not be loaded in this browser (H.264/MP4).' None of these is the reference's ad-state copy.",
+      "fix": "Use '<Title> begins after ads' as the centre caption and 'Ad <seconds>' in the badge. Remove the 'You're watching' label and the codec error toast."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference shows a report-flag icon and an 'Ad 12' countdown badge with a gold left bar; the implementation has nothing there",
+    "left-centre: implementation overlays a 'You're watching' / title / season-episode / synopsis block over a dimmed frame; reference shows the unobstructed video",
+    "bottom: implementation adds a full-width red scrubber with a time readout; the reference has no progress bar",
+    "bottom-left: implementation adds rewind-10 and forward-10 buttons and shows a play icon; reference has only pause + volume",
+    "bottom-right: implementation adds next-episode, episodes and subtitles icons; reference has only fullscreen",
+    "bottom-centre: caption reads as a bold title + episode lockup instead of the regular-weight '<Title> begins after ads' sentence",
+    "top-centre: implementation shows a red-accent error toast about H.264/MP4 loading; the reference has none"
+  ],
+  "fixes": [
+    "Add a top-right cluster aligned with the back arrow: outline flag icon, then a dark pill reading 'Ad <n>' with a gold vertical bar on its left edge",
+    "Hide the 'You're watching' synopsis overlay and the full-frame dim scrim during the ad state",
+    "Remove the progress scrubber and time readout in the ad state",
+    "Reduce the bottom row to: pause (filled bars), volume, centred '<Title> begins after ads' (regular weight), fullscreen at the far right",
+    "Remove rewind/forward-10, next-episode, episodes and subtitles buttons in this state",
+    "Suppress the codec error toast, or make sure the video actually plays so the frame renders"
+  ],
+  "summary": "Same full-bleed dark player skeleton, but the implementation renders a paused, info-overlay, full-controls state instead of the reference's minimal ad-break state, so it's missing the flag and Ad countdown badge and adds a scrubber, extra transport icons and a synopsis overlay."
+}

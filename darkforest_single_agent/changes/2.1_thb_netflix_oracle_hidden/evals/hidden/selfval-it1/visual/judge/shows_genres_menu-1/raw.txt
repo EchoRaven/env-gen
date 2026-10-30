@@ -1,0 +1,63 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The skeleton matches. Both have a transparent top nav over a full-bleed hero, the 'TV Shows' heading with the Genres dropdown next to it, a genre flyout panel under the dropdown, the hero title block bottom-left, mute and maturity-rating controls on the right, and the 'Today's Top Picks for You' carousel at the bottom. The differences: the hero block is taller in the implementation because of the added metadata and synopsis, so the Play/More Info buttons sit at about y=760 instead of 712 and the carousel at about y=920 instead of 840. That pushes the row tiles partly below the fold. The genre flyout is shorter (5 rows instead of 9) and narrower (about 415px instead of 470px).",
+      "fix": "Remove the metadata row and synopsis so the title lockup sits directly above the Play/More Info buttons (around y=712). Move the carousel heading up to around y=840 so the whole 16:9 tiles show. Size the flyout to about 470×270px."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "These all exist: nav with 7 items and an active 'Shows' pill, search, bell, Kids avatar, profile avatar with caret, page title, Genres dropdown, 3-column genre panel, Play and More Info buttons, mute button, TV rating tab, carousel with TOP 10 and red 'Recently Added' badges, and page-indicator dashes. The implementation adds a metadata row (genre · year · seasons · rating) and a synopsis paragraph that the reference does not show. The reference's hero has a small red NETFLIX label above the title, which the implementation lacks. The reference also shows a hovered or underlined genre link state (K-Dramas), and the genre list has about half as many entries.",
+      "missing": [
+        "small red 'NETFLIX' label above hero title",
+        "hover/underline state on genre links",
+        "full-height genre list (9 rows × 3 columns)"
+      ],
+      "fix": "Delete the hero metadata row and synopsis. Add a small red NETFLIX label above the title. Give genre links an underline on hover. Fill the genre panel to 9 rows per column."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic full-bleed hero with a dark vignette, a square-cornered dark translucent flyout, slightly rounded buttons, a pill-shaped active nav item, and tight tile gutters. In the reference, the Genres dropdown has a dark translucent fill and a thin light-gray border. In the implementation it has a solid black fill and a bright white border.",
+      "fix": "Style the Genres button with an rgba(0,0,0,0.6) fill and a 1px rgba(255,255,255,0.7) border."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Dark scheme, red brand wordmark and badges, a white primary Play button, and a translucent gray secondary button. All match. The flyout background is near-black translucent in both.",
+      "fix": "No major change needed. Keep the flyout at about rgba(0,0,0,0.9) and genre text white."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Sans UI type, and the nav, heading and genre item sizes match closely. In the reference, the hero title is stylised title artwork. In the implementation it is plain condensed caps text at a much larger width. The carousel tiles in the implementation also overlay large condensed text titles, while the reference relies on the title text baked into the artwork.",
+      "fix": "Render the hero title as a logo or title-art image of about 410×130px (or a stylised lockup at that scale) instead of a 720px-wide plain text headline. Don't overlay text titles on the tiles."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search, bell and mute icons, a filled play triangle, an info circle, Kids and smiley profile avatars as rounded squares, and a dropdown caret all match. Tile aspect ratio and badges match. In the implementation, tiles carry added text overlays.",
+      "fix": "Use only the artwork in the tiles, with no superimposed title text, and keep the badges at the bottom center."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' match exactly. The genre taxonomy wording differs: the reference uses 'Action', 'Comedies', 'Dramas', 'Documentaries', 'Kids', 'K-Dramas', 'Stand-Up & Talk Shows' and so on. The implementation uses TMDB-style labels: 'Action & Adventure', 'Comedy', 'Drama', 'Documentary', 'Soap', 'Talk', 'News'.",
+      "fix": "Replace the genre labels with the reference's Netflix-style list, in alphabetical column order: Action, AMC Collection, Anime, British, Classic & Cult, Comedies, Crime, Documentaries, Dramas, Emmys®, Horror, International, K-Dramas, Kids, LGBTQ, Mysteries, Reality, Romance, Sci-Fi & Fantasy, Science & Nature, Spanish-Language, Sports, Stand-Up & Talk Shows, Teen, Thriller, USA 250!"
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-left: implementation adds a metadata row ('Mystery · 2026 · 2 Seasons · TV-14') and a two-line synopsis that the reference does not have; this pushes the buttons and carousel down",
+    "bottom carousel: implementation's row starts about 80px lower, so the tiles are cut off at the bottom edge; the reference shows the whole tiles",
+    "genre flyout: implementation has 5 rows (13 items) with TMDB-style labels; the reference has 9 rows (26 items) with Netflix genre names",
+    "hero title: implementation uses a huge plain condensed text headline; the reference uses compact stylised title artwork with a small red NETFLIX label above it",
+    "carousel tiles: implementation overlays big condensed text titles on each tile; the reference shows only the artwork",
+    "Genres dropdown button: solid black fill with a white border in the implementation, versus a translucent fill with a thin gray border in the reference"
+  ],
+  "fixes": [
+    "Remove the hero metadata row and synopsis so the Play/More Info buttons sit directly under the title lockup",
+    "Move the 'Today's Top Picks for You' row up to around y=840 so the whole tiles are visible above the fold",
+    "Replace the genre list with the reference's 26 Netflix genres in 3 columns of 9 rows, with underline on hover",
+    "Shrink the hero title to a stylised lockup of about 410px wide and add a small red 'NETFLIX' label above it",
+    "Remove the text-title overlays from the carousel tiles",
+    "Restyle the Genres button with a translucent dark fill and a thin light-gray border"
+  ],
+  "summary": "Close Netflix TV Shows clone with the Genres flyout open. Structure and chrome match, but the hero adds metadata and a synopsis that push the row down, and the genre list is shorter with different wording."
+}

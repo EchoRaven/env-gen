@@ -1,0 +1,58 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Same structure: a centered dark modal over a dimmed Netflix home page with top nav, hero and row behind it. The synopsis and metadata area sits above an 'Episodes' header, followed by a vertical list of full-width episode rows (number, 16:9 thumbnail, title/duration line, description). Column positions and proportions closely match. Differences: the implementation adds an extra 'Season 1: TV-14' subline and a horizontal divider above the first row. In the reference the first row is a highlighted card with no divider above it.",
+      "fix": "Remove the 'Season 1: TV-14' subline under the Episodes header and the divider above row 1, so the first episode row sits directly under the header."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Present: Episodes heading, episode rows with large index number, thumbnail, bold title, right-aligned duration, a play-circle overlay on the hovered thumbnail, dividers between rows, and the synopsis/metadata block above. Differences: the header's right side is a bordered 'Season 1' dropdown, but the reference shows a plain text label (the series title). The implementation adds a season maturity-rating subline. The play overlay is a bare triangle with no circular outlined ring. The implementation highlights row 2 (the hovered row), while the reference highlights row 1 (the current episode) with a grey card.",
+      "missing": ["plain-text series/season label at right of Episodes header (replaced by dropdown)", "circular outlined play-button ring on hovered thumbnail", "current-episode highlight on row 1"],
+      "fix": "Show plain right-aligned text in place of the Season dropdown when there is one season. Wrap the hover play icon in a ~50px circle with a white outline. Give the current episode (row 1) a persistent #333-ish highlight background, separate from hover."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark styling, slightly rounded highlighted row, hairline dividers, square-ish thumbnails and similar density. The bordered dropdown adds a boxed control the reference doesn't have.",
+      "fix": "Drop the bordered dropdown box. Keep the header flat text-only."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Matching modal surface (~#181818), lighter highlight row, white titles, light-grey descriptions and a dimmed background page. The highlight appears on the wrong row, but the colours are the same.",
+      "fix": "Apply the highlight colour to the current episode row rather than only on hover."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif throughout. Bold section heading, large light index numerals, bold episode titles, regular durations and descriptions all match. Duration and title sizes are close. Synopsis line spacing is similar.",
+      "fix": "Render the header's right label at regular weight, ~20px white text, matching the reference 'The Hawk' label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Thumbnails are 16:9 with small radius, matching. The hover play icon is a plain white triangle, while the reference uses a triangle inside a circle with a white outline. The dropdown caret icon is extra.",
+      "fix": "Use a circled play icon (white outline ring, translucent dark fill) centred on the thumbnail. Remove the caret."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "'Episodes' heading matches. The implementation adds 'Season 1' dropdown text and 'Season 1: TV-14' copy, where the reference shows only the series title label at right.",
+      "fix": "Replace 'Season 1' with the show title text when there is a single season, and remove the 'Season 1: TV-14' line."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: implementation shows a bordered 'Season 1 ▾' dropdown; reference shows plain text (series title) with no box or caret",
+    "Below Episodes header: implementation adds a 'Season 1: TV-14' subline and a divider above row 1; reference has neither",
+    "Episode list: reference highlights row 1 (current episode) with a grey card; implementation highlights row 2 and leaves row 1 unhighlighted",
+    "Hovered thumbnail: reference play icon sits inside an outlined circle; implementation shows a bare triangle",
+    "Background hero, right side: implementation shows a mute/volume circle button that the reference doesn't show there"
+  ],
+  "fixes": [
+    "Replace the season dropdown with right-aligned plain text (series/season title) when there is only one season",
+    "Remove the 'Season 1: TV-14' subline and the top divider above the first episode row",
+    "Give the current episode (row 1) a persistent grey highlight card, independent of hover",
+    "Render the thumbnail hover play icon as a triangle inside a white-outlined circle"
+  ],
+  "summary": "The More Info episodes list matches closely in skeleton, row anatomy and colours, but the header uses a boxed season dropdown and an extra rating subline, the highlight is on the hovered row instead of the current episode, and the play overlay has no circle."
+}
+```

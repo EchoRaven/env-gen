@@ -1,0 +1,27 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.88, "notes": "The top nav, the Movies title with the Genres dropdown, the full-bleed hero, the left-aligned hero text block, the mute/maturity rating on the right and the 'Gems for You' row with its page indicator all match and sit in the same order. The hero runs taller in the implementation. The title starts around y=480 instead of y=200, and the row begins around y=920 instead of y=845, which pushes the tiles partly off-screen and hides the next row heading.", "fix": "Raise the hero content block so the title lockup starts about 200px from the top. Shorten the hero so 'Gems for You' sits around y=845, the full tile row shows, and the next row heading peeks in at the bottom."},
+    "components": {"score": 0.8, "notes": "Present: nav with 7 items and an active pill, search, bell, Kids, avatar with caret, Genres dropdown, Play and More Info, mute button, maturity rating tab, row page indicator, TOP 10 badges and Recently Added badges. Missing: the small red NETFLIX badge above the title and the Top 10 rank line ('TOP 10 badge + #3 in Movies Today'). The implementation adds a genre/year/type/rating metadata row that the reference does not show.", "fix": "Add the small 'N'/NETFLIX badge above the hero title. Replace the metadata row with the TOP 10 badge and '#N in Movies Today' line.", "missing": ["NETFLIX label above hero title", "Top 10 rank badge + '#3 in Movies Today' line", "next row heading peeking below first row"]},
+    "style": {"score": 0.88, "notes": "Same flat, cinematic, full-bleed style with square-cornered buttons and tiles, a bottom gradient fade and a translucent grey More Info button. The tiles show the title over the artwork in a similar way.", "fix": "Keep the current style. Only tighten the vertical spacing in the hero."},
+    "color": {"score": 0.9, "notes": "Dark base, Netflix red accents, white Play button, translucent grey secondary button, a dark grey active nav pill and red badges, all matching the reference.", "fix": "No significant change needed."},
+    "typography": {"score": 0.78, "notes": "The nav, page title and row heading are the same sans and sizes. The hero title is rendered as condensed bold text rather than a stacked title-art lockup with a subtitle. The synopsis is smaller and lighter than the reference's roughly 22px white body text. The rank line in the reference uses about 28px medium type.", "fix": "Increase the hero synopsis to about 22px in solid white with a 1.35 line height. Use a large two-line title lockup with a subtitle style where the data allows. Add the rank line at about 28px medium weight."},
+    "iconography": {"score": 0.9, "notes": "The icons match: outline search, bell and info, a filled play triangle, the mute icon in a circle, the Kids tile and the smiley avatar. Tiles use about a 16:9 cover crop with square corners and narrow gaps. TOP 10 badges sit top-right and Recently Added pills sit bottom-centre.", "fix": "Add the red TOP 10 square icon next to the rank line in the hero."},
+    "copy": {"score": 0.92, "notes": "The nav labels, 'Movies', 'Genres', 'Play', 'More Info', 'Gems for You', 'TV-14' and 'Recently Added' are identical. The reference's '#3 in Movies Today' wording is absent.", "fix": "Add the '#N in Movies Today' copy beside the TOP 10 badge."}
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "hero, left block: the reference has a TOP 10 badge with '#3 in Movies Today' under the title. The implementation replaces it with a 'Science Fiction · 2026 · Movie · TV-14' metadata row.",
+    "hero, above title: the reference shows a small red NETFLIX label above the title art. The implementation has none.",
+    "hero, vertical position: the reference title block starts around y=200, just below the Movies header. The implementation's starts around y=480, so the hero is taller and the row is pushed down.",
+    "bottom of page: the reference shows the full 'Gems for You' tile row and the next row heading. In the implementation, the tiles are cut off at the bottom edge and no second row heading is visible.",
+    "hero synopsis: the reference uses larger (~22px) bright white text. The implementation uses smaller, slightly dimmer text."
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a red TOP 10 badge plus '#N in Movies Today' in about 28px medium white text.",
+    "Add the small red NETFLIX label above the hero title.",
+    "Move the hero content block up so the title begins about 70px below the Movies/Genres header, and shorten the hero so 'Gems for You' sits around y=845 with the full tiles visible and the next row heading peeking in.",
+    "Increase the hero synopsis to about 22px in solid white."
+  ],
+  "summary": "A close Netflix Movies replica with matching nav, header, hero controls and row treatment. It lacks the NETFLIX label and Top 10 rank line in the hero, which also sits too low."
+}

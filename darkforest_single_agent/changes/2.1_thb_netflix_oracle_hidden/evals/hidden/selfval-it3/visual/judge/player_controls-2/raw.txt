@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The overall structure matches: a full-bleed player with no app chrome, a back arrow at top-left, a flag/report icon at top-right, a full-width scrubber near the bottom with remaining time at the right end, and a bottom control row with left cluster, centered title and right cluster. The difference is the middle of the frame. The reference shows an empty black video area. The implementation adds a large left-aligned info block at roughly 30–50% of the height (eyebrow, big title, episode line, synopsis, error line), so the center of the screen is no longer empty.",
+      "fix": "Remove the 'You're watching' info overlay from the controls state so the area between the top icons and the scrubber is plain video (black when there is no frame)."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Every control in the reference is present and in the same order: back, flag, scrubber with red thumb, remaining time, play/pause, back 10, forward 10, volume, centered title + episode, next episode, episodes, subtitles/audio, fullscreen. Invented: a 'You're watching' paused overlay with large title, season/episode heading and synopsis, and a red error line. The reference scrubber shows a red played segment, a lighter buffered segment and small chapter/marker ticks. The implementation shows only a bare track with the thumb at 0. The play button shows a play icon where the reference shows pause.",
+      "missing": [
+        "buffered-progress segment on scrubber",
+        "marker ticks on scrubber track"
+      ],
+      "fix": "Delete the info overlay and error text from the controls view. Render the scrubber with a red played fill, a light-grey buffered fill and a darker unbuffered track, plus optional marker ticks. Show the pause icon while the video is playing."
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "The reference is ultra-minimal: flat black, white line icons, no decoration. The implementation places the controls over a vivid full-bleed key-art backdrop with a darkening vignette. This turns the minimal utility overlay into a marketing-style hero. The control row itself is flat and minimal, which matches.",
+      "fix": "Use a plain black background (or the actual video frame) behind the controls instead of the poster backdrop; keep only a subtle bottom gradient if needed for legibility."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "Both use white icons/text and a red progress accent. The reference is pure black monochrome. The implementation is dominated by the saturated blue/red artwork, and it adds a pink/red error line. The scrubber's grey buffered/unbuffered tones are missing.",
+      "fix": "Set the player background to #000. Remove the artwork and the red error text. Make the scrubber track mid-grey with a light-grey buffered segment and a Netflix-red played segment and thumb."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "The bottom title lockup matches: bold show title, regular 'E1', regular episode title, centered, about 20px. Remaining time is small and white at the right of the scrubber, as in the reference. The implementation adds several type levels the reference does not have: a large bold display title (~50px), a semibold episode heading, body synopsis and a small eyebrow label.",
+      "fix": "Drop the overlay's type hierarchy entirely; keep only the bottom title lockup and the time label."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The icon set matches closely: line-style back arrow, flag, circular replay/forward-10, speaker with waves, next-episode, stacked-episodes, speech-bubble subtitles and corner-bracket fullscreen. The implementation's icons are somewhat smaller and lighter, and the left cluster sits more tightly spaced. The play icon is filled where the reference shows a filled pause (state difference). A full-bleed poster image is used where the reference has none.",
+      "fix": "Scale the bottom-row icons up about 15–20% (to ~48px) with wider gaps that match the reference spacing, and remove the backdrop image."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The bottom title format '<Show> E1 <Episode title>' and the time label match. The implementation adds copy the reference lacks: 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"', a synopsis, and the error 'This clip can't be played in this browser (H.264/MP4 support is required).'",
+      "fix": "Remove the eyebrow, season/episode heading, synopsis and error string from the controls state."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "center/left of the frame: the implementation overlays a 'You're watching' info block (eyebrow, large title, season/episode line, synopsis); the reference has an empty black video area",
+    "full background: the implementation shows saturated key-art as a full-bleed backdrop; the reference is plain black",
+    "below the synopsis: the implementation shows a red/pink codec error line that has no counterpart in the reference",
+    "scrubber: the reference shows a red played segment, a light-grey buffered segment and small marker ticks; the implementation shows a bare uniform track with the thumb at the start",
+    "bottom-left: the implementation shows a play icon where the reference shows a pause icon (playing state)",
+    "bottom control row: the implementation's icons are smaller and the left cluster is more tightly spaced than in the reference"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' title/synopsis overlay and the error message from the /watch controls state",
+    "Replace the poster backdrop with a pure black (#000) player surface or the actual video frame",
+    "Render the scrubber with a red played fill and thumb, a light-grey buffered fill, a darker grey remaining track, and optional marker ticks",
+    "Show the pause icon while playing so the screen matches the reference's playing state",
+    "Enlarge the bottom-row icons to about 48px and widen the spacing in the left and right clusters to match the reference"
+  ],
+  "summary": "The control chrome (top icons, scrubber, bottom control row, title lockup) is faithful, but the implementation adds a poster backdrop, a large 'You're watching' info overlay and an error line that the minimal black reference doesn't have."
+}
+```

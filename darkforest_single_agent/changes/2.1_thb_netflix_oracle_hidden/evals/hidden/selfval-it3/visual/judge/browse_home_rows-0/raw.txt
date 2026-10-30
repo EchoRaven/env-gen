@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The top nav bar matches: same height, logo on the left, links in the middle, utilities on the right. Rows use the same 67px left gutter, and each row bleeds off the right edge with a peek tile. They differ in a few ways. The reference starts right under the nav with stacked rows; the implementation still shows the bottom of a hero (Play/More Info) at the top. The reference has every row at 5 tiles per view, about 350x197 (16:9). In the implementation, 'TV Action & Adventure' has 6 shorter tiles, and the last row is a big-number Top 10 row with portrait posters. The reference's row rhythm is about 286px pitch with 4 rows visible; the implementation's spacing varies.",
+      "fix": "Show the scrolled rows state: no hero band at the top, first row title right under the nav (~y=118). Make every row 5 tiles per view at ~350x197 with ~9px gaps and a peek tile on the right. Use standard landscape rows only, with no ranked big-number row."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Matches: nav with 7 links and a pill-highlighted 'Home', search, bell, Kids avatar, profile avatar with caret, row titles, segmented page indicators on the right of each row, TOP 10 corner badges, red 'Recently Added' bottom-centre tags. Missing: the outlined 'BETA' pill next to a row title, and the paired 'New Episode' (red) + 'Watch Now' (white) tag. Invented: an expanded hover preview card (play/add/like/expand buttons, maturity rating, genre line, mute button), the hero CTA buttons and '#1 in TV Shows Today' line, and big outlined rank numbers.",
+      "missing": ["'BETA' outlined pill badge beside a row title", "paired 'New Episode' + 'Watch Now' tile tags", "'New Season' tile tag variant"],
+      "fix": "Remove the open hover preview card and the hero remnant from the default state. Add an outlined, letter-spaced 'BETA' pill after one row title. Support split tile tags: red label with a white 'Watch Now' segment next to it."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same dark, flat, cinematic style. Tiles have small radii (~4-6px), there are no dividers, rows are separated by whitespace, and badges are square-cornered. The hover card adds elevation and the hero adds a large rounded panel; the reference shows neither.",
+      "fix": "Leave out the elevated popover and hero panel so the flat grid of tiles is all that shows."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Near-black base (#141414), Netflix red for the logo and tags, white text, grey pill for the active nav item. Matches the reference.",
+      "fix": "No change beyond removing the hero gradient band at the top."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Nav and row titles use a matching bold geometric sans in white with the same relative sizes. On tiles, the implementation draws every title as uniform bold condensed caption text along the bottom-left. In the reference, the title lockup is part of the artwork, so styles vary and positions are centred or mixed.",
+      "fix": "Stop drawing a generic condensed text title over every tile. Rely on the artwork's own title lockup, or at least vary its placement and keep the overlay subtle."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Nav icons match: outline search, bell, Kids tile, square smiley avatar with caret. TOP 10 badges match. Tile imagery in the 'TV Action & Adventure' row and the Top 10 row uses the wrong aspect ratio (shorter landscape, portrait posters) compared with the uniform 16:9 tiles in the reference. The popover adds circular control icons the reference doesn't show.",
+      "fix": "Use 16:9 cover-cropped artwork (~350x197) in every row, and remove the portrait posters and outlined rank numerals."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels are identical ('Home', 'Shows', 'Movies', 'Games', 'New & Popular', 'My List', 'Browse by Languages', 'Kids'). 'Recently Added' and 'TOP 10' match. Missing the 'BETA', 'New Episode', 'Watch Now' and 'New Season' labels. Adds 'Play', 'More Info' and '#1 in TV Shows Today'.",
+      "fix": "Add the 'BETA' row badge and the 'New Episode' / 'Watch Now' / 'New Season' tag copy. Remove the hero CTA copy from this state."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "middle of screen: implementation shows an expanded hover preview card over the rows (artwork, play/check/like/expand buttons, TV-14/Movie/HD, genre line); the reference has no popover",
+    "top under nav: implementation shows the bottom of a hero with 'Play'/'More Info' buttons and '#1 in TV Shows Today'; the reference goes straight into the first row",
+    "bottom row: implementation has a Top 10 row with big outlined rank numbers and portrait posters; the reference keeps uniform 16:9 landscape tiles in every row",
+    "second row: implementation tiles are shorter, 6 per view; reference rows are 5 per view at ~350x197",
+    "row title: reference has an outlined letter-spaced 'BETA' pill next to a row title ('Games'); the implementation has none",
+    "tile tags: reference uses paired red 'New Episode' + white 'Watch Now' tags and a 'New Season' variant; implementation only uses 'Recently Added'",
+    "tile titles: implementation overlays uniform bold condensed title text at the bottom-left of every tile; in the reference the title lockups are part of the artwork and vary"
+  ],
+  "fixes": [
+    "Render /browse without the hover preview card open by default",
+    "Scroll past or remove the hero so the first row title sits right under the nav",
+    "Make every row 5 tiles per view at 16:9 (~350x197) with ~9px gaps and a peek tile on the right; drop the big-number Top 10 row",
+    "Add an outlined, letter-spaced 'BETA' pill after one row title",
+    "Support split tile tags (red 'New Episode' + white 'Watch Now') and 'New Season'",
+    "Remove the generic condensed text titles drawn on tiles; use the artwork's own title treatment"
+  ],
+  "summary": "The nav, colours and row/tile language match closely, but the implementation shows a different state (hero remnant, open hover card, ranked Top 10 row, uneven tile sizes) and lacks the BETA pill and split tile tags."
+}
+```

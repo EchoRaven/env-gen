@@ -1,0 +1,65 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The skeleton matches. A transparent top nav sits over a full-bleed hero, with the 'TV Shows' heading and Genres dropdown below the nav. Hero copy is in the left column, the mute and maturity-rating badge are at the right edge, and a horizontal 'Today's Top Picks for You' carousel follows with page indicators. The vertical rhythm is off, though. In the reference the title lockup starts at about 25% of the viewport height and the row heading sits at about 76%, so the whole row of cards and the top of the next section ('Only on Netflix') are visible. In the implementation the title starts at about 46%, the row heading is at about 83%, and the cards are cut off at the bottom of the viewport.",
+      "fix": "Shorten the hero and move the hero text block up so the title lockup starts ~250px from the top, the row heading sits ~835px down, and full cards plus the next row heading are visible in a 1104px-tall viewport."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "These are present: the nav with 7 items and the Shows pill active, search, bell, the Kids profile, the avatar with caret, the 'TV Shows' heading, the Genres dropdown, Play and More Info buttons, the mute button, the TV rating badge, the row title, the page indicator dashes, cards with TOP 10 corner badges, and the 'Recently Added' pills. Missing: the TOP 10 badge with '#1 in TV Shows Today' under the hero title, and the small red NETFLIX series mark above the title. The implementation adds a metadata row (genre · year · seasons · rating) that the reference does not show. Card status pills appear on fewer cards, and the reference also shows the 'New Season', 'New Episode' and 'Watch Now' variants. The next row's heading is not visible.",
+      "missing": [
+        "TOP 10 badge + '#1 in TV Shows Today' ranking line under the hero title",
+        "red 'NETFLIX' original-series mark above the hero title",
+        "card status pill variants ('New Season', 'New Episode' + white 'Watch Now') on most cards",
+        "next row heading peeking at the bottom"
+      ],
+      "fix": "Replace the genre/year/seasons metadata row with a TOP 10 red badge plus '#1 in TV Shows Today' at ~30px. Add the red NETFLIX mark above the title. Show a bottom-centered status pill on most cards, with red pill variants and a paired white 'Watch Now' pill."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "Both use the same cinematic, dark, full-bleed style: slightly rounded rectangular buttons, a translucent grey More Info button, a pill-shaped active nav item, flat cards with small radii, and tight card gaps. The reference title is a stylized artwork logo. The implementation sets the title as plain heavy condensed text, which feels more generic.",
+      "fix": "Render the hero title as an artwork-style logo image (or a styled lockup with italic/script variation), not uniform condensed caps."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both are dark, with a left-side and bottom scrim over the hero, white text, a Netflix-red wordmark and red badges, a white Play button, and a grey translucent secondary button. The reference fades into a near-black #141414 base below the hero, and the implementation's base is similar. The Genres box in the reference is solid black with a white border, while the implementation's is more transparent.",
+      "fix": "Give the Genres dropdown a solid black (#000) fill with a 1px white border."
+    },
+    "typography": {
+      "score": 0.72,
+      "notes": "Both use the same sans-serif for the nav, the heading, and the row title. The reference hero description is larger (~22px, with ~30px line height) and the 'Play'/'More Info' labels are similar in size. The implementation description is noticeably smaller (~17px) and lighter. The hero title type is plain condensed caps, not a stylized logo. The card titles in the implementation all use the same condensed font, while the reference uses each show's own logo artwork.",
+      "fix": "Increase the hero synopsis to ~22px with ~1.35 line-height and a subtle text shadow. Add the '#1 in TV Shows Today' line at ~30px medium weight."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "These match: the outline search and bell icons, the Kids gradient tile, the blue smiley avatar with caret, the filled play triangle, the outlined info circle, the circular mute button, and the TOP 10 red corner badges. Cards are 16:9 and cover-cropped. Missing are the TOP 10 hero badge icon and the red NETFLIX series mark.",
+      "fix": "Add the red square TOP 10 badge icon (~44px) before the ranking text in the hero."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "These labels match: the nav labels, 'TV Shows', 'Genres', 'Play', 'More Info', and 'Today's Top Picks for You'. Missing is the '#1 in TV Shows Today' copy. The pills say 'Recently Added', which matches, but 'New Season', 'New Episode' and 'Watch Now' are absent.",
+      "fix": "Add '#1 in TV Shows Today' under the hero title and use the varied card pill labels."
+    }
+  },
+  "similarity": 0.78,
+  "empty_state": false,
+  "deviations": [
+    "hero text block: reference shows a TOP 10 badge + '#1 in TV Shows Today' line under the title; implementation instead shows a genre · year · seasons · rating metadata row",
+    "hero title: reference has a small red NETFLIX series mark above a stylized artwork title logo; implementation shows plain white condensed caps with no NETFLIX mark",
+    "vertical rhythm: implementation hero is taller, with the title starting at ~500px vs ~250px and the row at ~920px vs ~835px, so the card row is cut off and the next section heading is not visible",
+    "hero synopsis: implementation text is noticeably smaller and lighter than the reference's ~22px description",
+    "card row: reference cards almost all carry bottom-centered status pills ('New Season', 'Recently Added', 'New Episode' + 'Watch Now'); implementation shows pills on only two cards",
+    "card title treatment: reference cards use each show's logo artwork; implementation overlays the same condensed text style on every card",
+    "Genres dropdown: reference is a solid black box; implementation is more transparent"
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a red TOP 10 badge + '#1 in TV Shows Today' (~30px, medium weight)",
+    "Add the small red 'NETFLIX' series mark above the hero title and render the title as a logo-style lockup",
+    "Reduce hero height and move the title block up (~250px top) so the row heading sits ~835px down, full cards are visible, and the next row heading peeks in",
+    "Increase hero synopsis font size to ~22px with ~1.35 line-height",
+    "Add bottom-centered status pills to most cards, including 'New Season', 'New Episode' and a paired white 'Watch Now' variant",
+    "Make the Genres dropdown solid black with a 1px white border"
+  ],
+  "summary": "The Netflix Shows page structure and chrome are close, but the hero lacks the TOP 10 '#1 in TV Shows Today' line and the NETFLIX title mark, adds a metadata row the reference doesn't have, and sits too low, so the card row is cut off."
+}

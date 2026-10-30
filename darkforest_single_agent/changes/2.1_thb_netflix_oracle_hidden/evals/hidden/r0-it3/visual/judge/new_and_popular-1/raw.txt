@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same skeleton: a top nav bar with the logo on the left, links in the middle and utilities on the right, then full-bleed horizontal rows: New on Netflix (16:9 tiles that run off the right edge), Top 10 TV Shows and Top 10 Movies (large numeral + poster pairs), then Coming This Week. Left gutters (~67px) and the page-indicator dashes at the top right of each row match. Differences: the content starts about 28px higher (first heading at y≈137 vs ≈165), so the rows sit tighter vertically. A large hover-preview card covers the middle of both Top 10 rows, hiding items 3–5. The reference shows no overlay at all.",
+      "fix": "Do not render an expanded hover card in the default state. Add ~25px of top padding above the first row heading so the row rhythm matches (headings at ~165/434/749/1063)."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Every nav item is present (Home, Shows, Movies, Games, New & Popular as an active pill, My List, Browse by Languages), along with search, bell, Kids avatar + label, profile avatar + caret, the TOP 10 corner flags, the red status badges at the bottom centre of tiles, the rank numerals and the row page indicators. Extra: an expanded preview card (play, add, like and expand buttons, mute toggle, maturity/seasons/HD metadata, genre list) that the reference does not show. Missing: the white secondary 'Watch Now' badge that sits next to the red badge on one reference tile. Every implementation tile shows a TOP 10 flag; the reference leaves some tiles unflagged (the first New-on tile). That is minor and depends on data.",
+      "missing": ["white 'Watch Now' secondary badge paired with red status badge"],
+      "fix": "Remove or suppress the auto-opened hover preview card. Support a two-part badge (red status + white 'Watch Now' chip) on tiles."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Flat, dark, cinematic and dense, like the reference. Tiles have barely rounded corners and no shadows, and badges are small square-ish red chips. The hover card adds a raised rounded panel that the reference never shows. Every tile title is rendered as the same condensed overlay text in the same spot. The reference uses artwork-specific logo lockups placed differently per tile, so the implementation looks more templated.",
+      "fix": "Use per-title logo art (or vary placement and scale) rather than a uniform condensed text overlay on every tile. Drop the raised hover panel from the default view."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Near-black #141414 base, white text, a Netflix-red logo/badges/TOP 10 flags and a grey translucent active nav pill: all match. The rank numerals are dark fills with a grey outline in both. The hover card's dark grey surface adds another surface level the reference lacks.",
+      "fix": "No palette change needed beyond removing the hover card surface."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Sans-serif throughout with the same levels: nav at ~17px, row headings at ~28px regular weight, and small bold badge text. The implementation's row headings are slightly larger and the face looks like Inter rather than Netflix Sans, which is a little wider and rounder. Tile title overlays use a uniform heavy condensed face (Bebas-like) on every tile; the reference uses artwork-native logotypes.",
+      "fix": "Switch to Netflix Sans or a closer substitute (e.g. a slightly tighter humanist sans), reduce row headings to ~26px, and stop drawing synthetic condensed titles on the tiles."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The NETFLIX red wordmark, outline search and bell icons, the square Kids and smiley profile avatars, the caret, the TOP 10 flag shape and the outlined rank numerals all match. Tiles are 16:9 in New on Netflix and 2:3 posters in the Top 10 rows, as in the reference. Top 10 posters are a little narrower (~143px vs ~146px) and leave a bit more gap after each numeral. The hover card brings in extra circular icon buttons that the reference does not show.",
+      "fix": "Widen the Top 10 posters to ~146px so each poster butts up against the right edge of its numeral, as in the reference."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, the section headings 'New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week', and the badge vocabulary ('Recently Added', 'New Episodes'/'New Season') all match in wording and casing. The 'Watch Now' chip text is absent.",
+      "fix": "Add the 'Watch Now' secondary chip label where a tile has a new episode."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Center of Top 10 TV / Top 10 Movies rows: the implementation shows a large expanded hover-preview card (artwork, play/add/like/expand buttons, TV-14 · 2 Seasons · HD, genres) covering ranks 3–5. The reference shows no overlay and every rank tile is visible.",
+    "Vertical rhythm: the implementation's row headings sit ~20–30px higher than the reference's (≈137/407/731/1055 vs ≈165/434/749/1063), so the page feels tighter at the top.",
+    "Tile title treatment: the implementation stamps the same condensed bold text title at the same position on every tile. The reference uses artwork-specific logo lockups that vary in placement and style.",
+    "Badges: the reference shows a paired red 'New Episode' + white 'Watch Now' chip on one tile. The implementation has no white secondary chip variant.",
+    "Top 10 rows: the implementation's posters are slightly narrower and the gap between each numeral and its poster is larger than in the reference.",
+    "Typography: the row headings are slightly larger and wider-set (Inter-like) than the reference's Netflix Sans."
+  ],
+  "fixes": [
+    "Do not auto-open the hover preview card. Render it only on real pointer hover so the default view shows unobstructed Top 10 rows.",
+    "Add ~25px of top padding above the 'New on Netflix' heading and match the row spacing (~270px between Top 10 row headings, ~315px between them and the next).",
+    "Replace the synthetic condensed-text tile titles with per-title logo artwork, or omit the overlay text when no logo art exists.",
+    "Add a two-part badge variant: a red status chip followed by a white 'Watch Now' chip with black text.",
+    "Widen the Top 10 poster tiles to ~146px and tuck each poster flush against the right edge of its numeral.",
+    "Switch the font to Netflix Sans or a closer substitute and set row headings to ~26px regular."
+  ],
+  "summary": "The implementation copies the reference's nav, rows, Top 10 numerals and badges closely. The main deviations are an extra hover-preview card covering the Top 10 rows, slightly tighter vertical spacing, and templated text titles in place of artwork logo lockups."
+}
+```

@@ -1,0 +1,58 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches. Both have a full-bleed tilted poster mosaic, a wordmark top-left and a language select plus Sign In top-right. Both centre the hero stack (headline, subline, prompt, email + CTA row), then a curved arc divider and a promo card at the bottom. Differences: the implementation's hero sits about 50px higher (headline starts near y≈265 vs ≈315). In the reference the popcorn illustration sits outside the promo card to its left and the card starts at about x≈275. In the implementation the icon is inside the card and the card spans x≈163–1757.",
+      "fix": "Move the hero stack down about 50px so the headline starts near y≈315. Put the popcorn graphic outside the promo card on its left, and start the card about 110px to the right of the content edge."
+    },
+    "components": {
+      "score": 0.92,
+      "missing": [],
+      "notes": "Every component is there: the NETFLIX wordmark, a language dropdown with icon and caret, the red Sign In button, the headline, the subline, the prompt text, the email input with placeholder, the red Get Started button with chevron, the arc divider, and the promo card with icon, title, subtitle and grey Learn More button. The only difference is the promo icon: it should sit outside the card, not inside.",
+      "fix": "Pull the popcorn icon out of the promo card and place it to the left of the card."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic dark style: a dimmed poster wall under a dark vignette, slightly rounded inputs and buttons, and a rounded promo card. The reference's mosaic is tilted with mixed, mostly wider landscape tiles in a denser rotated grid. The implementation uses uniformly tall portrait posters. The reference arc is thin, with a navy/blue glow under it. The implementation's arc is a deeper purple wash that spans the full width.",
+      "fix": "Use wider landscape or mixed-aspect tiles in the rotated mosaic. Restyle the arc as a thin pink-red line with a soft navy-to-black gradient below it, not a heavy purple fill."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Same dark scheme and Netflix red on the wordmark, Sign In and Get Started. White hero text, grey Learn More button and a purple promo card in both. The reference's under-arc glow leans blue/navy and its promo card is a deeper indigo. The implementation leans magenta/purple.",
+      "fix": "Shift the under-arc gradient and promo card toward deep indigo/navy (around #1d1b4a to #2a2160) and reduce the magenta."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Bold sans headline, a semibold subline, a regular prompt line and a bold promo title in both, with the same hierarchy. The implementation's headline is slightly larger and wraps as 'Unlimited movies, / TV shows, and more'. The reference wraps as 'Unlimited movies, TV / shows, and more' in a narrower block. The subline weight is similar.",
+      "fix": "Cap the headline width at about 640px and reduce its size slightly (≈56px) so it wraps after 'TV' as the reference does."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The wordmark, translate icon, caret and CTA chevron all match. The reference promo icon is a 3D illustrated popcorn bucket with a red star badge and a soft glow. The implementation uses a flat emoji-style popcorn. The implementation's poster tiles are portrait. The reference shows wider landscape key-art tiles.",
+      "fix": "Replace the emoji popcorn with a 3D illustrated popcorn bucket asset (red/white stripes, star badge) of about 80px, placed outside the card. Use landscape-ratio tiles in the background mosaic."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "These match: 'Sign In', 'English', 'Unlimited movies, TV shows, and more', 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started' and 'Learn More'. The subline differs: the reference has 'Starts at $8.99. Cancel anytime.' and the implementation has 'Watch on any device. Every profile keeps its own list.' The promo copy also differs: the reference has 'The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.' and the implementation has a catalog pitch.",
+      "fix": "Change the subline to a short price/cancel line ('Starts at $X. Cancel anytime.'). Phrase the promo as an offer headline with a one-line plan description."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "Bottom promo: the reference puts the 3D popcorn illustration outside the card on its left; the implementation puts a flat emoji popcorn inside the card",
+    "Background mosaic: the reference uses a tilted grid of mostly landscape/wide tiles; the implementation uses uniformly tall portrait posters",
+    "Arc divider: the reference has a thin red-pink line over a navy/blue glow; the implementation has a heavier magenta/purple wash",
+    "Hero: the implementation's headline block sits about 50px higher, is slightly larger, and wraps 'Unlimited movies, / TV shows…' instead of 'Unlimited movies, TV / shows…'",
+    "Hero subline: different wording; the reference's is a price/cancel-anytime line",
+    "Promo card copy: the reference has a price-offer headline and plan description; the implementation has a catalog pitch"
+  ],
+  "fixes": [
+    "Move the popcorn icon out of the promo card to its left, and replace the emoji with a 3D illustrated popcorn bucket asset",
+    "Restyle the arc as a thin pink-red stroke with a navy/indigo gradient below it, and tint the promo card deep indigo",
+    "Switch the background mosaic tiles to landscape or mixed aspect in a rotated dense grid",
+    "Constrain the headline width (≈640px), reduce its size slightly, and shift the hero stack down about 50px",
+    "Change the subline to 'Starts at $X. Cancel anytime.' style copy, and phrase the promo as a price offer plus a plan description"
+  ],
+  "summary": "A close recreation of the Netflix landing hero: structure, components and colours match. The main gaps are the popcorn icon's placement and style, portrait vs landscape mosaic tiles, the purple tint of the arc and promo card, and the subline/promo wording."
+}

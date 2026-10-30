@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "In both, the dropdown is anchored under the profile avatar at the top right. It has the same width (~275px) and right edge, and it overlaps the page content. The order matches: profile rows, then action rows, then a hairline divider, then a sign-out footer. The header chrome matches: logo, 7 nav links, search, bell, Kids shortcut, avatar and caret. The page underneath is different (a Home hero in the implementation, a Browse by Languages grid in the reference), but that is the host route, not the menu. The implementation's action rows are tighter (~50px pitch vs ~58px).",
+      "fix": "Keep the anchor and width. Increase the action-row height to ~58px so the menu's rhythm matches the reference."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: profile rows with avatar tiles, Manage Profiles (pencil), Account (person), a divider, and Sign out of Netflix. Missing: the Transfer Profile row and the Help Center row. Added: a Switch Profile row (monitor icon) that the reference does not have. The implementation also lists what looks like the active profile (the blue avatar, which matches the header avatar). The reference lists only the other profiles.",
+      "fix": "Make the action rows exactly: Manage Profiles, Transfer Profile, Account, Help Center. Then the divider, then Sign out of Netflix. Remove Switch Profile. Leave the current profile out of the profile list.",
+      "missing": ["Transfer Profile menu item (with its transfer icon)", "Help Center menu item (with circled ? icon)"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use a dark, near-opaque panel with slightly rounded corners, a hairline border and a full-width hairline divider above sign-out. The style is flat and utilitarian. The reference has more padding between rows and uses larger icons.",
+      "fix": "Increase vertical padding per row by ~8px. Keep the border, corner radius and divider."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both have a dark charcoal panel with white text and white line icons, and the same multicolour Kids tile and blue smiley tile. The implementation's panel is a little more transparent or lighter, but close.",
+      "fix": "Use the panel background ~rgba(20,20,20,0.95) to match the reference's darker surface."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans font at regular weight, ~17px, white and left-aligned, with sign-out in the same style. The implementation's labels are slightly smaller and set closer together.",
+      "fix": "Set item labels to ~17–18px regular, with the larger row height."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use line-style icons. The reference's icons are larger (~26px) with a pencil, transfer-document icon, person and circled question mark. The implementation's icons are smaller (~20px), and it uses a monitor icon that the reference does not show. The profile avatar tiles match: rounded-square Kids gradient and blue smiley.",
+      "fix": "Make action icons ~26px with a 1.5px stroke. Add the Transfer Profile icon and the circled-? Help Center icon. Remove the monitor icon."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Transfer Profile' and 'Help Center' are absent. 'Switch Profile' is invented.",
+      "fix": "Use these labels: 'Manage Profiles', 'Transfer Profile', 'Account', 'Help Center', 'Sign out of Netflix'."
+    }
+  },
+  "similarity": 0.76,
+  "empty_state": false,
+  "deviations": [
+    "account dropdown, action rows: the 'Transfer Profile' row (between Manage Profiles and Account in the reference) is missing",
+    "account dropdown, action rows: the 'Help Center' row with circled-? icon (above the divider in the reference) is missing",
+    "account dropdown: the implementation adds a 'Switch Profile' row with a monitor icon that the reference does not have",
+    "account dropdown, profile section: the implementation lists the active profile (the blue avatar matching the header), while the reference lists only the other profiles",
+    "account dropdown, rows: the implementation's icons are smaller (~20px vs ~26px) and its row pitch is tighter (~50px vs ~58px)"
+  ],
+  "fixes": [
+    "Replace the action-row list with: Manage Profiles (pencil), Transfer Profile (transfer icon), Account (person), Help Center (circled ?).",
+    "Remove the 'Switch Profile' row.",
+    "Exclude the currently active profile from the profile rows at the top of the menu.",
+    "Increase icon size to ~26px and row height to ~58px.",
+    "Keep the divider and 'Sign out of Netflix' footer as they are."
+  ],
+  "summary": "The account dropdown has the right placement, panel style, divider and sign-out footer, but it lacks the Transfer Profile and Help Center rows, adds a Switch Profile row, and its icons and rows are smaller and tighter than the reference."
+}
+```

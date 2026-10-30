@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Same skeleton: transparent top nav over a full-bleed hero, breadcrumb and genre title top-left, title lockup with description and CTAs in the lower-left, mute button and TV-14 rating flag on the right edge, and a 'Your Next Watch' carousel overlapping the bottom of the hero. The hero title wraps onto two lines and the description sits lower, so the carousel starts about 80px lower (~950 vs ~870). Its cards are cut off at the bottom of the viewport, and the next row heading ('TV Comedies' in the reference) never shows.",
+      "fix": "Keep the hero title lockup to one line (smaller font or a max-height on the lockup). Move the description, CTAs and carousel up so the row's top edge sits at ~870px and the full 16:9 cards fit, with the next row heading peeking at the bottom."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Present: logo, 7 nav links, search, bell, Kids profile, avatar with caret, breadcrumb, genre heading, title lockup, synopsis, Play and More Info buttons, mute toggle, maturity flag, row title, page-indicator dashes, cards with TOP 10 and red status badges, and a peek of the next card. Missing: the reference marks the active nav item with a grey pill ('Shows'); the implementation shows no active state. The reference's 'Live Now' badge with a dot is a content variant and isn't scored.",
+      "missing": ["active nav item pill highlight (grey rounded pill behind the current section)"],
+      "fix": "Put a translucent grey pill (rgba(255,255,255,0.2), fully rounded, ~10px 18px padding) behind the active nav link, bold the active link, and highlight the right parent section for genre pages."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic dark Netflix style: full-bleed imagery, slightly rounded buttons, the translucent grey More Info button, flat cards with small badges. The implementation's hero is a heavily saturated red backdrop and the card titles are rendered text, but the treatments match. The cards are cropped by the viewport.",
+      "fix": "Keep the treatments. Fix the vertical rhythm so cards show in full."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same palette: Netflix-red wordmark and title lockup, white Play button with black text, translucent grey secondary button, red badges, near-black base. The hero gradient and scrim match. The overall red cast comes from the content.",
+      "fix": "No major change. Keep the bottom scrim to #141414 so the row reads on a dark base, as in the reference."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same sans family and hierarchy: large light genre title, grey breadcrumb, condensed bold red title lockup, white synopsis, bold row heading. Differences: the synopsis is smaller (~17px vs ~22px) and its lines are tighter, and the Play/More Info labels are a little smaller. The title lockup is taller, so it wraps. The active nav item isn't bolded.",
+      "fix": "Set the hero synopsis to ~1.4vw/22px with line-height ~1.35 and a max-width of ~42%. Set the button labels to ~22px. Make the title lockup smaller so it stays on one line."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, Kids gradient tile, blue smiley avatar with caret, solid play triangle, circled-i info icon, circular mute button, and TOP 10 corner badges all match. The cards use 16:9 crops. The breadcrumb separator is a chevron '›', where the reference uses '>'. That's minor.",
+      "fix": "Make the More Info 'i' icon slightly larger (~32px) to match the reference's weight."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, Play, More Info, Your Next Watch, TV-14, Recently Added and Kids all match. The breadcrumb root reads 'Home', where the reference shows the parent section ('TV Shows'). The genre name itself is content.",
+      "fix": "Make the breadcrumb root show the parent category label (e.g. 'TV Shows' / 'Movies') instead of 'Home'."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "top nav: the reference wraps the active section ('Shows') in a grey rounded pill; the implementation highlights no nav item",
+    "hero: the title lockup wraps to two lines and pushes the synopsis, CTAs and 'Your Next Watch' row ~80px down, so the cards are cut off at the bottom and the next row heading never appears",
+    "hero synopsis: smaller and tighter type (~17px) than the reference's ~22px",
+    "breadcrumb: the root label is 'Home' with a '›' chevron; the reference shows the parent section ('TV Shows') with '>'",
+    "Play/More Info buttons: a little smaller in height and label size than the reference"
+  ],
+  "fixes": [
+    "Add an active-state pill (translucent grey, fully rounded) behind the current nav section, and make the genre page highlight its parent section",
+    "Limit the hero title lockup to a single line (smaller font or a max-height) so the carousel starts at ~870px and the cards show in full, with the next row heading peeking",
+    "Increase the hero synopsis to ~22px with ~1.35 line-height",
+    "Make the breadcrumb root show the parent category (e.g. 'TV Shows') instead of 'Home'",
+    "Enlarge the Play/More Info buttons slightly (~58px tall, 22px labels)"
+  ],
+  "summary": "Closely follows the Netflix genre-page design (nav, breadcrumb hero, title lockup, CTAs, rating flag, badged carousel), but it has no active-nav pill, the title wraps and pushes the row off-screen, and the synopsis type is too small."
+}
+```

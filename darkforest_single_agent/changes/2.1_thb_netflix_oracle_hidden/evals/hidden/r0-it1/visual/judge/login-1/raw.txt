@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. Both have a thin top header with the logo on the left above a hairline divider. Both have a centered single column about 490px wide holding the heading, subtitle, input(s), CTA, Get Help and the small fine print. Both use a dark-red-to-black gradient body and a full-width dark-grey footer with the same left gutter (~213px) and a 4-column link grid. The differences: the extra password field pushes everything below it down by ~60px, and the footer grid has 1 row of 3 links instead of 2 full rows of 4.",
+      "fix": "Remove the password field so the CTA sits right under the email input (~320px from the top). Fill the footer grid to 4 columns × 2 rows."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "Present and matching: logo, header divider, heading, subtitle, floating-label email input, full-width red Continue button, Get Help chevron toggle, fine-print line, footer contact line, footer link grid. Differences: there is an extra Password input that the reference's email-first step does not show. The footer has only 3 links where the reference has 8 (4 columns × 2 rows), so columns 2–4 of the second row and column 4 of the first row are empty.",
+      "fix": "Make the screen a single-field step: email or mobile number only, then Continue. Move the password to a follow-up step. Fill the footer with 8 links in a 4×2 grid.",
+      "missing": [
+        "footer links: 4th column and the second row of the 4×2 footer link grid"
+      ]
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat, minimal dark treatment. Inputs are slightly rounded with a translucent dark fill and a thin grey border. The button is slightly rounded, there are no shadows, and both use a hairline header divider and a footer block. The spacing rhythm is very close.",
+      "fix": "Keep as is. Just match the vertical spacing: 12px between input and button, then ~65px down to Get Help."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The palette matches: a maroon-to-black vertical gradient, a #181818-ish footer, white headings, grey secondary text and a red logo. The implementation's CTA is a brighter, more saturated Netflix red (#E50914). The reference button is a slightly softer, orange-leaning red (~#D3302A).",
+      "fix": "Set the Continue button background to ~#D6322A."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "The hierarchy matches: a bold ~36px heading, a ~20px light-grey subtitle, a ~13px floating label, a semibold button label, ~18px Get Help and ~14px muted fine print. The implementation uses a generic grotesque (Inter-like). The reference uses a rounder humanist sans (Netflix Sans), and its heading is slightly heavier and rounder. The input value size can't be compared because the implementation's field is empty.",
+      "fix": "Use a rounder humanist sans stack for headings and body (e.g. 'Netflix Sans', 'Helvetica Neue', fallbacks) at weight 700 for the heading."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "The wordmark logo is the same red condensed NETFLIX at the same size and position. The Get Help chevron is a thin outline in both, but the reference's chevron is slightly larger.",
+      "fix": "Increase the Get Help chevron to ~16px with a thin 1.5px stroke."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Matching copy: the heading 'Enter your info to sign in', the subtitle, the 'Email or mobile number' label, 'Continue' and 'Get Help'. Differences: the fine print reads 'Passwords are verified server-side…' where the reference has the reCAPTCHA notice. The footer contact line reads 'Questions? Use “Get Help”…' where the reference has 'Questions? Call <phone> (Toll-Free)'. The footer link labels (Home/Sign In/Create Account) differ from the reference's FAQ/Help Center/Terms of Use/Privacy/etc. style. The extra 'Password' label is also extra copy.",
+      "fix": "Change the fine print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Change the footer line to 'Questions? Call 1-xxx-xxx-xxxx (Toll-Free)'. Use footer labels FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "form: the implementation adds a Password input under the email field; the reference shows an email-only step with Continue directly beneath",
+    "footer link grid: the implementation shows 3 links in one row; the reference shows 8 links in a 4-column × 2-row grid",
+    "footer contact line: the implementation reads 'Questions? Use “Get Help” on the sign-in page.'; the reference shows a 'Questions? Call <phone> (Toll-Free)' line",
+    "fine print under Get Help: the implementation shows a password-hashing note; the reference shows the reCAPTCHA protection notice",
+    "Continue button: the implementation's red is brighter and more saturated (#E50914); the reference uses a softer red (~#D6322A)",
+    "typography: the implementation uses an Inter-like grotesque; the reference uses a rounder humanist sans with a heavier heading"
+  ],
+  "fixes": [
+    "Remove the Password field from /login so the email input is followed directly by the Continue button. Handle the password on a subsequent step.",
+    "Fill the footer with a 4-column × 2-row link grid: FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information.",
+    "Change the footer lead line to 'Questions? Call 1-xxx-xxx-xxxx (Toll-Free)'.",
+    "Change the fine print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Set the Continue button background to ~#D6322A.",
+    "Switch the font stack to a rounder humanist sans (Netflix Sans/Helvetica Neue) and enlarge the Get Help chevron slightly."
+  ],
+  "summary": "The implementation closely follows the reference's Netflix sign-in design, but it adds a Password field to the email-only step, has a sparse 3-link footer instead of a 4×2 grid, and swaps in different fine print and footer copy."
+}

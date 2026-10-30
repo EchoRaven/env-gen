@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The top bar matches closely: Netflix wordmark on the left, a pill-highlighted Home, 6 more nav links, and search, bell, Kids and profile on the right. Both screens use full-bleed horizontal carousels with a ~67px left gutter, a section title on the left, a page-indicator dash strip on the right, and a peeking 6th tile. The reference is scrolled into the rows: the first row title sits right under the header and no hero is visible. The implementation shows the bottom of a rounded hero (Play / More Info) under the header, which pushes the rows down by about 170px. It also shows a hover-preview card floating over the rows and a numbered Top-10 row, and neither appears in the reference state.",
+      "fix": "Render the /browse rows state so the first carousel title sits ~30px below the header with no hero band visible. Close the hover preview card by default. Stack the rows as standard 16:9 tile carousels."
+    },
+    "components": {
+      "score": 0.62,
+      "notes": "Present: the full nav (7 links), search, bell, Kids avatar + label, profile avatar + caret, row titles, row page indicators, 16:9 landscape tiles, TOP 10 corner badges, and red tag pills ('Recently Added', 'New Episodes'). Missing: the outlined 'BETA' chip next to the Games row title, the Games row of game artwork tiles, and the two-part pill (red label + white 'Watch Now' segment). The implementation adds things the reference lacks: hero Play/More Info buttons, an expanded hover card (play, +, thumbs, chevron, maturity/seasons/HD meta, genre list, mute button), and big outlined rank numerals in the Top-10 row.",
+      "missing": ["Games row header with 'BETA' outlined chip", "Games row of game tiles", "Two-part tag pill with white 'Watch Now' segment"],
+      "fix": "Add a 'Games' row whose title is followed by an outlined, letter-spaced 'BETA' chip with a purple/pink border. Support a split tag pill: red 'New Episode' plus a white 'Watch Now' segment with black text. Remove the hero, the hover card, and the rank-numeral row from this view."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "Both are flat and dark, with slightly rounded (~6px) tiles, tight ~9px tile gaps, and generous ~70px vertical spacing between rows. The hover card's elevation and shadow and the hero's rounded card add depth that the reference doesn't show.",
+      "fix": "Keep the tiles flat with ~6px radius and ~9px gaps. Drop the elevated popover and hero card from the default state."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both use a #141414 page with a near-black header, white text, Netflix-red tag pills and TOP 10 badges, and a grey active-nav pill. The reference's white 'Watch Now' segment and purple BETA chip outline are absent.",
+      "fix": "Add the purple/magenta outline on the BETA chip and the white/black 'Watch Now' pill segment."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Both use a sans-serif (Netflix Sans-like) font. Nav sizes and weights match, and so do the white row titles at ~26px. The reference's row titles look medium/semibold while the implementation's look regular and a bit lighter and larger. Tag pill text is bold in both, though the implementation's is slightly smaller.",
+      "fix": "Set the row title weight to 500–600 at ~26px, and the tag pill text to ~15px bold."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Line icons for search and bell match, and so do the Kids rainbow avatar and smiley profile avatar. Tiles in both are 16:9 cover crops with small radius, with the TOP 10 badge in the top-right corner. The implementation adds hover-card circle icon buttons and outlined rank numerals that the reference doesn't show.",
+      "fix": "Keep the tile and badge treatment. Remove the circular action icons and rank numerals from the default view."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. Tag copy matches the reference style ('Recently Added'), but the implementation uses 'New Episodes' (plural) where the reference uses 'New Episode' / 'New Season'. 'BETA' and 'Watch Now' labels are absent.",
+      "fix": "Use 'New Episode' / 'New Season' tag wording, add the 'Watch Now' pill segment, and add the 'BETA' chip text."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Center of rows (second image): an expanded hover-preview card with play/+/thumbs/chevron buttons and meta/genre text overlays the TV Action & Adventure row. The reference shows no popover, only plain tiles.",
+    "Top of page (second image): the bottom of a rounded hero with 'Play' / 'More Info' buttons sits under the header. In the reference, the first carousel title starts directly under the nav bar.",
+    "Bottom row (second image): a Top-10 row with large outlined rank numerals and portrait posters. The reference only has uniform 16:9 landscape tile rows.",
+    "Second row in reference: the 'Games' title with an outlined 'BETA' chip and a row of game tiles has no equivalent in the implementation.",
+    "Tile tag pills: the reference pairs a red label with a white 'Watch Now' segment on some tiles. The implementation has only single red pills.",
+    "Row titles: the implementation's weight is lighter and regular, versus the reference's medium/semibold."
+  ],
+  "fixes": [
+    "Don't open the hover preview card by default. Show it only on hover.",
+    "Start the browse view scrolled into the rows, or remove the hero band from this screen, so the first row title sits ~30px under the header.",
+    "Replace the rank-numeral Top-10 row with a standard 16:9 tile carousel, such as 'Top Searches'.",
+    "Add a 'Games' row with an outlined, letter-spaced 'BETA' chip (purple border) next to the title.",
+    "Support a split tag pill: red 'New Episode' plus a white 'Watch Now' segment with dark text, centered at the tile's bottom edge.",
+    "Set the row title font weight to 500–600."
+  ],
+  "summary": "The header, row titles, 16:9 tile carousels, TOP 10 badges and red tag pills match well. The implementation adds a hero, an open hover card and a ranked-numeral row that the reference lacks, and it misses the Games/BETA row and the 'Watch Now' split pill."
+}
+```

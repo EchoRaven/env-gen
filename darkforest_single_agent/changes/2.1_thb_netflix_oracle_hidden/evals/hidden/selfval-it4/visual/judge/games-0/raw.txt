@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The top nav matches closely: logo on the left, 7 links with a pill on the active 'Games' link, and search, bell, Kids and avatar on the right, overlaid on the page. Below the nav, the reference has a full-bleed hero (~70% of the viewport) with the title lockup, metadata and CTAs at the bottom left, followed by a horizontal 'Party Games' carousel row. The implementation has a short, flat purple-gradient header with a text title, and an empty centered message where the carousel should be.",
+      "fix": "Render a full-bleed hero with background artwork about 790px tall, the title lockup, metadata row and CTAs anchored bottom left at x≈53. Below it, add a 'Party Games' row of 16:9 landscape tiles that overflows to the right."
+    },
+    "components": {
+      "score": 0.3,
+      "notes": "Nav components all match. Missing: hero background artwork, logo-style title treatment, Play Game and More Info buttons, mute toggle, maturity-rating tab ('ALL'), carousel tiles and the row page indicator. Added: a BETA chip, an empty-state block with Browse TV Shows / Browse Movies CTAs, and a TMDB footer note.",
+      "fix": "Add a white 'Play Game' button, a translucent grey 'More Info' button with an info icon, a circular mute button on the right and the 'ALL' rating tab. Fill the Party Games row with artwork tiles and add the page-indicator dashes at the top right. Remove the BETA chip and the empty-state CTAs.",
+      "missing": ["hero background artwork", "title-art logo lockup with small Netflix label", "Play Game button", "More Info button", "mute/volume toggle", "maturity rating tab (ALL)", "Party Games carousel tiles", "row pagination indicator"]
+    },
+    "style": {
+      "score": 0.45,
+      "notes": "Same flat dark Netflix language, with slightly rounded buttons and a pill nav. The implementation has none of the rich imagery or the hero bottom fade, and adds a purple gradient wash plus an outlined chip, which the reference does not use.",
+      "fix": "Replace the purple gradient header with full-bleed imagery that has a dark bottom/left vignette. Use 16:9 tiles with ~4px radius and ~8px gaps."
+    },
+    "color": {
+      "score": 0.55,
+      "notes": "The #141414 base, white text, red logo and white primary CTA all match. The implementation adds a purple top gradient and a purple BETA outline that are absent from the reference.",
+      "fix": "Remove the purple gradient and purple chip so the page sits on a neutral #141414 base, with color coming only from the hero and tile artwork."
+    },
+    "typography": {
+      "score": 0.5,
+      "notes": "Nav type and the 'Party Games' row heading (~26px regular sans) match. The reference title is a graphic logo lockup; the implementation uses giant condensed 'GAMES' text. Its metadata row is similar in style but has only 2 items and no bold separators.",
+      "fix": "Replace the 'GAMES' text with an artwork title lockup about 200px wide. Use a metadata row of '<type> • <genre> • <players> • <duration>' at ~17px medium weight with bullet separators."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "The nav icons (search, bell, Kids badge, smiley avatar, caret) match. Missing: the circled-i info icon, the speaker-mute icon, and all landscape tile imagery.",
+      "fix": "Add the outlined info icon inside More Info and the speaker-x icon in a circular outlined button. Render game tiles as cover-cropped 16:9 images with slight rounding."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "The nav labels and the 'Party Games' heading match. The reference CTAs read 'Play Game' and 'More Info'; the implementation shows an empty-state headline, explanatory text, 'Browse TV Shows' / 'Browse Movies' buttons, a BETA chip and a TMDB footer.",
+      "fix": "Use 'Play Game' and 'More Info' as the hero CTAs and 'ALL' on the rating tab. Remove the empty-state copy and the BETA label."
+    }
+  },
+  "similarity": 0.35,
+  "empty_state": true,
+  "deviations": [
+    "hero: the reference has full-bleed game artwork covering the top ~70% of the screen; the implementation has a flat purple-to-dark gradient with plain 'GAMES' text",
+    "Party Games row: the reference shows a horizontal carousel of 16:9 game artwork tiles; the implementation shows a centered 'No games in the catalog yet' empty state",
+    "hero CTAs: the reference's white 'Play Game' and grey 'More Info' (with info icon) buttons are missing",
+    "hero right edge: the reference's circular mute button and 'ALL' maturity tab are missing",
+    "hero title: the reference uses a graphic logo lockup with a small NETFLIX label; the implementation uses large condensed text",
+    "Party Games heading: the implementation adds a purple outlined BETA chip that the reference does not have",
+    "empty-state area: the implementation adds invented 'Browse TV Shows' / 'Browse Movies' buttons",
+    "page bottom: the implementation adds a TMDB attribution footer that is not in the reference",
+    "Party Games row header: the row-pagination dash indicator at the top right is missing"
+  ],
+  "fixes": [
+    "Seed game data so the Party Games carousel renders 16:9 artwork tiles (~355×200, 8px gaps, overflowing to the right)",
+    "Build a full-bleed hero (~790px tall) with background artwork and a dark bottom/left vignette, replacing the purple gradient",
+    "Inside the hero at the bottom left, render the title logo lockup, then a metadata row (Game • Genre • Players • Duration), then the white 'Play Game' and translucent grey 'More Info' (with info icon) buttons",
+    "Add a circular mute button and an 'ALL' rating tab with a left border at the hero's bottom right",
+    "Remove the BETA chip, the empty-state block, its CTAs and the TMDB footer",
+    "Add row-pagination dashes at the top right of the Party Games row"
+  ],
+  "summary": "The nav chrome matches the reference exactly, but missing data leaves an empty state: there is no hero artwork, no CTAs and no carousel tiles, and the BETA chip and empty-state buttons are invented."
+}

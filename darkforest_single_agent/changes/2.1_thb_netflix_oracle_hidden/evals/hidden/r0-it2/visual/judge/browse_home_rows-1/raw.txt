@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Top nav matches the reference closely: NETFLIX wordmark on the left, a pill around the active 'Home' item, 7 nav items, and search, bell, Kids and avatar on the right. Below it, both use full-bleed horizontal carousels with a left gutter of about 67px, the last tile peeking off the right edge, and page indicator dashes at the top right of each row. Differences: the reference viewport is only stacked rows, with headings starting right under the header. The implementation still has the bottom of the hero (Play/More Info buttons) in view under the nav, so the first row is pushed down to about y=260. A large hover-preview card covers the middle of the second and third rows. A ranked 'Top 10' row with giant numerals and portrait posters is in view where the reference shows only uniform 16:9 rows. Row height and tile size are close (about 344×193 vs 350×197), but the gaps between tiles are slightly tighter.",
+      "fix": "Show the screen at the rows-only state: scroll past the hero or render the rows view without it, so the first row heading sits about 30px under the header. Keep every visible row a uniform 16:9 landscape carousel with the reference's spacing: about 285px from one row heading to the next, 9px gaps between tiles."
+    },
+    "components": {
+      "score": 0.62,
+      "notes": "Present: top nav with all items, search icon, bell, Kids profile chip, avatar with caret, row headings, landscape tiles, red 'TOP 10' corner badges, red status pills at the bottom centre of tiles, page-indicator dashes, and the partial tile peeking at the right edge. Missing or different: the reference pairs a red 'New Episode' pill with a white 'Watch Now' pill, and the implementation only shows single red pills. The reference has a 'Games' row heading with an outlined 'BETA' chip, which the implementation doesn't show. The implementation adds things the reference lacks: an expanded hover card (play, add, thumbs and expand buttons, maturity rating, seasons, HD tag, genre list), the hero's Play/More Info buttons, and the ranked-numeral Top 10 row.",
+      "missing": [
+        "white 'Watch Now' companion pill next to the red status pill",
+        "'BETA' outlined chip next to a row heading (Games row)"
+      ],
+      "fix": "Add the two-part badge (red 'New Episode' + white 'Watch Now') to tiles whose status calls for it. Render a Games row with an outlined purple-bordered 'BETA' chip beside its heading. Make sure no hover card is open in the default state."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat, dark, cinematic style. Tiles have slightly rounded corners (about 4–6px), there are no borders, rows are separated by whitespace, and badges are small solid pills. The implementation adds an elevated, shadowed hover card and a hero with heavily rounded corners, which make the screen look busier than the reference's calm grid of tiles. Most implementation tiles also have a heavy condensed title overlaid at the bottom left, while the reference puts title art in varied positions.",
+      "fix": "Remove the open hover-card state from the default view. Keep tiles as flat artwork with slightly rounded corners and no added elevation."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Same near-black base (#141414) and black header, the same Netflix red for the wordmark, status pills and TOP 10 badges, white headings and grey nav text. The reference's white 'Watch Now' pill and purple BETA chip outline are absent. Contrast levels are similar.",
+      "fix": "Add the white-background, black-text 'Watch Now' pill and the purple/magenta outline on the BETA chip."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif UI font. Row headings are about 26px medium-bold in white, nav items about 17px in grey, and the active nav item is bold white. Status pills are small bold white text on red. Pill text in the implementation looks slightly smaller and lighter than the reference's. Uniform condensed title text on the tiles stands in for the reference's per-title logo artwork, which is acceptable as content.",
+      "fix": "Make status pill text about 15px and bold, matching the reference, and keep row headings at their current size."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, a gradient Kids tile, a square smiley avatar with a caret, and red TOP 10 corner badges all match. Images use cover crop at 16:9 with slightly rounded corners in both. The ranked row in the implementation uses portrait posters and giant outlined numerals, which don't appear in the reference's visible rows.",
+      "fix": "Keep visible rows on 16:9 cover-cropped artwork. Don't show portrait/ranked tiles in this view."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. Row headings are in the same style ('TV Action & Adventure' appears in both). Pill wording differs: the implementation says 'New Episodes' (plural) where the reference says 'New Episode', and it never shows 'Watch Now' or 'New Season'. The 'BETA' label is absent.",
+      "fix": "Use 'New Episode', 'New Season', 'Recently Added' and 'Watch Now' pill copy, and add the 'BETA' tag to the Games heading."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "middle of screen (rows 2–3): implementation shows an expanded hover-preview card (large artwork, play/add/like/expand buttons, TV-14 · 2 Seasons · HD, genre list) covering the carousel; the reference has no open hover card",
+    "top of content area: implementation still shows the bottom of the hero banner with Play / More Info buttons under the nav; in the reference, the first row heading sits directly under the header and no hero is visible",
+    "bottom row: implementation shows a ranked Top 10 row with giant outlined numerals and portrait posters; every row visible in the reference is a uniform 16:9 landscape carousel",
+    "tile status pills: the reference pairs a red 'New Episode' pill with a white 'Watch Now' pill; the implementation shows only single red 'New Episodes' pills",
+    "row heading: the reference has a 'Games' heading with an outlined purple 'BETA' chip; the implementation has no row heading with a chip",
+    "tile spacing: implementation gaps between tiles are slightly tighter (about 8px vs 9px), and the vertical spacing between rows differs (about 300px vs about 285px from heading to heading)"
+  ],
+  "fixes": [
+    "Don't render the hover-preview card by default; only open it on real pointer hover",
+    "Render the rows-only state: scroll the hero out of view (or offset the rows) so the first row heading sits about 30px below the fixed header",
+    "Replace the ranked Top 10 row in this viewport with standard 16:9 landscape carousels (e.g. 'Only on Netflix', 'Top Searches')",
+    "Add the paired badge: red 'New Episode' pill plus a white-background, black-text 'Watch Now' pill, centred at the bottom of the tile; change the copy from 'New Episodes' to 'New Episode'",
+    "Add a 'Games' row whose heading carries a small outlined, letter-spaced 'BETA' chip with a purple border",
+    "Match row spacing: about 285px from heading to heading, 9px gaps between tiles, tiles about 350×197"
+  ],
+  "summary": "Netflix nav, colours and landscape carousel rows match closely, but the open hover card, the visible hero and the ranked Top 10 row depart from the reference's plain stacked rows, and the 'Watch Now' pill and BETA chip are missing."
+}

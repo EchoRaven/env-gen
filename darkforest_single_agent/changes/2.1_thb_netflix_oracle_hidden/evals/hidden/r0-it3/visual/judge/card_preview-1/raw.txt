@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "The hover card itself matches the reference: the 16:9 artwork sits on top and the dark info panel sits below, and the card is scaled up over the tile grid. The same top nav (wordmark, 7 links, search, bell, Kids, avatar and caret) is present. The page underneath is different. The reference shows the Browse by Languages page with a large left-aligned page title, 'Select Your Preferences' with two dropdowns on the right, and a 6-column grid of 16:9 tiles inside the 67px gutters, with no hero. The implementation shows the Home page with a full-width billboard hero (title lockup, metadata, Play/More Info) and horizontal carousels, where the last tile is cut off at the right edge, plus a 'Top 10' row heading. The card also extends past the left gutter (x≈16 vs the 67px page margin), while the reference card stays inside the content area.",
+      "fix": "Show this hover state on the Browse by Languages grid: page heading at top-left, preference dropdowns at top-right, a fixed 6-column 16:9 grid inside the 67px gutters with no hero banner. Keep the expanded card inside the gutters by clamping its left edge to the content edge."
+    },
+    "components": {
+      "score": 0.65,
+      "missing": [
+        "'Browse by Languages' page heading",
+        "'Select Your Preferences' label with 'Original Language' and 'English' dropdowns",
+        "Check (in My List) state on the card's second circular button",
+        "Active pill highlight on the 'Browse by Languages' nav item"
+      ],
+      "notes": "Every element of the card is there: red N badge top-left, title artwork lower-left, circular mute button, white filled play button, two outlined circular action buttons, chevron 'more info' button on the right, boxed maturity rating, season count, HD badge, and a dot-separated genre row. The second button shows '+' where the reference shows a check. The nav pill is on 'Home' instead of 'Browse by Languages'. The implementation adds a billboard hero with Play/More Info, a row pager indicator, and a row heading, none of which the reference shows.",
+      "fix": "Remove the hero and carousels from this view and add the page title and the two preference dropdowns. Show the check icon on the list button when the title is already in My List. Put the active pill on 'Browse by Languages'."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "The design language is the same: flat dark surfaces, a card with a soft shadow and a slightly rounded panel, outlined circular buttons with thin grey rings, and red 'Recently Added' / TOP 10 badges. The implementation's tiles have a bit more corner radius than the reference's nearly square tiles. The hero adds a large rounded decorative block that the reference doesn't have.",
+      "fix": "Cut the tile corner radius to about 2–4px and drop the rounded hero container on this screen."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Colours match: near-black #141414 page, #181818-ish card panel, white primary play button, grey-ringed secondary buttons, red badges and wordmark, light-grey metadata. The active nav pill uses the same grey fill.",
+      "fix": "No colour changes needed beyond moving the active pill to the correct nav item."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Both use a clean sans for nav and card metadata, with a boxed rating, regular-weight seasons text and genres at a similar size. The implementation lacks the large ~36px page title that the reference shows. Its tile titles are rendered as condensed caption text where the reference has title artwork, but the treatment reads as similar.",
+      "fix": "Add the ~36px regular-weight white page heading. Keep the card metadata sizes as they are."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Icons are mostly the same style: outlined circles, chevron-down, speaker-mute glyph, N badge, TOP 10 badges. The thumbs-up in the implementation is filled and small, where the reference uses an outline thumb. The list button uses '+' instead of the reference's check. The avatar on the right is a duplicated Kids gradient tile instead of the reference's blue smiley avatar square.",
+      "fix": "Use an outline thumbs-up at the same stroke weight as the other icons, use a check for the in-list state, and replace the right-hand avatar with a distinct profile avatar tile."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels and card metadata patterns (rating, 'N Seasons', HD, genre tags) match. The reference copy 'Browse by Languages' (heading), 'Select Your Preferences', 'Original Language' and 'English' is missing from the implementation. The implementation adds 'Play', 'More Info' and 'Top 10 TV Shows in the U.S. Today', none of which appear in the reference.",
+      "fix": "Render the page heading 'Browse by Languages' and the preference label and dropdown values on this screen."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "page body: implementation shows a large billboard hero (title lockup, metadata, Play/More Info) above the rows; reference has no hero, just the 'Browse by Languages' heading and then the tile grid",
+    "page header: reference's 'Select Your Preferences' label with 'Original Language' and 'English' dropdowns at top-right is missing in implementation",
+    "content area: reference uses a fixed 6-column grid inside the gutters; implementation uses horizontal carousels with the rightmost tile cut off at the screen edge and a row pager indicator",
+    "hover card position: implementation card extends past the left page gutter (x≈16); reference card stays inside the content area",
+    "top nav: active pill is on 'Home' in implementation; reference highlights 'Browse by Languages'",
+    "card action row: second circular button shows '+' where reference shows a check (in-list state); thumbs-up is a small filled glyph where reference uses an outline",
+    "bottom of implementation: extra 'Top 10 TV Shows in the U.S. Today' row heading not present in reference",
+    "top-right: profile avatar repeats the Kids gradient tile instead of a distinct avatar square"
+  ],
+  "fixes": [
+    "Render this hover state on the Browse by Languages page: remove the hero billboard and add the left-aligned 'Browse by Languages' heading",
+    "Add the 'Select Your Preferences' label and two bordered dropdowns ('Original Language', 'English') aligned right on the heading row",
+    "Replace the carousels with a 6-column wrapped grid of 16:9 tiles inside the 67px gutters, with no row titles and no pager",
+    "Clamp the expanded card's left edge to the content gutter",
+    "Move the active nav pill to 'Browse by Languages'",
+    "Show a check icon on the list button for in-list titles and switch the thumbs-up to an outline icon",
+    "Reduce the tile corner radius to nearly square and use a distinct profile avatar at top-right"
+  ],
+  "summary": "The hover card itself matches the reference closely (artwork, N badge, mute, play/list/rate/chevron, rating/seasons/HD, genre tags), but it sits on a Home page with a hero and carousels instead of the Browse by Languages grid with its heading and preference dropdowns."
+}
+```

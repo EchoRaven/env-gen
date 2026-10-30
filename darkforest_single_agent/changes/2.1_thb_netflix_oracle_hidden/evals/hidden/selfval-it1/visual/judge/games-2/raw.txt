@@ -1,0 +1,70 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The top nav matches: logo on the left, 7 links, a pill around the active 'Games' link, and search, bell, Kids and avatar on the right. The full-bleed hero, which fills about 70% of the reference viewport, is replaced by a flat purple gradient with a text title. The horizontal 'Party Games' carousel is replaced by a centered empty-state block. The section order is roughly kept: hero, then the row heading.",
+      "fix": "Render a full-bleed hero about 720px tall with cover artwork and a bottom/left dark gradient. Put the title lockup, metadata, CTAs and the mute/rating controls at the bottom of the hero. Under it, add a 'Party Games' row of 16:9 tiles that scrolls horizontally and runs off the right edge."
+    },
+    "components": {
+      "score": 0.3,
+      "notes": "Nav, search, bell, Kids, profile avatar and dropdown caret are present. Missing: hero artwork, the title-art logo lockup with the small NETFLIX label, the 'Play Game' and 'More Info' CTAs, the mute toggle, the rating/'ALL' badge, the row of game tiles and the page-indicator dashes. Added elements the reference doesn't have: a 'BETA' chip, an empty-state message, 'Browse TV Shows' and 'Browse Movies' buttons, and a footer attribution line.",
+      "missing": [
+        "hero background artwork",
+        "hero title-art lockup with NETFLIX label",
+        "Play Game button",
+        "More Info button with info icon",
+        "mute toggle button",
+        "maturity rating badge ('ALL') at the right edge",
+        "Party Games tile carousel",
+        "row page indicator dashes"
+      ],
+      "fix": "Add the hero CTAs 'Play Game' (white, black text) and 'More Info' (translucent grey with an ⓘ icon). Add a circular outlined mute button and a rating tag with a left border on the right. Fill the row with game artwork tiles and add page-indicator dashes at the top right of the row. Remove the BETA chip, the empty-state block and the fallback buttons."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "The dark, flat Netflix language, slightly rounded buttons and pill nav highlight all match. The reference is immersive and image-led, with cinematic gradient overlays. The implementation is sparse and text-led, and it adds a decorative purple gradient band.",
+      "fix": "Remove the purple header gradient and use the hero image with a black vignette gradient instead. Give the tiles a ~4px radius and small gaps."
+    },
+    "color": {
+      "score": 0.55,
+      "notes": "The #141414 base, red wordmark and white/grey buttons match. The purple top gradient and purple BETA outline are not in the reference, which has no purple accent; its colour comes from the artwork.",
+      "fix": "Remove the purple tint behind the nav and hero and use a transparent nav over the image fading to #141414. Drop the purple chip."
+    },
+    "typography": {
+      "score": 0.6,
+      "notes": "The nav, metadata and row-heading sans-serif text matches in size and weight. The hero title is a giant condensed all-caps 'GAMES' text heading, where the reference uses a title-art image lockup. Hero metadata in the reference is separated by bullets and has 3–4 items; that format is present but shows different content.",
+      "fix": "Replace the 'GAMES' text heading with a title-art image lockup about 200px wide, with a small red NETFLIX label above it."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "The nav icons (search, bell, Kids tile, smiley avatar, caret) match. The ⓘ info icon, the speaker-mute icon and all tile artwork are missing, and there is no hero imagery.",
+      "fix": "Add an outline ⓘ icon in More Info and an outline speaker-with-x icon in a circular bordered button. Render 16:9 cover-cropped tile images with a ~4px radius."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The nav labels and the 'Party Games' heading match. The hero CTAs 'Play Game' and 'More Info' are missing. The implementation adds copy the reference doesn't have: 'BETA', 'No games in the catalog yet', 'Browse TV Shows', 'Browse Movies' and the TMDB footer.",
+      "fix": "Use 'Play Game' and 'More Info' for the hero CTAs and remove the empty-state copy and the BETA label."
+    }
+  },
+  "similarity": 0.35,
+  "empty_state": true,
+  "deviations": [
+    "hero: the reference has full-bleed game artwork covering the top ~70% of the screen; the implementation shows a flat purple gradient with no image",
+    "hero bottom-left: the reference has 'Play Game' (white) and 'More Info' (grey, ⓘ icon) buttons; the implementation has none",
+    "content row: the reference has a horizontal carousel of 16:9 game art tiles under 'Party Games'; the implementation shows a centered 'No games in the catalog yet' empty state with Browse TV Shows / Browse Movies buttons",
+    "hero title: the reference uses a title-art logo lockup with a small NETFLIX label; the implementation uses a giant condensed text heading 'GAMES'",
+    "hero bottom-right: the reference's mute toggle and 'ALL' rating badge are missing",
+    "row heading: the implementation adds a purple 'BETA' chip that the reference doesn't have",
+    "nav background: the implementation has a purple-tinted gradient; the reference has a transparent nav over the image",
+    "row top-right: the reference's page-indicator dashes are missing",
+    "footer: the implementation adds a TMDB attribution line that the reference doesn't show"
+  ],
+  "fixes": [
+    "Seed game data so the Party Games row renders 16:9 artwork tiles in a horizontal carousel that bleeds off the right edge, with page-indicator dashes at the top right",
+    "Build a full-bleed hero (~720px) with cover artwork plus left and bottom dark gradients",
+    "Place a title-art lockup with a small red NETFLIX label, bullet metadata, and 'Play Game' (white) and 'More Info' (grey, ⓘ) buttons at the bottom left of the hero",
+    "Add a circular mute button and an 'ALL' rating tag with a left border at the bottom right of the hero",
+    "Remove the purple gradient, the BETA chip, the empty-state block and the footer attribution"
+  ],
+  "summary": "The nav chrome matches exactly, but the hero artwork, CTAs and game carousel never render: the implementation shows a purple text header and an empty-state message instead."
+}

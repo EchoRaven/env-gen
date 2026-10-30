@@ -1,0 +1,471 @@
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter5/workspace",
+ "tag": "calib-clean",
+ "parts": [
+  "api",
+  "static",
+  "ui"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/privacy_unscoped_my_list/workspace",
+ "tag": "calib-privacy_unscoped_my_list",
+ "parts": [
+  "api",
+  "ui"
+ ],
+ "api": {
+  "passed": 32,
+  "total": 36,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 2,
+    "total": 3
+   },
+   "privacy": {
+    "passed": 0,
+    "total": 3
+   }
+  },
+  "convention": null,
+  "note": "no profile convention isolates profiles; per-profile checks recorded as failed"
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ }
+}
+== privacy_unscoped_my_list: caught=True new=['api:My List is private to the profile', 'api:a rating is private to the profile', "api:another account cannot read this profile's My List", 'api:some profile-selection convention isolates two profiles']
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/auth_override_any_password/workspace",
+ "tag": "calib-auth_override_any_password",
+ "parts": [
+  "api"
+ ],
+ "api": {
+  "passed": 48,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 14,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ }
+}
+== auth_override_any_password: caught=True new=['api:wrong password is rejected (401/403)']
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/stub_search_handler/workspace",
+ "tag": "calib-stub_search_handler",
+ "parts": [
+  "api",
+  "static",
+  "ui"
+ ],
+ "api": {
+  "passed": 47,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 13,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+== stub_search_handler: caught=True new=["api:search by a word of a title's name finds it", "api:search by genre name returns that genre's titles"]
+parked_probe_route           1  e.g. 1 served route(s) exist only to satisfy a framework check and would ship with the product: GET /__readiness_probe__. A p
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/parked_probe_route/workspace",
+ "tag": "calib-parked_probe_route",
+ "parts": [
+  "static"
+ ],
+ "static": {
+  "detectors": {
+   "parked_probe_route": 1,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+== parked_probe_route: caught=True new=['static:parked_probe_route']
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/main.py (1). `example.com` and its siblings
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             1  e.g. app/backend/main.py:94: 'chain-'
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/dev_evaluator_special_case/workspace",
+ "tag": "calib-dev_evaluator_special_case",
+ "parts": [
+  "static"
+ ],
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 1
+ }
+}
+== dev_evaluator_special_case: caught=True new=['static:dev_fingerprints', 'static:reserved_email_domain']
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/static_data_twin/workspace",
+ "tag": "calib-static_data_twin",
+ "parts": [
+  "static"
+ ],
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+== static_data_twin: caught=False new=[]
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           1  e.g. api.js: (50, 'catch { return fallbackVideos')
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/masked_api_failure/workspace",
+ "tag": "calib-masked_api_failure",
+ "parts": [
+  "static"
+ ],
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 1,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+== masked_api_failure: caught=True new=['static:masked_api_failure']
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/broken_artwork/workspace",
+ "tag": "calib-broken_artwork",
+ "parts": [
+  "api",
+  "ui"
+ ],
+ "api": {
+  "passed": 48,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 14,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 18,
+  "total": 23,
+  "failed": [
+   "browse home shows poster rails (>=10 images loaded)",
+   "+ My List from the detail shows up on My List",
+   "another profile's My List does not show it",
+   "no broken images on visited pages",
+   "no console errors during the walk"
+  ]
+ }
+}
+== broken_artwork: caught=True new=['api:poster and backdrop images load', 'ui:+ My List from the detail shows up on My List', "ui:another profile's My List does not show it", 'ui:browse home shows poster rails (>=10 images loaded)', 'ui:no broken images on visited pages', 'ui:no console errors during the walk']

@@ -1,0 +1,28 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.92, "notes": "Same skeleton: full-bleed hero with a tilted poster collage, logo top-left, language select and Sign In top-right, centered headline/subhead/prompt/email+CTA stack, curved divider, then a promo banner. The difference is in the banner: in the reference the popcorn icon sits outside the card on the left and the card starts around x≈275. In the implementation the card starts around x≈168 and the icon sits inside its left edge.", "fix": "Pull the popcorn icon out of the banner card so it sits to the card's left. Start the card around x≈275 and keep its right edge aligned with Sign In."},
+    "components": {"score": 0.93, "notes": "Every reference component is there: wordmark, language dropdown with translate icon, red Sign In button, H1, price subline, prompt text, email input, red Get Started button with chevron, curved divider, popcorn icon, promo banner with title and subtitle, and a grey Learn More button. Nothing extra was added.", "missing": [], "fix": "No components are missing. Only the placement of the popcorn icon needs changing (see layout)."},
+    "style": {"score": 0.85, "notes": "Dark cinematic style, slightly rounded corners and a rounded banner card, all matching. The curved divider differs: in the reference the arc and its pink-red glowing edge run across the full width. In the implementation the red line is a short segment in the middle only. The poster tiles also have less rounding and less depth than in the reference.", "fix": "Make the divider a full-width elliptical arc with a 2–3px red-to-pink gradient stroke that fades toward the edges, over a navy glow."},
+    "color": {"score": 0.82, "notes": "Black base, Netflix red CTAs, navy-to-purple banner and a grey Learn More button all match. The hero overlay is noticeably lighter in the implementation, so the posters look bright and saturated. The reference darkens them heavily, to roughly 60–70% black.", "fix": "Strengthen the hero scrim to about rgba(0,0,0,0.6), with a heavier vignette toward the center and bottom, so the posters recede the way they do in the reference."},
+    "typography": {"score": 0.88, "notes": "Hierarchy, weights, centering and sizes match closely: bold H1 over two lines, a bold subline, regular prompt text and a bold banner title. The implementation uses a generic sans (Inter-like) where the reference uses Netflix Sans, which has a slightly tighter, rounder look. The prompt line in the implementation is a little wider and lighter.", "fix": "Use a font closer to Netflix Sans, such as Netflix Sans or Helvetica Neue with slight negative tracking on the H1. Make the prompt line medium weight."},
+    "iconography": {"score": 0.88, "notes": "Wordmark, translate icon, Get Started chevron and popcorn illustration are all present. The language dropdown uses a chevron where the reference uses a small filled triangle caret. The popcorn icon is flatter and sits inside the card in the implementation. The poster collage has a similar tilt and density.", "fix": "Change the dropdown indicator to a small filled down-triangle, and use a 3D-shaded popcorn bucket placed outside the card."},
+    "copy": {"score": 1.0, "notes": "All copy matches word for word: Sign In, English, H1, 'Starts at $8.99. Cancel anytime.', the prompt line, 'Email address', 'Get Started', banner title and subtitle, and 'Learn More'.", "fix": "None needed."}
+  },
+  "similarity": 0.9,
+  "empty_state": false,
+  "deviations": [
+    "Hero background: the implementation's overlay is much lighter, so the posters look bright and compete with the headline. The reference darkens them heavily.",
+    "Curved divider at the bottom of the hero: the reference's pink-red glowing edge runs across the full width. The implementation shows a short red segment in the middle only.",
+    "Promo banner: the reference places the popcorn icon outside the card on the left and starts the card around x≈275. The implementation puts the icon inside the card and starts the card around x≈168.",
+    "Language dropdown: the implementation uses a chevron where the reference uses a filled triangle caret.",
+    "Font: a generic sans stands in for Netflix Sans, so the headline's letterforms are slightly different."
+  ],
+  "fixes": [
+    "Darken the hero scrim to about 60% black, plus a radial vignette.",
+    "Make the bottom arc's red-to-pink stroke span the full viewport width, fading at the edges.",
+    "Move the popcorn icon outside the banner card to its left, and start the card around x≈275.",
+    "Replace the dropdown chevron with a small filled triangle.",
+    "Swap in Netflix Sans or a close match for the headings."
+  ],
+  "summary": "A near-identical recreation of the Netflix landing hero and promo banner. The remaining gaps are the hero overlay darkness, the width of the divider arc's glow, and where the popcorn icon sits in the banner."
+}

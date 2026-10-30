@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The skeleton matches. There is a transparent top nav over a full-bleed hero, a 'TV Shows' heading with a Genres dropdown below the nav, and the hero content is left-aligned. The order is title lockup, Top 10 line, synopsis, then buttons. The mute and maturity-rating badge sit on the right edge, and a horizontal row starts below the hero. The vertical rhythm differs. In the implementation the hero is taller: the row heading sits at about y=935 instead of about y=837. Because of that the thumbnail row is cut off at the bottom of the viewport, and the next section heading ('Only on Netflix…'), which peeks in at the bottom of the reference, is not visible. The mute/rating cluster is also lower (y≈733 vs y≈675).",
+      "fix": "Shorten the hero so the 'Today's Top Picks for You' heading lands at about 76% of the viewport height (y≈837 at 1104px). Thumbnails should then be fully visible with the next row's heading peeking below them. Move the mute/rating cluster up so it lines up with the buttons' upper area (y≈675)."
+    },
+    "components": {
+      "score": 0.82,
+      "missing": [
+        "Status badges on the bottom edge of the cards ('New Season', 'Recently Added', 'New Episode' / 'Watch Now') are not visible because the row is clipped"
+      ],
+      "notes": "Everything else in the inventory is present and placed correctly. Nav has the logo plus 7 links with a pill-highlighted 'Shows'. Search, bell, Kids avatar + label, profile avatar + caret, TV Shows heading, Genres dropdown, Top 10 badge with the '#1 in TV Shows Today' line, synopsis, Play and More Info buttons, mute button, rating badge, row heading, page indicator dashes, and TOP 10 corner badges on the cards are all there. The implementation also adds a metadata row ('Comedy • 2026 • 4 Episodes • TV-14') under the Top 10 line, which the reference doesn't have. The card status badges can't be confirmed because the cards are cut off; only faint red slivers show at the bottom edge.",
+      "fix": "Remove the genre/year/episodes/rating metadata line from the hero. Make sure the bottom-centered red status pills on the cards render fully in view."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The design language matches: cinematic, flat, a dark gradient vignette on the left and bottom, slightly rounded rectangular buttons, a translucent grey More Info button, a pill highlight on the active nav item, and square-ish thumbnails with small radii. The density is slightly different: the implementation has a bigger gap between the nav and the hero content and a deeper bottom fade.",
+      "fix": "Tighten the vertical spacing in the hero to match the reference's proportions, and keep the bottom fade so it begins just above the row."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same dark scheme. Netflix red is used for the logo, the Top 10 badges and the NETFLIX eyebrow. The Play button is white with black text, More Info is translucent grey, and the active pill is grey. The Genres box in the reference is solid black with a white border; the implementation's looks more transparent.",
+      "fix": "Give the Genres dropdown a solid black fill with a 1px white border."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "The sans-serif hierarchy is similar: large light 'TV Shows', a medium '#1 in TV Shows Today', regular-weight synopsis, and medium button labels. The reference's hero title is a large custom title-art lockup (about 250px tall). The implementation sets a plain condensed bold text title at about 100px, which is visibly smaller and has a generic treatment. The implementation's 'TV Shows' and '#1' lines are also slightly heavier.",
+      "fix": "Render the hero title as title-artwork (an image logo), or at least scale it to about 2x the current height (~40% of the hero width). Lighten the 'TV Shows' heading weight to regular."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The line-style search, bell, play triangle, outlined info circle and muted-speaker icons all match, as do the Top 10 badges and the Kids and smiley avatars. The card thumbnails use 16:9 art with title overlays, which matches. The cards look taller or cropped by the viewport, and the impl's Play icon is slightly smaller.",
+      "fix": "Keep the cards at a 16:9 aspect ratio and fully visible. Scale the Play button icon up slightly to match the reference."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "All chrome copy matches: Home/Shows/Movies/Games/New & Popular/My List/Browse by Languages, Kids, TV Shows, Genres, '#1 in TV Shows Today', Play, More Info, and 'Today's Top Picks for You'. The only extra is the invented metadata line.",
+      "fix": "Drop the 'Comedy • 2026 • 4 Episodes • TV-14' line."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Hero: the implementation adds a metadata row ('Comedy • 2026 • 4 Episodes • TV-14') between the Top 10 line and the synopsis; the reference has no such row.",
+    "Bottom row: the implementation's hero is taller, which pushes 'Today's Top Picks for You' to y≈935. The thumbnail cards are clipped by the viewport and their bottom status badges are hidden. In the reference the cards show in full with red 'New Season'/'Recently Added' pills, and the next row heading peeks in below.",
+    "Hero title: the reference uses a large stylised title-art logo filling about 40% of the width; the implementation uses a smaller plain condensed text title.",
+    "Right side: the mute/rating cluster sits lower in the implementation (y≈733 vs y≈675).",
+    "Genres dropdown: the reference is a solid black box with a white border; the implementation's is less opaque and slightly larger."
+  ],
+  "fixes": [
+    "Remove the metadata row from the hero.",
+    "Reduce the hero height so the row heading sits at y≈837 and the full 16:9 cards are visible, with the next section heading peeking below.",
+    "Make sure the card status pills ('New Season', 'Recently Added', 'New Episode | Watch Now') render centered on the cards' bottom edge.",
+    "Enlarge the hero title lockup to title-art scale (about 2x its current height).",
+    "Move the mute/rating cluster up to y≈675, and give Genres a solid black fill."
+  ],
+  "summary": "Very close Netflix Shows recreation with the same chrome, hero structure and colours. The gaps are an invented metadata row, a taller hero that clips the thumbnail row and its badges, and a smaller plain-text title in place of the large title-art lockup."
+}

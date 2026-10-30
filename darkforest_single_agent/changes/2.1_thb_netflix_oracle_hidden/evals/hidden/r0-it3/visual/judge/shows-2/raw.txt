@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches: a transparent top nav over a full-bleed hero, the 'TV Shows' heading with the Genres dropdown, a left-aligned hero text block, a mute and maturity-rating pill on the right, then the 'Today's Top Picks for You' carousel with its page indicator. The difference is vertical rhythm. The implementation's hero is taller, so the row heading sits at about y=935 instead of about 837. Because of that, the carousel cards are cut off at the fold, and the start of the next row ('Only on Netflix') that the reference shows never appears. The extra metadata line also pushes the hero block down.",
+      "fix": "Make the hero shorter so the row heading starts at about 76% of the viewport (about y=837 on a 1104px viewport). Bring the carousel up so the whole 16:9 card row, including its bottom badges, plus the next row's heading are visible above the fold."
+    },
+    "components": {
+      "score": 0.78,
+      "notes": "Present: the full nav with 7 items and the pill-highlighted 'Shows', search, bell, Kids, the avatar with caret, the TV Shows heading, the Genres dropdown, the NETFLIX eyebrow with title lockup, the TOP 10 badge with '#1 in TV Shows Today', the synopsis, Play and More Info, mute, the rating pill, row pagination dashes, card TOP 10 corner badges and the card carousel. Differences: the implementation adds a metadata row (genre · year · episodes · rating) that the reference does not have. The red bottom-centre card labels ('New Season', 'Recently Added', 'New Episode'/'Watch Now') are cut off at the viewport edge, with only a sliver of red visible. The second row heading visible at the bottom of the reference is absent.",
+      "missing": [
+        "fully visible bottom-centre red status labels on carousel cards (New Season / Recently Added / New Episode + Watch Now)",
+        "next row heading peeking at the bottom ('Only on Netflix' row)"
+      ],
+      "fix": "Remove the 'Comedy · 2026 · 4 Episodes · TV-14' metadata line under the TOP 10 rank. Make sure the red status labels sit centred on the bottom edge of the cards and are visible within the fold."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same cinematic dark Netflix language: a full-bleed hero image with a left and bottom dark vignette, a flat white Play button and a translucent grey More Info button with small radii, a square-edged Genres dropdown with a white border, and cards with slight rounding and tight gaps. The Play and More Info buttons are a bit smaller and more compact than the reference's larger 58px buttons.",
+      "fix": "Enlarge Play and More Info to about 58px tall with wider horizontal padding (Play about 158px wide, More Info about 214px)."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "The palette matches: black/near-black base, Netflix red wordmark and TOP 10 badges, white Play button with black text, translucent grey secondary button, white text on a darkened hero, and the grey nav pill for the active item. The implementation's hero is overall darker and moodier, which comes from the content image.",
+      "fix": "Keep as is. Optionally soften the bottom gradient so the hero image reads a bit brighter in the centre, as in the reference."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The hierarchy matches: a large light-weight 'TV Shows' heading, medium-size nav labels, a bold '#1 in TV Shows Today', a regular synopsis at about 22px, and a medium row heading. The implementation uses a generic geometric sans (Inter-like) rather than Netflix Sans, so letterforms are slightly wider. The hero title is rendered as plain condensed caps text rather than the stylised title-artwork lockup. The row heading is slightly larger.",
+      "fix": "Use a Netflix Sans-like font (e.g. 'Netflix Sans', falling back to Helvetica Neue) with tighter tracking. Render the hero title as a logo image or artwork lockup when one is available."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search, bell and mute icons match, as do the filled play triangle, the circled 'i', the TOP 10 red square badges, the rounded-square Kids and smiley avatars with caret, and the 16:9 cover-cropped card artwork with title art. The implementation cards overlay plain bold condensed text titles bottom-left instead of integrated title art. The hero's TOP 10 badge and card corner badges match in placement.",
+      "fix": "On cards, place the title artwork or logo lockup in the image area (as the reference does) rather than a uniform caps text strip at the bottom-left."
+    },
+    "copy": {
+      "score": 0.93,
+      "notes": "Nav labels, 'TV Shows', 'Genres', '#1 in TV Shows Today', 'Play', 'More Info', 'Kids' and 'Today's Top Picks for You' all match exactly. The only extra chrome copy is the metadata line. The card status labels are not legible.",
+      "fix": "Drop the metadata line and render card labels like 'New Season' / 'Recently Added' in the reference's wording."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "hero text block: the implementation inserts a metadata row 'Comedy · 2026 · 4 Episodes · TV-14' between the TOP 10 rank line and the synopsis; the reference goes straight from rank to synopsis",
+    "vertical rhythm: the implementation's hero is about 100px taller, so 'Today's Top Picks for You' starts at about y=935 vs about 837, and the card row is cut off at the viewport bottom",
+    "carousel cards: the reference's red bottom-centre status labels ('New Season', 'Recently Added', 'New Episode | Watch Now') are fully visible; in the implementation they are clipped to a red sliver at the fold",
+    "bottom of page: the reference shows the next row heading peeking below the carousel; the implementation shows none",
+    "hero buttons: Play and More Info are smaller and more compact than the reference's larger buttons",
+    "card artwork: the implementation overlays uniform bold condensed caps titles at the bottom-left of each card instead of the integrated title-art treatment",
+    "typography: a generic Inter-like sans instead of Netflix Sans; slightly wider letterforms and a larger row heading"
+  ],
+  "fixes": [
+    "Remove the genre/year/episodes/rating metadata line from the hero",
+    "Reduce hero height so the row heading sits around y≈837 and the full card row plus the next row's heading fit above the fold",
+    "Make the red status labels on cards visible, centred on the bottom edge with white bold small text",
+    "Enlarge Play and More Info buttons to about 58px tall with the reference's wider padding",
+    "Switch to a Netflix Sans-like font stack and match the row heading size (about 26px)",
+    "Render card titles as artwork lockups within the image instead of a bottom-left text strip"
+  ],
+  "summary": "A close Netflix Shows-page replica with matching nav, hero, buttons and carousel; it loses points for an invented metadata line, a taller hero that pushes the card row and its status labels below the fold, and smaller buttons."
+}
+```

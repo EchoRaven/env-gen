@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. Both have the same top nav bar and left gutter at about 67px. Rows run in the same order: New on Netflix (16:9 carousel, bleeding off the right edge), Top 10 TV Shows (big numerals plus portrait posters), Top 10 Movies, then Coming This Week. Each row has a page-indicator dash at its top right. The implementation sits about 20–30px higher on the page and its sections are slightly tighter. A hover preview card is open over ranks 3–4 of the Top 10 TV row and covers most of the Top 10 Movies row. The reference shows no overlay at all.",
+      "fix": "Render the page with no hover card open, so the default state matches the reference. Increase the gap above 'New on Netflix' to about 165px from the top of the page and space the rows about 270–315px apart, as in the reference."
+    },
+    "components": {
+      "score": 0.78,
+      "notes": "Nav items match: logo, 7 links with the active 'New & Popular' pill, search, bell, Kids profile and avatar with caret. The pieces that match: 16:9 tiles with TOP 10 corner badges and red status pills, ranked rows with large numerals beside posters, and row page indicators. The pieces that differ: a hover/expanded preview card that the reference does not have (artwork with title, mute button, then play / add / rate / expand buttons, maturity rating, seasons, HD tag and genre list). It hides the rank 3–4 tiles and the Movies row. The reference has a secondary white 'Watch Now' pill next to the red badge, and the implementation has no equivalent.",
+      "missing": [
+        "white secondary 'Watch Now' pill paired with the red status badge on a New on Netflix tile"
+      ],
+      "fix": "Remove the open hover-preview card, or keep it closed unless the user is actually hovering, so the Top 10 rank 3–4 tiles and the Movies row are visible. Support a second white pill with black text next to the red badge."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark Netflix style: square-ish tiles with a very small radius, no shadows on tiles, rows separated by whitespace, compact red badges. In the reference the rank numerals are dark fills with a clearly visible grey outline stroke. In the implementation they are near-black solid with a much fainter outline. The hover card adds an elevated, shadowed surface that does not belong in this state.",
+      "fix": "Give the rank numerals a visible mid-grey stroke of about 3–4px (#595959) around a #141414 fill, as in the reference. Drop the elevated hover card from the default view."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Same #141414 page background, white headings, Netflix red for the logo, badges and TOP 10 tags, and a grey pill for the active nav item. The numerals in the implementation have lower contrast than the reference's grey-outlined numerals.",
+      "fix": "Lighten the numeral outline to a mid-grey so the numbers read clearly against the background, as in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif throughout, with the same nav sizes and a bold active item. Row headings in the implementation are a little larger (about 30px vs about 27px) and slightly heavier. Badge text is bold and small in both. Rank numerals use the same heavy geometric face.",
+      "fix": "Reduce the row headings to about 26–28px in medium/regular weight so they match the reference's lighter heading weight."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, the Kids icon and the blue smiley avatar with caret all match. Tile and poster aspect ratios match (16:9 tiles about 290×163, portrait posters about 145×210). Posters in the implementation are slightly narrower and shorter. The open hover card adds circular outline buttons and an 'N' logo badge that the reference does not show. In the reference the red badge on New on Netflix tiles sits near the bottom-left of the tile; in the implementation it is centred under the title.",
+      "fix": "Size posters to about 147×208 and align the badge position with the reference."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, row headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week') and badge phrasing ('Recently Added', 'New Episodes'/'New Season') all match. The reference uses singular 'New Episode' and 'New Season' wording.",
+      "fix": "Use 'New Season' and 'New Episode' badge wording where it applies, as in the reference."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "Center of screen (over Top 10 TV ranks 3–4 and most of the Top 10 Movies row): the implementation shows an expanded hover preview card (artwork, title, mute, play/add/rate/expand buttons, TV-14 · 2 Seasons · HD, genres). The reference shows no overlay, and the card hides rank tiles 3–4 in both Top 10 rows.",
+    "Top 10 rows: the reference numerals have a clearly visible grey outline stroke. The implementation numerals are near-black with a faint outline, so they read much weaker.",
+    "Vertical rhythm: the implementation's rows start about 25px higher ('New on Netflix' heading at y≈137 vs ≈165) and sections are slightly tighter.",
+    "Row headings: slightly larger and heavier in the implementation than in the reference.",
+    "New on Netflix tiles: in the reference the red status pill sits near the bottom-left, and one tile adds a white 'Watch Now' pill. In the implementation the pill is centred, and there is no secondary white-pill variant."
+  ],
+  "fixes": [
+    "Don't render the hover preview card in the default page state. Show it only on real hover, so all Top 10 tiles and the full Movies row are visible.",
+    "Give the rank numerals a mid-grey outline stroke of about 3–4px around a dark fill so they match the reference's outlined numerals.",
+    "Increase the top offset of the first row heading to about 165px and the spacing between rows to match the reference.",
+    "Reduce the row headings to about 27px in regular/medium weight.",
+    "Position the red status pill on 16:9 tiles to the bottom-left and support a paired white 'Watch Now' pill."
+  ],
+  "summary": "The structure, chrome, colours and row types match the reference closely. The main gap is an open hover preview card that hides much of the Top 10 rows; the rank numerals are also less outlined and the vertical spacing is slightly off."
+}

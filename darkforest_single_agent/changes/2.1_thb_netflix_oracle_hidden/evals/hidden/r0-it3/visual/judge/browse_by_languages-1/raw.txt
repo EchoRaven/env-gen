@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top nav, the 'Browse by Languages' title on the left and the preference selectors on the right match. Both screens use a 6-column full-bleed grid of 16:9 tiles with the same gutters and edge margins. Differences: the reference grid starts at about y=305 and the implementation's at about y=226, so the space under the header is smaller. The reference row pitch is about 243px and the implementation's about 235px. The reference also shows a transient state with a hover preview card floating over the grid and both dropdowns expanded as overlays. The implementation shows neither.",
+      "fix": "Add about 80px of top margin above the grid so the first row starts around y=305, and widen the row gap to about 80px. Render the hover preview card as an absolutely positioned overlay above the grid. Render the dropdown menus as overlays that cover the grid instead of pushing it down."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: all nav items (Home, Shows, Movies, Games, New & Popular, My List, the active 'Browse by Languages' pill), search, bell, Kids avatar, profile avatar with caret, 'Select Your Preferences' label, both selects, the tile grid, red status badges, and TOP 10 corner badges. Missing from the reference state: the expanded first dropdown (Original Language / Dubbing / Subtitles), the expanded language list (Arabic…Vietnamese), and the enlarged hover preview card. That card has a muted video/backdrop, the N logo, a title lockup, a mute toggle, a play button, a check/add circle, a thumbs-up circle, an expand chevron, a maturity rating box, a duration with HD badge, and genre tags separated by dots.",
+      "fix": "Render both select menus in their open state: a dark panel with a hairline border and an option list. Add the hover preview card (about 435px wide) with backdrop, title logo, mute button, circular action row (play filled white; add, like and chevron outlined), metadata row (rating box, runtime, HD pill) and dot-separated genre tags.",
+      "missing": [
+        "open Original Language dropdown menu (Original Language / Dubbing / Subtitles)",
+        "open language dropdown list",
+        "hover preview card",
+        "preview mute toggle button",
+        "preview play / add-to-list / like / more-info circular buttons",
+        "preview maturity rating + runtime + HD metadata row",
+        "preview genre tag row"
+      ]
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both are flat and dark. Tiles have square or near-square corners, small red badges sit on the bottom edge of each tile, and the selects are square with a white outline. The implementation selects use a thinner outline and lack the reference's dark fill and caret styling. The elevated preview card, with its rounded corners and drop shadow, is absent.",
+      "fix": "Give the selects a black fill with a 1px light-gray border. Add the elevated preview card: dark gray #181818, about 6px radius, heavy drop shadow."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The near-black page, red Netflix wordmark, red badges, gray active nav pill and white text all match. The reference's dropdown panels are black with light text, and the preview card uses a #181818 surface. Neither appears in the implementation.",
+      "fix": "Use #000/rgba(0,0,0,0.9) for the dropdown menus and #181818 for the preview card body."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "The sans nav, page title and select text match in size and weight. In the reference, titles appear as each title's own artwork logo in varied typefaces. The implementation instead overlays a uniform white condensed bold caption with a drop shadow on every tile, which makes the grid look templated.",
+      "fix": "Remove the generic overlaid title caption on tiles. Rely on the title treatment in the artwork, or use per-title logo images, so tiles read as box art."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The nav icons (outline search and bell), avatars, TOP 10 badges and 16:9 cover-cropped tiles match. Missing: the preview card icon set (filled play circle, outlined check/thumbs-up/chevron circles, mute icon, N logo).",
+      "fix": "Add the outlined circular icon buttons and the mute icon in the preview card, plus the small red N logo top-left of the preview art."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English', 'Recently Added', 'New Episodes' and 'TOP 10' match. Missing visible copy: the 'Dubbing' and 'Subtitles' options, the language list, and the preview metadata labels (TV-MA, HD).",
+      "fix": "Populate the open menus with 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language list."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "center-left grid: the reference shows an enlarged hover preview card overlaying rows 1–3 (backdrop, title lockup, mute button, play/add/like/chevron buttons, rating/runtime/HD row, genre tags); the implementation has none",
+    "top-right: the reference shows both preference selects expanded (Original Language/Dubbing/Subtitles menu and a full language list overlaying the right column); the implementation shows them collapsed",
+    "tiles: the implementation overlays a uniform white condensed bold title caption on every tile; the reference shows each title's own logo artwork",
+    "grid vertical position: the implementation's first row starts about 80px higher (y≈226 vs y≈305), with slightly tighter row spacing",
+    "selects: the implementation uses a thin outline with no dark fill; the reference has a black-filled box with a white border"
+  ],
+  "fixes": [
+    "Show the open state of both selects: the first lists Original Language/Dubbing/Subtitles and the second lists languages Arabic→Vietnamese, as overlay panels on a black background with light 15px text",
+    "Add the hover preview card overlay (about 435px wide, #181818, rounded, shadowed) with backdrop, N logo, title logo, mute circle, play (filled white) plus outlined check/like/chevron circles, a 'TV-MA | 1h 34m | HD' row and dot-separated genre tags",
+    "Remove the generic white title text overlay from tiles",
+    "Push the grid down to start around y=305 and increase the row gap to about 80px",
+    "Style the select boxes with a black fill and a 1px light border"
+  ],
+  "summary": "The chrome, header and 6-column grid match well. The reference's open dropdowns and hover preview card are missing, and the tiles carry an invented uniform title caption."
+}
+```

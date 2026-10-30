@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed, chrome-free video player screens: back arrow top-left, transport row along the bottom, a centered caption in the bottom bar and fullscreen at bottom-right. The implementation is in a paused state instead. It adds a large left-side 'You're watching' synopsis block over the video, a full-width scrubber above the controls, and an error toast at top-center. None of these appear in the reference. The reference's top-right cluster (flag icon + Ad countdown badge) is absent.",
+      "fix": "Render the ad-playback state: hide the synopsis overlay and scrubber, place a flag icon and an 'Ad 12' countdown badge top-right (~1730px and ~1800–1885px, y≈55), and keep the bottom bar to pause + volume on the left, centered caption, and fullscreen on the right."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Matches: back arrow, play/pause toggle, volume, centered bottom caption, fullscreen. Missing: the report/flag icon and the 'Ad 12' countdown badge with a yellow left accent bar. Invented relative to the reference: ±10s skip buttons, next-episode, episodes, subtitles/audio, progress scrubber with red thumb and time readout, 'You're watching' title/episode/synopsis overlay, and the error toast. The play/pause button shows a play glyph, but the reference shows pause (playing state).",
+      "fix": "Add a top-right flag button and an ad countdown pill (dark translucent box, 4px yellow left bar, 'Ad 12'). During ads, remove the skip-back/forward, next-episode, episodes, subtitles and scrubber controls, and show the pause glyph.",
+      "missing": ["report/flag icon (top-right)", "Ad countdown badge with yellow accent bar (top-right)"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Same minimal, flat, overlay-on-video language with white controls and no cards. The reference keeps the frame clean with only thin bottom and top bars. The implementation darkens the whole frame with a heavy scrim and stacks a dense text block plus a toast, so it reads much busier.",
+      "fix": "Remove the full-frame dim scrim and synopsis block. Keep only subtle top and bottom gradients behind the controls."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use a dark scheme with white icons and text. The reference's accent is the yellow/amber bar on the Ad badge. The implementation introduces Netflix red on the scrubber thumb and the toast bar, and it lacks the yellow ad accent. The overall image is dimmed considerably more.",
+      "fix": "Add the yellow (#F5C518-ish) left accent on the ad badge. Drop the red scrubber and toast accents in this state, and lighten the overlay so the video shows at near-full brightness."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Same sans-serif family. The centered bottom caption is regular weight, ~22px, white in both. The implementation bolds part of it (title bold + episode regular) and adds a large bold title, a semibold subtitle and body synopsis text that the reference does not have. The reference's small 'Ad 12' label is missing.",
+      "fix": "Render the bottom caption as a single regular-weight line, and add the small ~18px 'Ad 12' text in the badge."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The back arrow, volume (speaker + waves) and fullscreen corner brackets are matching white line icons at similar sizes. The implementation shows a filled play triangle where the reference shows filled pause bars. The outlined flag icon is missing, and extra icons (replay/forward-10, skip-next, episodes, subtitles) are present.",
+      "fix": "Show the pause glyph while playing, add an outline flag icon top-right, and hide the extra transport icons in the ad state."
+    },
+    "copy": {
+      "score": 0.45,
+      "notes": "The reference's center caption reads '<Title> begins after ads'. The implementation shows '<Title> E1 Episode 1'. The reference has an 'Ad 12' label. The implementation adds 'You're watching', a season/episode line, the synopsis and an error string.",
+      "fix": "Change the center caption to '{title} begins after ads', add the 'Ad {seconds}' countdown label, and remove the 'You're watching' copy and the error toast text."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference shows a flag (report) icon and an 'Ad 12' countdown badge with a yellow left bar; implementation has nothing there",
+    "left/center overlay: implementation shows a large 'You're watching / Overdo / Season 1: Ep. 1 / synopsis' block over the video; reference has a clean frame",
+    "bottom: implementation adds a full-width progress scrubber with a red thumb and '0:00' time; reference has no scrubber",
+    "bottom-left: implementation adds replay-10 and forward-10 buttons between play and volume; reference has only pause + volume",
+    "bottom-right: implementation adds next-episode, episodes and subtitles icons before fullscreen; reference has only fullscreen",
+    "bottom-center caption: implementation reads '<Title> E1 Episode 1' with a bold title; reference reads '<Title> begins after ads' in regular weight",
+    "top-center: implementation shows an error toast with a red left bar ('This clip could not be loaded…'); not present in reference",
+    "whole frame: implementation applies a heavy dark scrim over the video; reference video is nearly undimmed",
+    "bottom-left: play glyph shown; reference shows pause (playing state)"
+  ],
+  "fixes": [
+    "Add a top-right cluster: outline flag icon (~40px) and an ad countdown pill (dark translucent bg, 4px yellow left bar, 'Ad 12' in ~18px white)",
+    "Change the bottom-center caption to '{title} begins after ads' in regular weight",
+    "In this ad state, hide the progress scrubber, the ±10s buttons, next-episode, episodes and subtitles buttons",
+    "Remove the 'You're watching' title/synopsis overlay and the full-frame dark scrim; keep only light top/bottom gradients",
+    "Show the pause icon (playing state) instead of play",
+    "Suppress the codec error toast (or show a fallback frame) so the video area renders cleanly"
+  ],
+  "summary": "Same full-bleed Netflix-style player skeleton (back arrow, bottom transport, centered caption, fullscreen), but it renders a paused/info state with many extra controls and overlays and lacks the reference's ad countdown badge, flag icon and 'begins after ads' copy."
+}

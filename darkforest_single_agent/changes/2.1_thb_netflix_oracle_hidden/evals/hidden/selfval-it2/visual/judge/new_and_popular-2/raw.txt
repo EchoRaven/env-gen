@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "The structure matches. Both have the same top nav bar (wordmark on the left, then the nav links, then search, bell, Kids and profile on the right) on a dark full-bleed page. Rows run in the same order: a landscape-card row, two Top-10 ranked rows, then a fourth row that is cut off. Gutters (~67px left), card widths and the bleed of the 7th card off the right edge all match, as do the page-indicator dashes at the top right of each row. The implementation's row headings sit about 15px higher, so the vertical rhythm is slightly tighter.",
+      "fix": "Add ~15px of top padding above the first row heading so 'New on Netflix' sits at ~y=165 instead of ~y=147."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": [],
+      "notes": "Every component in the reference is present: 7 nav items with a pill on the active one, search, bell, Kids avatar and label, profile avatar with caret, landscape cards with red 'Recently Added'-style badges and TOP 10 corner badges, ranked rows with large numerals behind portrait posters, and row page indicators. Differences: the implementation shows a right-chevron paging arrow on the Top 10 TV row that the reference does not have. One poster in the Top 10 Movies row (#3) has no rendered title artwork, just plain grey 'Backrooms' text, which reads as a placeholder.",
+      "fix": "Hide the row chevron until the row is hovered so the static state matches the reference. Render title artwork or a styled title lockup on poster #3 instead of plain grey text."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The design language is the same: flat, square-cornered cards, tight 8px gaps, no shadows, and compact red badges. The big difference is the rank numerals. In the reference they are solid near-black glyphs with a thin grey outline that block out the background. In the implementation they are hollow grey outlines with no fill, so they look lighter and wireframe-like.",
+      "fix": "Give the rank numerals a solid fill matching the page background (#141414 or black) plus a ~3px #595959 stroke, with heavier, wider glyph weight."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same dark #141414 base, white headings, red accents (wordmark and badges), grey active-nav pill, and red-and-white TOP 10 badges. The rank numeral outlines are lighter and more visible in the implementation because they have no dark fill.",
+      "fix": "Darken the rank numeral stroke to a mid-grey and add the dark fill so the numerals recede the way they do in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif UI font with the same nav sizes and the same bold red-badge text. The implementation's row headings are slightly heavier (medium/semibold) and the reference's are regular weight. The numerals use a light outline style rather than the reference's heavy, black-filled display weight. Landscape cards use one condensed bold title treatment at the lower left, which works as a title lockup.",
+      "fix": "Set row headings to font-weight 400–500 at ~26px. Use a heavy (800–900) weight for the rank numerals."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The search and bell line icons, the Kids gradient avatar, the blue smiley profile avatar with caret, and the TOP 10 badges all match. Images use the same crops: 16:9 cover on landscape cards and ~2:3 cover on portrait posters, with square corners. One poster has fallback text where artwork should be.",
+      "fix": "Make sure every poster tile renders artwork with a title treatment; never fall back to plain grey text."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels are identical, and so are 'New on Netflix' and the badge wording. The headings differ: 'Top 10 TV Shows Today' vs 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies Today' vs 'Top 10 Movies in the U.S. Today', and 'Worth the Wait' vs 'Coming This Week' for the fourth row.",
+      "fix": "Rename the rows to 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today', and rename the fourth row to 'Coming This Week'."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: the rank numerals are hollow grey outlines with no fill. The reference uses heavy, solid black numerals with a thin grey stroke.",
+    "Row headings: they read 'Top 10 TV Shows Today' and 'Top 10 Movies Today'. The reference reads '... in the U.S. Today'.",
+    "Fourth row heading: 'Worth the Wait'. The reference's fourth row is 'Coming This Week'.",
+    "Top 10 TV row: there is a right-chevron paging arrow at the right edge that the reference does not show.",
+    "Top 10 Movies row, poster #3: plain grey title text stands in for artwork, which reads as a placeholder.",
+    "Row headings: slightly bolder weight and ~15px higher placement than in the reference."
+  ],
+  "fixes": [
+    "Restyle the rank numerals with a solid dark fill (#141414), a ~3px grey (#595959) stroke and a heavy weight.",
+    "Change the Top 10 row titles to 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today'.",
+    "Rename the fourth row to 'Coming This Week'.",
+    "Show the row chevron arrows only on hover.",
+    "Replace plain-text poster fallbacks with a proper title lockup over the artwork.",
+    "Drop the row heading weight to regular/medium and add ~15px of top padding before the first row."
+  ],
+  "summary": "Very close to the reference in nav, rows, cards and badges. The main gaps are the rank numerals (hollow outlines instead of solid black) and the row headings ('in the U.S.' dropped, fourth row named differently), plus an extra chevron and one placeholder poster."
+}
+```

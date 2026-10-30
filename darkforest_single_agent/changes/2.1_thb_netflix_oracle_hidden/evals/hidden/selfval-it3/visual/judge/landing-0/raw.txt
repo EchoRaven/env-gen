@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.86,
+      "notes": "The skeleton matches. Both have a full-bleed tilted poster collage with a dark scrim, the NETFLIX wordmark top-left, the language select and Sign In top-right, a centered hero block (headline, subline, prompt, email + CTA row), a curved arc divider, and a promo banner at the bottom. Differences: the hero block sits about 45px higher in the implementation. In the reference, the popcorn graphic sits outside the banner to its left, and the banner card starts at about x=275. In the implementation, the popcorn is inside the card, which spans the full 163–1757 gutter. The implementation's arc region is taller, with a more pronounced purple dome.",
+      "fix": "Lower the hero block so the headline top sits at about 315px. Move the popcorn graphic out of the banner card and place it to its left. Start the card at about x=275 and end it at about x=1755. Flatten the arc so the gradient band below it is shallower."
+    },
+    "components": {
+      "score": 0.9,
+      "missing": [],
+      "notes": "All reference components are present: wordmark, language dropdown with translate icon, red Sign In button, H1, subline, prompt text, outlined email input with placeholder, red Get Started button with chevron, arc divider, promo banner with icon, title, subtitle and grey Learn More button. Nothing extra has been added. Small differences: the dropdown caret is a chevron instead of a filled down-triangle, and the popcorn is placed inside the card instead of beside it.",
+      "fix": "Replace the language dropdown's chevron with a small filled down-triangle caret, and add more padding between the label and the caret, as in the reference. Reposition the popcorn icon outside the banner card."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic marketing style: flat surfaces, slightly rounded buttons and inputs, rounded banner card, and a translucent dark input with a hairline border. The reference's collage is more heavily dimmed and uniformly dark. The implementation's posters are brighter and more saturated, so the background competes with the hero text. The reference's tiles are larger and more landscape-shaped; the implementation's are mostly portrait.",
+      "fix": "Increase the scrim over the collage to about 60–70% black, with a darker vignette at the edges. Use larger, wider poster tiles at the same tilt."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark scheme with Netflix red (#E50914) on the wordmark, Sign In and Get Started, white text, and a purple promo card. In the reference, the area under the arc fades from a navy/indigo glow to black. The implementation's area is a stronger magenta-purple. The implementation's background is less dark overall.",
+      "fix": "Change the gradient under the arc to dark navy/indigo (about #1a1f4a fading to #000). Darken the collage overlay."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Bold sans headline, white and centered, followed by a semibold subline, a regular prompt and a semibold banner title, so the hierarchy matches. The implementation's H1 is slightly larger and wraps as 'Unlimited movies, / TV shows, and more'. The reference wraps it as 'Unlimited movies, TV / shows, and more' in a narrower block of about 48–56px type.",
+      "fix": "Reduce the H1 to about 56px and constrain its max-width to about 640px so it wraps after 'TV'."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The wordmark is faithful. The translate icon and button chevron are present. The banner's popcorn is a flat emoji in the implementation, but the reference uses a glossy 3D popcorn-bucket illustration with a star badge and a soft circular glow behind it, placed outside the card. The dropdown caret style differs.",
+      "fix": "Replace the popcorn emoji with a 3D popcorn-bucket illustration of about 80px, with a radial glow behind it, overlapping the card's left edge."
+    },
+    "copy": {
+      "score": 0.72,
+      "notes": "These match: 'Sign In', 'English', 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started', 'Learn More', and the headline wording. The subline differs: the reference has 'Starts at $8.99. Cancel anytime.' and the implementation has 'Watch on any device. Every profile keeps its own list.'. The banner copy also differs: the reference has 'The Netflix you love for just $8.99.' with 'Get our most affordable, ad-supported plan.', and the implementation has '60 real titles, ready to stream.' with a longer catalog sentence.",
+      "fix": "Change the subline to a short price/cancel line ('Starts at $8.99. Cancel anytime.'). Change the banner to a short price-pitch title and a one-line plan subtitle."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "Bottom promo banner: in the reference, the popcorn illustration sits outside the card on its left, and the card starts at about x=275. In the implementation, the popcorn emoji is inside a card that spans the full content width.",
+    "Hero subline: the implementation reads 'Watch on any device. Every profile keeps its own list.' The reference has the short pricing line 'Starts at $8.99. Cancel anytime.'.",
+    "Promo banner copy: the implementation uses a catalog pitch with a long subtitle. The reference uses a short price pitch and a one-line ad-supported-plan subtitle.",
+    "Background collage: the implementation's posters are brighter and more saturated, with mostly portrait tiles. The reference uses a heavier dark scrim and larger, wider tiles.",
+    "Arc divider area: the implementation has a tall magenta-purple dome glow. The reference has a shallow arc with a navy/indigo gradient band.",
+    "Hero H1: in the implementation it is larger, wraps 'Unlimited movies, / TV shows, and more', and the block sits about 45px higher. The reference wraps after 'TV' in a narrower block.",
+    "Popcorn graphic: the implementation uses a flat emoji. The reference uses a glossy 3D illustration with a glow.",
+    "Language dropdown: the implementation uses a chevron caret tight to the label. The reference uses a filled triangle caret with more spacing."
+  ],
+  "fixes": [
+    "Move the popcorn graphic outside the banner card on the left, use a 3D popcorn-bucket illustration with a radial glow, and start the card at about x=275.",
+    "Change the hero subline to 'Starts at $8.99. Cancel anytime.' and the banner to a 'The Netflix you love for just $X.' title with a one-line plan subtitle.",
+    "Darken the collage scrim to about 65% black, with edge vignettes, and use larger, landscape-ish tilted tiles.",
+    "Recolor the gradient under the arc to navy/indigo fading to black, and flatten the dome height.",
+    "Reduce the H1 to about 56px with a max-width of about 640px so it wraps after 'TV', and shift the hero block down about 40px.",
+    "Replace the language dropdown's chevron with a filled down-triangle, with extra right padding."
+  ],
+  "summary": "The implementation is a close replica of the Netflix landing hero: the structure, colors and components match. The gaps are the popcorn/banner placement, the subline and banner copy, the brightness of the collage scrim, the arc gradient hue and the H1 wrap."
+}
+```

@@ -1,0 +1,26 @@
+You are building a complete web application from a product specification. This is iteration 1 of {iters}.
+
+TASK (verbatim from the benchmark)
+
+{description}
+
+MATERIALS (read-only, in /workspace/design/)
+- DESCRIPTION.txt: the task text above.
+- docs/spec.md: the full spec.
+- references/: the reference screenshots ("design/references" in the task text).
+- assets/: the real assets (logo, icons, fonts, posters, backdrops, trailer clips).
+- dataset/titles.json: the catalog to seed from.
+
+WHAT TO DELIVER (everything in /workspace, outside design/)
+- docker/docker-compose.yml starts the whole app from a clean state. Services are named `database` (Postgres 16), `backend` (FastAPI) and `frontend` (React + Vite); `backend` and `frontend` publish their ports to the host. Build contexts and bind mounts must stay inside /workspace; the validator refuses host mounts, host networking and privileged containers.
+- app/backend/, app/frontend/ (pages in app/frontend/src/pages/), app/database/init/ (schema and seed SQL). Anything the containers need, such as assets, must be inside the build contexts or mounted from inside /workspace.
+- The backend serves GET /health; POST /auth/register and POST /auth/login return an `access_token`; every /api/* endpoint requires `Authorization: Bearer <token>` and answers 401 without it. All 17 endpoints exist at exactly the listed paths.
+- This is the target environment of the env-gen benchmark. Its architecture document is /thb/docs/target_env_architecture.md.
+
+VALIDATION AVAILABLE TO YOU
+- `validate` runs env-gen's own deterministic api_smoke on a snapshot of /workspace, outside this sandbox. It does a clean docker compose build and boot, then checks health, register/login and that passwords are checked, that every contract endpoint is implemented, has the right response shape and enforces auth, that writes persist, a contract-derived business chain (register, create, list, read, delete), and that the frontend is reachable, navigable and has no dead controls. `validate --contract` prints the frozen contract it tests (the 17 endpoints of the task). One call takes about 1-5 minutes; give the Bash call a long timeout (for example 1800000 ms) or run it in the background. You have at most {max_calls} calls per iteration.
+- The validator's source is readable at /thb (the frozen env-gen repository, read-only): agent/env_generator/llm_generator/multi_agent/runtime/validation_runner.py (run_smoke_validation) and chain_executor.py.
+- There is no docker inside this sandbox; `validate` is the way to boot the full stack. Node 22 (node, npm) and Python 3.11/3.12 are available, and you can install packages from npm and PyPI.
+- Not available: env-gen's visual-fidelity judge and browser test users (they need paid LLM APIs). A person will open the running app and compare it with the reference screenshots and the spec, so the real UI and real functionality matter, not only the automated checks.
+
+{loop}

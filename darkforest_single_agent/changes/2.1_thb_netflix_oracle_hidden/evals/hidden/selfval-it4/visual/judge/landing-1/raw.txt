@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same skeleton: full-bleed tilted poster collage hero, red wordmark top-left, language select and Sign In top-right, centered headline/subhead/prompt/email+CTA stack, curved red arc divider, promo banner below. Differences: the hero text block sits about 50px higher in the implementation (headline starts at y≈270 vs y≈320). The promo banner spans the full content width (x≈163–1757) with the popcorn inside the card, but the reference puts the popcorn icon outside the card on the left and starts the card at x≈275.",
+      "fix": "Move the hero text stack down so the headline's first line sits at about 42% of viewport height. Restructure the promo row into a popcorn icon (~80px) outside on the left plus a card from ~275px to ~1755px."
+    },
+    "components": {
+      "score": 0.9,
+      "notes": "All reference components are present: wordmark, language dropdown with translate icon and caret, red Sign In button, headline, subheadline, prompt text, email input with placeholder, red Get Started button with chevron, curved arc divider, promo card with icon, title, subtitle and grey Learn More button. The only placement difference is the popcorn icon sitting inside the promo card.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same dark cinematic treatment with a dimmed collage, slightly rounded small controls, a rounded promo card and a curved arc. The reference collage is made of large landscape-oriented tilted tiles with a heavier dark vignette. The implementation uses mostly portrait poster tiles that are a bit brighter and more saturated, so the background competes more with the text. The glow under the reference arc is blue-indigo, while the implementation's is purple-magenta.",
+      "fix": "Use landscape (~16:9) rounded tiles for the collage at the same tilt, add a stronger black overlay/vignette (~60–70%), and tint the area under the arc with a deep indigo/blue radial glow instead of purple."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Netflix red, white text, a near-black base, a red arc line and a dark purple promo card all match. The collage in the implementation is less darkened. The reference glow under the arc is blue-navy, and the implementation's is magenta-purple. The Learn More grey and card hue are close.",
+      "fix": "Raise the hero darkening overlay. Change the gradient under the arc to a navy/indigo (#1b2350-ish) glow fading to black."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Bold sans headline at a similar size, bold subhead and regular prompt all match. The headline wraps differently: the reference breaks as 'Unlimited movies, TV / shows, and more' in a narrower block, while the implementation breaks as 'Unlimited movies, / TV shows, and more'. The implementation headline is also slightly larger. The promo title and body weights match.",
+      "fix": "Constrain the headline max-width to about 640px so it wraps after 'TV', and reduce the font size slightly (~56px)."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The wordmark, translate icon, caret, chevron in the CTA and popcorn illustration are all present. The reference popcorn is a larger 3D illustration with a glow that sits outside the card, while the implementation uses a smaller emoji-style popcorn inside the card. The collage tile aspect differs (portrait vs landscape).",
+      "fix": "Swap in a larger 3D popcorn illustration (~80px) positioned left of the promo card, and render the collage tiles in landscape orientation."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The headline, 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started', 'Sign In', 'English' and 'Learn More' all match. The hero subhead in the reference is the pricing line 'Starts at $8.99. Cancel anytime.', but the implementation says 'Watch on any device. Every profile keeps its own list.' The promo card copy is the reference's ad-plan pitch in the reference, but the implementation uses a catalog pitch.",
+      "fix": "Change the subhead to a short pricing/cancel-anytime line and make the promo card a plan-offer pitch ('The Netflix you love for just $X. Get our most affordable, ad-supported plan.')."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Hero background: the implementation collage uses portrait poster tiles and is less darkened; the reference uses larger landscape tiles under a heavier dark overlay",
+    "Promo row: the reference puts the popcorn illustration outside the card on the left (card starts at ~275px); the implementation puts a small emoji-like popcorn inside a full-width card",
+    "Hero subhead: the reference shows a pricing/cancel-anytime line, while the implementation shows a device/profile tagline",
+    "Headline: wraps as 'Unlimited movies, / TV shows, and more' instead of 'Unlimited movies, TV / shows, and more', and the whole text block sits about 50px higher",
+    "Arc glow: the reference has a navy/indigo glow under the red arc, while the implementation's is magenta-purple",
+    "Promo card copy: the reference has an ad-supported plan pitch, while the implementation has a catalog/account pitch"
+  ],
+  "fixes": [
+    "Increase the hero dark overlay and use landscape rounded tiles for the tilted collage",
+    "Move the popcorn illustration (~80px, 3D style) outside the promo card on the left and inset the card to start at ~275px",
+    "Replace the hero subhead with a pricing line like 'Starts at $X. Cancel anytime.'",
+    "Set the headline max-width to ~640px so it wraps after 'TV', and shift the hero stack down ~50px",
+    "Recolor the gradient below the arc to navy/indigo",
+    "Change the promo card text to a plan-offer title plus 'Get our most affordable, ad-supported plan.'"
+  ],
+  "summary": "A near-faithful Netflix landing page. The gaps are the collage tile orientation and darkness, the popcorn placement in the promo row, the subhead and promo copy, the headline wrapping and the arc glow hue."
+}
+```

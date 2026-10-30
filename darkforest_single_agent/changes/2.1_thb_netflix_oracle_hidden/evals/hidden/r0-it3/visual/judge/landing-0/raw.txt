@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The page skeleton matches: a full-bleed tilted poster wall as the hero, the wordmark top-left, the language select and Sign In top-right, a centred headline, subhead, prompt and email+CTA row, then a curved divider and a promo banner below. One difference is in the banner row. In the reference the popcorn illustration sits on its own, left of the card, and the card starts at about x=276. In the implementation the popcorn sits inside or over the card's left edge, and the card starts at about x=168, so it is wider. The hero text block also sits about 15px higher.",
+      "fix": "Move the popcorn illustration outside the banner card so it sits in its own column to the left (about x=180–255). Start the card at about x=276 and end it at about x=1755."
+    },
+    "components": {
+      "score": 0.93,
+      "notes": "Every component in the reference is present: the NETFLIX wordmark, the language dropdown with its translate icon, the red Sign In button, the H1, the price subhead, the prompt line, the email input, the Get Started button with chevron, the curved divider, the promo banner with title, subtitle and Learn More button, and the popcorn illustration. The only problem is the popcorn's placement inside the card. Nothing has been added that the reference lacks.",
+      "missing": [],
+      "fix": "Pull the popcorn icon out of the banner card so it sits beside the card, not inside it."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "The design language matches: a dark cinematic poster collage, tilted rounded tiles, slightly rounded buttons and a pill-rounded banner card. Two treatments differ. In the reference the curved divider is a full-width arc whose red/pink stroke runs to the screen edges, with a soft blue glow beneath it. In the implementation the red stroke shows only in the centre (about x=700–1200) and fades out at the sides. The hero scrim is also much lighter, so the posters are bright and busy, while the reference posters are heavily dimmed.",
+      "fix": "Darken the hero overlay (about rgba(0,0,0,0.6–0.7) plus a vignette). Run the arc's red-to-pink gradient stroke across the full width, with a blue radial glow under the arc."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "Both use a black base, Netflix red (#E50914) for the CTAs and the white text. The banner differs. The reference card has a purple-navy gradient (bluish on the left, warming to purple-red on the right). The implementation is a flatter dark navy with a slight reddish tint. The brighter hero posters lower contrast behind the headline compared with the reference.",
+      "fix": "Give the banner a linear gradient from about #1d1f4a on the left to #3a1f45 on the right. Increase the dim on the hero image."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "The type matches: a heavy bold sans H1 on two centred lines at a similar size, a bold subhead, regular prompt text, a large semibold CTA label, and a bold banner title with a regular subtitle. The implementation's subhead, 'Starts at $8.99…', looks medium weight where the reference is bold. Its prompt line is slightly wider and lighter.",
+      "fix": "Set the subhead to font-weight 700, about 20–24px. Match the prompt line at about 18px regular."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The translate icon, the dropdown caret, the CTA chevron and the red wordmark all match. The popcorn illustration in the reference is a shaded 3D-style tub with a shadow, about 80px. The implementation's is a flatter, simpler popcorn graphic. The poster tiles match in aspect ratio, tilt and corner radius.",
+      "fix": "Use a shaded, dimensional popcorn-tub illustration with a soft drop shadow, about 80px, outside the card."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All copy is identical: 'English', 'Sign In', the H1, the subhead, the prompt, 'Email address', 'Get Started', the banner title and subtitle, and 'Learn More'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Bottom banner: the popcorn illustration overlaps or sits inside the banner card's left edge. In the reference it stands alone to the left of the card, and the card starts further right (about x=276 vs x=168).",
+    "Curved divider under the hero: the implementation's red stroke shows only in the centre and fades out. The reference's red/pink arc stroke spans the full width, edge to edge.",
+    "Hero background: the implementation's poster wall is much brighter. The reference applies a heavy dark scrim, so the posters recede behind the text.",
+    "Banner card fill: the implementation is a flat dark navy. The reference is a navy-to-purple gradient.",
+    "Popcorn icon: the implementation's is a flat, simple graphic. The reference's is a shaded 3D illustration with a shadow.",
+    "Subhead 'Starts at $8.99…': lighter weight than the reference's bold."
+  ],
+  "fixes": [
+    "Increase the hero overlay darkness (about 60–70% black plus a radial vignette) so the posters are dimmed as in the reference.",
+    "Make the curved divider stroke a full-width red-to-pink gradient arc, with a blue glow beneath it.",
+    "Move the popcorn illustration outside the banner card, to its left. Inset the card to start at about x=276.",
+    "Give the banner card a navy-to-purple linear gradient background.",
+    "Replace the popcorn icon with a shaded, dimensional version with a drop shadow.",
+    "Set the subhead to font-weight 700."
+  ],
+  "summary": "A near-faithful Netflix landing hero. The remaining gaps are hero dimming, the full-width arc stroke, and the popcorn and banner placement and gradient."
+}

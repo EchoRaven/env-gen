@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The top nav matches: logo at left, inline links, 'My List' highlighted as a pill, and search, bell, Kids and avatar on the right. The 'My List' heading sits top-left and the poster grid is left-aligned with the same 67px gutter and 16:9 tiles about 295px wide. Two differences: the reference tile row starts lower (about y=303 against about y=225), and the reference shows an enlarged hover preview card over the third tile position, about 440px wide and running from y=169 to y=601. The implementation shows only the flat row at rest.",
+      "fix": "Move the grid down so the first row's top sits at about y=300. Render the expanded hover preview card centred on the hovered tile: about 1.5× the tile width, raised above the row, overlapping its neighbours."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Nav items (7 links), search, bell, Kids profile, avatar with caret, page title and landscape title tiles with text-overlay title treatment are all present. The whole expanded preview card that dominates the reference is missing: the video/still area with the N badge and mute button, the white circular play button, the grouped rating pill (thumbs down, thumbs up, double thumbs up) with its 'I like this' tooltip, the circular expand-chevron button, the metadata row (maturity box, runtime, HD badge) and the genre tags separated by dots.",
+      "missing": [
+        "expanded hover preview card",
+        "mute/unmute circular button over the preview",
+        "white circular play button",
+        "rating pill with thumbs down / thumbs up / love buttons",
+        "'I like this' tooltip",
+        "circular expand (chevron-down) 'more info' button",
+        "maturity rating box + runtime + HD badge metadata row",
+        "dot-separated genre tag row"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same flat, dark, minimal Netflix language: slightly rounded tiles, a pill-shaped active nav item and tight gutters. The reference's elevated card treatment (shadow, rounded bottom panel in #181818, outlined circular buttons) does not appear because the card is absent.",
+      "fix": "Style the preview card with radius ~6px, a deep soft shadow and a #181818 info panel. Give the action buttons a ~2px grey outline, make the play button solid white, and put the rating buttons in a dark grey pill."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same #141414 base, white nav text, grey active pill and red wordmark and badges. The hover card's slightly lighter #181818 surface and the white tooltip with dark text are missing.",
+      "fix": "Use #181818 for the preview card's info panel. Make the tooltip light grey/white with black text, and the play button white with a black glyph."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "The sans nav labels match, with a semibold active 'My List', and the large regular-weight 'My List' heading matches. The preview card's typography is absent: the ~18px runtime, small outlined HD text and ~17px genre labels with grey dot separators.",
+      "fix": "Add a metadata row with an outlined maturity letter, '1h 49m' style runtime and a small boxed 'HD'. Add a genre row in white at ~17px with grey '•' separators."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The nav icons match: outline search, outline bell, gradient Kids square and blue smiley avatar with caret. The tiles use the same 16:9 cover crop with a bold condensed title overlay and small red badge. The outline thumb icons, play triangle, chevron-down and muted-speaker icons from the preview card are missing.",
+      "fix": "Add outline-style icons inside ~44px circles: thumbs-down, thumbs-up, double-thumbs-up, chevron-down and muted speaker. Add a solid play triangle in a white circle."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "The nav labels ('Home', 'Shows', 'Movies', 'Games', 'New & Popular', 'My List', 'Browse by Languages'), the 'Kids' label and the 'My List' heading all match. Missing: the 'I like this' tooltip wording, the 'HD' badge text and the genre wording.",
+      "fix": "Add tooltip labels 'Not for me' / 'I like this' / 'Love this!' on the rating buttons and an 'HD' quality badge."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Centre of the grid (third tile position): the reference shows an enlarged hover preview card with a video still, mute button, play button, rating pill, 'I like this' tooltip, expand chevron, metadata row and genre tags. The implementation shows only flat tiles at rest.",
+    "Preview card action row: the white play circle, the grouped thumbs-down / thumbs-up / love rating pill and the right-aligned circular chevron button are absent.",
+    "Preview card info panel: the maturity box, runtime and HD badge row and the dot-separated genre row are absent.",
+    "Grid vertical position: the reference tile row starts at about y=303, while the implementation's starts at about y=225, closer to the heading."
+  ],
+  "fixes": [
+    "Build an expanded hover/preview card for the My List tiles: about 440px wide, raised above the row and overlapping its neighbours, with a 16:9 still (red N badge top-left, title lockup bottom-left, outlined mute circle bottom-right).",
+    "Below the still, add a #181818 panel with a white circular play button, a dark pill holding outline thumbs-down / thumbs-up / double-thumbs-up buttons with an 'I like this' tooltip on hover, and an outlined chevron-down circle aligned right.",
+    "Add a metadata row (outlined maturity letter, runtime, small boxed 'HD') and a genre row (white labels separated by grey dots).",
+    "Push the tile row down to start at about y=300 so the heading-to-grid spacing matches the reference."
+  ],
+  "summary": "The nav, heading and tile grid match closely, but the reference's main element is missing: the expanded hover preview card with play, rating, expand, metadata and genre controls."
+}
+```

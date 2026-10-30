@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The structure matches the reference. A full-screen dimmed and blurred title-detail backdrop sits behind a centred overlay that spans about 480–1440px. The overlay has a red top rule, a close X at the top right, a centred title and subtitle, three equal rating columns, and a centred 'Got it!' button. The title and the rating row sit 5–10px higher in the implementation. The extra status line pushes 'Got it!' down to about y=758, against y=744 in the reference. The reference has a faint hairline across the overlay width at about y=800, below the button. The implementation does not show it.",
+      "fix": "Remove the extra status line so 'Got it!' sits about 80px below the rating labels (y≈744). Add a 1px low-contrast hairline across the 960px overlay width about 55px below the button."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": ["bottom hairline divider under the Got it! button"],
+      "notes": "Every component in the reference is present: the red accent bar, the close X, the heading, the subtitle, three icon-plus-label rating options (thumbs down, thumbs up, double thumbs up) and the dark 'Got it!' button. The implementation adds two things the reference does not have. It shows a grey rounded highlight tile behind the thumbs-down option, and it adds a status line, 'The East Palace is not rated yet.', above the button.",
+      "fix": "Delete the '<title> is not rated yet.' caption. In the resting state, remove the filled rounded background from the thumbs-down option and show only the icon and label, as in the reference. Add the hairline divider below the button."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same flat, minimal overlay with no card surface and the same small, slightly rounded dark button. The visible highlight tile on the first option adds a card treatment that the reference lacks. The close X in the implementation has a thinner stroke than the reference's bold X. The backdrop is blurred and darkened more heavily than the reference, where the page behind is dim but still readable.",
+      "fix": "Remove the option tile. Draw the close X with a stroke about 3px thick. Reduce the backdrop dimming and blur slightly so the hero image and side panels show through at about the same brightness as the reference."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The palette matches: a dark scrim, a Netflix-red top rule, white text and icons, a light-grey subtitle and a near-black button with white text. The implementation's red rule is slightly brighter and thicker. Its backdrop is darker overall. The highlight tile adds an extra grey surface.",
+      "fix": "Make the top rule about 3px of #E50914 at reference brightness. Lighten the scrim opacity a little. Remove the grey tile surface."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The hierarchy matches: a large bold centred heading, a lighter grey subtitle and small white two-line centred labels. The implementation uses an Inter-style sans instead of the reference's Netflix Sans, which has a rounder humanist shape. The heading looks slightly heavier and wider. The labels sit in wider boxes, so they wrap differently ('We won't suggest this / to you again' instead of 'We won't suggest / this to you again', and 'We know you're a true / fan!' instead of 'We know you're a / true fan!').",
+      "fix": "Use Netflix Sans or a close humanist sans fallback. Constrain each option label to about 150px so the lines wrap as 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!'."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The icons are filled white thumbs-down, thumbs-up and double-thumbs-up glyphs at the same positions and roughly the same size. The implementation's glyphs differ slightly in shape, and its double-thumb is a little larger and more upright. The close X is thinner.",
+      "fix": "Use Netflix's filled rating glyphs at about 40px. Use a bolder close X at about 30px."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The heading, subtitle, three option labels and the 'Got it!' text all match the reference word for word. The implementation adds copy the reference does not have: 'The East Palace is not rated yet.'",
+      "fix": "Remove the 'not rated yet' status line."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Rating row, left option: the implementation draws a grey rounded highlight tile behind the thumbs-down icon and label. In the reference all three options are bare, with no tile.",
+    "Between the labels and the button: the implementation adds a caption, 'The East Palace is not rated yet.', which is not in the reference. It also pushes 'Got it!' about 14px lower.",
+    "Typography across the overlay: the implementation uses an Inter-style sans instead of Netflix Sans, and the wider label boxes change where the option labels wrap.",
+    "Below the button: the reference has a faint full-width hairline at about y=800. The implementation does not show it.",
+    "Close X at the top right: the implementation's stroke is thinner than the reference's bold X.",
+    "Backdrop: the implementation dims and blurs the page behind more heavily than the reference, where the hero and side panels stay more visible."
+  ],
+  "fixes": [
+    "Remove the default highlight background from the rating options, including the thumbs-down tile, so the resting state shows only the icon and label.",
+    "Delete the '<title> is not rated yet.' caption and move 'Got it!' up to about 80px below the labels.",
+    "Switch the font to Netflix Sans or a close fallback, and constrain the option labels to about 150px so they wrap as in the reference.",
+    "Thicken the close X stroke to about 3px.",
+    "Add a 1px low-contrast hairline across the overlay width below the button.",
+    "Lighten the backdrop scrim and blur slightly to match the reference's visibility."
+  ],
+  "summary": "The implementation is a near-faithful rate overlay with a matching red rule, copy, icons and button. It adds an option highlight tile and a 'not rated yet' caption that the reference lacks, uses a different font, and is missing the faint bottom divider."
+}
+```

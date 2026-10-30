@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The top nav with the logo, 7 links, the pill-highlighted active 'Movies' item and the right-side utility cluster matches. The 'Movies' heading with the Genres dropdown below the nav matches. The hero is full-bleed with left-aligned content, followed by the 'Gems for You' carousel that bleeds off the right edge. The mute and rating tab sits at the right edge. Two things differ: the hero content block sits lower (the title starts at ~480px vs ~250px in the reference), and the first row starts at ~920px vs ~843px. Because of that, the second row heading ('Comedy Movies'), which peeks in at the bottom of the reference, is pushed off-screen.",
+      "fix": "Raise the hero content stack so the title lockup starts ~250px from the top. Shorten the hero so the 'Gems for You' heading sits at ~840px and the next row's heading peeks in at the bottom of the viewport."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "Present: the nav, the active pill, search, the bell, the Kids badge, the avatar with caret, the Movies heading, the Genres dropdown, the Play and More Info buttons, the mute button, the TV-14 rating tab, the row title, the page indicator dashes, poster cards, the TOP 10 corner badges and the 'Recently Added' pills. Missing: the small Netflix-brand 'N' series mark above the hero title, and the TOP 10 badge row ('#3 in Movies Today'). Invented: a genre · year · type · rating metadata row under the title, which the reference does not have.",
+      "missing": [
+        "Netflix brand mark above hero title",
+        "TOP 10 badge + '#N in Movies Today' ranking line in hero"
+      ],
+      "fix": "Above the title, add the red NETFLIX wordmark label. Below the title, swap the metadata row for a red TOP 10 square badge followed by '#3 in Movies Today' in ~28px medium white text."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "It uses the same cinematic full-bleed hero with a dark bottom fade, square-cornered buttons (solid white Play, translucent grey More Info), slightly rounded thumbnail cards with tight gaps, and a pill-shaped active nav item. The thumbnails render the title as uniform condensed text at the bottom-left, whereas the reference uses varied per-title logo artwork. The cards also look slightly taller because they're cut off at the bottom.",
+      "fix": "Use title-logo art on cards, or vary the treatment, rather than one overlaid condensed caption on every card. Keep cards at a ~16:9 aspect with the full card visible."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Dark scheme, Netflix-red logo and badges, white Play button, translucent grey secondary button, and a dark gradient fading into the near-black page base. All of these match.",
+      "fix": "No significant change; keep the bottom gradient fading to #141414 behind the row."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The nav, page heading and row title use a similar sans with matching sizes. The hero synopsis is smaller and lighter (~17px, grey-white) vs ~22px pure white in the reference, and it's truncated with an ellipsis. The hero title is a single-line condensed display face rather than the stacked two-tier artwork lockup, which is acceptable as content. The metadata row adds an extra type level the reference doesn't have.",
+      "fix": "Set the hero synopsis to ~22px, regular, pure white, at a width of ~680px. Remove the metadata row text level. Set the ranking line to ~28px medium."
+    },
+    "iconography": {
+      "score": 0.87,
+      "notes": "The line search and bell icons, the Kids gradient tile, the smiley avatar, the play triangle, the circled-i info icon and the circled mute icon all match. The TOP 10 badges on cards match. The hero is missing the TOP 10 badge icon.",
+      "fix": "Add the red TOP 10 square badge icon in the hero ranking line."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "Nav labels, 'Movies', 'Genres', 'Play', 'More Info', 'Gems for You', 'Recently Added' and 'TV-14' all match. The '#N in Movies Today' copy is missing.",
+      "fix": "Add the '#3 in Movies Today' ranking text."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "Hero, under the title: the reference shows a TOP 10 badge with '#3 in Movies Today'; the implementation shows a 'Science Fiction · 2026 · Movie · TV-14' metadata row instead (invented).",
+    "Hero, above the title: the reference has the red NETFLIX brand label over the title lockup; the implementation has none.",
+    "Hero vertical placement: the implementation's title block starts ~230px lower, and the 'Gems for You' row starts ~80px lower, which pushes the next row heading off-screen.",
+    "Hero synopsis: the implementation's text is smaller, greyer and ellipsis-truncated; the reference uses larger pure-white text with no truncation.",
+    "Row cards: the implementation overlays the same condensed caption at the bottom-left of every card instead of per-title logo artwork, and the cards are cut off at the bottom of the viewport."
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a red TOP 10 badge and '#3 in Movies Today' (~28px, medium, white).",
+    "Add the red NETFLIX brand label above the hero title.",
+    "Move the hero content stack up so the title starts ~250px from the top, and reduce the hero height so the 'Gems for You' heading sits at ~840px with the next row heading peeking in.",
+    "Increase the hero synopsis to ~22px pure white and remove the ellipsis truncation.",
+    "Render card titles as artwork-style logos, not a uniform overlaid caption, and show full 16:9 cards."
+  ],
+  "summary": "The nav, page header, hero buttons, rating tab and carousel follow the reference closely. The hero is missing the brand label and the TOP 10 ranking line, adds a metadata row the reference doesn't have, and its content sits too low."
+}
+```

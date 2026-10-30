@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+const B='http://localhost:5173';
+const b=await chromium.launch(); const p=await b.newPage({viewport:{width:1920,height:1080}});
+await p.goto(B+'/login'); await p.fill('input[name=email]','demo@netflix.local'); await p.fill('input[name=password]','netflix123'); await p.click('button[type=submit]');
+await p.waitForURL('**/profiles'); await p.click('text=Demo'); await p.waitForTimeout(2000);
+await p.goto(B+'/shows'); await p.waitForTimeout(2000);
+await p.locator('.title-card').nth(2).hover(); await p.waitForTimeout(1500);
+await p.screenshot({path:'/tmp/shots/hover2.png'});
+await p.click('.cp-mute'); await p.waitForTimeout(300); console.log(await p.locator('.cp-mute').getAttribute('aria-label'));
+await b.close();

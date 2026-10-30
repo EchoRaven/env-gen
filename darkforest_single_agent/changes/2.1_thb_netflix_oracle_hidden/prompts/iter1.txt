@@ -1,0 +1,25 @@
+You are building a complete web application from a product specification. This is iteration 1 of {iters}.
+
+TASK (verbatim from the benchmark)
+
+{description}
+
+MATERIALS (read-only, in /workspace/design/)
+- DESCRIPTION.txt: the task text above.
+- docs/spec.md: the full spec.
+- references/: the reference screenshots ("design/references" in the task text).
+- assets/: the real assets (logo, icons, fonts, posters, backdrops, trailer clips).
+- dataset/titles.json: the catalog to seed from.
+
+WHAT TO DELIVER (everything in /workspace, outside design/)
+- docker/docker-compose.yml starts the whole app from a clean state. Services are named `database` (Postgres 16), `backend` (FastAPI) and `frontend` (React + Vite); `backend` and `frontend` publish their ports to the host. Build contexts and bind mounts must stay inside /workspace; the evaluator refuses host mounts, host networking and privileged containers.
+- app/backend/, app/frontend/ (pages in app/frontend/src/pages/), app/database/init/ (schema and seed SQL). Anything the containers need, such as assets, must be inside the build contexts or mounted from inside /workspace.
+- The backend serves GET /health; POST /auth/register and POST /auth/login return an `access_token`; every /api/* endpoint requires `Authorization: Bearer <token>` and answers 401 without it. All 17 endpoints exist at exactly the listed paths.
+
+AUTOMATED CHECKS (their report reaches you after each submission)
+The harness runs env-gen's deterministic api_smoke on each submission. It does a clean docker compose build and boot, then checks health, register/login and that passwords are checked, that every contract endpoint is implemented, has the right response shape and enforces auth, that writes persist, a contract-derived business chain (register, create, list, read, delete), and that the frontend is reachable, navigable and has no dead controls.
+
+YOUR ENVIRONMENT
+There is no docker inside this sandbox, so you cannot boot the compose stack here. Node 22 (node, npm) and Python 3.11/3.12 are available, and you can install packages from npm and PyPI.
+
+{loop}

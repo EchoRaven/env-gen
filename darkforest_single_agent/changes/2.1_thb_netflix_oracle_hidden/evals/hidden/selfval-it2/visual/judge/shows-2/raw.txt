@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.82,
+      "notes": "Same skeleton: a transparent top nav over a full-bleed hero, the 'TV Shows' heading with a Genres dropdown below the nav, a left-aligned hero text block, a maturity rating tab on the right edge, then a horizontal row of cards with page indicators. The difference is vertical rhythm. In the implementation the hero copy block sits lower, and the 'Today's Top Picks for You' row starts at about y=920 instead of about 837, so the cards are cut off at the bottom of the viewport. The reference shows the whole row and the start of the next row heading.",
+      "fix": "Make the hero shorter, about 75% of the viewport, so the first row heading lands near y≈835. Show the full 16:9 cards (about 165px tall) and the top of the next row heading above the fold."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Nav items (7), search, bell, Kids, profile avatar with caret, TV Shows heading, Genres dropdown, Play and More Info buttons, mute button, rating tab, row title, page indicator, TOP 10 corner badges and red 'Recently Added' pills are all present. The hero is missing the small NETFLIX series label above the title, the title-artwork lockup and the TOP 10 rank row ('#1 in TV Shows Today'). It adds a genre · year · seasons · rating metadata row that the reference does not have. On the cards, the red tag pills are cropped off the bottom edge, and titles are plain text instead of artwork treatments.",
+      "missing": [
+        "NETFLIX series label above the hero title",
+        "hero title-artwork/logo lockup",
+        "TOP 10 badge + '#N in TV Shows Today' rank row",
+        "fully visible tag pills on the row cards"
+      ],
+      "fix": "Replace the metadata row with a TOP 10 red badge plus a '#1 in TV Shows Today' line. Add a red NETFLIX label above the title and render the title as a logo image. Make sure card pills sit inside the visible card."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The cinematic, flat, dark-overlay look matches. Buttons are slightly rounded: solid white for Play, translucent grey for More Info. The Genres box is square-cornered. The hero treatment is close, but the implementation's description text is denser and smaller, and its buttons are a bit narrower.",
+      "fix": "Make Play about 158px wide and More Info about 214px wide, with about 18px between them. Increase the description size to about 22px with a slightly looser line height."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Same palette: near-black base, red Netflix wordmark and badges, white text and Play button, translucent grey secondary button and rating tab. The left and bottom vignette gradients match. The implementation's hero image is darker and cooler, but that comes from the content.",
+      "fix": "Keep the palette. Add the red NETFLIX label and red TOP 10 badge in the hero so the red accent appears there as it does in the reference."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Nav, heading and row-title type (a Netflix Sans–style sans) matches in size and weight. The hero title is condensed bold uppercase text where the reference uses a stylised artwork wordmark. The reference's rank line is about 30px medium; the implementation instead has a small metadata row. The description is about 18px in the implementation against about 22px in the reference. Card titles are uniform condensed text instead of per-title logos.",
+      "fix": "Use a logo image for the hero title, add a '#1 in TV Shows Today' line at about 30px medium, and set the description to about 22px regular white with a slight text shadow."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "Line-style search, bell and mute icons, the filled play triangle, the outlined info circle, the Kids tile, the blue smiley avatar with caret and the TOP 10 badges all match. There is no TOP 10 badge in the hero. Card artwork uses the same 16:9 crop with small radii but shows text titles rather than artwork logos.",
+      "fix": "Add a TOP 10 badge icon (red square with a white TOP/10 stack) next to the rank text in the hero."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info', 'Today's Top Picks for You' and 'Recently Added' all match. The '#1 in TV Shows Today' rank copy is missing, and a 'Mystery · 2026 · 2 Seasons · TV-14' row has been added.",
+      "fix": "Replace the metadata line with '#N in TV Shows Today'."
+    }
+  },
+  "similarity": 0.78,
+  "empty_state": false,
+  "deviations": [
+    "hero left block: the implementation has no TOP 10 badge + '#1 in TV Shows Today' rank row and adds a genre/year/seasons/rating metadata row instead",
+    "hero title: plain condensed uppercase text instead of a title-artwork logo lockup, with no red NETFLIX series label above it",
+    "vertical rhythm: the hero copy and the first row sit about 80px lower, so the row cards and their red tag pills are cut off at the bottom and the next row heading never appears",
+    "hero description: smaller (about 18px vs about 22px) and denser than the reference",
+    "row cards: titles are rendered as uniform text overlays instead of per-title artwork logos",
+    "hero buttons: Play and More Info are slightly narrower than in the reference"
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a red TOP 10 badge + '#1 in TV Shows Today' (about 30px, medium weight)",
+    "Render the hero title as a logo/artwork image (about 680px wide) with a small red NETFLIX label above it",
+    "Shorten the hero so the 'Today's Top Picks for You' heading sits at about y=835 and the full card row (with pills) plus the next row heading show above the fold",
+    "Enlarge the hero description to about 22px and widen the Play/More Info buttons to about 158/214px",
+    "Use title-logo artwork on the row cards instead of text overlays"
+  ],
+  "summary": "The nav, heading, hero framing and card row closely match the reference. The main gaps are in the hero: no artwork title lockup, no NETFLIX label, and no TOP 10 rank row (a metadata row appears instead). The hero is also too tall, so the card row is cut off."
+}
+```

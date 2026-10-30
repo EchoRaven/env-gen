@@ -1,0 +1,44 @@
+This is iteration 2 of 5. The evaluator's report on the version you submitted in iteration 1:
+
+env-gen api_smoke: PASSED - 14/14 checks passed (11s).
+Contract endpoints answering 2xx with a token: 11/15. Business-chain steps ok: 8/8.
+Summary: all api_smoke checks passed
+
+Checks:
+- [pass] frontend_navigable: 28 page component(s), 19 route(s)
+- [pass] frontend_fallback_pages: 0/16 pages are framework fallback ()
+- [pass] docker_up
+- [pass] backend_health
+- [pass] auth_register_login
+- [pass] business_endpoints_reachable: 15 endpoint(s) reachable
+- [pass] business_endpoints_implemented: 15 registered-implemented endpoint(s) serve their route
+- [pass] business_endpoints_correct_shape: 15 endpoint(s) match the item/items contract
+- [pass] business_writes_persist: POST /api/profiles → id=6; GET readback contains it
+- [pass] auth_enforced_401
+- [pass] auth_password_is_checked
+- [pass] business_chain: 8 step(s) across 1 verifier-authored chain(s) pass
+- [pass] frontend_dead_controls: all interactive pages bind their controls
+- [pass] frontend_reachable: GET :3000/ → 200
+
+Endpoints not answering 2xx:
+- POST http://localhost:8000/api/profiles -> 422
+- POST http://localhost:8000/api/my-list -> 422
+- DELETE http://localhost:8000/api/my-list/1 -> 404
+- POST http://localhost:8000/api/titles/1/rating -> 422
+
+Chain framework_default_crud:
+- [ok] POST /auth/register -> 201 (expect [200, 201, 409])
+- [ok] POST /auth/register -> 201 (expect [200, 201, 409])
+- [ok] POST /api/my-list -> 201 (expect [200, 201])
+- [ok] GET /api/my-list -> 200 (expect [200])
+- [ok] DELETE /api/my-list/1 -> 200 (expect [200, 204])
+- [ok] POST /api/profiles -> 201 (expect [200, 201])
+- [ok] GET /api/profiles -> 200 (expect [200])
+- [ok] PUT /api/my-list/1 -> 404 (expect [401, 403, 404])
+
+How to work, in this iteration and every later one:
+1. Continue from everything already in /workspace and in this conversation. Using the current state and the latest evaluator report, produce a better version.
+2. Check it with every validation available to you here: the `validate` command (scores), your own tests and builds, and your own review for bugs and security holes.
+3. When you are confident this version is ready, submit it: end your turn with a short summary of what changed and what is still missing or broken.
+
+After you submit, the harness snapshots /workspace and runs the same validation independently. Its report starts your next iteration. Work autonomously and do not ask questions.

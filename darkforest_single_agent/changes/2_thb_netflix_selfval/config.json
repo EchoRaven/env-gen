@@ -1,0 +1,11 @@
+{
+  "base_experiment": "0_baxbench_nl2_tests",
+  "task": "netflix",
+  "iters": 5,
+  "runs": 1,
+  "iter_timeout_s": 14400,
+  "max_validate_calls_per_iter": 20,
+  "validate_wait_s": 1500,
+  "node_dir": "/home/user/.nvm/versions/node/v22.22.1",
+  "bash_timeout_ms": {"default": 600000, "max": 1800000}
+}

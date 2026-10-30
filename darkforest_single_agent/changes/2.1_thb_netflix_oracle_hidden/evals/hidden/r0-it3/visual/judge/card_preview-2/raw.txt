@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "The top nav matches: wordmark left, links, search/bell/Kids/avatar on the right. The page skeleton below it is different. The reference has a page title row ('Browse by Languages') with preference dropdowns on the right, then a static 6-column poster grid with no row headings. The implementation is the Home layout instead: a large rounded hero billboard, horizontal carousels whose last tile is cut off at the right edge, a page indicator, and a 'Top 10 TV Shows' section heading. The preview card position also differs. In the reference it expands from a mid-row tile and rises above the row. In the implementation it is pinned to the far left, past the page gutter (x≈16).",
+      "fix": "Render the held preview on the Browse by Languages route. Replace the hero and carousels with a title row (H1 left, 'Select Your Preferences' plus two dropdowns right) and a 6-column wrapping grid with ~8px gaps inside the 67px gutters. Anchor the expanded card centred on its source tile, growing about 1.5× upward."
+    },
+    "components": {
+      "score": 0.55,
+      "missing": [
+        "Page title 'Browse by Languages'",
+        "'Select Your Preferences' label",
+        "'Original Language' dropdown",
+        "Language ('English') dropdown",
+        "Active pill on 'Browse by Languages' nav item",
+        "Static multi-row poster grid"
+      ],
+      "notes": "The preview card's internals match closely: N badge, artwork with title lockup, mute button, play/list/thumb circles, expand chevron, rating box, seasons, HD badge, and genre row with bullet separators. Two small differences: the list button shows '+' where the reference shows a check (the added state), and the thumb icon is filled where the reference's is outline. Tile badges (TOP 10, Recently Added) are present. The implementation adds things the reference does not have: the hero billboard with Play/More Info, the carousel page indicator, and the 'Top 10 TV Shows in the U.S. Today' heading. The active nav pill sits on 'Home' instead of 'Browse by Languages'.",
+      "fix": "Add the language preference header with its two outlined dropdowns. Move the active pill to 'Browse by Languages'. Remove the hero and row headings on this route. Use an outline thumbs-up icon in the card."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat dark Netflix language: slightly rounded tiles, a pill for the active nav item, circular outlined action buttons, a dark elevated card with a soft shadow. The hero's rounded container and gradient add decoration the reference doesn't have. The reference dropdowns are square-cornered with white outlines; the implementation has none.",
+      "fix": "Remove the hero container. Style the dropdowns as square, 1px white-outlined boxes on black with a caret."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark #141414 base, a lighter grey card surface, red Netflix badges, red 'Recently Added' tags, and a white play button all match. The hero's bright artwork makes the top of the page much more colourful than the reference's flat dark title area.",
+      "fix": "Keep a flat dark background behind the title/preferences row instead of the bright hero artwork."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same sans-serif and the same nav weights and sizes. The card metadata and genre text sizes match. The reference's large regular-weight page title (~34px) is missing. The implementation adds a 48–90px condensed hero title and a section heading.",
+      "fix": "Add the ~34px regular-weight white 'Browse by Languages' H1 at the top-left and drop the hero title typography."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Outline search and bell icons match, and the card's play/chevron/mute circles match. The card's list button shows '+' instead of a check. The thumb icon is filled rather than outline. The reference's avatar is a blue smiley; the implementation reuses the gradient kids tile as the profile avatar. Tile crops are about 16:9 in both.",
+      "fix": "Use an outline thumbs-up icon and show a check when the title is in My List. Use a distinct profile avatar instead of the Kids gradient tile."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels, 'Kids', 'Seasons', 'HD' and badge wording match. The implementation is missing 'Browse by Languages' (title), 'Select Your Preferences', 'Original Language' and the language name. It adds 'Play', 'More Info' and 'Top 10 TV Shows in the U.S. Today'.",
+      "fix": "Add the copy 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English'. Remove the hero CTAs and row headings on this route."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Page body: the implementation renders the Home hero billboard (title, metadata, Play/More Info) where the reference has a plain title row with 'Browse by Languages' and the preference dropdowns",
+    "Header right of title: the 'Select Your Preferences' label and the 'Original Language' / 'English' dropdowns are missing",
+    "Content area: the implementation uses horizontal carousels with the last tile cut off, a page indicator and section headings; the reference is a static 6-column grid with no row titles",
+    "Nav: the active pill is on 'Home' in the implementation; the reference highlights 'Browse by Languages'",
+    "Preview card: in the implementation it is pinned to the left edge past the page gutter; the reference centres it on its tile and grows it upward",
+    "Preview card actions: '+' instead of a check, and a filled thumb instead of an outline thumb",
+    "Bottom: the implementation adds the 'Top 10 TV Shows in the U.S. Today' heading, which the reference does not have",
+    "Profile avatar: the implementation reuses the gradient Kids tile; the reference uses a distinct blue avatar"
+  ],
+  "fixes": [
+    "Show the held preview on the Browse by Languages route: an H1 'Browse by Languages' at the left plus 'Select Your Preferences' and two square outlined dropdowns ('Original Language', 'English') aligned right",
+    "Replace the hero and carousels with a static 6-column wrapping grid of 16:9 tiles inside the 67px gutters, with no row headings or page indicator",
+    "Move the active nav pill to 'Browse by Languages'",
+    "Anchor the expanded preview card to its source tile, scaled about 1.5× and rising above the row, never past the page gutter",
+    "Show a check when the title is in My List, and use an outline thumbs-up icon",
+    "Use a distinct profile avatar in the top-right"
+  ],
+  "summary": "The preview card is a faithful copy, but it sits on the Home layout (hero plus carousels) instead of the Browse by Languages grid, which has a title, preference dropdowns and a different active nav item."
+}
+```

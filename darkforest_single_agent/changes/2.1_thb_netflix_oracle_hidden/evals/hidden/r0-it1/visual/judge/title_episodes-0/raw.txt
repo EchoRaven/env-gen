@@ -1,0 +1,55 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "Matches the reference: a centred dark modal (~1085px wide, x≈418–1502) sits over a dimmed home page, with the nav bar and hero still visible at the edges. Inside the modal the order is the same: synopsis plus right-hand metadata column, then the 'Episodes' header with the title on the right, then full-width episode rows (number, 16:9 thumbnail, title/duration line, description). Differences: rows are a little taller (~157px vs ~146px), and the scroll position leaves more of the synopsis block in view.",
+      "fix": "Tighten episode row vertical padding so each row is ~146px tall (thumbnail ~170×96 with ~25px top/bottom padding)."
+    },
+    "components": {
+      "score": 0.88,
+      "missing": [],
+      "notes": "All the reference components are present: synopsis, right metadata column, 'Episodes' heading with the show title on the right, episode rows with a large index number, thumbnail, bold title, right-aligned duration, a grey description line, hairline dividers, a filled background on the active row, and a circular play overlay on hover. Difference in state: the hovered row 2 gets a filled grey background, so rows 1 and 2 merge into one grey block. In the reference only row 1 (current episode) is filled, and the hovered row shows just the play overlay with a divider beneath it.",
+      "fix": "Show the filled #333 background only on the current or selected episode. On hover, show only the circular play icon over the thumbnail and keep the row transparent, with its bottom divider."
+    },
+    "style": {
+      "score": 0.92,
+      "notes": "Same flat, dark, utilitarian Netflix modal: slightly rounded card for the active row, hairline dividers between rows, and the same density. Rows are slightly airier than the reference.",
+      "fix": "Reduce row padding slightly and keep the hairline divider under each non-active row, including the hovered one."
+    },
+    "color": {
+      "score": 0.94,
+      "notes": "Modal surface is #181818-ish, the active row is a lighter grey, text is white, and descriptions are light grey. The red TOP 10 badge is Netflix red. The backdrop dim level matches. The only difference is that the second highlighted row adds an extra grey block.",
+      "fix": "Remove the hover background fill so only one grey row appears."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "Same sans family and hierarchy: ~28px 'Episodes' heading, ~26px light episode numerals, bold ~18px titles, ~16px regular durations, ~15px grey descriptions, and labels like 'Original Language:' in grey with values in white. Synopsis line height and size match.",
+      "fix": "No major change. Keep description text at ~15px with ~22px line height so two-line descriptions wrap like the reference."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "Thumbnails use the same 16:9 cover crop and small radius. The play overlay is the same circular outlined button with a filled triangle, and the TOP 10 badge matches. Repeating the same still for every episode is a content difference only.",
+      "fix": "Use a per-episode still for each thumbnail where data allows (not a design change)."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "'Episodes' heading and the show name on the right match. The right-hand metadata uses 'Label: value' styling. The reference shows a 'This Show Is:' line, while the implementation shows 'Original Language' and 'Rating' at this scroll point. Episode titles and descriptions are generic placeholders ('Episode 1', 'Season 1, episode 1 of …') rather than real loglines, but the presentation is correct.",
+      "fix": "Include the 'This Show Is:' tags line in the right metadata column and use real episode descriptions, so rows render the two-line description treatment."
+    }
+  },
+  "similarity": 0.9,
+  "empty_state": false,
+  "deviations": [
+    "Episode list, row 2: the hovered row gets a filled grey background and merges with row 1's highlight into one grey block. In the reference, the hovered row 2 is transparent with only the play overlay, and only row 1 is filled.",
+    "Episode list: rows are ~10px taller than in the reference and descriptions are a single short line instead of a two-line grey paragraph, so the list feels airier.",
+    "Right metadata column: shows 'Original Language' and 'Rating' where the reference has a 'This Show Is:' tag line."
+  ],
+  "fixes": [
+    "Limit the filled row background to the current episode. On hover, show only the circular play overlay on the thumbnail and keep the row's bottom hairline divider.",
+    "Reduce episode row vertical padding to bring row height to ~146px.",
+    "Add the 'This Show Is: <tags>' line to the right metadata column of the modal."
+  ],
+  "summary": "A near-faithful copy of the More Info episodes modal. The main deviation is that the hovered row also gets the active grey fill; rows are also a little taller and the metadata column lacks the 'This Show Is' line."
+}
+```

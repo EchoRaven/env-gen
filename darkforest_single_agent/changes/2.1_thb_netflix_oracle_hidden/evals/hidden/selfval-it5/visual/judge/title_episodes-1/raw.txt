@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The overall structure matches the reference. A centred dark modal (about 1085px wide) sits over a dimmed Home page whose top nav, hero and row headings show through on both sides. Inside the modal the order is the same: synopsis block, then the 'Episodes' header row, then a vertical list of episode rows separated by hairline dividers. Each row has the same layout: a large index number, a 16:9 thumbnail, a bold title with the duration at the far right, and a description below. There are two differences. The implementation adds a 'Season 1: TV-14' sub-row under the Episodes heading, and it draws a divider above the first row. In the reference, the first row is a highlighted block that starts straight after the header.",
+      "fix": "Remove the 'Season 1: [TV-14]' sub-row so the episode list starts directly under the Episodes header row. Drop the divider above the first row."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "Present: the Episodes heading, numbered episode rows, thumbnails, titles, durations, descriptions (row 1), the hover play overlay on a thumbnail, a highlighted row background and dividers. The reference has a plain text label on the right of the Episodes header. The implementation puts a bordered 'Season 1 ▾' dropdown there instead and adds a maturity-badge sub-line. The reference's highlighted row is the first episode, with a separate hover play icon on episode 2. In the implementation, the highlight and the play icon both sit on episode 2, and episode 1 is not highlighted. The reference's play overlay is a circle-outlined play button, but the implementation shows a bare triangle. Behind the modal, the implementation shows a circular mute button on the hero, which the reference does not show at that spot.",
+      "missing": [
+        "plain-text series/season label on the right of the Episodes header (replaced by a dropdown)",
+        "persistent highlight on the current/first episode row",
+        "circle-outlined play button overlay on the hovered thumbnail"
+      ],
+      "fix": "Replace the Season dropdown with a right-aligned plain white text label (no border or caret) when the reference state applies. Give the current (first) episode a persistent lighter grey background with rounded corners. Render the hover play icon as a white triangle inside a thin white circle on a dark translucent disc."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same flat dark Netflix modal with hairline dividers and slightly rounded corners on the highlighted row block and the thumbnails. Row padding and density are close. The bordered dropdown box adds a heavier outlined control that the reference header does not have.",
+      "fix": "Remove the outlined dropdown box. Keep the header row borderless, as in the reference."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use the same dark #181818 modal over a darkened page, a #2f2f2f-like highlight block, white titles and light grey descriptions. The palette and contrast match.",
+      "fix": "No change needed beyond moving the highlight colour to the current episode row."
+    },
+    "typography": {
+      "score": 0.87,
+      "notes": "The sans-serif type is consistent with the reference: a bold 'Episodes' heading at about 28px, large light index numerals, bold row titles, regular durations and grey descriptions. The synopsis text in the implementation is slightly larger and lighter in weight. The extra 'Season 1:' caption adds a type level that the reference does not have.",
+      "fix": "Remove the 'Season 1:' caption. Set the right header label at about 20px regular white. Keep the synopsis at about 18px with a 1.6 line height."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The thumbnails are 16:9 cover crops at matching size with slightly rounded corners. The hover play icon is a bare triangle, but the reference uses a ringed circle. The dropdown caret is extra. The mute icon on the background hero is extra.",
+      "fix": "Use a circle-outlined play glyph (about 54px, white ring and triangle on a semi-transparent black disc) for the thumbnail hover. Remove the dropdown caret."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading matches, and durations use the same 'Nm'-style unit format. The header's right side reads 'Season 1' in a selector, while the reference shows a plain title label. The 'Season 1: TV-14' line is copy that the reference does not have.",
+      "fix": "Show the plain series/season label text on the right of the header and drop the 'Season 1:' line."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: the implementation shows a bordered 'Season 1 ▾' dropdown, while the reference shows plain white label text with no box or caret.",
+    "Below the Episodes header: the implementation adds a 'Season 1: [TV-14]' line and a divider, which the reference does not have. In the reference, the first row starts immediately.",
+    "Episode list highlight: the reference highlights row 1 (the current episode) with a lighter rounded block. The implementation leaves row 1 plain and highlights row 2.",
+    "Thumbnail hover play: the reference shows a play triangle inside a thin white circle. The implementation shows a bare triangle.",
+    "Background hero, right side: the implementation shows a circular mute button that is not visible in the reference."
+  ],
+  "fixes": [
+    "Replace the Season dropdown in the Episodes header with right-aligned plain white text (about 20px regular), with no border and no caret.",
+    "Remove the 'Season 1: TV-14' sub-row and the divider above the first episode row.",
+    "Apply the lighter grey rounded highlight to the current/first episode row by default, separate from hover.",
+    "Restyle the thumbnail hover play icon as a white triangle inside a thin white ring on a translucent dark disc.",
+    "Hide the hero mute button while the More Info modal is open."
+  ],
+  "summary": "The modal structure, episode rows and dark styling closely match the reference. The main differences are the dropdown in the Episodes header where the reference has a text label, the extra season/rating sub-line, the highlight sitting on the wrong row, and a plain play icon where the reference has a ringed one."
+}
+```

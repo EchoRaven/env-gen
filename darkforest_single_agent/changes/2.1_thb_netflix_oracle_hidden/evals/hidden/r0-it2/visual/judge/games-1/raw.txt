@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Top nav matches closely: NETFLIX wordmark top-left, horizontal links with a pill highlight on 'Games', search, bell, Kids and avatar on the right, all overlaid on a full-bleed hero. The hero spans about 0–790px with a left-aligned info block and a dark page below, as in the reference. Differences: the hero info block sits higher (title lockup at about y=355–480 vs the reference's about 510–640, buttons at y≈633 vs ≈758). The left gutter is about 67px vs the reference's about 53px. The 'Party Games' row has no tiles and is followed by a second row, 'Family Movie & Show Night', so the first visible carousel is not the games row.",
+      "fix": "Push the hero info block down so the buttons sit about 30px above the hero's bottom edge (y≈758). Reduce the left gutter to about 53px. Render the 'Party Games' carousel as the first row directly below the hero, with tiles starting at y≈880."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: the full nav with active pill, the search, bell, Kids and avatar controls, the hero title lockup, the metadata row with bullet separators, primary and secondary hero buttons, the row heading and the row page indicator (on the second row). Missing or different: the mute/sound toggle circle and the 'ALL' maturity-rating tag with a left bar at the hero's bottom-right; the secondary button has no ⓘ icon and is not a 'More Info' affordance; the Party Games row has no game tiles. Invented: a description paragraph in the hero and a 'Family Movie & Show Night' row with TOP 10 badges, neither of which the reference shows.",
+      "missing": [
+        "hero mute/volume toggle button (circular, bottom-right)",
+        "maturity rating tag 'ALL' with left divider bar (bottom-right of hero)",
+        "info (ⓘ) icon in secondary hero button",
+        "Party Games carousel tiles (landscape game artwork cards)",
+        "page indicator on the Party Games row"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same Netflix dark cinematic style: full-bleed hero art with a bottom fade into #141414, slightly rounded buttons, flat surfaces and no shadows. The reference's carousel tiles have slightly rounded corners and the implementation's do too. The hero in the implementation has a heavier left-side darkening scrim and a body paragraph that makes it feel text-heavy compared with the reference's sparse lockup.",
+      "fix": "Remove the hero description paragraph. Keep only a soft bottom and left vignette so the art reads edge to edge, as in the reference."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark base (#141414), white primary button with black text, translucent grey secondary button, red NETFLIX wordmark and white nav text with a grey active pill all match. The secondary button is a slightly more opaque grey than the reference's translucent dark grey.",
+      "fix": "Set the secondary hero button to rgba(109,109,110,0.7)-style translucency over the art."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "The nav font, sizes and weights match, and so do the row heading size and weight and the metadata row style. The hero title is a generic condensed display word with no artwork-logo treatment; the reference uses a red 'NETFLIX' kicker above a title-artwork lockup. The implementation adds body-size description copy and grey caption copy ('— No games available') that the reference doesn't have.",
+      "fix": "Render the hero title as a title-art image or logo lockup at about 200px width under the small red NETFLIX kicker, and drop the description and caption text."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Nav icons (outline search and bell), the Kids badge and the blue smiley avatar with its caret match. Missing: the outline mute-speaker icon in a circle and the ⓘ info icon in the secondary button. The reference shows landscape game-art tiles of about 356×200 with rounded corners in the games row; the implementation has none there. The tiles in the invented row also carry TOP 10 badges, which the reference row doesn't have.",
+      "fix": "Add an outline ⓘ icon to the secondary button and an outline speaker-mute icon inside a 42px circular bordered button at the hero's bottom-right. Fill the games row with landscape artwork tiles of about 356×200 with about 4px radius and no badges."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The nav labels match exactly, and so do the 'Party Games' heading and the 'Game •' metadata prefix. The hero CTAs read 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' / 'More Info'. The implementation adds empty-state copy ('There are no games in this catalog yet…', 'No games available', '0 available') and the heading 'Family Movie & Show Night'.",
+      "fix": "Change the hero CTAs to 'Play Game' and 'More Info'. Use metadata of the form 'Game • <Genre> • <N> Players • <N>+ Minutes' and remove the empty-state sentences."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": true,
+  "deviations": [
+    "Party Games row (below the hero): the reference shows a horizontal carousel of landscape game-art tiles; the implementation shows only '— No games available' text",
+    "Hero bottom-right: the reference has a circular mute toggle and an 'ALL' maturity tag with a left bar; the implementation has neither",
+    "Hero buttons: the reference has 'Play Game' (white) and 'ⓘ More Info' (translucent grey with icon); the implementation has 'Browse Family Titles' and 'Back to Home' with no icon",
+    "Hero info block: the implementation adds a two-line description paragraph and '0 available' metadata; the reference has only the title lockup and a 'Game • Genre • Players • Minutes' metadata row",
+    "Hero title: the implementation uses a plain condensed 'GAMES' text title instead of a title-artwork logo lockup",
+    "Below the hero: the implementation adds a 'Family Movie & Show Night' row with TOP 10 badges that the reference does not show",
+    "Hero info block is positioned about 150px higher than in the reference, and the left gutter is about 67px vs about 53px"
+  ],
+  "fixes": [
+    "Seed the games catalog so the 'Party Games' row renders landscape artwork tiles (about 356×200, 4px radius, about 8px gaps) directly under the hero, bleeding off the right edge, with a page indicator at the top-right of the row",
+    "Feature a game in the hero: title-art lockup under the red NETFLIX kicker, metadata 'Game • Sports • 1-4 Players • 10+ Minutes', and no description paragraph",
+    "Change the hero CTAs to a white 'Play Game' button and a translucent grey 'More Info' button with an outline ⓘ icon",
+    "Add the circular outline mute button and the 'ALL' maturity tag with a left white bar, flush to the right edge at the hero's bottom-right",
+    "Move the hero info block down so the buttons sit at y≈758, and set the left gutter to about 53px",
+    "Remove the 'Family Movie & Show Night' row (or at least render it below Party Games) and remove all empty-state copy"
+  ],
+  "summary": "The nav chrome and the hero/row skeleton match the Netflix Games design, but the implementation shows an empty state: no game tiles, the wrong hero CTAs, no mute or maturity controls, and an extra non-games row."
+}
+```

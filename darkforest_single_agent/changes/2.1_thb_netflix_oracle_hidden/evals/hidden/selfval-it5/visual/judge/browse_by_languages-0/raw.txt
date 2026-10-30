@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The top nav matches: logo on the left, 7 nav items with 'Browse by Languages' as a grey pill, and search, bell, Kids and avatar on the right. The page title is on the left and the preference controls are on the right. The 6-column 16:9 grid has the same gutters and row spacing. Differences: the implementation's grid starts at about y=200, but the reference has a gap of about 160px below the header and starts the grid at about y=304. The reference's transient overlays, two open dropdown lists and an enlarged hover preview card over the grid, are absent. The implementation adds a third control group ('Sort by' plus a dropdown), which pushes the preference controls left.",
+      "fix": "Remove the Sort-by control so the two dropdowns sit at the right edge (about 1325–1842px). Push the grid down so the first row starts about 300px from the top. Render the open dropdown lists and the hover preview card as overlays above the grid."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: the full nav, search, bell, Kids profile, avatar with caret, page title, 'Select Your Preferences' label, Original Language and English dropdowns, the grid of title cards, TOP 10 corner badges and red pill badges. Missing from the reference state: the open Original Language menu (Original Language / Dubbing / Subtitles), the open, scrollable language list (Arabic…Vietnamese), and the expanded hover card. That card has a video still with an 'N' logo and a title lockup, a mute button, play/add (check)/rate (thumb) circle buttons, an expand chevron, a 'TV-MA' boxed rating, a runtime, an 'HD' badge and a genre tag row with dot separators. Invented: the 'Sort by: Suggestions For You' dropdown. The reference also shows a 'Live Now' badge variant with a dot, which the implementation lacks.",
+      "missing": [
+        "open Original Language dropdown menu (Original Language / Dubbing / Subtitles)",
+        "open language list dropdown (Arabic…Vietnamese)",
+        "hover/expanded preview card with video still and title lockup",
+        "preview card mute button",
+        "preview card play / add-to-list / rate circular buttons",
+        "preview card expand-chevron button",
+        "maturity rating box, runtime and HD badge row",
+        "genre tags row with dot separators",
+        "'Live Now' badge variant with dot"
+      ]
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both use a flat dark Netflix aesthetic: square-edged thumbnails, square bordered selects with a white 1px border and a solid caret, small red pill badges and a pill highlight on the active nav item. The reference's dropdown menus are flat black panels with a hairline border. Its hover card is elevated with a shadow, rounded corners and a dark grey body. None of this layering appears in the implementation.",
+      "fix": "Style the dropdown menus as black panels with a 1px grey border and roughly 29px rows. Build the hover card at about 1.5× tile scale with a 4px radius, a #181818 body and a heavy drop shadow."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The near-black page, white text, Netflix red logo and badges, grey active-nav pill and red/white TOP 10 tags all match. The implementation is missing the #181818 hover-card surface and the dropdown-panel black with grey borders.",
+      "fix": "Add the dark-grey (#181818) hover-card surface and black dropdown panels with a grey border, keeping the white outlined circle buttons."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "Sans-serif throughout, a large regular-weight page title, regular nav labels and a bold active nav label all match. The implementation's page title is slightly larger. Its dropdown values are a little lighter in weight and size than the reference's 'Original Language' and 'English'. The tiles add a condensed all-caps title overlay, which is acceptable as title-artwork treatment. The reference's hover-card metadata type (rating/runtime row, genre row) is absent.",
+      "fix": "Shrink the page title to about 34px. Use a medium weight at about 18px for the select values. Add the hover-card metadata typography: a 16px rating box and runtime, and 17px genre tags with grey bullet separators."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Line search and bell icons, the Kids gradient tile, the smiley avatar and the caret match. The 16:9 cover-cropped thumbnails and TOP 10 badges match. The reference's outlined circular action icons (play filled white, check, thumb, chevron, mute) are absent. So is the red 'N' mark on the preview.",
+      "fix": "Add circular outlined icon buttons to the hover card: white filled play, check, thumbs-up, down-chevron and a muted-speaker icon. Put the red 'N' logo top-left on the preview image."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English' match. The implementation adds copy the reference does not show: 'Sort by' and 'Suggestions For You'. Option labels (Dubbing, Subtitles, the language names) are missing because the menus are not shown.",
+      "fix": "Remove the 'Sort by / Suggestions For You' copy. Use 'Original Language', 'Dubbing' and 'Subtitles' in the first menu and the alphabetical language names in the second."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "right side under header: the reference shows both preference dropdowns expanded (a 3-item mode menu and a tall alphabetical language list overlaying the grid); in the implementation both are closed",
+    "grid center: the reference shows an enlarged hover preview card (video still, title lockup, mute, play/check/thumb/chevron buttons, TV-MA/runtime/HD row, genre tags); the implementation has no hover card",
+    "header controls: the implementation adds a 'Sort by' label and a 'Suggestions For You' dropdown that the reference does not have, shifting the two preference selects left",
+    "vertical rhythm: the implementation's grid starts directly under the title (about y=200); the reference leaves a large gap and starts the grid at about y=304",
+    "tile badges: the reference mixes 'Live Now' (with dot), 'New Season' and 'Recently Added' pill badges; the implementation has only one badge variant"
+  ],
+  "fixes": [
+    "Remove the Sort-by label and dropdown from the header controls",
+    "Render the Original Language select open, with a black bordered menu listing Original Language / Dubbing / Subtitles",
+    "Render the language select open, with a tall black bordered list from Arabic to Vietnamese overlaying the right grid column",
+    "Add a hover-expanded preview card over a grid tile: a 16:9 still with a red N mark, a title lockup and a mute button; a #181818 body with play (filled white), check, thumb and chevron circle buttons; a 'TV-MA' boxed rating, runtime and 'HD' badge; and a genre tags row with grey dot separators",
+    "Increase the space between the header row and the first grid row to about 150px",
+    "Support 'Live Now' (with a dot) and 'New Season' badge variants alongside 'Recently Added'"
+  ],
+  "summary": "The nav, header and tile-grid design match closely, but the reference's open dropdown menus and hover preview card are missing, and the implementation adds an extra Sort-by dropdown."
+}

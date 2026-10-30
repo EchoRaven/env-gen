@@ -1,0 +1,5 @@
+{"iter": 1, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 11, "endpoints_total": 15, "chain_steps_ok": 8, "chain_steps_total": 8}, "summary": "all api_smoke checks passed"}
+{"iter": 2, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 13, "endpoints_total": 15, "chain_steps_ok": 8, "chain_steps_total": 8}, "summary": "all api_smoke checks passed"}
+{"iter": 3, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 13, "endpoints_total": 15, "chain_steps_ok": 8, "chain_steps_total": 8}, "summary": "all api_smoke checks passed"}
+{"iter": 4, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 13, "endpoints_total": 15, "chain_steps_ok": 8, "chain_steps_total": 8}, "summary": "all api_smoke checks passed"}
+{"iter": 5, "passed": true, "metrics": {"checks_passed": 14, "checks_total": 14, "endpoints_2xx": 13, "endpoints_total": 15, "chain_steps_ok": 8, "chain_steps_total": 8}, "summary": "all api_smoke checks passed"}

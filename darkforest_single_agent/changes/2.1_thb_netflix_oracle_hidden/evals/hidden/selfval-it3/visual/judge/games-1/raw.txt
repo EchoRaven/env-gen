@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The top nav bar matches closely: the logo sits left, followed by 7 nav items with a pill on Games, and search, bell, Kids and avatar on the right. Below the nav, the full-bleed hero (about 70% of the viewport, artwork behind a transparent nav) is replaced by a flat purple-to-dark gradient band holding a big text title. The Party Games row has no horizontal carousel of landscape tiles. Instead there is a centered empty-state block and a footer disclaimer line, and neither appears in the reference.",
+      "fix": "Render a full-bleed hero about 720px tall with game key art, the nav overlaid transparently, and title art, metadata, buttons and mute/rating in the bottom-left and bottom-right. Below it, add a horizontal carousel row of 16:9 tiles that bleeds off the right edge."
+    },
+    "components": {
+      "score": 0.3,
+      "notes": "The nav inventory is all there: logo, Home, Shows, Movies, Games (active pill), New & Popular, My List, Browse by Languages, search, bell, Kids, avatar and caret. Missing: hero artwork, the title-logo lockup with the small NETFLIX label, the hero CTAs (white 'Play Game' and translucent grey 'More Info' with an info icon), the mute toggle, the maturity-rating tag at the right edge, the carousel tiles and the row page indicator. Invented: a BETA badge, 'Browse TV Shows'/'Browse Movies' buttons, an empty-state message and a footer credit.",
+      "missing": ["hero background artwork", "hero title-art lockup with NETFLIX label", "Play Game button", "More Info button with info icon", "mute/volume toggle", "maturity rating tag at hero right edge", "Party Games carousel tiles", "row page-indicator dashes"]
+    },
+    "style": {
+      "score": 0.45,
+      "notes": "The flat Netflix language is kept: square-ish buttons, a pill nav highlight, no shadows. But the reference is image-heavy and cinematic, while the implementation is a sparse text page. The purple gradient and the outlined BETA chip add a decorative flavor the reference doesn't have.",
+      "fix": "Remove the purple gradient and the BETA chip. Use a dark bottom vignette over the hero imagery, and put 4px-radius image tiles with about 8px gaps in the row."
+    },
+    "color": {
+      "score": 0.55,
+      "notes": "The dark #141414 base, red wordmark, white text and white/grey button pair all match. The purple header gradient isn't in the reference, and the reference's colorful artwork-driven palette is absent.",
+      "fix": "Replace the purple top gradient with hero artwork under a black left and bottom gradient. Keep the base at #141414."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "The nav, metadata row and section heading use a similar sans at similar sizes and weights. The hero title is a giant condensed text 'GAMES' instead of title-art imagery. The metadata row has only 2 items where the reference shows 4 dot-separated items.",
+      "fix": "Replace the text title with a title-logo image about 200px wide. Render the metadata as 'Game • Genre • Players • Duration' in about 18px white."
+    },
+    "iconography": {
+      "score": 0.4,
+      "notes": "Nav icons match: outline search, bell, Kids tile, blue smiley avatar. There is no imagery at all where the reference shows hero art and 16:9 rounded game tiles. The info-circle icon and the muted-speaker circle icon are missing.",
+      "fix": "Add hero key art, 16:9 cover-cropped tiles with about 4px radius, an outline info-circle icon in More Info, and an outlined circular mute button."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "The nav labels and the 'Party Games' heading match. Missing copy: 'Play Game', 'More Info' and the full metadata row. Extra copy: 'No games in the catalog yet', 'Browse TV Shows', 'Browse Movies', 'BETA', 'Play on any device' and the TMDB footer.",
+      "fix": "Use 'Play Game' and 'More Info' CTAs. Remove the BETA label, the empty-state text and the footer credit."
+    }
+  },
+  "similarity": 0.35,
+  "empty_state": true,
+  "deviations": [
+    "hero region: reference shows full-bleed game artwork filling about 70% of the viewport; implementation has a flat purple gradient band with a large text 'GAMES'",
+    "hero bottom-left: reference's 'Play Game' (white) and 'More Info' (grey with info icon) buttons are absent",
+    "Party Games row: reference shows a horizontal carousel of 16:9 game tiles bleeding off the right edge; implementation shows a centered 'No games in the catalog yet' empty state with Browse TV Shows/Movies buttons",
+    "hero bottom-right: reference's circular mute button and maturity-rating tag are missing",
+    "hero title: reference uses a title-art logo lockup with a small red NETFLIX label above it; implementation uses plain condensed text",
+    "section heading: implementation adds an outlined purple 'BETA' chip next to 'Party Games' that the reference lacks",
+    "row header right: reference's page-indicator dashes are missing",
+    "page bottom: implementation adds a TMDB credit footer line not in the reference"
+  ],
+  "fixes": [
+    "Seed game data, or fall back to existing artwork, so the hero and the Party Games row render content instead of an empty state",
+    "Build a full-bleed hero (about 720px) with background art and a left/bottom black gradient, with the nav overlaid transparently",
+    "In the hero bottom-left, add a title-logo image with a small red NETFLIX label, a metadata row 'Game • Genre • Players • Duration', a white 'Play Game' button and a grey translucent 'More Info' button with an info icon",
+    "In the hero bottom-right, add a circular outlined mute button and a rating tag with a left white border",
+    "Render Party Games as a horizontal row of 16:9 rounded tiles (about 355px wide, 8px gap) that overflows the right edge, plus page-indicator dashes on the right of the heading",
+    "Remove the BETA chip, the purple gradient, the empty-state CTA buttons and the footer credit line"
+  ],
+  "summary": "The nav chrome matches exactly, but the data is missing: the hero artwork, CTAs and game carousel never rendered, and a purple text header plus an empty state stand in their place."
+}

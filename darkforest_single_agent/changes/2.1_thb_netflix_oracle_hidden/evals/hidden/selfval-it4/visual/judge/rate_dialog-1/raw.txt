@@ -1,0 +1,30 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.92, "notes": "Same structure as the reference. A centered overlay sits over a blurred, dimmed title-detail page, with a red top rule spanning about 480–1440px and a close X at top-right. Below that come the centered title and subtitle, a row of three evenly spaced rating options, and a centered 'Got it!' button. In the implementation the option row sits slightly higher, and an extra status line pushes the button down about 15px.", "fix": "Remove the status line between the options and the button so 'Got it!' sits about 45px below the option labels (around y≈745)."},
+    "components": {"score": 0.85, "notes": "Every reference component is present: the red top rule, close X, title, subtitle, three thumb options with captions, and the 'Got it!' button. The implementation adds a 'X is not rated yet.' status line that the reference doesn't have. It also shows a filled rounded highlight box behind the thumbs-down option, which the reference doesn't show in its resting state.", "missing": [], "fix": "Remove the 'not rated yet' text. Don't render the highlight tile behind the first option by default; show it on hover or focus only, or not at all."},
+    "style": {"score": 0.87, "notes": "Both are flat, dark and minimal, with no card surface, just a scrim. The implementation's selection tile adds a rounded grey surface the reference doesn't have. The scrim in the implementation is darker and more opaque, so the background is less visible than in the reference.", "fix": "Lighten the scrim to about rgba(0,0,0,0.6) with the same blur, and drop the option background tile."},
+    "color": {"score": 0.9, "notes": "Same palette: a Netflix red rule, white text, a light-grey subtitle and a dark-grey 'Got it!' button. The implementation's backdrop is darker and more neutral black.", "fix": "Reduce the scrim opacity a little so the blurred page shows through as it does in the reference."},
+    "typography": {"score": 0.8, "notes": "The hierarchy matches: a large bold centered title, a grey regular subtitle, small centered two-line captions and a bold small button label. The implementation uses an Inter-like geometric sans, while the reference uses Netflix Sans, which is slightly narrower. The implementation's captions are wider and larger, so they wrap differently ('We won't suggest this / to you again' versus 'We won't suggest / this to you again').", "fix": "Switch to a Netflix Sans–like font (or Helvetica Neue fallback). Constrain the captions to about 150px max-width at about 16px so they wrap as in the reference."},
+    "iconography": {"score": 0.88, "notes": "Same filled white thumbs-down, thumbs-up and double-thumbs icons at a similar size. The close X in the implementation is a thinner stroke than the reference's bolder X.", "fix": "Increase the close X stroke to about 3px at about 30px size."},
+    "copy": {"score": 0.92, "notes": "The title, subtitle, three captions and 'Got it!' match exactly. The extra 'The East Palace is not rated yet.' line is copy the reference doesn't have.", "fix": "Delete the 'not rated yet' status text."}
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Between the options and the button: the implementation adds a 'The East Palace is not rated yet.' line that isn't in the reference",
+    "Left (thumbs-down) option: the implementation shows a filled rounded grey highlight tile; the reference shows all three options without any background",
+    "Option captions: the implementation's text is wider and larger, so the line breaks differ from the reference's narrow two-line wrapping",
+    "Font: the implementation uses an Inter-like sans instead of the reference's Netflix Sans",
+    "Close X at top-right: thinner stroke than the reference's heavier X",
+    "Backdrop scrim: darker and more opaque than in the reference"
+  ],
+  "fixes": [
+    "Remove the 'not rated yet' status line and move 'Got it!' up to sit about 80px below the captions",
+    "Remove the default highlight tile behind the thumbs-down option",
+    "Set the caption max-width to about 150px so they wrap as 'We won't suggest / this to you again', 'We'll show you / more like this', 'We know you're a / true fan!'",
+    "Use a Netflix Sans–style font stack for all modal text",
+    "Thicken the close X stroke",
+    "Lighten the scrim slightly"
+  ],
+  "summary": "A near-faithful match of the rate dialog. It loses marks only for the extra 'not rated yet' line, a default highlight tile on the first option, and small differences in font and caption wrapping."
+}

@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The structure matches. A full-screen dimmed and blurred title-detail page sits behind a centered panel about 960px wide. The panel has a red top rule, an X close button top-right, a centered title and subtitle, three rating options in a row, and a centered 'Got it!' button. Two things differ. The implementation adds a caption line between the options and the button, which pushes the button about 15px lower. The reference shows a hairline divider at the bottom of the panel, around y≈800, that the implementation lacks. The option columns are also wider, so the text wraps at different points.",
+      "fix": "Remove the status caption so 'Got it!' sits about 75px below the option labels. Add a 1px divider spanning the panel width about 55px below the button. Narrow each option column to about 180px."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "Every reference component is present: the red accent rule, the X close button, the heading, the subtitle, three icon-and-label rating options (thumbs down, thumbs up, double thumbs up) and the 'Got it!' button. Two elements are invented. A grey rounded highlight box sits behind the thumbs-down option, as if it were selected or hovered, and the reference shows all three options unhighlighted. A caption, '<title> is not rated yet.', has also been added. The reference's bottom hairline divider is missing.",
+      "missing": ["bottom hairline divider under the panel"],
+      "fix": "Show all three options with no background in the default state, delete the 'not rated yet' caption, and add the bottom divider line."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The look matches: flat, minimal panel content floating over a blurred backdrop, a thin red accent rule and a small dark button with a slight corner radius. The implementation's selected-option card adds a rounded tile that the reference doesn't have. The X uses a thinner stroke, and the red rule looks slightly heavier.",
+      "fix": "Remove the option highlight tile. Give the X a bolder stroke of about 3px at about 32px. Keep the red rule at about 3px."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both use a dark scrim with white text, a light-grey subtitle, a Netflix-red rule and a dark grey 'Got it!' button with white bold text. The implementation's scrim is darker and more opaque, so the backdrop is less visible. The selected tile adds a grey surface that the reference doesn't have.",
+      "fix": "Lighten the overlay to about 60–65% black so the backdrop artwork shows through as it does in the reference, and remove the grey tile behind the first option."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The hierarchy matches: a large bold centered title, a regular light-grey subtitle, small centered white two-line option labels and a bold button label. The implementation uses Inter or a generic sans, while the reference uses Netflix Sans, which is slightly narrower with different letterforms. Option labels wrap differently: 'We won't suggest this / to you again' instead of 'We won't suggest / this to you again', and 'We know you're a true / fan!' instead of 'We know you're a / true fan!'.",
+      "fix": "Use Netflix Sans or a closer substitute. Constrain the option label width to about 160px so the lines break as in the reference."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The three white filled thumb icons are the same in style, size and arrangement. The double-thumbs icon is very close. The close X is thinner than the reference's heavier, bolder X.",
+      "fix": "Thicken the X close icon stroke to match the reference."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "The title, subtitle, all three option labels and 'Got it!' match word for word. The implementation adds the line '<title> is not rated yet.', which doesn't appear in the reference.",
+      "fix": "Delete the 'is not rated yet.' caption."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Rating options row: in the implementation the thumbs-down option sits inside a grey rounded highlight tile, as if selected or hovered. In the reference all three options have no background.",
+    "Between the options and the button: the implementation adds a small grey caption, '<title> is not rated yet.', that the reference doesn't have, and it pushes 'Got it!' lower.",
+    "Panel bottom: the reference has a full-width hairline divider about 55px below 'Got it!'. The implementation has none.",
+    "Option labels: the implementation's columns are wider, so the label line breaks differ from the reference ('this' and 'true' move to the first line).",
+    "Close X, top-right: the implementation uses a thinner stroke than the reference's bold X.",
+    "Font: the implementation uses Inter or a generic sans instead of the reference's Netflix Sans.",
+    "Backdrop: the implementation's scrim is darker, so the blurred page behind is less visible than in the reference."
+  ],
+  "fixes": [
+    "Remove the default selected or hover background tile from the thumbs-down option so all three options render with no background.",
+    "Delete the '<title> is not rated yet.' caption and move 'Got it!' up to about 75px below the labels.",
+    "Add a 1px subtle grey divider spanning the panel width (480–1440px) about 55px below the 'Got it!' button.",
+    "Constrain each option label to about 160px wide so the text wraps as 'We won't suggest / this to you again' and 'We know you're a / true fan!'.",
+    "Thicken the X close icon stroke to about 3px.",
+    "Use Netflix Sans or a closer substitute for all dialog text.",
+    "Lighten the overlay slightly so the blurred backdrop is as visible as in the reference."
+  ],
+  "summary": "A near-faithful copy of the rate dialog. It is let down by an invented selected-option tile and a 'not rated yet' caption, a missing bottom divider, and small differences in font, line wrapping and the X stroke."
+}
+```

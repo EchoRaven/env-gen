@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both are full-bleed, chromeless players: a back arrow at top-left, the media fills the frame, and a single bottom control row has transport controls on the left, centered text and fullscreen on the right. The implementation adds a large left-aligned 'You're watching' info block in the middle-left of the frame and a full-width progress bar above the controls. The reference shows neither. The reference's top-right cluster (flag icon plus Ad badge) is absent.",
+      "fix": "Remove the mid-screen 'You're watching' info overlay and the progress bar for this state. Add a top-right cluster aligned with the back arrow: a report flag icon, then an 'Ad 12' badge."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Matches: back arrow, play/pause toggle, volume icon, centered caption text and fullscreen button. Missing: the top-right report flag icon and the 'Ad 12' countdown badge, which has a yellow left accent bar on a dark chip. Invented: a red progress bar with a scrubber dot and 0:00 time, rewind-10 and forward-10 buttons, next-episode, episodes, subtitles/audio, the title/season/synopsis overlay, and a red codec error line. The reference shows a pause glyph (playing state); the implementation shows play.",
+      "missing": [
+        "report/flag icon (top-right)",
+        "Ad countdown badge with yellow accent bar ('Ad 12')",
+        "'<Title> begins after ads' centered status text"
+      ],
+      "fix": "When an ad is playing, show only these controls: back, flag, Ad countdown badge, pause, volume, the centered 'begins after ads' text and fullscreen. Hide the seek, skip, next, episodes and subtitles controls and the scrubber."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use the same minimalist cinematic overlay: white icons directly on the video with no containers and flat surfaces. The reference is sparser. The implementation's heavy text block and dense icon row make it busier. The Ad badge in the reference is a small, slightly rounded dark chip, and the implementation has no equivalent.",
+      "fix": "Cut the overlay to the sparse ad-state set and add the small dark rounded chip for the ad timer with a 2–3px yellow left bar."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both are dark with white icons and text. The implementation introduces Netflix-red in the progress scrubber and pinkish-red error text, neither of which appears in the reference. The reference's only accent is the yellow/amber bar on the Ad badge, and it is missing.",
+      "fix": "Remove the red scrubber and the red error text in this state. Add the amber (#E5B33A-ish) accent bar on the Ad badge."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a clean sans-serif. The bottom center text in the reference is regular weight, white, ~20px, as a single sentence. The implementation uses a bold title plus regular episode text. It also adds large display-weight headings (title ~56px bold, subtitle, synopsis) that the reference lacks.",
+      "fix": "Make the bottom center label one regular-weight line, e.g. '<Title> begins after ads'. Drop the large heading hierarchy. Badge text should be small, ~16px regular: 'Ad 12'."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The icon style matches: white line/outline at a similar size for the back arrow, speaker with waves and fullscreen corners. The play/pause glyph matches in weight but shows the opposite state. The flag outline icon is missing, and the extra glyphs (10s skip, next, episodes, subtitles) are extra icons the reference lacks. The video frame renders as a still poster rather than playing video.",
+      "fix": "Add an outline flag icon at the top right. Show the pause glyph while playing. Remove the extra transport icons in the ad state."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference copy is 'Ad 12' and '<Title> begins after ads'. The implementation shows 'You're watching', 'The East Palace E1 Episode 1', a synopsis and a codec error message ('This clip can't be played in this browser…'). None of these match the reference chrome copy.",
+      "fix": "Replace the bottom center text with '<Title> begins after ads' and add an 'Ad <seconds>' badge label. Remove the 'You're watching' copy and the error copy."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference shows a flag (report) icon and an 'Ad 12' badge with a yellow left bar; the implementation has nothing there",
+    "center-left of the frame: implementation overlays a large 'You're watching / title / season-episode / synopsis' block that the reference does not have",
+    "center-left: implementation shows a red error line 'This clip can't be played in this browser', so the media is a static poster instead of playing video",
+    "bottom: implementation adds a full-width red progress bar with a scrubber and a 0:00 timestamp; the reference has no scrubber",
+    "bottom-left: implementation adds rewind-10 and forward-10 buttons between play and volume; the reference has only pause and volume",
+    "bottom-right: implementation adds next-episode, episodes and subtitles icons before fullscreen; the reference has only fullscreen",
+    "bottom-center: implementation shows a bold title plus episode label; the reference shows the regular-weight sentence '<Title> begins after ads'",
+    "bottom-left: implementation shows a play glyph (paused); the reference shows a pause glyph (playing)"
+  ],
+  "fixes": [
+    "Render the ad-playing state: hide the progress bar, timestamp, skip ±10, next-episode, episodes and subtitles controls",
+    "Add a top-right cluster aligned with the back arrow: an outline flag icon, then a dark slightly rounded chip with a yellow left accent bar reading 'Ad <n>' that counts down",
+    "Change the bottom center label to a single regular-weight white line: '<Title> begins after ads'",
+    "Remove the 'You're watching' title/season/synopsis overlay and the red codec error text; ensure the media plays (or loops a playable clip) so no error state shows",
+    "Show the pause icon while the media is playing"
+  ],
+  "summary": "The implementation has the same full-bleed player shell, but it renders the paused, normal-playback overlay with extra controls and an info block instead of the reference's minimal ad-playing state, and it lacks the flag icon and Ad countdown badge."
+}
+```

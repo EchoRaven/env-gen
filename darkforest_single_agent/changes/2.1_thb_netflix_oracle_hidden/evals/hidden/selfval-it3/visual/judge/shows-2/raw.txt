@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.82,
+      "notes": "Same skeleton: transparent top nav over a full-bleed hero, 'TV Shows' heading plus Genres dropdown below the nav, hero content block on the left, mute and maturity-rating plate on the right, and a horizontal 'Today's Top Picks for You' carousel overlapping the bottom of the hero. The difference is vertical rhythm. In the reference the title block starts around y≈250 and the row heading sits at y≈837, so the whole first row of tiles and the start of the next section ('Only on Netflix') are visible. In the implementation the title starts at y≈500, the buttons sit at y≈760 and the row heading is pushed to y≈920, so the tiles are cut off at the fold and the next section is not visible.",
+      "fix": "Shorten the hero, or move the hero content block up so the title lockup starts about 250px from the top and the row heading sits about 835px down. Then the full tile row, plus the top of the next row heading, fits in a 1104px viewport."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "These match the reference: logo, all 7 nav items with a pill highlight on the active 'Shows', search, bell, Kids avatar and label, profile avatar with caret, 'TV Shows' heading, Genres dropdown, Play (white) and More Info (translucent grey) buttons, mute circle, rating plate, row title, page-indicator dashes, 16:9 tiles with TOP 10 corner badges and red bottom-centre pills. Hero differences: there is no small red 'NETFLIX' series badge above the title, and no Top 10 badge with a '#1 in TV Shows Today' ranking line. In their place the implementation adds a genre · year · seasons · rating metadata row that the reference does not have.",
+      "missing": [
+        "Hero 'NETFLIX' red series badge above the title",
+        "Hero TOP 10 badge + '#1 in TV Shows Today' ranking line",
+        "Title-artwork logo treatment in the hero (plain text is used instead)"
+      ],
+      "fix": "Above the hero title, add a small red NETFLIX wordmark badge. Below the title, add a row with a red TOP 10 square badge and '#1 in TV Shows Today' in white at about 30px. Remove the 'Mystery · 2026 · 2 Seasons · TV-14' metadata row."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic dark streaming language: full-bleed imagery, dark left and bottom vignette, flat buttons with slight 4px radii, square-cornered tiles with tight 6–8px gaps, pill-shaped active nav item, and a Genres dropdown with a thin white border on black. The implementation's hero looks heavier and darker overall, but the treatment is the same.",
+      "fix": "Keep the treatment. Make the left-to-right gradient a little lighter so the hero art reads brighter, as in the reference."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Dark scheme, Netflix red for the logo and badges, white Play button with black text, translucent grey More Info button, grey active-nav pill, red 'Recently Added' pills, and red/white TOP 10 badges all match. The rating plate is a dark translucent bar with a white left rule in both.",
+      "fix": "No palette changes needed. Make sure the hero badge you add uses the same Netflix red (#E50914)."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Nav, 'TV Shows' heading, row title and button labels are all clean sans of similar size and weight. The hero title differs: the reference uses a stylized artwork logo lockup, while the implementation uses a large condensed all-caps text title. The hero synopsis is noticeably smaller in the implementation (about 18px versus about 22px, white with text shadow). The reference also has a ~30px ranking line that has no equivalent.",
+      "fix": "Raise the hero synopsis to about 22px with a slight text shadow and cap it at a ~700px line width. Render the title as a logo/artwork image when one is available. Add the '#1 in TV Shows Today' line at about 30px, regular weight."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, Kids gradient tile, blue smiley profile avatar with caret, filled play triangle, outlined info circle, and muted-speaker circle all match. Tiles are 16:9 cover crops with TOP 10 badges in the top-right corner. The implementation's tiles show the title as a condensed-text caption overlay instead of baked-in title artwork, and the bottom pills are cropped by the fold.",
+      "fix": "Use tile imagery that has title artwork baked in, or style the overlay lockup to match. Make sure the full tile height, with the bottom-centre status pill, is visible above the fold."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info', 'Today's Top Picks for You', 'Kids' and the 'Recently Added' pills match. The reference's '#1 in TV Shows Today' line is missing.",
+      "fix": "Add the hero ranking copy '#1 in TV Shows Today' next to the TOP 10 badge."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Hero, below title: reference shows a red TOP 10 badge + '#1 in TV Shows Today' line; implementation has none and instead shows an invented 'Mystery · 2026 · 2 Seasons · TV-14' metadata row",
+    "Hero, above title: reference has a small red 'NETFLIX' series badge; implementation has none",
+    "Hero title: reference uses a stylized artwork/logo title lockup; implementation renders plain condensed all-caps text",
+    "Vertical rhythm: implementation's hero block sits ~250px lower and the 'Today's Top Picks' row starts at ~920px versus ~837px, so the tiles are cut off at the fold and the next section heading is not visible",
+    "Hero synopsis: implementation text is smaller and lighter than the reference's ~22px synopsis",
+    "Row tiles: implementation shows the title as a text overlay caption instead of title artwork, and the bottom status pills are clipped"
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a TOP 10 red badge + '#1 in TV Shows Today' (white, ~30px) line",
+    "Add a small red 'NETFLIX' series badge directly above the hero title",
+    "Render the hero title as a logo/artwork image (fall back to stylized text only if no logo exists)",
+    "Move the hero content up so the title starts ~250px from the top and the row heading lands at ~835px, keeping the full tile row and the next section heading in view",
+    "Increase the hero synopsis to ~22px with a text shadow",
+    "Ensure tiles show their full height with the bottom-centre red status pill visible"
+  ],
+  "summary": "Chrome, nav, buttons, carousel and colour system match closely. The gaps are in the hero: no NETFLIX badge, no TOP 10 ranking line, a plain-text title instead of artwork, an extra metadata row, and content pushed too low so the tile row is clipped."
+}
+```

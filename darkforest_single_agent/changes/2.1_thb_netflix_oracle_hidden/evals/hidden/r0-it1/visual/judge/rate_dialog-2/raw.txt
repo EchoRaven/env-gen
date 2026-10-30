@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same structure: a centred overlay about 960px wide over the blurred, dimmed title-detail modal. Top to bottom it has a red rule with the close X at top-right, a centred title, a subtitle, three evenly spaced rating columns and a centred 'Got it!' button. Small differences: the red rule sits about 15px lower (y≈318 vs 302), the button sits about 15px lower, and the reference shows a faint hairline at y≈802 that spans the same 480–1440 width. The implementation doesn't have that line.",
+      "fix": "Move the red rule up to y≈302 and the CTA to y≈744. Add a 1px low-contrast horizontal rule at y≈802, spanning the same width as the red rule."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Everything in the reference is present: the red top accent, the close X, the title, the subtitle, three rating options (thumbs down, thumbs up, two thumbs up) each with a caption, and the 'Got it!' button. The implementation adds a filled rounded grey box behind the thumbs-down option, which looks like a hover or focus state. The reference shows no highlight on any option.",
+      "fix": "Remove the default highlight box behind the first rating option so all three options sit on the backdrop with no box. Add the bottom hairline divider.",
+      "missing": ["bottom hairline divider under the rating content"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, minimal overlay with no card surface: content floats over a dimmed, blurred backdrop. The CTA is a small, slightly rounded dark-grey button in both. The extra rounded grey highlight panel adds a surface the reference doesn't have. The close X in the implementation has a thinner stroke.",
+      "fix": "Remove the option highlight panel. Draw the close X with a heavier stroke of about 3px, at about 32px."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark scheme: white text, a Netflix-red accent rule, light grey subtitle and a dark-grey CTA. The implementation's backdrop is darker and more uniformly black. The reference's blurred background keeps more of its natural colour and brightness. The rule red is a bit more saturated in the implementation.",
+      "fix": "Lighten the backdrop dim to about 60–65% black, with less blur intensity, so the underlying artwork shows through as in the reference. Use #E50914 at 3px for the rule."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use a centred sans-serif with the same hierarchy (bold title, regular grey subtitle, small white captions, bold CTA label). In the implementation the title is larger and heavier (spanning about 572–1348 vs 601–1319) and set in Inter rather than Netflix Sans. The captions also wrap differently: they use wider columns, giving 'We won't suggest this to / you again' and 'We know you're a true / fan!' where the reference has 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!'.",
+      "fix": "Set the title in Netflix Sans (or a close geometric sans) at about 44px, weight 700. Set the caption column width to about 160px so each caption wraps into two balanced lines as in the reference."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The filled white thumbs-down, thumbs-up and double-thumbs icons match in style and size. The close X is thinner in the implementation.",
+      "fix": "Thicken the close-X stroke to match the reference's bold X."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "The title, subtitle, all three captions and 'Got it!' match word for word.",
+      "fix": "None."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Thumbs-down option: the implementation draws a filled rounded grey highlight box behind it. The reference shows all three options with no box.",
+    "Rating captions: the columns are too wide, so the line breaks differ ('this to / you again', 'more like / this', 'a true / fan!') from the reference's balanced two-line wraps.",
+    "Title: the implementation renders it larger and heavier, in Inter instead of Netflix Sans.",
+    "Below the CTA: the reference has a faint hairline divider at y≈802 that is absent in the implementation.",
+    "Backdrop: the implementation is darker and more uniformly black. The reference's blurred page behind it is brighter.",
+    "Vertical positions: the red rule and the 'Got it!' button each sit about 15px lower than in the reference.",
+    "Close X: the implementation uses a thinner stroke than the reference's bold X."
+  ],
+  "fixes": [
+    "Remove the default highlight/selected background from the first rating option.",
+    "Constrain each rating caption to about 160px wide so the text wraps as in the reference.",
+    "Reduce the title to about 44px and use Netflix Sans (or a closer geometric sans).",
+    "Add a 1px subtle divider across the overlay width at about 58px below the 'Got it!' button.",
+    "Lighten the backdrop overlay (less black, so the blurred page shows through more).",
+    "Nudge the red rule and CTA up about 15px, and thicken the close-X stroke."
+  ],
+  "summary": "A near-faithful rate overlay with identical copy, icons and structure. It is let down by an invented highlight box on the first option, different caption wrapping, an oversized title font, a missing bottom hairline and a darker backdrop."
+}
+```

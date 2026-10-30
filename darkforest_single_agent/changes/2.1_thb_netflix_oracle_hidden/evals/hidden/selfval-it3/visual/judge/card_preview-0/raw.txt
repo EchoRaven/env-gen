@@ -1,0 +1,73 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The preview card is built the same way in both: an enlarged tile that floats above the grid, with a 16:9 media area on top and a dark info panel below holding a controls row, a metadata row and a tags row. The page behind it is a different page, though. The reference is the 'Browse by Languages' page: a page title on the left, 'Select Your Preferences' with two dropdowns on the right, then a static grid of 6 equal tiles per row inside the page gutters, with no hero and no row headings. The implementation is the Home page: a big billboard hero, horizontal carousels that bleed past the right edge with a 7th tile cut off, page-indicator dashes, and a 'Top 10 TV Shows Today' row. The card is also placed differently. In the reference it scales up around the hovered tile and stays inside the 67px gutter. In the implementation it sticks out past the left gutter to x≈16.",
+      "fix": "Render the hover preview on the Browse by Languages route. Put the H1 'Browse by Languages' at the top left and the 'Select Your Preferences' label with 'Original Language' and 'English' dropdowns at the top right. Below that, use a non-scrolling 6-column tile grid inside the 67px gutters, with no hero, carousel arrows or page dots. Keep the scaled card inside the gutter: anchor it to the tile and push it inward when the tile is at the edge."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "The card has everything the reference card has: a circular white Play button, outlined circular Add (check) and Rate (thumb) buttons, a circular expand chevron on the right, a mute icon over the media, a bordered maturity badge, a seasons/type label, an HD badge, and genre tags separated by dots. A few card details are off: there is no small red 'N' originals badge in the top left of the media, the buttons are smaller (~42px against ~52px), and the thumb icon is filled. Outside the card, the reference page title, preference label and both dropdowns are missing. The implementation also adds things the reference doesn't show: a hero billboard with Play/More Info and '#1 in TV Shows Today', carousel page indicators, and a row heading. The nav highlights 'Home' as active, but the reference highlights 'Browse by Languages'.",
+      "missing": [
+        "Netflix 'N' badge on preview media (top-left)",
+        "'Browse by Languages' page heading",
+        "'Select Your Preferences' label",
+        "'Original Language' dropdown",
+        "Language ('English') dropdown",
+        "Active pill on 'Browse by Languages' nav item"
+      ],
+      "fix": "Add a red 'N' glyph in the top-left corner of the preview media. Make the action buttons ~52px with 2px grey outlines. Remove the hero, page dots and row titles from this screen. Add the page header with the two square-cornered outlined dropdowns. Move the active nav pill to 'Browse by Languages'."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "The design language matches: flat dark surfaces, a slightly rounded card with a soft shadow, and square tiles with red 'Recently Added' and TOP 10 badges. The reference card is bigger relative to the tiles and its info panel has roomier padding, with larger buttons spaced further apart. The dropdowns in the reference are square with thin white borders, and they are absent here.",
+      "fix": "Make the preview card ~1.5× the tile size (~436px wide on a ~290px tile). Increase the info-panel padding to ~18–20px and the button gaps to ~10px."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same near-black page (#141414) and dark grey card panel (#181818/#1f1f1f), same red brand accent on badges and logo, same white primary button and grey outlined secondary buttons. The hero's warm imagery adds a lot of colour that the reference page doesn't have.",
+      "fix": "Remove the hero so the page reads as the reference does: a flat dark base with only the tile artwork for colour."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same sans-serif family, metadata sizes and grey levels, and the same dot-separated tag line. The reference uses larger metadata and tag text (~18px against ~16px). It has a large regular-weight page H1 'Browse by Languages', which is missing; instead there is a heavy display hero title and a bold row heading.",
+      "fix": "Raise the preview metadata and tag text to ~18px. Add the ~36px regular-weight H1 at the top left and drop the hero title and row heading on this route."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Play, check, chevron and mute use the same outline-in-circle style. The thumbs-up is filled here but outlined in the reference, and there is no 'N' originals mark on the media. Both use a 16:9 cover crop with the title lockup at the bottom left. The reference dropdowns have caret icons, which are missing here.",
+      "fix": "Switch to an outlined thumbs-up icon. Add the 'N' badge. Add down-caret icons to the preference dropdowns."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. The badge copy 'Recently Added' and the 'TV-xx / N Seasons / HD' pattern also match. The copy 'Browse by Languages', 'Select Your Preferences' and 'Original Language' is missing. The implementation adds 'Play', 'More Info', '#1 in TV Shows Today' and 'Top 10 TV Shows Today', none of which appear in the reference.",
+      "fix": "Add the page heading and preference copy exactly as worded in the reference, and remove the hero and row-heading copy from this screen."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "whole page below the nav: the implementation shows the Home billboard hero and carousels, but the reference shows the Browse by Languages page with a heading, a preferences bar and a static 6-column tile grid",
+    "top-right under the nav: the 'Select Your Preferences' label and the 'Original Language' and 'English' dropdowns from the reference are missing",
+    "top-left under the nav: the 'Browse by Languages' page H1 from the reference is missing",
+    "nav: the active pill is on 'Home' in the implementation but on 'Browse by Languages' in the reference",
+    "rows: the implementation's rails bleed off the right edge with a partly visible tile and page-indicator dashes; the reference grid ends cleanly inside the gutters",
+    "preview card position: the implementation's card goes past the left page gutter (x≈16); the reference card stays inside the 67px gutter",
+    "preview card media top-left: the red 'N' originals badge from the reference is missing",
+    "preview card controls: the buttons are smaller (~42px against ~52px) and the thumb icon is filled instead of outlined",
+    "preview card text: the metadata and tag text are a step smaller than in the reference",
+    "below the rails: the implementation adds a 'Top 10 TV Shows Today' heading row that the reference doesn't have"
+  ],
+  "fixes": [
+    "Show the hover preview on the Browse by Languages route: no hero; H1 'Browse by Languages' at top left; 'Select Your Preferences' with 'Original Language' and 'English' outlined dropdowns at top right",
+    "Replace the carousels with a static 6-column tile grid inside the 67px gutters, with no page dots, row headings or overflow tiles",
+    "Move the active nav pill to 'Browse by Languages'",
+    "Keep the preview card inside the page gutters and scale it ~1.5× the tile (~436px wide)",
+    "Add the red 'N' badge to the top-left corner of the preview media",
+    "Enlarge the Play, Add, Rate and expand buttons to ~52px and use an outlined thumbs-up icon",
+    "Raise the preview metadata and genre tag text to ~18px and add more padding to the info panel"
+  ],
+  "summary": "The hover card itself is a close match (controls, metadata and tags all line up), but it sits on the Home page with a hero and carousels instead of the reference's Browse by Languages grid with its heading and preference dropdowns, and it's missing the small 'N' badge."
+}
+```

@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The overall structure matches. A centred ~1085px modal sits over a dimmed browse page that still shows the Netflix top nav. The modal has a full-bleed hero with a circular close button at top-right, and the title lockup and Play/+/thumbs row sit bottom-left on the hero, with a mute button at bottom-right. Below that is a two-column metadata block, roughly 60/40, with the Episodes section after it. Differences: the implementation adds a 'Top 10 #2 in TV Shows Today' row between the metadata and the synopsis, which pushes the Episodes section down. The Episodes header row has no right-aligned bordered season selector. The 'Season 1: [TV-14] advisories' sub-row under the Episodes heading is also missing.",
+      "fix": "Remove the Top-10 rank row from the modal body so the synopsis follows the maturity/advisory line directly. Put a bordered season dropdown on the right of the Episodes header and a 'Season N:' rating sub-row under it."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "These are present: close X, hero title lockup, white Play button, circular add (+) and rate buttons, circular mute button, year/seasons/HD/subtitle-icon meta row, TV-14 bordered badge with advisories, synopsis, Cast/Genres label-value list and Episodes heading with an episode card. The season selector is plain text ('Overdo') instead of a bordered dropdown with a caret. The season rating/advisory sub-row is missing, and so is the 'This Show Is:' row. The implementation adds a Top-10 badge row and extra 'Original Language' and 'Rating' rows that the reference doesn't have.",
+      "missing": [
+        "Season selector dropdown (bordered box, 'Season 1' + caret) in Episodes header",
+        "'Season 1: [TV-14] advisories' sub-row under Episodes heading",
+        "'This Show Is:' attribute row in right metadata column"
+      ],
+      "fix": "Replace the 'Overdo' text in the Episodes header with a ~180x46px dark select that has a 1px grey border, a 'Season 1' label and a ▼ caret. Add a 'Season 1: [TV-14] advisories' line. Remove the Top-10 row and the Original Language/Rating rows, and add a 'This Show Is:' row."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Both are flat dark with the same treatments: a soft bottom fade on the hero, a square-ish Play button with a small radius, circular outlined icon buttons and a dark rounded episode card. The density is close. The implementation's synopsis block is a much longer paragraph, but that is content.",
+      "fix": "Keep the treatments. Set the episode card to a #2f2f2f surface with ~4px radius, as in the reference."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use the #181818 modal surface on a darkened backdrop, a white Play button with black text, grey labels with white values and grey outlined circular buttons. The implementation adds a red Top-10 badge accent that the reference doesn't show in the modal.",
+      "fix": "Remove the red Top-10 badge from the modal body so the only accents are white and grey."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The sans-serif body is similar, and so are the meta sizes, the grey label/white value pattern and the ~26px 'Episodes' heading. The hero title lockup is plain white condensed text, where the reference uses large red stylised title artwork. The implementation's synopsis line height and size are close.",
+      "fix": "Render the title as a logo/title-art image. As a fallback, use a heavy condensed display face at ~70px with the title's brand treatment instead of plain white text."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The X, plus, mute-with-x, HD badge and subtitle icons match in outline style. The thumbs icon is filled in the implementation and outline in the reference. The hero crop and the fade into the body match.",
+      "fix": "Change the rate button's icon to an outline thumbs-up at the same stroke weight as the + icon."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "These labels match: 'Play', 'Cast:', 'Genres:', 'Episodes' and 'HD'. The season control reads as the show title instead of 'Season 1'. 'This Show Is:' is missing, while 'Original Language:', 'Rating:' and '#2 in TV Shows Today' are extra.",
+      "fix": "Label the selector 'Season 1' and use the label set 'Cast:', 'Genres:', 'This Show Is:'."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: the implementation shows plain text 'Overdo'. The reference has a bordered 'Season 1 ▼' dropdown selector.",
+    "Under the Episodes heading: the reference's 'Season 1: [TV-14] substances, language' sub-row is missing from the implementation.",
+    "Modal body, left column: the implementation adds a red Top-10 badge with '#2 in TV Shows Today' between the rating line and the synopsis. The reference has no such row.",
+    "Right metadata column: the implementation lacks 'This Show Is:' and adds 'Original Language:' and 'Rating:' rows.",
+    "Hero title lockup: plain white condensed text in the implementation, where the reference uses stylised colour title artwork.",
+    "Rate button: filled thumbs icon in the implementation; the reference uses an outline thumbs icon."
+  ],
+  "fixes": [
+    "Replace the Episodes header's right-hand text with a bordered dark dropdown ('Season 1' + ▼ caret, ~180x46px, 1px grey border).",
+    "Add a 'Season N: [TV-14 bordered badge] advisories' line under the Episodes heading.",
+    "Remove the Top-10 '#2 in TV Shows Today' row from the modal body.",
+    "Make the right column read Cast / Genres / This Show Is, and drop the Original Language and Rating rows.",
+    "Use title-logo artwork for the hero lockup instead of plain white text.",
+    "Use an outline thumbs-up icon on the rate button."
+  ],
+  "summary": "The More Info modal reproduces the reference's skeleton, hero and action row closely, but its Episodes header has no season dropdown or season rating line, it adds a Top-10 row and different metadata labels, and its title lockup is plain text."
+}
+```

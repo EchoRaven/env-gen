@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.86,
+      "notes": "The skeleton matches. Both have a full-width dark top nav with the wordmark on the left, seven text nav items, the active 'New & Popular' pill and a right-side utility cluster. Below it, both stack the same horizontal rows in the same order: New on Netflix (16:9 tiles) → Top 10 TV Shows (giant numerals with posters) → Top 10 Movies → Coming This Week. Gutters (~67px) and the cut-off tile at the right edge match. The differences: the implementation starts the first row higher (title at ~137px vs ~165px) and has slightly tighter gaps between rows. The Top 10 numeral-plus-poster units are a bit narrower, so numerals and posters sit at slightly different x positions. The big one is a floating hover preview card over the middle of the Top 10 rows, which hides items 3–5. The reference shows no overlay.",
+      "fix": "Close any hover preview by default so the page renders in its resting state. Add ~25px of top padding above 'New on Netflix' and ~10–15px more vertical space between rows. Widen each Top 10 unit so the posters are ~147px wide and sit flush right of each numeral, matching the reference's 6.3 units per row."
+    },
+    "components": {
+      "score": 0.82,
+      "missing": [],
+      "notes": "All of the reference's components are present: the wordmark, the 7 nav items with the active pill, search, the bell, the Kids profile chip, the avatar with its caret, row headings, the page-indicator dashes at the top right of each row, the red TOP 10 corner badges, red status pills ('Recently Added', 'New Season/Episodes'), outlined giant rank numerals and the Coming This Week row. The extra component is the expanded hover preview card (play/add/rate/expand buttons, maturity rating, seasons, HD badge, genre list). It is not in the reference, and it hides three Top 10 tiles in each row. The reference's second white pill next to a red one ('Watch Now') has no equivalent, though that depends on the content.",
+      "fix": "Don't render the hover preview card in the default state; only show it on a real hover, after a delay. Optionally support a secondary white pill (e.g. 'Watch Now') next to the red status pill on New-on-Netflix tiles."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "It has the same flat, cinematic, artwork-dominant style: square or barely rounded tiles, small gaps between tiles, no card shadows, red pill badges centred at the bottom edge, and outlined numerals. The implementation's New-on-Netflix tiles all carry the same condensed white title text at the bottom left. The reference's title lockups are part of the artwork, so they vary in position and style. The hover card brings in a rounded, elevated surface that the reference doesn't have.",
+      "fix": "Use title artwork baked into the image, or vary the lockup placement, instead of one uniform condensed-caps caption on every 16:9 tile. Drop the elevated hover card from the resting state."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The colours match: a near-black #141414 page, a slightly darker nav, white text, a grey active pill, Netflix-red badges and wordmark, and dark numerals with grey outlines. Contrast is the same. The only colour difference is the hover card's grey-black panel.",
+      "fix": "No colour changes needed beyond removing the hover overlay; keep the numeral stroke at a mid-grey (~#595959) on a #141414 fill."
+    },
+    "typography": {
+      "score": 0.84,
+      "notes": "Both use a sans-serif with the same hierarchy (nav ~17px regular, active item semibold, row titles ~26px regular, bold small pill labels). The implementation's row headings look slightly larger and wider, and its letterforms read more like Inter/Helvetica than the reference's tighter Netflix Sans. The condensed bold caps captions on tiles aren't part of the reference's UI type.",
+      "fix": "Set row headings to ~26px regular with slightly tighter tracking, and use a Netflix Sans-like grotesque. Remove the generated condensed-caps title captions from the 16:9 tiles, or make them look like artwork lockups."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The line-style search and bell icons, the Kids gradient square, the blue smiley avatar with its caret and the red TOP 10 corner badges all match. Imagery matches too: 16:9 cover crops in the first row and 2:3 portrait posters next to huge outlined numerals. The Top 10 posters are slightly smaller. The hover card adds circular outline icon buttons and a mute icon that the reference doesn't have.",
+      "fix": "Increase the Top 10 poster size to ~147×208 and remove the hover card icons from the resting state."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels are identical (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids), and so are the row headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week'). The pill wording uses the same vocabulary ('Recently Added', 'New Episodes/Season'). The reference also uses the singular 'New Episode'.",
+      "fix": "Use the singular 'New Episode' or 'New Season' where it applies, to match the reference's pill wording."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 TV Shows / Top 10 Movies rows, centre: the implementation shows an expanded hover preview card (artwork, title, play/add/rate/expand buttons, TV-14 · 2 Seasons · HD, genres). It covers items 3–5 in both rows; the reference has no overlay.",
+    "New on Netflix tiles: the implementation puts a uniform condensed white caps title caption at the bottom left of every tile; the reference's title treatments are lockups that vary and are part of the artwork.",
+    "Vertical rhythm: the implementation's first row heading sits ~28px higher, and the gaps between rows are tighter than the reference's.",
+    "Top 10 rows: the posters are slightly narrower and the numeral-poster units sit at different x positions than the reference's evenly spaced units.",
+    "Row headings: slightly larger and wider type than the reference's tighter Netflix Sans headings.",
+    "New on Netflix pills: there's no secondary white pill ('Watch Now') next to the red status pill, which the reference shows on one tile."
+  ],
+  "fixes": [
+    "Render /new in its resting state with no open hover preview card. Show the card only on an actual hover, after a delay.",
+    "Replace the generated condensed-caps title captions on the 16:9 tiles with artwork-integrated title lockups, or remove them.",
+    "Add ~25px of top padding before 'New on Netflix' and ~10–15px more space between rows.",
+    "Size the Top 10 posters to ~147×208, flush right of each outlined numeral, with units spaced so ~6.3 fit across 1920px.",
+    "Tighten the row heading font to a Netflix Sans-style grotesque at ~26px regular.",
+    "Support an optional white secondary pill beside the red status pill on tiles."
+  ],
+  "summary": "A close match to the reference's Netflix New & Popular layout, nav, rows, badges and colours; the main problem is an invented hover preview card that hides the Top 10 rows, plus small spacing and caption-treatment differences."
+}
+```

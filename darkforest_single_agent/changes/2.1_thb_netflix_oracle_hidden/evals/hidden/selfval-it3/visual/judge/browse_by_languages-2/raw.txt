@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top nav, the title row with preference selectors on the right, and the 6-column 16:9 tile grid with large vertical gaps between rows all match. Differences: the implementation's grid starts at about y=200, but the reference's starts at about y=304, leaving a tall empty band below the title row. The implementation also adds a third selector group ('Sort by'), which pushes 'Select Your Preferences' and the two dropdowns further left. The reference puts the two dropdowns flush right, at about x=1325 and x=1575.",
+      "fix": "Remove the 'Sort by' group so the two dropdowns sit right-aligned and end at the content edge (~1842px). Raise the top margin above the grid to ~160px below the title row so the first row starts at about y=304."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: the nav with all 7 items and a pill-highlighted active 'Browse by Languages', the search, bell, Kids and profile-avatar-with-caret controls, the page title, the 'Select Your Preferences' label, the two bordered dropdowns, tiles, TOP 10 badges and red status pills. The reference shows a transient state that the implementation does not render: both dropdowns are expanded (one menu lists Original Language/Dubbing/Subtitles, the other lists languages from Arabic to Vietnamese), and a hover preview card is open over a tile. That card has a large image with a title lockup, a mute button, play/check/thumb buttons, an expand chevron, a TV-MA/1h 34m/HD metadata row and mood tags. The implementation invents a 'Sort by: Suggestions For You' dropdown.",
+      "missing": [
+        "expanded audio-type dropdown menu (Original Language / Dubbing / Subtitles)",
+        "expanded language dropdown list (Arabic … Vietnamese)",
+        "hover preview card with image + title lockup",
+        "preview mute button",
+        "preview action row: play, add-to-list check, thumbs-up, expand chevron",
+        "preview metadata row (maturity rating box, runtime, HD badge)",
+        "preview mood/genre tags separated by dots"
+      ],
+      "fix": "Render the open state of both dropdowns as dark (#141414-ish) panels with a hairline border, listing options in white 15px text right under each select. Add the hovered-tile preview card: scaled ~1.5x, image with title art and a round mute button, then a dark panel with a white filled play circle, outlined round check, thumb and chevron buttons, a rating/runtime/HD row and dot-separated tags. Remove the 'Sort by' dropdown."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both are flat and dark, with square-cornered tiles, thin white-bordered square selects and a pill nav highlight, so the design language matches. Differences: the implementation puts a 'Recently Added' pill on nearly every tile, which makes it busier than the reference, where tiles vary between Live Now, New Season, Recently Added and no pill. The reference's preview card adds elevation with a soft shadow and slightly rounded corners, and the implementation has nothing comparable.",
+      "fix": "Show status pills selectively and vary them (Live Now with a dot, New Season, Recently Added, many tiles with none). Give the preview card a 4–6px radius and a soft drop shadow."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Matches: the near-black base, white text, Netflix red for the logo, badges and pills, the grey pill behind the active nav item, and white select borders. The implementation lacks the slightly lighter #181818-ish surfaces of the preview card and the dropdown panels.",
+      "fix": "Use a #181818 surface for the preview card's lower panel and the dropdown menus, against the #141414 page."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Matches: a humanist sans throughout, the large regular-weight page title, the small label 'Select Your Preferences' and medium-size select text. The implementation's page title is larger (~44px vs ~38px). Tile titles all use the same bold condensed overlay, but the reference shows varied title art. That is acceptable in substance, though it makes the treatment uniform.",
+      "fix": "Reduce the page title to ~38px. Keep the select text at ~19px with slight letter spacing, as in the reference."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The nav icons (outline search, bell), the Kids badge, the smiley avatar with caret, the TOP 10 badges and the 16:9 cover-cropped tiles all match. Missing: the round outlined icon buttons in the preview card (play, check, thumbs-up, chevron, muted speaker) and the red N mark on the preview image.",
+      "fix": "Add 52px circular outline buttons (2px grey border) with line icons for check, thumb, chevron and mute, plus a filled white play circle and an 'N' series mark at the top left of the preview image."
+    },
+    "copy": {
+      "score": 0.82,
+      "notes": "Nav labels, the 'Browse by Languages' title, 'Select Your Preferences', 'Original Language', 'English' and 'Recently Added' all match. The extra copy 'Sort by' and 'Suggestions For You' does not appear in the reference. The dropdown option copy (Dubbing, Subtitles, the language names) is not visible in the implementation.",
+      "fix": "Remove the 'Sort by / Suggestions For You' copy. Make sure the menu options read 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language names."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Center-left of the grid: the reference shows an expanded hover preview card (image with title lockup, mute button, play/check/thumb/chevron buttons, TV-MA/1h 34m/HD row, mood tags); the implementation has no preview card",
+    "Top right: the reference shows both preference dropdowns expanded, with an Original Language/Dubbing/Subtitles menu and a long language list overlaying the right column of the grid; the implementation shows both closed",
+    "Header right: the implementation adds a 'Sort by – Suggestions For You' dropdown that the reference does not have, shifting the preference controls left",
+    "Grid top: the implementation's first tile row starts right under the title row (~y=200); the reference leaves a large gap and starts at ~y=304",
+    "Tiles: the implementation shows a 'Recently Added' pill on almost every tile; the reference varies the pills (Live Now with a dot, New Season, Recently Added) and leaves many tiles without one",
+    "Page title: slightly larger in the implementation than in the reference"
+  ],
+  "fixes": [
+    "Add the hover preview card over a hovered tile: scaled ~1.5x, image with title art, a round mute button at the bottom right, then a dark panel with a white play circle, outlined check, thumb and chevron buttons, a 'TV-MA | runtime | HD' row and dot-separated mood tags",
+    "Render the open state of both selects: dark bordered panels under each, listing 'Original Language/Dubbing/Subtitles' and the alphabetical language list (Arabic…Vietnamese), with the language list overlaying the grid",
+    "Remove the 'Sort by' label and dropdown; right-align the two preference selects to the content edge",
+    "Increase the space between the title row and the first grid row to ~150px",
+    "Vary the status pills (Live Now with a red dot, New Season, Recently Added) and leave many tiles without a pill",
+    "Reduce the page title size to ~38px"
+  ],
+  "summary": "The chrome, title row and tile grid match closely, but the implementation is missing the reference's transient state (both dropdowns open and a hover preview card) and adds a 'Sort by' control the reference doesn't have."
+}
+```

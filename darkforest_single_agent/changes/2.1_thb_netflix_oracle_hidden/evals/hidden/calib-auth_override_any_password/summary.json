@@ -1,0 +1,43 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/auth_override_any_password/workspace",
+ "tag": "calib-auth_override_any_password",
+ "parts": [
+  "api"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 48,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 14,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ }
+}

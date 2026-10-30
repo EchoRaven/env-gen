@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Top nav, left-aligned 'My List' heading and a left-aligned horizontal grid of 16:9 tiles with ~8px gaps all match. Differences: the reference grid starts lower (~y=303, leaving room for the enlarged hover card above the row), while the implementation's row starts at ~y=225. The reference also shows an enlarged preview card (~440px wide) that overlaps and replaces the third tile position. The implementation renders only the resting grid.",
+      "fix": "Push the tile row down to ~y=300. Add an enlarged hover-preview card (~1.5x tile width) that scales up from the hovered tile and overlays its neighbours, anchored so it extends above and below the row."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Nav (7 items with the 'My List' pill active), search, bell, Kids profile, avatar with caret, heading and title-art tiles with red badges are all present. The reference's main focal component, the expanded preview card, is entirely absent: muted video/still area with N logo and title lockup, mute toggle, white circular play button, grouped rating pill (dislike / like / love) with an 'I like this' tooltip, circular more-info chevron, maturity rating box + duration + HD badge row, and dot-separated genre tags.",
+      "fix": "Implement the tile hover state as an expanded card: artwork top with N logo and title lockup plus a circular mute button bottom-right; below it a row with a white filled play circle, a dark rounded pill containing three outlined thumb buttons (with a white tooltip on hover), and a right-aligned outlined chevron-down circle; then a metadata row '[R] 1h 49m [HD]' and a genre row 'Violent • Exciting • Sci-Fi'.",
+      "missing": [
+        "expanded hover preview card",
+        "play button (white filled circle)",
+        "rating pill with dislike / like / love buttons",
+        "'I like this' tooltip",
+        "mute toggle on preview",
+        "more-info chevron button",
+        "maturity rating / duration / HD metadata row",
+        "genre tag row with dot separators",
+        "N logo + title lockup on preview artwork"
+      ]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Flat dark Netflix style, slightly rounded tile corners, pill-shaped active nav item and title art over imagery all match. Missing: the elevated card surface with soft shadow and the ~4px radius that the preview card shows.",
+      "fix": "Give the preview card a #181818 surface, ~4–6px radius and a soft drop shadow so it lifts above the row."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Near-black #141414 page, black-fading header, Netflix red logo and red badges, white text and grey active pill all match. The reference's dark card surface (#181818), white play button and grey-outlined icon circles are absent.",
+      "fix": "Use a #181818 card surface for the preview, a white play button with a black glyph, grey-bordered icon circles, and light-grey metadata text."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif nav, semibold active item, large regular-weight 'My List' heading and condensed bold title art all match. The implementation's heading looks slightly larger. The preview card's text levels (~18px metadata, genre row, tooltip label) are absent.",
+      "fix": "Match the heading at ~34px regular. Add the card's metadata at ~17px light-grey and genre tags at ~17px white with grey bullet separators."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Search and bell outline icons, Kids gradient avatar and blue smiley avatar match. Tiles have the correct 16:9 cover crop and red badge treatment. Missing: the outlined thumb icons, play glyph, chevron-down and muted-speaker icons in circular containers.",
+      "fix": "Add outlined thumb-down, thumb-up and double-thumb icons, a filled play triangle, a chevron-down and a speaker-muted icon, each in ~44px circles."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'Kids' and the 'My List' heading match exactly. The reference's 'I like this' tooltip and 'HD' badge copy are missing because the preview card isn't rendered.",
+      "fix": "Add the tooltip labels 'Not for me' / 'I like this' / 'Love this!' to the rating buttons and an 'HD' badge in the metadata row."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Grid row, third tile position: the reference shows an expanded hover preview card (artwork, play, rating pill, chevron, metadata and genre rows); the implementation shows only flat resting tiles.",
+    "Preview card controls row: the reference has a white play circle, a dark pill holding three thumb-rating buttons with an 'I like this' tooltip, and a right-aligned chevron button; none exist in the implementation.",
+    "Preview card info: the reference shows a '[R] 1h 49m [HD]' metadata row and a 'Violent • Exciting • Sci-Fi' genre row; both are absent.",
+    "Preview artwork: the reference has an N logo top-left and a circular mute toggle bottom-right; both are absent.",
+    "Tile row vertical position: the reference row sits at ~y=303, while the implementation's is at ~y=225, about 80px higher."
+  ],
+  "fixes": [
+    "Implement the tile hover state: after a short delay, scale the hovered tile into a ~440px-wide elevated card (#181818, rounded, shadowed) overlaying its neighbours.",
+    "In the card, put the artwork on top with an N logo top-left, a title lockup bottom-left and a circular mute button bottom-right.",
+    "Add a controls row: a white filled play circle, a dark rounded pill with dislike / like / love outlined thumb buttons (white tooltip on hover, e.g. 'I like this'), and a right-aligned outlined chevron-down circle.",
+    "Add a metadata row with a bordered maturity box, the duration and an outlined 'HD' badge, followed by a genre row with grey bullet separators.",
+    "Shift the tile row down to ~y=300 so the expanded card has room above it."
+  ],
+  "summary": "Chrome, heading and tile grid match the reference closely, but the expanded hover preview card that dominates the reference state (play, rating pill, chevron, metadata, genres) is entirely missing."
+}
+```

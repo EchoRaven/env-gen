@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The top bar matches closely: wordmark on the left, pill-highlighted Home, six text nav items, and search, bell, Kids and avatar on the right. The rows also match: left-aligned headings at about 67px, about five landscape 16:9 tiles plus a peek tile at the right edge, and page-indicator dashes above the right end of each row. The reference is scrolled fully into the rows, so the first row sits right under the header. In the implementation, the bottom of a rounded hero card with Play and More Info buttons still takes up the top of the viewport. An empty 'Continue Watching' section with no tiles breaks the row rhythm. The bottom row is a big-number Top 10 layout instead of a standard landscape row.",
+      "fix": "Make the scrolled /browse state start straight at the first row under the sticky header, with no hero remnant above it. Give every visible section a tile row, and hide 'Continue Watching' when it has no items. Use standard landscape rows only, with about 60px between rows as in the reference."
+    },
+    "components": {
+      "score": 0.62,
+      "missing": [
+        "'BETA' pill badge next to a row heading (Games row)",
+        "Paired white 'Watch Now' badge next to the red status badge on tile bottoms",
+        "Tile title-artwork lockups (logo-style titles integrated into the artwork)"
+      ],
+      "notes": "Present: the nav with its active pill, search, bell, Kids profile, avatar with caret, row headings, landscape tiles, red Top 10 corner flags, red bottom-centre status badges ('New Season', 'Recently Added') and row page indicators. Missing: the BETA heading badge and the two-part badge (red label plus white 'Watch Now'). Added components the reference does not show: the hero Play and More Info buttons, an empty-state text line, and a big-numeral Top 10 ranking row.",
+      "fix": "Add an outlined, letter-spaced 'BETA' pill after the heading of the games-type row. Add a white 'Watch Now' chip right after the red badge on tiles that have new episodes. Remove the empty 'Continue Watching' placeholder and the hero remnant from this state."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "The overall style matches: flat dark UI, slightly rounded tiles (about 6px), no shadows, whitespace between sections and edge-bleed carousels. The implementation's tiles are a bit shorter and the gap is a bit tighter. Each implementation tile has a uniform bottom-left text overlay where the reference uses varied artwork lockups, which makes the implementation look templated.",
+      "fix": "Remove the generated bottom-left title overlay and let the artwork's own title treatment show. Keep tiles at about 350×197 with an 8–10px gap."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The near-black page (#141414), black header, white text, Netflix red accents on the badges and Top 10 flags, and the grey active nav pill all match. The only differences are the reference's white 'Watch Now' chip and the purple-outlined BETA pill.",
+      "fix": "Add a white-background, black-text 'Watch Now' chip and a dark pill with a purple/magenta outline for BETA."
+    },
+    "typography": {
+      "score": 0.68,
+      "notes": "Both use a sans-serif, and the nav text matches. Reference row headings are about 26px semibold/bold in a geometric sans. Implementation headings are larger (about 30px) and regular weight, so they read lighter. The tile title overlays use a condensed bold display face the reference does not use as UI text. The badges are smaller and lighter than the reference's bold 15px badges.",
+      "fix": "Set row headings to about 26px, weight 600–700. Increase badge text to about 15px bold. Remove the condensed overlay title text."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The line search and bell icons, the Kids gradient icon, the blue smiley avatar with caret, the Top 10 red corner flags and the 16:9 cover-cropped images with rounded corners all match. The big-numeral row and the hero play icon are not in the reference.",
+      "fix": "Keep the icons as they are. Make sure every visible row uses 16:9 cover-cropped landscape art, and drop the numeral ranking row from this viewport."
+    },
+    "copy": {
+      "score": 0.78,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. The implementation uses 'New Episodes' (plural) where the reference uses 'New Episode', and it never shows 'New Season' or 'Watch Now'. The empty-state sentence 'Nothing in progress yet…' does not appear in the reference.",
+      "fix": "Use the badge copy 'New Episode', 'New Season' and 'Recently Added', with a 'Watch Now' companion chip. Remove the empty-state sentence."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Top of content area: the implementation shows the bottom of a rounded hero card with Play and More Info buttons; the reference starts directly with the first row under the header",
+    "Middle of page: the implementation's 'Continue Watching' heading has only an empty-state text line and no tile row; every reference section has a full row of tiles",
+    "Second row heading: the reference has an outlined, letter-spaced 'BETA' pill next to the heading; the implementation has no heading badge",
+    "Tile bottom badges: the reference pairs the red status badge with a white 'Watch Now' chip; the implementation only shows smaller red badges",
+    "Tile artwork: the implementation puts a uniform condensed white title at the bottom left of every tile; the reference uses the artwork's own title lockups in varied positions",
+    "Bottom row: the implementation renders a big-numeral Top 10 ranking row with portrait posters; all reference rows use standard landscape tiles",
+    "Row headings: the implementation's are larger and regular weight; the reference's are smaller and semibold/bold"
+  ],
+  "fixes": [
+    "Render the /browse rows state without the hero remnant, so the first row heading sits about 30px below the header",
+    "Hide 'Continue Watching' when it has no items, or seed it with data, so no empty-state text line appears",
+    "Add a 'BETA' outlined pill badge after the games row heading",
+    "Add a white 'Watch Now' chip next to the red 'New Episode' badge, and make badges bold at about 15px",
+    "Remove the generated bottom-left title text overlay from tiles",
+    "Restyle row headings to about 26px semibold",
+    "Replace the big-numeral Top 10 row in this viewport with a standard landscape row"
+  ],
+  "summary": "Header, landscape carousels, Top 10 flags and the colour system match well, but the view still shows part of the hero, has an empty Continue Watching section, lacks the BETA and Watch Now badges, and uses lighter headings and templated tile titles."
+}
+```

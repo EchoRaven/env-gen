@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "Same skeleton: a transparent top nav over a full-bleed hero, a breadcrumb plus page title at top-left, the title lockup, synopsis and CTAs at lower-left, mute and maturity rating at mid-right, and a 'Your Next Watch' carousel overlapping the bottom of the hero. The difference is vertical rhythm. In the implementation the hero block sits lower (the title wraps to two lines and the CTAs are at ~760px instead of ~710px), which pushes the carousel to ~950px. Its tiles are cropped by the fold and the next row header seen in the reference ('TV Comedies' at ~1100px) never shows.",
+      "fix": "Tighten the hero so the carousel row starts at ~840px (row header) / ~868px (tiles). Cap the title lockup height at ~110px (scale long titles down rather than wrapping) and reduce the synopsis/CTA spacing so the full tile row and the next row header fit in a 1106px viewport."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "Everything in the inventory is present: the logo, 7 nav links, search, bell, Kids profile, avatar with caret, breadcrumb, page title, hero title lockup, synopsis, Play and More Info buttons, mute button, TV-14 rating flag, row title, the carousel with TOP 10 corner badges and red bottom ribbons, the peek of the next tile, and the page indicator dashes. What's missing is the active-state pill on the current nav section: the reference highlights 'Shows' with a grey rounded pill and bold weight, and the implementation has no highlighted item. The ribbon variants also differ: every tile reads 'Recently Added', with none of the reference's 'Live Now' (with a dot) or 'New Season' variants. That part may be data-driven.",
+      "missing": ["active nav item pill highlight (selected section)"],
+      "fix": "Add an active state to the nav item for the current section: a semi-transparent grey rounded pill (~rgba(255,255,255,0.2), radius ~20px, padding ~8px 18px) with semibold white text. Support the 'Live Now' (red dot) and 'New Season' ribbon variants on tiles."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same cinematic, flat dark-overlay style: slightly rounded CTA buttons (white solid Play, translucent grey More Info), flat tiles with tight ~8px gaps, a left-edge gradient on the hero, and a rating flag with a left border bar. The implementation's CTA buttons are slightly smaller and lighter. Its tiles carry a dark bottom gradient with large overlaid title text, while the reference tiles show plain artwork with integrated logos.",
+      "fix": "Make the Play/More Info buttons ~58px tall with ~22px labels and ~28px icons. Drop the heavy bottom gradient and overlaid caption text on tiles when the artwork already carries a title."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Same dark scheme, Netflix red for the logo, title lockup, badges and ribbons, a white Play button and a grey translucent More Info button. The top nav band is a little darker and more opaque in the implementation than the reference's soft top scrim. Breadcrumb grey and white text contrast match.",
+      "fix": "Lighten the top nav scrim to a subtle gradient (rgba(0,0,0,0.6) to transparent) instead of a near-solid dark band."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same sans family for the nav and body, a condensed display face for the title lockup, and the page title at ~40px beside a smaller grey breadcrumb. Differences: the implementation's synopsis is noticeably smaller (~17px vs ~22px, lighter), the hero lockup wraps to two lines, the CTA labels are smaller, and there is no bold active nav label. The tile titles are set in a large condensed overlay font that the reference does not use.",
+      "fix": "Set the hero synopsis to ~22px/1.35 white regular with max-width ~670px. Keep the title lockup to a single line at ~110px cap height (auto-shrink long titles). Set CTA labels to ~22px medium and the active nav item to semibold."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Matching outline search and bell icons, the Kids gradient tile, a blue smiley avatar with caret, a filled play triangle, an outlined info circle, an outlined mute circle, and red TOP 10 corner badges. The tiles are 16:9 cover crops with square corners and match. The implementation's mute icon has a more visible outline. Its info and play icons are slightly smaller.",
+      "fix": "Scale the Play/info icons up to ~28px and keep the mute circle outline faint (~40% white)."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, 'Play', 'More Info', 'Your Next Watch', 'Kids' and 'TV-14' all match. The breadcrumb parent reads 'Home' with a '›' chevron, while the reference uses the section name ('TV Shows') with a '>' separator. The page title is a bare genre ('Action') instead of the reference's '<Genre> TV Shows' pattern.",
+      "fix": "Render the breadcrumb as '<Section> > <Genre> <Section>', e.g. 'TV Shows > Action TV Shows', with a plain '>' separator in grey."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "top nav: the reference highlights the active section 'Shows' with a grey rounded pill and bold text; the implementation has no active nav highlight",
+    "hero/bottom: the implementation's hero title lockup wraps to two lines and the block sits ~50–80px lower, pushing the 'Your Next Watch' row down so its tiles are cut off by the fold and the next row header is not visible",
+    "hero synopsis: the implementation's text is ~17px and lighter; the reference's is ~22px with more presence",
+    "breadcrumb: the reference reads '<Section> > <Genre> <Section>' (TV Shows > Sports TV Shows); the implementation reads 'Home › Action'",
+    "carousel tiles: the implementation overlays large condensed title text with a dark bottom gradient on every tile; the reference shows plain artwork whose titles are part of the image",
+    "CTA buttons: the implementation's Play/More Info buttons and icons are slightly smaller than the reference's",
+    "tile ribbons: the reference mixes 'Live Now' (with a red dot), 'Recently Added' and 'New Season' ribbons; the implementation shows only 'Recently Added'"
+  ],
+  "fixes": [
+    "Add an active nav state: a grey translucent pill (radius ~20px) with semibold label on the current section ('Shows' for TV genres)",
+    "Constrain the hero title lockup to one line (~110px tall, auto-scale long titles) and tighten hero spacing so the 'Your Next Watch' header lands at ~840px and the tiles at ~868px, leaving the next row header visible",
+    "Increase the hero synopsis to ~22px/1.35, max-width ~670px",
+    "Change the breadcrumb to 'TV Shows > <Genre> TV Shows' with a grey '>' separator",
+    "Remove the overlaid title text and heavy bottom gradient from carousel tiles, and show the artwork as-is",
+    "Enlarge the Play/More Info buttons to ~58px tall with ~22px labels",
+    "Support the 'Live Now' (red dot) and 'New Season' ribbon variants"
+  ],
+  "summary": "The same Netflix genre-page design is applied faithfully. The gaps are the missing active-nav pill, a taller hero that pushes the carousel below the fold, a smaller synopsis, different breadcrumb wording, and added title overlays on tiles."
+}
+```

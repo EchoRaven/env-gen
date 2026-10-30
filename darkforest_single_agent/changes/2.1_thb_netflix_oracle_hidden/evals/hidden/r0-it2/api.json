@@ -1,0 +1,331 @@
+{
+ "checks": [
+  {
+   "category": "auth",
+   "name": "register returns an access token",
+   "ok": true,
+   "detail": "201"
+  },
+  {
+   "category": "auth",
+   "name": "duplicate email is rejected (4xx)",
+   "ok": true,
+   "detail": "409"
+  },
+  {
+   "category": "auth",
+   "name": "login with the right password returns a token",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "auth",
+   "name": "wrong password is rejected (401/403)",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "unknown email is rejected (4xx)",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "a token with an edited payload is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "a garbage token is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/titles is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/genres is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/search is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/my-list is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/profiles is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/continue-watching is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/titles/trending is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/titles/top10 is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "catalog",
+   "name": "the catalog lists the dataset's titles (>=95%)",
+   "ok": true,
+   "detail": "60/60 dataset names; 60 listed"
+  },
+  {
+   "category": "catalog",
+   "name": "titles carry the data-model fields (>=95%)",
+   "ok": true,
+   "detail": "59/60"
+  },
+  {
+   "category": "catalog",
+   "name": "poster and backdrop images load",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "category": "catalog",
+   "name": "trailer clips (video_url) load",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "category": "catalog",
+   "name": "title detail matches the listing",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "catalog",
+   "name": "a missing title id is 404",
+   "ok": true,
+   "detail": "404"
+  },
+  {
+   "category": "catalog",
+   "name": "a series has episodes with season and number",
+   "ok": true,
+   "detail": "13 episodes"
+  },
+  {
+   "category": "catalog",
+   "name": "trending is non-empty and drawn from the catalog",
+   "ok": true,
+   "detail": "20"
+  },
+  {
+   "category": "catalog",
+   "name": "top 10 is ranked 1..n (per kind or overall)",
+   "ok": true,
+   "detail": "{'series': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'movie': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}"
+  },
+  {
+   "category": "catalog",
+   "name": "genres are listed (>=5, unique names)",
+   "ok": true,
+   "detail": "22"
+  },
+  {
+   "category": "catalog",
+   "name": "genre pages list titles of that genre",
+   "ok": true,
+   "detail": "3/3 genres"
+  },
+  {
+   "category": "catalog",
+   "name": "search by a word of a title's name finds it",
+   "ok": true,
+   "detail": "Disclosure"
+  },
+  {
+   "category": "catalog",
+   "name": "search by genre name returns that genre's titles",
+   "ok": true,
+   "detail": "Action: 20"
+  },
+  {
+   "category": "catalog",
+   "name": "search for nonsense is empty",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "catalog",
+   "name": "search with SQL metacharacters neither errors nor dumps the catalog",
+   "ok": true,
+   "detail": "200, 0"
+  },
+  {
+   "category": "profiles",
+   "name": "creating a profile returns its id",
+   "ok": true,
+   "detail": "10"
+  },
+  {
+   "category": "profiles",
+   "name": "created profiles are listed",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "profiles",
+   "name": "some profile-selection convention isolates two profiles",
+   "ok": true,
+   "detail": "('header', 'X-Profile-Id')"
+  },
+  {
+   "category": "writes",
+   "name": "adding to My List persists",
+   "ok": true,
+   "detail": "201"
+  },
+  {
+   "category": "privacy",
+   "name": "My List is private to the profile",
+   "ok": true,
+   "detail": "0"
+  },
+  {
+   "category": "writes",
+   "name": "adding the same title twice does not duplicate it",
+   "ok": true,
+   "detail": "1"
+  },
+  {
+   "category": "privacy",
+   "name": "another account cannot read this profile's My List",
+   "ok": true,
+   "detail": "403"
+  },
+  {
+   "category": "privacy",
+   "name": "another account cannot write this profile's My List",
+   "ok": true,
+   "detail": "403"
+  },
+  {
+   "category": "privacy",
+   "name": "another account does not see these profiles",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "privacy",
+   "name": "a fresh profile's Continue Watching is empty",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "writes",
+   "name": "a rating is accepted and shows on the title for that profile",
+   "ok": true,
+   "detail": "{'value': 2}"
+  },
+  {
+   "category": "privacy",
+   "name": "a rating is private to the profile",
+   "ok": true,
+   "detail": "{'value': 2}"
+  },
+  {
+   "category": "writes",
+   "name": "re-rating with another value changes it",
+   "ok": true,
+   "detail": "{'value': -1}"
+  },
+  {
+   "category": "writes",
+   "name": "removing from My List works",
+   "ok": true,
+   "detail": "True"
+  },
+  {
+   "category": "validation",
+   "name": "adding a nonexistent title is a 4xx",
+   "ok": true,
+   "detail": "404"
+  },
+  {
+   "category": "validation",
+   "name": "adding with an empty body is a 4xx",
+   "ok": true,
+   "detail": "422"
+  },
+  {
+   "category": "validation",
+   "name": "a malformed JSON body is a 4xx, not a 5xx",
+   "ok": true,
+   "detail": "422"
+  },
+  {
+   "category": "validation",
+   "name": "rating a nonexistent title is a 4xx",
+   "ok": true,
+   "detail": "404"
+  },
+  {
+   "category": "validation",
+   "name": "creating a profile without a name is a 4xx",
+   "ok": true,
+   "detail": "422"
+  }
+ ],
+ "convention": [
+  "header",
+  "X-Profile-Id"
+ ],
+ "note": "",
+ "by_category": {
+  "auth": {
+   "passed": 15,
+   "total": 15
+  },
+  "catalog": {
+   "passed": 15,
+   "total": 15
+  },
+  "profiles": {
+   "passed": 3,
+   "total": 3
+  },
+  "writes": {
+   "passed": 5,
+   "total": 5
+  },
+  "privacy": {
+   "passed": 6,
+   "total": 6
+  },
+  "validation": {
+   "passed": 5,
+   "total": 5
+  }
+ },
+ "passed": 49,
+ "total": 49
+}

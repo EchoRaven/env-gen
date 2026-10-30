@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The structure matches. Both show a centered overlay over a blurred, dimmed title-detail modal. The top has a full-width red rule spanning about 480–1440px with a close X at the top right. Below that, in order: a centered title, a subtitle, three evenly spaced icon-and-caption columns at about 690/960/1230px, and a centered 'Got it!' button. Vertical rhythm differs a little. The implementation's red rule sits about 15px lower (y≈318 vs 302), and the options and button sit about 15px lower. The caption columns are wider in the implementation, so the lines break in different places.",
+      "fix": "Move the red rule up to y≈302 and keep the X just below it at the right edge (about 1410px). Limit each option caption to about 160px wide so the text wraps onto two balanced lines. Put 'Got it!' about 90px below the captions."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Everything in the reference is present: the red top rule, the close X, the title, the subtitle, three rating options (thumbs down, thumbs up, double thumbs up) with captions, and the 'Got it!' button. The implementation adds a rounded, lighter-gray highlight tile behind the thumbs-down option. The reference shows all three options the same way, with no background tile.",
+      "fix": "Remove the default highlight or selected background on the first rating option. All three options should sit transparent on the scrim.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "The flat, minimal treatment matches: there's no card surface, content sits directly on a dark scrim, and the button is a small dark-gray rectangle with a slight radius. The extra rounded tile behind option 1 breaks the flat, uniform look. The implementation's backdrop is blurred and dimmed more heavily, so the underlying page almost disappears. In the reference the hero image and side panels are still clearly visible through a softer dim.",
+      "fix": "Lighten the scrim to about 55–60% black and keep a moderate blur so the background detail modal stays recognisable. Remove the option tile."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The palette matches: a Netflix-red rule, white title and icons, a light-gray subtitle, and a dark #222-ish button with white text. The implementation's red is a little more saturated and pinkish (#E50914-like vs the reference's slightly duller #D9302A tone). The overall backdrop is darker. The option tile adds an extra gray surface.",
+      "fix": "Use a slightly muted red for the top rule. Reduce the scrim opacity to match the reference's brightness. Remove the gray option tile."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "The hierarchy matches: a large bold centered title, a mid-size light-gray subtitle, small white captions, and a bold button label. The implementation uses Inter/Helvetica-style type, while the reference uses Netflix Sans, which is rounder and more humanist. The implementation's title is larger and heavier (it spans about 572–1348px vs 600–1318px). Caption line breaks differ, for example 'We won't suggest this to / you again' vs 'We won't suggest / this to you again'.",
+      "fix": "Switch to a Netflix Sans-like font (or a fallback with similar proportions). Reduce the title to about 46px semibold so it spans about 720px. Keep the subtitle at about 20px in #ccc. Narrow the caption boxes so the text wraps as two balanced lines."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "The filled white thumbs-down, thumbs-up and double-thumbs-up icons match in style and size. The thin-stroke close X matches, though the implementation's is slightly thinner and smaller.",
+      "fix": "Make the close X a little heavier, with a stroke of about 3px at about 30px."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All wording matches exactly: the title, the subtitle, the three captions and 'Got it!'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Rating row, left option: the implementation draws a rounded gray highlight tile behind the thumbs-down option. In the reference all three options sit on the scrim with no background.",
+    "Title: the implementation renders 'Rate for better recommendations' larger and heavier, in a generic grotesque sans instead of the reference's Netflix Sans-style face.",
+    "Option captions: the implementation's caption boxes are wider, so the lines break differently ('this to / you again', 'more like / this', 'a true / fan!').",
+    "Backdrop: the implementation's scrim and blur are much darker and heavier, so the underlying detail modal is almost invisible. In the reference the hero image and side panels remain readable.",
+    "Vertical positions: the implementation's red rule, options and 'Got it!' button sit about 15px lower than in the reference.",
+    "Top rule: the implementation's red is a brighter, more saturated red than the reference's slightly muted red."
+  ],
+  "fixes": [
+    "Remove the default background or selected tile from the first rating option and render all three options transparently.",
+    "Constrain each option caption to about 160px wide and center it so the text wraps as 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!'.",
+    "Reduce the title to about 46px semibold and use a Netflix Sans-like font across the dialog.",
+    "Lighten the backdrop scrim to about 55–60% opacity with a moderate blur.",
+    "Move the red rule to y≈302, tone it to a slightly muted red, and make the close X a little heavier."
+  ],
+  "summary": "The implementation is a near-faithful copy of the rate dialog with identical copy and structure. The main gaps are an invented highlight tile on the first option, a heavier and differently styled title font, different caption wrapping, and an overly dark backdrop."
+}
+```

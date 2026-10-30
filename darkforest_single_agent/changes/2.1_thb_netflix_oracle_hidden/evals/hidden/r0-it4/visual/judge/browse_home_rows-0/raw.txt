@@ -1,0 +1,64 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Matches: the top nav sits on a dark bar with the logo on the left, the nav links, and search, bell, Kids and profile on the right. Rows are full-bleed, scroll sideways, start at the same ~67px left gutter, show ~5.3 tiles in the viewport, and have the page indicator top-right. Differs: the reference viewport is only stacked title rows, with the first row heading right under the nav. The implementation shows the bottom of a hero billboard (Play / More Info) at the top. It also has a row that shows only a heading and a line of empty-state text, which breaks the steady rhythm of ~286px between rows. The last row is a numbered Top-10 layout with narrow portrait posters, a row type the reference never shows.",
+      "fix": "Start the /browse rows view right under the nav (scroll the hero away, or don't render it in this state). Hide rows that have no data instead of showing a text placeholder. Give every row the same structure: heading, then one strip of 16:9 tiles, with ~286px from one row's heading to the next."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "Present: the nav with 7 links and an active Home pill, search, bell, Kids avatar and label, profile avatar with caret, row headings, the per-row page indicator, rounded 16:9 tiles, the red TOP 10 corner badge, red status pills centred on the tile's bottom edge, and the peeking partial tile on the right. Missing: the outlined 'BETA' chip next to the Games row heading, and the paired white 'Watch Now' pill next to the red 'New Episode' pill. Extra: the hero Play / More Info buttons, the 'Continue Watching' empty-state line, and the big-number Top-10 poster row.",
+      "missing": [
+        "Outlined 'BETA' chip beside a row heading (Games row)",
+        "White 'Watch Now' pill paired with the red status pill",
+        "Games row of 16:9 game artwork tiles"
+      ],
+      "fix": "Add a Games row whose heading has an outlined, letter-spaced 'BETA' chip (purple-ish border, rounded). Let a tile carry two pills side by side: a red 'New Episode' and a white 'Watch Now' with black text. Remove the hero buttons, the empty-state line and the numbered Top-10 row from this view."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dark, cinematic look: tiles with ~6–8px radius and no shadows, rows separated by whitespace, a pill-shaped active nav item, and small square-cornered badges. Tile gaps are ~8px in both. The implementation's rhythm is uneven because of the text-only row and the hero block.",
+      "fix": "Keep one even row rhythm: heading, ~16px gap, tiles, ~56px gap to the next heading. Drop the text-only row."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The near-black page (#141414) with a slightly darker nav bar, the red Netflix wordmark, red status pills with white text, the red TOP 10 badges, and the grey active nav pill all match. Nothing else differs except the warm hero image and the missing white 'Watch Now' pill.",
+      "fix": "Add the white-on-black 'Watch Now' pill style. Otherwise keep the palette."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use a sans family. Nav labels match in size and weight. Row headings in the reference are ~26px semibold and tight. The implementation's are ~28–30px and lighter (regular/medium). The implementation draws tile titles as condensed bold caption text along the bottom-left of every tile, while the reference's titles are logos that are part of the artwork, so the treatment differs. The grey empty-state caption is an extra text style.",
+      "fix": "Set row headings to ~24–26px, weight 600. Remove the synthetic condensed title overlay on tiles, or limit it to tiles whose artwork has no logo, so the artwork carries the title as in the reference."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Same outline search and bell icons, the Kids gradient square avatar, the blue smiley profile avatar with caret, the TOP 10 badge in the top-right corner, and 16:9 cover-cropped tiles with rounded corners. The Top-10 row's portrait posters next to huge outlined numerals are a different image treatment that the reference doesn't show.",
+      "fix": "Keep all tiles as 16:9 landscape crops in this view. Drop the portrait-poster plus numeral treatment."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, and Kids. The reference badge reads 'New Episode' (singular); the implementation uses 'New Episodes'. 'Recently Added' matches. The implementation adds the 'Nothing in progress yet…' line, which the reference doesn't have, and lacks the 'Watch Now' and 'BETA' labels.",
+      "fix": "Change the badge to 'New Episode'. Add the 'Watch Now' and 'BETA' labels. Remove the empty-state sentence."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "Top of the content area: the implementation shows the bottom of a hero billboard with Play / More Info buttons. The reference goes straight into the first row's heading (~30px under the nav) with no hero visible.",
+    "Middle of the page: the implementation renders the 'Continue Watching' heading over a grey text line ('Nothing in progress yet…') with no tiles. Every reference row is a full strip of artwork tiles.",
+    "Bottom row: the implementation uses large outlined numerals with narrow portrait posters for a Top-10 row. Every reference row, including 'Top Searches', uses the same 16:9 tile strip with a TOP 10 corner badge.",
+    "Games row heading (reference, second row): the outlined, letter-spaced 'BETA' chip next to the heading has no equivalent anywhere in the implementation.",
+    "Tile status pills: the reference pairs the red 'New Episode' pill with a white 'Watch Now' pill. The implementation only shows single red pills, which read 'New Episodes' (plural).",
+    "Tiles: the implementation lays condensed bold title text over the bottom-left of every tile. The reference's titles are logos inside the artwork, with no uniform text overlay.",
+    "Row headings: the implementation's are a bit larger and lighter in weight than the reference's semibold ~26px headings."
+  ],
+  "fixes": [
+    "On /browse, show only the stacked tile rows in this state: remove or scroll away the hero so the first row heading sits right under the nav.",
+    "Don't render rows that have no data (hide 'Continue Watching' when it's empty) instead of showing placeholder text.",
+    "Render every row, Top-10 included, as a strip of 16:9 rounded tiles with the red TOP 10 corner badge. Drop the numeral-plus-portrait layout.",
+    "Add an outlined, letter-spaced 'BETA' chip next to the Games row heading, and add a Games row of landscape game artwork.",
+    "Support two pills side by side on a tile: red 'New Episode' plus white 'Watch Now'. Change 'New Episodes' to 'New Episode'.",
+    "Remove the generated condensed title text overlay from tiles. Set row headings to ~25px semibold with an even ~286px spacing between rows."
+  ],
+  "summary": "The nav, colours, tile style and badges closely match the reference. The view is off because a hero billboard is visible, there's a text-only empty 'Continue Watching' row and a numbered Top-10 poster row, and the BETA chip and 'Watch Now' pill are missing."
+}

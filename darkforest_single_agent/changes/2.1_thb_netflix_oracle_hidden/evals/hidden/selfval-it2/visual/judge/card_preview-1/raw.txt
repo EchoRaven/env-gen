@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Top nav matches: wordmark on the left, 7 text links, and search, bell, Kids and avatar on the right. The page beneath it is a different screen. The reference has a 'Browse by Languages' page title row with preference dropdowns on the right, then a static grid of 6 equal-width 16:9 tiles per row, all inside the gutters, with no row headings. The implementation has a large billboard hero with a title, metadata, synopsis, Play/More Info and a '#1 in TV Shows Today' badge. Below that are horizontal carousels whose tiles bleed past the right edge, with page indicators and a 'Top 10 TV Shows Today' rail heading. In both, the preview card floats over the first row and covers the tile next to the hovered one. In the reference the card sits inside the left gutter (x≈295–730) and covers about half a row above. In the implementation it sticks out past the left content edge (x≈16).",
+      "fix": "Render the hover preview on the Browse by Languages page layout: page heading 'Browse by Languages' on the left and 'Select Your Preferences' with two dropdowns on the right, then a non-scrolling 6-column tile grid with ~8px gaps and no row titles, no hero and no carousel peek/indicators. Clamp the preview card so it stays inside the 67px page gutter."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "The preview card matches the reference closely: 16:9 media area with a mute button bottom-right, a white filled play button, outline check and thumbs-up circles, a chevron-down circle on the right, a maturity rating in an outlined box, a length label, an HD badge, and genre tags separated by dots. Tiles keep the TOP 10 corner badges and red 'Recently Added' tags. Missing: page heading, 'Select Your Preferences' label, 'Original Language' and 'English' dropdowns, and the active pill on the 'Browse by Languages' nav item (the implementation highlights Home). Extra: the hero billboard with Play/More Info, synopsis and #1 badge, the carousel page indicators, the 'Top 10 TV Shows Today' rail heading and the half-visible peek tiles.",
+      "missing": ["'Browse by Languages' page heading", "'Select Your Preferences' label", "'Original Language' dropdown", "'English' language dropdown", "active pill on 'Browse by Languages' nav item"],
+      "fix": "Add the heading row and the two square-cornered outlined dropdowns (white 1px border, caret on the right). Move the active pill to 'Browse by Languages'. Remove the hero billboard, rail headings, carousel indicators and peek tiles from this state."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same flat dark Netflix style: lightly rounded tiles, the card with a dark body and lightly rounded corners, and outlined circular action buttons. The reference card is smaller in proportion to the screen but has larger action buttons (~50px vs ~42px) with more padding. The implementation's hero adds gradient-heavy, marketing-style decoration that the reference screen doesn't have.",
+      "fix": "Increase the preview action buttons to ~48–50px with ~10px gaps and add more padding to the card body. Remove the gradient hero so the page stays a plain grid."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a #141414 page base, a slightly lighter card body (#181818/#232323), red accent badges, white primary text and light-gray metadata. The nav pill is gray in both. The implementation's hero adds a large saturated image block.",
+      "fix": "Remove the hero image block so the screen is mainly the dark base with tile artwork. Keep the card body at ~#181818."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use the same sans family and the same weights in the nav. The reference card metadata ('2 Seasons', rating box) and genre tags are larger (~17–18px) than the implementation's (~15–16px). The reference has a ~34px regular-weight page heading, which the implementation lacks. Instead it has a huge condensed display title in the hero and a bold rail heading. Tile titles in the implementation are rendered as uniform condensed text overlays, while the reference uses varied title-art lockups.",
+      "fix": "Set the card meta row and genre tags to ~17px regular. Add the 'Browse by Languages' heading at ~34px regular weight. Remove the hero display title."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Matching parts: line-style search and bell icons, the Kids tile, the square blue smiley avatar with a caret, outlined circular action icons, the mute icon and the 16:9 cover-cropped tiles. Differences: the thumbs-up in the implementation looks filled, while the reference uses an outline. The reference card shows a red N badge top-left on the media, which the implementation lacks.",
+      "fix": "Switch the thumbs-up icon to an outline stroke. Add the small red Netflix 'N' badge to the top-left corner of the preview media when applicable."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels and badge text ('Recently Added', TOP 10, HD) match. Missing copy: 'Browse by Languages' heading, 'Select Your Preferences', 'Original Language' and 'English'. Extra copy: 'Play', 'More Info', '#1 in TV Shows Today' and 'Top 10 TV Shows Today'.",
+      "fix": "Add the heading and preference labels exactly as worded in the reference. Remove the hero and rail-heading copy from this screen."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Upper page: the implementation shows a full-width hero billboard (title, metadata, synopsis, Play/More Info, '#1 in TV Shows Today'). The reference has no hero, only a 'Browse by Languages' heading row above the grid.",
+    "Heading row, right: the reference's 'Select Your Preferences' label and the 'Original Language' and 'English' outlined dropdowns are absent from the implementation.",
+    "Content area: the reference is a contained 6-column grid with no row titles. The implementation uses horizontal carousels with tiles cut off past the right edge, page-indicator dashes and a 'Top 10 TV Shows Today' heading.",
+    "Nav: the reference highlights 'Browse by Languages' with the gray pill. The implementation highlights 'Home'.",
+    "Preview card position: the reference card sits inside the left gutter and rises about half a tile above its row. The implementation's card starts at x≈16, outside the content edge.",
+    "Preview card actions: the reference buttons are larger (~50px) with an outline thumbs-up. The implementation's are ~42px with a filled-looking thumbs-up.",
+    "Preview card meta and genre text is smaller in the implementation than in the reference."
+  ],
+  "fixes": [
+    "Show this hover state on the Browse by Languages route: remove the hero and render the heading 'Browse by Languages' (~34px regular) at the top left.",
+    "Add 'Select Your Preferences' with 'Original Language' and 'English' dropdowns (square, 1px white border, caret) aligned right on the heading row.",
+    "Replace the carousels with a static 6-column 16:9 tile grid inside the 67px gutters: no peek tiles, no indicators, no row headings.",
+    "Move the nav active pill to 'Browse by Languages'.",
+    "Clamp the preview card inside the page gutter and anchor it so it covers the tile to the right and rises about half a tile above the row.",
+    "Increase the preview action buttons to ~50px, use an outline thumbs-up, and set the meta and genre text to ~17px."
+  ],
+  "summary": "The hover preview card is a close match, but it sits on the Home layout (hero and carousels) instead of the reference's Browse by Languages page (heading, preference dropdowns, static 6-column grid)."
+}
+```

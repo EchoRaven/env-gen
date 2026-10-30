@@ -1,0 +1,58 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The header matches: NETFLIX wordmark on the left, then the 7 nav links, with search, bell, Kids chip and avatar plus caret on the right. The dropdown sits in the same place, anchored top-right under the avatar, at about the same width (~275px), with the same dark panel and a divider above 'Sign out of Netflix'. The page behind the menu is different. The reference shows the Browse by Languages page: the active pill is on 'Browse by Languages', there is a page title, a 'Select Your Preferences' / 'Original Language' dropdown and a 6-column tile grid with a hover preview card. The implementation shows Home, with a full-width hero, a 'Trending Now' row and the active pill on 'Home'. The reference menu starts slightly higher (~y72) than the implementation's (~y78).",
+      "fix": "Open the account menu over the Browse by Languages page so it matches the reference: active pill on 'Browse by Languages', 'Browse by Languages' H1 on the left, 'Select Your Preferences' label and an 'Original Language' bordered select on the right, then a 6-column grid of 16:9 tiles."
+    },
+    "components": {
+      "score": 0.65,
+      "missing": ["'Transfer Profile' menu item with icon", "'Help Center' menu item with ? circle icon", "Browse by Languages page header with 'Original Language' select (behind the menu)", "tile grid with hover preview card (behind the menu)"],
+      "notes": "Present: profile row(s) with avatar, 'Manage Profiles' (pencil), 'Account' (person), divider, 'Sign out of Netflix', and the caret pointing up next to the avatar. The reference menu has 6 entries: Kids, Manage Profiles, Transfer Profile, Account, Help Center, and Sign out. The implementation drops Transfer Profile and Help Center. It lists 3 profile rows where the reference has 1, which is acceptable as profile data. Behind the menu, the implementation shows an invented hero (Play/More Info, '#1 in TV Shows Today') where the reference has the language-browse grid.",
+      "fix": "Add 'Transfer Profile' (screen-with-arrow icon) between Manage Profiles and Account, and 'Help Center' (question-mark-in-circle icon) after Account, both above the divider."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same dark elevated panel with slightly rounded corners and a hairline border, a hairline divider before sign-out, and flat rows. The reference rows are more airy (~58px pitch). The implementation's action rows are tighter (~48px pitch).",
+      "fix": "Raise the dropdown row height to ~58px and give the icon/text more padding so the menu matches the reference's spacing."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use a near-black page, a dark grey (#1f1f1f-ish) panel, white labels, the red NETFLIX wordmark and the blue smiley/Kids gradient avatars. They match closely.",
+      "fix": "No change needed. Optionally make the panel border slightly lighter grey to match the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif at the same weight, and menu labels are roughly 17–18px regular white in each. The reference labels look slightly larger and lighter relative to the icons. Nav link sizes match.",
+      "fix": "Set the menu label size to ~18px regular with consistent baseline alignment to the 24px icons."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use line icons (pencil, person). The reference icons are larger (~26px) with a heavier stroke and fill more of the leading column. The implementation's icons are smaller (~20px) and thinner. The Kids avatar is a rounded square in both.",
+      "fix": "Make the menu icons ~26px with ~1.75px stroke, centred in a 32px leading column, and add the Transfer Profile and Help Center outline icons."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Transfer Profile' and 'Help Center' labels are missing.",
+      "fix": "Add the menu labels 'Transfer Profile' and 'Help Center' with this exact casing."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "account dropdown: the reference's 'Transfer Profile' and 'Help Center' items are missing between Manage Profiles and the divider",
+    "background page: the reference shows the menu over the Browse by Languages page (title, Original Language select, tile grid with hover card); the implementation shows the Home hero and Trending Now row",
+    "header nav: the reference highlights 'Browse by Languages' as the active pill; the implementation highlights 'Home'",
+    "account dropdown icons: the implementation's pencil/person icons are smaller and thinner than the reference's ~26px outline icons",
+    "account dropdown rows: the implementation's row spacing is tighter than the reference's ~58px rhythm"
+  ],
+  "fixes": [
+    "Add a 'Transfer Profile' row (screen-with-arrow outline icon) after 'Manage Profiles'",
+    "Add a 'Help Center' row (question-mark-circle outline icon) after 'Account', above the divider",
+    "Render the account-menu state over the Browse by Languages route, with the active nav pill on 'Browse by Languages', the page H1, the 'Select Your Preferences' + 'Original Language' select, and a 6-column 16:9 tile grid",
+    "Scale the menu icons to ~26px with a heavier stroke and raise the row height to ~58px"
+  ],
+  "summary": "The header and dropdown shell match closely, but the menu is missing the Transfer Profile and Help Center items, and it opens over the Home hero instead of the Browse by Languages grid."
+}
+```

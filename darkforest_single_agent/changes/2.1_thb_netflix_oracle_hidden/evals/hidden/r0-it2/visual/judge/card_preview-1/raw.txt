@@ -1,0 +1,71 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "Top nav matches: wordmark on the left, 7 text links, search, bell, Kids and profile on the right. The page below it is different. The reference is the 'Browse by Languages' page: a page title with a preferences row, then an even 6-column grid of 16:9 tiles with no row headings and no hero. The implementation is the Home layout instead: a large hero banner at the top, horizontal rails with the last tile cut off at the right edge, a page indicator, and a 'Top 10 TV Shows…' row heading. The preview card's placement is similar in both: it expands over the first tile of a row, overlapping the row and the space above it.",
+      "fix": "Render the held-hover state on the Browse by Languages screen. Remove the hero. Add a left-aligned page title row with 'Select Your Preferences' and two dropdowns on the right. Lay the tiles out as a 6-column grid with fixed gutters: no horizontal scrolling rails, no tile cut off at the edge, no page indicator, no row headings."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "The preview card is mostly correct: artwork with a Netflix 'N' badge, a white circular play button, two outlined circle buttons, an outlined chevron button on the right, a boxed maturity rating with season count and an HD badge, and genre tags separated by dots. Tile badges (TOP 10 corner flag, red 'Recently Added' pill) also match. Differences: the card artwork has no mute/volume button, and the second button shows '+' where the reference shows the 'in My List' checkmark. The page is also missing components the reference shows: the 'Browse by Languages' heading, the preferences label and both dropdowns, and the active pill on 'Browse by Languages'. The implementation adds components the reference does not have: the hero with Play/More Info buttons, a section heading and a page indicator.",
+      "missing": [
+        "mute/volume toggle on preview-card artwork",
+        "'Browse by Languages' page title",
+        "'Select Your Preferences' label",
+        "'Original Language' dropdown",
+        "'English' language dropdown",
+        "active pill on 'Browse by Languages' nav item"
+      ],
+      "fix": "Add a circular outlined mute button at the bottom-right of the card artwork. Show the checkmark state for the list button when the title is already in the list. Add the page header with both outlined select dropdowns. Move the active nav pill to 'Browse by Languages'. Remove the hero and the page indicator."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat dark Netflix style: lightly rounded tiles, the card raised over a dark surface, circular outlined buttons. Differences: the implementation's hero has heavy rounded corners and a washed-out gradient, which the reference does not have. The reference dropdowns are square with a thin white outline; the implementation has none.",
+      "fix": "Remove the rounded hero. Style the dropdowns as square-cornered black boxes with a 1px white border and a solid caret."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same near-black base, dark grey card surface, white play button, red badges and wordmark, and grey active nav pill. The light, washed-out hero artwork makes the implementation much brighter than the uniformly dark reference.",
+      "fix": "Remove the hero so the page stays uniformly dark with only tiles and the card as image surfaces."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Nav links, card metadata and genre tags use matching sans weights and sizes. The reference has a large regular-weight page title ('Browse by Languages', about 36px) that the implementation lacks. The implementation adds a giant hero title lockup and a row heading. The reference card artwork has no large overlaid title text; the implementation overlays a bold condensed title on the card image.",
+      "fix": "Add a large regular-weight page title at the left gutter. Drop the hero title lockup and row headings. Keep the card artwork free of large overlaid title text, matching the reference treatment."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Line icons for search and bell, outlined circle action icons, the thumbs-up, the chevron and the 'N' badge all match. Differences: '+' instead of a checkmark, no mute icon on the artwork, and the profile avatar is a kids-style tile instead of the blue smiley-style avatar. The thumbs icon looks filled, while the reference uses an outline.",
+      "fix": "Use an outline thumbs-up, a checkmark for the in-list state, and an outlined speaker-mute icon on the artwork. Use a single blue profile avatar tile."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels and card metadata format ('2 Seasons', HD, rating box) match. The implementation is missing 'Browse by Languages' (heading), 'Select Your Preferences', 'Original Language' and 'English'. It adds 'Play', 'More Info' and 'Top 10 TV Shows in the U.S. Today', which this reference screen does not show.",
+      "fix": "Add the page heading and preference copy exactly as in the reference. Remove the hero CTAs and row heading text from this screen."
+    }
+  },
+  "similarity": 0.58,
+  "empty_state": false,
+  "deviations": [
+    "page body: implementation shows the Home hero banner (title lockup, Play/More Info) at the top; reference has no hero and starts with the 'Browse by Languages' title row",
+    "header row below nav: reference shows the 'Browse by Languages' title plus 'Select Your Preferences' and the 'Original Language'/'English' dropdowns; all are absent in the implementation",
+    "content area: reference is a fixed 6-column grid of tiles with no row titles; implementation uses horizontally scrolling rails with a tile cut off at the right edge, a page indicator and a 'Top 10 TV Shows…' heading",
+    "top nav: active pill is on 'Home' in the implementation, but on 'Browse by Languages' in the reference",
+    "preview card artwork: reference has a circular mute button at the bottom-right; implementation has none",
+    "preview card artwork: implementation overlays a large bold title on the image; reference artwork has no such large title overlay",
+    "preview card actions: the second button is '+' in the implementation and a checkmark in the reference; the thumbs icon looks filled rather than outlined",
+    "top-right profile: implementation repeats the kids tile as the profile avatar; reference uses a distinct blue avatar tile"
+  ],
+  "fixes": [
+    "Show the held-hover card on the Browse by Languages screen: no hero, a 'Browse by Languages' title at the left gutter, and 'Select Your Preferences' with 'Original Language' and 'English' square outlined dropdowns aligned right",
+    "Replace the rails with a 6-column, 16:9 tile grid with even gutters: no row headings, no page indicator, no tile cut off at the edge",
+    "Move the active grey pill in the nav to 'Browse by Languages'",
+    "Add a circular outlined mute toggle at the bottom-right of the preview-card artwork",
+    "Show a checkmark (in-list) in the second circle button, and use an outline thumbs-up icon",
+    "Remove the large overlaid title text from the card artwork",
+    "Use a distinct blue profile avatar next to the caret"
+  ],
+  "summary": "The hover preview card and nav closely match the reference, but the card sits on the Home page with a hero and rails, while the reference shows it on the Browse by Languages grid with a title and dropdowns; the card is also missing the mute button and checkmark state."
+}
+```

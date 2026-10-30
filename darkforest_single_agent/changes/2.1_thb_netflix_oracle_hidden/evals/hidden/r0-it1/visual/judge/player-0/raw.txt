@@ -1,0 +1,64 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed video players with no app chrome: back arrow top-left, a control row along the bottom (left playback cluster, centred text, fullscreen far right). The reference shows an ad playing, so it has no scrubber, no paused info overlay, and a top-right flag + 'Ad 12' cluster. The implementation adds a full-width red progress bar, a large left-side 'You're watching' paused overlay and a centred error toast near the top. It has nothing in the top-right corner.",
+      "fix": "Render the ad-break state: remove the scrubber row and the paused synopsis overlay. Add a top-right cluster (flag icon + 'Ad 12' badge) on the same line as the back arrow. Keep only the bottom row: pause, volume, centred caption, fullscreen."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Matching: back arrow, play/pause toggle, volume, centred bottom caption and fullscreen. Missing: the report/flag icon top-right, the 'Ad 12' countdown badge with its yellow left bar, and the 'begins after ads' message. Added beyond the reference: progress bar with red thumb and time, rewind-10 and forward-10, next-episode, episodes, and subtitles/audio buttons, the 'You're watching' title/episode/synopsis overlay, and the red-bordered error toast.",
+      "missing": [
+        "flag/report icon (top-right)",
+        "Ad countdown badge with yellow accent bar ('Ad 12')",
+        "'<Title> begins after ads' centre caption"
+      ],
+      "fix": "Add an ad-break mode with a flag icon at top-right and a dark rounded 'Ad NN' pill with a 2px yellow left bar. Change the centre caption to '<Title> begins after ads'. Hide skip ±10, next, episodes, subtitles, the scrubber, the paused overlay and the error toast."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both are minimal and flat: white controls straight over the video with a subtle bottom gradient. The implementation is busier because of the dimmed paused overlay and the extra control row. Its toast also uses a red-bar style, which echoes the badge treatment but in a different context.",
+      "fix": "Keep the video undimmed and show only the sparse control set, so the frame stays the dominant element."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both use a black base with white icons and text. The reference's only accent is the yellow bar on the Ad badge. The implementation adds a red progress bar and thumb plus a red toast accent, and it dims the whole video.",
+      "fix": "Remove the red scrubber and toast. Add the yellow (#e5b13a-ish) accent bar on the Ad badge, and keep the video at full brightness."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a clean sans in white. The reference's centre caption is regular weight and medium size. The implementation's caption puts the title in bold and the episode in regular, and adds a large bold title, a semibold subtitle and body synopsis text that the reference doesn't have.",
+      "fix": "Make the centre caption a single regular-weight line ('X begins after ads'). Drop the large overlay typography, and set 'Ad 12' in small regular white text."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The back arrow, volume-with-waves and fullscreen-corner icons match the reference's white line style. The reference shows a pause icon (playing); the implementation shows play because it is paused. The outlined flag icon is missing, and the extra icons (skip-10, next, episodes, subtitles) add clutter.",
+      "fix": "Show filled pause bars while the ad plays, add an outlined flag icon top-right, and remove the extra control icons."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference copy is 'All American begins after ads' and 'Ad 12'. The implementation shows 'Overdo E1 Episode 1', 'You're watching', and an error string ('This clip could not be loaded…') that has no counterpart in the reference.",
+      "fix": "Use '<Title> begins after ads' as the centre caption and 'Ad <seconds>' in the badge, and remove the error toast copy."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference shows an outlined flag icon and an 'Ad 12' countdown badge with a yellow left bar; the implementation has nothing there",
+    "bottom bar: the implementation adds a full-width red progress scrubber with a time label, which the reference doesn't have during the ad",
+    "left/centre: the implementation overlays a dimmed 'You're watching' block (title, season/episode, synopsis) that is absent from the reference",
+    "top-centre: the implementation shows a red-bordered error toast ('This clip could not be loaded…') that is not in the reference",
+    "bottom-left: the implementation adds rewind-10 and forward-10 buttons; the reference has only pause and volume",
+    "bottom-right: the implementation adds next-episode, episodes and subtitles icons; the reference has only fullscreen",
+    "bottom-centre caption: the implementation reads 'Title E1 Episode 1' (bold title); the reference reads '<Title> begins after ads' in regular weight",
+    "play-state icon: the implementation shows play (paused); the reference shows pause (playing)"
+  ],
+  "fixes": [
+    "Add an ad-break player state that hides the scrubber, the skip ±10 / next / episodes / subtitles buttons and the paused info overlay",
+    "Top-right: add an outlined flag (report) icon and a dark 'Ad NN' countdown pill with a yellow left accent bar, aligned with the back arrow",
+    "Change the bottom-centre caption to a single regular-weight line: '<Title> begins after ads'",
+    "Keep only pause + volume bottom-left and fullscreen bottom-right, and show the pause icon while playing",
+    "Remove the error toast and the video dimming so the frame is shown at full brightness"
+  ],
+  "summary": "The player has the same full-bleed chrome-less skeleton, but it renders a paused/scrubber state instead of the reference's ad-break state: the flag icon, Ad countdown badge and 'begins after ads' caption are missing, and many extra controls and overlays are added."
+}

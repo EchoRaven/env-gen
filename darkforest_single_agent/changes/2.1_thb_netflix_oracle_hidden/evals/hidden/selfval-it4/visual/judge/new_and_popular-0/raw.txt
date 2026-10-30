@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "The page skeleton is the same: a top nav bar with the logo on the left, nav links, and utilities on the right. Below it are full-bleed horizontal carousels in the same order: a 16:9 row, two Top-10 ranked rows with a large numeral next to a portrait poster, then a fourth 16:9 row. The left gutter (~67px), tile widths and page indicators at the top right of each row all match. The first section heading sits about 18px higher than in the reference, and the vertical rhythm between rows is a little tighter.",
+      "fix": "Add about 18px of top padding above the first row heading so 'New on Netflix' sits about 165px from the top, and keep the gap between rows at about 270px as in the reference."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "The nav has all 7 links with a pill on the active 'New & Popular' item, plus search, bell, the Kids badge and label, the avatar and caret. Rows have page indicators, TOP 10 corner badges, red 'Recently Added' pills and ranked numerals. The implementation adds a right chevron arrow on the Top 10 TV row, which the reference does not show at rest. The reference's two-part badge (red 'New Episode' next to a white 'Watch Now' chip) has no equivalent; every tile uses the single red pill. Several ranked tiles show no badge, and one movie tile is a plain-text fallback ('Backrooms' in grey text on an image) instead of poster art.",
+      "missing": [
+        "white 'Watch Now' secondary chip next to the red status pill on 16:9 tiles"
+      ],
+      "fix": "Show the carousel chevron only on row hover. Support a paired badge (red status pill plus a white 'Watch Now' chip). Never render the plain-text artwork fallback; use real poster art or hide the tile."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Both use the same flat, dark streaming style: slightly rounded tiles (~4px), no shadows, edge-to-edge carousels, and badges with small radii. In the reference, the ranked numerals have a solid black fill with a grey outline, so they read as dark solid shapes. The implementation draws them hollow, with only a thin grey stroke over the background, so they look lighter and wireframe-like.",
+      "fix": "Render the ranked numerals with fill #000 (or near black) and a 3–4px #595959 stroke, tucked behind the left edge of the poster."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The colours match: a #141414 page, a slightly darker nav, the red NETFLIX wordmark, red badges with white text, a grey active pill, white headings and grey page indicators. The only difference is the numeral fill, which is transparent in the implementation and solid black in the reference.",
+      "fix": "Give the ranked numerals a black fill so they contrast against the #141414 background as in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif with similar sizes. The row headings in the implementation look semibold, while the reference uses a regular/medium weight. Nav links and badge text are close. The giant numerals use a similar bold geometric shape, but they are stroke-only.",
+      "fix": "Set the row headings to weight 500 (medium) at about 26px instead of semibold."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Line-style search and bell icons, the rounded-square Kids badge and the blue smiley avatar all match. Artwork uses the same aspect ratios (16:9 landscape and 2:3 portrait, cover crop). One ranked movie tile shows a text placeholder instead of artwork. The numerals are hollow instead of solid.",
+      "fix": "Replace the text-on-image placeholder with proper poster art, and use solid black numerals with a grey outline."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels, 'New on Netflix', 'Recently Added', 'TOP 10' and 'Kids' match. The ranked headings drop the region: the implementation has 'Top 10 TV Shows Today' and 'Top 10 Movies Today' where the reference has 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today'. The fourth row is 'Worth the Wait' where the reference has 'Coming This Week'.",
+      "fix": "Rename the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: the large rank numerals are hollow, stroke-only outlines; the reference fills them solid black with a grey outline",
+    "Row headings: 'Top 10 TV Shows Today' and 'Top 10 Movies Today' leave out 'in the U.S.' from the reference copy",
+    "Fourth row heading is 'Worth the Wait'; the reference shows 'Coming This Week'",
+    "Top 10 TV row, right edge: an extra chevron arrow is visible that the reference does not show",
+    "Top 10 Movies row, tile 3: plain grey text ('Backrooms') over an image instead of poster art",
+    "16:9 tiles: the paired red status pill with a white 'Watch Now' chip from the reference is never used",
+    "Row headings are heavier (semibold) than the reference's regular/medium weight",
+    "The first section heading and row spacing sit about 18px higher and tighter than in the reference"
+  ],
+  "fixes": [
+    "Draw the rank numerals with a solid black fill and a ~3–4px #595959 stroke",
+    "Rename the section headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'",
+    "Hide the carousel chevron until the row is hovered",
+    "Replace the text-fallback artwork with real poster images, or skip tiles that have no art",
+    "Support a two-part badge (red status pill plus a white 'Watch Now' chip) on landscape tiles",
+    "Set the row headings to font-weight 500 and add about 18px of top padding before the first row"
+  ],
+  "summary": "Near-identical Netflix New & Popular layout and chrome. The main gaps are hollow rank numerals instead of solid black ones, shortened section headings, an extra carousel chevron, and one text-placeholder tile."
+}
+```

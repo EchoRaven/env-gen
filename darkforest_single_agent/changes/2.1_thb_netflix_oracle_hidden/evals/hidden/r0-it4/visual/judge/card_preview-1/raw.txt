@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "The preview card itself matches the reference: it is a scaled-up overlay sitting above the row, with a 16:9 media area on top, a dark info panel below, an action row, a metadata row and a genre row. The page around it is different. The reference has a 'Browse by Languages' page title on the left, a 'Select Your Preferences' label with two dropdowns on the right, and a wrapping 6-column grid of 16:9 tiles with no hero. The implementation has a full-width hero billboard and horizontal rails, with a tile cut off at the right edge. The implementation's card also sits outside the content gutter (left edge ~16px, while the grid starts at ~67px). The reference card stays aligned with the column it expands from.",
+      "fix": "For this state, render the 'Browse by Languages' page: title at top-left, the preferences label and two dropdowns at top-right, and a wrapping 6-column grid of 16:9 tiles with no hero. Clamp the preview card's left edge to the 67px content gutter."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "The preview card's parts are all present: the N badge at top-left of the media, a mute toggle circle at bottom-right, a white filled play circle, two outlined circle buttons, an outlined chevron-down circle on the right, a boxed maturity rating, the seasons count, an HD badge and dot-separated genre tags. The tiles behind it match too, with TOP 10 corner badges and red 'Recently Added' pills. Some differences: the second action button is '+' where the reference shows a checkmark (the in-list state), and the thumbs-up glyph is filled rather than outlined. The page chrome around the card does not match. The reference's page heading and two preference dropdowns are missing, the nav highlights 'Home' instead of 'Browse by Languages', and the implementation adds a hero with Play and More Info that the reference doesn't have. Stray empty-state text ('…here.') shows through beside the card.",
+      "missing": ["'Browse by Languages' page heading", "'Select Your Preferences' label", "'Original Language' dropdown", "'English' language dropdown", "checkmark (in My List) state on the second action button", "active pill on 'Browse by Languages' nav item"]
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "The design language matches: a dark, flat, cinematic look, a preview card with slight corner radius and a soft shadow, outlined circular icon buttons and a pill nav highlight. The reference media corners are tight while the implementation's are similar, which is fine. The hero adds a heavy marketing billboard that this reference screen doesn't have. The preview card in the implementation is slightly larger relative to the tiles.",
+      "fix": "Drop the hero for this screen. Keep the card at about 1.5× tile width and match the reference's tight radius."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark #141414-style base, a slightly lighter card panel, white primary play button, grey outlined controls, Netflix-red badges and pills, and a grey active nav pill. The colour system matches.",
+      "fix": "Make the preview panel the same slightly lifted dark grey as the reference (~#181818)."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Sans UI type, a boxed rating label, regular-weight genres with bullet separators, and a small HD badge all match. The reference has a large regular-weight page title ('Browse by Languages') that is absent here. The implementation adds large display hero typography the reference doesn't have.",
+      "fix": "Add the ~36px regular-weight page heading at top-left and remove the hero title lockup."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Circular outline buttons, the chevron and the mute icon match. The reference uses an outlined thumbs-up and a checkmark, while the implementation uses a filled thumb and a plus. The implementation's profile avatar is a gradient 'kids' tile, where the reference uses the blue smiley avatar. Poster tiles are 16:9 with title lockups in both.",
+      "fix": "Use an outline thumbs-up glyph and show a checkmark when the title is in the list. Use a distinct profile avatar rather than reusing the kids icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels match exactly, and so do the 'Recently Added' and 'TOP 10' badges and the 'N Seasons' and 'HD' labels. Missing copy: 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English'. A stray '…here.' empty-state string is visible.",
+      "fix": "Add the page heading and the preferences copy, and remove or hide the leaked empty-state text."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Top of page: the implementation shows a full-width hero billboard (title, metadata, Play and More Info). The reference has no hero, only the 'Browse by Languages' heading on the left and the preferences label with two dropdowns on the right.",
+    "Content area: the reference is a wrapping 6-column grid of tiles. The implementation uses horizontal rails with a cut-off tile at the right edge and a carousel page indicator.",
+    "Nav bar: the active pill is on 'Home' in the implementation. The reference highlights 'Browse by Languages'.",
+    "Preview card position: the implementation's card extends to x≈16, past the left content gutter. The reference card stays aligned inside the grid's columns.",
+    "Preview card action row: the second button is '+' in the implementation and a checkmark in the reference. The thumbs-up is filled in the implementation and outlined in the reference.",
+    "Below the preview card: stray empty-state text ('…here.') shows next to the card in the implementation and has no counterpart in the reference.",
+    "Header right: the implementation's profile avatar repeats the kids gradient tile instead of a distinct user avatar."
+  ],
+  "fixes": [
+    "Render this state on the Browse by Languages page: no hero, the 'Browse by Languages' title at top-left, and 'Select Your Preferences' plus 'Original Language' and 'English' dropdowns at top-right.",
+    "Replace the rails with a wrapping 6-column grid of 16:9 tiles that keeps TOP 10 and 'Recently Added' badges.",
+    "Move the active nav pill to 'Browse by Languages'.",
+    "Clamp the hover preview card so its left edge doesn't go past the 67px content gutter.",
+    "Show a checkmark on the second action button when the title is in My List, and use an outline thumbs-up glyph.",
+    "Remove the leaked empty-state text near the rail.",
+    "Use a distinct profile avatar in the header."
+  ],
+  "summary": "The hover preview card closely matches the reference, but it sits on a Home page with a hero and rails instead of the Browse by Languages grid with its heading and preference dropdowns."
+}
+```

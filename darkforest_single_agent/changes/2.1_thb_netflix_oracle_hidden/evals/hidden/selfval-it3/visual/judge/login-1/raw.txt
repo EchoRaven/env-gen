@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Same skeleton in both: a top bar with the wordmark at left and a hairline divider under it, a centered ~490px form column, a dark gradient body, and a separate #141414 footer band that starts lower in the implementation (~955px vs ~907px). The implementation's form is taller because it adds a password field. Its footer has only the questions line and none of the 4-column link grid.",
+      "fix": "Collapse the form to one field plus button so the column height matches. Add the 4-column footer link grid under the questions line at the reference's column x-positions (~213/590/967/1343px)."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "These match: logo, heading, subheading, a floating-label input and a full-width red primary button. The implementation adds a password field, a 'New to Netflix? Sign up now.' line and a demo-account hint, none of which appear in the reference. It leaves out the 'Get Help' dropdown, the reCAPTCHA notice and the footer link grid.",
+      "fix": "Remove the password input, the sign-up line and the demo hint. Add a 'Get Help' text button with a chevron-down about 65px below the button, then the small gray reCAPTCHA line, then the footer link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information).",
+      "missing": [
+        "'Get Help' dropdown toggle with chevron",
+        "reCAPTCHA protection notice",
+        "footer link grid (4 columns of underlined links)"
+      ]
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same minimal, flat dark treatment: inputs with slightly rounded corners and a thin gray border, a solid button with ~4px radius, hairline dividers and airy spacing. The implementation's button is a little shorter (~48px vs ~53px).",
+      "fix": "Make the button about 53px tall and keep the input at about 62px."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The maroon-to-black vertical gradient, #141414 footer, white text and semi-transparent dark inputs all match. The implementation's button is a saturated #E50914 red. The reference uses a slightly softer red (#D6332A-ish).",
+      "fix": "Change the Continue button background to roughly #D0302A to match the reference."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Both use sans-serif, the same heading/subheading/label hierarchy and left alignment. The reference uses Netflix Sans, which looks rounder and less tight. The implementation uses Inter, so its heading looks heavier and wider. The reference button label is larger and bolder (~20px) than the implementation's (~17px).",
+      "fix": "Use a Netflix Sans–like font (or a softer fallback) at about 34px bold for the heading. Set the button label to about 20px semibold."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The red condensed NETFLIX wordmark matches in size and position. The reference's only icon is the chevron next to Get Help, and the implementation doesn't have it.",
+      "fix": "Add a thin outline chevron-down icon right after the 'Get Help' label."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "Heading and subheading match exactly. The field label 'Email address' should be 'Email or mobile number', and the button says 'Sign In' where the reference says 'Continue'. The footer says 'Questions? This is a local Netflix clone…' where the reference has 'Questions? Call 1-844-569-7700 (Toll-Free)'. The implementation also adds copy the reference doesn't have: the sign-up line and the demo-account line.",
+      "fix": "Rename the input label to 'Email or mobile number' and the button to 'Continue'. Add 'Get Help' and 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Change the footer to 'Questions? Call 1-844-569-7700 (Toll-Free)'."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "form: implementation adds a second 'Password' input below the email field; the reference has a single email/phone field (an identifier-first step)",
+    "primary button: implementation reads 'Sign In'; reference reads 'Continue'",
+    "below the button: implementation shows 'New to Netflix? Sign up now.' and a 'Demo account: …' hint; the reference has neither and shows a 'Get Help' chevron dropdown there instead",
+    "below Get Help: reference has the small gray reCAPTCHA notice, which the implementation doesn't have",
+    "footer: reference has a 4-column grid of underlined links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information), which the implementation doesn't have",
+    "footer: the questions line wording differs (phone number vs a 'local Netflix clone' note)",
+    "input label: 'Email address' vs 'Email or mobile number'",
+    "button color: implementation uses a brighter #E50914 red; the reference's red is softer and slightly orange",
+    "typography: implementation's heading is heavier and wider (Inter) than the reference's Netflix Sans; its button label is smaller"
+  ],
+  "fixes": [
+    "Remove the password input and make the flow identifier-first: one field labelled 'Email or mobile number' and a red full-width 'Continue' button",
+    "Remove the 'New to Netflix? Sign up now.' line and the demo-account hint",
+    "Add a 'Get Help' text button with a chevron-down about 65px below the button, then a 13px gray line: 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Change the footer line to 'Questions? Call 1-844-569-7700 (Toll-Free)' and add a 4-column grid of underlined gray links underneath it: FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information",
+    "Set the button color to about #D0302A, its height to about 53px and its label to about 20px semibold",
+    "Use a softer, rounder sans-serif in place of Inter for the heading and body to get closer to Netflix Sans"
+  ],
+  "summary": "The shell, gradient, wordmark, heading and form column all match, but the implementation shows a classic email+password form with sign-up and demo text where the reference has an identifier-first 'Continue' step with Get Help, a reCAPTCHA note and a footer link grid."
+}
+```

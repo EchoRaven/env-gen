@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.78,
+      "notes": "The skeleton matches the reference: a full-bleed player with no app chrome, a back arrow top-left, a full-width scrubber near the bottom with the time label at its right end, and a single control row below it. Transport controls sit left, the title is centred and the utility icons sit right. Differences: the top-right slot is empty (the reference has a flag icon there), and the left/centre region carries a large invented info overlay. The bottom bar sits about 30–50px lower and the left icon cluster is tighter than in the reference.",
+      "fix": "Put a flag/report icon top-right, mirroring the back arrow's inset (~40px from the top and right). Remove the centre-left info overlay. Raise the scrubber to ~88% of viewport height and the control row to ~94%, and space the left icons ~90px apart, centre to centre."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "Present: back arrow, scrubber with red thumb, remaining-time label, play/pause, back 10, forward 10, volume, centred title/episode label, next episode, episodes list, subtitles/audio, fullscreen. Missing: the top-right flag/report button. The scrubber has no buffered segment (lighter grey) and no chapter tick marks. Invented: a 'You're watching' block with big title, season/episode line, synopsis, and a red codec error message that the reference does not have.",
+      "missing": ["top-right flag / report-a-problem icon button", "buffered-progress segment on scrubber", "chapter/marker ticks on scrubber"],
+      "fix": "Add the top-right flag IconButton. Render a buffered range (light grey #bbb) between the played (red) and unplayed (dark grey) parts of the track, with small marker ticks. Drop the 'You're watching' overlay and the error text from the controls state."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "The minimal, flat, chromeless overlay with white line icons and a thin hairline scrubber matches. The reference's video surface is pure black and has no text panel. The implementation adds a heavy marketing-style text block over the artwork, which changes the screen's character from bare playback controls to a pause or info screen.",
+      "fix": "Keep the controls state bare: the video frame plus the icon rows only, with no hero text block and no poster-style composition."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "White icons and text and a red played-progress with red thumb match. The reference is pure black with a mid-grey track and lighter grey buffered region. The implementation shows a saturated poster behind the controls and red/pink error text, which adds a semantic colour the reference lacks.",
+      "fix": "Show black (or the actual video frame) behind the controls. Use #808080 for the track and #bcbcbc for the buffered segment. Remove the pink error text."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The centred title row matches: a bold series name followed by regular 'E1' and a regular episode title, in a sans-serif at a similar size. The time label is a small regular sans in both. The extra overlay brings in display-size bold headings and body text that the reference does not have.",
+      "fix": "Remove the overlay typography. Keep the bottom title at ~22px, bold name plus regular 'E1 <title>', and the time label at ~16px regular."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The icon set matches in style: outline line icons for back 10, forward 10, volume, next, episodes stack, subtitles speech bubble and fullscreen corners. The play/pause glyph is filled in both. The implementation's icons are smaller (~36px against ~48px in the reference), and the top-right flag glyph is absent. It shows a play icon where the reference shows pause, but that is a state difference.",
+      "fix": "Scale the bottom-row icons to ~48px with ~44px gaps, and add the outline flag icon at ~44px top-right."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The title-row format ('<Show> E1 <Episode>') and the time label match. Invented copy: 'You're watching', the 'Season 1: Ep. 1 \"Episode 1\"' line, the synopsis, and the error message 'This clip can't be played in this browser…'. None of these appear in the reference.",
+      "fix": "Remove the 'You're watching' overlay copy and the error string from the controls view. Surface playback errors some other way, or not in this state at all."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "centre-left of video area: implementation adds a 'You're watching' block (large title, season/episode line, synopsis); the reference has only a bare black video area",
+    "centre-left: implementation shows a red/pink error line 'This clip can't be played in this browser…' that the reference does not have",
+    "top-right corner: the reference's flag/report icon is missing from the implementation",
+    "scrubber: the reference shows a lighter grey buffered segment and small chapter tick marks; the implementation has a uniform track",
+    "bottom control row: implementation icons are noticeably smaller and the left cluster is more tightly spaced than the reference's ~48px icons",
+    "vertical placement: the implementation's scrubber and control row sit lower (~1016px / ~1065px against ~968px / ~1038px)"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' title/season/synopsis overlay and the error message from the controls state",
+    "Add an outline flag (report a problem) icon button top-right, ~44px, inset to match the back arrow",
+    "Add a buffered-range segment (light grey) and chapter marker ticks to the scrubber track",
+    "Enlarge bottom-row icons to ~48px and widen spacing (~90px centre to centre on the left cluster)",
+    "Move the scrubber up to ~88% of viewport height and the control row to ~94%",
+    "Show black or the actual video frame behind the controls, not a poster composition"
+  ],
+  "summary": "The player chrome is close to the reference: same control inventory, layout and icon style. But the implementation adds an info/error overlay, drops the top-right flag button, and simplifies the scrubber."
+}
+```

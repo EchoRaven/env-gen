@@ -1,0 +1,57 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same structure: a centered dark modal about 1085px wide over a dimmed Home page, with the top nav still visible behind it. The order is synopsis then Episodes. The Episodes header has the title name right-aligned. Rows are a full-width list: number, 16:9 thumbnail, title/description block, and duration right-aligned. Rows in the implementation are taller (about 157px pitch vs about 145px in the reference).",
+      "fix": "Make each episode row about 145px tall (about 24px vertical padding around a 96px-high thumbnail) so 6+ rows fit in the viewport as in the reference."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": [],
+      "notes": "Present: Episodes heading, right-aligned title label, numbered episode rows, thumbnails, circular play overlay on the hovered thumbnail, bold episode title, duration, description, hairline row dividers, highlighted first row, synopsis and metadata column above. Difference: in the reference only row 1 has the lighter card background. The hovered row 2 shows just the play icon, with no background fill and with a divider under it. The implementation fills both rows 1 and 2, and there are no dividers between rows 1, 2 and 3.",
+      "fix": "Remove the background highlight from hovered rows. Keep the #2f2f2f rounded fill only on the current/first episode, show the play-circle overlay on hover only, and always render the 1px divider under non-selected rows."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Flat dark surfaces. The selected row is a slightly rounded lighter card, separated by hairline dividers, with matching density and spacing. Minor differences are the double-highlight state and slightly looser row padding.",
+      "fix": "Tighten row padding by about 6px top and bottom, and limit the card treatment to one row."
+    },
+    "color": {
+      "score": 0.95,
+      "notes": "Same #181818 modal on a dimmed backdrop, #2f2f2f selected row, white titles, light-grey descriptions, grey metadata labels and red Top 10 badge. Matches.",
+      "fix": "None beyond limiting the highlight colour to the selected row."
+    },
+    "typography": {
+      "score": 0.92,
+      "notes": "Same sans-serif hierarchy: Episodes heading about 26px semibold, title label regular at the right, large light episode numbers, bold episode titles, regular descriptions about 15px, and duration in regular weight. Matches closely.",
+      "fix": "Keep as is. Make sure descriptions wrap to two lines at the same width (max about 630px) when longer copy is present."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "16:9 thumbnails at the same size, with slight corner rounding and cover crop. The play-circle outline overlay matches. The Top 10 badge and nav icons match.",
+      "fix": "None needed."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "'Episodes' heading, title label at the right, and durations in 'NNm' format match. Episode titles and descriptions are generic seeded content ('Episode 1', 'Season 1, episode 1 of …'), which counts as content, not chrome.",
+      "fix": "Optionally seed real episode titles and two-line synopses so the row text block fills as in the reference."
+    }
+  },
+  "similarity": 0.89,
+  "empty_state": false,
+  "deviations": [
+    "Episode list rows 1–2: the implementation gives both rows the lighter card background. In the reference only row 1 is filled, and hovered row 2 shows just the play overlay on a plain background with a divider beneath.",
+    "Episode list: the implementation has no hairline dividers between rows 1/2 and 2/3. The reference has a divider under every non-selected row.",
+    "Episode rows: the implementation uses a taller row pitch (about 157px vs about 145px), so fewer episodes fit on screen.",
+    "Episode descriptions: one short line in the implementation vs two-line synopses in the reference. This is a content difference, and the text block looks less dense as a result."
+  ],
+  "fixes": [
+    "Apply the #2f2f2f rounded-row background only to the current/first episode. Hover should only reveal the circular play overlay on the thumbnail.",
+    "Render a 1px #404040 divider beneath every non-selected episode row, including while it is hovered.",
+    "Reduce episode row height to about 145px (thumbnail about 170×96, vertical padding about 24px).",
+    "Seed realistic two-line episode synopses so the description block matches the reference density."
+  ],
+  "summary": "Near-faithful recreation of the More Info modal's Episodes list. The main gaps are the hover state wrongly filling the row background, dividers missing between the top rows, and slightly taller rows."
+}
+```

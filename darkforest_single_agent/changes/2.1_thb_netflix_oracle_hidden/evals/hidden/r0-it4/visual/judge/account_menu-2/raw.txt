@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The header matches: the NETFLIX wordmark is on the left, the text nav sits next to it, and search, bell, the Kids chip and the avatar with a caret are on the right. The dropdown is anchored in the same place, under the avatar at the top right, at about the same width (~275px) and right edge. The page behind it is different. The reference opens the menu over the 'Browse by Languages' page, which has a page title, a 'Select Your Preferences' language dropdown and a 6-column tile grid. The implementation opens it over the Home hero billboard with a 'Trending Now' row. Inside the menu, the rows are shorter (~50px vs ~58px) and there are 8 rows instead of 7.",
+      "fix": "Take the account-menu screenshot over the Browse by Languages page: 'Browse by Languages' title on the left, 'Select Your Preferences' plus a bordered 'Original Language' select on the right, and a 6-column 16:9 tile grid below. Make menu rows ~58px tall so the 7 rows fill about 72–425px."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: a profile row (Kids) with a square avatar, Manage Profiles with a pencil icon, Account with a person icon, a hairline divider, and 'Sign out of Netflix' with no icon. Missing: 'Transfer Profile' (icon of a profile on a phone/screen with an arrow) and 'Help Center' (circled question mark). Added: a 'Switch Profile' row that isn't in the reference. The implementation also lists the active profile (Visual Checker) inside the menu. The reference only lists the other profiles, not the one that is currently active. The nav pill highlights 'Home' here and 'Browse by Languages' in the reference, which follows from the different page underneath.",
+      "missing": [
+        "Transfer Profile menu item",
+        "Help Center menu item"
+      ],
+      "fix": "Change the menu items to: [other profiles…], Manage Profiles, Transfer Profile, Account, Help Center, divider, Sign out of Netflix. Remove 'Switch Profile' and leave the active profile out of the list."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both menus are a near-black panel with slightly rounded corners and a hairline border/edge. Neither has a heavy shadow, and both use one divider before sign-out. Spacing in the reference is a bit airier: taller rows and larger icons.",
+      "fix": "Increase row height to ~58px and the gap between icon and label to ~16px, keeping the current panel radius and border."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same dark scheme. The panel is a dark grey (#181818-ish) with white labels and white line icons, and the divider is a subtle grey. The Kids avatar uses the same gradient and the profile avatar the same blue. The only difference is the backdrop, which comes from the different page.",
+      "fix": "No colour change needed beyond matching the page underneath."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans at regular weight with white labels, around 17–18px, in sentence/title case. The reference labels read slightly larger. The 'Sign out of Netflix' footer is styled the same.",
+      "fix": "Raise menu label size by about 1px (~18px) to match the reference."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use outline icons: a pencil for Manage Profiles and a person for Account. Reference icons are bigger (~26px vs ~20px) with a heavier stroke. Profile avatars are rounded squares in both, but the reference's is larger (~36px). The Transfer Profile and Help Center (circled ?) icons are missing, and an extra monitor icon was added for Switch Profile.",
+      "fix": "Scale menu icons to ~26px with a ~1.5–2px stroke and avatars to ~36px. Add a transfer-profile glyph and a circled-question-mark glyph, and drop the monitor icon."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. The 'Transfer Profile' and 'Help Center' labels are missing, and 'Switch Profile' was added.",
+      "fix": "Use the labels 'Transfer Profile' and 'Help Center' and remove 'Switch Profile'."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown, rows 3–5: reference has 'Transfer Profile' (between Manage Profiles and Account) and 'Help Center' (after Account); the implementation has neither.",
+    "Account dropdown: the implementation adds a 'Switch Profile' row with a monitor icon that the reference doesn't have.",
+    "Account dropdown, top: the implementation lists the active profile ('Visual Checker') in the menu. The reference lists only the other profiles.",
+    "Page behind the menu: reference is the Browse by Languages grid (page title, 'Select Your Preferences' and 'Original Language' select, 6-column tile grid). The implementation shows the Home hero billboard and a 'Trending Now' row.",
+    "Header nav: the active pill is on 'Home' in the implementation and on 'Browse by Languages' in the reference.",
+    "Account dropdown rows: implementation rows and icons are smaller (~50px rows, ~20px icons) than the reference (~58px rows, ~26px icons, ~36px avatar)."
+  ],
+  "fixes": [
+    "Set the dropdown items to: other profiles, Manage Profiles, Transfer Profile, Account, Help Center, divider, Sign out of Netflix.",
+    "Remove the 'Switch Profile' item and leave the active profile out of the profile list.",
+    "Add outline icons for Transfer Profile (a profile on a screen with an arrow) and Help Center (circled question mark).",
+    "Enlarge menu rows to ~58px, icons to ~26px and profile avatars to ~36px, with labels at ~18px.",
+    "Show the menu over the Browse by Languages page (title, preferences select, tile grid) with the 'Browse by Languages' nav pill active."
+  ],
+  "summary": "The dropdown's placement, panel style, colours and sign-out footer match. It's missing the Transfer Profile and Help Center items, adds Switch Profile and the active profile, uses slightly smaller rows and icons, and opens over Home instead of the Browse by Languages page."
+}
+```

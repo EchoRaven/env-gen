@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same layout: a header strip with a hairline bottom border and the logo top-left at about 213px, then a centred ~490px form column. Below it sit a dark gradient body and a #161616-style footer band with the 4-column link grid starting at the same left gutter. The form column also has the same vertical order: heading, subhead, input, CTA, Get Help, small print. Differences: the extra password field pushes the CTA and everything below it about 60px down. The footer grid fills only 3 of 4 columns in one row; the reference has 4 columns × 2 rows.",
+      "fix": "Remove the password field so the CTA sits right under the single email input. Fill the footer grid with 4 columns × 2 rows of links."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "Present: logo, heading, subhead, floating-label email input, full-width red Continue button, 'Get Help' disclosure with chevron, small-print notice, footer phone/question line, footer link grid. Differences: the implementation adds a Password input that the reference's email-first step does not show. The footer link grid has 3 links in one row instead of 8 links across 4 columns × 2 rows.",
+      "missing": [
+        "footer link grid second row (4 columns × 2 rows; implementation shows only 3 links in 1 row)"
+      ],
+      "fix": "Delete the Password input from this step and collect the password on a later step if needed. Render 8 underlined footer links in a 4-column × 2-row grid."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat, minimal dark treatment: slightly rounded (~4px) input and button, hairline translucent input borders, no shadows, airy spacing, and a radial dark-red-to-black gradient background. The implementation's spacing between fields and the CTA is slightly larger.",
+      "fix": "Keep the treatment. Tighten the input-to-CTA gap to about 14px."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark scheme, maroon-to-black gradient, near-black footer band, white heading and grey secondary text. The CTA colour differs: the reference uses a slightly desaturated, warmer red (~#D6312A), while the implementation uses saturated Netflix red #E50914, which reads more punchy. The logo red is equivalent.",
+      "fix": "Change the Continue button background to about #D52F28 (the softer, warmer red in the reference)."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans-serif hierarchy: a ~32px bold heading, ~18px light-grey subhead, small floating label, ~18px semibold button, ~13px grey small print, and underlined footer links. The reference uses Netflix Sans, which is rounder and heavier in the heading. The implementation uses an Inter-like face with tighter, more geometric shapes and a slightly lighter heading.",
+      "fix": "Use Netflix Sans (or a rounder humanist sans) and make the heading a heavier bold at about 32px."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "The NETFLIX wordmark has the correct red and condensed form, and the Get Help chevron is present. The implementation's chevron is smaller and thicker than the reference's thin, ~14px outline chevron.",
+      "fix": "Enlarge the Get Help chevron to about 14px with a thin stroke."
+    },
+    "copy": {
+      "score": 0.72,
+      "notes": "These match: 'Enter your info to sign in', 'Or get started with a new account.', 'Email or mobile number', 'Continue', 'Get Help'. These differ: the small print says 'Passwords are verified server-side…' instead of the reCAPTCHA notice. The footer line says 'Questions? Use “Get Help”…' instead of 'Questions? Call <phone> (Toll-Free)'. The footer links are Home/Sign In/Create Account instead of FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information. There is an extra 'Password' label.",
+      "fix": "Change the small print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' and the footer line to 'Questions? Call 1-xxx-xxx-xxxx (Toll-Free)'. Replace the footer links with the reference's 8 labels."
+    }
+  },
+  "similarity": 0.83,
+  "empty_state": false,
+  "deviations": [
+    "form column: the implementation adds a Password input under the email field; the reference shows only the email input before Continue",
+    "footer: the implementation has 3 links in a single row (Home, Sign In, Create Account); the reference has a 4-column × 2-row grid of 8 links",
+    "form small print: the implementation's PBKDF2 notice replaces the reference's reCAPTCHA notice",
+    "footer heading line: 'Questions? Use “Get Help” on the sign-in page.' vs 'Questions? Call <phone> (Toll-Free)'",
+    "Continue button: saturated #E50914 red vs the reference's warmer, softer red (~#D6312A)",
+    "typography: Inter-like face with a lighter heading vs the reference's rounder, heavier Netflix Sans"
+  ],
+  "fixes": [
+    "Remove the Password input from the /login form so only the email input sits above Continue",
+    "Rebuild the footer link list as a 4-column × 2-row grid with FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information",
+    "Change the footer lead line to 'Questions? Call 1-844-569-7700 (Toll-Free)'",
+    "Change the small print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Set the Continue button background to about #D52F28",
+    "Switch to a rounder, heavier sans (Netflix Sans or a fallback) for the heading and body"
+  ],
+  "summary": "The structure, chrome, gradient and form styling closely match. The main gaps are the extra password field, a sparser footer link grid with different copy, and a more saturated CTA red."
+}

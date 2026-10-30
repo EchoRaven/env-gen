@@ -1,0 +1,72 @@
+You are building a complete web application from a product specification. This is iteration 1 of 5.
+
+TASK (verbatim from the benchmark)
+
+Build a pixel-faithful, fully-functional Netflix web clone — a multi-profile video streaming
+catalog. Match every reference screenshot exactly (dark #141414 theme, red #e50914 accent, the
+NETFLIX wordmark, poster rails, hero billboard, title-detail modal, full-screen player). Use the
+REAL provided assets: seed the catalog from dataset/titles.json (real titles, posters, backdrops,
+synopses), play real trailer clips from the assets, and use the provided logo, icon set and fonts.
+Complete functionality with EVERY interactive control wired to a real backend action — no dead
+links, no placeholder stubs, no fabricated data; honest empty states. Full design details are in
+design/references and the spec doc.
+
+Each profile sees only its own My List, ratings and Continue Watching (per-profile private data).
+
+Endpoints:
+- POST /auth/register
+- POST /auth/login
+- GET /api/profiles
+- POST /api/profiles
+- GET /api/titles
+- GET /api/titles/{id}
+- GET /api/titles/{id}/episodes
+- GET /api/titles/trending
+- GET /api/titles/top10
+- GET /api/genres
+- GET /api/genres/{id}/titles
+- GET /api/search
+- GET /api/my-list
+- POST /api/my-list
+- DELETE /api/my-list/{id}
+- POST /api/titles/{id}/rating
+- GET /api/continue-watching
+
+Data model:
+- table: users: id, email, password_hash, name
+- table: profiles: id, user_id, name, avatar, is_kids
+- table: titles: id, name, kind, year, genre, maturity_rating, rating, synopsis, poster, backdrop, video_url, duration, top10_rank
+- table: episodes: id, title_id, season, number, name, synopsis, duration, thumbnail
+- table: genres: id, name
+- table: title_genres: id, title_id, genre_id
+- table: my_list: id, profile_id, title_id
+- table: ratings: id, profile_id, title_id, value
+- table: continue_watching: id, profile_id, title_id, progress_seconds
+
+Screens: landing, login, profiles (who's watching), browse_home, shows, movies, games,
+new_and_popular, genre_category, title_detail, player, my_list, browse_by_languages.
+
+MATERIALS (read-only, in /workspace/design/)
+- DESCRIPTION.txt: the task text above.
+- docs/spec.md: the full spec.
+- references/: the reference screenshots ("design/references" in the task text).
+- assets/: the real assets (logo, icons, fonts, posters, backdrops, trailer clips).
+- dataset/titles.json: the catalog to seed from.
+
+WHAT TO DELIVER (everything in /workspace, outside design/)
+- docker/docker-compose.yml starts the whole app from a clean state. Services are named `database` (Postgres 16), `backend` (FastAPI) and `frontend` (React + Vite); `backend` and `frontend` publish their ports to the host. Build contexts and bind mounts must stay inside /workspace; the evaluator refuses host mounts, host networking and privileged containers.
+- app/backend/, app/frontend/ (pages in app/frontend/src/pages/), app/database/init/ (schema and seed SQL). Anything the containers need, such as assets, must be inside the build contexts or mounted from inside /workspace.
+- The backend serves GET /health; POST /auth/register and POST /auth/login return an `access_token`; every /api/* endpoint requires `Authorization: Bearer <token>` and answers 401 without it. All 17 endpoints exist at exactly the listed paths.
+
+AUTOMATED CHECKS (their report reaches you after each submission)
+The harness runs env-gen's deterministic api_smoke on each submission. It does a clean docker compose build and boot, then checks health, register/login and that passwords are checked, that every contract endpoint is implemented, has the right response shape and enforces auth, that writes persist, a contract-derived business chain (register, create, list, read, delete), and that the frontend is reachable, navigable and has no dead controls.
+
+YOUR ENVIRONMENT
+There is no docker inside this sandbox, so you cannot boot the compose stack here. Node 22 (node, npm) and Python 3.11/3.12 are available, and you can install packages from npm and PyPI.
+
+How each iteration works:
+1. Continue from everything already in /workspace and in this conversation. Using the current state and the latest evaluator report, produce a better version.
+2. Test it yourself with whatever you can run here: builds, your own tests, a local database, a headless browser, and your own review for bugs and security holes. You cannot run the evaluator yourself.
+3. When you are confident this version is ready, submit it by ending your turn with a short summary of what changed and what is still missing or broken. Each submission is evaluated once, and the iteration ends there.
+
+After you submit, the harness snapshots /workspace and evaluates it. You will receive the report of the automated checks described above at the start of the next iteration. Every submission is also evaluated by further checks that you cannot see, against the task text, the spec and the reference screenshots. Work autonomously and do not ask questions.

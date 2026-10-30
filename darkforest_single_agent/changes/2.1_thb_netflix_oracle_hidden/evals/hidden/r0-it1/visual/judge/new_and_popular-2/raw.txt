@@ -1,0 +1,57 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Same skeleton: dark top nav bar with the wordmark at left, centred nav links, and search/bell/Kids/avatar on the right. Below it are full-bleed horizontal rows in the same order: New on Netflix, Top 10 TV Shows, Top 10 Movies, Coming This Week. Both use a 67px left gutter, the row titles sit in the same place, the right-side page indicators match, and the last tile is cut off at the right edge. Differences: the first row starts about 25px higher (title at y≈137 vs 164), so the page is slightly more compressed. A hover preview card stays open over the middle of the Top 10 rows and covers tiles 3–5 in both rows. The reference shows no such overlay.",
+      "fix": "Show no hover/preview card in the default state; render it only on real pointer hover and close it when the pointer leaves. Add about 25px of top padding above the first row title so it sits around y≈164."
+    },
+    "components": {
+      "score": 0.82,
+      "missing": [],
+      "notes": "Everything in the reference is present: 7 nav links with a pill-highlighted active 'New & Popular', the search icon, the bell, the Kids profile chip, the avatar with caret, row titles, row page indicators, 16:9 landscape tiles with a red TOP 10 corner badge and a red bottom status pill, Top 10 rows with large outlined rank numerals behind portrait posters, and the start of the Coming This Week row. One component is invented: an expanded preview card (play, +, thumbs, expand chevron, maturity box, seasons, HD tag, genre list) sitting over the Top 10 rows. The reference does not show it.",
+      "fix": "Remove the persistent expanded preview card from the rendered state, or make sure it only appears on hover."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat, dark streaming style: tiles with small corner radii, no borders, small solid red pills, and the active nav item in a rounded grey pill. The implementation's tile gaps are slightly tighter (about 8px vs 8–10px). The shadowed, elevated card adds a layer of depth that the reference doesn't have.",
+      "fix": "Hide the elevated preview card. Keep tile spacing at about 8–10px."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same near-black #141414 background, white row titles, the same Netflix red for the wordmark, badges and TOP 10 tags, and the same grey active-nav pill and grey outline on the rank numerals. The colour system matches.",
+      "fix": "No change needed beyond removing the overlay card's grey surface."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same kind of sans-serif. Row titles are similar in size, though slightly larger and heavier in the implementation. Nav weights match, with the active item bold. Badge text is bold and small. The implementation's landscape tiles carry a generic condensed-caps title in text over the art, where the reference uses each title's own logo artwork. That reads close enough, but it is visibly a uniform text lockup.",
+      "fix": "Reduce the row title size slightly (about 28px, regular/medium weight). Where available, use title-logo artwork instead of a uniform condensed text overlay."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The line-style search and bell icons, the Kids gradient square, and the blue smiley avatar with caret all match. TOP 10 badges match. The large rank numerals have the same black fill and grey stroke, and the portrait posters overlap them in the same way. Image crops follow the reference: 16:9 cover in row 1 and roughly 2:3 posters in the Top 10 rows.",
+      "fix": "None significant."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels, the row headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week') and the badge wording style ('Recently Added', 'New Episodes') all match the reference terminology and casing.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "Centre of the Top 10 rows: the implementation has an expanded hover preview card (artwork, play/+/like/expand buttons, TV-14, '2 Seasons', HD, genres) covering tiles 3–5 of both Top 10 rows; the reference shows no overlay",
+    "Top of the page: the implementation's first row starts about 25px higher than the reference, so the vertical rhythm under the nav is tighter",
+    "Landscape tiles in row 1: titles are a uniform condensed caps text overlay instead of per-title logo artwork",
+    "Row titles: slightly larger and heavier than the reference"
+  ],
+  "fixes": [
+    "Don't render the expanded preview card by default; show it only on actual hover and clear it when the pointer leaves",
+    "Increase the space between the nav bar and the 'New on Netflix' title by about 25px",
+    "Reduce the row heading font size and weight slightly to match the reference",
+    "Prefer title-logo artwork on landscape tiles over a generic text lockup"
+  ],
+  "summary": "A close copy of the reference's nav, row order, Top 10 numeral treatment and badges; the main gap is an invented hover preview card covering the Top 10 rows, plus small spacing and type-size differences."
+}
+```

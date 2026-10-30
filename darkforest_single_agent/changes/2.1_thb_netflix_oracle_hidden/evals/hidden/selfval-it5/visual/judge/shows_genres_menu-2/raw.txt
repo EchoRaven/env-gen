@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.82,
+      "notes": "Same skeleton: full-bleed hero, transparent top nav (logo, 7 links, Shows pill active, search/bell/Kids/avatar right), 'TV Shows' heading with Genres dropdown beside it, a 3-column genre panel anchored under the dropdown, hero title block bottom-left, mute + rating badge on the right edge, and the 'Today's Top Picks for You' carousel at the bottom. Differences: the genre panel is shorter and narrower (5 rows instead of 9, about 415px wide instead of 470px). The hero block runs taller because of an added metadata row and synopsis, which pushes the CTAs down to y≈760 (reference ≈712) and the carousel down to y≈920 (reference ≈842). As a result the row tiles are cropped at the bottom of the viewport.",
+      "fix": "Remove the metadata row and synopsis from the hero so the CTAs sit about 60px below the title art. Pull the 'Today's Top Picks' row up so its heading sits at about 76% of viewport height and the full tiles are visible. Let the genre panel grow to 3 columns × up to 9 rows."
+    },
+    "components": {
+      "score": 0.75,
+      "missing": [
+        "'NETFLIX' red series badge above the hero title",
+        "graphic title-logo treatment for the hero (rendered as plain text instead)",
+        "underlined hover/active state on a genre link",
+        "corner badges inside carousel tiles ('New Season' / 'Recently Added' / 'New Episode' + 'Watch Now'), fully visible within the tile"
+      ],
+      "notes": "Present: nav with all 7 items, active Shows pill, search, bell, Kids profile, avatar with caret, the 'TV Shows' title, a Genres select with caret, a multi-column genre menu, Play and More Info buttons, mute button, rating badge, carousel with TOP 10 badges and page indicator. Invented: a metadata line (genre · year · seasons · rating) and a two-line synopsis under the hero title, neither of which the reference shows in this state. The genre menu holds 16 entries instead of 26, so it reads as a much sparser panel. Tile badges are cut off at the bottom edge.",
+      "fix": "Delete the hero meta row and synopsis. Add the small red 'NETFLIX' series label above the title. Fill the genre panel to about 26 entries arranged column-first, 9 per column, with an underline on hover. Make sure tile badges render inside the visible tile."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, cinematic Netflix language: square-cornered dropdown with a thin white border, a near-black opaque menu panel, slightly rounded white and translucent-grey CTAs, a pill highlight on the active nav item, and the rating badge with a left white bar. In the reference the Genres trigger has a semi-transparent darker fill with a softer border, and the menu is slightly translucent. Hero CTAs are a touch smaller in the implementation.",
+      "fix": "Give the Genres trigger and panel a slightly translucent black (rgba(0,0,0,0.85)) with a grey (#bbb-ish) 1px border, and match the CTA padding (Play about 158×58px, More Info about 214×58px)."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Dark scheme with Netflix red for the logo and badges, white text, a translucent grey secondary CTA and the same gradient vignette over the hero. The palettes match, and differences come from the artwork.",
+      "fix": "Keep as is. Optionally add a slightly stronger bottom-left vignette so the title area matches the reference's contrast."
+    },
+    "typography": {
+      "score": 0.72,
+      "notes": "Nav, heading, genre list and CTA sans-serif sizes and weights closely match. The hero title is set as huge condensed bold text instead of a title-art image lockup, and the extra meta and synopsis add two text levels the reference doesn't have in this state. Genre item size and spacing match (about 29px rows).",
+      "fix": "Render the hero title as a logo image (or a styled lockup at roughly the reference's 410×100px footprint) instead of giant plain text, and drop the meta and synopsis text levels."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search, bell, mute and info-circle icons, a filled play triangle, the Kids tile and smiley avatar, and the dropdown caret all match. Tile imagery uses the same 16:9 cover crop with TOP 10 badges. The reference tiles show the badge ribbons fully, but in the implementation they're clipped by the viewport.",
+      "fix": "Keep the icon set. Make sure the carousel tiles sit fully in view so the ribbon badges at the bottom-center show."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match exactly. Genre names differ but are catalog data, so they aren't penalized beyond the count already noted.",
+      "fix": "None needed beyond populating the genre list."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-left: the implementation adds a metadata row (genre · year · seasons · rating) and a two-line synopsis under the title, which the reference doesn't show",
+    "hero title: the implementation renders the title as giant plain condensed text, while the reference uses a graphic title-art lockup with a small red 'NETFLIX' series badge above it",
+    "carousel: because of the taller hero block, the 'Today's Top Picks' row starts about 80px lower and the tiles and their ribbon badges are cut off at the bottom edge",
+    "genres menu: the panel holds 5 rows (16 items) instead of the reference's 9-row, 26-item, 3-column grid, so it's noticeably smaller",
+    "genres trigger/panel: the reference uses a translucent dark fill with a soft grey border, while the implementation uses an opaque black fill with a bright white border",
+    "hero CTAs: Play and More Info are slightly narrower than in the reference"
+  ],
+  "fixes": [
+    "Remove the hero metadata row and synopsis in this state so the Play and More Info buttons sit directly under the title art",
+    "Replace the plain-text hero title with a title-art image lockup (about 410×100px) and add the small red 'NETFLIX' badge above it",
+    "Move the 'Today's Top Picks for You' row up (heading at about y=842 on a 1108px-tall viewport) so the full tiles, including their bottom ribbon badges, are visible",
+    "Fill the genre dropdown with about 26 entries, laid out column-first, 9 per column, across 3 columns, with an underline on hover",
+    "Style the Genres trigger and panel with a translucent black background and a grey 1px border",
+    "Widen the Play and More Info buttons to match the reference padding"
+  ],
+  "summary": "This is a close Netflix Shows + Genres dropdown recreation: chrome, dropdown and carousel all match, but the hero adds a meta row and synopsis the reference doesn't have, uses plain-text instead of title art, and the genre menu and carousel placement are off."
+}
+```

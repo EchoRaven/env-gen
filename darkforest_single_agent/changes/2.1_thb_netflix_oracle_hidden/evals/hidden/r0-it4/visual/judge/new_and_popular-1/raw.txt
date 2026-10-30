@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches: a horizontal top nav with the wordmark on the left, the nav links next to it and the utility icons on the right; full-bleed horizontal carousels with a ~67px left gutter; and the same section order (New on Netflix, Top 10 TV Shows, Top 10 Movies, Coming This Week). The ranked rows pair a giant number with a poster, as in the reference. Page indicators sit top-right of each row in both. The vertical rhythm is a bit tighter in the implementation: the first row heading is ~28px higher and the ranked row tiles are slightly narrower. A hover-preview card floats over the middle of the Top 10 rows, hiding items 3 and 4 in both rows. The reference does not show this state.",
+      "fix": "Keep the hover-preview card closed in the resting state so it only opens on real hover. Raise the top padding above 'New on Netflix' by ~25px. Widen the ranked poster tiles slightly (~145px wide × ~207px tall) so the number+poster pairs fill the row as they do in the reference."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Everything in the reference is present: 7 nav items with the active pill on 'New & Popular', search, bell, the Kids profile chip, the avatar with a caret, 16:9 landscape tiles with title art, the TOP 10 corner badges, the red 'New Season'/'Recently Added' bottom badges, the outlined rank numbers, the row page indicators and the peeking next tile. The invented element is an expanded preview card (play/add/like/expand buttons, maturity rating, seasons, HD tag, genres) covering the middle of the page. The reference also pairs a red label with a white secondary pill ('New Episode' + 'Watch Now'), and that dual-badge treatment never appears in the implementation.",
+      "missing": ["dual badge treatment (red label + white 'Watch Now' pill) on landscape tiles"],
+      "fix": "Remove the open preview overlay from the default render. Support the optional white secondary pill next to the red badge on landscape tiles."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat, cinematic, dense design language. The tiles have small radii and no shadows, rows are separated by whitespace, and the active nav item is a pill. The floating card adds elevation and depth that the reference does not have.",
+      "fix": "Remove the elevated hover card from the resting screen."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The near-black #141414 base, white text, Netflix red badges and wordmark, grey active-nav pill and dark-filled rank numerals with grey outlines all match. The overlay adds a lighter grey surface that the reference does not have.",
+      "fix": "No palette change needed beyond removing the overlay surface."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Same sans-serif nav labels and section headings at similar sizes and weights, plus small bold white badge text. The implementation's section headings render a touch larger and bolder (~30px vs ~27px). The landscape tiles use one uniform condensed all-caps title treatment rather than per-title logo art, which is acceptable as a stand-in.",
+      "fix": "Reduce the row headings to ~26–27px at regular/medium weight."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The outline search and bell icons, the Kids gradient chip, the square smiley avatar with a caret, the TOP 10 corner badge and the outlined rank numerals all match. The aspect ratios match: 16:9 landscape tiles and 2:3 portrait posters with cover crop. The overlay adds circular outline action icons that the reference does not have.",
+      "fix": "Remove the preview card's icons from the default view. Make the rank numerals slightly larger so they sit flush against the poster's left edge."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels, section headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week') and badge labels match. The implementation says 'New Episodes' where the reference says 'New Season'/'New Episode', but these are data-driven labels.",
+      "fix": "Use the singular 'New Episode' and add 'New Season' as a label option."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Center of the Top 10 TV Shows and Top 10 Movies rows: a large expanded hover-preview card (artwork, play/add/like/expand buttons, TV-14 / 2 Seasons / HD, genres) covers ranks 3–4 in both rows. The reference shows no overlay.",
+    "Landscape tiles in the 'New on Netflix' row: the reference pairs a red badge with a white 'Watch Now' pill on one tile, and the implementation never shows that dual-badge treatment.",
+    "Vertical spacing: the implementation starts the first row ~28px higher, and its rows sit slightly closer together than in the reference.",
+    "Ranked rows: the implementation's poster tiles are slightly narrower (~143px vs ~147px), with a small gap between each numeral and its poster. In the reference the posters butt up against the numerals.",
+    "Row headings: the implementation's headings are slightly larger and heavier than the reference's."
+  ],
+  "fixes": [
+    "Render the screen with no hover-preview card open: only mount it on real pointer hover, and don't trigger it from the initial cursor position.",
+    "Add optional secondary white pill badges (e.g. 'Watch Now') next to the red bottom badge on landscape tiles.",
+    "Increase the top padding above 'New on Netflix' by ~25px and match the row spacing (~270px between Top 10 row headings).",
+    "Size the ranked posters to ~147×207px and place them flush against the right edge of the rank numeral.",
+    "Reduce the row heading size to ~26–27px at regular/medium weight."
+  ],
+  "summary": "A near-faithful match of the reference layout, nav, ranked rows and badges, but an open hover-preview card, which the reference doesn't show, covers the middle of both Top 10 rows."
+}
+```

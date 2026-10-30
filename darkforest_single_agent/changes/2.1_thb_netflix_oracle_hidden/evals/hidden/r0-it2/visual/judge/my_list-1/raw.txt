@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top nav matches: left-aligned wordmark, 7 text links with a pill on the active item, and search, bell, Kids and avatar clustered on the right. The 'My List' heading sits top-left at the same gutter (~67px), and the tiles form a left-aligned 16:9 grid with ~8px gaps. Differences: the tile row starts at ~y225, while the reference row sits at ~y303 (it is pushed down / vertically centred around the expanded card). The reference also has an enlarged preview card (~440px wide) overlaying the third tile slot. The implementation shows no such layered state, just a flat row.",
+      "fix": "Leave more vertical room above the grid (row top at ~y300). Have hovered tiles expand into an overlaying preview card ~1.5x tile width that rises above the row's top edge, as in the reference."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Nav, heading, title tiles with a title-lockup overlay and red badge pills are all present. Everything in the reference's main focal element is missing: the expanded hover preview card with its video/artwork header, small N logo corner badge, title lockup, mute toggle, white circular play button, rating pill (thumbs down / thumbs up / double thumbs up) with an 'I like this' tooltip, circular 'more info' chevron, maturity box + runtime + HD badge row, and genre tags separated by dots. The implementation also adds a 'TOP 10' corner badge and a 'Recently Added' badge on every tile. The reference only shows a single 'New Season' badge, so badge-on-every-tile is extra noise.",
+      "fix": "Add a hover/focus preview card on grid tiles: artwork header with mute button, then a control row (white filled play circle, grouped rating pill with 3 thumb buttons and a tooltip, outlined chevron circle on the right), then a metadata row (outlined maturity box, runtime, outlined HD chip), then genre tags separated by dots. Show badges only where the data warrants them.",
+      "missing": [
+        "expanded hover preview card",
+        "mute/volume toggle on preview",
+        "white circular play button",
+        "rating pill (thumbs down / thumbs up / love)",
+        "'I like this' tooltip",
+        "circular more-info chevron button",
+        "maturity rating box + runtime + HD badge row",
+        "genre tags row with dot separators"
+      ]
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat dark Netflix language: slightly rounded tiles (~4px), no borders, a pill on the active nav item, small red rectangular badges. The reference's preview card adds an elevated surface (#181818 panel, soft shadow, rounded corners) that the implementation never shows. Overusing badges makes the implementation busier.",
+      "fix": "Render the preview card as a #181818 rounded (~6px) panel with a soft drop shadow. Use badges sparingly."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Matches: #141414 page base, Netflix red wordmark and badges, white/grey nav text, grey active pill. The red-badge density is higher in the implementation. The elevated card surface and white play button are missing.",
+      "fix": "Add the #181818 card surface with a white play button and grey-outlined circular controls. Reduce red badges to the occasional one."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif nav at the same size and weight, bold active item, large regular-weight 'My List' heading. The tile title lockups use a condensed bold display face, as in the reference. The implementation heading looks slightly larger. The card's metadata typography (runtime, genre tags, tooltip) is absent.",
+      "fix": "Match the heading size (~36px). Add the card metadata in ~16px regular white, with grey dot separators."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Outline search and bell icons, a gradient Kids tile, a blue smiley avatar square with a caret, 16:9 cover-cropped artwork, and a red N wordmark all match. Missing: the outline thumb icons, filled play triangle, mute-speaker icon, chevron-down in an outlined circle, and the small N corner logo on artwork. The added 'TOP 10' corner badge is not shown in the reference.",
+      "fix": "Add outline thumbs-down, thumbs-up and double-thumbs icons, a filled play triangle, a speaker-mute icon and a chevron-down circle in the preview card. Drop the TOP 10 corner badge unless the data calls for it."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels match word for word (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids), and so does the heading 'My List'. The badge copy differs ('Recently Added' everywhere vs 'New Season'). The tooltip copy 'I like this' is missing.",
+      "fix": "Add the 'I like this' tooltip on thumbs-up hover. Use badge copy like 'New Season' only on qualifying titles."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Grid centre/right (third tile slot): the reference shows an expanded hover preview card (artwork header, play, rating pill, chevron, metadata, genre tags). The implementation shows only flat tiles with no expanded card.",
+    "Preview card controls: the white play circle, the 3-button thumb rating pill with the 'I like this' tooltip, and the outlined chevron circle are absent from the implementation.",
+    "Preview card metadata: the outlined 'R' maturity box, runtime, HD chip and dot-separated genre tags are absent.",
+    "Grid vertical position: the reference tile row sits at ~y303–467. The implementation row is higher, at ~y225–389.",
+    "Tile badges: the implementation puts a red 'Recently Added' pill on every tile plus a 'TOP 10' corner flag. The reference shows a single 'New Season' pill on one tile.",
+    "Preview artwork: the reference has a mute toggle and a small red N logo in the corner. Neither appears in the implementation."
+  ],
+  "fixes": [
+    "Build a tile hover/focus preview card (~440px wide, #181818, rounded, shadowed) that overlays and enlarges the tile, with the artwork header extending above the row.",
+    "In the card, add a control row: filled white play circle, grouped rating pill (thumbs down / thumbs up / double thumbs up) with an 'I like this' tooltip on hover, and an outlined chevron-down circle aligned right.",
+    "Below the controls, add a metadata row (outlined maturity box, runtime, outlined HD chip) and a genre tags row with grey dot separators.",
+    "Add a mute toggle circle at the bottom-right of the preview artwork and a small red N logo at the top-left.",
+    "Move the grid row down to ~y300 so it leaves room for the expanded card.",
+    "Show badges only where the data warrants them, not on every tile, and remove the TOP 10 corner flag from the default tile treatment."
+  ],
+  "summary": "The chrome, heading and tile grid match closely, but the reference's main element, the expanded hover preview card with play, rating and metadata controls, is entirely missing."
+}
+```

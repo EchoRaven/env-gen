@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The overall structure matches: full-bleed hero with a transparent top nav overlaid on it, 'TV Shows' title next to the Genres dropdown at the top left, title lockup and buttons at the left, mute and maturity badge at the right edge, and a 'Today's Top Picks for You' row at the bottom. The genres dropdown panel is the problem. It is one narrow column (~235px wide, 6 rows), while the reference panel is wide (~470px) with three columns and about 9 rows each. The hero also adds a rank line, a metadata row and a 3-line synopsis between the title and the buttons. That pushes the buttons and the row lower, so the row starts at ~y=935 instead of ~y=840.",
+      "fix": "Make the genres panel a 3-column grid (~470px wide, columns ~145/120/190px, ~29px row pitch) placed just under the Genres trigger. Remove the extra hero text block so the Play/More Info buttons sit right under the title art at ~y=710 and the row heading is at ~y=840."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "These are present: the nav with 7 items and a pill on the active 'Shows' item, the search and bell icons, the Kids entry, the profile with caret, the Genres select trigger, the dropdown panel, the Play and More Info buttons, the mute button, the TV rating flag and the carousel row. The dropdown has only 6 entries in one column. The reference has a 3-column list of about 26 genres, and one of them ('K-Dramas') is underlined as the hover state. The hero adds components the reference doesn't show: a Top 10 rank badge with '#N in TV Shows Today', a metadata row and a synopsis. In the row, the tiles have no bottom-centered red status pills ('New Season', 'Recently Added', 'New Episode' / 'Watch Now'), and only one tile has the TOP 10 corner badge where the reference has several. The profile avatar is a duplicate Kids gradient icon, not a profile avatar tile.",
+      "missing": [
+        "3-column genres grid with full genre list",
+        "hover/underline state on a genre link",
+        "red status pill badges on row tiles (New Season / Recently Added / New Episode + Watch Now)",
+        "profile avatar distinct from Kids icon"
+      ],
+      "fix": "Fill the genres dropdown with the full 3-column list and underline a link on hover. Remove the Top 10 rank line, metadata row and synopsis from the hero. Add red status pill badges at the bottom center of the row tiles. Use a solid-color square profile avatar, not the Kids icon."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "The Netflix design language is the same: a flat, cinematic full-bleed hero, a near-black semi-opaque dropdown with square corners, a thin white-bordered select, a white Play button and a translucent grey More Info button, and a square-cornered maturity flag with a left border. The tiles have the same slight rounding. The extra synopsis text makes the hero feel denser than the reference's sparse title-plus-buttons composition.",
+      "fix": "Keep the hero sparse with only title art and buttons. Size the dropdown panel generously in three columns with ~29px row spacing."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The dark scheme is the same, with Netflix red for the wordmark and Top 10 badges, a white primary CTA, a grey-translucent secondary CTA, a black ~90% opacity dropdown and a dark bottom gradient. The colored accents that are missing are the red status pills on the row tiles.",
+      "fix": "Add red (#E50914) status pills with white bold text on the row tiles."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Typography is a close match: a sans-serif UI face, a large 'TV Shows' heading, ~15px regular white genre links, ~22px bold Play/More Info labels and a medium-weight row heading. There is no underline hover treatment on genre links. The extra hero text adds hierarchy levels the reference doesn't have (a bold rank line, a metadata caption and body copy).",
+      "fix": "Remove the extra hero text levels. Add a text-decoration underline on hover for genre links."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Icons match: outline search, bell and info icons, a filled play triangle, a circled muted-speaker icon and a small caret. Landscape 16:9 tiles have the title art at the bottom left, and the TOP 10 badge is in the top-right corner. The profile avatar uses the Kids gradient icon instead of a solid blue square avatar with a face glyph. The TOP 10 corner badges are used sparingly.",
+      "fix": "Replace the profile avatar with a rounded-square solid-color avatar. Apply TOP 10 corner badges and the bottom-center status pill treatment to tiles as in the reference."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match. The genre labels differ in vocabulary and coverage: 'Action & Adventure', 'Animation' and 'Comedy' versus 'Action', 'Anime' and 'Comedies'. The reference labels are missing, such as AMC Collection, British, Classic & Cult, Crime, Documentaries, Dramas, Emmys®, Horror, International, K-Dramas, Kids, LGBTQ, Mysteries, Romance, Science & Nature, Spanish-Language, Sports, Stand-Up & Talk Shows, Teen, Thriller and USA 250!.",
+      "fix": "Use the reference genre list and wording in alphabetical column order: Action…Dramas, then Emmys®…Romance, then Sci-Fi & Fantasy…USA 250!."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Genres dropdown panel: implementation shows a narrow single-column list of 6 genres; reference shows a wide 3-column grid of ~26 genres.",
+    "Genres dropdown wording: implementation uses 'Action & Adventure', 'Animation', 'Comedy' and 'Family'; reference uses 'Action', 'Anime', 'Comedies', etc., plus many entries not in the implementation.",
+    "Hero left block: implementation adds a Top 10 badge with '#4 in TV Shows Today', a genre/year/seasons/rating metadata row and a 3-line synopsis; reference has only the title artwork followed directly by the Play/More Info buttons.",
+    "Hero vertical rhythm: because of the extra text, the buttons and the 'Today's Top Picks' row sit ~90px lower than in the reference.",
+    "Row tiles: implementation has no bottom-centered red status pills ('New Season', 'Recently Added', 'New Episode'/'Watch Now') that appear on most reference tiles.",
+    "Row tiles: the TOP 10 corner badge appears on only one implementation tile; reference shows it on four.",
+    "Header right: the profile avatar is a copy of the Kids gradient icon; reference uses a distinct blue square avatar.",
+    "Dropdown link state: reference shows an underlined hovered genre ('K-Dramas'); implementation shows no hover state."
+  ],
+  "fixes": [
+    "Rebuild the genres dropdown as a ~470px-wide, 3-column grid with the reference genre list in alphabetical column order (9/9/8 rows, ~29px pitch) and underline links on hover.",
+    "Remove the Top 10 rank line, metadata row and synopsis from the hero so the Play/More Info buttons sit right under the title artwork.",
+    "Move the 'Today's Top Picks for You' row up to ~y=840 to match the reference's hero proportion.",
+    "Add red status pill badges centered at the bottom edge of row tiles, and show TOP 10 corner badges on the relevant tiles.",
+    "Replace the duplicate Kids icon used as the profile avatar with a solid-color rounded-square profile avatar."
+  ],
+  "summary": "The Netflix shows page chrome and hero match closely. The genres menu is a sparse single column instead of the reference's wide 3-column grid, the hero adds a synopsis and metadata block, and the row tiles lack the red status pills."
+}
+```

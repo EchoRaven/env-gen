@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Matches the reference: a centered overlay about 960px wide over a blurred title-detail page, with a full-width red top rule, X at the top right, a centered title and subtitle, three evenly spaced rating columns, and a centered 'Got it!' button. Differences: the red rule sits about 16px lower (y≈318 vs 302). The X sits against the rule instead of about 30px below it. The rating columns are wider, so their captions wrap differently. The 'Got it!' button sits about 15px lower. The reference has a faint hairline at y≈802 spanning the modal width, and the implementation does not.",
+      "fix": "Move the red rule up to y≈302. Put the X about 30px below the rule, inset about 30px from the right edge. Narrow each rating column to about 170px so the captions wrap onto two balanced lines. Put the 'Got it!' button about 75px below the captions. Add a hairline divider at the bottom edge of the modal, the same width as the red rule."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "Everything in the reference is present: the red top rule, the close X, the title, the subtitle, the three icon+caption rating options (thumbs down, thumbs up, double thumbs up) and the dark 'Got it!' button. The implementation adds one thing the reference doesn't show: a grey rounded highlight box behind the 'We won't suggest…' option.",
+      "missing": [
+        "faint hairline divider at the bottom edge of the modal"
+      ],
+      "fix": "Remove the default grey highlight on the first rating option, or only show it on hover or focus. Add the bottom hairline divider."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, minimal overlay with no card surface, content sitting straight on the dimmed backdrop, and a small square-ish dark button. The extra rounded grey tile on the first option adds a card treatment the reference doesn't have. The implementation's backdrop is blurred more heavily and is darker, so the page behind it is almost illegible. In the reference you can still make out the hero art and its colors.",
+      "fix": "Reduce the backdrop blur and dim to about 60–65% black, so the hero art and its colors still show through as in the reference. Drop the tile background on the rating options."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same palette: a Netflix-red rule, white title, light-grey subtitle, white icons and captions, and a near-black button with white text. The implementation's backdrop is darker and more desaturated. The grey (#2a2a2a-ish) option tile adds a surface color the reference doesn't use.",
+      "fix": "Lighten the overlay scrim so the background stays visibly tinted by the page art, and remove the grey option surface."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "Same hierarchy: a large bold centered title, a regular grey subtitle, small white two-line captions and a bold button label. The reference uses Netflix Sans, which is rounder with tighter letterforms. The implementation uses an Inter-like grotesque, and its title is larger (~56px vs ~46px) and heavier. Caption wrapping differs: 'We won't suggest this to / you again' instead of 'We won't suggest / this to you again', and 'true / fan!' has an orphan.",
+      "fix": "Use Netflix Sans, or a close rounded-grotesque fallback, for the whole modal. Set the title to about 46px semibold. Narrow the caption width so the lines break as 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!'."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The filled white thumbs-down, thumbs-up and double-thumbs icons match in style and size. The close X is a thin line in both, but slightly thinner and lighter in the implementation.",
+      "fix": "Make the close X stroke about 3px and set it to about 32px."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "The title, subtitle, three captions and 'Got it!' label match word for word, including casing and punctuation.",
+      "fix": "None."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "first rating option: the implementation draws a grey rounded highlight tile behind the thumbs-down option, which the reference renders on the bare backdrop",
+    "title: the implementation's 'Rate for better recommendations' is larger and heavier, set in an Inter-like font instead of the reference's Netflix Sans",
+    "rating captions: the wider columns change the line breaks ('…this to / you again', 'more like / this', 'a true / fan!' instead of the reference's balanced two-line wraps)",
+    "backdrop: the implementation's scrim is darker and blurred more heavily, so the hero art behind the modal is barely visible, while the reference keeps it recognisable",
+    "header: the red rule sits about 16px lower, and the close X is right against it instead of about 30px below",
+    "modal bottom: the faint full-width hairline divider below 'Got it!' in the reference (y≈802) is missing",
+    "'Got it!' button: sits about 15px lower relative to the captions"
+  ],
+  "fixes": [
+    "Remove the default background tile on the rating options, or show it only on hover or focus",
+    "Switch the modal font to Netflix Sans (or a close fallback) and reduce the title to about 46px semibold",
+    "Constrain each rating column to about 170px so the captions wrap as in the reference",
+    "Lighten the overlay scrim and reduce the blur so the page art shows through",
+    "Move the red rule to y≈302 and put the X about 30px below it with a thicker stroke",
+    "Add a hairline divider at the modal's bottom edge and tighten the gap above 'Got it!'"
+  ],
+  "summary": "The implementation follows the reference closely in structure, copy, icons and colors. The gaps are an extra highlight tile on the first option, font and title-size differences, caption wrapping and a darker, blurrier backdrop."
+}
+```

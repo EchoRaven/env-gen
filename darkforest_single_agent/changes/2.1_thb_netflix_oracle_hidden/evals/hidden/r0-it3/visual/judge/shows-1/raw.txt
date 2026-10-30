@@ -1,0 +1,58 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.82,
+      "notes": "The skeleton matches: a transparent top nav over a full-bleed hero, a 'TV Shows' heading with a Genres dropdown under it, a left-aligned hero block (logo, Top 10 line, synopsis, buttons), mute and rating on the right edge, and a horizontal row with a page indicator. The vertical rhythm is off, though. The hero is taller, so the 'Today's Top Picks' row starts at about y=935 instead of about y=837. That pushes the tiles below the fold, so their bottom halves and badges are cut off, and the next row's heading ('Only on Netflix') can't be seen. The mute/rating cluster sits about 60px lower than in the reference.",
+      "fix": "Shrink the hero height so the row heading sits at about 76% of viewport height (~837px at 1104px) and the tiles show in full, with the next row's heading just peeking in at the bottom. Raise the mute/rating cluster to line up with the Play/More Info row."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Every part of the reference is present: the nav with 7 items and a pill on the active one, search, bell, Kids badge, profile avatar with caret, the 'TV Shows' title, the Genres select, the NETFLIX title lockup, the Top 10 badge with the '#1 in TV Shows Today' line, synopsis, Play and More Info buttons, the mute button, the rating flag, the row heading, Top 10 corner badges on tiles, and the page indicator. The implementation adds a metadata row ('Comedy • 2026 • 4 Episodes • TV-14') that the reference doesn't have. The red bottom-center status tags on the tiles ('New Season', 'Recently Added', 'New Episode'/'Watch Now') are only partly visible because the tiles are cropped.",
+      "missing": ["fully visible bottom-center status tags on row tiles (New Season / Recently Added / New Episode + Watch Now)"],
+      "fix": "Remove the genre/year/episodes/rating metadata line from the hero. Make sure the bottom-center red status pills on the tiles render inside the visible area."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same cinematic dark overlay, same flat buttons with slight rounding, same pill on the active nav item, a square-bordered Genres select, and a left vignette over the hero image. The density is a little looser because of the extra metadata line and the larger vertical gaps.",
+      "fix": "Tighten the vertical spacing between the title lockup, Top 10 line, synopsis and buttons to match the reference."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Same dark scheme, red brand wordmark and Top 10 badges, white Play button with a translucent grey More Info button, white text over a dark gradient. The bottom fade into the near-black page base looks a little weaker in the implementation.",
+      "fix": "Strengthen the bottom gradient of the hero into #141414 behind the row."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The sans-serif nav, the size of the 'TV Shows' heading, the weight of the '#1 in TV Shows Today' line and the body text size all roughly match. 'TV Shows' and the Top 10 line are slightly bolder or larger. The hero title is set as a plain condensed typeface, where the reference uses a custom title-artwork logo. The tile titles are condensed text overlays, which works as an equivalent of the reference's title artwork.",
+      "fix": "Render the hero title as a title-logo image (or a stylised display treatment) instead of plain condensed text. Bring the 'TV Shows' heading weight in line with the reference's regular weight."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Outline search and bell icons, the Kids gradient badge, the blue smiley avatar, the filled play triangle, the outlined info circle, the circled mute icon, and red Top 10 badges on the tiles all match. The tiles are 16:9 with slight rounding, matching the reference crop. The mute icon is slightly smaller.",
+      "fix": "Scale the mute icon up to about the reference size and keep the tile Top 10 badges flush with the top-right corner."
+    },
+    "copy": {
+      "score": 0.93,
+      "notes": "All the chrome labels match: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids, TV Shows, Genres, '#1 in TV Shows Today', Play, More Info, Today's Top Picks for You. The only extra copy is the added metadata row.",
+      "fix": "Remove the extra metadata text line."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Row placement: the 'Today's Top Picks for You' row starts about 100px lower than in the reference, so the tiles are cut off at the bottom of the viewport and their red status pills can't be read.",
+    "Hero block: the implementation adds a 'Comedy • 2026 • 4 Episodes • TV-14' metadata line between the Top 10 line and the synopsis. The reference has none.",
+    "Hero title: a plain condensed font stands in for a title-artwork logo, where the reference has a stylised logo image under the NETFLIX wordmark.",
+    "Right edge: the mute/rating cluster sits lower (y≈733 vs y≈675), out of line with the reference.",
+    "Bottom of page: the reference shows the next row's heading peeking in at the fold. The implementation doesn't."
+  ],
+  "fixes": [
+    "Reduce the hero height and spacing so the row heading lands at about y=837 and the tiles (including the bottom status pills) are fully visible, with the next row's heading peeking in below.",
+    "Remove the hero metadata row (genre/year/episodes/rating).",
+    "Render the hero title as a logo image or stylised artwork lockup instead of plain text.",
+    "Move the mute button and rating flag up to line up vertically with the Play/More Info buttons."
+  ],
+  "summary": "A close Netflix Shows hero clone with the right nav, title bar, hero block and row. It loses fidelity on an extra metadata line, a hero that's too tall and pushes the row tiles below the fold, and a plain-text title in place of the logo artwork."
+}
+```

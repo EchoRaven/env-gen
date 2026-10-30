@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Skeleton matches: back arrow top-left, full-width scrubber with time on the right, bottom control row with playback controls on the left, centered title, and utility icons on the right. Differences: the implementation adds a large left-aligned info block in the middle of the screen. There is a thin black strip across the top, and the control row sits lower and is more compressed, with icons spaced more tightly.",
+      "fix": "Remove the mid-screen info overlay so the video area stays empty. Make the player full-bleed from y=0. Put the scrubber at about 87% of the height and the control row at about 94%, with icon gaps around 90px on the left cluster."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Present: back arrow, progress bar with red thumb, time readout, play/pause, back 10s, forward 10s, volume, centered title + episode label, next episode, episodes, subtitles, fullscreen. Missing: the report-problem flag icon at top-right, the buffered (light-gray) segment, and the chapter/marker ticks on the track. Invented: the 'You're watching' title block with synopsis, and an inline playback error message. State differs: the reference shows a pause icon (playing); the implementation shows a play icon.",
+      "fix": "Add a flag icon button at top-right (~40px outline). Render a buffered range in light gray between the playhead and the unbuffered gray track, with small marker ticks. Show the pause icon in the controls state. Drop the 'You're watching' overlay and the error text.",
+      "missing": ["report/flag icon (top-right)", "buffered-progress segment on scrubber", "chapter marker ticks on scrubber"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Minimal, flat, chrome-light player in both. The reference is a stark black frame with thin chrome. The implementation layers a hero-style backdrop and marketing text block, which gives it a more decorative, browse-page character.",
+      "fix": "Keep the video surface plain (video or solid black), with no text overlay. Use a subtle bottom gradient only, behind the controls."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Dark scheme, white icons, red progress fill and thumb all match. The reference's track is grey with a lighter buffered portion. The implementation's track is a uniform lighter grey with no visible red fill, because playback is at 0:00. It also adds a pinkish-red error text color.",
+      "fix": "Style the track as #808080 for unbuffered, #ccc for buffered and #e50914 for played. Remove the red error text."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The bottom title lockup matches: bold show name, then a regular 'E1' and episode title in a sans-serif font at a similar size. The time readout is small and white in both. The extra large title, subheading and body text in the overlay add type levels the reference doesn't have.",
+      "fix": "Keep only the bottom title lockup (~22px, bold series name + regular episode label) and the small time label. Remove the overlay typography."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "Outline icons match the reference set: circular 10s arrows, speaker with waves, skip-next, stacked episodes, speech-bubble subtitles, and corner-bracket fullscreen. The implementation's icons are slightly smaller and use a filled play triangle where the reference has a filled pause. The flag icon is absent.",
+      "fix": "Scale the control icons to ~50px, show the pause glyph while playing, and add the outline flag icon at top-right."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Title lockup format 'Show E1 Episode' matches, and the time readout is shown. The extra copy ('You're watching', the synopsis and the codec error string) is not in the reference.",
+      "fix": "Remove 'You're watching', the synopsis and the error string from the controls state."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "center-left of the video area: the implementation overlays a 'You're watching' block with a large title, season/episode line and synopsis; in the reference the frame is clear",
+    "top-right: the reference's flag (report problem) icon is missing in the implementation",
+    "scrubber: the implementation lacks the light-gray buffered segment and the small marker ticks that the reference shows on the track",
+    "bottom-left: the implementation shows a play icon; the reference shows pause (active playback state)",
+    "below the synopsis: the implementation shows red 'This clip can't be played…' error text, which is not in the reference",
+    "top edge: the implementation has a black strip above the full-bleed backdrop; the reference fills the whole viewport",
+    "bottom control row: the implementation's icons are smaller and more tightly spaced, and the row sits lower than in the reference"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' info overlay and the playback error text from the controls state",
+    "Add an outline flag/report icon button at top-right, mirroring the back arrow's inset",
+    "Render the scrubber in 3 tones (red played, light-gray buffered, mid-gray remaining) with small marker ticks",
+    "Show the pause icon when the controls are visible during playback",
+    "Increase the control icons to ~50px and space the left cluster at ~90px intervals",
+    "Make the player surface full-bleed from the top edge, with no black strip"
+  ],
+  "summary": "The player chrome mostly matches (back arrow, scrubber, bottom control row, centered title lockup), but the implementation adds a 'You're watching' overlay and error text, and it's missing the flag icon and the buffered and marker detail on the scrubber."
+}

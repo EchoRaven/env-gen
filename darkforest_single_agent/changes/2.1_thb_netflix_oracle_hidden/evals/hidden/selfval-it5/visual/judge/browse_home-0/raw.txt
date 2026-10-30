@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.95,
+      "notes": "The structure is nearly identical. Both have a top nav (logo, pill-highlighted Home, 6 more text links, and search, bell, Kids and avatar on the right). Below it sits an inset rounded hero card with matching gutters, a bottom-left title stack with Play and More Info, a bottom-right badge and a top-right sound toggle. Then comes a row heading with a segmented page indicator on the right and a horizontal carousel of about 5.2 landscape tiles. Proportions and section order match.",
+      "fix": "No structural change is needed. Keep the hero card at the same inset and height."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "Nav items (7 links plus 4 right-side controls), the hero sound button, Play/More Info, the bottom-right status badge with its megaphone icon, the row title, the segmented indicator and the carousel tiles are all present. Differences: the reference shows a red '• LIVE' pill plus a 'Started at 5 PM PT' status line under the title, and the implementation has no such status row. The implementation adds a 2-line synopsis paragraph that the reference hero does not show. The sound button is in a muted state with an outlined ring, while the reference shows a filled dark circle with sound on.",
+      "missing": ["LIVE badge + start-time status line under the hero title"],
+      "fix": "Add an optional status row between the title and the metadata: a small red rounded pill reading '• LIVE' followed by bold white ~22px text ('Started at 5 PM PT'). Remove the synopsis paragraph from the hero (or hide it in this state). Render the sound toggle as a filled translucent dark circle without the outline ring."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Both use the same rounded hero card, pill buttons (white Play, translucent grey More Info), pill-shaped active nav item, rounded tiles and flat dark surfaces. In the reference the page background and hero sit on a soft warm-grey radial glow behind the header, and the hero card has a subtle drop shadow. The implementation background is flat near-black.",
+      "fix": "Put a subtle warm-grey gradient on the page background behind the header and down the sides (about #3a3835 at the top fading to #141414), and add a soft shadow to the hero card."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both are dark themes with Netflix red for the logo and badges, white primary CTA, grey secondary CTA and grey active-nav pill, so the scheme matches. The reference header area is a warmer, lighter grey (#3b3a38-ish). The implementation is a cooler, flatter near-black. The red LIVE accent is absent.",
+      "fix": "Warm and lighten the top-of-page background gradient. Add the red LIVE pill accent."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family for nav, metadata, buttons and the row heading, with matching sizes and weights. The metadata row is close, but in the reference the leading items (genre, year, seasons) are semibold and the rating is regular. The hero title is set as live condensed display text, whereas the reference uses a title-artwork logo lockup. The synopsis body text adds a type level the reference lacks.",
+      "fix": "Render the hero title as a logo image (title art) when available, falling back to the condensed display face. Bold the first metadata items and leave the rating regular. Drop the synopsis text level."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Search and bell are line icons. The Kids gradient tile, smiley avatar with caret, megaphone badge icon and TOP 10 corner badges all match. The sound icon differs: the reference shows a speaker with waves in a filled circle, while the implementation shows a muted speaker in an outlined circle. The hero uses typeset text where the reference uses title-art imagery.",
+      "fix": "Use a filled-circle sound button whose default state is sound-on (speaker with waves), and use title-art images for the hero lockup."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. The 'Play' and 'More Info' labels match. The badge copy and row title differ only by content. The 'Started at …' live-status phrasing is absent.",
+      "fix": "Support a 'Started at {time}' status string next to the LIVE pill."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "hero, under title: reference shows a red '• LIVE' pill + bold 'Started at 5 PM PT' line; implementation has no status row",
+    "hero, above buttons: implementation adds a 2-line synopsis paragraph that the reference hero does not show",
+    "hero title: reference uses a title-artwork logo lockup; implementation uses typeset condensed text",
+    "hero top-right: reference sound button is a filled dark circle with a sound-on icon; implementation is an outlined ring with a muted icon",
+    "page background behind header: reference has a warm-grey gradient glow; implementation is flat near-black",
+    "hero metadata row: reference bolds genre/year/seasons and leaves the rating regular; implementation weights them more uniformly"
+  ],
+  "fixes": [
+    "Add a LIVE status row under the hero title: a small red rounded pill reading '• LIVE' plus bold white 'Started at {time}' text",
+    "Remove the synopsis paragraph from the hero",
+    "Render the hero title as a title-art image lockup (about 450px wide), falling back to text",
+    "Make the sound toggle a filled translucent dark circle (about 36px) with no border, showing the sound-on icon by default",
+    "Apply a warm-grey top gradient to the page background (about #3a3835 → #141414) and give the hero card a soft shadow",
+    "Make the metadata row semibold for genre/year/seasons and regular for the rating"
+  ],
+  "summary": "Very close Netflix home clone with matching nav, hero card, CTAs and carousel. The gaps are the missing LIVE status row, an extra synopsis, a text title instead of title art, a muted outlined sound button and a flatter, cooler background."
+}

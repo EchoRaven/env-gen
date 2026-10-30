@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.86,
+      "notes": "Same skeleton: sticky dark top bar with left wordmark, inline nav and right utility cluster; full-bleed stacked horizontal rows (New on Netflix → Top 10 TV → Top 10 Movies → Coming This Week) with the same left gutter (~67px), the cut-off tile on the right edge, and page indicators top-right of each row. The vertical rhythm is slightly tighter: the first row heading sits at ~137px vs ~164px, and the rows start a little higher. A floating hover preview card covers the centre of the Top 10 rows, which the reference doesn't show.",
+      "fix": "Close or suppress the hover preview card in the default state. Increase the top padding above 'New on Netflix' by ~25px, and match the row spacing (heading-to-heading ~270px for the first gap, ~315px between Top 10 rows)."
+    },
+    "components": {
+      "score": 0.8,
+      "missing": [
+        "secondary white 'Watch Now' chip paired next to the red badge on a landscape tile"
+      ],
+      "notes": "Every reference component is present: 7 nav items with a pill-highlighted active 'New & Popular', search, bell, Kids profile chip, avatar with caret, landscape tiles with TOP 10 corner badges and red bottom status badges, Top 10 rows with large outlined numerals behind portrait posters, row pagination dashes, and the Coming This Week row. The invented component is an expanded hover/preview card (play, +, thumbs, chevron, TV-14/2 Seasons/HD metadata, genre list). It isn't in the reference and hides tiles 3–4 of both Top 10 rows. The reference's two-badge combination (red 'New Episode' + white 'Watch Now') has no equivalent.",
+      "fix": "Don't render the preview card unless the user hovers. Support a secondary white-background/black-text 'Watch Now' badge placed next to the red status badge on landscape tiles."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dense, streaming-catalog style: slightly rounded tiles, no shadows on the rows, small red pill badges, and thin grey outline numerals. The implementation puts heavy condensed title text over every landscape tile in a uniform left-aligned position. The reference uses varied per-title logo lockups placed inside the artwork. The preview card adds an elevated rounded surface the reference doesn't have.",
+      "fix": "Use per-title logo artwork (or vary the lockup position and size) instead of a uniform left-anchored text overlay, and remove the elevated preview card from the default state."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same near-black #141414 base, white headings, Netflix red wordmark and badges, red TOP 10 flags, grey pill for the active nav item, and grey outlined numerals. They match closely.",
+      "fix": "No change needed beyond removing the preview card's lighter elevated surface."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif UI matches: regular-weight row headings, nav in light grey with a bold white active item, small bold badge text. Row headings look slightly larger and bolder in the implementation (~30px vs ~27px). Tile titles are set in one condensed bold display font for every tile, unlike the reference's artwork-native lockups.",
+      "fix": "Reduce row heading size to ~26–27px, regular weight. Drop the uniform condensed-caps title overlay on landscape tiles, or keep it only where artwork lacks a logo."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Outline search and bell icons, a rounded-square Kids icon and smiley avatar, the TOP 10 badge style, 16:9 landscape and 2:3 portrait crops, and huge outlined numerals all match. The tile gaps are similar. The preview card adds circular outline action icons that aren't in the reference.",
+      "fix": "Keep the icon set. Remove the preview card's action-icon row from the default view."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, section headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week'), 'Kids' and badge phrasing ('Recently Added', 'New Episodes' vs 'New Episode'/'New Season') all match the reference. 'Watch Now' doesn't appear.",
+      "fix": "Support the 'New Season', 'New Episode' and 'Watch Now' badge labels alongside 'Recently Added'."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 TV/Movies rows, centre: the implementation shows a large expanded hover preview card (artwork, play/+/like/chevron buttons, TV-14 · 2 Seasons · HD, genres) covering tiles 3–4. The reference has no overlay.",
+    "New on Netflix tiles: the implementation puts a uniform condensed white text title, left-aligned at mid-height, on every tile. The reference uses artwork-native logo lockups placed differently per title.",
+    "New on Netflix tile badges: the reference pairs a red 'New Episode' badge with a white 'Watch Now' chip on one tile. The implementation only ever shows single red badges.",
+    "Vertical spacing: the implementation's first row heading sits ~27px higher and the rows are slightly tighter than in the reference.",
+    "Row headings: slightly larger in the implementation than in the reference."
+  ],
+  "fixes": [
+    "Don't render the preview/hover card in the default state; show it only on actual pointer hover.",
+    "Replace the uniform condensed text title overlay on landscape tiles with logo-style lockups embedded in the artwork (or drop the overlay when artwork already has a title).",
+    "Add a white 'Watch Now' secondary badge variant next to the red status badge, and allow the 'New Season' and 'New Episode' labels.",
+    "Add ~25px of top padding before 'New on Netflix', and match the reference row spacing.",
+    "Reduce row heading font size to ~26–27px, regular weight."
+  ],
+  "summary": "A close match to Netflix's New & Popular layout (nav, rows, Top 10 numerals, badges, colours), but the implementation has a preview card open over the Top 10 rows that the reference doesn't show, uses uniform text title overlays instead of artwork lockups, and lacks the 'Watch Now' badge."
+}

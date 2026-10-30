@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The overall structure matches. Both have a full-bleed player with a back arrow top-left, a flag icon top-right, a full-width scrubber with the time on the right, and a bottom control row: transport controls on the left, the centered title, and utility icons on the right. The implementation adds a large left-aligned text block in the middle-left of the frame. It also has a thin black strip across the very top and puts the control row a little lower and tighter than the reference.",
+      "fix": "Remove the mid-frame info block so the frame is clear between the top icons and the scrubber. Remove the black strip at the top so the frame is full-bleed. Keep the scrubber at about 87% of the height and the control row at about 94%."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Every control in the reference is present: back, flag/report, scrubber with time, play/pause, back 10, forward 10, volume, the title/episode label, next episode, episodes, subtitles and fullscreen. The implementation adds components the reference doesn't show: a 'You're watching' eyebrow, a large show title, a season/episode subtitle, a synopsis paragraph and a red error line. The play/pause control is in the 'paused' state (play triangle) where the reference shows 'playing' (pause bars). The reference scrubber has a buffered segment in light gray and small yellow chapter markers; the implementation scrubber has neither and the playhead sits at 0.",
+      "missing": ["buffered-progress segment on scrubber", "chapter/marker ticks on scrubber", "pause (playing-state) icon"],
+      "fix": "Render the controls in the playing state with the pause icon. Add a lighter-gray buffered fill and small marker ticks to the scrubber. Do not render the 'You're watching' overlay or the error text in this controls state."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use the same minimal, flat white-icon overlay with no chrome surfaces. The implementation fills the frame with vivid artwork and dense paragraph text. The reference is a stark, empty dark frame with only the overlay controls, so the implementation feels much busier.",
+      "fix": "Show the video frame (or black) rather than a bright poster backdrop. Keep the overlay limited to the icons, scrubber and title line."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "The reference is pure black, with white icons and text, a red progress fill and a red playhead, a gray track, and yellow marker dots. The implementation keeps the white icons and the red playhead. However, the frame is dominated by saturated blue and red artwork, there is no red progress fill, and it adds pink-red error text.",
+      "fix": "Use a black (#000) player background when no video frame is shown. Draw a red played segment from the left edge to the playhead, then a light-gray buffered segment, then a dark-gray track."
+    },
+    "typography": {
+      "score": 0.72,
+      "notes": "The bottom title line matches: a bold show name followed by a regular-weight episode code and episode title, white, centered, in a similar sans at a similar size. The time label is a small white sans in both. The implementation adds a large display title, a medium subtitle and body text that the reference doesn't have.",
+      "fix": "Remove the extra heading levels from the frame. Keep only the bottom title line ('<Show> E1  <Episode title>') and the small time label."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "All the icons match the reference in style: outlined white Netflix-style arrow, flag, 10s rewind and forward, speaker, next-episode, stacked episodes, subtitle bubble and fullscreen corners. The implementation's bottom icons are noticeably smaller and more tightly spaced; the reference icons are about 45–50px with wider gaps. It also shows play instead of pause. The playhead dot is similar.",
+      "fix": "Make the bottom-row icons about 48px with roughly 40px gaps on the left cluster, matching the reference spacing. Show the filled pause bars while playing."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The title-line format matches. The implementation adds copy the reference doesn't have: 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"', the synopsis and a browser error message.",
+      "fix": "Remove the 'You're watching' block and the error string from the controls view."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "center-left of the frame: the implementation overlays a 'You're watching' eyebrow, a large title, a season/episode subtitle, a synopsis and a red error line; the reference frame is empty apart from the controls",
+    "background: the implementation shows bright full-bleed poster artwork; the reference frame is black",
+    "bottom-left: the implementation shows the play triangle (paused); the reference shows pause bars (playing)",
+    "scrubber: the reference has a red played segment, a light-gray buffered segment and yellow marker ticks; the implementation has only a gray track with the playhead at 0",
+    "bottom control row: the implementation's icons are smaller and more tightly spaced than the reference's larger, more widely spaced icons",
+    "top edge: the implementation has a thin black strip above the frame; the reference is full-bleed"
+  ],
+  "fixes": [
+    "Hide the 'You're watching' / title / synopsis / error overlay in the controls state",
+    "Use a black frame (or the actual video frame) instead of the bright poster backdrop",
+    "Render the pause icon when the controls show the playing state",
+    "Add a red played fill, a light-gray buffered fill and small yellow marker ticks to the scrubber",
+    "Enlarge the bottom-row icons to about 48px and widen the gaps to match the reference",
+    "Remove the black strip at the top so the player is full-bleed"
+  ],
+  "summary": "The control set matches the reference closely, but the implementation adds a pause-screen info overlay and a bright poster backdrop, shows the paused state, and omits the scrubber's buffered and marker details."
+}
+```

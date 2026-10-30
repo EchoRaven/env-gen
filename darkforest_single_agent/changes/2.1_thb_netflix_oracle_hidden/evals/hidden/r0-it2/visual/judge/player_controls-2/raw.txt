@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The skeleton matches. There is a full-bleed player with no app chrome, a back arrow at the top left, a full-width scrubber above a bottom control row with time on the right, four controls on the left, a centred title and four on the right. The difference is what fills the middle. The reference shows a plain black playing frame. The implementation fills it with a dimmed backdrop image and a large left-aligned 'You're watching' block that takes up the middle-left of the screen. It also adds an error toast at the top centre. The top-right corner is empty where the reference has a flag icon.",
+      "fix": "Render the controls overlay on the plain video surface (black when there is no frame) with no 'You're watching' info block or backdrop poster. Put the report/flag icon at the top right, mirroring the back arrow's inset (~40px). Remove the top-centre error toast from this state."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Present: back arrow, scrubber with red thumb, remaining-time label, play/pause, back 10, forward 10, volume, centred title/episode label, next episode, episodes stack, subtitles/audio, fullscreen. Missing: the top-right flag (report a problem) icon, the buffered (light-grey) section of the scrubber and the small chapter/marker ticks on the track. State differs: the reference shows a PAUSE icon (playing), but the implementation shows PLAY with a 0:00 position, so nothing is played (red) on the track. Invented: a 'You're watching' title/season/synopsis overlay and a red-accented error toast.",
+      "missing": [
+        "top-right flag / report-a-problem icon",
+        "buffered-progress segment on scrubber (lighter grey ahead of playhead)",
+        "chapter/marker ticks on scrubber track",
+        "playing state: pause icon + red played segment"
+      ],
+      "fix": "Add the flag icon button at the top right. Add a buffered range in light grey (#bbb) over the darker track, plus small marker ticks. Show the playing state: a pause glyph (two thick bars) and a red played segment up to the thumb. Remove the synopsis overlay and the error toast."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are flat and minimal, with white glyphs and no shadows on controls and a thin hairline scrubber. The reference is plain black, with no imagery, gradients or dimming scrim. The implementation adds a darkened photographic backdrop, a big text block and a toast card with a red left border, which makes it busier.",
+      "fix": "Drop the backdrop image and scrim from the controls state. Keep the surface pure black with only the thin track and white glyphs."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a black base, white icons and text, and Netflix red for the played track and thumb, with a grey track. The reference also has a light-grey buffered band and amber/orange marker dots. The implementation's warm red/brown backdrop brings in lots of colour the reference doesn't have, and the toast adds a red accent bar.",
+      "fix": "Use a #000 background. Track base mid-grey (#5a5a5a), buffered light grey, played red (#e50914). Add small amber marker ticks. No other colour on screen."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The bottom title lockup matches: show name in bold followed by 'E1' and the episode title in regular, centred, ~22px sans in white. The time label is small regular white at the right end of the track, as in the reference. The implementation adds a large display hierarchy (grey caption, ~50px bold title, semibold season line, body synopsis) that the reference does not have.",
+      "fix": "Remove the large title, season line and synopsis typography. Keep only the bottom centred 'Bold Show  E# Episode Title' label and the small time label."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "The line-style white icon set matches for volume, next episode, episodes stack, subtitles and fullscreen corners, and the back arrow matches. The back/forward-10 icons are clearly smaller and thinner than in the reference (~35px vs ~50px), so the left group looks less substantial. The play/pause glyph differs (play triangle vs thick pause bars). The top-right flag icon is missing.",
+      "fix": "Size the back/forward-10 icons to ~50px with a bold '10' inside the circular arrow, matching the volume icon's weight. Show the thick two-bar pause glyph at ~40px. Add an outline flag icon at the top right, ~44px."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The bottom label format 'Show E1 Episode Title' and the remaining-time format match. The implementation adds copy that is not in the reference: 'You're watching', a season/episode line, the synopsis and a technical error message.",
+      "fix": "Remove the 'You're watching' block and the 'This clip could not be loaded…' toast from this state."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "centre-left of screen: implementation overlays a large 'You're watching' title/season/synopsis block on a dimmed backdrop image; reference shows a plain black video frame with only the controls",
+    "top-right corner: reference has a flag (report a problem) icon; implementation has nothing there",
+    "top-centre: implementation shows an error toast with a red left border ('This clip could not be loaded…'), which the reference does not have",
+    "bottom-left play control: reference shows the playing state with a thick pause icon; implementation shows a play triangle",
+    "scrubber: reference has a red played segment, a light-grey buffered band and small amber marker ticks; implementation has only the thumb at 0 on a uniform grey track",
+    "bottom-left control group: back/forward-10 icons are noticeably smaller and lighter than in the reference"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' info overlay and the backdrop poster/scrim from the controls state; render on a black video surface",
+    "Add an outline flag icon button at the top right, mirroring the back arrow's position",
+    "Remove the error toast (or keep it out of the controls overlay)",
+    "Show the playing state: a pause glyph (two thick bars) and a red played segment from the left edge to the thumb",
+    "Add a light-grey buffered range ahead of the playhead and small amber marker ticks on the track",
+    "Enlarge the back/forward-10 icons to ~50px with a bold '10', matching the weight of the other control icons"
+  ],
+  "summary": "The control bar and scrubber skeleton match the reference closely, but the implementation adds a paused-style synopsis overlay, a backdrop image and an error toast, leaves out the top-right flag and the buffered/marker track details, and shows play instead of pause."
+}
+```

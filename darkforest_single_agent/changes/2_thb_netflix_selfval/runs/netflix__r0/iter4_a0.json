@@ -1,0 +1,102 @@
+{
+ "duration_api_ms": 1386606,
+ "stop_reason": "end_turn",
+ "session_id": "a6c4d6ed-f825-4ef2-89d9-8d54246c96d9",
+ "total_cost_usd": 10.0198952,
+ "usage": {
+  "input_tokens": 22,
+  "cache_creation_input_tokens": 17029,
+  "cache_read_input_tokens": 3469905,
+  "output_tokens": 10153,
+  "output_tokens_details": {
+   "thinking_tokens": 1061
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 17029,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 2,
+    "output_tokens": 822,
+    "cache_read_input_tokens": 322733,
+    "cache_creation_input_tokens": 689,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 689
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-opus-5-5": {
+   "inputTokens": 218,
+   "outputTokens": 147162,
+   "thinkingTokens": 22802,
+   "cacheReadInputTokens": 22442036,
+   "cacheCreationInputTokens": 323422,
+   "webSearchRequests": 0,
+   "costUSD": 10.0198952,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 12,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "The app still passes all 14 api_smoke checks and all 8 chain steps (13/15 contract endpoints return 2xx to the empty-body probes, unchanged). This round I re-ran the full end-to-end browser flow on desktop, which passed with no problems, and fixed the phone layout, which was badly broken.\n\n**Desktop flow (re-run in full, all passing)**\n- Signing up from the landing page, then adding and renaming a profile.\n- My List from both the detail modal and the hover preview, and confirming a second profile's list stays empty.\n- Rating, search, and the Shows, Movies, Games, New, Languages (including the Dubbing empty state) and Account pages.\n- A genre from the Genres menu, opening a title from notifications, and playing an episode, then the episodes panel, next episode, and back to the modal.\n- The 404 page, signing out, and the error shown for a wrong password.\n\nThe only console error was the expected 401 from that wrong-password attempt.\n\n**Phone layout (390px wide), fixed**\n- **Header:** the nav pills were crushed to a single \"H\". On screens up to 860px they now collapse into a \"Browse \u25be\" menu showing the current section. On very narrow screens the header Kids shortcut is hidden; Kids is still reachable from the profile menu.\n- **Landing:** the email form overflowed the screen. It now stacks vertically, and the header has been simplified.\n- **Overflow:** the browse pages had horizontal overflow from the rail page-indicator dashes and the header. I checked every main page and none overflows now.\n- **Sizing:** billboards, rails (about 2.3 cards visible), two-column grids, the full-screen detail modal, the episode list and the season selector were all resized for phones. So were the rate dialog, the player controls and panels, the login and profile pages, and the profile editor.\n\nDesktop layout is unchanged: every new rule only applies at 860px wide or less.\n\n**Still missing**\n- The two remaining non-2xx probes are deliberate. `POST /api/profiles` with no name and `POST /api/my-list` with no title correctly return 422.\n- Dataset gaps are unchanged:\n  - Durations shown are the real trailer-clip lengths.\n  - Episodes are numbered, with only Episode 1 carrying the show's real synopsis.\n  - There are no cast or games.\n  - Dubbing/Subtitles show empty states.\n- I still haven't watched a clip play: the headless browser here can't decode H.264.",
+ "ttft_ms": 11517,
+ "type": "result",
+ "duration_ms": 205306,
+ "uuid": "d82fe0e1-859b-4f39-8f5a-2d4e9844c80c",
+ "ttft_stream_ms": 9861,
+ "time_to_request_ms": 247,
+ "first_content_frame_ms": 9861,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_rc": 0,
+ "_timed_out": false,
+ "_wall_s": 205.9
+}

@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. A transparent top nav sits over a full-bleed hero, with the 'TV Shows' heading and Genres dropdown below the nav. The hero text block is bottom-left, the mute and maturity badge are mid-right, and a horizontal row of 16:9 cards bleeds off the right edge. The differences are vertical. The implementation puts the hero text block lower (title at ~y500–600, buttons at ~y760 instead of ~y710), and the 'Today's Top Picks' row starts at ~y950 instead of ~y866. Because of that, the bottoms of the cards are clipped at the fold, and the next row heading ('Only on…'), which peeks in at the bottom of the reference, can't be seen.",
+      "fix": "Move the hero content block up so the CTAs sit at ~y710. Start the first row heading at ~y835 and the cards at ~y866, so the whole card row and the top of the next section heading show above the fold."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Nav items (7), search, bell, Kids profile, avatar with caret, the TV Shows heading, the Genres dropdown, Play and More Info, the mute button, the maturity rating flag, the row heading, the page indicator dashes, TOP 10 corner badges and red bottom tag pills are all present. Two things are missing from the hero: the small red 'N SERIES'-style brand badge above the title, and the TOP 10 badge with the '#1 in TV Shows Today' rank line. The implementation adds a genre · year · seasons · rating metadata row, which the reference doesn't have. The reference also has a dual pill ('New Episode' + white 'Watch Now') that the implementation has no equivalent for.",
+      "missing": [
+        "Red NETFLIX brand label above the hero title",
+        "TOP 10 badge + '#1 in TV Shows Today' rank line in hero",
+        "Dual tag pill variant (red 'New Episode' + white 'Watch Now') on cards",
+        "Next row heading peeking at bottom"
+      ]
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same cinematic full-bleed look. Both have a dark left/bottom vignette, square-cornered cards with tight gaps, slightly rounded rectangular buttons, a translucent grey More Info button and a solid white Play button. The Genres dropdown is the same black box with a white hairline border. Only the hero logo treatment differs: the reference uses stylised title artwork, the implementation plain condensed text.",
+      "fix": "Show the title as a logo-style artwork image (or a styled lockup), not plain text. Keep everything else."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both use a dark scheme with Netflix red for the wordmark, TOP 10 badges and tag pills, white text and a translucent grey secondary button. The active nav pill is the same grey. The hero is a little darker and cooler, but that comes from the artwork.",
+      "fix": "No structural change needed. Use the red brand label in the hero to restore the red accent near the title."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Both use a sans UI font, and the nav, heading and button sizes are close. The hero description is noticeably smaller and lighter in the implementation (~17px against ~22px in the reference). The bold '#1 in TV Shows Today' line (~30px) is missing. Card titles are rendered as text overlays rather than artwork logotypes. The row heading is slightly bolder.",
+      "fix": "Set the hero synopsis to ~22px regular white with ~1.35 line-height. Add a ~30px medium-weight rank line next to the TOP 10 badge. Bring the row heading back to regular/medium weight at ~26px."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The icons match: outline search, outline bell, the filled play triangle, the circled-i info icon, the circular mute button, the Kids tile and the blue smiley avatar. The TOP 10 corner badges are the same style. Card artwork is cropped 16:9 in both. The hero title is plain text, where the reference has a title-artwork logo.",
+      "fix": "Use logo artwork for hero titles where available. Add the TOP 10 badge icon in the hero rank line."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info', 'Today's Top Picks for You' and 'Recently Added' all match. Two things don't: the '#1 in TV Shows Today' line is missing, and the implementation adds a metadata row that has no text equivalent in the reference.",
+      "fix": "Add the '#N in TV Shows Today' rank copy and remove the genre/year/seasons line."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "hero, above synopsis: the reference has a TOP 10 badge + '#1 in TV Shows Today' line; the implementation has a genre · year · seasons · rating metadata row instead",
+    "hero, above title: the reference shows a small red NETFLIX brand label; the implementation has none",
+    "hero title: the reference uses stylised title-artwork logo; the implementation renders plain condensed text",
+    "vertical rhythm: the implementation's hero block and the 'Today's Top Picks' row sit ~80px lower, so card bottoms are clipped and the next row heading isn't visible",
+    "hero synopsis: smaller, lighter type in the implementation than the reference's ~22px",
+    "card tags: the reference's dual 'New Episode' + white 'Watch Now' pill variant is missing; the implementation's pills are cut off at the fold"
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a TOP 10 badge + '#1 in TV Shows Today' line (~30px)",
+    "Add the small red NETFLIX brand label above the hero title",
+    "Render the hero title as logo artwork, not plain text",
+    "Move the hero block and the first row up ~80px so the full card row plus the next section heading show above the fold",
+    "Increase the hero synopsis to ~22px",
+    "Support a dual tag pill (red label + white 'Watch Now') on cards"
+  ],
+  "summary": "The chrome, hero structure and card row closely match the reference. The hero is missing the brand label and the TOP 10 rank line and has an invented metadata row in their place, and the content block and card row sit too low."
+}
+```

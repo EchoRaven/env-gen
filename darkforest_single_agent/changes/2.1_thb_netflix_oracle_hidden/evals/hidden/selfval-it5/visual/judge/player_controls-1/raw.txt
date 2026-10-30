@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The skeleton matches. There is a back arrow at top-left and a flag at top-right. A full-width scrubber sits above the bottom control row, with the time on its right. The bottom row has left transport controls, a centered title and right-hand utility icons. The reference's video area is plain black with nothing in the middle. The implementation fills that area with full-bleed key art and puts a large left-aligned info block in the upper-middle ('You're watching', title, episode line, synopsis, error line). The reference has no such block. The implementation's bottom row also sits slightly lower, and its icons are spaced more tightly.",
+      "fix": "Make the video area plain black with no centered or left info overlay while the controls are shown. Keep only the top corner icons, the scrubber and the bottom control row. Space the left icons about 90px apart, matching the reference."
+    },
+    "components": {
+      "score": 0.68,
+      "missing": [
+        "buffered-progress segment on the scrubber (light grey section ahead of the playhead)",
+        "chapter/marker ticks on the scrubber track",
+        "pause-state primary button (reference shows a pause icon; implementation shows play)"
+      ],
+      "notes": "Present: back arrow, flag/report, scrubber with red playhead dot, remaining-time label, play/pause, back 10, forward 10, volume, centered title lockup, next episode, episodes, subtitles/audio and fullscreen. That is 9 bottom controls, the same as the reference. Added and not in the reference: the 'You're watching' info panel with title, season/episode line and synopsis, and a red error message about the browser being unable to play the clip. The primary button shows play instead of pause. The scrubber shows no played red segment, no buffered segment and no marker ticks.",
+      "fix": "Remove the 'You're watching' info panel and the error text from the controls state. Show the playing state: a pause icon, a red played segment, a light-grey buffered segment and small amber marker ticks on the grey track."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use flat, minimal, white-on-dark player chrome with no shadows or containers. The implementation adds a rich photographic backdrop and a large hero text block, which makes it feel more like a marketing pause screen. The reference is a stark, utilitarian black canvas.",
+      "fix": "Remove the backdrop image and the hero text treatment so the screen is flat black with only the floating white controls."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "The accent red on the playhead matches and the white icons match. The reference is pure black, with a red played segment, a light-grey buffered segment and a mid-grey track. The implementation's colourful blue/red artwork dominates the screen. Its track is a single grey with no red fill. It also adds pinkish-red error text.",
+      "fix": "Use a #000 background. Colour the scrubber red for played, light grey (#bbb) for buffered and mid grey for the rest. Remove the red error text."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The bottom title lockup matches: the series name in bold white, then 'E1' and the episode name in regular weight, all sans and centered. The time label is a small regular sans in both. The implementation adds a large display title, a semibold subtitle and body synopsis text that the reference does not have.",
+      "fix": "Drop the large info-block typography. Keep only the bottom lockup (bold series name + regular 'E1 Episode name') and the small time label."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "The outline icon set matches: back arrow, flag, 10-second rewind and forward circles, speaker with waves, skip-next, stacked episodes, speech-bubble subtitles and fullscreen corners. The implementation's left icons look slightly smaller and closer together. It shows a filled play triangle where the reference has a filled pause.",
+      "fix": "Show the pause icon (two filled bars) when playing. Size the transport icons to about 50px and match the reference spacing."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The bottom lockup follows the same pattern, '<Series> E1 <Episode>'. The implementation adds copy the reference does not have: 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"', the synopsis and the error message.",
+      "fix": "Remove the 'You're watching' heading, the season/episode line, the synopsis and the codec error message from this state."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "center/upper-left of video area: implementation shows a large 'You're watching' block (title, season/ep line, synopsis), but the reference's video area is empty black",
+    "full background: implementation renders full-bleed colourful key art, while the reference is a plain black video frame",
+    "below the synopsis: implementation shows a red error line about the browser being unable to play the clip, which the reference does not have",
+    "bottom-left primary control: implementation shows a play icon, while the reference shows a pause icon (playing state)",
+    "scrubber: implementation has no red played segment, no light-grey buffered segment and no amber marker ticks, all of which the reference shows",
+    "bottom-left transport icons: implementation's icons are smaller and more tightly spaced than the reference's evenly spaced ~90px rhythm"
+  ],
+  "fixes": [
+    "Replace the backdrop artwork with a solid black video surface",
+    "Remove the 'You're watching' info panel and the playback error text from the controls overlay",
+    "Render the playing state: a pause icon in the primary slot, a red played fill up to the playhead, a light-grey buffered segment and amber marker ticks on the track",
+    "Enlarge the left transport icons slightly and space them evenly, matching the reference's bottom-row rhythm"
+  ],
+  "summary": "The player chrome (top icons, scrubber, 9-control bottom row, title lockup) matches well, but the implementation adds a full-bleed artwork backdrop, a 'You're watching' info panel and an error message. It also shows a paused or empty scrubber instead of the reference's black playing state."
+}
+```

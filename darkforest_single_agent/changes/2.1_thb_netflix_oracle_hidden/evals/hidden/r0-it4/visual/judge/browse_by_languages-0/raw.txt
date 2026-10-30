@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top nav, page title row with the preferences selectors on the right, and the 6-column landscape tile grid with wide vertical gaps between rows all match. Differences: the grid starts at about y=226 instead of about y=304, because the reference leaves extra space below the header. The two selects sit about 46px apart instead of about 12px. The reference shows a transient state, with both dropdowns expanded and a hover preview card floating over the grid. The implementation shows neither overlay.",
+      "fix": "Push the first grid row down to about 300px from the top. Put the two selects about 12px apart, right-aligned to about x=1842. Render the expanded-dropdown and hover-preview overlays as they appear in the reference."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: the NETFLIX wordmark, 7 nav items with a pill-highlighted active 'Browse by Languages', search, bell, Kids avatar and label, profile avatar with caret, the 'Select Your Preferences' label, both select boxes with carets, the tile grid, TOP 10 badges and red 'Recently Added'/'New Episodes' pills. Missing: both open dropdown menus (Original Language/Dubbing/Subtitles, and the long language list Arabic…Vietnamese), and the expanded hover preview card. That card has a video still, a title lockup, a mute button, play/add/rate circular buttons, an expand chevron, a TV-MA/duration/HD metadata row and a genre tag row.",
+      "missing": [
+        "expanded 'Original Language' dropdown menu (Original Language / Dubbing / Subtitles)",
+        "expanded language list dropdown (Arabic … Vietnamese) overlaying the grid",
+        "hover preview card over the grid",
+        "preview card mute toggle button",
+        "preview card circular play / add-to-list (check) / rate (thumb) buttons",
+        "preview card expand-details chevron button",
+        "preview card maturity rating box + duration + HD badge row",
+        "preview card genre tags row with dot separators",
+        "'Live Now' badge variant with dot"
+      ],
+      "fix": "Make both selects open into dark menus with no border radius, shown expanded. Add a tile hover card about 1.5x the tile size. It needs the image, a title lockup, a mute icon, play (white filled circle), check and thumb (outlined circles), a chevron circle at the right, a metadata row (outlined rating box, duration, HD box) and a genre row."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark Netflix look: square tiles with small radii, a pill nav highlight, square bordered select boxes and red badge pills. The reference's popover layers (dark menus, elevated preview card with shadow) are absent.",
+      "fix": "Add the elevated hover card with a soft shadow and slightly rounded corners, plus flat dark dropdown menus with no border."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Near-black page, white text, Netflix red wordmark and badges, a grey pill for the active nav item. Matches. The selects have a black fill and white border in both. The reference has a darker #141414 menu surface and a #181818 preview card surface, which are missing.",
+      "fix": "Use #000 or very dark grey for the dropdown menus and #181818 for the preview card."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Same sans family and hierarchy. The page title is slightly larger in the implementation. Tiles carry a uniform condensed bold caption instead of per-title artwork lockups. That is acceptable as a content stand-in, but it's a more uniform treatment than the reference. Missing type: the preview card's large title lockup, its metadata row and its genre row.",
+      "fix": "Shrink the 'Browse by Languages' heading by about 10%. Add the preview card text styles: metadata at about 17px light grey, genres at about 17px white with grey dot separators."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Line-style search and bell icons, the avatar treatment, TOP 10 badges and select carets all match. Missing: the preview card's circular outlined action icons (play, check, thumb, chevron, mute).",
+      "fix": "Add outlined circular icon buttons (2px grey ring) for check, thumb, chevron and mute, and a filled white circle for play."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English' and the badge labels all match. Missing: the menu options 'Dubbing' and 'Subtitles', and the language names.",
+      "fix": "Populate the menus with 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language list."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Center of grid: the reference shows an expanded hover preview card (video still, title, mute, play/check/thumb/chevron buttons, TV-MA·1h 34m·HD row, genre tags). The implementation has no hover card.",
+    "Top-right: the reference shows the language select expanded into a long dark list overlaying the right column. The implementation shows the select collapsed.",
+    "Top-right: the reference shows the 'Original Language' select expanded (Original Language/Dubbing/Subtitles). The implementation shows it collapsed.",
+    "Grid top: the implementation starts the first row at about y=226. The reference starts it at about y=304, leaving more space below the title row.",
+    "Preference selects: the implementation spaces the two boxes about 46px apart and ends them at about x=1820. The reference places them about 12px apart, ending at about x=1842.",
+    "Tiles: the implementation uses a uniform condensed bold text caption on every tile, while the reference uses varied title artwork lockups."
+  ],
+  "fixes": [
+    "Add a tile hover preview card: about 435px wide, #181818, image top with title lockup and mute circle, then a row with a white filled play circle, outlined check and thumb circles and a right-aligned chevron circle, then a metadata row (outlined 'TV-MA' box, duration, outlined 'HD'), then a genre row with dot separators.",
+    "Make the 'Original Language' select open a dark menu listing Original Language / Dubbing / Subtitles directly beneath it.",
+    "Make the language select open a tall dark menu (Arabic … Vietnamese) that overlays the grid's right column.",
+    "Move the grid's first row down to about y=304.",
+    "Tighten the gap between the two select boxes to about 12px and right-align them with the grid edge."
+  ],
+  "summary": "The static page skeleton, nav, preferences row and tile grid closely match. The implementation lacks the reference's transient state: both expanded dropdown menus and the hover preview card with its action buttons and metadata."
+}
+```

@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Overall structure matches. Both have a back arrow at the top left, a full-width scrubber near the bottom with the time at the right end, and a bottom control row with a left cluster, a centred title and a right cluster. But the implementation adds a large left-aligned 'You're watching' info block over the middle and a toast centred near the top. In the reference the centre of the frame is empty. The top-right corner, which holds an icon in the reference, is empty in the implementation.",
+      "fix": "Hide the 'You're watching' synopsis block and the error toast in the controls state, so the middle of the frame stays clear the way the reference shows it. Add the top-right icon at about 1850,55."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "Present: back arrow, scrubber with red played portion and red thumb, remaining time, play/pause toggle, back 10, forward 10, volume, centred title with episode label, next episode, episodes stack, subtitles/audio, fullscreen. Differences: there is no top-right report/flag icon. The scrubber has no light-grey buffered segment and no chapter/marker ticks. The toggle shows Play (a paused state) where the reference shows Pause (playing). Added components: a 'You're watching' title/episode/synopsis overlay and a red-accented error toast.",
+      "missing": ["top-right report-a-problem flag icon", "buffered-progress segment on scrubber", "marker ticks on scrubber"],
+      "fix": "Add a flag outline icon at the top right. Render a lighter-grey buffered range ahead of the red progress, plus small amber tick marks. Show the Pause icon in the playing/controls state. Remove the synopsis overlay and the toast."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use a minimal, flat player chrome with no surfaces, plus a thin scrubber and a round thumb. The implementation adds a darkened full-bleed poster with a heavy text overlay and a boxed toast. That reads much busier than the reference's bare black frame.",
+      "fix": "Keep the controls overlay chrome-only: plain video or black background, no info panel, no toast box."
+    },
+    "color": {
+      "score": 0.78,
+      "notes": "Both are dark with white icons and text, a red progress fill and thumb, and a grey track. The implementation's warm, red-tinted poster background changes the overall tone, and the toast adds a red accent bar. The reference's buffered segment is light grey and its ticks are amber; both are absent in the implementation.",
+      "fix": "Use a pure black backdrop when no frame is decoded. Add a light-grey buffered fill (#bbb-ish) and amber tick marks on the track."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The bottom title lockup matches: a bold show name, then a regular episode code and episode title in a clean sans at a similar size. The time label is a small white sans in both. The extra overlay brings in large display headings ('Overdo', 'Season 1: Ep. 1') that the reference doesn't have.",
+      "fix": "Remove the overlay headings. Keep the bottom title at its current size and weights."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Outline-icon style, stroke weight and set (back, skip 10, volume, next, episodes, subtitles, fullscreen) all match. The left-cluster icons are noticeably smaller in the implementation, especially the skip-10 glyphs. The reference's Pause is a pair of solid bars; the implementation shows a filled Play triangle. The top-right flag icon is missing.",
+      "fix": "Scale the left-cluster icons up to roughly 50px so they match the right cluster. Use the solid pause bars while playing. Add the outline flag icon at the top right."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Title format matches ('<Show> E1 <Episode title>'). The implementation adds copy the reference doesn't show: 'You're watching' and the 'This clip could not be loaded…' error message.",
+      "fix": "Drop the 'You're watching' label and the error toast text from this state."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "Centre-left of the frame: the implementation overlays a 'You're watching' label, a large show title, a season/episode heading and a long synopsis. In the reference the middle of the frame is empty.",
+    "Top centre: the implementation shows a dark toast with a red left border ('This clip could not be loaded…'). The reference has no toast.",
+    "Top right: the reference has an outline flag (report) icon; the implementation leaves this corner empty.",
+    "Scrubber: the reference shows a light-grey buffered segment after the red progress and small amber marker ticks along the track. The implementation's track is uniform grey.",
+    "Bottom left: the reference shows a Pause (two bars) toggle; the implementation shows a Play triangle.",
+    "Bottom left cluster: the implementation's skip-10 and volume icons are smaller than the reference's, which are about the same size as the right-cluster icons.",
+    "Background: the implementation shows a darkened poster image; the reference frame is plain black."
+  ],
+  "fixes": [
+    "Remove the 'You're watching' info overlay from the controls state.",
+    "Suppress or hide the playback error toast in this view.",
+    "Add a top-right outline flag icon button, aligned with the back arrow.",
+    "Add a light-grey buffered-range fill and amber chapter tick marks to the scrubber track.",
+    "Show the solid Pause icon when the controls are shown during playback.",
+    "Enlarge the play/pause, skip-10 and volume icons to match the right-cluster icon size (~48–50px).",
+    "Use a black backdrop instead of the poster image behind the controls."
+  ],
+  "summary": "The bottom control bar and title lockup closely match the reference. The main gaps are an added synopsis overlay and error toast, no top-right flag icon, and a plain scrubber without the buffered segment or tick marks."
+}
+```

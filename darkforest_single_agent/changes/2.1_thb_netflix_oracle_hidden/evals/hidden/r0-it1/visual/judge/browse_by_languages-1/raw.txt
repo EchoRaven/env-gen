@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The top nav matches the reference: wordmark on the left, 7 nav items with a pill on the active one, and search/bell/Kids/avatar on the right. The page title is left-aligned with the preference controls on the right, and the content is a 6-column grid of 16:9 tiles with matching gutters and side margins. Three things differ. The grid starts higher (y≈226 vs ≈304), so the reference's larger gap under the header is missing. Row pitch is slightly tighter. The two selects sit about 46px apart instead of about 12px.",
+      "fix": "Raise the top margin of the grid to about 150px below the title row so the first row starts near y≈304. Set the gap between the Original Language and English selects to about 12px. Increase vertical row spacing to about 243px pitch."
+    },
+    "components": {
+      "score": 0.55,
+      "missing": [
+        "Expanded hover preview card over a tile (video still, title lockup, mute button, play/add-to-list/rate/more-info circular buttons, maturity rating box + runtime + HD badge, genre tags separated by bullets)",
+        "Open state of the 'Original Language' dropdown menu (Original Language / Dubbing / Subtitles)",
+        "Open state of the language dropdown (long scrolling list Arabic…Vietnamese on a dark panel)"
+      ],
+      "notes": "The nav, title, 'Select Your Preferences' label, both selects, the tile grid, TOP 10 badges and red 'Recently Added'/'New Episodes' tags all match. The reference is a transient state: both dropdowns are open and one tile is expanded into a hover preview card with a full control row. The implementation shows only the resting state, so none of these three elements appears.",
+      "fix": "Make both selects custom dropdowns that open a black panel with a 1px light border and left-aligned option lists. Add a tile hover card about 1.5× the tile width with: a 16:9 media area with title lockup and a mute toggle bottom-right; a row with a white filled play circle, outlined check and thumbs circles, and an outlined chevron-down circle on the right; a metadata row with a boxed TV-MA, the runtime and a boxed HD; and a genre row separated by bullets."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use a flat dark Netflix style with square-ish tile corners, tight 8px gutters, red badge tags and sharp-cornered outlined selects. The implementation adds an identical bold condensed title overlay with a heavy shadow on every tile. The reference uses each title's own artwork lockup, which here comes out as a uniform generic text treatment.",
+      "fix": "Render tile titles as artwork-style lockups, or drop the heavy text-shadow overlay so tiles read as poster art. Keep the selects as black boxes with a thin white border."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both use the same near-black #141414 background, white text, red Netflix wordmark and red badges, and a grey pill for the active nav item. The reference's dropdown panels and preview card use a darker #181818 elevated surface, which is absent from the implementation.",
+      "fix": "Use #181818 for the dropdown panels and the hover card, and lightly dim the background tiles behind the open menus."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Nav and heading use the same sans and sizes. The page title in the implementation is slightly larger (about 42px vs about 36px). The select text is similar. The tile title overlays use a condensed display face that the reference does not apply uniformly.",
+      "fix": "Reduce the 'Browse by Languages' heading to about 36px regular. Keep the select labels at about 19px with slight letter spacing."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Search, bell, Kids tile, smiley avatar with caret, TOP 10 badges and caret triangles all match. The reference's circular outlined action icons (play, check, thumbs, chevron) and mute icon are absent because the hover card is missing.",
+      "fix": "Add 1.5px outline circular action icons and a filled white play circle inside the hover card."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "All of these match exactly: the nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English', and the 'Recently Added'/'New Season' tag wording. The menu options shown in the reference (Dubbing, Subtitles, the language names) do not appear because the dropdowns are not open.",
+      "fix": "Provide the options 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language list Arabic…Vietnamese in the dropdowns."
+    }
+  },
+  "similarity": 0.75,
+  "empty_state": false,
+  "deviations": [
+    "center of grid: the reference shows an expanded hover preview card ('THE CRASH' still with play/check/thumbs/chevron buttons, TV-MA 1h 34m HD row and genre tags); the implementation has no hover card",
+    "top-right: the reference shows the language select open with a long dark list from Arabic to Vietnamese overlapping the grid; the implementation's select is closed",
+    "top-right: the reference shows the 'Original Language' select open with Original Language/Dubbing/Subtitles; the implementation's select is closed",
+    "grid: the implementation's first row starts about 80px higher than the reference's, so the space below the header is missing",
+    "preferences row: the implementation spaces the two selects about 46px apart; the reference places them about 12px apart",
+    "tiles: the implementation overlays a uniform bold condensed title with a text shadow on every tile, while the reference uses varied per-title artwork lockups"
+  ],
+  "fixes": [
+    "Build the tile hover preview card (scaled about 1.5×, #181818, media area with title lockup and mute button, circular play/add/rate/expand buttons, maturity/runtime/HD row, bullet-separated genre tags) and show it on hover",
+    "Turn both selects into custom dropdowns that open black bordered panels listing Original Language/Dubbing/Subtitles and the languages Arabic…Vietnamese",
+    "Move the grid down so the first row begins about 304px from the top, and set the row pitch to about 243px",
+    "Reduce the gap between the two selects to about 12px and the page heading to about 36px",
+    "Replace the generic text-shadow title overlay on tiles with artwork-style lockups, or remove it"
+  ],
+  "summary": "The chrome, header, preference selects and 6-column tile grid match the reference closely, but the screen shows only the resting state: the reference's open dropdown menus and expanded hover preview card are missing, and spacing differs slightly."
+}

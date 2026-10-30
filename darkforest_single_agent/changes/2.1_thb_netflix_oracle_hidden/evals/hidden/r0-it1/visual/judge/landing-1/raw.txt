@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches. There is a full-bleed hero with a tilted poster wall, the logo sits top-left, and the language selector and Sign In button sit top-right. The headline, subline, prompt and email+CTA row are centred, followed by a curved divider and a promo banner below. The banner placement differs: in the reference the popcorn icon sits outside the card to its left and the card starts at about x=275. In the implementation the card starts at about x=168 and the popcorn is inside its left edge. The banner also sits slightly lower in the implementation (about y=1040 vs y=1015).",
+      "fix": "Move the popcorn illustration outside the promo card so it floats to the card's left. Start the card about 100px further right (about x=275 at 1920 width) so its right edge stays aligned with the Sign In button, and tighten the gap between the curve and the banner by about 25px."
+    },
+    "components": {
+      "score": 0.92,
+      "notes": "Every component in the reference is present: wordmark logo, language dropdown with translate icon and caret, red Sign In button, headline, price subline, email prompt, email input with placeholder, red Get Started button with chevron, curved accent divider, and the promo card with popcorn icon, title, subtitle and Learn More button. Nothing extra has been added. The differences are small and in presentation only (popcorn placement, divider extent).",
+      "fix": "Keep the inventory. Adjust the popcorn placement and the divider arc as described under layout and style.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "The design language matches: dark cinematic look, slightly rounded corners and a tilted poster mosaic. Three treatments differ. (1) The reference covers the poster wall with a much heavier dark overlay so posters read as muted; the implementation's posters are noticeably brighter and more saturated. (2) The reference's curved divider is a full-width arc whose pinkish-red stroke runs from edge to edge, with a soft indigo glow underneath. The implementation shows only a short red segment in the centre that fades out toward the sides. (3) The reference promo card is more rounded (about 16px radius) and the popcorn has a subtle circular glow.",
+      "fix": "Raise the hero overlay to about rgba(0,0,0,0.6–0.7) with a radial/vertical vignette. Draw the divider as a full-width elliptical arc with a 2–3px pink-red (#e50914→#c11119 / pink) stroke across the whole width and an indigo radial glow beneath. Give the promo card about 16px corner radius."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "The dark scheme, Netflix red CTAs, white text and black page base all match. The promo card is different: the reference uses a purple/indigo gradient (#1f1a4a → #2a1a40), while the implementation goes from navy to maroon/brown on the right. The hero is lighter overall because the dimming is weaker. The divider glow in the reference is a richer blue-violet band across the whole width.",
+      "fix": "Set the promo card background to a left-to-right indigo→purple gradient (about #1d1b4b → #2b1c47) without the maroon tint. Darken the hero overlay. Extend the indigo glow under the divider across the full width."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sizes, hierarchy, centring and weights are close: a heavy two-line headline of about 64px, a bold subline, a regular prompt, and bold promo copy. The reference uses Netflix Sans (tighter, slightly condensed geometric); the implementation uses an Inter-like face that is a little wider. The subline 'Starts at $8.99…' is semibold in the reference but looks medium/regular-weight in the implementation.",
+      "fix": "Use a Netflix Sans–like face (or Helvetica Neue/Inter with letter-spacing -0.01em). Set the price subline to weight 700. Keep the headline at weight 900 with a slightly tighter tracking."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The wordmark logo, translate icon, dropdown caret and chevron on Get Started match. The poster tiles have the same tilted, rounded-rectangle crop. The popcorn icon in the reference is a rounder, 3D-style illustration on a soft dark circular plate with a glow. The implementation's popcorn is flatter, sits flush inside the card, and has no plate or glow.",
+      "fix": "Replace the popcorn with a glossy 3D-style illustration (about 80px) on a soft circular dark backdrop with a faint glow, placed outside the card on its left."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All UI copy matches word for word: 'English', 'Sign In', 'Unlimited movies, TV shows, and more', 'Starts at $8.99. Cancel anytime.', 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started', 'The Netflix you love for just $8.99.', 'Get our most affordable, ad-supported plan.', 'Learn More'.",
+      "fix": "No change needed."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero background: the reference dims the poster wall heavily so posters look muted; the implementation's posters are bright and saturated, which weakens the dark cinematic contrast behind the headline",
+    "curved divider at hero bottom (y≈900): the reference has a full-width pink-red arc stroke from edge to edge with an indigo glow below; the implementation shows only a short red segment in the centre that fades out",
+    "promo banner: the reference floats the popcorn icon outside the card to its left with the card starting at about x=275; the implementation puts the popcorn inside the card's left edge and the card starts at about x=168",
+    "promo banner background: the reference is an indigo/purple gradient; the implementation goes from navy to maroon-brown on the right",
+    "popcorn icon: the reference is a glossy 3D illustration on a soft circular plate; the implementation is flatter, with no plate or glow",
+    "typography: the implementation uses a wider Inter-like face instead of condensed Netflix Sans, and the price subline is lighter than the reference's bold"
+  ],
+  "fixes": [
+    "Increase the hero overlay darkness (about rgba(0,0,0,0.65) plus a vignette) so the poster wall reads as muted like the reference",
+    "Render the divider as a full-width elliptical arc with a continuous pink-red stroke across the entire viewport and an indigo radial glow beneath it",
+    "Restructure the promo row: put the popcorn illustration outside and to the left of the card, start the card about x=275, align its right edge with the Sign In button, and use about 16px radius",
+    "Change the promo card fill to an indigo→purple gradient (#1d1b4b → #2b1c47) and remove the maroon tint",
+    "Swap the popcorn for a glossy 3D-style icon on a circular dark plate with a faint glow",
+    "Use a Netflix Sans–like font (or tighten tracking) and make the 'Starts at $8.99. Cancel anytime.' line bold"
+  ],
+  "summary": "A close match in structure, components and copy; the remaining gaps are the hero overlay darkness, the extent of the divider arc, and the popcorn and colour treatment of the promo banner."
+}
+```

@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "Matches: the top nav bar is the same, with the wordmark on the left, the inline nav links, the 'My List' pill and the right-side utilities. The left-aligned 'My List' heading sits at a 67px gutter, and the 16:9 tiles run left to right in a dark, full-width page. Differs: the reference catches a transient hover state, where the third tile has grown into a larger preview card (about 440px wide) that overlaps the row. The implementation shows only the resting grid. The reference tile row sits lower (top at about y=303, with room above for the expanded card) than the implementation's row (about y=211). The implementation also adds a small footer line at the bottom left that the reference does not have.",
+      "fix": "Add the tile hover-expand behaviour: on hover, scale the tile into a roughly 440x430 preview card centred on the tile so it overlaps its neighbours. Leave enough top margin under the heading for the expanded card. Remove the TMDB attribution footer, or hide it on this screen."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present: nav with 7 links, the active 'My List' pill, search, bell, Kids profile chip, avatar with caret, page heading and the 16:9 title tiles. Missing (from the reference's hover state): the expanded preview card with video/artwork and an N badge, the title lockup, a mute toggle, a round white play button, the rating pill (dislike / like / love) with an 'I like this' tooltip, a circular 'more info' chevron button, a metadata row (rating box, runtime, HD badge) and genre tags separated by dots. Added in the implementation but not in the reference: a 'TOP 10' corner badge on every tile, a 'Recently Added' ribbon on every tile (the reference has one 'New Season' ribbon) and the footer text.",
+      "missing": [
+        "hover preview card (expanded tile)",
+        "mute/volume toggle on preview",
+        "round white play button",
+        "thumbs rating pill (dislike / like / love)",
+        "'I like this' tooltip",
+        "circular more-info chevron button",
+        "maturity rating box + runtime + HD badge row",
+        "genre tags row with dot separators"
+      ],
+      "fix": "Build a hover card. Top: the artwork with a title lockup at the bottom left and a circular mute button at the bottom right. Below it, on a #181818 panel: a white circular play button, a dark pill holding three outline thumb icons (with a white tooltip on hover), and an outlined circular chevron on the right. Under that, a row with an outlined 'R' box, the runtime and an outlined 'HD' badge, then genre words separated by grey dots. Use the TOP 10 badges sparingly rather than on every tile."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both are flat and dark, with slightly rounded tiles, artwork cropped edge to edge, a small gutter (about 8px) between tiles and roomy negative space. The reference's preview card has a soft drop shadow and a rounded elevated panel, which the implementation never shows. The implementation's badges on every tile make it busier.",
+      "fix": "Give the hover card a rounded (about 6px) elevated #181818 surface with a soft shadow. Cut the badges back so tiles look like the reference's cleaner treatment."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same #141414 base, Netflix red wordmark, white and light-grey nav text, grey pill for the active nav item and red ribbons on tiles. The reference's elevated card surface (#181818) and the white play button / white tooltip accents cannot be seen in the implementation.",
+      "fix": "Use #181818 for the hover card body, a solid white play button, and grey-outlined circular secondary buttons."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans UI font with a regular-weight heading and nav links. The implementation's 'My List' heading is a little larger and heavier (about 44px) than the reference's (about 34px, regular). The metadata and genre typography in the reference card is absent.",
+      "fix": "Make the page heading about 34px regular weight. Set the hover card's metadata text at about 16px light grey and the genre tags at about 16px white."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The nav icons match: outline search, outline bell, Kids gradient tile and blue smiley avatar with caret. Tile artwork is 16:9 with a title lockup and a red ribbon, which matches. The reference card's outline icons (thumbs, mute, chevron, play) are missing. The TOP 10 corner badge is extra.",
+      "fix": "Use outline thumbs-down, thumbs-up and double-thumbs icons, an outline speaker-mute icon, a chevron-down in a circle, and a solid play triangle on a white circle."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. The 'My List' heading matches. Missing: the 'I like this' tooltip text and the metadata labels. Extra: the footer attribution sentence.",
+      "fix": "Add the 'I like this' tooltip (and the matching labels for the other two rating buttons) and remove the attribution footer copy."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "centre of the tile row: the reference shows an expanded hover preview card (artwork, play button, thumbs rating pill with 'I like this' tooltip, chevron, rating/runtime/HD row, genre tags); the implementation shows only flat resting tiles",
+    "tile row position: the reference row sits about 90px lower (y≈303) than the implementation's (y≈211), leaving room above for the expanded card",
+    "tile top-right corners: the implementation adds a red 'TOP 10' badge to every tile; the reference tiles have none",
+    "tile bottoms: the implementation puts a 'Recently Added' ribbon on every tile; the reference has a single 'New Season' ribbon on one tile only",
+    "bottom left of the page: the implementation adds a grey attribution footer line that the reference does not have",
+    "page heading: the implementation's 'My List' is larger and bolder than the reference's lighter heading of about 34px"
+  ],
+  "fixes": [
+    "Add a hover-expanded preview card to the tiles: artwork with title lockup and mute button; a #181818 body with a white play circle, a thumbs rating pill with tooltip and a circular chevron; a rating/runtime/HD row; genre tags separated by dots",
+    "Shift the tile row down so the top of the expanded card fits under the heading",
+    "Remove the TOP 10 badges from My List tiles and show ribbons only where the item has one",
+    "Remove the attribution footer on this screen",
+    "Reduce the 'My List' heading to about 34px regular weight"
+  ],
+  "summary": "The chrome, heading and 16:9 tile grid match the reference, but the reference's hover preview card and all its controls are missing, and the implementation adds badges and a footer."
+}
+```

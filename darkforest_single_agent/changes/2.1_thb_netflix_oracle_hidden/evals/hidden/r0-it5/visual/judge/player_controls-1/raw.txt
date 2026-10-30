@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The overall skeleton matches. Both are full-bleed players with no app chrome, a back arrow at top-left, a full-width scrubber above a bottom control row (left cluster, centred title, right cluster) and the remaining time at the right end of the scrubber. Differences: the implementation puts a large left-aligned 'You're watching' info block in the middle-left of the frame and a toast at top-centre, and neither appears in the reference. The top-right corner is empty, but the reference has an icon there. The scrubber sits slightly lower (~990px vs ~968px).",
+      "fix": "Remove the mid-frame paused-info block and the top-centre toast from the controls state, put an icon button in the top-right corner, and move the scrubber up to ~968px."
+    },
+    "components": {
+      "score": 0.68,
+      "missing": [
+        "top-right flag (report a problem) icon button",
+        "buffered segment on the progress bar (lighter grey fill ahead of the playhead)",
+        "chapter/marker ticks on the progress track"
+      ],
+      "notes": "Present: back arrow; scrubber with red playhead and time remaining; play/pause; rewind 10; forward 10; volume; centred 'Show E# Episode title'; next episode; episodes; subtitles/audio; fullscreen. Bottom-row count matches at 4 left + title + 4 right. Reference state is playing, so it shows a pause icon; the implementation shows play. Invented: the 'You're watching / Title / Season: Ep. / synopsis' overlay and the red-bar error toast 'This clip could not be loaded…'. The progress track has no buffered fill and no marker ticks.",
+      "fix": "Add the top-right flag icon button, render the controls in the playing state (pause icon), add the light-grey buffered fill and the small marker ticks on the track, and hide the paused-info overlay and error toast."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "The design language matches: minimal, flat, white line icons on dark, a thin hairline scrubber and no containers. The implementation adds a dimmed poster backdrop with dark scrim and a boxed toast, so the frame is far busier than the reference's plain black video area.",
+      "fix": "Make the video area plain black (or the actual video frame) behind the controls, with no dimmed poster scrim and no boxed toast."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both use a dark scheme with white icons and text, a red playhead and red played portion, and a grey track. The reference is pure black, and its track has a red played segment, a light-grey buffered segment and a darker remaining track, with small amber marker ticks. The implementation's track is a single grey plus the red dot, and the warm red/brown poster tints the whole screen.",
+      "fix": "Use a #000 background, make the track three-tone (red played / light-grey ~#bbb buffered / dark-grey remaining), and add small amber marker ticks."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The centred title lockup matches: bold show name followed by a regular 'E1  Episode title', white sans, ~22px. The time label is a small white sans in both. The implementation adds large bold display text (title ~50px, subtitle ~26px) and a body paragraph, which are not in the reference.",
+      "fix": "Keep only the bottom title lockup and the time label, and remove the large title/subtitle/synopsis text."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "Both use the same Netflix-style line icons: back arrow, circular ±10 arrows, speaker with waves, next-episode, stacked episodes, subtitles bubble and corner-bracket fullscreen. In the implementation the ±10 icons are noticeably smaller (~32px vs ~50px) with tiny numerals, the play icon replaces the pause bars, and the top-right flag icon is absent. Overall icon size is slightly smaller than in the reference (~44–50px).",
+      "fix": "Scale the bottom-row icons to ~48–50px with ±10 numerals at the reference size, show the two solid pause bars while playing, and add the outline flag icon at top-right."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The title lockup format 'Show E1  Episode title' matches. The implementation adds a 'You're watching' label and an error message, neither of which is in the reference.",
+      "fix": "Remove the 'You're watching' label and the error toast copy from this state."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "center-left of frame: implementation overlays a 'You're watching / large title / Season: Ep. / synopsis' info block on a dimmed poster; reference shows a plain black video area with no overlay text",
+    "top-right corner: reference has an outline flag (report) icon button; implementation has nothing there",
+    "top-center: implementation shows an invented red-accent error toast 'This clip could not be loaded…'; reference has no toast",
+    "bottom-left play control: reference shows the pause icon (playing state); implementation shows a play triangle",
+    "progress bar: reference has red played fill, a light-grey buffered segment and amber marker ticks; implementation has only a flat grey track with a red dot",
+    "bottom row: implementation's rewind/forward-10 icons are much smaller than the reference's ~50px circular icons",
+    "scrubber vertical position: implementation's sits ~20px lower than the reference's"
+  ],
+  "fixes": [
+    "Hide the paused-info overlay (You're watching/title/episode/synopsis) and the error toast in the controls state, and render a plain black video area",
+    "Add an outline flag icon button at top-right, mirroring the back arrow's inset (~40px from the edges)",
+    "Render the controls in the playing state: pause (two solid bars) instead of play",
+    "Make the progress track three-tone (red played, light-grey buffered, dark-grey remaining) and add small amber marker ticks",
+    "Enlarge the ±10 skip icons and the other bottom-row icons to ~48–50px to match the reference scale",
+    "Move the scrubber up to ~968px so it sits about 70px above the control row"
+  ],
+  "summary": "The player chrome (scrubber, bottom control row, title lockup, back arrow) matches closely. The implementation adds a paused-info overlay and an error toast, leaves out the top-right flag icon and the buffered/marker progress styling, and shows the play icon instead of pause."
+}
+```

@@ -1,0 +1,57 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same structure: centred dark modal (~1085px) over a dimmed Home page, with the Netflix top nav and hero still visible at the sides. Inside the modal the order matches: synopsis paragraph on the left with a metadata column on the right, then an 'Episodes' heading with the series name right-aligned, then a full-width list of episode rows. Each row has a large number, a 16:9 thumbnail, a bold title with runtime on the right and a description below. The implementation's rows are a little taller (~157px vs ~146px) because the descriptions are one line and the vertical padding is larger.",
+      "fix": "Cut the vertical padding in each episode row so rows are about 146px apart, matching the reference rhythm."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": [],
+      "notes": "Every component in the reference is present: synopsis, right-hand metadata column, 'Episodes' header with series label, numbered episode rows with thumbnail, title, runtime and description, and the circular play overlay on the hovered thumbnail. The states differ. In the reference only row 1 has the lighter 'current episode' card, and hovering row 2 shows just the play icon with no row highlight. In the implementation rows 1 and 2 both get the lighter card background, so the selected and hover states can't be told apart, and the divider between rows 2 and 3 is lost.",
+      "fix": "Keep the lighter rounded card background only on the current episode (row 1). On hover, show the play-circle overlay on the thumbnail without changing the row background. Keep hairline dividers between all rows that aren't highlighted."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat, dark, minimal treatment: slightly rounded highlighted card, hairline grey dividers, small-radius thumbnails, airy spacing. The only difference is the two stacked highlighted rows, which make the list read heavier.",
+      "fix": "Highlight only one row and restore the hairline divider under row 2."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The modal surface (#181818-ish), the lighter grey highlighted row (#333-ish), white titles, light-grey descriptions and the dimmed backdrop all match. Metadata labels in grey with values in white match the reference's 'This Show Is:' styling.",
+      "fix": "No colour changes needed apart from limiting the highlight background to a single row."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "Same sans-serif and the same hierarchy: large light episode numbers, bold white titles around 18px, runtime at the same size, regular descriptions around 15px in light grey, and a bold 'Episodes' heading around 26px with the series name in regular weight on the right. The synopsis size and line height match.",
+      "fix": "No type changes needed. Let descriptions wrap to two lines with about 22px line height, as in the reference."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Thumbnail aspect ratio and crop match (16:9, cover, slightly rounded), and the play overlay is the same outlined circle with a white triangle. Every row reuses the same key art as its thumbnail, while the reference shows a distinct still for each episode, so the list looks repetitive.",
+      "fix": "Use a different still for each episode thumbnail, or vary the crop of the backdrop per episode, instead of repeating the same key art."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The chrome copy matches: 'Episodes', the series name label, and runtimes in 'NNm' format. The episode descriptions are generated filler ('Season 1, episode N of Overdo.') rather than real loglines, so each description is one short line and reads as placeholder text. The episode titles are generic ('Episode 1') where the reference has real titles.",
+      "fix": "Seed real per-episode titles and one- to two-sentence loglines so each row has a named title and a full description."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Episode list: the implementation gives rows 1 and 2 both the lighter highlighted card background; the reference highlights only row 1 and shows row 2's hover with just the play-circle overlay.",
+    "Episode list: in the implementation the divider between rows 2 and 3 disappears because the highlighted cards are adjacent; the reference has a hairline divider under every row that isn't highlighted.",
+    "Episode rows: the implementation's descriptions are one-line filler text ('Season 1, episode N of …') and the titles are generic, so rows look sparse compared with the reference's two-line loglines.",
+    "Episode thumbnails: the implementation repeats the same key art in every row; the reference shows a distinct still per episode.",
+    "Row spacing: the implementation's rows are about 10px taller each than the reference's."
+  ],
+  "fixes": [
+    "Show the highlighted card background only on the current episode row. Make hover show only the play-circle overlay on the thumbnail.",
+    "Make sure there is a hairline divider between every pair of rows that aren't highlighted, including below a hovered row.",
+    "Fill in real episode titles and two-line descriptions in the seed data.",
+    "Use a distinct thumbnail image for each episode.",
+    "Reduce row vertical padding so rows are about 146px apart."
+  ],
+  "summary": "A near-faithful copy of the More Info episodes modal; the main gaps are the double-highlighted rows (hover and selected states merged), filler episode copy, and repeated thumbnails."
+}

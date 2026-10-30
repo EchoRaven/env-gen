@@ -1,0 +1,72 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "The top nav matches: NETFLIX wordmark on the left, 7 text links, and search, bell, Kids and avatar on the right. The page underneath is a different screen. The reference is the 'Browse by Languages' page: a page title on the left, 'Select Your Preferences' with two dropdowns on the right, then a 6-column grid of 16:9 tiles with no row headings. The implementation is the Home layout: a large rounded hero billboard, horizontally scrolling rails that bleed off the right edge, a page indicator, and a 'Top 10 TV Shows in the U.S. Today' row heading. The preview card is placed differently too. In the reference it is centred over its tile and grows upward, about 435px wide, and stays inside the grid gutters. In the implementation it is pinned to the far left at x≈16, past the 67px page gutter.",
+      "fix": "Show this state on the Browse by Languages screen. Remove the hero billboard. Add an H1 'Browse by Languages' at the left gutter, with 'Select Your Preferences' and two bordered dropdowns ('Original Language', 'English') aligned right on the same baseline. Render the titles as a static 6-column wrapping grid with no rail headings and no off-screen bleed. Anchor the hover card to its tile, scale it about 1.5× from the tile centre, and clamp it inside the 67px page gutters."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "The hover card is mostly right. It has a media area with a small red N badge top-left, a dark lower panel, a white filled Play circle, two outlined circle buttons, a chevron circle on the right, a bordered maturity box with 'N Seasons' and an HD badge, and a genre row separated by dots. Differences: the reference media has a circular mute button bottom-right, and the implementation does not. The second button shows a check (already in My List) in the reference and a plus in the implementation. The rest of the page is missing the reference's title and preference dropdowns, and adds a hero, Play and More Info CTAs, and a carousel page indicator that the reference does not have. 'Browse by Languages' should be the selected pill in the nav, not 'Home'.",
+      "missing": [
+        "mute/volume circle button bottom-right of preview media",
+        "'Browse by Languages' page heading",
+        "'Select Your Preferences' label",
+        "'Original Language' dropdown",
+        "'English' language dropdown",
+        "active pill on 'Browse by Languages' nav item"
+      ],
+      "fix": "Add a 44px outlined circle with a muted speaker icon at the bottom-right of the preview media. Show a check icon in the second action button when the title is in My List. Add the page heading and the two preference dropdowns. Remove the hero billboard, its Play and More Info buttons, and the rail page indicator from this screen. Move the grey active pill to 'Browse by Languages'."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use the same flat dark Netflix language: slightly rounded tiles, red 'Recently Added' pill badges, TOP 10 corner flags, and a hover card with soft elevation. The implementation's hero is a rounded inset card, which adds visual weight the reference screen doesn't have. The reference dropdowns are square-cornered with a 1px white outline.",
+      "fix": "Drop the rounded hero panel. Give the hover card the reference's ~4px radius, a medium shadow, and a #181818 lower panel. Make the dropdowns square-cornered with a 1px white border on black."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same near-black #141414 base, white text, Netflix red for the wordmark and badges, and a grey #2a/#33 pill for the active nav item. The hover card panels are the same dark grey. The hero adds a large bright illustrated area that the reference screen doesn't have.",
+      "fix": "Keep the palette. Removing the hero brings the overall luminance back to the reference's uniformly dark grid."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Nav, metadata and genre text use the same clean sans at similar sizes and weights. The reference has a large regular-weight ~36px page title that the implementation lacks. The implementation adds a huge condensed hero title and a 30px row heading instead. On the hover card, the 'TV-xx' boxed rating, 'N Seasons' and genre line match in size and colour.",
+      "fix": "Add the ~36px regular-weight 'Browse by Languages' title and the ~15px 'Select Your Preferences' label. Remove the hero display title and the row heading from this screen."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The line icons match: search, bell, and the card's play, thumbs-up and chevron in outlined circles. The reference's second card button is a check and the implementation's is a plus. The reference has a muted-speaker icon on the media, and the implementation has none. Tiles are 16:9 with title artwork and the same badge overlays. In the reference, the card media is a 16:9 still with the logo lockup at bottom-left. The implementation's media is closer to 16:9 too, but it uses a big condensed text title instead of a logo-art treatment. The reference uses a blue smiley profile avatar; the implementation uses a duplicated Kids-style gradient avatar.",
+      "fix": "Use a check icon for in-list titles. Add the muted speaker icon. Use a distinct profile avatar image (blue square smiley style) instead of reusing the Kids gradient tile."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The nav labels match exactly. The card copy pattern matches ('2 Seasons', HD, genre tags). The reference copy 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English' is absent. The extra copy 'Play', 'More Info' and 'Top 10 TV Shows in the U.S. Today' is not in the reference.",
+      "fix": "Add the four reference strings in place, and remove the hero CTA labels and row heading on this screen."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "page body: the implementation renders a Home hero billboard with title, metadata and Play/More Info buttons at the top. The reference has no hero; it goes straight to the 'Browse by Languages' title row and a tile grid.",
+    "header row under nav: the reference's 'Browse by Languages' H1 and the right-aligned 'Select Your Preferences' label with 'Original Language' and 'English' dropdowns are missing from the implementation",
+    "content area: the implementation uses horizontal rails that bleed off the right edge (partial 7th tile, page indicator dashes). The reference is a static 6-column grid that fits inside the gutters.",
+    "nav: the active grey pill is on 'Home' in the implementation. In the reference it is on 'Browse by Languages'.",
+    "hover card position: the implementation pins the card to the far-left screen edge (x≈16), outside the page gutter. In the reference, the card expands from its tile and grows upward, inside the grid.",
+    "hover card media: the reference shows a circular muted-speaker button bottom-right of the media. The implementation has none.",
+    "hover card actions: the reference's second button is a check (in My List). The implementation shows a plus.",
+    "bottom of implementation: an extra 'Top 10 TV Shows in the U.S. Today' row heading appears. The reference grid has no row headings.",
+    "profile avatar top-right: the reference uses a blue smiley avatar. The implementation reuses the Kids gradient tile."
+  ],
+  "fixes": [
+    "Route this state to the Browse by Languages screen: no hero, and set the nav active pill to 'Browse by Languages'.",
+    "Add the title row: 'Browse by Languages' (~36px regular) on the left, and on the right 'Select Your Preferences' plus two square bordered dropdowns ('Original Language' ▾, 'English' ▾).",
+    "Replace the scrolling rails with a 6-column wrapping 16:9 tile grid inside the 67px gutters, with no row headings and no page indicators.",
+    "Anchor the hover card to the hovered tile: scale ~1.5× and expand upward, clamped within the gutters.",
+    "Add a 44px outlined muted-speaker button at the bottom-right of the card's media.",
+    "Show a check icon instead of a plus in the card's second action button when the title is in My List.",
+    "Use a distinct profile avatar (blue smiley square) next to the caret."
+  ],
+  "summary": "The hover card closely matches the reference's structure and treatment, but it sits on the Home page (hero plus rails) instead of the Browse by Languages page (title, preference dropdowns, static grid), and it lacks the mute button and the in-list check state."
+}
+```

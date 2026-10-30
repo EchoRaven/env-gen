@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The skeleton matches: a full-bleed player, back arrow top-left, flag icon top-right, a full-width scrubber with the time on the right, and a bottom control row (transport cluster on the left, centred title, utility icons on the right). The difference is in the middle of the frame. The reference shows only the plain video surface with nothing in the centre. The implementation adds a large left-aligned info block at about 30–45% of the height, laid over full-bleed artwork, and a thin black strip runs across the very top edge. The bottom row and scrubber also sit slightly lower and tighter than in the reference.",
+      "fix": "Remove the centre-left info overlay so the middle of the frame is only the video surface. Remove the top black strip so the player is truly full-bleed. Keep the scrubber at about 87% of the height and the control row about 70px below it."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Present and correctly placed: back arrow, report flag, scrubber with red played portion, red thumb and time label, play/pause, back 10, forward 10, volume, centred title/episode label, next episode, episodes, subtitles/audio, and fullscreen. Differences: the scrubber has no light-grey buffered segment and no small yellow chapter/marker ticks, and the thumb sits at 0 with the label reading 0:00 where the reference shows remaining time. The main button shows a play triangle, but the reference is in its playing state and shows a pause icon. Invented elements: the 'You're watching' / title / season-episode / synopsis overlay and the red 'This clip can't be played in this browser' error line.",
+      "missing": [
+        "buffered-progress segment on the scrubber",
+        "chapter/marker ticks on the scrubber",
+        "pause icon in the playing state (shows play instead)"
+      ],
+      "fix": "Render the playing state: a pause icon (two solid bars), a red played fill, a lighter-grey buffered fill ahead of the thumb, and small yellow marker ticks along the track. Show remaining time on the right. Delete the info overlay and the error line."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are flat and minimal, using thin white line icons, a hairline scrubber and a small round red thumb, with no chrome panels. The implementation's large hero-style title block and full-colour poster backdrop make it read like a marketing detail screen rather than the reference's bare, utilitarian player overlay.",
+      "fix": "Keep the overlay bare: icons and scrubber only on top of the video, with no headline text block. If there is no playable frame, use a plain black surface rather than poster art."
+    },
+    "color": {
+      "score": 0.6,
+      "notes": "The reference is pure black with white icons, a red progress fill and thumb, a grey track, and yellow marker ticks. The implementation's controls use the right white and red, but the frame is filled with saturated blue and red poster artwork, and it adds a pink/red error line. The overall palette is very different from the monochrome black reference.",
+      "fix": "Use a #000 player background when no video frame renders, and keep the colour accents to the red played fill and thumb, a grey track, a light-grey buffered segment and yellow ticks."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The bottom title label matches: a bold show name followed by 'E1' and the episode title in regular weight, white, sans-serif and centred. The time label is the same small white sans. The implementation adds an extra hierarchy (large bold display title, semibold season line, body synopsis, small caption) that does not exist in the reference.",
+      "fix": "Remove the overlay text levels and keep only the centred bottom label (bold series name + regular 'E1 Title') and the small time label."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The icon set is a close match: outlined left arrow, outlined flag, circular back/forward 10 arrows, a speaker with waves, next-episode, stacked-cards episodes, speech-bubble subtitles and corner-bracket fullscreen, all white line icons of similar weight. Differences: the main control is a play triangle where the reference shows a pause glyph, the back/forward 10 and volume icons are a bit smaller and more tightly spaced than in the reference, and the reference leaves a wider gap between the episodes and subtitles icons.",
+      "fix": "Show the pause glyph while playing. Bring the left-cluster icons up to about 50px with about 40px gaps. Widen the gap between the episodes and subtitles icons to match the reference."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The bottom label format '<Series> E1 <Episode title>' and the time label match. The implementation adds the copy 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"', a synopsis, and a technical error message, none of which appear in the reference. The time reads 0:00 where the reference shows remaining duration.",
+      "fix": "Remove the 'You're watching' block and the browser error message. Show the remaining duration (e.g. 32:57) in the time label."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "centre-left of frame: implementation overlays a 'You're watching' / large title / season-episode / synopsis block; the reference has no text in the frame body",
+    "centre-left under the synopsis: implementation shows a red 'This clip can't be played in this browser' error line that the reference does not have",
+    "frame background: implementation fills the player with full-colour poster artwork; the reference shows a plain black video surface",
+    "scrubber: implementation lacks the light-grey buffered segment and the small yellow marker ticks shown in the reference, and its thumb sits at the start with the label reading 0:00",
+    "bottom-left primary control: implementation shows a play triangle; the reference (playing state) shows a pause icon",
+    "top edge: implementation has a thin black strip above the artwork; the reference player is edge-to-edge",
+    "bottom-left cluster: back/forward 10 and volume icons are slightly smaller and more tightly spaced than in the reference; the right cluster lacks the wider gap between the episodes and subtitles icons"
+  ],
+  "fixes": [
+    "Remove the 'You're watching' info overlay (title, season/episode line, synopsis) from the controls state",
+    "Remove the browser-compatibility error text from the player surface",
+    "Use a solid black player background instead of poster artwork when no video frame is rendered, and make it full-bleed with no top strip",
+    "Add a light-grey buffered segment ahead of the red played fill and small yellow marker ticks on the scrubber track; show remaining time on the right",
+    "Render the playing state with a pause icon (two solid bars) as the primary control",
+    "Enlarge the left-cluster icons to about 50px with even spacing of about 40px, and widen the gap between the episodes and subtitles icons on the right"
+  ],
+  "summary": "The control chrome and icon set closely match the reference, but the implementation adds an invented 'You're watching' info block and an error line over poster artwork, its scrubber lacks the buffered and marker treatment, and it shows the paused state instead of the reference's playing state."
+}
+```

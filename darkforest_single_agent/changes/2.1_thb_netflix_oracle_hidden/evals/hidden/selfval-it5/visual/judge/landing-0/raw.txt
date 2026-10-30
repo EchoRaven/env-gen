@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same skeleton: a full-bleed tilted poster collage under a dark overlay, a transparent top bar with the wordmark at left and the language select plus Sign In at right, centered hero copy, an email+CTA row, a curved red/pink divider, and a promo card along the bottom. Differences: the hero block sits about 50px higher in the implementation. In the reference the popcorn icon sits OUTSIDE the promo card on its left, and the card starts at about x=275. The implementation puts the icon INSIDE the card and stretches the card across the full content width (x=163–1757).",
+      "fix": "Move the popcorn icon out of the promo card so it sits to the card's left at about x=175–260. Start the card at about x=275 and end it at about x=1755. Push the hero block down about 50px so the headline's first line sits at about y=345."
+    },
+    "components": {
+      "score": 0.92,
+      "notes": "All of the reference's components are present: the NETFLIX wordmark, the language dropdown with a translate icon, the red Sign In button, the H1, the subheading, the helper line, the bordered email input with placeholder, the red Get Started button with a chevron, the curved divider, and the promo card with an icon, title, subtitle and grey Learn More button. The only difference is where the promo icon sits.",
+      "missing": [],
+      "fix": "Move the popcorn icon to the left of the promo card instead of inside it. The language dropdown needs a separate small caret with spacing, as in the reference ('English  ▾')."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same cinematic dark marketing style: rotated poster mosaic with a heavy dark vignette, slightly rounded corners on the buttons and input, and a rounded promo card. The reference collage uses more landscape-ish rotated tiles, while the implementation uses taller portrait tiles. The glow under the reference's curved divider is a dark navy-blue gradient; the implementation's is more purple.",
+      "fix": "Change the glow under the curve to a navy/indigo radial gradient (about #1b1f4a fading to black). Optionally use wider tiles in the background collage so it matches the reference density."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Netflix red (#E50914) on the wordmark, Sign In and Get Started matches, as do the white text on near-black and the grey Learn More button on a purple card. The glow under the curve leans purple in the implementation and blue-navy in the reference. The promo card is a little more saturated purple than the reference's muted indigo (#2b2350-ish).",
+      "fix": "Shift the glow below the divider toward blue-navy and make the promo card fill a more muted indigo/violet."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a heavy sans H1, a bold subheading, a regular helper line and a bold card title. The H1 wraps differently: the reference breaks as 'Unlimited movies, TV / shows, and more', the implementation as 'Unlimited movies, / TV shows, and more', so the implementation's text block is wider. The implementation's font also looks like Inter rather than Netflix Sans, with slightly tighter, more geometric letterforms.",
+      "fix": "Cap the H1 width at about 640px (or adjust the font size) so it wraps as 'Unlimited movies, TV / shows, and more'. Use a Netflix Sans-like font stack (e.g. 'Netflix Sans', Helvetica Neue, Arial) at weight 900."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "Wordmark, translate glyph and chevron are all present. The reference uses an illustrated 3D popcorn bucket, larger and outside the card; the implementation uses a smaller flat popcorn emoji inside the card. The implementation's dropdown caret is a chevron tight against the label, while the reference has a small filled triangle with spacing.",
+      "fix": "Replace the popcorn emoji with an illustrated popcorn-bucket image about 80px tall, outside the card on its left. Use a small filled ▾ caret with about 16px left margin in the language select."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The chrome copy matches: 'Sign In', 'English', 'Email address', 'Get Started', 'Learn More', the helper line, and the H1. The subheading and the promo card text differ ('Watch on any device…' vs 'Starts at $8.99. Cancel anytime.'; '60 real titles…' vs 'The Netflix you love for just $8.99.'). This is product marketing copy rather than user content, but the structure is preserved: a short title plus a one-line subtitle.",
+      "fix": "Keep the subheading to a single short pricing/benefit line, e.g. 'Starts at $X. Cancel anytime.', and keep the promo subtitle to one short sentence like the reference's."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Bottom promo: the reference has the popcorn illustration outside the card on its left and the card starts at about x=275; the implementation puts a popcorn emoji inside the card and the card spans the full content width",
+    "Hero H1: the implementation wraps as 'Unlimited movies, / TV shows, and more' (wider block); the reference wraps as 'Unlimited movies, TV / shows, and more'",
+    "Hero block vertical position: the implementation's headline starts about 50px higher than the reference's",
+    "Below the curved divider: the reference's glow is navy-blue; the implementation's is purple",
+    "Language select (top right): the reference has a spaced filled caret, the implementation has a tight chevron",
+    "Subheading and promo copy: the implementation's text is longer and different in tone from the reference's short pricing lines"
+  ],
+  "fixes": [
+    "Move the popcorn icon out of the promo card to its left, swap it for an illustrated bucket about 80px tall, and inset the card to start at about x=275",
+    "Constrain the H1 width so it breaks after 'TV', and shift the hero block down about 50px",
+    "Recolor the glow under the curved divider to navy/indigo and mute the promo card's purple",
+    "Space the language dropdown caret as a small filled triangle",
+    "Shorten the subheading to a single pricing line like 'Starts at $X. Cancel anytime.'"
+  ],
+  "summary": "A close recreation of the Netflix landing hero. Remaining gaps are the promo card's icon placement and width, the H1 line wrap, and the navy-vs-purple glow below the divider."
+}
+```

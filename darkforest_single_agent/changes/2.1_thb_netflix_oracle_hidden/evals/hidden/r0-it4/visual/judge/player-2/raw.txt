@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed dark video players with no app chrome. Each has a back arrow top-left, a bottom control row with transport on the left, a centred label and fullscreen bottom-right. The reference is a clean ad-playback state. The implementation adds a large left-aligned 'You're watching' info block in mid-screen, a full-width scrubber with a timestamp above the controls, and an error toast at top-centre. The top-right cluster from the reference is missing.",
+      "fix": "Remove the mid-screen title/synopsis overlay and the full-width progress bar. Put a top-right cluster at about y=55: flag icon, then the 'Ad 12' countdown badge. Keep a single bottom row: pause + volume on the left, centred caption, fullscreen on the right."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Matches: back arrow, play/pause toggle, volume icon, centred caption text, fullscreen icon. Missing: the report/flag icon and the 'Ad NN' countdown badge with its yellow left accent bar. Not in the reference: 10s back and forward skip buttons, next-episode, episodes-stack, subtitles/audio, red-dot scrubber with '0:00' time, 'You're watching' metadata block (title, season/episode, synopsis), red-accented error toast. The play icon shows paused state, but the reference shows the pause icon (playing).",
+      "fix": "Add a flag icon and an 'Ad 12' pill (dark translucent box, thin yellow/amber vertical bar on the left edge) at top-right. Remove the skip-10, next-episode, episodes, subtitles and scrubber controls in the ad state. Show the pause icon while playing.",
+      "missing": ["report/flag icon (top-right)", "Ad countdown badge with yellow accent bar (top-right)"]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use flat white line icons over video, with no visible panels and a minimal overlay. The implementation is busier because of the text block, dimmed scrim, toast and scrubber. The reference is very sparse and the video is not dimmed.",
+      "fix": "Drop the heavy dimming scrim and the overlay text. Keep only the thin bottom gradient behind the controls."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Both are dark with white icons and text. The implementation adds red accents (scrubber dot, toast bar) and the reference has none. The reference's only accent is the amber/yellow bar on the Ad badge, which the implementation lacks. The implementation also darkens the whole frame heavily.",
+      "fix": "Remove the red scrubber and red toast accent in this state. Add the amber accent bar to the Ad badge and stop dimming the video."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use the same sans font, and the centred bottom caption is regular weight at a similar size. The implementation adds large bold title, subtitle and body levels that are not in the reference. Its caption uses a bold title plus regular episode text, while the reference is a single regular-weight sentence.",
+      "fix": "Make the centred caption one regular-weight line (e.g. '<Title> begins after ads'). Remove the bold title, episode and synopsis typography."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Back arrow, volume-with-waves and fullscreen-corners icons match the outline style and weight. The reference uses the pause glyph and the implementation uses play. The flag icon is missing, and there are extra skip-10, next, episodes and subtitles icons.",
+      "fix": "Use the pause glyph during playback, add an outline flag icon at top-right, and remove the extra transport icons."
+    },
+    "copy": {
+      "score": 0.35,
+      "notes": "The reference copy is '<Title> begins after ads' and 'Ad 12'. The implementation shows '<Title> E1 Episode 1', 'You're watching', and a technical error message. The ad-state wording and the 'Ad' label are absent.",
+      "fix": "Change the centre caption to '<Title> begins after ads', add the 'Ad <seconds>' badge text, and remove the 'You're watching' and error copy from this view."
+    }
+  },
+  "similarity": 0.52,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference has a flag (report) icon and an 'Ad 12' badge with an amber left bar; the implementation has nothing there",
+    "mid-left: implementation overlays a large 'You're watching' / title / season-episode / synopsis block; the reference shows unobstructed video",
+    "bottom: implementation adds a full-width red-dot scrubber with a '0:00' timestamp; the reference has no progress bar",
+    "bottom-left: implementation adds 10s skip-back and skip-forward buttons; the reference shows only pause + volume",
+    "bottom-right: implementation adds next-episode, episodes and subtitles icons; the reference shows only fullscreen",
+    "bottom-centre: caption reads 'Title E1 Episode 1' (bold + regular) instead of the single regular line '<Title> begins after ads'",
+    "top-centre: implementation shows an error toast with a red accent bar, which is not in the reference",
+    "whole frame: implementation dims the video heavily; the reference video is at full brightness",
+    "bottom-left: play glyph shown where the reference shows the pause glyph"
+  ],
+  "fixes": [
+    "Add a top-right cluster: outline flag icon, then a dark 'Ad 12' pill with a thin amber vertical bar on its left edge",
+    "Remove the 'You're watching' title/episode/synopsis overlay and the dimming scrim",
+    "Remove the scrubber/timestamp row and the skip-10 back/forward, next-episode, episodes and subtitles buttons in the ad state",
+    "Bottom row: pause icon + volume icon on the left, centred regular-weight '<Title> begins after ads', fullscreen icon on the right",
+    "Hide the playback error toast (or make playback work) so the frame stays clean"
+  ],
+  "summary": "Same dark full-bleed player skeleton (back arrow, bottom transport row, centred caption, fullscreen), but the implementation shows a busy paused state with many extra controls and an info overlay, and lacks the reference's ad-state flag icon, Ad countdown badge and 'begins after ads' caption."
+}
+```

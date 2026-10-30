@@ -1,0 +1,66 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The overall skeleton matches the reference. Both have a transparent top nav over a full-bleed hero, a 'TV Shows' title with a Genres dropdown below the nav, a left-aligned hero lockup with Play/More Info, a mute + rating tab on the right edge, and a 'Today's Top Picks for You' row at the bottom. The open genre menu is laid out differently: the reference uses a wide 3-column panel (~470px wide, reaching x≈780), while the implementation uses a narrow single column (~235px). The hero block is also much taller in the implementation because of extra rank, metadata and synopsis lines, which pushes the Play buttons and the bottom row about 95px lower (row title y≈935 vs ≈840).",
+      "fix": "Make the genre flyout a ~470px-wide panel with 3 columns of 9 rows each, starting under the Genres button. Remove the extra hero text lines so Play/More Info sit at about y≈710 and the row title at about y≈840."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "The nav has all 7 items, the Shows pill is active, and search, bell, Kids label, profile avatar with caret, TV Shows title, Genres dropdown, hero Play/More Info, mute button, rating tab and carousel are all present. The genre menu has 6 entries instead of the reference's ~26, and none is shown in a hovered/underlined state (the reference underlines 'K-Dramas'). The hero adds components the reference doesn't have: a Top 10 badge with '#4 in TV Shows Today', a metadata row (genre · year · seasons · rating) and a synopsis paragraph. On the carousel tiles, the reference's red bottom-center status pills ('New Season', 'Recently Added', 'New Episode'/'Watch Now') are missing, and most of the reference's top-right TOP 10 corner badges are absent.",
+      "missing": [
+        "3-column genre menu with full genre list (~26 entries)",
+        "hover/underline state on a genre menu item",
+        "red status pills on carousel tiles (New Season / Recently Added / New Episode + Watch Now)",
+        "TOP 10 corner badges on most carousel tiles"
+      ],
+      "fix": "Fill the genre menu with the full list across 3 columns and underline the hovered item. Remove the Top 10 rank line, metadata row and synopsis from the hero. Add red bottom-center status pills and TOP 10 corner ribbons to the row tiles."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both use the same cinematic dark Netflix language: a full-bleed hero with a darkening gradient, a pill-shaped active nav item, a white Play button, a translucent grey More Info button, and a square near-black dropdown panel. The reference's Genres button is translucent with a thin white border, while the implementation's is solid black with a white border. The reference hero is sparse (logo + buttons); the implementation hero is text-heavy.",
+      "fix": "Give the Genres button a semi-transparent dark fill (rgba(0,0,0,0.3)) with a 1px white border, and remove the paragraph text from the hero."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Same dark scheme, Netflix red wordmark, white text, near-black menu panel, white Play button and grey translucent More Info button. Color differences are minor: the tile status pills are missing, so the red accents on the carousel are lost, and the profile avatar is a kids-gradient square rather than a solid blue avatar.",
+      "fix": "Add the red (#E50914) status pills and TOP 10 badges on tiles, and use a solid-color profile avatar."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "Nav, title, menu items and button labels use a similar sans with similar sizes and weights; menu items are regular weight at ~15px in both. Because the reference uses title artwork, the implementation's plain condensed-text title is a different treatment. The extra '#4 in TV Shows Today' semibold line, the metadata row and the ~22px synopsis add type levels the reference doesn't have.",
+      "fix": "Render the hero title as a logo-style image lockup at roughly 410×130, and drop the rank, metadata and synopsis type levels."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The line search, bell, info-circle and mute icons and the filled play triangle all match. Tiles are 16:9 with square corners and small gaps, as in the reference. Deviations: the profile avatar is a duplicate Kids-style gradient icon instead of a distinct solid avatar; the hero title is plain text, not title artwork; and the tiles rely on large text overlays without the badge/pill imagery treatment.",
+      "fix": "Replace the right-hand profile avatar with a solid blue rounded-square avatar. Use title-art images for the hero and tile title lockups, and add TOP 10 ribbon graphics."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels, 'TV Shows', 'Genres', 'Play', 'More Info', 'Kids' and 'Today's Top Picks for You' all match exactly. The genre menu wording differs: 'Action & Adventure', 'Animation', 'Comedy' and 'Family' versus the reference's 'Action', 'Anime', 'Comedies', 'Kids', etc., and most reference categories are absent. The added '#4 in TV Shows Today' copy is not in the reference.",
+      "fix": "Use the reference genre labels (Action, AMC Collection, Anime, British, Classic & Cult, Comedies, Crime, Documentaries, Dramas, Emmys®, Horror, International, K-Dramas, Kids, LGBTQ, Mysteries, Reality, Romance, Sci-Fi & Fantasy, Science & Nature, Spanish-Language, Sports, Stand-Up & Talk Shows, Teen, Thriller, USA 250!)."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "Genres flyout (top-left under the Genres button): the reference shows a wide 3-column panel with ~26 genres; the implementation shows a narrow single-column list of 6",
+    "Hero left block: the implementation adds a Top 10 badge with '#4 in TV Shows Today', a metadata row and a 3-line synopsis that the reference doesn't have, which pushes the Play/More Info buttons and the carousel down by ~95px",
+    "Carousel tiles: the reference's red bottom-center status pills ('New Season', 'Recently Added', 'New Episode' + 'Watch Now') are missing in the implementation",
+    "Carousel tiles: the reference has TOP 10 corner ribbons on 5 tiles; the implementation shows one",
+    "Hero title: the reference uses title artwork as a logo lockup; the implementation renders plain condensed text, which overlaps the open genre menu",
+    "Genre menu: no hovered/underlined item state, while the reference underlines 'K-Dramas'",
+    "Genres button: the reference uses a translucent fill with a white border; the implementation uses solid black",
+    "Top-right profile avatar: the implementation repeats the Kids gradient icon; the reference uses a distinct solid blue avatar"
+  ],
+  "fixes": [
+    "Rebuild the genre flyout as a ~470px-wide near-black panel with 3 columns of up to 9 items, filled with the reference genre list, and underline the hovered item",
+    "Remove the Top 10 rank line, metadata row and synopsis from the hero so it shows only the title lockup plus Play/More Info, with the buttons at about y≈710",
+    "Add red bottom-center status pills ('New Season', 'Recently Added', 'New Episode'/'Watch Now') and top-right TOP 10 ribbons to the carousel tiles",
+    "Render the hero title as title-art imagery (~410px wide) instead of large plain text",
+    "Style the Genres button with a semi-transparent dark fill and a 1px white border",
+    "Use a distinct solid-color profile avatar next to the caret, separate from the Kids icon"
+  ],
+  "summary": "The nav, page structure and hero/carousel skeleton match well, but the genre menu is a 6-item single column instead of the reference's 3-column ~26-item panel, the hero has text blocks the reference doesn't show, and the tile status pills are missing."
+}

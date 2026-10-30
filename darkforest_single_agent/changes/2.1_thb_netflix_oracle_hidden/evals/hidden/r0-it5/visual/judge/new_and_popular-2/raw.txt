@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same skeleton: a sticky dark top bar with the wordmark on the left, inline nav links and right-side utilities, then full-bleed horizontal carousel rows with left gutters of about 67px. The rows run in the same order: New on Netflix, then Top 10 TV Shows, then Top 10 Movies, then Coming This Week. The Top 10 rows use the same giant outlined rank numeral, with a portrait poster overlapping its right side. Page indicators sit at the top right of each row, and the last tile is clipped at the right edge. Differences: the content starts about 28px higher (first heading near y≈137 vs y≈165), and the gaps between rows are slightly tighter. An expanded hover preview card is open over the middle of the Top 10 rows. The reference has no such card, so it covers ranks 3–4 in both rows.",
+      "fix": "Add about 28px of top padding above the first row heading so it sits around y≈165, and match the reference's row spacing of about 270px between headings. Make sure no hover preview card is open when the page loads or the cursor rests on it (close it on load or capture without hover)."
+    },
+    "components": {
+      "score": 0.88,
+      "missing": [],
+      "notes": "Everything in the reference is present: the 7 nav items with New & Popular in a pill-highlighted active state, search, bell, the Kids profile chip with label, the avatar with caret, row headings, row page indicators, the red TOP 10 corner badges, the red status pills on tiles, the rank numerals in Top 10 rows, and the clipped peek tile. The implementation adds one extra element the reference doesn't show: an expanded mini-modal preview with play, add, rate and expand buttons, a maturity rating, seasons, an HD badge and genres. The reference's two-part badge, a red label next to a white 'Watch Now' chip, does not appear anywhere in the implementation.",
+      "fix": "Keep the hover preview card closed in the default state. Support a secondary white 'Watch Now' chip next to the red status pill on landscape tiles."
+    },
+    "style": {
+      "score": 0.92,
+      "notes": "Same flat, cinematic, dense style. Tile corners are slightly rounded, there are no shadows on tiles, rows are separated by whitespace, and the active nav item is a pill. The open preview card adds an elevated rounded surface that the reference state doesn't have.",
+      "fix": "Remove the elevated preview card from the resting state. Everything else already matches."
+    },
+    "color": {
+      "score": 0.95,
+      "notes": "The dark #141414 base, white headings, the grey active-nav pill and the red (#E50914-like) wordmark and badges all match. Colour use matches the reference.",
+      "fix": "No change needed."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a clean sans, regular-weight nav and similar heading sizes, with bold small text inside the badges. Tiles in the implementation show the title as uniform bold condensed all-caps text with a dark shadow. The reference uses each title's own logo artwork, so every tile in the implementation looks the same. Row headings look a little larger and heavier in the implementation.",
+      "fix": "Use per-title logo artwork in the lower half of each tile where it exists. Otherwise use a lighter, more varied lockup. Reduce row heading size and weight slightly to match the reference (about 26px, medium weight)."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "The outline search and bell icons, the Kids chip, the blue smiley avatar with caret, and the TOP 10 badges all match. Landscape tiles are about 16:9 and portrait posters about 2:3, both cover-cropped. The rank numerals use the same dark outlined treatment. Top 10 posters are slightly narrower and the numerals sit a little further left.",
+      "fix": "Widen the Top 10 posters to about 147px and tuck the numeral closer behind the poster's left edge, as in the reference."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, row headings and badge wording ('Recently Added', 'New Season'/'New Episodes') match the reference. The reference's 'Watch Now' chip isn't shown.",
+      "fix": "Add the 'Watch Now' secondary chip where a title has a new episode."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "middle of Top 10 TV / Top 10 Movies rows: the implementation has an expanded hover preview card open (artwork, play/add/rate/expand buttons, TV-14, seasons, genres) that covers ranks 3–4. The reference shows no overlay.",
+    "page top: the first row heading and carousel sit about 28px higher than in the reference, and the rows are slightly tighter vertically",
+    "landscape tiles: titles are generic bold condensed all-caps text, while the reference uses per-title logo artwork",
+    "Top 10 rows: posters are slightly narrower and numerals sit further left, so the numeral and poster overlap less than in the reference",
+    "badges: the reference's two-part 'New Episode' + white 'Watch Now' chip has no equivalent in the implementation"
+  ],
+  "fixes": [
+    "Make sure the hover preview card isn't open by default or on page load",
+    "Add about 28px of top padding before 'New on Netflix' and match the reference's spacing between rows",
+    "Use title logo artwork on tiles instead of uniform condensed text, or soften the text lockup",
+    "Widen the Top 10 posters to about 147px and tighten the numeral/poster overlap",
+    "Support the white 'Watch Now' chip next to the red status pill"
+  ],
+  "summary": "Close copy of the New & Popular screen in chrome, row structure, Top 10 numerals and badge system; the main problem is a hover preview card left open over the Top 10 rows, plus small spacing and title-lockup differences."
+}
+```

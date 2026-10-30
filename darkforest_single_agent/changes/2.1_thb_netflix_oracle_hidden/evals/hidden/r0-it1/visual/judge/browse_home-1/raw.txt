@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Same skeleton. There is a top nav with the logo on the left, the nav pills inline and the utilities on the right. Below it sit an inset rounded hero card with the same margins (~67px), a row heading, a pagination indicator on the right and a horizontal carousel with a peeking last tile. Vertical spacing differs a little: the reference leaves a bigger gap between the metadata row and the CTA buttons (~65px vs ~35px), so the lockup block sits lower. Title-to-badge spacing also differs.",
+      "fix": "Raise the margin between the hero metadata row and the Play/More Info buttons to ~60px and anchor the buttons ~40px above the hero card's bottom edge, as in the reference."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "The inventory mostly matches. Present: the 7 nav items with the active Home pill, search, the bell, the Kids profile chip, the avatar with a caret, the sound toggle at the hero's top right, the status badge with its headline line, the dot-separated metadata row, the white Play pill, the grey translucent More Info pill, the row heading, the segmented page indicator and Top 10 corner badges on tiles. Missing: the bottom-right hero tag ('New Episode' with a megaphone icon). The sound toggle shows a muted icon where the reference shows unmuted, which is a state difference.",
+      "missing": ["hero bottom-right episode tag (megaphone icon + 'New Episode' label)"],
+      "fix": "Add a small bottom-right label inside the hero: a red/pink megaphone icon plus 13px semibold white text, aligned with the CTA row. Show the speaker toggle as unmuted by default to match the reference."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat, cinematic, dark style. The hero card has a large (~20px) radius, the buttons are pills and the tiles are rounded. The reference hero card has a soft dark drop shadow lifting it off a lighter backdrop; the implementation's card sits flat on the near-black page. Carousel gutters are about 10px in the reference and slightly tighter in the implementation.",
+      "fix": "Give the hero card a soft diffuse shadow (e.g. 0 20px 40px rgba(0,0,0,.5)) and set the carousel tile gap to ~10px."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both are dark with a red brand, white primary CTA and grey translucent secondary CTA. The reference page background is a warm grey-brown gradient: lighter (#3a3633-ish) behind the header and the top/sides of the hero, fading to ~#181818 lower down. The implementation uses a flat cool near-black (#141414) everywhere, so the header has no tinted backdrop. The reference badge is a LIVE red pill. Here it is the Top 10 badge, which is content-driven and acceptable.",
+      "fix": "Paint the page/header background with a warm top-down gradient (≈#3d3935 at the top to #1a1a1a by the hero's lower half) so the header and the area around the hero card read as lighter warm grey."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family for the nav, metadata and buttons, with matching sizes. Differences: the row heading 'TV Action & Adventure' is bold/semibold (~600) in the reference, but the implementation's 'Trending Now' looks regular/medium. The implementation renders the hero title as condensed display text rather than a title-artwork lockup, which is a near-equivalent but plainer treatment. Inactive nav items in the reference are a dimmer grey.",
+      "fix": "Set carousel row headings to font-weight 600–700 at ~26px. Dim inactive nav labels to ~rgba(255,255,255,.7). Render the hero title as a logo image when one is available, otherwise use bold display type at a similar scale (~250px tall block)."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Line icons match for search and the bell. The Kids rainbow tile, the blue smiley avatar, the caret, the circular speaker button and the play triangle all match. Tiles are 16:9 with rounded corners and corner badges. The megaphone glyph from the reference's hero tag is missing. The speaker glyph state differs (muted vs unmuted).",
+      "fix": "Add the megaphone glyph with the hero tag and use the unmuted speaker glyph in the hero sound button."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), 'Kids', 'Play' and 'More Info' are identical. The heading and status copy is content-driven. The only chrome label missing is 'New Episode'.",
+      "fix": "Add the 'New Episode' tag label in the hero's bottom-right."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "page/header background: the reference has a warm grey-brown gradient behind the nav bar and around the top of the hero card; the implementation is flat near-black",
+    "hero bottom-right: the reference shows a megaphone icon plus 'New Episode' tag; the implementation has none",
+    "hero card: the reference card has a soft drop shadow lifting it off the background; the implementation's card sits flat",
+    "hero lockup: the reference leaves a much larger gap between the metadata row and the Play/More Info buttons; the implementation stacks them tightly",
+    "row heading: the reference's 'TV Action & Adventure' is semibold/bold; the implementation's 'Trending Now' is lighter in weight",
+    "hero sound button: the reference shows the unmuted speaker icon; the implementation shows the muted icon",
+    "hero title: the reference uses title-logo artwork; the implementation uses plain condensed text, a plainer treatment"
+  ],
+  "fixes": [
+    "Replace the flat #141414 page background with a warm top-to-bottom gradient (≈#3d3935 → #1a1a1a) visible behind the header and the hero card's edges",
+    "Add a bottom-right 'New Episode' tag inside the hero (megaphone icon plus 13–14px semibold white text), aligned with the CTA row",
+    "Add a soft shadow to the hero card (0 20px 40px rgba(0,0,0,.5))",
+    "Increase the spacing between the hero metadata row and the CTA buttons to ~60px",
+    "Make carousel row headings font-weight 600–700",
+    "Default the hero sound toggle to the unmuted speaker icon",
+    "Use title-logo artwork for the hero title when available"
+  ],
+  "summary": "A near-faithful Netflix browse home with the same nav, inset hero card, CTAs and carousel. The gaps are the warm gradient backdrop, the hero shadow, the 'New Episode' tag, the CTA spacing and the row heading weight."
+}
+```

@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same structure: a full-screen dim overlay over the blurred title-detail page, a centred 960px panel with a red top rule, the close X top-right, a centred title and subtitle, three evenly spaced rating columns, and a centred 'Got it!' button. Differences: the implementation adds a status line between the options and the button, which pushes the button down about 15px. The reference also has a thin hairline across the panel width (~y=800) closing the dialog area, and the implementation has none.",
+      "fix": "Remove the status line so 'Got it!' sits about 80px below the option labels. Add a 1px rgba(255,255,255,0.15) hairline spanning the panel width about 55px below the button."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": ["bottom hairline divider of the dialog panel"],
+      "notes": "Present: red top rule, close X, title, subtitle, three thumb options with captions, and the 'Got it!' button. Two things the reference doesn't have: the 'The East Palace is not rated yet.' status text, and a grey rounded highlight card behind the 'thumbs down' option. In the reference all three options sit unhighlighted on the scrim.",
+      "fix": "Delete the 'not rated yet' status text. Render all three options with no background card in the default state, and don't pre-select or hover-highlight the first one."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Flat, minimal, dark-scrim modal with no card surface and a small, slightly rounded dark button. Both match. The highlight card on the first option adds a surface treatment the reference doesn't show.",
+      "fix": "Remove the option highlight card. Keep the options as bare icon-and-caption stacks on the scrim."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same palette: Netflix red rule, white text, light-grey subtitle, dark-grey button. The implementation's scrim is darker and more neutral black, so the backdrop is much less visible. The reference's dim lets the hero artwork read clearly with warmer tones, at roughly 60–65% black.",
+      "fix": "Lighten the overlay to about rgba(0,0,0,0.6) with a lighter blur so the underlying page and hero stay visibly legible behind the dialog."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Title size, bold weight and centring match, as do the subtitle size and grey. The implementation uses an Inter-like face instead of the reference's Netflix Sans-style face. Option captions wrap wider (about 190px against about 150px in the reference), so the line breaks differ: 'We won't suggest this / to you again' versus 'We won't suggest / this to you again'.",
+      "fix": "Constrain caption width to about 150px so the breaks match the reference: 'We won't suggest / this to you again', 'We'll show you / more like this', 'We know you're a / true fan!'. Use a Netflix Sans-like font stack if one is available."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The filled thumbs-down, thumbs-up and double-thumbs icons match in style and size. The close X is a thinner stroke than the reference's heavier X.",
+      "fix": "Increase the close-X stroke to about 3px at about 32px size."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "The title, subtitle, all three captions and 'Got it!' match the reference word for word. The extra status sentence 'The East Palace is not rated yet.' is copy that isn't in the reference.",
+      "fix": "Remove the 'is not rated yet' sentence."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Options row, left column: the implementation shows a grey rounded highlight card behind the thumbs-down option. In the reference, all three options sit unhighlighted on the scrim.",
+    "Between options and button: the implementation adds the status text 'The East Palace is not rated yet.', which the reference doesn't have, and it pushes 'Got it!' down.",
+    "Below 'Got it!': the reference shows a full-width hairline divider closing the dialog panel. The implementation has none.",
+    "Overlay: the implementation's scrim is darker and more opaque, so the backdrop page is far less visible than in the reference.",
+    "Option captions wrap differently because the text column is wider than the reference's ~150px.",
+    "Close X: the implementation's stroke is thinner than the reference's bold X."
+  ],
+  "fixes": [
+    "Remove the default/hover highlight card from the thumbs-down option.",
+    "Delete the '<title> is not rated yet.' status line and tighten the gap so 'Got it!' sits about 80px below the captions.",
+    "Add a 1px translucent white hairline across the panel width about 55px below 'Got it!'.",
+    "Lighten the overlay to about rgba(0,0,0,0.6) so the backdrop stays legible.",
+    "Set the option caption max-width to about 150px so the line breaks match.",
+    "Thicken the close-X stroke."
+  ],
+  "summary": "Near-faithful rate dialog with the same structure, copy and icons. Points are lost to an extra status line, a highlighted first option, a missing bottom hairline and a darker scrim."
+}
+```

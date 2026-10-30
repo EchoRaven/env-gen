@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.1,
+      "notes": "Reference: a full-width header with the NETFLIX wordmark at about x=213, separated by a hairline divider. Below it is a centered form column about 490px wide, with a large gap above a dark footer band holding a 4-column link grid. Implementation: an unstyled document flow pinned to the top-left at 8px margins. There is no header bar or divider, the form column isn't centered, the inputs and button sit inline in one row, and there is no footer band.",
+      "fix": "Add a header bar (logo left-aligned at the ~213px content gutter, bottom hairline divider). Center a ~490px form column starting ~140px from the top and stack the fields vertically. Add a full-width footer band at the bottom, using a 4-column link grid aligned to the same gutter."
+    },
+    "components": {
+      "score": 0.2,
+      "notes": "The logo, heading, subheading and an email input are present. Differences: the reference has a single floating-label input ('Email or mobile number') with a full-width red 'Continue' button. The implementation has two tiny bordered inputs, one labeled Email and one labeled Password, plus a small grey native 'Sign In' button. The 'Get Help' disclosure with chevron, the reCAPTCHA notice and the footer (phone line plus 8-link grid) are missing. Invented: a 'New to Netflix? Sign up now.' link, a demo-account credentials line and a 'local clone' disclaimer.",
+      "missing": ["floating-label email/mobile input", "full-width red Continue button", "Get Help dropdown with chevron", "reCAPTCHA notice text", "footer band with Questions/phone line", "footer 4-column link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)", "header divider line"],
+      "fix": "Replace the inline inputs with one 490×62px floating-label input ('Email or mobile number'). Add a full-width 52px red 'Continue' button and a 'Get Help ⌄' toggle, then the small grey reCAPTCHA line. Build the footer component. Remove the password field (it isn't shown in the reference), the demo-credentials line and the clone disclaimer."
+    },
+    "style": {
+      "score": 0.05,
+      "notes": "Reference: a polished, minimal dark design. It has a subtly textured dark-red-to-black vertical gradient, inputs with 4px radius and a semi-transparent dark fill and grey border, a solid 4px-radius red button, and airy spacing. Implementation: raw browser default styling (no stylesheet applied), with native form controls and no spacing system.",
+      "fix": "Make sure the stylesheet loads. Use a 4px radius on the input and button, a dark translucent input fill with a 1px grey border, generous vertical spacing (~16px between input and button, ~60px before Get Help), and a hairline header divider."
+    },
+    "color": {
+      "score": 0.05,
+      "notes": "Reference: dark scheme. The background is a maroon (#3a1515-ish) to black gradient, the footer is #161616, text is white with grey secondary text, and the CTA is red (#d6302a). Implementation: a white page with black text, a default blue link and a grey native button. Only the red logo matches.",
+      "fix": "Set the page background to a top-down gradient from ~#3b1414 to #000 and the footer to ~#161616. Use white for headings and input text, rgba(255,255,255,0.7) for secondary text, Netflix red for the Continue button, and grey underlined links in the footer."
+    },
+    "typography": {
+      "score": 0.15,
+      "notes": "Reference: Netflix Sans (geometric sans) throughout. The ~36px bold heading is left-aligned within the centered column, the subheading is ~20px regular grey, there is a 13px floating label over 18px input text, the button label is 18px semibold, and helper text is 14px grey. Implementation: default Times serif at browser sizes, and the bold demo text adds noise.",
+      "fix": "Apply a geometric sans stack (Netflix Sans / Helvetica Neue / Arial). Set the heading to 32–36px/700 white, the subheading to 20px/400 grey, the floating label to 13px, the input value to 16–18px, the button to 18px/600, and the reCAPTCHA line to 13–14px grey."
+    },
+    "iconography": {
+      "score": 0.35,
+      "notes": "The red NETFLIX wordmark is present but oversized (~370×100px, against ~165×45px in the reference) and sits flush to the top-left corner. The chevron-down icon next to Get Help is missing.",
+      "fix": "Scale the wordmark to ~165px wide, place it at ~213px from the left in a ~100px-tall header, and add a thin outline chevron-down icon after 'Get Help'."
+    },
+    "copy": {
+      "score": 0.45,
+      "notes": "The heading 'Enter your info to sign in' and the subheading 'Or get started with a new account.' match exactly. Differences: the reference label 'Email or mobile number' appears as 'Email address' in the implementation, the CTA 'Continue' appears as 'Sign In', and 'Get Help', the reCAPTCHA line and the footer link labels are missing. The extra lines ('New to Netflix? Sign up now.', demo account, local-clone disclaimer) aren't in the reference.",
+      "fix": "Rename the label to 'Email or mobile number' and the button to 'Continue'. Add 'Get Help', 'This page is protected by Google reCAPTCHA to ensure you're not a bot.', 'Questions? Call …' and the 8 footer link labels. Remove the sign-up, demo and disclaimer lines."
+    }
+  },
+  "similarity": 0.12,
+  "empty_state": false,
+  "deviations": [
+    "Whole page: the implementation renders as unstyled HTML on a white background with default serif text, while the reference is a dark maroon-to-black gradient design",
+    "Form: the reference has a single centered ~490px column with a stacked floating-label input and a full-width red 'Continue' button. The implementation has two small inline native inputs (Email, Password) and a grey native 'Sign In' button in one row at the top-left",
+    "Footer: the reference has a full-width dark #161616 band with a 'Questions? Call…' line and a 4-column underlined link grid. The implementation has no footer",
+    "Header: the reference has the logo at the content gutter with a hairline divider below the header. The implementation has an oversized logo flush to the top-left corner and no divider",
+    "Below the button: the reference has a 'Get Help' toggle with a chevron and a grey reCAPTCHA notice. Both are missing in the implementation",
+    "Extra content: the implementation adds 'New to Netflix? Sign up now.' (blue default link), a bold demo-credentials line and a 'local Netflix clone' disclaimer, none of which appear in the reference",
+    "Copy: the input label is 'Email address' instead of 'Email or mobile number', and the CTA is 'Sign In' instead of 'Continue'"
+  ],
+  "fixes": [
+    "Fix the stylesheet loading or apply CSS: dark gradient page background (#3b1414 → #000), white sans-serif text",
+    "Build a header: ~165px-wide red wordmark at ~213px from the left, ~100px tall, 1px rgba(255,255,255,0.1) bottom border",
+    "Center a ~490px form column: 36px bold heading, 20px grey subheading, 62px floating-label input 'Email or mobile number' (dark translucent fill, grey 1px border, 4px radius)",
+    "Replace the password field and native Sign In button with a full-width 52px red (#d6302a) 'Continue' button with a 4px radius",
+    "Add a 'Get Help' toggle with a chevron-down icon ~60px below the button, then the grey 13px reCAPTCHA notice",
+    "Remove the 'New to Netflix? Sign up now.', demo-account and local-clone disclaimer lines",
+    "Add a footer band (#161616) with a 'Questions? Call …' line and a 4-column grid of grey underlined links: FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information"
+  ],
+  "summary": "The implementation is an unstyled HTML form whose heading copy and red logo match the reference, but it lacks the dark gradient, centered single-input layout, red Continue CTA, Get Help, reCAPTCHA notice and footer."
+}
+```

@@ -1,0 +1,37 @@
+This is iteration 4 of 5. The automated checks' report on the version you submitted in iteration 3:
+
+env-gen api_smoke: PASSED - 14/14 checks passed. Business-chain steps ok: 8/8.
+Summary: all api_smoke checks passed
+
+Checks:
+- [pass] frontend_navigable: 28 page component(s), 18 route(s)
+- [pass] frontend_fallback_pages: 0/19 pages are framework fallback ()
+- [pass] docker_up
+- [pass] backend_health
+- [pass] auth_register_login
+- [pass] business_endpoints_reachable: 15 endpoint(s) reachable
+- [pass] business_endpoints_implemented: 15 registered-implemented endpoint(s) serve their route
+- [pass] business_endpoints_correct_shape: 15 endpoint(s) match the item/items contract
+- [pass] business_writes_persist: POST /api/profiles → id=6; GET readback contains it
+- [pass] auth_enforced_401
+- [pass] auth_password_is_checked
+- [pass] business_chain: 8 step(s) across 1 verifier-authored chain(s) pass
+- [pass] frontend_dead_controls: all interactive pages bind their controls
+- [pass] frontend_reachable: GET :3000/ → 200
+
+Business chain framework_default_crud:
+- [ok] POST /auth/register -> 201 (expect [200, 201, 409])
+- [ok] POST /auth/register -> 201 (expect [200, 201, 409])
+- [ok] POST /api/my-list -> 201 (expect [200, 201])
+- [ok] GET /api/my-list -> 200 (expect [200])
+- [ok] DELETE /api/my-list/5 -> 200 (expect [200, 204])
+- [ok] POST /api/profiles -> 201 (expect [200, 201])
+- [ok] GET /api/profiles -> 200 (expect [200])
+- [ok] PUT /api/my-list/5 -> 404 (expect [401, 403, 404])
+
+How each iteration works:
+1. Continue from everything already in /workspace and in this conversation. Using the current state and the latest evaluator report, produce a better version.
+2. Test it yourself with whatever you can run here: builds, your own tests, a local database, a headless browser, and your own review for bugs and security holes. You cannot run the evaluator yourself.
+3. When you are confident this version is ready, submit it by ending your turn with a short summary of what changed and what is still missing or broken. Each submission is evaluated once, and the iteration ends there.
+
+After you submit, the harness snapshots /workspace and evaluates it. You will receive the report of the automated checks described above at the start of the next iteration. Every submission is also evaluated by further checks that you cannot see, against the task text, the spec and the reference screenshots. Work autonomously and do not ask questions.

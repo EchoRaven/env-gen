@@ -1,0 +1,242 @@
+{
+ "checks": [
+  {
+   "category": "auth",
+   "name": "register returns an access token",
+   "ok": true,
+   "detail": "201"
+  },
+  {
+   "category": "auth",
+   "name": "duplicate email is rejected (4xx)",
+   "ok": true,
+   "detail": "409"
+  },
+  {
+   "category": "auth",
+   "name": "login with the right password returns a token",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "auth",
+   "name": "wrong password is rejected (401/403)",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "unknown email is rejected (4xx)",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "a token with an edited payload is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "a garbage token is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/titles is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/genres is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/search is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/my-list is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/profiles is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/continue-watching is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/titles/trending is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "auth",
+   "name": "no token: GET /api/titles/top10 is rejected",
+   "ok": true,
+   "detail": "401"
+  },
+  {
+   "category": "catalog",
+   "name": "the catalog lists the dataset's titles (>=95%)",
+   "ok": true,
+   "detail": "59/60 dataset names; 59 listed"
+  },
+  {
+   "category": "catalog",
+   "name": "titles carry the data-model fields (>=95%)",
+   "ok": true,
+   "detail": "58/59"
+  },
+  {
+   "category": "catalog",
+   "name": "poster and backdrop images load",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "category": "catalog",
+   "name": "trailer clips (video_url) load",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "category": "catalog",
+   "name": "title detail matches the listing",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "catalog",
+   "name": "a missing title id is 404",
+   "ok": true,
+   "detail": "404"
+  },
+  {
+   "category": "catalog",
+   "name": "a series has episodes with season and number",
+   "ok": true,
+   "detail": "11 episodes"
+  },
+  {
+   "category": "catalog",
+   "name": "trending is non-empty and drawn from the catalog",
+   "ok": true,
+   "detail": "20"
+  },
+  {
+   "category": "catalog",
+   "name": "top 10 is ranked 1..n (per kind or overall)",
+   "ok": true,
+   "detail": "{'movie': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'series': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}"
+  },
+  {
+   "category": "catalog",
+   "name": "genres are listed (>=5, unique names)",
+   "ok": true,
+   "detail": "22"
+  },
+  {
+   "category": "catalog",
+   "name": "genre pages list titles of that genre",
+   "ok": true,
+   "detail": "3/3 genres"
+  },
+  {
+   "category": "catalog",
+   "name": "search by a word of a title's name finds it",
+   "ok": true,
+   "detail": "Disclosure"
+  },
+  {
+   "category": "catalog",
+   "name": "search by genre name returns that genre's titles",
+   "ok": true,
+   "detail": "Action: 20"
+  },
+  {
+   "category": "catalog",
+   "name": "search for nonsense is empty",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "catalog",
+   "name": "search with SQL metacharacters neither errors nor dumps the catalog",
+   "ok": true,
+   "detail": "200, 0"
+  },
+  {
+   "category": "profiles",
+   "name": "creating a profile returns its id",
+   "ok": true,
+   "detail": "34"
+  },
+  {
+   "category": "profiles",
+   "name": "created profiles are listed",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "category": "profiles",
+   "name": "some profile-selection convention isolates two profiles",
+   "ok": false,
+   "detail": "None"
+  },
+  {
+   "category": "privacy",
+   "name": "My List is private to the profile",
+   "ok": false,
+   "detail": "no profile-selection convention isolates two profiles"
+  },
+  {
+   "category": "privacy",
+   "name": "another account cannot read this profile's My List",
+   "ok": false,
+   "detail": "no profile-selection convention isolates two profiles"
+  },
+  {
+   "category": "privacy",
+   "name": "a rating is private to the profile",
+   "ok": false,
+   "detail": "no profile-selection convention isolates two profiles"
+  }
+ ],
+ "convention": null,
+ "note": "no profile convention isolates profiles; per-profile checks recorded as failed",
+ "by_category": {
+  "auth": {
+   "passed": 15,
+   "total": 15
+  },
+  "catalog": {
+   "passed": 15,
+   "total": 15
+  },
+  "profiles": {
+   "passed": 2,
+   "total": 3
+  },
+  "privacy": {
+   "passed": 0,
+   "total": 3
+  }
+ },
+ "passed": 32,
+ "total": 36
+}

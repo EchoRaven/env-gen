@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Matches the reference: the same top nav (logo, 7 links, pill around the active 'New & Popular' link, search/bell/Kids/avatar on the right), dark full-bleed page and 67px left gutter. Rows come in the same order: New on Netflix, Top 10 TV, Top 10 Movies, Coming This Week. Landscape tiles bleed off the right edge, and the Top-10 rows pair big numerals with posters. Two small differences: the vertical rhythm is about 25px tighter (first heading at y≈137 vs ≈165), and a hover preview card sits over the middle of the Top-10 rows. That card is a transient state the reference does not show.",
+      "fix": "Raise the top padding above the first row heading by about 28px so it sits near y≈165. Take the screenshot with no tile hovered so the expanded preview card is closed."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": [],
+      "notes": "Everything in the reference is present. Nav has 7 links with the active pill, plus search, notifications, Kids badge, profile avatar and caret. Each row has a heading and a page indicator at top right. New on Netflix tiles carry TOP 10 corner ribbons and red bottom badges. Top-10 rows have outlined numerals with posters, and Coming This Week tiles peek in at the bottom. The extra element is the expanded hover card (play, add, rate, more buttons, TV-14 / seasons / HD metadata, genre list), which is not in the reference. Every New on Netflix tile also gets a TOP 10 ribbon and a badge, while the reference mixes tiles with and without them.",
+      "fix": "Show the hover preview card only on real hover, and leave it closed in the default state. Show TOP 10 ribbons and status badges only on qualifying titles, not on every tile."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat, dark, dense streaming style: square-cornered tiles, tight ~8px gaps, no shadows, and small red rectangular badges centred at the bottom of each tile. The hover card brings in a raised, rounded surface the reference lacks. Implementation tiles also show a uniform bottom gradient behind a text title, where the reference shows the title artwork baked into the image.",
+      "fix": "Close the hover card in the default state. Drop the forced dark gradient on tiles where title-art is present."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same near-black #141414 base with a darker header, white headings, Netflix-red badges and TOP 10 ribbons, light-gray active pill and dark-outlined numerals. No meaningful differences.",
+      "fix": "None needed beyond keeping the numeral outline at the reference's mid-gray stroke (#595959-ish), which is slightly more visible in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans-serif nav and headings. Row headings in the implementation are slightly larger and heavier (~30px vs ~26px). On tiles, the implementation uses one condensed bold all-caps font placed left-middle for every title, while the reference shows a different title-art lockup for each title. Badge text is the same small bold white.",
+      "fix": "Reduce row headings to about 26px regular/medium weight. Use per-title logo artwork when available; when falling back to text, keep the condensed title smaller and lower on the tile."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Outline search and bell icons match, as do the gradient Kids tile, the blue smiley avatar with caret, and the TOP 10 ribbon. Tile aspect ratios match: about 16:9 landscape and about 2:3 posters, cover crop with square corners. The outlined giant numerals match.",
+      "fix": "Keep as is. Make sure poster tiles overlap the right side of their numerals by the same amount as in the reference (the poster starts at about 45% of the numeral's width)."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, row headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week') and badge wording ('Recently Added', 'New Season', 'New Episode') all match. The implementation uses 'New Episodes' (plural) where the reference says 'New Episode' or 'New Season'.",
+      "fix": "Use the reference badge strings 'New Episode' and 'New Season' rather than 'New Episodes'."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Middle of the screen over the Top-10 TV and Movies rows: the implementation shows an expanded hover preview card (art, play/add/rate/more buttons, TV-14 · 2 Seasons · HD, genre list) that does not appear in the reference",
+    "New on Netflix tiles: the implementation puts a TOP 10 ribbon and a red badge on every tile; the reference has some tiles without them",
+    "Tile titles: the implementation renders a uniform condensed white text title at left-middle over a gradient; the reference shows each title's own logo artwork",
+    "Vertical spacing: the first row heading and the rows sit about 25px higher in the implementation, so the page reads slightly tighter",
+    "Row headings: slightly larger and heavier in the implementation than in the reference",
+    "Badge copy: 'New Episodes' (plural) vs the reference's 'New Episode' / 'New Season'"
+  ],
+  "fixes": [
+    "Make sure the hover preview card is closed in the default, unhovered state",
+    "Show TOP 10 ribbons and status badges only on qualifying titles",
+    "Use title logo artwork on tiles when available; tone down the fallback text title and gradient",
+    "Add about 28px of top padding above 'New on Netflix' and match the row spacing (~270px from heading to heading)",
+    "Set row headings to about 26px at medium weight",
+    "Change the badge string to 'New Episode' and add 'New Season' where applicable"
+  ],
+  "summary": "Close match to the reference structure and styling; the main deviation is a hover preview card left open, plus TOP 10 ribbons and badges on every tile and generic text titles instead of logo artwork."
+}
+```

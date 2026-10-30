@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "The structure matches. Both show a centered overlay at about 960px width over a blurred, dimmed title-detail modal and browse page. Both have a red top rule, a close X at top-right, a centered title and subtitle, three rating columns (left, centre, right) and a centered 'Got it!' button below. Spacing is slightly off: in the implementation the red rule sits about 15px lower, the title sits higher relative to the rule, the icon row and button sit about 15px lower, and the label columns are wider, so the text wraps differently.",
+      "fix": "Set the label column width to about 170px so the labels wrap as 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!'. Move the red rule to y≈300 and keep about 75px between the rule and the title baseline."
+    },
+    "components": {
+      "score": 0.88,
+      "missing": [],
+      "notes": "Every component in the reference is present: the red accent rule, the close X, the title, the subtitle, three icon-and-label rating options (thumbs down, thumbs up, double thumbs up) and the 'Got it!' button. The implementation adds a lighter rounded card behind the thumbs-down option, which looks like a hover or selected state. The reference has no card behind any option.",
+      "fix": "Remove the default background card from the first rating option, or only show it on hover, so all three options sit flat on the scrim as in the reference."
+    },
+    "style": {
+      "score": 0.86,
+      "notes": "Both use a flat, minimal overlay, a thin red rule and a small dark button with slight rounding. The extra rounded card behind option 1 breaks the flat treatment. The implementation's background is blurred more heavily and is darker overall, so less of the underlying page shows through than in the reference.",
+      "fix": "Lighten the scrim to about rgba(0,0,0,0.6) with a lighter blur so the underlying artwork stays visible as in the reference. Remove the option card."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Both have a dark scheme, a red accent rule, white text, a gray subtitle and a dark-gray button with white text. The implementation's backdrop is noticeably darker and nearly black. Its red rule is a slightly brighter and more saturated red.",
+      "fix": "Reduce the backdrop darkness and use Netflix red #E50914 at the reference's slightly muted tone for the rule."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Both use sans-serif text centered on the screen. The reference title is a medium-bold humanist face (Netflix Sans) at about 46px. The implementation uses a heavier, larger Inter-like font at about 50px, so the title runs wider (572–1348px versus 601–1318px). The labels are sized similarly but wrap differently because the columns are wider.",
+      "fix": "Use Netflix Sans or a similar humanist face for the title at about 46px, weight 700, with slightly tighter tracking. Keep the labels at about 17px regular in narrower columns."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Both use the same filled white thumbs-down, thumbs-up and double-thumbs icons at similar sizes. The implementation's close X is drawn with a thinner stroke and sits slightly lower and further left than the reference's bolder X.",
+      "fix": "Draw the close X with a stroke of about 3px, size it at about 30px, and align it to the right edge of the rule just below it."
+    },
+    "copy": {
+      "score": 0.97,
+      "notes": "The wording is identical: the title, the subtitle, all three labels and 'Got it!'. Only the line breaks differ.",
+      "fix": "Match the reference line breaks by narrowing the label columns."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Rating row, left option: the implementation draws a lighter rounded card behind the thumbs-down icon and label. The reference has no card behind any option.",
+    "Title: the implementation's font is heavier and larger (Inter-like, about 50px), so the line is wider than the reference's Netflix Sans title at about 46px.",
+    "Rating labels: the wider columns change the wrapping to 'We won't suggest this to / you again', 'We'll show you more like / this' and 'We know you're a true / fan!'. The reference breaks after 'suggest', 'you' and 'a'.",
+    "Backdrop: the implementation's scrim is darker and more heavily blurred than the reference, which keeps the underlying artwork more visible.",
+    "Close X: the implementation's stroke is thinner and the icon sits further left and lower than the reference's bolder X.",
+    "Vertical rhythm: the red rule, icon row and 'Got it!' button each sit about 15px lower than in the reference."
+  ],
+  "fixes": [
+    "Remove the default background card from the first rating option.",
+    "Narrow each rating label column to about 170px so the lines wrap as in the reference.",
+    "Switch the title font to a Netflix Sans–like humanist face at about 46px, weight 700.",
+    "Lighten the scrim and reduce the blur so the underlying page shows through as in the reference.",
+    "Make the close X stroke heavier and align it to the right end of the rule.",
+    "Nudge the rule, icon row and button up by about 15px to match the reference's vertical spacing."
+  ]
+,
+  "summary": "The rating dialog closely matches the reference in structure, copy and icons, with one extra element: a highlight card behind the thumbs-down option. The other differences are small ones in the title font, label wrapping, backdrop darkness and close-X weight."
+}
+```

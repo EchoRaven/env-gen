@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The modal is centred over the dimmed home page, with the top nav still visible behind it, as in the reference. It is about 1085px wide in both. Inside it, the order is the same: synopsis on the left, a metadata column on the right, then the Episodes section with a full-width list. Each row has a large number, then a 16:9 thumbnail, then the title and duration on one line with the description underneath. Differences: the implementation adds a 'Season 1: TV-14' sub-line under the Episodes heading, which pushes the list down, and it draws a divider above the first row. In the reference, the highlighted first row sits directly under the heading.",
+      "fix": "Remove the 'Season 1: TV-14' sub-line and the divider above row 1, so the first episode row starts about 30px below the Episodes heading."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Present and matching: the Episodes heading, numbered episode rows, thumbnails with a circular play overlay on hover, a highlighted (lighter grey) row, right-aligned durations, row dividers, and the metadata column. Differences: in the header's right slot, the reference shows the show title as plain text, while the implementation shows a bordered 'Season 1' dropdown. The implementation also adds a rating-badge sub-line ('Season 1: TV-14') that the reference doesn't have. Its play overlay is a bare triangle, while the reference uses a triangle inside a circular outlined ring on a dark disc.",
+      "missing": [
+        "plain-text show-title label at the right of the Episodes header (implementation shows a season dropdown instead)",
+        "circular outlined ring around the hover play icon"
+      ],
+      "fix": "When there is only one season, replace the Season dropdown with a plain right-aligned text label (about 20px, white, regular weight). Drop the 'Season 1: TV-14' line. Wrap the hover play triangle in a roughly 52px circle with a 2px white border and a translucent dark fill."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Both use the same flat dark modal, square-cornered highlight band on the active row, hairline grey dividers between rows, slightly rounded thumbnails, and similar padding. The bordered dropdown box in the implementation adds a control-like look that the reference header doesn't have.",
+      "fix": "Remove the bordered dropdown box from the header, and keep the row highlight as a flat #333-ish band with no border."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both use the same near-black modal (#181818), a lighter grey highlighted row, white titles, light-grey descriptions, and a heavily dimmed backdrop. The colours match closely.",
+      "fix": "No significant change is needed. Keep the description text at roughly #d2d2d2 to match the reference's contrast."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Both use the same Netflix Sans-like font: a bold Episodes heading of about 26px, large light episode numbers, bold titles of about 17px, regular descriptions of about 15px, and right-aligned durations. In the reference, the right-side header label is regular weight at about 20px, while the implementation's dropdown label is smaller and sits inside a box. The rating sub-line adds an extra type level.",
+      "fix": "Style the header's right-side label as plain text, about 20px, regular weight, white. Remove the extra caption-level sub-line."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Thumbnails match in aspect ratio (16:9, about 170×96), crop, and corner radius. The hover play affordance differs: the reference has a circled play button, and the implementation has a bare white triangle. The implementation also adds a dropdown caret icon that the reference doesn't have.",
+      "fix": "Render the hover play icon as a filled triangle centred in a bordered circle, and remove the caret."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "The 'Episodes' heading matches. The reference's right label is the show title, while the implementation shows 'Season 1' plus a 'Season 1: TV-14' caption. Duration format is the same ('34m' compared with '7s'), apart from the data.",
+      "fix": "Show the title text on the right of the Episodes header instead of 'Season 1', and remove the 'Season 1:' rating caption."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "Right side of the Episodes header: the reference shows a plain-text label (the show title), while the implementation shows a bordered 'Season 1' dropdown with a caret.",
+    "Below the Episodes heading: the implementation adds a 'Season 1: TV-14' caption with a rating badge, which the reference doesn't have, and this pushes the list down.",
+    "First episode row: in the reference it sits directly under the heading with no top divider. The implementation has a divider above row 1.",
+    "Hover play icon on the thumbnail: the reference uses a play triangle inside a circular outlined ring, while the implementation shows a bare triangle."
+  ],
+  "fixes": [
+    "Replace the Season dropdown at the right of the Episodes header with plain right-aligned text: the show title, about 20px, regular weight, white.",
+    "Remove the 'Season 1: TV-14' sub-line and the divider above the first episode row.",
+    "Change the thumbnail hover play icon to a filled triangle inside a roughly 52px circle with a white border and a semi-transparent dark fill."
+  ],
+  "summary": "The Episodes list closely matches the reference in modal structure, row anatomy, colours and type. The main differences are a season dropdown and rating sub-line that the reference doesn't have, and a play icon without the circular ring."
+}
+```

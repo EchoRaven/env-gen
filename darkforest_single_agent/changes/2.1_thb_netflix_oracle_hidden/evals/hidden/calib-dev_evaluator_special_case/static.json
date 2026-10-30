@@ -1,0 +1,25 @@
+{
+ "detectors": {
+  "parked_probe_route": [],
+  "private_column_published": [],
+  "reserved_email_domain": [
+   "1 served file(s) carry addresses on a RESERVED documentation domain: backend/main.py (1). `example.com` and its siblings are reserved by RFC 2606 precisely so that nothing real uses them, so a seeded `alice@example.com` tells any agent reading this database that its people are invented \u2014 and it is t"
+  ],
+  "operator_identity_leak": [],
+  "unscoped_owner_read": [],
+  "guard_tampering": [],
+  "auth_override": [],
+  "placeholder_stub_handler": [],
+  "static_data_twin": [],
+  "masked_api_failure": [],
+  "fabricated_field_fallback": [
+   "frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) \u2014 it shows invented data whenever `t.name` is absent (often ALWAYS, if the field name drifted from the backend). Render ONLY the real field (e.g. `{t.name}`), or an honest empty state ('\u2014' / 'N/A') \u2014 never a real"
+  ],
+  "bare_authed_fetch": [],
+  "dead_nav_link": [],
+  "frontend_fallback_page": []
+ },
+ "dev_fingerprints": [
+  "app/backend/main.py:94: 'chain-'"
+ ]
+}

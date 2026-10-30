@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches. The NETFLIX wordmark is top-left, and the language selector and Sign In button are top-right. The hero is a centered column over a full-bleed tilted poster wall, followed by a curved divider and a promo banner. The hero block sits about 50px higher in the implementation (headline starts at y≈265 vs y≈315). In the reference, the popcorn badge sits outside the banner card to its left, and the card starts at x≈275. In the implementation, the card spans x≈163–1757 with the popcorn inside it.",
+      "fix": "Move the hero block down about 50px. Move the popcorn badge out of the banner card so it sits to the card's left, and start the card at about x=275 so it lines up with the reference."
+    },
+    "components": {
+      "score": 0.9,
+      "missing": [],
+      "notes": "Every component is present: wordmark, language dropdown with translate icon, red Sign In button, H1, subheadline, helper line, email input, red Get Started button with chevron, curved accent divider, promo banner with icon, heading, subtext and grey Learn More button. The only placement difference is the popcorn icon, which is inside the banner card in the implementation and outside it in the reference.",
+      "fix": "Render the popcorn icon as a separate badge to the left of the banner card, not inside the card."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both are dark and cinematic, with a dimmed, tilted poster mosaic, slightly rounded corners, a red-gradient curved arc and a rounded promo card. The reference tiles are mostly landscape and wider, and the wall is dimmed more evenly. The implementation's tiles are portrait and somewhat brighter. Under the reference arc there is a glow that fades from navy/indigo into black. The implementation fills that area with a flatter purple wash.",
+      "fix": "Switch the background tiles to landscape (about 16:9 or 4:3) at the same tilt. Make the dark overlay a little heavier. Under the arc, use a radial navy-to-black glow instead of the purple fill."
+    },
+    "color": {
+      "score": 0.87,
+      "notes": "The black base, Netflix red (#E50914) on Sign In and Get Started, white text, grey Learn More button and purple promo card all match. The glow under the arc is blue-indigo in the reference and magenta-purple in the implementation. The reference banner card is a bluer, deeper indigo.",
+      "fix": "Shift the glow under the arc and the banner card toward indigo/navy (about #1d1b3a to #2a1f4f) and away from magenta."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a bold sans in the Netflix Sans style, with a centered hierarchy of H1, bold subheadline, regular helper line and large bold CTA text. The implementation's H1 is slightly larger and wraps as 'Unlimited movies, / TV shows, and more'. The reference wraps as 'Unlimited movies, TV / shows, and more' with a narrower max-width (about 640px). The banner heading in the implementation is a little larger.",
+      "fix": "Set the hero H1 to about 56px with max-width about 640px so it wraps after 'TV'. Bring the banner heading to about 20px bold."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The red NETFLIX wordmark, translate glyph, dropdown caret and Get Started chevron all match. The reference popcorn is an illustrated 3D bucket on a soft circular badge. The implementation uses a flat emoji. The reference poster tiles are landscape. The implementation's tiles are portrait.",
+      "fix": "Replace the popcorn emoji with an illustrated popcorn-bucket image on a circular badge. Use landscape crops for the background tiles."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "These match: 'Unlimited movies, TV shows, and more', 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started', 'Sign In', 'English' and 'Learn More'. The subheadline differs: the reference says 'Starts at $8.99. Cancel anytime.' and the implementation says 'Watch on any device. Every profile keeps its own list.' The banner copy also differs: the reference has a pricing promo ('The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.'), and the implementation has a catalog pitch.",
+      "fix": "Change the subheadline to the short price-and-cancel line ('Starts at $X. Cancel anytime.'). Change the banner to a plan-pricing promo with a headline and a one-line plan description."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Promo banner: in the reference, the popcorn badge sits outside the card to its left, and the card starts at about x=275. In the implementation, a flat emoji sits inside a full-width card (x≈163).",
+    "Hero subheadline: the reference reads 'Starts at $8.99. Cancel anytime.' The implementation reads 'Watch on any device. Every profile keeps its own list.'",
+    "Promo banner copy: the reference is a pricing promo ('The Netflix you love for just $8.99.' plus an ad-supported plan line). The implementation is a catalog pitch.",
+    "Hero H1: the implementation is slightly larger and wraps after 'movies,'. The reference wraps after 'TV'. The whole hero block also sits about 50px higher in the implementation.",
+    "Background poster wall: the reference uses landscape tiles. The implementation uses portrait tiles, and they are a bit brighter.",
+    "Area under the arc: the reference glow is navy/indigo. The implementation's is magenta-purple."
+  ],
+  "fixes": [
+    "Move the popcorn icon out of the banner card into a circular badge on its left. Use an illustrated popcorn bucket instead of the emoji, and start the card at about x=275.",
+    "Change the hero subheadline to 'Starts at $X. Cancel anytime.' and the banner to a plan-pricing headline with a one-line plan description.",
+    "Cap the H1 at about 640px wide, about 56px tall, so it wraps 'Unlimited movies, TV / shows, and more'. Move the hero block down about 50px.",
+    "Use landscape tiles in the tilted poster wall and darken the overlay slightly.",
+    "Shift the glow under the arc and the banner card fill from purple to indigo/navy."
+  ],
+  "summary": "The implementation is a close match to the Netflix landing design. The remaining gaps are small: the popcorn badge's placement and style, the subheadline and banner copy, the headline wrap and hero position, the poster tile shape, and the colour of the glow under the arc."
+}
+```

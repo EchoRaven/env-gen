@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Header is the same: NETFLIX wordmark on the left, 7 nav items, then search, bell, Kids chip and avatar with caret on the right. The dropdown is in the same place too: right-aligned under the avatar, about 277px wide, top edge at y≈75, ending at about the same height. The page behind the menu differs. The reference opens the menu over the Browse by Languages grid, with its page title, 'Select Your Preferences' dropdown and tile grid. The implementation opens it over the Home hero. Inside the menu, rows are tighter than the reference's even ~58px rhythm, especially Manage Profiles to Account.",
+      "fix": "Space menu rows evenly at ~58px. If the screen is meant to match the reference state, show the menu over the Browse by Languages page with that nav pill active."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: Kids profile row with kids avatar, Manage Profiles (pencil), Account (person), a divider, and 'Sign out of Netflix'. Missing: the 'Transfer Profile' row with its transfer icon and the 'Help Center' row with its question-circle icon. The extra profile rows ('Visual Checker', 'Vis Two') are profile data, not a design deviation. The caret next to the header avatar shows the open state, as in the reference.",
+      "fix": "Add 'Transfer Profile' (transfer icon) between Manage Profiles and Account, and 'Help Center' (question-mark circle icon) after Account, before the divider.",
+      "missing": ["Transfer Profile menu item", "Help Center menu item"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both menus are a dark, flat, slightly rounded panel with a hairline divider above sign-out and a full-width sign-out row. The implementation panel has a visible light border. The reference edge is softer. The implementation also packs the icon rows more tightly.",
+      "fix": "Soften or remove the panel border and use the same row height for every icon row."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same near-black panel on a dark page, white labels, grey divider, multicolour kids avatar and blue smiley avatar. The panel tone and contrast match closely.",
+      "fix": "Make the panel border closer to the background so it reads as subtle, as in the reference."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Same white sans-serif at ~17px regular, left-aligned, with sign-out at the same size. Text starts at about the same x. Weights and sizes match.",
+      "fix": "No major change. Keep the label baselines on the ~58px row grid."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use outline icons. The reference icons are larger (~26px) and heavier: a pencil inside a rounded shape, a person, and a question circle. The implementation's pencil and person are smaller (~20px) and thinner. The profile avatars are rounded squares in both.",
+      "fix": "Make the menu icons ~26px with a heavier stroke, and add the transfer and help-circle glyphs."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "'Kids', 'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Transfer Profile' and 'Help Center' labels are missing.",
+      "fix": "Add the 'Transfer Profile' and 'Help Center' labels."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "account dropdown: no 'Transfer Profile' row between Manage Profiles and Account (reference y≈214)",
+    "account dropdown: no 'Help Center' row with question-circle icon after Account (reference y≈330)",
+    "page behind the menu: the implementation shows the Home hero with 'Home' pill active, while the reference shows the menu over the Browse by Languages grid with that pill active",
+    "account dropdown: icons are smaller and thinner than the reference's ~26px outline icons",
+    "account dropdown: uneven, tighter spacing on the Manage Profiles/Account rows compared with the reference's even ~58px spacing",
+    "account dropdown: the panel has a visible light border that the reference does not show as strongly"
+  ],
+  "fixes": [
+    "Add a 'Transfer Profile' menu item with a transfer icon after Manage Profiles",
+    "Add a 'Help Center' menu item with a question-mark-circle outline icon after Account, above the divider",
+    "Give every menu row the same ~58px height",
+    "Make the menu icons ~26px with a heavier outline stroke",
+    "Soften the dropdown panel border",
+    "Optionally render this state over the Browse by Languages page, with that nav pill active, to match the reference"
+  ],
+  "summary": "The dropdown's placement, panel style and type closely match the reference, but it lacks the Transfer Profile and Help Center items, its icons are smaller, and it opens over a different page."
+}
+```

@@ -1,0 +1,57 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Structure matches: a centred dark modal (~1085px wide) sits over the dimmed home page, which keeps its top nav, hero and a row below. The order inside the modal is the same: synopsis plus right-hand metadata column, then the Episodes header with the title on the right, then the episode list. Each row has a number, a 16:9 thumbnail, a title and duration line, and a description. Rows are slightly taller in the implementation (~157px vs ~146px). The scroll offset differs, so more synopsis shows in the implementation. That is a scroll-state difference, not a design gap.",
+      "fix": "Tighten the episode row vertical padding by about 5px top and bottom so rows land at ~146px."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "All reference components are present: episodes header with right-aligned show title, numbered rows, thumbnails with a play-circle overlay on the hovered row, bold title, right-aligned duration, description, and hairline dividers. The current/first row has the lighter highlighted panel. The implementation also highlights row 2 while it is hovered. In the reference, row 2 shows only the play overlay on the hovered thumbnail and no panel. The divider between rows 1 and 2 is also missing in the implementation.",
+      "missing": [],
+      "fix": "Keep the grey panel only on the current/first episode. Hover should show only the play-circle overlay on the thumbnail, with no row background. Keep the hairline divider below every non-highlighted row."
+    },
+    "style": {
+      "score": 0.92,
+      "notes": "Flat dark surfaces, slightly rounded highlighted row, hairline dividers, small radius on thumbnails, and the same density. Both match.",
+      "fix": "Remove the hover background fill on rows so only the current episode has the raised panel."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The modal surface (#181818-ish), the highlighted row grey, white titles, light-grey descriptions and the dimmed page behind all match.",
+      "fix": "None significant. Make sure the hover state does not reuse the highlighted-row grey."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Same sans-serif and the same hierarchy: large 'Episodes' header, large episode numerals, bold episode titles, regular durations and descriptions. Descriptions here wrap to one line versus two in the reference; that comes from the content. Description text in the implementation looks a little greyer and smaller than in the reference.",
+      "fix": "Render episode descriptions at ~15px in near-white grey (#d2d2d2) with ~22px line-height."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "16:9 thumbnails with a small radius, and the play-circle overlay has a white ring. Both match. The Top 10 badge styling matches. Every implementation thumbnail uses the same image, but that is content.",
+      "fix": "Use per-episode stills where they exist; the framing is already correct."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' header and the show title on the right match, and the 'Nm' duration format matches. Episode titles and descriptions are generic placeholders ('Episode 1', 'Season 1, episode 1 of …'), not real synopses. The metadata labels in the right column differ ('Original Language', 'Rating' vs 'This Show Is:'); the reference crops this area, so the comparison is partial.",
+      "fix": "Seed real episode titles and 1–2 sentence synopses. Include a 'This show is:' line in the right metadata column."
+    }
+  },
+  "similarity": 0.89,
+  "empty_state": false,
+  "deviations": [
+    "episode list row 2: implementation gives the hovered row the same grey panel as the current episode; the reference highlights only row 1 and shows only the play-circle on row 2's thumbnail",
+    "episode list: the implementation has no hairline divider between rows 1 and 2, while the reference has dividers below every non-highlighted row",
+    "episode rows: the implementation rows are ~10px taller than the reference",
+    "episode descriptions: placeholder one-line text ('Season 1, episode N of …') instead of a two-line synopsis block, so the row's text density differs",
+    "right metadata column: the reference shows a 'This Show Is:' line; the implementation shows 'Original Language' and 'Rating' without it"
+  ],
+  "fixes": [
+    "Change the row hover so it no longer adds a background; reserve the grey panel for the current episode only",
+    "Render the hairline divider under every row that is not highlighted",
+    "Reduce the episode row vertical padding so rows are ~146px tall",
+    "Seed real episode titles and multi-sentence descriptions so the two-line description treatment shows",
+    "Add a 'This show is:' tags line to the modal's right metadata column"
+  ],
+  "summary": "A near-faithful More Info modal episode list; the main differences are the hover-row highlight, a missing divider, and placeholder episode copy."
+}

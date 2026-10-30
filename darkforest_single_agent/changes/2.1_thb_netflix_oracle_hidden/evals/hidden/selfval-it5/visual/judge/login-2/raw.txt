@@ -1,0 +1,64 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "This matches the reference closely. Both have a top bar with the wordmark at the left and a hairline divider under it, a narrow centered form column about 490px wide that starts at x≈715, and a dark gradient body above a #141414 footer band whose content starts at x≈211. The implementation's footer starts lower (≈955 vs ≈907) because the form has an extra field. Its footer also has no four-column link grid, so it is shorter and emptier.",
+      "fix": "Put the four-column underlined link grid back in the footer, under the 'Questions?' line, aligned to the 211px gutter. Use a single-field form so the footer sits at about the same height as the reference."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "The wordmark, heading, subheading, floating-label input and full-width red CTA are all there. The reference shows a one-step identifier form: one input, a 'Continue' button, a 'Get Help ▾' disclosure and a reCAPTCHA notice. The implementation adds a Password field, a 'New to Netflix? Sign up now.' line and a 'Demo account' hint, none of which the reference has. It drops Get Help, the reCAPTCHA text and the footer link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information).",
+      "missing": [
+        "'Get Help' disclosure link with chevron",
+        "reCAPTCHA protection notice",
+        "footer link grid (4 columns of underlined links)"
+      ],
+      "fix": "Remove the Password input, the 'Sign up now' line and the demo hint. Keep a single 'Email or mobile number' input followed by a 'Continue' button. Under it add a 'Get Help' text button with a down chevron (about 16px white, roughly 50px below the button), then a reCAPTCHA notice in small gray text. Add the footer link grid."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dark, minimal look. Both inputs use a thin gray border on a dark translucent fill with slightly rounded corners, and both CTAs have small radii. The spacing rhythm is similar. The reference CTA is a little taller (≈53px vs ≈48px).",
+      "fix": "Make the CTA about 53px tall. Keep the input height at about 62px with a 4px radius."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use the same maroon-to-black vertical gradient with a #141414 footer. The reference CTA is a slightly orange, muted red (≈#D32F27). The implementation uses a more saturated #E50914. Its footer has no gray underlined links at all.",
+      "fix": "Change the Continue button background to about #D6322A. Show footer links in light gray (#c0c0c0-ish) with underlines."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Both use a sans-serif with a bold heading of about 36px and a gray subheading of about 20px. The reference uses Netflix Sans, which has rounder letterforms and is slightly lighter. The implementation uses Inter/system, which looks heavier and wider; its heading runs to x≈1142 vs ≈1124. The CTA label is semibold in the reference and looks a little lighter in the implementation.",
+      "fix": "Use a Netflix Sans–like font stack, or tighten the letter-spacing. Make the CTA label semibold at about 20px. Set the reCAPTCHA notice at about 14px in gray."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The red condensed NETFLIX wordmark is rendered the same way in both. The chevron-down icon next to 'Get Help' is missing.",
+      "fix": "Add a thin outline chevron-down icon (about 16px) right after the 'Get Help' label."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The heading and subheading match word for word. The input label says 'Email address' instead of 'Email or mobile number', and the CTA says 'Sign In' instead of 'Continue'. The 'New to Netflix? Sign up now.' and 'Demo account' text is extra. The footer line is a custom sentence instead of 'Questions? Call …', and the 'Get Help' and reCAPTCHA wording is missing.",
+      "fix": "Change the label to 'Email or mobile number' and the button to 'Continue'. Add 'Get Help' and 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Use the 'Questions? Call 1-844-…' footer copy and the footer link labels."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Form: the implementation has a two-field email + password form. The reference shows a single 'Email or mobile number' input.",
+    "CTA: the implementation's button says 'Sign In' and is a more saturated #E50914. The reference says 'Continue' in a slightly orange red.",
+    "Below CTA: the reference has a 'Get Help ▾' disclosure. The implementation shows 'New to Netflix? Sign up now.' in its place.",
+    "Below CTA: the reference has a small gray reCAPTCHA notice. The implementation shows an invented 'Demo account: …' hint instead.",
+    "Footer: the reference has a four-column grid of underlined links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information). The implementation footer has only one line of text.",
+    "Footer copy: the reference says 'Questions? Call <phone> (Toll-Free)'. The implementation uses a custom disclaimer sentence.",
+    "Typography: the implementation's heading is heavier and wider (Inter) than the reference's Netflix Sans."
+  ],
+  "fixes": [
+    "Remove the Password input. Rename the remaining input label to 'Email or mobile number'.",
+    "Change the CTA text to 'Continue', its background to about #D6322A and its height to about 53px.",
+    "Replace 'New to Netflix? Sign up now.' with a white 'Get Help' text button plus a chevron-down icon, about 50px below the CTA.",
+    "Replace the demo-account hint with a ~14px gray reCAPTCHA notice: 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Footer: change the line to 'Questions? Call 1-844-…' and add a four-column grid of underlined light-gray links below it, aligned to the 211px gutter.",
+    "Switch to a Netflix Sans–style font stack, or reduce the heading weight and tracking."
+  ],
+  "summary": "The shell is very close: same header, gradient, centered column and heading copy. But the implementation shows a password sign-in form instead of the reference's one-step 'Continue' form, and it lacks Get Help, the reCAPTCHA notice and the footer link grid."
+}

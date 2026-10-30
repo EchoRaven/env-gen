@@ -1,0 +1,261 @@
+{
+ "source": "/home/user/project/shabi_forest/benchmarks/env-gen/design_inputs/netflix/DESCRIPTION.txt",
+ "endpoints": {
+  "POST /auth/register": {
+   "method": "POST",
+   "path": "/auth/register",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": false
+   }
+  },
+  "POST /auth/login": {
+   "method": "POST",
+   "path": "/auth/login",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": false
+   }
+  },
+  "GET /api/profiles": {
+   "method": "GET",
+   "path": "/api/profiles",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "POST /api/profiles": {
+   "method": "POST",
+   "path": "/api/profiles",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   },
+   "schema": {
+    "request": {
+     "name": "str",
+     "avatar": "str",
+     "is_kids": "bool"
+    }
+   }
+  },
+  "GET /api/titles": {
+   "method": "GET",
+   "path": "/api/titles",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/titles/{id}": {
+   "method": "GET",
+   "path": "/api/titles/{id}",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/titles/{id}/episodes": {
+   "method": "GET",
+   "path": "/api/titles/{id}/episodes",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/titles/trending": {
+   "method": "GET",
+   "path": "/api/titles/trending",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/titles/top10": {
+   "method": "GET",
+   "path": "/api/titles/top10",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/genres": {
+   "method": "GET",
+   "path": "/api/genres",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/genres/{id}/titles": {
+   "method": "GET",
+   "path": "/api/genres/{id}/titles",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/search": {
+   "method": "GET",
+   "path": "/api/search",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/my-list": {
+   "method": "GET",
+   "path": "/api/my-list",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "POST /api/my-list": {
+   "method": "POST",
+   "path": "/api/my-list",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   },
+   "schema": {
+    "request": {
+     "title_id": "int"
+    }
+   }
+  },
+  "DELETE /api/my-list/{id}": {
+   "method": "DELETE",
+   "path": "/api/my-list/{id}",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "POST /api/titles/{id}/rating": {
+   "method": "POST",
+   "path": "/api/titles/{id}/rating",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  },
+  "GET /api/continue-watching": {
+   "method": "GET",
+   "path": "/api/continue-watching",
+   "status": "implemented",
+   "metadata": {
+    "auth_required": true
+   }
+  }
+ },
+ "tables": {
+  "users": {
+   "name": "users",
+   "columns": [
+    "id",
+    "email",
+    "password_hash",
+    "name"
+   ]
+  },
+  "profiles": {
+   "name": "profiles",
+   "columns": [
+    "id",
+    "user_id",
+    "name",
+    "avatar",
+    "is_kids"
+   ]
+  },
+  "titles": {
+   "name": "titles",
+   "columns": [
+    "id",
+    "name",
+    "kind",
+    "year",
+    "genre",
+    "maturity_rating",
+    "rating",
+    "synopsis",
+    "poster",
+    "backdrop",
+    "video_url",
+    "duration",
+    "top10_rank"
+   ]
+  },
+  "episodes": {
+   "name": "episodes",
+   "columns": [
+    "id",
+    "title_id",
+    "season",
+    "number",
+    "name",
+    "synopsis",
+    "duration",
+    "thumbnail"
+   ]
+  },
+  "genres": {
+   "name": "genres",
+   "columns": [
+    "id",
+    "name"
+   ]
+  },
+  "title_genres": {
+   "name": "title_genres",
+   "columns": [
+    "id",
+    "title_id",
+    "genre_id"
+   ]
+  },
+  "my_list": {
+   "name": "my_list",
+   "columns": [
+    "id",
+    "profile_id",
+    "title_id"
+   ]
+  },
+  "ratings": {
+   "name": "ratings",
+   "columns": [
+    "id",
+    "profile_id",
+    "title_id",
+    "value"
+   ]
+  },
+  "continue_watching": {
+   "name": "continue_watching",
+   "columns": [
+    "id",
+    "profile_id",
+    "title_id",
+    "progress_seconds"
+   ]
+  }
+ },
+ "screens": [
+  "landing",
+  "login",
+  "profiles (who's watching)",
+  "browse_home",
+  "shows",
+  "movies",
+  "games",
+  "new_and_popular",
+  "genre_category",
+  "title_detail",
+  "player",
+  "my_list",
+  "browse_by_languages"
+ ]
+}

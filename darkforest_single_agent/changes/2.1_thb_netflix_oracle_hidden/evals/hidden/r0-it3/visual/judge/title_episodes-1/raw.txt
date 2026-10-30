@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Both use the same structure: a centred dark modal about 1085px wide over a dimmed home page, with the Netflix top bar and hero still visible at the sides. Inside the modal the order matches: synopsis on the left with a metadata column on the right, then an 'Episodes' header with the title on the right, then a numbered episode list. Each row has the number, a 16:9 thumbnail, the title and description, and the runtime right-aligned near x≈1370. Differences: the implementation is scrolled less, so the synopsis block still takes the top 260px, and its rows are taller (~157px vs ~146px). In the dimmed background hero, the reference shows 'Recently Added' and '#1 in TV Shows' chips at the bottom right; the implementation does not.",
+      "fix": "Keep the row height at about 146px (24px vertical padding, thumbnail about 170×96) so rows sit the same way when descriptions run to two lines. Add the bottom-right chip row ('Recently Added', '#N in TV Shows') to the background hero."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "These all match: the episodes header with the title on the right, the episode number, the thumbnail, the bold episode title, the description, the right-aligned runtime, the circular play overlay on the hovered thumbnail, the grey background on the current episode row, and the hairline dividers. The difference is the hover state. In the reference, the hovered row (2) shows only the play overlay on its thumbnail and keeps the dark background, with dividers below it. In the implementation, the hovered row 2 also gets the lighter grey row background, so rows 1 and 2 look like one merged highlighted block with no divider between them.",
+      "missing": [
+        "divider between episode rows 1–2 and 2–3 (both are hidden by the highlight in the implementation)",
+        "'Recently Added' / '#1 in TV Shows' chips on the background hero"
+      ],
+      "fix": "When a row is hovered, show only the play-circle overlay on its thumbnail. Do not change the row background. Only the current episode (row 1) keeps the #2F2F2F background. Keep the 1px #404040 dividers between all non-current rows."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "The style is the same flat, minimal dark design: a slightly rounded highlighted row, square-cornered thumbnails with small radii, hairline dividers, and generous padding. The doubled highlighted block in the implementation makes the list look heavier than in the reference.",
+      "fix": "Limit the raised-surface treatment to the current episode row."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "The colours match: a #181818 modal on a dimmed backdrop, a #2F2F2F current row, white titles, light-grey descriptions, and grey metadata labels with white values. The only drift is the extra grey on the hovered row.",
+      "fix": "Make the hovered row background transparent, the same as the modal surface."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "The typography matches: a Netflix Sans-like font, a ~26px semibold 'Episodes' header, a ~20px regular title on the right, ~18px bold episode titles, ~16px grey descriptions, ~18px runtimes, and ~26px light episode numbers. The implementation's synopsis is set slightly larger with looser leading, which is close enough.",
+      "fix": "Set the synopsis line height to about 1.6 at about 17–18px to match the reference rhythm."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "These match: 16:9 thumbnails with cover crop, the white outlined circular play icon on hover, and the line-style search and bell icons in the background top bar. The implementation adds a mute icon on the background hero; it is partly obscured and has little impact. The implementation repeats the same thumbnail on every row; that is content, not design.",
+      "fix": "Use a distinct still for each episode where the data allows it. Otherwise no structural change is needed."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "These match: 'Episodes', the show title on the right, runtimes in '34m' format, and 'Label: value' metadata. The episode titles and descriptions are generic placeholders ('Episode 1', 'Season 1, episode 1 of Overdo.'), so the rows read as filler rather than real synopses. This reflects a data gap more than the design.",
+      "fix": "Fill episode titles and two-line synopses from the data, and do not generate 'Season X, episode Y of …' strings."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Episode list, row 2: in the implementation the hovered row gets the grey raised background, which merges with the current row 1 into one block; in the reference the hovered row stays dark and shows only the play overlay",
+    "Episode list: the dividers between rows 1–2 and 2–3 are missing in the implementation because of the double highlight",
+    "Episode rows: the implementation's rows are about 10px taller, with one-line placeholder descriptions instead of two-line synopses",
+    "Background hero, bottom right: the reference's 'Recently Added' and '#1 in TV Shows' chips are absent in the implementation",
+    "Background hero, top right: the implementation adds a mute icon button that is not visible in the reference"
+  ],
+  "fixes": [
+    "Remove the background change on row hover. Show only the circular play overlay on the hovered row's thumbnail, and keep the #2F2F2F background for the current episode only.",
+    "Always render 1px dividers between the non-current episode rows.",
+    "Tighten the row vertical padding so each row is about 146px tall.",
+    "Fill real episode titles and descriptions instead of 'Episode N' / 'Season 1, episode N of …' placeholders.",
+    "Add the bottom-right chip row to the background hero."
+  ],
+  "summary": "The More Info episodes modal matches the reference closely in structure, colour and type; the main gap is that hovering a row also gives it the grey background, merging it with the current-episode highlight and hiding the dividers."
+}
+```

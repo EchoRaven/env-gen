@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same top nav bar, with the logo on the left, the links inline and the utility icons on the right. Rows come in the same order: New on Netflix (landscape carousel), Top 10 TV Shows (ranked numerals + posters), Top 10 Movies, then Coming This Week. Both use the same left gutter (~67px), bleed the 7th tile off the right edge and put page indicators top-right of each row. The vertical spacing is a bit tighter: the first row heading sits at ~137px vs ~165px in the reference, and the posters in the ranked rows are slightly narrower (~143px vs ~147px). An expanded hover preview card covers the centre of the Top 10 rows, hiding ranks 3–5. The reference shows no such overlay.",
+      "fix": "Capture or render the screen with no hover card open (close the preview on load or move the pointer out of the rows). Increase the space between the nav and the first row heading to ~80px, and keep the ranked-row poster width at ~147px."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Everything in the reference is here: 7 nav items with a pill-highlighted active state, search, bell, Kids profile chip, avatar with caret, TOP 10 corner badges, red status badges, outlined rank numerals and pagination dashes. The expanded preview card (play, add, rate, more-info buttons, maturity/seasons/HD metadata, genre list) is an extra component that does not appear in the reference. The reference's paired 'New Episode' + white 'Watch Now' badge combination does not appear on any tile here.",
+      "missing": ["white 'Watch Now' secondary badge paired with the red status badge on landscape tiles"],
+      "fix": "Remove or hide the hover preview card in the default state. Support a white-background 'Watch Now' badge placed next to the red status badge at the bottom of landscape tiles."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dark, dense carousel style: slightly rounded tiles, no shadows, badges flush at the tile bottom, and huge outlined rank numerals behind the posters. The landscape tiles here all use the same heavy condensed white text title at bottom-left. The reference uses varied title artwork placed per image. The extra preview card adds elevation and rounded panels that the reference does not have.",
+      "fix": "Use the title logo artwork if available, placed according to each image instead of always bottom-left. If you fall back to text, give it smaller, varied placement. Remove the elevated preview card from the default view."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same near-black #141414 page, Netflix red wordmark/badges/TOP 10 flags, white headings, dark grey active nav pill, and dark numerals with grey outlines. Very close.",
+      "fix": "Keep as is. Just make sure the rank numeral outline uses the reference's lighter grey stroke (#595959-ish)."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif nav and row headings with matching size hierarchy. The row headings are slightly larger and bolder (~30px vs ~28px). The badges use the same small bold sans. The fallback tile titles use an all-caps condensed display face, which is heavier and more uniform than the reference artwork.",
+      "fix": "Set row headings to ~28px with medium weight. Tone down the condensed all-caps fallback titles on landscape tiles (smaller, less uniform)."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The search, bell, Kids chip and blue smiley avatar with caret all match in line style. The TOP 10 badges match. Tile aspect ratios match (16:9 landscape, 2:3 posters), as do the crops. The preview card adds circular play/plus/thumb/chevron icons that the reference does not show.",
+      "fix": "Hide the preview-card icon set in the default state."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "The nav labels and all 4 row headings are identical. The badges say 'New Episodes' (plural), where the reference uses 'New Episode' and 'New Season'. 'Recently Added' matches. The reference has a 'Watch Now' label that is missing here.",
+      "fix": "Use the singular 'New Episode' and add the 'New Season' and 'Watch Now' badge variants."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Center of Top 10 TV / Top 10 Movies rows: the implementation shows an expanded hover preview card (artwork, play/add/rate/expand buttons, TV-14 · 2 Seasons · HD, genres) covering ranks 3–5. The reference has no overlay.",
+    "New on Netflix tiles: the implementation always puts a heavy condensed all-caps text title at bottom-left. The reference uses varied title artwork placed per image.",
+    "New on Netflix tile badges: the reference shows a paired red 'New Episode' + white 'Watch Now' badge. The implementation only uses single red badges.",
+    "Vertical rhythm: the implementation's first row heading sits ~28px higher, and the row spacing is slightly tighter than the reference's.",
+    "Badge copy: 'New Episodes' (plural) vs the reference's 'New Episode' / 'New Season'."
+  ],
+  "fixes": [
+    "Make sure the default /new view renders with no hover preview card open.",
+    "Add space under the nav so the 'New on Netflix' heading sits at ~165px from the top, and match the reference row spacing (~270px between row headings).",
+    "Replace the uniform bottom-left condensed text titles on landscape tiles with title-logo artwork placed per image, or use a lighter, smaller fallback.",
+    "Add a white 'Watch Now' badge variant shown next to the red status badge, and use the 'New Episode' / 'New Season' badge copy.",
+    "Reduce the row heading size slightly to ~28px."
+  ],
+  "summary": "A faithful recreation of the Netflix New & Popular skeleton (nav, four rows, ranked Top 10 numerals, badges). The main differences are an unrequested hover preview card over the Top 10 rows and uniform text-title treatment on landscape tiles."
+}
+```

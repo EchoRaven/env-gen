@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed, chrome-free video player screens: back arrow at top-left, a control row along the bottom (playback controls on the left, centered title text, fullscreen at bottom-right). Neither has app nav, which is correct. The implementation adds a full-width scrubber above the control row and a large left-aligned 'You're watching' info block in the middle-left of the frame. The reference has neither. The top-right cluster (report flag and Ad countdown) is missing from the implementation.",
+      "fix": "Remove the progress-bar row and the mid-screen info overlay in this state. Add a top-right cluster with a flag icon and an 'Ad 12' badge, level with the back arrow. Keep the bottom row as pause, volume, centered status text and fullscreen."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Matches: back arrow, play/pause toggle, volume, centered caption text, fullscreen. Missing: the report flag icon and the 'Ad 12' countdown badge with the yellow left bar, both at top-right. The implementation invents controls the reference doesn't show: a red-dot progress scrubber with a 0:00 timestamp, rewind-10 and forward-10, next-episode, episodes, subtitles, the 'You're watching' paused-info overlay, and an error message. It shows a play icon where the reference shows pause, which means a paused state rather than playing.",
+      "missing": [
+        "report/flag icon (top-right)",
+        "Ad countdown badge 'Ad 12' with yellow accent bar (top-right)",
+        "pause button in playing state (implementation shows play)"
+      ],
+      "fix": "Render the ad-playing state: add the flag icon and the 'Ad N' badge at top-right, and show pause instead of play. Hide the scrubber, timestamp, ±10 skip buttons, next-episode, episodes, subtitles and the info overlay."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use the same minimal cinematic overlay: white line icons over full-bleed video, flat, no cards. The implementation is busier because of the extra controls, the overlay text block and the red scrubber. The reference's Ad badge is a small dark rounded chip with a thin yellow left bar.",
+      "fix": "Remove the extra overlays to get back to the reference's sparse look. Add the dark translucent Ad chip with a 2–3px yellow left border."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both are dark, with white icons and text over the video. The implementation adds red accents (scrubber dot and the error text). The reference's only accent is the yellow bar on the Ad badge.",
+      "fix": "Remove the red scrubber and the red error text in this state. Use a yellow/amber accent on the Ad badge."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a sans-serif face. In the reference, the centered bottom caption is regular weight, about 20px, white, in one style. The implementation's centered caption mixes a bold title with regular episode text. It also adds a large display-size title hierarchy (eyebrow, H1, subtitle, body) that the reference doesn't have.",
+      "fix": "Make the centered bottom caption a single regular-weight white line of about 20px. Remove the large title and synopsis block."
+    },
+    "iconography": {
+      "score": 0.65,
+      "notes": "The back arrow, speaker-with-waves volume icon and corner-bracket fullscreen icon match in style: white, outline, similar size. The reference uses a filled pause icon; the implementation shows play. The flag outline icon is missing, and the implementation adds extra icons (skip-10, next, episodes, subtitles).",
+      "fix": "Add the outline flag icon at top-right and show the filled two-bar pause icon. Drop the extra control icons."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference's bottom-center text has the form '<Title> begins after ads', and the top-right badge reads 'Ad 12'. The implementation shows '<Title> E1 Episode 1', 'You're watching', and a codec error message.",
+      "fix": "Change the center caption to '<Title> begins after ads' and add the 'Ad <seconds>' badge label. Remove 'You're watching' and the error text."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference's report flag icon and the 'Ad 12' countdown badge with yellow left bar are missing from the implementation",
+    "bottom: the implementation adds a full-width progress scrubber with a red dot and a 0:00 timestamp; the reference has no scrubber",
+    "mid-left: the implementation overlays a 'You're watching' title, episode and synopsis block plus a red error line; the reference shows clean video",
+    "bottom-left: the implementation adds rewind-10 and forward-10 buttons and shows play instead of the reference's pause",
+    "bottom-right: the implementation adds next-episode, episodes and subtitles icons; the reference has only fullscreen",
+    "bottom-center: the caption reads '<Title> E1 Episode 1' with a bold title, where the reference reads '<Title> begins after ads' in regular weight"
+  ],
+  "fixes": [
+    "Add an ad-playing player state for this route: top-right flag icon plus a dark 'Ad 12' chip with a yellow left bar",
+    "Show only pause, volume, a centered '<Title> begins after ads' caption and fullscreen in the bottom row",
+    "Hide the progress scrubber, timestamp, ±10 skip buttons, next-episode, episodes and subtitles in this state",
+    "Remove the 'You're watching' paused-info overlay and the error message, and keep the video full-bleed and unobstructed",
+    "Set the playback icon to pause (playing state)"
+  ],
+  "summary": "The implementation renders a paused, full-controls player instead of the reference's minimal ad-playing state: the flag and Ad countdown badge are missing, and the scrubber, extra controls and info overlay are invented."
+}

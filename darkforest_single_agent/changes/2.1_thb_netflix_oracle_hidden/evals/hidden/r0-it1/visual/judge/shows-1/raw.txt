@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Same skeleton: a transparent top nav over a full-bleed hero, a 'TV Shows' heading with a Genres dropdown, a left-aligned hero lockup, Play/More Info buttons, a mute plus maturity-rating flag on the right, and a horizontal 'Today's Top Picks for You' carousel that bleeds off the right edge. The difference is vertical rhythm. The implementation's hero is taller: the row heading sits at about y=935 instead of y=837, so the tiles are cropped by the fold and the next row's heading never appears. The mute/rating flag also sits lower (about y=733 vs y=675).",
+      "fix": "Shorten the hero so the first row heading lands at about 76% of viewport height (y≈837 at 1104px) and the full tile height plus the next row heading are visible above the fold. Move the mute/rating cluster up to align with the description block."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "The inventory mostly matches: logo, 7 nav items with a pill-highlighted 'Shows', search, bell, Kids profile chip, avatar with caret, the Genres dropdown, the Netflix-originals tag above the title lockup, the TOP 10 badge with '#1 in TV Shows Today', the description, Play and More Info, mute, the TV rating flag, the carousel paging indicator, and TOP 10 corner badges on tiles. The implementation adds a metadata row ('Comedy · 2026 · 4 Episodes · TV-14') that the reference does not have. The reference's red status pills at the bottom of the tiles ('New Season', 'Recently Added', 'New Episode'/'Watch Now') are cut off by the fold and can't be confirmed; only red slivers show at the very bottom edge.",
+      "missing": [
+        "visible tile-bottom status pills (New Season / Recently Added / New Episode + Watch Now) — cropped below the fold"
+      ],
+      "fix": "Remove the genre/year/episodes/rating metadata row under the '#1 in TV Shows Today' line. Make sure the tile status pills render fully visible, centered at the bottom edge of each tile."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same cinematic dark treatment: a full-bleed image with a left and bottom dark vignette, slightly rounded rectangular buttons, a square-cornered Genres select with a white border on black, flat tiles with tiny radius and narrow gaps, and a pill-shaped active nav item. Density is close.",
+      "fix": "Keep as is. Only the hero proportions (see layout) need tightening."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Dark scheme with Netflix red for the logo, originals tag, TOP 10 badges and status pills. White Play button with black text, translucent grey More Info, a translucent grey highlight pill on the active nav item, and a semi-transparent dark rating flag with a white left bar. All of this matches.",
+      "fix": "No change needed. Optionally make the More Info grey slightly lighter and more translucent to match the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif throughout. Nav labels at small/regular weight with a bold active item, a large regular 'TV Shows' heading, and a medium-weight '#1 in TV Shows Today' line all match. The implementation's 'TV Shows' heading and '#1' line are slightly heavier and larger. The row heading is a bit larger. The text-rendered title lockup has a heavier condensed character, which is acceptable as stand-in title art.",
+      "fix": "Set 'TV Shows' to regular weight at ~40px, set '#1 in TV Shows Today' to ~30px medium, and set the row heading to ~26px regular."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Outline search and bell icons, a Kids gradient tile, a blue smiley avatar with caret, an outline circle-i on More Info, a filled play triangle, a circular mute button, and red TOP 10 badges all match. The Play button and its icon are slightly smaller than the reference's. Tile artwork uses a 16:9 cover crop with titles burned in, which matches.",
+      "fix": "Enlarge the Play button to ~158×58 with a ~32px play glyph, and the More Info button to ~214×58 with a ~34px info icon."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Every chrome label matches exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids, TV Shows, Genres, #1 in TV Shows Today, Play, More Info, Today's Top Picks for You. The extra metadata-row text is not part of the reference.",
+      "fix": "Remove the metadata row copy."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "hero, below the '#1 in TV Shows Today' line: the implementation adds a metadata row (genre · year · episodes · rating) that the reference does not have",
+    "hero height: the implementation's hero is ~100px taller, pushing 'Today's Top Picks for You' to y≈935 (reference y≈837). The tiles are cut off at the fold and the next row heading ('Only on Netflix…' in the reference) is not visible",
+    "carousel tiles: the bottom-centered red status pills visible in the reference are cropped below the fold in the implementation",
+    "right side of hero: the mute and TV-rating flag sit ~60px lower than in the reference",
+    "hero buttons: Play and More Info are slightly smaller than the reference's"
+  ],
+  "fixes": [
+    "Delete the metadata row (genre/year/episodes/rating) under the TOP 10 line in the hero",
+    "Reduce hero height so the row heading starts at ~76% of viewport height and the first row's tiles, including their status pills, plus the start of the next row heading are visible above the fold",
+    "Raise the mute + maturity-rating cluster to sit level with the description text",
+    "Scale the Play and More Info buttons up to ~58px tall with larger icons and text (~22px)",
+    "Lighten the 'TV Shows' and '#1 in TV Shows Today' text weight to regular/medium"
+  ],
+  "summary": "A near-faithful Netflix TV Shows browse screen. The main gaps are an invented metadata row in the hero and a taller hero that pushes the top-picks row and its tile status pills below the fold."
+}
+```

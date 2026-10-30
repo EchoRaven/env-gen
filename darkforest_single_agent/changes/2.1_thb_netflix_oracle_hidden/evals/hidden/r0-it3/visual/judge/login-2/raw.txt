@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches the reference. Both have a top bar with the wordmark at about x=213 and a hairline divider under it, a centered ~490px form column, a dark red-to-black gradient body, and a separate #141414-style footer band with a left-aligned 'Questions?' line and a 4-column link grid. Differences: the extra password field pushes everything below the email field down by about 75px. The header is slightly shorter (divider at ~90px vs ~100px). The footer grid has only one row with 3 of the 4 columns filled.",
+      "fix": "Remove the password field so 'Continue' sits about 14px below the email field. Raise the header height to ~100px. Fill the footer grid to 4 columns × 2 rows."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "These match: the wordmark, the H1 with its subtitle, the floating-label email input, the full-width red Continue button, the 'Get Help' disclosure with chevron, the small gray legal line, the footer contact line and the underlined footer links. Differences: there is an extra Password input that the reference's email-first step does not show. The footer has 3 links in one row, but the reference shows 8 links in a 4×2 grid.",
+      "missing": [
+        "footer link grid second row (4 links)",
+        "footer 4th link column"
+      ],
+      "fix": "Delete the Password field from this step, or move it to a second step after Continue. Render 8 footer links in a 4-column × 2-row grid."
+    },
+    "style": {
+      "score": 0.92,
+      "notes": "The design language is the same: flat dark surfaces, a slightly rounded input with a gray hairline border, a 4px-radius solid button, no shadows, and an airy centered form. The button is about 54px tall in both.",
+      "fix": "No structural change needed. Keep the input border radius and border at ~4px and a 1px gray border, as now."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The scheme matches: a dark maroon-to-black gradient body, a #141414 footer, white headings, light-gray subtitle and footer links, and a red CTA. The implementation's CTA is the saturated #E50914. The reference's button is a slightly softer, warmer red (~#D6322B). The input fill looks the same.",
+      "fix": "Change the Continue button background to ~#D6322B (a softer red), or keep #E50914 if that is the brand token, but match the reference's tone."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "The hierarchy matches: a ~36px bold H1, a ~20px regular gray subtitle, a ~13px floating label, a ~20px semibold button label, ~18px Get Help, ~14px gray legal text, and ~18px footer text. The implementation uses an Inter-like grotesk. The reference uses Netflix Sans, which is slightly rounder and more geometric. The H1 is a touch larger and tighter in the reference.",
+      "fix": "Use a rounder geometric sans such as Netflix Sans, or fall back to 'Helvetica Neue'/'Roboto' with slightly wider letterspacing. Set the H1 to ~36px/700."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The red condensed NETFLIX wordmark renders at the same size and position. The Get Help chevron is smaller and heavier in the implementation, while the reference uses a thin ~14px outline chevron.",
+      "fix": "Replace the Get Help chevron with a thin-stroke ~14px outline chevron-down, about 6px right of the label."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "These match: the H1, the subtitle, the 'Email or mobile number' label, 'Continue' and 'Get Help'. Differences: the legal line reads 'Passwords are verified server-side…' instead of 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' The footer line reads 'Questions? Use “Get Help”…' instead of 'Questions? Call 1-844-569-7700 (Toll-Free)'. The footer links are Home / Sign In / Create Account instead of FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences and Corporate Information.",
+      "fix": "Use the reference's reCAPTCHA-style legal line and the 'Questions? Call …' footer line, and the 8 footer link labels."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "Form: the implementation adds a Password input between the email field and Continue. The reference shows only the email field followed directly by Continue (email-first step).",
+    "Footer link grid: the implementation shows 3 links in one row (Home, Sign In, Create Account). The reference shows 8 links in 4 columns × 2 rows (FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information).",
+    "Footer contact line: 'Questions? Use “Get Help” on the sign-in page.' vs the reference's 'Questions? Call 1-844-569-7700 (Toll-Free)'.",
+    "Legal line under Get Help: the PBKDF2 password text replaces the reference's reCAPTCHA notice.",
+    "Continue button: a saturated #E50914 red vs the reference's softer, warmer red.",
+    "Header: the divider sits at ~90px vs ~100px in the reference, and the logo sits slightly higher.",
+    "Get Help chevron: smaller and heavier than the reference's thin outline chevron."
+  ],
+  "fixes": [
+    "Remove the Password input from the /login first step so the email field is followed directly by Continue, about 14px below.",
+    "Rebuild the footer links as a 4-column × 2-row grid with 8 underlined links: FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information.",
+    "Change the footer heading to 'Questions? Call 1-844-569-7700 (Toll-Free)'.",
+    "Change the small gray legal line to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Soften the Continue button red to ~#D6322B.",
+    "Increase the header height to ~100px, with the wordmark vertically centered above the hairline divider.",
+    "Swap the Get Help chevron for a thin ~14px outline chevron-down."
+  ],
+  "summary": "The implementation is a close replica of the reference's sign-in screen, but it adds a password field the reference's email-only step doesn't show, cuts the footer link grid down to 3 links, and changes the legal and footer wording."
+}
+```

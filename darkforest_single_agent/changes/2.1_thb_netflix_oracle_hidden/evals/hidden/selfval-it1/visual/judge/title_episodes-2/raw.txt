@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Matches the reference: a centred dark modal about 1085px wide sits over a dimmed Netflix home page with the top nav, hero and rows behind it. Inside the modal the order matches too: synopsis on the left with metadata on the right, then the Episodes header, then the episode list. Each row has the same structure: large number, 16:9 thumbnail about 170px wide, title and duration on one line, and the description below. Differences: the implementation adds a 'Season 1: TV-14' line between the header and the list, and draws a divider above the first row. In the reference, the first row is a highlighted block straight under the header.",
+      "fix": "Remove the 'Season 1: [TV-14]' sub-line under the Episodes heading. Start the list straight after the heading, with no divider above the first row."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "Present: Episodes heading, numbered episode rows, thumbnails, titles, durations, descriptions (row 1), hover play overlay, row dividers and the highlighted row. Differences: (1) the right side of the Episodes header is a bordered 'Season 1 ▾' dropdown, where the reference shows plain right-aligned text with no box or caret; (2) the play overlay is a bare white triangle, where the reference has a triangle inside a thin white circular ring; (3) there is an extra season rating badge line; (4) the highlight is on row 2 (hover), where the reference highlights the first or current episode.",
+      "fix": "Replace the Season dropdown with plain right-aligned text in the header for single-season titles. Wrap the thumbnail play icon in a roughly 52px white-outlined circle on a translucent dark fill. Give row 1 the persistent lighter-grey highlight.",
+      "missing": [
+        "circular ring around the thumbnail play overlay",
+        "plain-text label on the right of the Episodes header (replaced by a bordered dropdown)"
+      ]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark Netflix modal treatment: hairline grey row dividers, a lighter-grey highlighted row with slight rounding, slightly rounded thumbnails and generous row padding. The bordered dropdown box adds a framed control that the reference's clean header doesn't have.",
+      "fix": "Drop the bordered dropdown box so the header is text-only. Keep the dividers as hairlines between rows only."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Matches the reference: #181818-style modal surface, #2f2f2f-ish highlighted row, white titles, light-grey descriptions and a dimmed black overlay on the page behind. Contrast is equivalent.",
+      "fix": "Keep the colours as they are. The highlight should sit on the current episode (row 1), not on the hovered row."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family and hierarchy: bold Episodes heading at about 26px, large light episode numbers, bold titles at about 17px, regular durations and smaller grey descriptions. The reference's header-right text is about 20px regular; the implementation's is styled inside a control. The implementation's synopsis text is slightly larger and spaced more widely.",
+      "fix": "Render the header-right label as about 20px regular white text. Match the synopsis to about 17px with a line height of about 1.7."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Thumbnails have the correct aspect ratio, cover crop and small radius. The play overlay is a filled triangle with no circular outline, where the reference has a ringed circle. There is an extra dropdown caret.",
+      "fix": "Use a play icon inside a thin white circular outline (circle about 52px, 2px stroke), centred on the thumbnail. Remove the caret where the reference shows plain text."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The 'Episodes' heading matches. The header-right label reads 'Season 1' in a selector, where the reference shows a title label. The implementation adds the 'Season 1: TV-14' copy. Durations use an 'Xs' format where the reference uses 'XXm', which is a formatting convention.",
+      "fix": "Remove the 'Season 1: TV-14' sub-label. Format durations as minutes ('34m'). Show a plain label on the right of the header instead of the season selector."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right: the implementation shows a bordered 'Season 1 ▾' dropdown; the reference shows plain right-aligned text with no box or caret",
+    "Below the Episodes heading: the implementation inserts a 'Season 1: [TV-14]' line and a divider before the list, which are absent in the reference",
+    "Episode thumbnail play overlay: the implementation uses a bare white triangle; the reference has the triangle inside a white circular ring",
+    "Row highlight: the reference highlights row 1 with a lighter-grey rounded block; the implementation highlights row 2 and leaves row 1 unhighlighted under a divider",
+    "Duration text: the implementation uses an 'Xs' seconds format; the reference uses the 'XXm' minutes format"
+  ],
+  "fixes": [
+    "Replace the Season dropdown in the Episodes header with plain right-aligned 20px white text, with no border or caret",
+    "Delete the 'Season 1: TV-14' sub-line and the top divider so the list starts directly under the heading",
+    "Give the current episode (row 1) a persistent #2f2f2f rounded highlight and remove the divider above it",
+    "Wrap the hover play icon in a white-outlined circle (about 52px) over the thumbnail",
+    "Format episode durations as minutes ('34m')"
+  ],
+  "summary": "The modal's episode list follows the reference closely in structure and treatment. The main gaps are the bordered Season dropdown and extra rating sub-line in the header, the ringless play overlay, and the highlight sitting on the wrong row."
+}
+```

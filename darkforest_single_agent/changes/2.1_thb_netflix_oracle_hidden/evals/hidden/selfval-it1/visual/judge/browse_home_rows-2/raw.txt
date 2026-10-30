@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.62,
+      "notes": "Matches: sticky dark top bar with the wordmark at left, pill-highlighted 'Home', the same nav items in the same order, and icons on the right. Below it is a vertical stack of horizontal carousel rows with a 67px left gutter, page-indicator dashes at the right of each row header, and a partly cut-off tile at the right edge. Differs: the reference starts right under the nav with rows only. The implementation shows the bottom of a hero banner (Play/More Info buttons and a '#1 in TV Shows Today' tag) above the rows. The TV Action & Adventure row uses smaller tiles (~290px wide, 6 per view) instead of the reference's ~350px tiles at 5 per view. Rows also start further down the page, so fewer rows fit on screen.",
+      "fix": "Capture /browse scrolled so the first row sits directly below the nav (~110px from the top) with no hero visible. Give every standard row the same 16:9 tile size (~350×197px, 5 tiles plus a peek, ~9px gaps)."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: nav with 7 items plus the active pill, search, bell, the Kids profile switcher, an avatar with a caret, row titles, page-indicator dashes, 16:9 artwork tiles, red 'Recently Added' tag pills at the bottom centre of tiles, and red TOP 10 corner badges. Missing: the 'BETA' outlined pill badge next to a row title (the reference's 'Games' row), and the paired white 'Watch Now' tag next to the red 'New Episode' tag. Extra compared with the reference: a hover preview card is open over the rows (play, add, like, expand controls; TV-14/HD metadata; genre list) and covers part of two rows. There is also a hero CTA area, and a numbered Top 10 row with giant outlined numerals and portrait posters, which the reference does not show.",
+      "missing": [
+        "'BETA' outlined pill badge next to a row heading",
+        "Two-part tile tag ('New Episode' red + 'Watch Now' white)"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat, dark streaming style: slightly rounded tiles (~4–6px), no shadows on rows, whitespace between rows rather than divider lines, and dense carousels. The hover preview card adds an elevated, shadowed layer that the reference doesn't have, and the hero's rounded inset card adds more decoration.",
+      "fix": "Leave every tile at rest (no expanded preview) when the screen first renders, and hide the hero so the page is a flat stack of rows."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Matches: near-black #141414 page with a black nav bar, white text, Netflix red for the logo, tags and TOP 10 badges, and a grey active nav pill. The implementation's grey 'More Info' button and preview card add surfaces the reference doesn't have, but the palette is the same.",
+      "fix": "No palette change needed. Remove the extra surfaces (preview card, hero buttons)."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Matches: the same sans-serif typeface for the nav (regular weight, white/grey) and row headings (~26px semibold, white). Tag pills use small bold white text. The implementation's row headings look slightly larger and bolder (~28px), and every tile carries the same condensed title overlay. Since that overlay stands in for title artwork, it is acceptable.",
+      "fix": "Set row headings to ~24–26px medium/semibold so they match the reference's lighter weight."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Line-style search and bell icons, the Kids gradient icon, and a square blue smiley avatar with a caret all match. Tiles are cover-cropped 16:9 with slight rounding, as in the reference. Differs: the Top 10 row uses portrait posters with giant outlined numerals, an image treatment the reference doesn't show. The hover card adds circular outline control icons.",
+      "fix": "Show only standard 16:9 landscape tile rows in this view. Remove the outlined-numeral portrait row from the visible area."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. Tag wording 'Recently Added' and the TOP 10 badges match. Missing: the 'BETA' label and the 'New Episode' / 'Watch Now' / 'New Season' tag variants.",
+      "fix": "Support tile tag variants 'New Season', 'New Episode' + 'Watch Now', and a 'BETA' row-title badge."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "middle of the screen: an expanded hover preview card (large artwork, play/check/like/expand buttons, TV-14 Movie HD, genre list) covers parts of the first two rows. The reference shows all tiles at rest.",
+    "top, below the nav: the bottom of a hero banner (Play and More Info buttons, '#1 in TV Shows Today' tag) is visible. In the reference, rows begin directly under the nav.",
+    "bottom row: a numbered Top 10 row with giant outlined numerals and portrait posters. Every row in the reference uses standard 16:9 landscape tiles.",
+    "'TV Action & Adventure' row: tiles are smaller (~290px wide, 6 per view) than the reference's ~350px tiles (5 per view), so tile sizes are inconsistent between rows.",
+    "row headings: no row has the outlined 'BETA' pill badge that sits next to the 'Games' heading in the reference.",
+    "tile tags: only single red 'Recently Added' pills appear. The reference also uses the paired red 'New Episode' + white 'Watch Now' tag and 'New Season'."
+  ],
+  "fixes": [
+    "Render /browse with no hover preview card expanded (only open it on real hover).",
+    "Scroll or lay out the view so the first carousel row starts right below the nav and no hero is visible, matching the rows-only reference.",
+    "Use one tile size (16:9, ~350×197px, 5 visible plus a peek, ~9px gap) for every row.",
+    "Keep the visible rows to standard landscape carousels. Move the numbered Top 10 poster row out of this view.",
+    "Add an outlined pill 'BETA' badge option next to row headings, and a two-part tile tag ('New Episode' red + 'Watch Now' white), plus a 'New Season' tag variant.",
+    "Make row headings slightly smaller and lighter (~24–26px semibold)."
+  ],
+  "summary": "The nav and row/tile styling match the reference, but an open hover preview card, a visible hero, a numbered Top 10 poster row and inconsistent tile sizes pull it away from the reference's plain stack of landscape rows."
+}

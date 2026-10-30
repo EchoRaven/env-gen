@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches. There is a transparent top nav over a full-bleed hero, a breadcrumb and page title at top-left, the title lockup, description and CTAs at bottom-left, and the mute and TV-14 rating flag at mid-right. A 'Your Next Watch' carousel overlaps the bottom of the hero, and the 66px left gutter lines up. The difference is height: the hero is taller, so the carousel starts at ~y=950 instead of ~y=870. That pushes the cards partly off the fold and hides the next row heading ('TV Comedies'), which the reference shows peeking in at the bottom.",
+      "fix": "Shorten the hero, or tighten the title-to-description-to-buttons stack, so 'Your Next Watch' sits at ~y=840. The full card row (~165px tall) and the next row heading should both be visible above the fold."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": [
+        "active-state pill on the current nav item (reference: grey rounded pill behind 'Shows')",
+        "second row heading visible at the bottom edge"
+      ],
+      "notes": "Present in both: logo, 7 nav items, search, bell, Kids profile chip, avatar with caret, breadcrumb, page title, hero title art, description, Play and More Info buttons, mute toggle, maturity rating flag, row heading, page indicator dashes, cards with TOP 10 badges and red bottom tags, and a peeking 7th card. What's missing is the selected state in the nav: the reference highlights 'Shows' with a pill, and the implementation highlights nothing.",
+      "fix": "Highlight the active category's nav item ('Shows' or 'Movies', depending on genre type) with a semi-transparent grey rounded pill (~rgba(255,255,255,0.2), radius ~20px) and semibold white text."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The design language matches: cinematic, flat, dark, with slightly rounded buttons and cards, card tags in pill-like red labels, and the same left-to-right and bottom vignette gradients. The cards are roughly the same shape, though the implementation's cards look a bit taller. The implementation's hero is more heavily colour-graded, but that comes from the artwork.",
+      "fix": "Keep the card aspect at ~16:9 (≈290×165) and make sure the bottom vignette fades to #141414 behind the row."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same dark base, Netflix red for the wordmark, title art and card tags, a white Play button, a translucent grey More Info button, and white nav text. The breadcrumb parent link is a dimmer grey in the reference (~#808080) than in the implementation.",
+      "fix": "Dim the breadcrumb parent link to ~rgba(255,255,255,0.5) and render the active nav pill as a translucent grey."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family and hierarchy: a large light page title, a condensed red display title, body description and a semibold row heading. The hero description is noticeably smaller and lighter in the implementation (~17px against ~22px in the reference). Card titles are typeset as condensed white text, where the reference uses logo artwork; that is acceptable as content. The row heading is slightly larger in the implementation.",
+      "fix": "Increase the hero description to ~22px regular with ~1.35 line-height and a max width of ~660px. Set the row heading to ~26px semibold."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Matching icons: outline search and bell, the Kids gradient tile, the blue smiley avatar with caret, a filled play triangle, a circled-i info icon, a circular mute button, and the red TOP 10 badges. The info icon and its stroke are a bit smaller in the implementation.",
+      "fix": "Enlarge the More Info icon to ~34px with a heavier stroke, matching the size of the Play icon."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, Play, More Info, Your Next Watch and the tag wording all match. The breadcrumb parent is wrong: the reference names the parent category ('TV Shows' for a show genre), while the implementation says 'Home'. The reference also uses a '>' separator, where the implementation uses a chevron glyph.",
+      "fix": "Label the breadcrumb parent with the category ('TV Shows' or 'Movies') instead of 'Home', and use a thin grey '>' separator."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Top nav: the reference shows the current category ('Shows') inside a grey rounded active pill; the implementation highlights no nav item.",
+    "Vertical rhythm: the implementation's hero is ~80px taller, pushing 'Your Next Watch' and its cards down so the cards are cut off at the fold and the next row heading peeking in at the bottom of the reference is not visible.",
+    "Breadcrumb: the reference parent reads 'TV Shows' in dim grey with a '>' separator; the implementation reads 'Home' with a chevron and is brighter.",
+    "Hero description: the implementation's text is noticeably smaller and lighter than the reference's ~22px body.",
+    "More Info button: the implementation's info icon is smaller and thinner than the reference's."
+  ],
+  "fixes": [
+    "Add an active-state pill (translucent grey, rounded, semibold label) to the nav item for the current genre's category.",
+    "Reduce the hero height or tighten its stack so the 'Your Next Watch' heading sits at ~y=840, with full cards and the next row heading visible above the fold.",
+    "Change the breadcrumb parent from 'Home' to the category name ('TV Shows' or 'Movies'), dim it to ~50% white, and use a '>' separator.",
+    "Increase the hero description font to ~22px with ~1.35 line-height.",
+    "Enlarge the More Info circled-i icon to match the Play icon's size."
+  ],
+  "summary": "Nearly the same Netflix genre-page design: the main gaps are no active nav pill, a taller hero that pushes the row below the fold, a breadcrumb that says 'Home' instead of the category, and a smaller hero description."
+}
+```

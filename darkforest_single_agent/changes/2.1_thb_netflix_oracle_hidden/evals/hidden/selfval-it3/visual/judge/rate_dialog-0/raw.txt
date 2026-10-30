@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The overall structure matches. Both show a centered modal over the blurred, dimmed title-detail page. A full-width red rule runs across the top (x≈480–1440), the close X sits top-right, then come the centered title, the subtitle, three evenly spaced rating columns and a centered 'Got it!' button. The vertical rhythm is close. Two things differ: the implementation adds a status line between the options and the button, which pushes the button about 15px lower, and its option columns are wider, so the labels wrap differently.",
+      "fix": "Remove the status line so 'Got it!' sits about 80px below the option labels. Limit each option column to about 160px so the labels wrap the same way as the reference."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Everything the reference shows is present: the red accent bar, the close X, the heading, the subtext, three icon-plus-caption options (thumbs down, thumbs up, double thumbs up) and the 'Got it!' button. The implementation adds two things the reference does not have. One is a grey rounded tile behind the first option, which looks like a hover or selected state. The other is a status line, 'The East Palace is not rated yet.'",
+      "missing": [],
+      "fix": "Remove the 'not rated yet' status text. Render all three options without a background tile in the default state."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The look is the same: flat and minimal, a dark scrim over a blurred page, no modal card surface and a small dark rectangular button. In the implementation the red rule is slightly thicker and more saturated, and the grey tile on the first option adds a surface the reference does not have. The page behind is blurred a little more heavily and is darker.",
+      "fix": "Make the red rule about 3px tall, matching the reference's slightly muted red. Remove the option background tile. Ease off the backdrop blur and darkening slightly."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use a dark scheme with white text and icons, a light-grey subtitle, a red accent rule and a dark grey button with white text. The scrim in the implementation is a bit darker and cooler. Its red is slightly brighter.",
+      "fix": "Change the accent rule to Netflix red (#E50914 at slightly reduced intensity). Lighten the scrim a little so more of the backdrop shows through."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The hierarchy matches: a large bold centered title, a mid-size light-grey subtitle and small white two-line centered captions. The implementation uses a generic grotesk (Inter-like) instead of Netflix Sans, so the title looks a little heavier and wider. Its caption text is slightly larger, and the lines break in different places ('We won't suggest this / to you again' instead of 'We won't suggest / this to you again').",
+      "fix": "Use a Netflix Sans–like font, or a lighter-weight Helvetica-style fallback, for the title. Set the captions to about 16px and narrow the columns so the wraps match the reference."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Both use filled white thumbs-down, thumbs-up and double-thumbs-up glyphs at similar sizes, and both use a thin X close icon. The X in the implementation has a slightly thinner stroke, and its double-thumbs glyph is drawn a little differently.",
+      "fix": "Make the close X stroke slightly heavier, about 3px. Align the double-thumbs glyph with Netflix's overlapping style."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "The heading, subtitle, three captions and 'Got it!' all match word for word. The implementation adds an extra line, '<Title> is not rated yet.', which the reference does not have.",
+      "fix": "Remove the '<Title> is not rated yet.' line."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Between the option row and the 'Got it!' button: the implementation adds a small grey status line ('… is not rated yet.') that the reference does not have, which pushes the button down.",
+    "First rating option (thumbs down): the implementation draws a grey rounded tile behind the icon and caption. In the reference all three options sit directly on the scrim with no background.",
+    "Option captions: the implementation's columns are wider and its type larger, so the lines break differently ('We won't suggest this / to you again', 'We'll show you more / like this', 'We know you're a true / fan!').",
+    "Title typeface: the implementation uses a generic grotesk that is heavier and wider than the reference's Netflix Sans.",
+    "Top red rule: slightly thicker and brighter in the implementation.",
+    "Backdrop: the implementation's scrim and blur are heavier and darker, so less of the underlying page shows through."
+  ],
+  "fixes": [
+    "Remove the 'not rated yet' status text from the rate dialog.",
+    "Remove the default or hover background tile from the rating options so all three render as bare icon-plus-caption columns.",
+    "Set the rating columns to about 160px wide with about 16px captions so they wrap as 'We won't suggest / this to you again', 'We'll show you / more like this', 'We know you're a / true fan!'.",
+    "Use Netflix Sans or a closer fallback, at a slightly lighter bold weight, for the title.",
+    "Make the top red rule about 3px tall, and lighten the scrim and blur slightly."
+  ],
+  "summary": "The rate dialog is a near-faithful copy of the reference. The main deviations are an invented 'not rated yet' line and a grey tile behind the first option, plus small differences in font and caption wrapping."
+}
+```

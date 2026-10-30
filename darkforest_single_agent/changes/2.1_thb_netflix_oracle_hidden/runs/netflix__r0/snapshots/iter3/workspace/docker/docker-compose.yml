@@ -1,0 +1,44 @@
+name: netflix-clone
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: netflix
+      POSTGRES_PASSWORD: netflix
+      POSTGRES_DB: netflix
+    volumes:
+      - ../app/database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U netflix -d netflix"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../app/backend
+    environment:
+      DATABASE_URL: postgresql://netflix:netflix@database:5432/netflix
+      JWT_SECRET: change-me-in-production-netflix-clone-secret
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../app/frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    restart: unless-stopped

@@ -1,0 +1,30 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.72, "notes": "The chrome skeleton matches the reference: back arrow top-left, flag top-right, a full-width scrubber with the time on the right, a bottom control row with left cluster, centred title and right cluster. The implementation adds a large left-aligned 'You're watching' info block in the middle of the video area. The reference's video area is empty black. The control row sits a little lower and is more compact.", "fix": "Remove the mid-screen info overlay so the video area holds only the video frame. Keep the scrubber at ~88% of the height and the control row at ~94%."},
+    "components": {"score": 0.7, "notes": "All of the reference's controls are present: back, flag/report, scrubber with thumb, time remaining, play/pause, back 10, forward 10, volume, centred title+episode, next episode, episodes, subtitles and fullscreen. The play/pause button shows the play state where the reference shows pause. The scrubber has no buffered segment or chapter marker ticks. The implementation also adds an info panel (eyebrow, title, season/episode line, synopsis) and a red codec error message that the reference does not have.", "fix": "Show the pause icon while playing. Render a light-grey buffered segment and small marker ticks on the scrubber track. Remove the 'You're watching' info panel and the error text.", "missing": ["pause-state play/pause button", "buffered-progress segment on scrubber", "chapter marker ticks on scrubber"]},
+    "style": {"score": 0.65, "notes": "Both use flat, minimal white-on-dark player chrome with no shadows. The reference is plain black and austere. The implementation puts the controls over a vivid artwork backdrop and adds a large text block, which makes it look like a decorative pause screen.", "fix": "Render a black video surface, or the actual video frame, behind the controls with no poster art. Keep the controls flat white."},
+    "color": {"score": 0.6, "notes": "The red scrubber progress and thumb match, and so do the white icons and text. The reference is pure black. The implementation's backdrop is a saturated blue/red image, and the error text is pink/red.", "fix": "Use a #000 background for the player. Drop the poster backdrop and the red error copy. Draw the buffered track in light grey (#bbb) over a darker grey base."},
+    "typography": {"score": 0.75, "notes": "The centred bottom title matches: a bold show name, followed by regular-weight episode code and episode title in a similar sans at ~20px. The implementation adds a large display-title hierarchy (eyebrow, ~50px title, subtitle, body) that the reference does not show. The time label size is similar.", "fix": "Remove the overlay text hierarchy and keep only the bottom title line (bold name + regular 'E1  Episode title') and the time label."},
+    "iconography": {"score": 0.8, "notes": "The outline icon set matches the reference: back arrow, flag, the 10-second circular arrows, speaker, next-episode, stacked episodes, subtitles bubble and fullscreen corners. The implementation's icons are slightly smaller and thinner. It shows a filled play triangle where the reference has a filled pause.", "fix": "Scale the bottom-row icons to ~48px with a slightly heavier stroke to match the reference, and show the pause glyph while playing."},
+    "copy": {"score": 0.7, "notes": "The bottom title format matches ('<Show> E1  <Episode title>'), as does the time label. The implementation adds 'You're watching', a 'Season 1: Ep. 1 …' line, a synopsis, and the codec error 'This clip can't be played in this browser…'. The reference has none of this copy.", "fix": "Remove the eyebrow, season line, synopsis and error message from the player controls state."}
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Center-left video area: the implementation overlays a 'You're watching' info block (eyebrow, large title, season/episode line, synopsis). In the reference this area is empty video.",
+    "Background: the implementation shows full-bleed poster artwork. The reference shows a pure black video surface.",
+    "Below the synopsis: the implementation shows a red/pink codec error message ('This clip can't be played…') that the reference does not have.",
+    "Bottom-left play/pause: the implementation shows the play triangle; the reference shows the pause bars (playing state).",
+    "Scrubber: the reference has a light-grey buffered segment and small yellow marker ticks; the implementation shows only a uniform track.",
+    "Bottom control row: the implementation's icons are smaller and thinner, and the row sits closer to the bottom edge than in the reference."
+  ],
+  "fixes": [
+    "Remove the 'You're watching' / title / season / synopsis overlay from the controls state.",
+    "Replace the poster backdrop with a black (#000) video surface.",
+    "Hide the codec error text, or surface it outside this controls view.",
+    "Render the pause icon when the player is in its playing state.",
+    "Add a light-grey buffered segment and small marker ticks to the scrubber track.",
+    "Enlarge the bottom-row icons to ~48px with a heavier stroke and space them to match the reference."
+  ],
+  "summary": "All the player chrome controls are there, but the implementation adds a poster backdrop, a 'You're watching' info overlay and an error message, and shows the play state instead of the reference's clean black playing state."
+}

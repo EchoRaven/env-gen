@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches: a full-bleed hero with a tilted poster-wall background, logo at top-left, language selector and Sign In at top-right, centred headline/subhead/prompt/email form, a curved divider, then a promo banner. One difference: in the reference the popcorn icon sits outside the banner to its left, and the banner starts at about x=275. In the implementation the icon is inside the banner's left edge and the banner starts at about x=168, so the banner is wider and shifted left.",
+      "fix": "Pull the popcorn icon out of the banner card and place it as a separate element left of the card. Start the card about 100px further right, around x=275, so it spans about 275–1755px."
+    },
+    "components": {
+      "score": 0.92,
+      "notes": "The inventory is complete: wordmark, language dropdown with translate icon, red Sign In button, headline, price subhead, email prompt, email input with placeholder, red Get Started CTA with chevron, curved accent divider, and promo banner with icon, title, subtitle and grey Learn More button. The dropdown indicator differs: the reference uses a small filled caret ▾, while the implementation uses a line chevron.",
+      "fix": "Change the language dropdown indicator to a small filled down-caret triangle.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "Both are flat, dark, marketing-style pages with slightly rounded corners and a rounded banner card. The hero scrim is much heavier in the reference, so the posters look muted and dim. In the implementation the posters are bright and saturated and compete with the headline. The reference's curved divider is a pronounced arc that spans the full width with a glow fading downward. The implementation's arc is flatter, and its red line only shows clearly across the centre.",
+      "fix": "Darken the hero overlay to about 60–70% black, plus a radial/vertical vignette. Make the bottom divider a full-width elliptical arc with a red-to-pink stroke across the whole width and a navy glow underneath."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use the same black base, Netflix red for the CTA, Sign In and logo, a navy/purple banner surface and a grey Learn More button. Because the implementation's hero is under-darkened, it looks much more colourful and has lower text contrast than the muted reference. The reference banner is a fairly uniform purple-navy. The implementation's banner gradient runs from navy to a maroon tint.",
+      "fix": "Raise the hero scrim opacity. Set the banner background to a consistent dark indigo/purple gradient (about #1d1a3f to #2b1f4a) with no maroon end."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "Both use the same bold sans headline in two centred lines, a semibold subhead, a regular prompt line, a large semibold CTA label and a bold banner title over a regular subtitle. The sizes and hierarchy match closely. The implementation's headline is a touch larger, and its subhead is slightly lighter in weight.",
+      "fix": "Set the headline to about 56px/800 and the 'Starts at…' subhead to 20px/700 to match the reference weight."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The wordmark, translate icon and CTA chevron match. The popcorn icon in the reference is a detailed, shaded 3D illustration that sits outside the card. In the implementation it is a flatter, simpler popcorn bucket clipped inside the card. The poster tiles match in their rounded corners and rotated grid.",
+      "fix": "Use a shaded 3D popcorn-bucket illustration of about 80px, positioned outside the banner on its left, vertically centred."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All chrome copy is identical: 'English', 'Sign In', 'Unlimited movies, TV shows, and more', 'Starts at $8.99. Cancel anytime.', 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started', 'The Netflix you love for just $8.99.', 'Get our most affordable, ad-supported plan.' and 'Learn More'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Hero background: the implementation's poster wall is much brighter and more saturated. The reference applies a heavy dark scrim, so the posters are dim and the headline dominates.",
+    "Bottom divider: the reference has a pronounced full-width curved arc with a red/pink edge running across the whole width. The implementation's arc is flatter, and its red line is visible mainly in the centre.",
+    "Promo banner: the reference places the popcorn icon outside the card to its left, with the card starting about 275px from the left edge. The implementation puts the icon inside the card, which starts at about 168px.",
+    "Popcorn icon: the reference uses a detailed, shaded 3D illustration; the implementation uses a flatter, simpler graphic.",
+    "Language selector: the reference uses a filled ▾ caret; the implementation uses a line chevron.",
+    "Banner surface: the reference is a uniform indigo/purple; the implementation's gradient shifts toward maroon on the right."
+  ],
+  "fixes": [
+    "Increase the hero overlay darkness to about rgba(0,0,0,0.65), plus a vignette, so the posters look as muted as the reference.",
+    "Redraw the hero-bottom divider as a full-width elliptical arc with a red-to-pink stroke spanning edge to edge and a navy glow fading into black beneath.",
+    "Move the popcorn icon outside the promo card on its left and inset the card to start at about x=275.",
+    "Replace the popcorn graphic with a shaded 3D-style illustration.",
+    "Swap the language dropdown chevron for a small filled caret.",
+    "Make the banner background a consistent indigo/purple gradient."
+  ],
+  "summary": "This is a near-faithful Netflix landing clone with identical structure, components and copy; the main gaps are a too-bright hero overlay, a weaker curved divider, and the popcorn icon placed inside the promo banner instead of beside it."
+}

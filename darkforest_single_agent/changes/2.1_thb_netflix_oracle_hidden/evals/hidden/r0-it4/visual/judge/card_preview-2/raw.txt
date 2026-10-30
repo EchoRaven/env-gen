@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "The top nav bar matches the reference: wordmark on the left, seven text links, and search, bell, Kids and avatar on the right. The page underneath does not. The reference is the 'Browse by Languages' page. It has a large page title on the left and 'Select Your Preferences' with two dropdowns on the right, followed by a uniform 6-column grid of 16:9 tiles with ~8px gaps and wide vertical spacing between rows. The implementation shows a full-width hero billboard with horizontally scrolling rails, so the skeleton and section order differ. The hover card is anchored differently too. In the reference it grows out of the 2nd tile and stays inside the 67px page gutter. In the implementation it sits at x≈16, outside the page gutter, and the rail behind it bleeds off the right edge.",
+      "fix": "Render the preview over the Browse-by-Languages grid: a page title row ('Browse by Languages' on the left; 'Select Your Preferences' label + 'Original Language' and 'English' dropdowns on the right), then a fixed 6-column tile grid inside the 67px gutters with no hero. Clamp the hover card so its left edge never crosses the page gutter."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "page title heading 'Browse by Languages'",
+        "'Select Your Preferences' label",
+        "'Original Language' dropdown",
+        "'English' language dropdown",
+        "active pill state on the 'Browse by Languages' nav item",
+        "'Live Now' red badge with dot (tile treatment)"
+      ],
+      "notes": "The hover card inventory matches: Netflix 'N' badge top-left, mute button on the artwork, a row with white filled play, circular my-list and thumbs buttons and a chevron-down on the right, a maturity box + seasons + HD badge row, and dot-separated genre tags. Tiles have Top 10 and 'Recently Added' badges like the reference. My-list shows '+' where the reference shows a check, which is a state difference. The implementation adds a hero billboard (Play / More Info), a rail page indicator, and stray 'here.' text that the reference does not have.",
+      "fix": "Add the page header with the two preference dropdowns. Move the active nav pill to 'Browse by Languages'. Remove the hero billboard, rail paging indicator and the stray empty-row text from this view."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat dark Netflix language: slightly rounded tiles, an elevated card with a dark body and a soft shadow, and outlined circular action buttons. The reference card has a squarer top edge and sits on a sparse grid. The implementation is denser because of the hero and rails.",
+      "fix": "Keep the card styling. Use the reference's airy grid rhythm (≈80px between tile rows) instead of tight rails."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Matches the reference: #141414-style base, a slightly lighter card surface, white text, red Netflix wordmark and red badges, and a grey active nav pill. The dropdowns in the reference are black with white 1px borders, and they are absent here.",
+      "fix": "Add the black dropdowns with white 1px borders and white text. Apply the grey pill to the active 'Browse by Languages' item."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Nav, card metadata and genre tags use a similar sans at similar sizes and weights. The reference has a large regular-weight page title (~36px), and the implementation has none. Instead it adds a huge condensed hero title. Tile titles are rendered as a uniform condensed caps text overlay rather than varied artwork lockups, which is acceptable as content.",
+      "fix": "Add a ~36px regular-weight white 'Browse by Languages' heading and drop the hero title typography from this view."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Outline search and bell icons, and the play, chevron and mute icons, match. The thumbs icon is rendered filled and small, while the reference uses an outline thumbs-up. My-list shows '+' rather than a check. The right-hand profile avatar reuses the Kids gradient icon, while the reference uses a distinct blue smiley avatar. Tiles are 16:9 with cover crop as in the reference.",
+      "fix": "Use an outline thumbs-up glyph at the same stroke weight as the other buttons. Show a distinct profile avatar separate from the Kids icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels, 'Recently Added', 'TOP 10', 'HD' and the maturity/seasons format match. The reference's 'Browse by Languages' heading, 'Select Your Preferences', 'Original Language' and 'English' are absent. The extra copy 'Play' / 'More Info' and a stray '…here.' fragment appear.",
+      "fix": "Add the header copy exactly as in the reference and remove the leaked empty-row text."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "page body: the reference shows the Browse-by-Languages grid page with a title and preference dropdowns; the implementation shows a hero billboard (X-Men '97 with Play/More Info) and rails",
+    "header row under nav: the 'Browse by Languages' title, 'Select Your Preferences' label and the 'Original Language' / 'English' dropdowns from the reference are missing",
+    "nav: the active pill is on 'Home' in the implementation; the reference highlights 'Browse by Languages'",
+    "hover card position: the implementation card overflows the left page gutter (x≈16); the reference card grows from the 2nd grid tile and stays within the margins",
+    "tile layout: the implementation uses a horizontally scrolling rail that bleeds off the right edge, with a paging indicator; the reference uses a fixed 6-column grid with no overflow",
+    "middle of the screen: stray '…here.' text visible behind the hover card (leaked empty-row message)",
+    "hover card actions: the thumbs button uses a small filled icon; the reference uses an outline thumbs-up. My-list shows '+' vs a check in the reference",
+    "nav right: the profile avatar duplicates the Kids gradient icon instead of a distinct profile avatar"
+  ],
+  "fixes": [
+    "Render this state on the Browse-by-Languages route: remove the hero and add a header row with a ~36px 'Browse by Languages' title on the left and, on the right, 'Select Your Preferences' + 'Original Language' ▾ and 'English' ▾ black dropdowns with white borders",
+    "Lay tiles out as a fixed 6-column 16:9 grid inside the 67px gutters with ~8px column gaps and ~80px row gaps; drop the rail paging indicator and overflow",
+    "Set the active grey pill on the 'Browse by Languages' nav item",
+    "Clamp the hover card horizontally so it never extends past the page gutter (anchor it over its source tile, scaled ~1.5x)",
+    "Remove the leaked empty-row '…here.' text",
+    "Swap the filled thumbs icon for an outline thumbs-up matching the other circular buttons; use a distinct profile avatar on the right of the nav"
+  ],
+  "summary": "The hover preview card and nav are faithfully reproduced, but they sit over a home hero + rails page instead of the reference's Browse-by-Languages grid with title and preference dropdowns, and the card overflows the left gutter."
+}
+```

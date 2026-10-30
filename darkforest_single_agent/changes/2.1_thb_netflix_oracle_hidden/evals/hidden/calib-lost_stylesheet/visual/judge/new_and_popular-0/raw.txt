@@ -1,0 +1,72 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.1,
+      "notes": "The implementation renders with no styles at all. The header elements stack vertically: a huge logo, then a dropdown button, inline links, and each icon button on its own line. The reference has one horizontal top bar with the logo, nav and right-side icons. Instead of a horizontal carousel of six or more 16:9 tiles, the first row is a single giant image about 1290px wide inside a bordered box. The Top 10 rows and the 'Coming This Week' section don't show in the viewport. The left gutter is about 8px; the reference uses about 67px.",
+      "fix": "Load the stylesheet. Build a single-row top bar about 90px tall: logo at left about 67px, nav links inline, search/bell/Kids/avatar right-aligned. Render each section as a horizontal row of 16:9 tiles about 290×165px with about 8px gaps, using the same 67px left gutter. Add the numbered Top 10 rows after it."
+    },
+    "components": {
+      "score": 0.25,
+      "notes": "Most parts exist in the DOM: logo, seven nav items, search, bell, Kids profile, avatar dropdown, the 'New on Netflix' heading and one tile with its title, TOP 10 badge and 'Recently Added' tag. The badges show as plain inline text, not as a red corner flag and a red bottom-center pill. Only one tile is shown. The row page-indicator dashes, the Top 10 rows with their large outlined numerals, and the 'Coming This Week' row are missing. There's an extra 'New & Popular ▾' dropdown button above the nav links; the reference doesn't have it.",
+      "missing": [
+        "horizontal tile carousel (multiple tiles per row)",
+        "row pagination indicator dashes (top-right of each row)",
+        "Top 10 TV Shows row with large outlined rank numerals",
+        "Top 10 Movies row with large outlined rank numerals",
+        "Coming This Week row",
+        "red TOP 10 corner badge treatment",
+        "red 'New Season'/'Recently Added' pill label overlaid on tile",
+        "active pill highlight on 'New & Popular' nav item"
+      ],
+      "fix": "Remove the visible mobile 'New & Popular ▾' dropdown on desktop. Overlay the TOP 10 badge in the tile's top-right corner and the label pill at its bottom-center. Render all four rows with their tiles and the dashed page indicators."
+    },
+    "style": {
+      "score": 0.05,
+      "notes": "The implementation is an unstyled browser default: native button borders, a grey box behind the tile and a 1px default border. The reference is flat and cinematic, with slightly rounded tiles (about 4px), no borders, and a dense, tidy grid.",
+      "fix": "Apply the design system: no borders on buttons or links, tiles with about 4px radius and object-fit cover, consistent spacing of about 8px between tiles and about 70px between rows."
+    },
+    "color": {
+      "score": 0.05,
+      "notes": "The implementation has a white background, black text and blue-free default links. The reference is dark (#141414) with white and light-grey text, red brand accents on the badges and labels, and a dark-grey pill for the active nav item.",
+      "fix": "Set the body background to #141414 and text to #fff, with nav links in #e5e5e5. Make the badges and label pills Netflix red #E50914 with white text, and the active nav pill rgba(255,255,255,0.15)."
+    },
+    "typography": {
+      "score": 0.1,
+      "notes": "The implementation uses the default serif (Times) for the nav and a bold serif heading. The reference uses a clean sans (Netflix Sans/Helvetica) throughout: about 16px nav links, about 26px medium-weight row titles, and small bold white badge text.",
+      "fix": "Set font-family to 'Netflix Sans', Helvetica, Arial, sans-serif. Make nav links 16px regular, with the active one semibold. Make row headings 26px weight 500 in white, and badge text 12–13px bold."
+    },
+    "iconography": {
+      "score": 0.3,
+      "notes": "The search, bell, Kids and blue smiley avatar icons are present and look right, but they sit inside native button frames. The wordmark is rendered at about 370px instead of about 85px. The tile artwork isn't cropped to 16:9 thumbnail size.",
+      "fix": "Size the logo to about 85×24px. Remove the button chrome around the icons and size them at about 24px. Crop tile images to 16:9 at about 290px wide with object-fit cover."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), 'Kids', 'New on Netflix', 'TOP 10' and 'Recently Added' all match. The extra 'New & Popular ▾' label is duplicated. The other section headings can't be checked because those rows don't render.",
+      "fix": "Hide the duplicate dropdown label on desktop. Make sure the 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week' headings render."
+    }
+  },
+  "similarity": 0.12,
+  "empty_state": false,
+  "deviations": [
+    "Whole page: no CSS applied. White background, Times serif and native button borders, versus the reference's dark #141414 cinematic theme.",
+    "Header: the logo, a dropdown, inline links and four icon buttons stack vertically down the left edge. The reference has one horizontal bar with the logo and nav at left and the icons at right.",
+    "Header: the wordmark is about 370px wide; in the reference it's about 85px.",
+    "Header: an extra 'New & Popular ▾' dropdown button that the reference doesn't show.",
+    "Header: the active 'New & Popular' item has no dark-grey pill highlight.",
+    "'New on Netflix' row: one giant image about 1290×720px in a bordered grey box, versus a horizontal carousel of six or more 16:9 tiles about 290px wide.",
+    "Tile: 'TOP 10' and 'Recently Added' appear as plain inline text beside the image. The reference has a red corner badge and a red pill overlaid on the artwork.",
+    "Rows below: the Top 10 TV Shows and Top 10 Movies rows, with their large outlined numerals next to portrait posters, and the 'Coming This Week' row don't show.",
+    "Row headers: the page-indicator dashes at the top-right of each row are missing.",
+    "Gutters: content starts at about 8px from the left; in the reference it's about 67px."
+  ],
+  "fixes": [
+    "Make sure the global stylesheet/CSS bundle actually loads on the /new route. Set the body background to #141414, text to white, and a sans font family.",
+    "Lay out the header as a flex row about 90px tall with 67px horizontal padding: logo about 85px, nav links with 'New & Popular' in an active dark pill, and search/bell/Kids/avatar plus caret pushed to the right. Hide the mobile dropdown on desktop.",
+    "Render each section as a horizontal scroll row of 16:9 tiles about 290×165px with about 8px gaps and object-fit cover. Put a 26px heading above each row and page-indicator dashes at the top right.",
+    "Overlay the red 'TOP 10' flag in the tile's top-right corner and the red label pill ('Recently Added'/'New Season') at its bottom-center.",
+    "Add the Top 10 TV Shows and Top 10 Movies rows: huge black numerals with a grey outline, each sitting behind and to the left of a portrait poster about 145×207px.",
+    "Add the 'Coming This Week' row below them."
+  ],
+  "summary": "The implementation renders as an unstyled HTML page: stacked header elements, one giant tile, and no dark theme, carousels or Top 10 rows, so it barely resembles the reference."
+}

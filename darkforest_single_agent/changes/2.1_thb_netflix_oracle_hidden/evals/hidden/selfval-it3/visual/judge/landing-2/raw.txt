@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same skeleton: full-bleed tilted poster collage hero with dark overlay, logo top-left at about 163px, language select and Sign In at top-right, centered hero stack (headline, subline, prompt, email and CTA row), red-pink curved divider, then a promo banner card on black. Differences: the implementation's headline sits higher (about 300px vs 345px), so the whole stack moves up about 50px. In the reference, the popcorn icon sits outside the banner card on the left and the card starts at about 275px. In the implementation, the icon is inside the card and the card spans the full 163–1757px content width.",
+      "fix": "Move the popcorn icon out of the banner card so it sits to the left of it (about 180–260px), start the card at about 275px and end it at about 1755px. Push the hero text block down about 45px so the headline's first line centers near y≈345."
+    },
+    "components": {
+      "score": 0.93,
+      "notes": "Everything in the reference is present: wordmark, language dropdown with translate icon and caret, red Sign In button, headline, price/subline, helper prompt, email input with placeholder, Get Started button with chevron, curved accent divider, promo banner with icon, title, subtitle and grey Learn More button. Nothing is invented. The only difference is where the banner icon sits (inside the card vs outside it).",
+      "fix": "Put the popcorn illustration outside the banner card, to the left of it, with a soft circular glow behind it as in the reference.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same cinematic marketing style: darkened poster wall, slightly rounded corners on inputs and buttons, flat CTAs, a rounded purple banner card, and a glowing curved divider. The reference tiles are landscape cards tilted in a dense diagonal grid with thin dark gutters. The implementation uses mostly portrait posters at a steeper angle, so the wall reads differently. The implementation's banner card is also taller (about 100px vs 86px).",
+      "fix": "Lay out the background tiles as landscape (about 16:10) rounded cards in a rotated grid with roughly 12px gutters, matching the reference's diagonal rhythm. Reduce the banner card's height to about 86px."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Matches: dark scheme, black base, Netflix red (#E50914) on the CTA and Sign In, white text, red-to-pink curve, and a deep indigo/purple banner with a grey Learn More button. The reference's overlay is a little more uniform, while the implementation's background is somewhat brighter and more saturated in places. The reference area below the curve shades from navy-blue to black; the implementation's is more magenta-purple.",
+      "fix": "Darken the hero overlay to about rgba(0,0,0,0.6) uniformly, and shift the under-curve gradient toward a navy/indigo hue (#1a1f4a → #000)."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same bold sans hierarchy and centered alignment. The implementation's headline is larger (about 72px vs 64px) and breaks as 'Unlimited movies, / TV shows, and more' where the reference has 'Unlimited movies, TV / shows, and more'. The reference subline is bold at about 22px. The implementation's subline is semibold, a similar size, and slightly lighter.",
+      "fix": "Set the headline to about 64px, 900 weight, max-width about 640px so it wraps after 'TV'. Make the subline 700 weight, about 22px."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Matches: Netflix red wordmark, translate glyph in the language select, chevron in Get Started, popcorn illustration. The reference's popcorn is a larger 3D bucket with a star emblem and a circular shadow, placed outside the card. The implementation uses a small emoji-style popcorn inside the card. Background tile aspect differs: landscape in the reference, portrait in the implementation.",
+      "fix": "Replace the emoji popcorn with a larger (about 80px) illustrated popcorn bucket with a drop shadow, placed outside the card. Use landscape artwork crops for the background tiles."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Same wording for Sign In, English, the 'Ready to watch? Enter your email to create or restart your membership.' prompt, the Email address placeholder, Get Started, and Learn More. The subline differs: the reference says 'Starts at $8.99. Cancel anytime.', the implementation says 'Watch on any device. Every profile keeps its own list.' The banner copy also differs: the reference has 'The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.', the implementation has '60 real titles, ready to stream.' / 'Create an account…'.",
+      "fix": "Change the subline to 'Starts at $8.99. Cancel anytime.', the banner title to 'The Netflix you love for just $8.99.', and the banner subtitle to 'Get our most affordable, ad-supported plan.'"
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "promo banner (bottom): in the reference, the popcorn illustration sits outside the card on the left and the card starts at about x=275. The implementation puts a small emoji popcorn inside a card that spans the full 163–1757px width.",
+    "hero subline: the reference has the pricing line 'Starts at $8.99. Cancel anytime.'; the implementation uses the feature line 'Watch on any device. Every profile keeps its own list.'",
+    "promo banner copy: the reference's price-led ad-tier message is replaced by '60 real titles, ready to stream.' and an account-creation subtitle",
+    "hero headline: the implementation is larger and wraps after 'movies,' instead of after 'TV'; the whole hero stack sits about 45px higher than in the reference",
+    "background collage: the reference uses landscape tilted tiles in a dense diagonal grid; the implementation uses mostly portrait posters at a different angle and is slightly brighter",
+    "below-curve gradient: the reference is navy/indigo; the implementation is more magenta-purple, and its banner card is taller"
+  ],
+  "fixes": [
+    "Move the popcorn illustration outside the banner card to the left, make it about 80px with a shadow, and make the card span about x=275–1755 at about 86px tall",
+    "Change the hero subline to 'Starts at $8.99. Cancel anytime.' (bold, about 22px)",
+    "Change the banner title and subtitle to 'The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.'",
+    "Set the headline to about 64px with max-width about 640px so it wraps 'Unlimited movies, TV / shows, and more', and move the hero stack down about 45px",
+    "Use landscape (about 16:10) rounded tiles for the rotated background grid and darken the overlay evenly",
+    "Shift the under-curve gradient toward navy/indigo"
+  ],
+  "summary": "Close match to the Netflix landing hero and chrome. The main gaps are the banner icon placement, the subline and banner copy, the headline wrap and size, and portrait vs landscape background tiles."
+}
+```

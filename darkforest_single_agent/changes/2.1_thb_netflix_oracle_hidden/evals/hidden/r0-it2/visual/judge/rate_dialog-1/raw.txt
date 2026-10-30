@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "The structure matches. A centred overlay sits over a blurred, dimmed title-detail modal. A red rule spans about 480–1440px, with the close X at top right, then a centred title, a subtitle, three evenly spaced rating columns and a centred 'Got it!' button. Some vertical positions differ slightly. In the implementation the red rule sits at y≈318 rather than ≈302, and the X overlaps the rule instead of sitting below it. The icon row sits about 12px lower and 'Got it!' about 15px lower.",
+      "fix": "Move the red rule up to y≈302. Put the X fully below the rule (centre ≈y334, x≈1410). Tighten the spacing so the icons sit at y≈560 and 'Got it!' at y≈744."
+    },
+    "components": {
+      "score": 0.88,
+      "missing": [],
+      "notes": "Everything in the reference is present: the red rule, close X, title, subtitle, three thumb options with captions, and the 'Got it!' button. The implementation adds a grey rounded highlight box behind the first (thumbs-down) option. The reference shows no selected or hover state, so this box is extra.",
+      "fix": "Remove the default highlighted or hover background on the thumbs-down option so all three options render on the transparent overlay."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same flat, minimal dark overlay, the small dark-grey square-ish 'Got it!' button and the same thin red rule. The extra rounded grey card behind option one breaks the flat look. The implementation's backdrop is blurred and dimmed more heavily than the reference, where background art is still fairly visible. The red rule is a little thicker in the implementation.",
+      "fix": "Lighten the backdrop dim to about 60–65% black with a moderate blur. Set the red rule to about 3px. Remove the option card background."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The palette matches: a dark scrim, white text and icons, a lighter grey subtitle, a Netflix-red rule and a dark grey (#181818-ish) button. The implementation's scrim is darker overall, and its red is slightly more saturated and brighter.",
+      "fix": "Reduce scrim opacity so the background reads somewhat brighter. Use a slightly deeper red (#E50914 at about 3px)."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Both use a centred bold sans title, a regular grey subtitle, small white captions and a bold button label. The implementation's title is larger and heavier (about 50px bold versus about 44px medium-bold). Its font is Inter-like, while the reference is a Netflix Sans–like humanist grotesque. Caption columns are wider in the implementation, so the line breaks differ: 'this to / you again' versus the reference's 'We won't suggest / this to you again', and 'a true / fan!' versus 'a / true fan!'.",
+      "fix": "Reduce the title to about 44px with weight 500–600. Limit the caption width to about 150px so the text wraps like the reference ('We won't suggest / this to you again', 'We'll show you / more like this', 'We know you're a / true fan!'). Use a Netflix Sans–like font stack."
+    },
+    "iconography": {
+      "score": 0.93,
+      "notes": "The icons match: a filled white thumbs-down, a filled thumbs-up and a filled double thumbs-up, all at similar sizes. The X is a thin white line glyph in both, though slightly thinner in the implementation.",
+      "fix": "Make the close X stroke slightly heavier (about 3px) at roughly 30px."
+    },
+    "copy": {
+      "score": 0.98,
+      "notes": "All wording matches exactly: the title, subtitle, three captions and 'Got it!'. Only the line breaks differ.",
+      "fix": "None beyond the caption line-break width."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Thumbs-down option: the implementation draws a rounded grey highlight card behind it. The reference shows all three options with no background.",
+    "Title: the implementation's 'Rate for better recommendations' is noticeably larger and bolder than the reference's.",
+    "Option captions: the implementation uses wider text blocks, so the line breaks differ ('We won't suggest this to / you again', 'We know you're a true / fan!').",
+    "Close X: the implementation overlaps the red rule. In the reference it sits clearly below the rule.",
+    "Backdrop: the implementation's blurred background modal is darker and more blurred than the reference's.",
+    "Vertical rhythm: the implementation's icon row and 'Got it!' button sit about 12–15px lower relative to the subtitle."
+  ],
+  "fixes": [
+    "Remove the default highlighted background from the first rating option.",
+    "Set the title to about 44px, weight 500–600.",
+    "Constrain each caption to about 150px wide so it wraps over two lines like the reference.",
+    "Position the close X below the red rule (top ≈ rule + 16px).",
+    "Lighten the backdrop scrim and blur so the underlying modal art shows through more.",
+    "Tighten vertical spacing: icons about 50px below the subtitle, 'Got it!' about 75px below the captions."
+  ],
+  "summary": "A near-identical rate dialog that matches the reference's structure, copy and icons. It loses points for an extra highlight card on the first option, an oversized title, different caption wrapping and a darker backdrop."
+}
+```

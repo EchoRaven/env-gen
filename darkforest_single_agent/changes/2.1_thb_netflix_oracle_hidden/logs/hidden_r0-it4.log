@@ -1,0 +1,119 @@
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/app/main.py (1). `example.com` and its sibl
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/iter4/workspace",
+ "tag": "r0-it4",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 21,
+  "total": 22,
+  "failed": [
+   "the account menu offers Sign out"
+  ]
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.726,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "genre_category",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.883,
+   "login": 0.827,
+   "browse_home": 0.883,
+   "browse_home_rows": 0.733,
+   "shows": 0.857,
+   "movies": 0.867,
+   "games": 0.577,
+   "new_and_popular": 0.853,
+   "genre_category": 0.5,
+   "browse_by_languages": 0.727,
+   "my_list": 0.673,
+   "title_detail": 0.82,
+   "title_episodes": 0.88,
+   "rate_dialog": 0.88,
+   "player": 0.54,
+   "player_controls": 0.693,
+   "account_menu": 0.35,
+   "card_hover_preview": 0.607,
+   "card_preview": 0.633,
+   "shows_genres_menu": 0.733
+  }
+ }
+}

@@ -1,0 +1,31 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.85, "notes": "The overall structure matches: a transparent top nav over a full-bleed hero, the breadcrumb and page title top-left, the title lockup, synopsis and buttons on the left, mute/maturity controls on the right, and a 'Your Next Watch' row near the bottom with a peeking tile. The hero is taller in the implementation, so the row starts at about y=920 instead of about y=840. Because of that the tiles are cropped at the fold and the next row's heading never shows. The title lockup wraps to two lines.", "fix": "Shorten the hero so the row heading sits at about 76% of the viewport (y≈840) and the full tile row plus the next section heading are visible. Keep the title lockup to one line by shrinking the font or letting it run wider."},
+    "components": {"score": 0.8, "notes": "Present: logo, 7 nav items, search, bell, Kids profile, avatar with caret, breadcrumb, title, synopsis, Play and More Info buttons, mute button, TV-14 badge, row title, page indicator, TOP 10 badges and 'Recently Added' ribbons. Missing: the active pill on 'Shows' in the nav, and the small title-attribution tag next to the hero synopsis. The tiles also lack the variety of ribbons the reference shows ('Live Now', 'New Season').", "fix": "Add an active-state pill (rounded, translucent grey) behind the current nav item, which should be 'Shows' for this genre route. Add the small boxed title tag beside the synopsis.", "missing": ["active nav pill highlight on 'Shows'", "small title tag label next to hero synopsis", "second row heading below the first row (pushed off-screen)"]},
+    "style": {"score": 0.85, "notes": "Same Netflix cinematic dark style: full-bleed imagery, a white solid Play button, a translucent grey More Info button and slightly rounded corners. The implementation's buttons are a little smaller.", "fix": "Make the Play and More Info buttons about 58px tall, matching the reference's padding and icon size."},
+    "color": {"score": 0.85, "notes": "Same palette: dark base, Netflix red logo and title treatment, white primary button, grey secondary button and red ribbons. The implementation's hero art is a strong red, but that comes from the content. The breadcrumb is a similar grey.", "fix": "Make the breadcrumb a dimmer grey (#808080 at about 70%) so it matches the reference's subdued tone."},
+    "typography": {"score": 0.8, "notes": "Same sans hierarchy and condensed display title. The synopsis in the implementation is smaller (about 17px vs about 22px) and lighter. The page title is about the same size. The breadcrumb separator is '›' instead of '>'.", "fix": "Raise the hero synopsis to about 22px with a line height of about 1.35. Use '>' as the breadcrumb separator and make the breadcrumb text about the same size as in the reference (about 20px)."},
+    "iconography": {"score": 0.9, "notes": "Same outline search and bell icons, filled play triangle, circled info icon, circled mute button, TOP 10 badges and 16:9 tiles with ribbons. The tiles carry overlaid title-art text in the same way.", "fix": "Make the info icon a bit larger and heavier in stroke so it matches the reference."},
+    "copy": {"score": 0.8, "notes": "Nav labels, Play, More Info and Your Next Watch match. The breadcrumb parent reads 'Home' where the reference reads the category parent ('TV Shows'), so the hierarchy wording differs.", "fix": "Make the breadcrumb parent the category (e.g. 'TV Shows' / 'Movies') rather than 'Home'."}
+  },
+  "similarity": 0.83,
+  "empty_state": false,
+  "deviations": [
+    "top nav: the reference highlights 'Shows' with a rounded grey active pill; the implementation shows no active state on any nav item",
+    "hero/row proportions: the implementation's hero is taller, so 'Your Next Watch' starts at about y=920 (reference about y=840), the tiles are cut off at the bottom and the next section heading is not visible",
+    "breadcrumb: the reference reads 'TV Shows > [Genre]'; the implementation reads 'Home › [Genre]', with a different parent label and separator glyph",
+    "hero title lockup: wraps onto two lines in the implementation, while the reference uses a single line",
+    "hero synopsis: smaller and lighter text in the implementation than the reference's roughly 22px body",
+    "hero synopsis: the reference has a small boxed title tag beside the text; the implementation has none",
+    "Play / More Info buttons: slightly smaller and tighter than in the reference"
+  ],
+  "fixes": [
+    "Add an active-state rounded pill behind the current section's nav item ('Shows')",
+    "Reduce the hero height so the row heading lands at about y=840, with full tiles and the next row heading visible above the fold",
+    "Change the breadcrumb to '<Category> > <Genre>' using a '>' separator and a dimmer grey parent",
+    "Keep the hero title lockup on a single line (smaller font size or wider max-width)",
+    "Increase the synopsis font to about 22px and enlarge the Play and More Info buttons to about 58px tall",
+    "Add the small boxed title tag next to the synopsis"
+  ],
+  "summary": "A close Netflix genre-page copy with matching chrome, hero and row structure; the main gaps are the missing active nav pill, an over-tall hero that pushes the row below the fold, and differences in breadcrumb wording and type sizes."
+}

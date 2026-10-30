@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Matches: the top bar has the logo on the left, the nav links next to it, and the search, bell, Kids and avatar icons on the right. Rows run full width with a left gutter of about 67px. Each row has a title on the left and a page indicator on the right, and the last tile is cut off at the right edge. Tiles are a similar size (about 345×195 against 350×197). Differs: the reference shows only stacked rows directly under the header, but the implementation still shows the bottom of a hero banner with Play and More Info at the top. It also has an empty 'Continue Watching' text block between rows and a large-numeral Top 10 row at the bottom. Rows sit further apart, with a pitch of about 430px against about 286px. The header bar in the reference is darker than the page; in the implementation it is the same colour as the page.",
+      "fix": "When this view loads (or is scrolled), start with title rows right under the header and no hero remnant. Hide 'Continue Watching' when it has no items. Reduce the space between rows to about 50px so each title + tile block repeats about every 286px. Make the header background close to #000 against a #141414 page."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "Games row title with an outlined 'BETA' chip",
+        "Two-part tile badge: red status pill plus a white 'Watch Now' pill",
+        "Custom title-logo artwork treatment on tiles (instead of generic text overlays)"
+      ],
+      "notes": "Present: all 7 nav items with Home as the active pill, search, bell, Kids profile chip, avatar with a caret, rows of 16:9 tiles, TOP 10 corner ribbons, red status badges centred at the bottom of tiles, and per-row page indicators. Missing: the 'BETA' chip beside the Games heading, and the white 'Watch Now' pill paired with the red 'New Episode' badge. Extra compared with the reference: the Play and More Info hero buttons, the empty-state line under 'Continue Watching', and the large-rank-number Top 10 row.",
+      "fix": "Add a Games row whose heading has an outlined 'BETA' chip (purple-ish border, wide letter-spaced caps). Support a two-segment badge (red 'New Episode' plus white 'Watch Now'). Don't render the hero or empty-row placeholders in this rows view."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat, dark, cinematic look. Tiles have slightly rounded corners of about 6px with no shadows, and spacing between tiles is similar (about 8–10px). Badges are rectangular tabs that sit on the bottom edge of the tile. The implementation's vertical spacing feels airier than the dense stack in the reference.",
+      "fix": "Make the vertical spacing between rows tighter. Keep the tile corner radius at about 6px and the gap between tiles at about 9px."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark #141414 base, Netflix red for the logo, badges and TOP 10 ribbons, and white text. In the reference the header is near-black and slightly darker than the page body; in the implementation the header blends into the page. There are no white 'Watch Now' badge segments.",
+      "fix": "Make the header background about #000 to #0b0b0b. Add the white badge segment with black text."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Sans-serif throughout, and the nav sizes match. Row headings in the reference are medium/semibold at about 26px; in the implementation they look regular weight at about 28px, so they read lighter and larger. Badge text is bold, as in the reference. The implementation's tiles use one uniform condensed-caps title overlay, while the reference shows varied, artwork-integrated title lockups.",
+      "fix": "Set row headings to about 26px with font-weight 500–600. Use title artwork or logos on tiles in place of uniform condensed text overlays where they are available."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "The line icons for search and bell, the Kids gradient square, the blue smiley avatar with a caret, and the TOP 10 ribbons all match. Tile imagery is 16:9 cover-cropped with rounded corners, matching the reference. Title treatment over the artwork differs: generic text versus logo art.",
+      "fix": "Show title-logo art on the tile image itself rather than overlaying generated text."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. Badges say 'New Episodes' (plural) where the reference says 'New Episode'. 'Watch Now' and 'BETA' are absent. There is an extra empty-state line ('Nothing in progress yet…').",
+      "fix": "Use 'New Episode' (singular) and 'Recently Added' as the badge wording. Add 'Watch Now' and 'BETA' labels. Remove the empty-state copy."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "Top of page: the implementation shows the bottom of a hero banner with Play and More Info buttons; the reference shows only title rows starting right under the header.",
+    "Middle: the implementation inserts a 'Continue Watching' heading with an empty-state text line and no tiles. The reference has no empty rows, so every row it shows has tiles.",
+    "Row stack: the reference has a 'Games' row with an outlined 'BETA' chip beside the heading; the implementation has no row heading with a chip.",
+    "Tile badges: the reference pairs a red 'New Episode' tab with a white 'Watch Now' tab; the implementation only ever shows a single red tab.",
+    "Tiles: the implementation overlays uniform condensed white text titles at bottom-left; the reference uses artwork-integrated title logos in varied styles.",
+    "Vertical rhythm: rows in the implementation are spaced much further apart (about 430px pitch against about 286px), so fewer rows fit on screen.",
+    "Bottom: the implementation shows a big-numeral Top 10 row that the reference does not have in this view.",
+    "Header: the reference header is darker than the page body; the implementation header is the same colour as the page.",
+    "Row headings: the implementation's are lighter in weight and slightly larger than the reference's medium-weight headings."
+  ],
+  "fixes": [
+    "Render this view as stacked title rows directly under the header, with no hero remnant or Play/More Info buttons.",
+    "Don't render rows that have no items, such as Continue Watching with its empty-state text.",
+    "Tighten row spacing so each heading + tile row repeats about every 286px.",
+    "Add a Games row whose heading has an outlined, letter-spaced 'BETA' chip.",
+    "Support two-segment tile badges (red 'New Episode' plus white 'Watch Now') and use singular 'New Episode'.",
+    "Replace generated condensed-text title overlays with title-logo artwork, or drop the overlay.",
+    "Set row headings to about 26px at weight 500–600, and the header background to about #000."
+  ],
+  "summary": "Very close Netflix chrome and tile system. Main gaps: hero and empty-row remnants instead of a pure stack of rows, looser row spacing, a missing Games/BETA row and two-part badges, and generic text overlays where the reference has title-logo art."
+}

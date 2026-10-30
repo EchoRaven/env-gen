@@ -1,0 +1,28 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.92, "notes": "Same skeleton: full-bleed tilted poster wall hero, NETFLIX wordmark top-left, language selector + Sign In top-right, centered headline/subhead/prompt/email+CTA row, curved divider, then promo banner below. Difference: in the reference the popcorn icon sits OUTSIDE the banner to its left and the banner card starts at ~x=276; in the implementation the icon sits inside the card's left edge and the card spans from ~x=168.", "fix": "Move the popcorn icon outside the promo card (left of it, overlapping its edge) and start the card ~100px further right so its left edge sits at ~x=276 and its right edge at ~x=1755."},
+    "components": {"score": 0.93, "notes": "Every reference component is there: logo, language dropdown with translate icon + caret, red Sign In button, H1, price subhead, email prompt, email input with placeholder, red Get Started button with chevron, curved hero divider, promo banner with icon, title, subtitle and grey Learn More button. Nothing invented.", "fix": "Reposition the popcorn icon relative to the promo card as described under layout; no components need adding.", "missing": []},
+    "style": {"score": 0.85, "notes": "Flat dark marketing style, tilted rounded-corner poster grid, slightly rounded inputs and buttons, rounded promo card all match. The curved divider differs: the reference arc has a pinkish-red glowing line across the full width, while the implementation's red line only shows as a short central segment. The hero dimming overlay is also much lighter, so the posters read as busy and bright instead of a muted backdrop.", "fix": "Draw the hero-bottom arc with a red-to-pink stroke across the full viewport width over a navy glow, and darken the hero overlay (about rgba(0,0,0,0.6–0.7) plus a vignette)."},
+    "color": {"score": 0.82, "notes": "Black base, Netflix red CTAs, navy-to-purple promo card gradient and grey Learn More all match. The hero imagery is noticeably brighter and more saturated than the reference's heavily dimmed wall, which lowers the headline's contrast emphasis. The arc stroke color is visible only in the center.", "fix": "Increase the hero dark overlay opacity and keep the full-width red/pink arc stroke; leave the CTA reds and banner gradient as they are."},
+    "typography": {"score": 0.9, "notes": "Bold sans headline at a similar size, split over two lines and centered; medium-weight subhead; regular body prompt; bold banner title with regular subtitle. The implementation's subhead looks slightly lighter in weight than the reference's bold 'Starts at…' line, and its letter spacing is slightly wider.", "fix": "Set the 'Starts at $8.99. Cancel anytime.' line to weight 700 at ~20–22px and tighten letter spacing to normal."},
+    "iconography": {"score": 0.85, "notes": "Wordmark, translate icon, caret, CTA chevron and popcorn bucket are all present. The popcorn illustration is flatter and simpler than the reference's glossy 3D bucket with a shadow, and it sits inside the card instead of beside it. Poster tiles have the same rounded crop and tilt.", "fix": "Use a 3D-style popcorn bucket illustration (~80px) with a soft drop shadow, placed left of the card."},
+    "copy": {"score": 1.0, "notes": "All chrome copy matches verbatim: English, Sign In, the headline, 'Starts at $8.99. Cancel anytime.', the email prompt, Email address, Get Started, the banner title and subtitle, Learn More.", "fix": "None."}
+  },
+  "similarity": 0.89,
+  "empty_state": false,
+  "deviations": [
+    "hero background: the implementation's poster wall is far less dimmed, so artwork competes with the headline; the reference uses a heavy dark overlay",
+    "hero bottom divider: the reference shows a full-width red/pink glowing arc; the implementation's red stroke appears only as a short center segment",
+    "promo banner: the reference places the popcorn icon outside the card to its left with the card inset (~276px); the implementation puts the icon inside a wider card starting at ~168px",
+    "popcorn icon: the implementation uses a flat simplified illustration; the reference uses a glossy 3D bucket with a shadow",
+    "subhead 'Starts at $8.99…': slightly lighter weight than the reference's bold"
+  ],
+  "fixes": [
+    "Darken the hero overlay (about rgba(0,0,0,0.65) plus a radial vignette) so posters read as a muted backdrop",
+    "Render the hero-bottom curved border as a full-width red→pink stroke over a navy glow",
+    "Move the popcorn icon outside the promo card on its left and shrink the card so its left edge sits at ~276px",
+    "Swap in a 3D-style popcorn bucket with a drop shadow",
+    "Make the price subhead bold (700)"
+  ],
+  "summary": "Nearly faithful Netflix landing clone. The main gaps are the lighter hero dimming, an arc divider that only shows in the center, and the popcorn icon sitting inside the promo card instead of beside it."
+}

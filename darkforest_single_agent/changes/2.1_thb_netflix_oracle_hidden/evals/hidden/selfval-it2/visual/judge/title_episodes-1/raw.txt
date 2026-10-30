@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Matches the reference: the centred dark modal (~1085px) sits over a dimmed home page with the top nav and hero still visible behind it. The order inside the modal is the same: synopsis and metadata columns, then the Episodes header, then numbered rows. Each row has the same structure: a large number on the left, a 16:9 thumbnail, a bold title with the duration aligned right, a description below, and hairline dividers between rows. There are two differences. The implementation adds a 'Season 1: TV-14' sub-row under the Episodes header, which pushes the list down. Rows without a description have their title centred vertically instead of top-aligned like the reference.",
+      "fix": "Remove the 'Season 1: TV-14' sub-row so the first episode row starts right under the Episodes header. Keep row titles top-aligned next to the thumbnail even when there is no description."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "These are all present: episode rows with number, thumbnail, title, duration and description; a hover-highlighted row with a lighter surface; a circular play overlay on the hovered thumbnail; and the synopsis and metadata blocks above. Where the reference has a plain right-aligned show-title label beside 'Episodes', the implementation uses a bordered 'Season 1' dropdown. The implementation also adds the season/maturity sub-label. Its play overlay is a bare triangle, while the reference puts the triangle inside a translucent circle with a ring.",
+      "missing": [
+        "right-aligned plain-text show-title label beside the Episodes heading (replaced by a Season dropdown)",
+        "circular ringed play-button overlay on the hovered episode thumbnail"
+      ],
+      "fix": "For this state, replace the Season dropdown with plain right-aligned show-title text, as the reference shows for a single-season title. Remove the 'Season 1: TV-14' badge row. Wrap the hover play icon in a ~56px translucent dark circle with a white 2px ring."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Both use the same flat dark modal, hairline row dividers, slightly rounded thumbnails, a lighter grey hovered row with a small radius, and the same spacing. The extra bordered dropdown adds a boxed control that the reference's minimal header doesn't have.",
+      "fix": "Drop the bordered dropdown box and keep the header as text only."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The palette matches: modal base ~#181818, hovered row ~#333, white titles, light-grey descriptions, and the page behind dimmed. Colours are consistent with the reference.",
+      "fix": "No change needed. Make sure description text stays a light grey (~#d2d2d2)."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Both use the same Netflix-style sans: a bold ~24px 'Episodes' heading, bold ~17px row titles, regular ~15px descriptions, and large light episode numbers. The reference's right-hand header label is regular weight at ~20px. In the implementation, that position holds dropdown text inside a box.",
+      "fix": "Render the right-hand header label as unboxed regular ~20px white text."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "Thumbnails match the reference's 16:9 crop, size (~170×95) and slight rounding. The hover play glyph has no circular ringed container. The implementation adds a mute icon button on the backdrop at the right, which the reference doesn't show in this frame.",
+      "fix": "Use a circled play icon (white outline ring with a semi-transparent fill) on the hovered thumbnail. Hide the backdrop mute button while the modal is open."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading and the duration format ('Nm') match. The implementation adds 'Season 1' and 'Season 1: TV-14' chrome text that the reference doesn't have. Durations in seconds and generic 'Episode N' titles come from seeded data and aren't penalised.",
+      "fix": "Remove the 'Season 1: TV-14' label. Show the show title, not 'Season 1', in the Episodes header."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: the implementation shows a bordered 'Season 1 ▾' dropdown; the reference shows plain right-aligned show-title text with no box",
+    "Below the Episodes heading: the implementation adds a 'Season 1: [TV-14]' sub-row and divider that the reference doesn't have",
+    "Hovered episode thumbnail: the implementation shows a bare white triangle; the reference shows the play triangle inside a translucent circle with a white ring",
+    "Episode rows with no description: the title and duration are centred vertically; in the reference the title sits top-aligned with the thumbnail",
+    "Backdrop, right side: the implementation shows a circular mute button outside the modal that the reference's frame doesn't show"
+  ],
+  "fixes": [
+    "Replace the Season dropdown in the Episodes header with plain right-aligned show-title text (regular weight, ~20px, white) for this single-season state",
+    "Remove the 'Season 1: TV-14' sub-row so episode rows start directly under the header",
+    "Wrap the hover play icon in a ~56px circle with a semi-transparent dark fill and a white 2px border",
+    "Top-align the episode title and duration row with the thumbnail's top edge whether or not a description is present",
+    "Hide the hero mute button while the More Info modal is open"
+  ],
+  "summary": "Very close: the modal episode list matches in structure, colour and type. The main differences are the Season dropdown and extra season sub-label in place of the reference's plain title label, plus a bare play glyph instead of the ringed circle."
+}
+```

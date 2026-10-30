@@ -1,0 +1,56 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The header matches: NETFLIX wordmark on the left, then the nav links, then search, bell, Kids avatar, profile avatar and caret on the right. In both, the dropdown is anchored top-right under the avatar at about the same width (~275px) and right edge. The page behind it differs. The reference shows the 'Browse by Languages' page: a title at the left, 'Select Your Preferences' with a language select on the right, a 6-column 16:9 tile grid, and an expanded hover preview card. The implementation shows the Home page instead, with a full-width rounded hero and a 'Trending Now' carousel. The dropdown in the reference starts at y≈72; in the implementation it starts lower, at y≈78.",
+      "fix": "Render the account menu over the Browse by Languages route: the 'Browse by Languages' h1 on the left, 'Select Your Preferences' with an 'Original Language' outlined select on the right, then a 6-column grid of 16:9 tiles. Move the dropdown up so its top edge sits at ~72px."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": ["Transfer Profile menu item", "Help Center menu item", "Browse by Languages page header with 'Select Your Preferences' language select", "Tile grid with an expanded hover preview card (play/add/like/expand buttons, rating/episodes/HD row, genre tags)"],
+      "notes": "Present in both: other-profile row (Kids), Manage Profiles, Account, a divider, and 'Sign out of Netflix'. The implementation is missing Transfer Profile and Help Center. It also lists the current profile (Visual Checker) inside the menu, while the reference lists only the other profiles. In the header, the active nav pill is on Home, but the reference highlights 'Browse by Languages'. The implementation adds a hero with Play/More Info and a '#1 in TV Shows Today' badge, none of which appear in the reference.",
+      "fix": "Make the menu read: other profiles (excluding the current one), Manage Profiles, Transfer Profile, Account, Help Center, divider, Sign out of Netflix. Highlight 'Browse by Languages' as the active nav pill."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both menus use a dark elevated panel with slight rounding, a hairline divider above Sign out, and a pill-shaped active nav item. The reference spaces its rows more airily (~58px pitch); the implementation is tighter (~48–58px). The reference panel has a slightly lighter border and shadow.",
+      "fix": "Set menu row height to ~58px, use 20px horizontal padding and a 1px rgba(255,255,255,0.15) border."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use the same dark #141414 base, a dark grey menu surface, white text, the red wordmark and a grey active pill. The colour system matches.",
+      "fix": "Make the menu surface a slightly translucent near-black (rgba(20,20,20,0.95)) to match the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use the same sans at ~17px regular for menu items and nav links. The reference renders the active nav label in semibold.",
+      "fix": "Use semibold for the active 'Browse by Languages' nav label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use line icons: a pencil for Manage Profiles and a person for Account. The reference icons are larger (~26px) with a heavier stroke. The implementation's icons are smaller (~20px) and thinner. The Transfer Profile and Help Center (question mark in a circle) icons are absent. Profile avatars are rounded squares in both.",
+      "fix": "Scale the menu icons to ~26px with a 1.75px stroke. Add the transfer-profile glyph and the circled '?' help icon."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. The 'Transfer Profile' and 'Help Center' labels are absent.",
+      "fix": "Add the 'Transfer Profile' and 'Help Center' labels."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown: the 'Transfer Profile' and 'Help Center' rows in the reference are missing from the implementation.",
+    "Page behind the menu: the reference shows the Browse by Languages page (title, 'Select Your Preferences' select, 6-column tile grid, expanded preview card); the implementation shows the Home hero and a 'Trending Now' carousel.",
+    "Header nav: the active pill is on 'Home' in the implementation; the reference highlights 'Browse by Languages'.",
+    "Account dropdown: the implementation lists the current profile ('Visual Checker') as a menu row; the reference lists only the other profiles.",
+    "Account dropdown icons: smaller and thinner than the reference's ~26px outline icons."
+  ],
+  "fixes": [
+    "Add 'Transfer Profile' (with transfer icon) between Manage Profiles and Account, and 'Help Center' (circled ? icon) after Account, above the divider.",
+    "Exclude the active profile from the dropdown's profile list.",
+    "Show the menu over the Browse by Languages route, with that nav item as the active pill, the page h1, the 'Select Your Preferences' and 'Original Language' select, and the 6-column tile grid.",
+    "Enlarge the menu icons to ~26px, increase row height to ~58px, and move the panel top to ~72px."
+  ],
+  "summary": "The header and dropdown shell closely match, but the menu is missing Transfer Profile and Help Center, and the menu sits over the Home hero instead of the Browse by Languages grid."
+}

@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The overall structure matches. Both have a transparent top nav over a full-bleed hero, the 'TV Shows' heading with a Genres dropdown next to it, the title lockup and Play/More Info on the left, the mute button and maturity tab on the right, and a 'Today's Top Picks for You' row at the bottom. The differences: the genres panel is one narrow column (about 230px) where the reference uses a wide three-column grid (about 470px). The hero also has extra lines (rank, metadata and synopsis), which push the buttons and the row about 90px further down, so less of the row shows.",
+      "fix": "Make the genres panel a 3-column grid about 470px wide, starting under the Genres button. Remove the rank, metadata and synopsis lines so Play/More Info sit at about y=710 and the row title at about y=840."
+    },
+    "components": {
+      "score": 0.62,
+      "notes": "The nav has the same 7 items with a pill highlight on Shows, plus search, bell, Kids and a profile caret. The Genres dropdown, Play, More Info, mute button, maturity tab and carousel are all present. Missing: the reference's dense genre list (about 26 entries in 3 columns, one shown with an underline as hovered or active) is replaced by 6 entries. The row cards have no corner badges ('New Season', 'Recently Added', 'New Episode' / 'Watch Now') and only one card has a Top 10 ribbon, while the reference has several. Added: a Top 10 rank line, a metadata row and a synopsis paragraph in the hero, none of which the reference shows.",
+      "missing": [
+        "3-column genre grid with full genre list (~26 entries)",
+        "hover/active underline state on a genre link",
+        "bottom-edge status badges on row cards (New Season / Recently Added / New Episode + Watch Now)",
+        "Top 10 ribbons on multiple row cards"
+      ],
+      "fix": "Fill the genres menu with about 26 entries in 3 columns and underline a link on hover. Add red status pills at the bottom center of the row cards and Top 10 ribbons in their top-right corners. Remove the hero's rank line, metadata row and synopsis."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "The look is the same: a dark cinematic overlay, the pill highlight on the active nav item, a square-cornered white Play button, a translucent grey More Info button, and a nearly opaque black dropdown panel with no radius. The genres panel is narrower and less dense than the reference. The hero carries a lot more text, which works against the reference's sparse look.",
+      "fix": "Make the genres panel wider and denser (about 29px line pitch across 3 columns) and remove the extra hero text to bring back the sparse hero."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The colors match: dark scheme, red NETFLIX wordmark, white Play button with black text, grey translucent More Info button, black dropdown with white text, and a grey maturity tab. The red badge pills on the reference's row cards are missing, which takes away the accent color in the carousel.",
+      "fix": "Add the red (#E50914) status pills with white bold text on the row cards."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use a sans-serif UI font with similar sizes for the nav, 'TV Shows' and the row heading, and the genre items look the same. In the hero, the reference uses an artwork logo lockup, while the implementation sets the title in large condensed type over the image. The extra 28px bold rank line and body-size synopsis add hierarchy levels the reference doesn't have.",
+      "fix": "Show the title as an artwork logo image about 410×130px instead of plain type, and remove the rank line and synopsis text levels."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The icons match: outline search, bell, mute-in-circle, info-in-circle and a filled play triangle. The row thumbnails are 16:9 with square corners and small gaps, as in the reference. The second profile avatar uses the Kids tile graphic instead of a separate single-color avatar, and the row cards have no badge overlays.",
+      "fix": "Give the profile avatar a separate solid-color face icon instead of reusing the Kids tile graphic, and add the badge and Top 10 overlays to the thumbnails."
+    },
+    "copy": {
+      "score": 0.72,
+      "notes": "The nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match. The genre labels are different: 'Action & Adventure', 'Animation', 'Comedy' and 'Family' where the reference has 'Action', 'Anime', 'Comedies', 'Kids', 'Classic & Cult' and so on. The '#4 in TV Shows Today' line doesn't exist in the reference.",
+      "fix": "Use the reference's genre labels (Action, AMC Collection, Anime, British, Classic & Cult, Comedies, Crime, Documentaries, Dramas, Emmys®, Horror, International, K-Dramas, Kids, LGBTQ, Mysteries, Reality, Romance, Sci-Fi & Fantasy, Science & Nature, Spanish-Language, Sports, Stand-Up & Talk Shows, Teen, Thriller, USA 250!)."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "Genres dropdown panel: the implementation has a narrow single column with 6 items; the reference has a wide three-column grid of about 26 genres.",
+    "Hero left block: the implementation adds a Top 10 '#4 in TV Shows Today' line, a metadata row (genre · year · seasons · rating) and a 3-line synopsis, none of which the reference shows.",
+    "Hero title: the implementation sets the title in plain condensed type; the reference uses an artwork logo lockup.",
+    "Because of the extra hero text, Play/More Info and the 'Today's Top Picks for You' row sit about 90px lower in the implementation, so the row thumbnails are cut off at the bottom of the viewport.",
+    "Row cards: the implementation has no bottom-center red status pills ('New Season', 'Recently Added', 'New Episode' + 'Watch Now'), and only one card has a Top 10 ribbon where the reference has several.",
+    "Genre labels are different from the reference ('Action & Adventure', 'Animation', 'Comedy', 'Family' versus 'Action', 'Anime', 'Comedies', 'Kids', etc.).",
+    "Top-right profile avatar: the implementation reuses the Kids tile graphic; the reference shows a separate solid blue face avatar."
+  ],
+  "fixes": [
+    "Rebuild the genres dropdown as a 3-column grid about 470px wide holding the reference's 26 genre labels, white 15px text at about 29px row pitch, with an underline on hover.",
+    "Remove the Top 10 rank line, metadata row and synopsis from the hero so only the title lockup and Play/More Info remain.",
+    "Show the hero title as a logo artwork image (with the small red NETFLIX tag above it) instead of plain type.",
+    "Move Play/More Info up to about y=710 and the row heading to about y=840 so the full thumbnails show.",
+    "Add the red status pills at the bottom center of the row cards and Top 10 ribbons in the top-right corners of several cards.",
+    "Use a separate solid-color face avatar for the profile menu instead of the Kids tile graphic."
+  ],
+  "summary": "The nav, page heading, hero and carousel skeleton all match. The genres menu is a sparse single column instead of the reference's wide 3-column grid, the hero adds text the reference doesn't have, and the row cards are missing their badge overlays."
+}
+```

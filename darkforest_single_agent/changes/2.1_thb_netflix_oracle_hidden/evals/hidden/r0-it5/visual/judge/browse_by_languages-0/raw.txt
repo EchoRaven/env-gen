@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "Top nav bar, page title row with the preferences controls right-aligned, and a 6-column 16:9 tile grid with the same gutters and left/right margins all match. The grid starts higher in the implementation (first row at about y=226 vs about y=304), so the vertical gap between header and grid is smaller. The vertical rhythm between rows is close. The reference's transient state has two expanded dropdown panels and a floating hover-preview card over the grid. The implementation has no overlay layer.",
+      "fix": "Increase the space between the title/preferences row and the first grid row to about 150px (grid top near y=304). Render the open dropdown lists and the hover preview card as absolutely positioned overlays above the grid."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "The nav (7 items with the active pill), search, bell, Kids avatar, profile avatar with caret, page title, 'Select Your Preferences' label, both select boxes, tiles with TOP 10 badges, and bottom-centred red status badges are all present. The reference shows both dropdowns expanded: the first lists Original Language, Dubbing and Subtitles, and the second shows a long language list. It also shows an expanded hover preview card with a large video still, a title lockup, a mute button, circular play/add/rate/more-info buttons, a TV-MA rating box, the runtime, an HD badge and a genre-tag row separated by dots. None of these appear in the implementation.",
+      "fix": "Implement the open state of both selects as dark list panels directly below each select with plain white option rows. Implement the tile hover preview card: about 1.5x scaled 16:9 media at the top with an N logo, title lockup and round mute button, then a dark body with a white filled play circle, outlined check, thumbs and chevron circles, a rating/runtime/HD row and a dot-separated genre row.",
+      "missing": [
+        "expanded 'Original Language' dropdown list (Original Language / Dubbing / Subtitles)",
+        "expanded language dropdown list panel",
+        "hover preview card (expanded tile)",
+        "preview card play button",
+        "preview card add-to-list (check) button",
+        "preview card rate (thumb) button",
+        "preview card more-info chevron button",
+        "preview card mute toggle",
+        "maturity rating box / runtime / HD badge row",
+        "dot-separated genre tags row"
+      ]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Flat, dark Netflix look. The tiles are square-cornered, the select boxes have a thin white border and square corners, and the nav has a pill highlight. The dropdown panels and the elevated preview card with its rounded corners and shadow are absent, so the reference's layering depth is missing.",
+      "fix": "Add an elevated preview card (radius about 6px, strong dark shadow, #181818 body) and dropdown panels with a black background and a thin grey border."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use a near-black #141414 base, Netflix red for the logo and badges, white text and a grey active-nav pill. The palette matches. The only gap is the missing #181818 preview-card surface and the semi-opaque black dropdown panels.",
+      "fix": "Use rgba(0,0,0,0.9) for the dropdown panels and #181818 for the preview card body."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use the same Netflix Sans-like humanist sans. The page title is slightly larger in the implementation (about 44px vs about 36px). Select text is similar. Tile titles are drawn as uniform condensed bold text rather than per-title logo art, but the treatment is close.",
+      "fix": "Reduce the 'Browse by Languages' heading to about 36px regular. Keep the 18px select text."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The outline search and bell icons, Kids and profile avatars as rounded squares, the TOP 10 corner badge and the red pill status badges all match. The circular outline action icons and the mute icon from the preview card are absent.",
+      "fix": "Add circular 2px-outline action icons (check, thumbs-up, chevron-down, speaker-mute) and a filled white play circle in the preview card."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "Nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English' all match. The option labels ('Dubbing', 'Subtitles', the language names) are absent because the dropdowns are closed.",
+      "fix": "Populate the first dropdown with 'Original Language', 'Dubbing' and 'Subtitles', and the second with the alphabetical language list (Arabic … Vietnamese)."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Grid centre-left: the reference shows an expanded hover preview card (video still, title lockup, mute button, play/check/thumb/chevron circles, TV-MA · 1h 34m · HD row, genre tags). The implementation shows only the static grid.",
+    "Right of the title row: the reference has the language dropdown open as a long list panel overlaying the right grid column. The implementation's select is closed.",
+    "Middle of the title row: the reference has the 'Original Language' dropdown open, showing Original Language / Dubbing / Subtitles. The implementation's select is closed.",
+    "Header-to-grid spacing: the reference's first tile row starts about 80px lower than the implementation's.",
+    "Page title: the implementation's 'Browse by Languages' heading is noticeably larger than the reference's."
+  ],
+  "fixes": [
+    "Build the tile hover preview card overlay: scaled 16:9 media with an N logo, title lockup and mute button, then a dark #181818 body with a play/check/thumb/more-info circle row, a rating box + runtime + HD badge row and a dot-separated genre row.",
+    "Render the open state of both preference selects as dark list panels directly under each select: 3 options for the type select and the full language list for the language select.",
+    "Push the grid down so the first row starts around y=304.",
+    "Reduce the page title to about 36px."
+  ],
+  "summary": "The base chrome, preference row and tile grid match closely, but the reference's transient state (both dropdowns open and a hover preview card expanded) is missing, so key components are absent."
+}
+```

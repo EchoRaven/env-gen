@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The top nav (logo, links, search, bell, Kids, avatar) and the breadcrumb/title row sit in the same places as the reference. The page skeleton differs a lot. The reference is a full-bleed hero billboard that takes up about 75% of the viewport, with the nav and breadcrumb laid transparently over it and the first carousel row ('Your Next Watch') overlapping the bottom of the hero. The implementation has a solid black header block and a dim backdrop, then goes straight into stacked carousel rows starting at y≈250. There is no hero region at all. The rows also go Your Next Watch → New on Netflix → All grid, while the reference goes Your Next Watch → TV Comedies-style genre rows.",
+      "fix": "Add a full-bleed hero billboard (~100vh × 0.78) behind a transparent nav and breadcrumb. Put the title lockup at about 40% of the height, then the synopsis and buttons, and overlap the first carousel row onto the bottom ~20% of the hero with a dark bottom gradient."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present: nav with 7 links, search, bell, Kids, avatar with caret, breadcrumb, row titles, 16:9 tiles with title art, TOP 10 badges, red 'Recently Added' pills, and row pagination dashes. Missing: the hero title-art lockup, hero synopsis, white Play button, grey 'More Info' button, the mute/replay circle button, and the right-edge maturity rating tab (TV-14). The active 'Shows' nav pill is also missing. The implementation adds an expanded hover preview card (play/add/like/expand, TV-14, genres) that the reference does not show.",
+      "missing": [
+        "hero billboard image",
+        "hero title-artwork lockup",
+        "hero synopsis text",
+        "Play button (white)",
+        "More Info button (grey translucent)",
+        "mute/replay circular button",
+        "maturity rating tab (TV-14) on right edge",
+        "active nav pill highlight on 'Shows'"
+      ]
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "The flat, cinematic, dark Netflix language matches, as do the slightly rounded tiles and the red pill badges. The reference gets its immersive feel from full-bleed video art with soft gradients. The implementation looks flat and list-heavy, and has a hard-edged black header band.",
+      "fix": "Remove the solid black header band. Let the hero art run under the nav with a top-to-transparent dark gradient and a left-side vignette for the text."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Same dark base, white text, Netflix red logo and badges. The reference uses a bright hero image with gradient scrims and a translucent grey pill for the active nav item. The implementation is uniformly dark and lacks that contrast between the bright hero and the dark rows.",
+      "fix": "Add the hero image with a bottom fade into #141414, and a rgba(255,255,255,0.2) pill behind the active nav item."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Same sans-serif family, nav sizing, a large title next to a grey breadcrumb, and medium-weight row titles. The implementation is missing the hero synopsis body text (~22px regular) and the button labels.",
+      "fix": "Add the hero synopsis at ~22px regular white, max-width ~45%, with Play/More Info labels at ~22px medium."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Line icons for search and bell, the Kids badge, the avatar, and 16:9 tile crops all match. The implementation is missing the play triangle and info-circle icons on the hero buttons, and the outline mute circle.",
+      "fix": "Add a filled play triangle and an outline info-circle icon inside the hero buttons, plus an outline circular mute icon at the bottom right of the hero."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels are identical. The reference breadcrumb root reads 'TV Shows' and the implementation's reads 'Home'. The 'Your Next Watch' heading matches. The 'Play' and 'More Info' CTA copy is absent.",
+      "fix": "Use the parent category ('TV Shows' / 'Movies') as the breadcrumb root instead of 'Home', and add 'Play' and 'More Info' CTA labels."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "hero region (top ~75% of reference): implementation has no full-bleed billboard with title-art lockup, synopsis, Play and More Info buttons; it starts directly with carousel rows",
+    "header: reference nav and breadcrumb float transparently over the hero image; implementation uses a solid black header band",
+    "hero right edge: reference shows a mute/replay circle button and a TV-14 maturity tab; implementation has neither",
+    "nav: reference highlights the active section ('Shows') with a grey rounded pill; implementation shows no active state",
+    "first row: reference overlaps 'Your Next Watch' onto the bottom of the hero; implementation places it in normal flow below the header",
+    "middle of page: implementation shows an expanded hover preview card (play/add/like/chevron, TV-14, genres) that the reference does not show",
+    "breadcrumb: reference root is 'TV Shows'; implementation root is 'Home'"
+  ],
+  "fixes": [
+    "Add a full-bleed hero billboard at the top of the genre page: backdrop image with left and bottom dark gradients, title-art logo (~660px wide) at ~40% height, 3-line synopsis below it, then a white 'Play' button (play icon) and a translucent grey 'More Info' button (info-circle icon)",
+    "Add a circular outline mute button and a grey 'TV-14' maturity tab on the hero's right edge, level with the buttons",
+    "Make the nav and breadcrumb transparent and overlaid on the hero (drop the solid black header band)",
+    "Pull the first carousel row up so it overlaps the bottom of the hero",
+    "Highlight the active nav item with a translucent grey pill",
+    "Change the breadcrumb root to the parent category label (e.g. 'TV Shows') and keep the hover preview card closed by default"
+  ],
+  "summary": "Nav, breadcrumb and carousel rows match Netflix's styling, but the genre page has none of the reference's dominant hero billboard (title art, synopsis, Play/More Info, rating tab) and puts a solid header where the reference has a transparent overlay."
+}
+```

@@ -1,0 +1,55 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/broken_artwork/workspace",
+ "tag": "calib-broken_artwork",
+ "parts": [
+  "api",
+  "ui"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 48,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 14,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 18,
+  "total": 23,
+  "failed": [
+   "browse home shows poster rails (>=10 images loaded)",
+   "+ My List from the detail shows up on My List",
+   "another profile's My List does not show it",
+   "no broken images on visited pages",
+   "no console errors during the walk"
+  ]
+ }
+}

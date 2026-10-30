@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.82,
+      "notes": "Same skeleton: transparent top nav over a full-bleed hero, 'TV Shows' heading with the Genres dropdown to its right, the genre panel open as a multi-column block, the hero title lockup and CTAs at bottom-left, the mute button and maturity tab at right, and the 'Today's Top Picks for You' row along the bottom. Differences: the implementation adds a metadata row and synopsis under the hero title, which pushes the CTAs down (~760px vs ~712px). The carousel row starts ~80px lower, so the cards are cut off at the bottom edge, while in the reference they show in full with their bottom badges. The genre panel is narrower and shorter (3 columns of 5/5/3 vs 3 columns of 9/9/8), but that comes from the data.",
+      "fix": "Remove the metadata/synopsis block under the hero title so the Play/More Info row sits ~140px below the title lockup, and lift the 'Today's Top Picks' heading to ~y=840 so the full card height (including bottom badges) shows in the first viewport."
+    },
+    "components": {
+      "score": 0.78,
+      "notes": "Present: Netflix wordmark, 7 nav items with a pill-highlighted active 'Shows', search, bell, Kids badge + label, avatar with caret, 'TV Shows' title, Genres select with caret, multi-column genre link panel, Play (white) and More Info (grey translucent) buttons, mute circle, maturity rating tab with left bar, row title, row page-indicator dashes, cards with TOP 10 badges and red 'Recently Added' tags. The implementation adds a genre/year/seasons/rating metadata line and a synopsis paragraph that the reference does not show. The small red 'N'/NETFLIX series badge above the hero title is missing, and the hero title is plain text instead of a logo lockup.",
+      "missing": ["NETFLIX series badge above hero title", "hero title-artwork logo lockup (rendered as plain text instead)"],
+      "fix": "Delete the hero metadata row and synopsis. Add a small red 'NETFLIX' label above the hero title, and render the title as a logo image (or a styled display lockup) rather than a plain condensed text heading."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, cinematic dark-overlay treatment. Pill highlight on the active nav item, square-cornered dropdown panel, slightly rounded buttons and thumbnails, same spacing rhythm. The Genres select in the implementation has a solid black fill with a bright white border; the reference uses a translucent dark fill with a thinner grey-white border. The implementation's hero overlay is heavier and darker overall.",
+      "fix": "Give the Genres select a semi-transparent black background (rgba(0,0,0,0.5)) with a 1px rgba(255,255,255,0.8) border and lighter text, and lighten the hero vignette so the hero image reads brighter."
+    },
+    "color": {
+      "score": 0.87,
+      "notes": "Dark scheme, red Netflix wordmark, white Play button with black text, grey translucent More Info, red TOP 10 and 'Recently Added' badges, near-black dropdown panel, white text. Matches well. The implementation's overall hero is darker and moodier, mostly because of the artwork. Genre link text is the same white on black.",
+      "fix": "Keep the palette and reduce the extra dark overlay on the hero so it matches the reference's lighter top and left gradients."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The sans-serif UI font, nav sizes, the 'TV Shows' heading size and weight, the genre list size, the button labels and the row title all match closely. The hero title is a huge condensed all-caps text block where the reference uses a stylized logo image. The extra metadata and synopsis text adds type levels the reference doesn't have.",
+      "fix": "Replace the condensed text hero title with a logo-image lockup (~410px wide) and drop the metadata/synopsis text levels."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, Kids gradient tile, blue smiley avatar square with caret, filled play triangle, outline info circle, outline muted-speaker circle, and TOP 10 badges all match. Thumbnails are 16:9 cover crops with the same gaps. Cards in the implementation show the title as overlaid text, which is acceptable. There is no logo artwork treatment on the hero.",
+      "fix": "Use a title-logo image in the hero, keep the existing icon set as is."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match. Genre names differ (Action & Adventure / Animation / Soap / Talk vs Action / Anime / K-Dramas...), and these are data-driven. The synopsis and metadata copy is extra.",
+      "fix": "Remove the extra synopsis and metadata text. If the genre list is static, use Netflix-style genre labels (e.g., 'Action', 'Anime', 'Comedies', 'Dramas', 'Stand-Up & Talk Shows')."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "hero lower-left: implementation inserts a metadata row (genre · year · seasons · rating) and a two-line synopsis between the title and the Play/More Info buttons; the reference goes straight from the title lockup to the buttons",
+    "hero title: implementation renders a giant plain condensed text heading; the reference shows a stylized title-logo image with a small red NETFLIX badge above it",
+    "bottom row: implementation's 'Today's Top Picks' row sits ~80px lower, so the cards are cut off at the viewport edge and their bottom badges are clipped; the reference shows full cards with their badges",
+    "Genres select (top-left, next to 'TV Shows'): implementation uses a solid black box with a bright white border, while the reference has a translucent dark fill with a softer grey border",
+    "genre dropdown panel: implementation has a shorter, narrower 3-column grid (5/5/3 items) versus the reference's tall 9/9/8 grid. This comes from the data, but it changes the panel's footprint"
+  ],
+  "fixes": [
+    "Remove the hero metadata line and synopsis paragraph so the Play/More Info buttons sit directly below the title lockup",
+    "Render the hero title as a logo image (or logo-like lockup, ~410px wide) with a small red 'NETFLIX' label above it",
+    "Move the 'Today's Top Picks for You' row up (heading ~y=840, cards ~y=870–1035) so full cards and their bottom badges show",
+    "Style the Genres select with a semi-transparent black fill, a thinner light-grey border and a slightly lighter caret",
+    "Lighten the hero's dark overlay so it only darkens the top nav area and the left/bottom edges, like the reference"
+  ],
+  "summary": "Close Netflix 'TV Shows + Genres open' recreation with matching nav, dropdown, CTAs and row; it loses points for an invented metadata/synopsis block, a plain-text hero title instead of a logo lockup, and a carousel pushed too low."
+}
+```

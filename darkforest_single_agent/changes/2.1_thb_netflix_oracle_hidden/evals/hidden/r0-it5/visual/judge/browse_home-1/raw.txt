@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Same structure: a top nav (logo, 7 pill/text links, search, bell, Kids, avatar and caret) above a rounded, inset hero card about 1786px wide with the title lockup at bottom-left and CTAs below it, then a titled horizontal row of 16:9 tiles with a segmented page indicator at right. Gutters (~67px) and the vertical positions of the hero and row match. In the hero's text block, the reference leaves a bigger gap between the status line and the metadata row (~50px vs ~48px here, with the metadata sitting closer to the CTAs in the implementation). The tile gap is slightly tighter in the implementation.",
+      "fix": "In the hero text block, add ~28px between the badge/status line and the metadata row, and ~40px between metadata and the Play/More Info buttons. Widen the row tile gap to ~10px."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "All 7 nav items, the active 'Home' pill, search, bell, Kids profile chip, avatar with caret, hero sound toggle, status badge with status line, metadata row with dot separators, Play and More Info buttons, row heading, segmented paging indicator, tile carousel and TOP 10 tile badges are present. Missing: the 'New Episode' marker (red/pink icon and label) at the hero's bottom-right corner.",
+      "missing": ["hero bottom-right 'New Episode' marker (icon + label)"],
+      "fix": "Add a bottom-right hero marker at about (right 52px, bottom 62px): a small red/magenta icon and the white 14px semibold label 'New Episode', vertically aligned with the CTA row."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat dark streaming style: rounded hero card (~16px radius), pill CTAs, round translucent sound button and rounded tiles. In the reference, the hero card has a soft drop shadow lifting it off the page, and the header sits on a soft warm-gray gradient. The implementation's header and page base are flat.",
+      "fix": "Give the hero card a soft diffuse shadow (e.g. 0 10px 40px rgba(0,0,0,.5)), and put a subtle top-to-bottom gray gradient behind the header and page top."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Near-black page, white text, Netflix-red wordmark and badges, white Play button and translucent gray More Info button all match. The reference's top band is a lighter warm gray (#3a3734 → #1b1b1b gradient), while the implementation's header is uniformly near-black (#141414).",
+      "fix": "Set the page/header background to a vertical gradient from about #3b3835 at the top to #181818 by ~300px."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family and nav sizes, and the active nav item is bold. The metadata row and CTA sizes match. The row heading 'Trending Now' is regular weight, but the reference heading is semibold/bold (~26px). The hero title is rendered as condensed display text rather than a title-art lockup, which is an acceptable stand-in, although it is smaller in scale than the reference's logo block.",
+      "fix": "Make the row heading font-weight 600–700 at ~26px. Scale the hero title lockup up to ~240px tall (max-width ~460px), or use the title's logo artwork when it is available."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Line-style search, bell and sound icons match, as do the rounded-square Kids chip and blue smiley avatar, the filled play triangle, the red TOP 10 badges and the 16:9 rounded tiles. The sound toggle shows a muted glyph where the reference shows a speaker with waves. This is a state difference and minor. The hero title is plain text, not image art.",
+      "fix": "Default the hero sound toggle to the speaker-with-waves icon, and render title logo artwork in the hero when it is available."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels 'Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages', 'Kids', 'Play' and 'More Info' are identical. The status line and row titles are content. The 'New Episode' label is missing (see components).",
+      "fix": "Add the 'New Episode' label text to the hero corner marker."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-right: reference has a 'New Episode' marker (red icon + label), which is absent in the implementation",
+    "hero text block: reference has more vertical spacing between the status line, the metadata row and the CTAs. In the implementation they are compressed together",
+    "page/header background: reference has a warm-gray gradient at the top behind the nav. Implementation is flat near-black",
+    "hero card: reference has a soft drop shadow/elevation. Implementation's card sits flat on the page",
+    "row heading: reference title is semibold/bold. Implementation 'Trending Now' is regular weight",
+    "hero title: implementation uses plain condensed text in place of a title-art logo lockup, at a smaller scale",
+    "hero sound toggle: implementation shows the muted icon. Reference shows a speaker with sound waves",
+    "row tiles: implementation gap between tiles is tighter (~6px) than the reference (~10px)"
+  ],
+  "fixes": [
+    "Add a 'New Episode' marker (small red/magenta icon + white 14px semibold label) at the hero's bottom-right, aligned with the CTA row",
+    "Increase spacing in the hero text block: ~28px under the status line and ~40px between the metadata row and the Play/More Info buttons",
+    "Set the row heading ('Trending Now') to font-weight 700 at ~26px",
+    "Give the hero card a soft shadow (0 10px 40px rgba(0,0,0,.5))",
+    "Apply a top-of-page vertical gradient (#3b3835 → #181818) behind the header",
+    "Widen the carousel tile gap to ~10px",
+    "Default the sound toggle icon to unmuted (speaker with waves), and use title logo art for the hero title when it is available"
+  ],
+  "summary": "Close match to the Netflix browse home: nav, inset rounded hero, CTAs and tile row are all faithful. The main gaps are the missing 'New Episode' hero marker, tighter hero text spacing, a flat header background with no gradient, and a lighter row-heading weight."
+}
+```

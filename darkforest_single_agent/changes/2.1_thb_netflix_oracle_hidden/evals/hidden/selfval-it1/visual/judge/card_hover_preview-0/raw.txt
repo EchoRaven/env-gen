@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both use the same top nav (wordmark, text links, search/bell/Kids/avatar on the right) and full-width horizontal rows of 16:9 tiles with the hover card floating over them. The reference is a genre sub-page: a 'TV Shows > Sports TV Shows' breadcrumb header sits below the nav, and the rows start right away over dimmed, full-bleed background art. The implementation shows the Home layout instead, with a large rounded billboard hero (title lockup, synopsis, Play/More Info) taking the top ~40% of the screen. The reference hover card is centred on the hovered tile and stays inside the 67px gutter. The implementation card is pinned to x≈16, past the left gutter. The implementation's second row has no visible heading, while every reference row has one.",
+      "fix": "For this state, render the genre page layout: breadcrumb header ('TV Shows' gray > large white page title) under the nav, no billboard hero, rows starting at about y=230 over dimmed background art. Centre the hover card on the hovered tile and clamp it inside the 67px page gutter. Make sure every row shows its heading."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "The hover card matches well: artwork with a title lockup and mute button, then a row with a white filled play button, outlined circle buttons and a chevron on the right, a maturity box + duration + HD badge row, and dot-separated genre tags. The tiles have 'Recently Added' and TOP 10 badges, and the rows have page-indicator dashes. Differences: no breadcrumb/page-title header; an extra billboard hero with Play/More Info and a '#1 in TV Shows Today' badge that the reference doesn't have; the second row's heading is missing; the hover card shows a check where the reference shows '+'. The check is an in-list state difference, so it costs little. The card's action buttons are smaller and thinner than in the reference.",
+      "missing": ["breadcrumb header (TV Shows > page title)", "row heading on second visible row"]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same dark, flat Netflix look: the hover card is a dark elevated panel with slightly rounded corners and the tiles are slightly rounded. The billboard's large rounded inset panel adds a heavier decorative element the reference doesn't have. The reference card's buttons are larger, about 52px, with thicker 2px rings. The implementation's are about 42px with thin rings.",
+      "fix": "Remove the inset billboard panel. Increase the hover-card action buttons to about 52px with 2px gray rings, and the chevron to match."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Dark scheme with a red wordmark, red 'Recently Added' badges, a white play button and a #181818-ish hover card, all matching. The reference header is pure black over the black breadcrumb band. The implementation nav is a lighter charcoal (#1f1f1f-ish). The reference page background has dimmed full-bleed artwork behind the first row.",
+      "fix": "Set the nav and header band to #000. Add the dimmed background artwork behind the top rows of the genre page."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The sans-serif nav, row titles (about 26px, regular weight) and hover-card metadata sizes are close. The reference has a large page title, about 40px, and a gray breadcrumb in the header. The implementation instead has a huge condensed billboard title and synopsis paragraph. The hover-card genre tags in the reference are slightly larger and brighter.",
+      "fix": "Add a 40px white page title with a 20px gray 'TV Shows >' breadcrumb. Make the hover-card genre tags about 18px white."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The outline search and bell icons, Kids tile, blue smiley avatar with caret, circular outlined card buttons, thumbs icon, chevron-down and mute icon all match in style. The 16:9 tile crops with title-art lockups match. The card's icons are smaller, and the thumbs icon is filled rather than outlined.",
+      "fix": "Use the outline thumbs-up glyph. Scale the card icons to the reference size, about 26px glyphs in 52px circles."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "The nav labels are identical, and the badge copy 'Recently Added' and 'TOP 10' matches. The active nav item is 'Home' where the reference has 'Shows'. The breadcrumb copy 'TV Shows >' is missing. There is extra billboard copy ('Play', 'More Info', '#1 in TV Shows Today').",
+      "fix": "Highlight 'Shows' as the active pill on this page and add the 'TV Shows >' breadcrumb text."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Top of page: the implementation shows a large rounded billboard hero (title lockup, synopsis, Play/More Info, '#1 in TV Shows Today'). The reference has no hero, just a 'TV Shows > Sports TV Shows' breadcrumb header, with rows starting right below it.",
+    "Below the nav: the reference's breadcrumb/page-title band is missing from the implementation.",
+    "Hover card position: the implementation pins the card to the far left (x≈16), outside the 67px content gutter. The reference centres the enlarged card over the hovered tile.",
+    "Second visible row (y≈770 in the implementation): no row heading. Every reference row has a heading such as 'TV Comedies'.",
+    "Nav: 'Home' is the active pill in the implementation; the reference has 'Shows' active. The nav background is charcoal instead of pure black.",
+    "Hover card action row: the buttons are smaller (~42px vs ~52px) with thinner rings, and the thumbs icon is filled instead of outlined.",
+    "Background: the reference has dimmed full-bleed artwork behind the first rows. The implementation has a flat dark background."
+  ],
+  "fixes": [
+    "Give this route the genre page layout: remove the billboard hero and add a header band below the nav with a gray 'TV Shows' breadcrumb, a '>' separator and a ~40px white page title.",
+    "Start the rows right after the header over dimmed full-bleed background art, with a ~26px heading above every row.",
+    "Position the hover card centred on the hovered tile at about 1.5× scale, clamped inside the 67px page gutter.",
+    "Enlarge the hover-card action buttons to ~52px circles with 2px gray rings, and use an outline thumbs-up icon.",
+    "Set the nav/header background to #000 and make 'Shows' the active pill."
+  ],
+  "summary": "The hover-preview card and the rows of tiles are a close match. The page around them is Home with a billboard hero instead of the reference's breadcrumbed genre page, and the card sits off to the left edge instead of centred on its tile."
+}
+```

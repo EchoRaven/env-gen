@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.45,
+      "notes": "The top nav bar matches the reference: wordmark left, the same link set, and search, bell, Kids and avatar on the right. The page skeleton below it is different. The reference has a breadcrumb header ('TV Shows > Sports TV Shows') over a stack of titled horizontal rows on a dim backdrop image, with the hover card floating over the rows. The implementation renders the Home layout instead: a large rounded hero billboard with a title lockup and Play/More Info, then rows. The hover card's anchor is also wrong. In the reference it is centered over the hovered tile and sits inside the page gutter (x≈595–1028). In the implementation it is pushed to the far left edge (x≈16) and breaks the 67px gutter. The tiles are also bigger (~344px wide vs ~290px), so fewer fit per row.",
+      "fix": "Render this hover state on the genre/Shows page: no hero billboard, a breadcrumb header row ('TV Shows › <Genre>', with the genre in large type) under the nav, then stacked titled rows of ~290px tiles. Center the hover card over the hovered tile and clamp it inside the 67px page gutters."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": [
+        "breadcrumb header ('TV Shows > genre title')",
+        "row section headings above each rail",
+        "Shows nav item active state (pill on 'Shows')"
+      ],
+      "notes": "The hover card itself is close to the reference. It has artwork with a title lockup and a mute button, then a row with a white filled play button, outlined + and thumbs-up circles and a right-aligned chevron-down circle. Below that are the maturity box, season count and HD badge, then the genre tags with dot separators. Rails, the TOP 10 badge and the 'Recently Added' badges are present. Missing: the breadcrumb header and visible row titles. The rail headings are absent, and a stray empty-state text fragment ('…here.') shows between rails. Invented: a hero billboard with Play/More Info, which the reference does not have, and an 'N' badge on the card artwork. The pill sits on 'Home' instead of 'Shows'.",
+      "fix": "Remove the hero billboard and add the breadcrumb header. Give every rail a heading (e.g. 'Your Next Watch', 'TV Comedies'). Remove the empty-state text between rails. Move the active pill to 'Shows'."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same dark, flat Netflix style. Tiles have slightly rounded corners, and the hover card has a soft shadow, a dark surface and outlined circular buttons. The hero's large rounded container adds a heavier, card-like surface that the reference does not have. The reference rows sit over a dim full-bleed backdrop photo, while the implementation background is plain.",
+      "fix": "Drop the rounded hero container. Keep the rows edge-aligned on a dark backdrop, optionally with a dimmed full-bleed genre image behind the top rows as in the reference."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Near-black base, white text, red wordmark and red TOP 10/'Recently Added' badges all match. The hover card surface is the same dark grey. The page base is slightly lighter grey (#181818-ish) than the reference's black header band, and there is no dimmed backdrop gradient.",
+      "fix": "Use pure black behind the nav and breadcrumb header, and #141414 below it with the dimmed backdrop image."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The sans-serif nav and the hover card metadata sizes and weights match: bordered TV-14 box, grey season text, small HD outline badge, white tags. The large breadcrumb title level (~44px) and the ~26px row-heading level are missing entirely, so the size hierarchy is flatter. The hero title adds a giant display level that the reference does not have.",
+      "fix": "Add the breadcrumb title at ~44px regular white, with the 'TV Shows' crumb at ~20px grey, and row headings at ~26px medium white. Remove the hero display title."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Line icons for search and bell, the circular outlined action buttons, the chevron and the mute icon all match. Tile artwork has the same landscape ~16:9 crop with title art over it. The card artwork carries an extra red 'N' badge, which the reference card does not show. The profile avatar is a gradient tile instead of the reference's blue square avatar.",
+      "fix": "Remove the 'N' badge from the hover card artwork and use a solid square avatar style for the profile icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels and the hover card metadata format ('TV-14', 'N Seasons', 'HD', dot-separated tags) match. Missing copy: the 'TV Shows' breadcrumb label and the row headings. Extra copy: the 'Play'/'More Info' hero CTAs and the stray '…here.' empty-state text.",
+      "fix": "Add the breadcrumb and row heading text, and remove the hero CTAs and the empty-state message."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "Top of page below the nav: the implementation shows a large rounded hero billboard (title lockup, metadata, Play/More Info). The reference has a 'TV Shows > Sports TV Shows' breadcrumb header and goes straight into rows.",
+    "Hover card position: the implementation pins the card to the far left (x≈16), outside the page gutter. The reference centers the card over the hovered tile, inside the gutters.",
+    "Rail headings: the reference has a title above every row ('Your Next Watch', 'TV Comedies', 'Today's Top Picks for You', 'New on Netflix'). The implementation shows no row headings.",
+    "Between rails (~y=806): the implementation shows stray empty-state text ('…here.'). The reference shows a populated rail there.",
+    "Nav: the active pill is on 'Home' in the implementation and on 'Shows' in the reference.",
+    "Tiles: the implementation's tiles are ~344px wide vs ~290px, so fewer tiles show per row.",
+    "Hover card artwork: the implementation adds a red 'N' badge in the top-left, which the reference card lacks.",
+    "Background: the reference rows sit over a dimmed full-bleed backdrop image. The implementation background is a plain dark grey."
+  ],
+  "fixes": [
+    "Render this route on the Shows/genre page: remove the hero billboard and add a breadcrumb header ('TV Shows' grey ~20px › genre title white ~44px) under the nav.",
+    "Add a ~26px white heading above every rail, and remove the empty-state text between rails.",
+    "Position the hover card centered over the hovered tile, scaled ~1.5x from it (~435px wide), and clamp it within the 67px gutters.",
+    "Shrink the rail tiles to ~290px wide with ~8px gaps.",
+    "Set the active nav pill on 'Shows'.",
+    "Remove the 'N' badge from the hover card artwork.",
+    "Use a black header band and add a dimmed full-bleed backdrop image behind the top rows."
+  ],
+  "summary": "The hover card closely matches the reference, but it is shown on a Home page with a hero billboard instead of the genre page with its breadcrumb header and titled rails, and it is pinned to the left edge."
+}
+```

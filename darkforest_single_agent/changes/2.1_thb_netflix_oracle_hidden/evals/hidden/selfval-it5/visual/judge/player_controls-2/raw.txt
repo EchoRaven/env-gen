@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The overall structure matches. Both are full-bleed players with no app chrome, a back arrow top-left and a flag top-right. The progress bar spans the full width with the time on the right, and the bottom control row has playback controls on the left, a centred title and utilities on the right. The difference is a large left-aligned info block in the implementation, at about 27–48% of the height, which the reference does not have. The reference's centre area is empty video frame. The bottom bar also sits a little lower in the implementation (y≈1017 vs 969), and the left icon cluster is tighter.",
+      "fix": "Remove the mid-left 'You're watching' info block from the controls state so the centre stays empty. Move the progress bar up to about 88% of the height and space the left icons about 90px apart, like the reference."
+    },
+    "components": {
+      "score": 0.75,
+      "missing": ["buffered-range segment on the progress bar (lighter grey section ahead of the playhead)", "chapter/marker ticks on the progress track"],
+      "notes": "Present and correctly placed: back arrow, report flag, red scrubber with knob, time readout, play/pause, back 10, forward 10, volume, centred title/episode label, next episode, episodes, subtitles and fullscreen. Added components the reference lacks: the 'You're watching' eyebrow, a large title, a season/episode subtitle, a synopsis paragraph and a red-pink playback error line. The play icon instead of pause is a playback-state difference and is acceptable. The progress track has no buffered segment and no small marker ticks.",
+      "fix": "Remove the info overlay and the error text from this state. Add a lighter-grey buffered segment after the red played section, plus small marker ticks on the track."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Minimal flat white controls on a dark field match the reference, as does the thin hairline progress bar. The reference is pure black with nothing on screen except the controls. The implementation puts a full-bleed, highly saturated poster image behind everything, with a heavy text overlay that changes the feel from a quiet, utilitarian player to a promotional page.",
+      "fix": "Render the video surface as solid #000, or as the actual dark video frame, rather than the key-art poster. Drop the overlay so only the controls float over the video."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Matches: white icons and text, a red played section and knob, and a grey track. The reference background is pure black and monochrome. The implementation's backdrop is vivid blue and red artwork, and the added pink-red error text brings in another accent colour. The track looks slightly darker and lacks the lighter buffered tone.",
+      "fix": "Set the player background to #000 and remove the poster. Use about #808080 for the track and about #bfbfbf for the buffered section. Remove the red error text."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The centred label matches the reference treatment: bold show title, regular 'E1' and episode name, at a similar size. The time readout is small and white in both. The added overlay brings in new type levels (a roughly 56px bold title, a semibold subtitle and body text) that do not exist in the reference, which has only the single bottom label level.",
+      "fix": "Remove the overlay typography so the bottom title label and the time are the only text on screen."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Same white line-icon set throughout: arrow, flag, circular 10s skip icons, speaker with waves, skip-next, stacked episodes, speech-bubble subtitles and corner-bracket fullscreen. The implementation's icons are slightly smaller (about 40px vs 50px) and the left group is closer together. Imagery differs: the reference shows no artwork, while the implementation shows a full-bleed poster.",
+      "fix": "Scale the control icons to about 50px and spread the left group to about 90px centre-to-centre. Do not show poster artwork in the player."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The bottom label follows the same '<Title> E1 <Episode name>' pattern. The implementation adds UI copy the reference does not have: 'You're watching' and the error line 'This clip can't be played in this browser (H.264/MP4 support is required).'",
+      "fix": "Remove the 'You're watching' eyebrow and the codec error message from this screen."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Centre-left of the screen: the implementation overlays a 'You're watching' eyebrow, a large title, a season/episode line and a synopsis. In the reference this area is empty black video.",
+    "Full background: the implementation shows saturated key-art poster artwork. The reference is a pure black video surface.",
+    "Below the synopsis: the implementation shows a red-pink error line about H.264/MP4 support, which the reference does not have.",
+    "Progress bar: the reference has a lighter-grey buffered segment ahead of the playhead and small marker ticks on the track. The implementation's track is a single flat grey.",
+    "Bottom control row: the implementation's icons are smaller and the left cluster (play, back 10, forward 10, volume) is more tightly spaced than in the reference.",
+    "Vertical position: the implementation's progress bar and controls sit about 50px lower than the reference's."
+  ],
+  "fixes": [
+    "Remove the 'You're watching' title/synopsis overlay and the error message from the controls state.",
+    "Replace the poster backdrop with a solid #000 (or actual video) surface behind the controls.",
+    "Add a lighter-grey buffered segment and small marker ticks to the progress track.",
+    "Enlarge the control icons to about 50px, space the left group about 90px apart, and raise the progress bar and control row to match the reference."
+  ],
+  "summary": "The controls (top icons, progress bar and bottom row) match the reference closely, but the implementation adds a poster backdrop, a 'You're watching' info overlay and an error line that the reference's plain black player does not have."
+}
+```

@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "The page is built the same way. A sticky dark top bar holds the logo, 7 text nav links and icons on the right. Below it are full-bleed horizontal carousel rows with the same left gutter (~67px) in the same order: a 16:9 landscape row, then two ranked Top-10 rows with a big numeral and a poster, then a fourth 16:9 row cut off at the bottom. Page indicators sit at the top right of each row. The first section starts about 18px higher than in the reference.",
+      "fix": "Add ~18px of top padding above the first row heading so 'New on Netflix' sits at y≈165 as in the reference."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "Present and placed the same: all nav items (Home, Shows, Movies, Games, New & Popular pill, My List, Browse by Languages), search, bell, Kids profile chip, avatar with caret, row page indicators, TOP 10 corner badges, red status badges along the bottom edge of tiles, ranked numerals, and a peeking 7th tile. Differences: the implementation shows a right-arrow chevron on the TV Shows row that the reference doesn't show in this state. Its badges are all one label ('Recently Added'), where the reference mixes 'New Season', 'New Episode' and a paired white 'Watch Now' chip. One Movies tile renders a plain-text fallback ('Backrooms') instead of artwork.",
+      "missing": [
+        "secondary white 'Watch Now' chip next to the red badge (New on Netflix row)",
+        "badge variants 'New Season' / 'New Episode'"
+      ],
+      "fix": "Support badge variants (New Season, New Episode, Recently Added) and an optional white 'Watch Now' chip beside the red badge. Hide the row chevron unless the row is hovered. Make sure poster tiles always render artwork, never a text fallback."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dense, dark streaming look: tiles with slightly rounded corners, no shadows, rows separated by whitespace. The big difference is the rank numerals. In the reference they are solid black shapes with a thick gray outline, so they read as heavy filled blocks behind the posters. In the implementation they are thin outlines with transparent fills, so they look light and wireframe-like.",
+      "fix": "Render the rank numerals as heavy, solid shapes (fill #000 or the page colour, ~4–6px #595959 stroke, font-weight 900) so they read as filled blocks."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Same near-black #141414 page with a slightly darker header, Netflix red for the wordmark and badges, a gray pill for the active nav item, white text, and the same TOP 10 red/white badge. The numeral outline gray is lighter and thinner than the reference's.",
+      "fix": "Use a darker, thicker numeral stroke (~#4d4d4d to #595959) on a black fill."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Both use a sans UI font in the same size hierarchy. Row headings in the reference are regular weight (~400). The implementation's are noticeably bolder (~600–700) and slightly larger. Nav and badge text match well.",
+      "fix": "Set row headings (h2) to font-weight 400–500 at ~26px, letter-spacing normal."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The search and bell line icons, the Kids gradient chip, the blue smiley avatar with caret, and the wordmark all match. The 16:9 and 2:3 crops and the tile radii match. The reference landscape tiles carry stylised title-logo artwork. The implementation lays a generic condensed-caps text title over the image, and one poster shows a plain-text placeholder.",
+      "fix": "Use title-logo artwork, or at least position the text title lockup per title like the reference, instead of a uniform bottom-left caps overlay. Replace the text fallback poster with real artwork."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels and 'New on Netflix' match exactly. The row headings differ: 'Top 10 TV Shows Today' vs 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies Today' vs 'Top 10 Movies in the U.S. Today', and 'Worth the Wait' vs 'Coming This Week'.",
+      "fix": "Rename the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: the rank numerals are thin transparent outlines; the reference uses heavy solid black numerals with a thick gray stroke",
+    "Row headings: rendered semibold/bold; the reference uses regular weight",
+    "Row heading copy: 'Top 10 TV Shows Today' / 'Top 10 Movies Today' / 'Worth the Wait' instead of '…in the U.S. Today' ×2 and 'Coming This Week'",
+    "New on Netflix tiles: every badge reads 'Recently Added', with no 'New Season'/'New Episode' variants and no paired white 'Watch Now' chip as in the reference",
+    "New on Netflix tiles: a uniform bottom-left condensed-caps text title overlay replaces the reference's per-title logo artwork",
+    "Top 10 TV Shows row: a right-chevron arrow is visible at the right edge; the reference shows none in this state",
+    "Top 10 Movies row, tile 3: a plain-text 'Backrooms' fallback instead of rendered poster artwork",
+    "First row sits ~18px higher under the header than in the reference"
+  ],
+  "fixes": [
+    "Restyle the rank numerals: font-weight 900, fill black, ~5px gray (#595959) stroke, so they read as solid blocks behind the posters",
+    "Set row heading font-weight to 400–500",
+    "Change the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'",
+    "Add badge variants (New Season / New Episode / Recently Added) plus an optional white 'Watch Now' chip next to the red badge",
+    "Show the row chevrons only on hover",
+    "Make sure all poster tiles render artwork (no text fallback); prefer title-logo artwork over a generic text overlay",
+    "Add ~18px of top padding before the first row"
+  ],
+  "summary": "Structurally a near-identical New & Popular page; the gaps are the outline-only rank numerals, bolder headings, different heading copy and uniform badges."
+}
+```

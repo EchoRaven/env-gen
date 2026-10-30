@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The overall structure matches. A centered modal of about 1085px floats over the dimmed browse page, with the top nav still visible behind it. The hero art is full-bleed inside the modal, with the title lockup, Play/+/thumb row and mute button laid over its bottom edge. The two-column metadata block follows, about 60/40 with metadata on the left and credits on the right, then the Episodes header and episode cards. The modal width, the close button position and the content gutters (~55px) all match. Differences: the right side of the Episodes header holds plain text instead of a bordered dropdown. There is also no 'Season 1: TV-14 …' sub-line between the header and the first episode card.",
+      "fix": "Put a bordered season selector on the right of the Episodes header, aligned to the right gutter, and add the season rating sub-line under the header, above the episode list."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "These are present: close X, title lockup, white Play button, circular add and rate buttons, circular mute button, year/count/HD/subtitle row, maturity rating box with advisories, synopsis, Cast and Genres labels, Episodes heading and episode card. Missing: the season dropdown, which is replaced by the plain text 'Overdo', the 'Season 1: [TV-14] advisories' sub-line, the 'This Show Is:' row and the 'more' link after Cast. Invented: 'Original Language:' and 'Rating: 9.0 / 10' rows in the right column, and a TOP 10 '#2 in TV Shows Today' row above the synopsis. The Cast value renders as an em-dash placeholder.",
+      "missing": [
+        "Season selector dropdown (bordered box with caret) in Episodes header",
+        "'Season 1: [TV-14] advisories' sub-line under Episodes header",
+        "'This Show Is:' tag row in right metadata column",
+        "'more' link after the Cast list"
+      ],
+      "fix": "Replace the 'Overdo' text with a bordered 'Season 1 ▾' dropdown. Add the season-rating sub-line. Swap the 'Original Language' and 'Rating' rows for a 'This Show Is:' row. Drop the TOP 10 rank row from the modal, or show it only where the reference does. Render the real cast list with an italic 'more' link."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat dark modal with slightly rounded corners, the hero fading into the modal body through a bottom gradient, outline circular icon buttons, square-cornered white Play button and episode cards on a lighter grey surface. The implementation's mute button has a more prominent ring than the reference's faint, semi-transparent one. The episode card corner radius looks consistent.",
+      "fix": "Make the mute button ring and icon lower-opacity grey (~40%) to match the reference's subdued treatment."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Dark #181818-style modal over a dimmed page, white primary CTA with black text, grey labels with white values in the right column, and a lighter grey episode-card surface all match. The red TOP 10 badge adds an accent the reference modal does not have. The white title lockup versus the reference's red is title artwork, so it is not counted.",
+      "fix": "Remove the red TOP 10 badge row from the modal so the palette stays monochrome plus white CTA."
+    },
+    "typography": {
+      "score": 0.87,
+      "notes": "Same sans family and hierarchy: large display title art, ~22px Play label, ~17px metadata, ~17px synopsis, smaller grey 'Label:' text with white values, and a ~26px Episodes heading. The extra semibold '#2 in TV Shows Today' line adds a hierarchy level the reference lacks. The reference's italic 'more' after the cast is absent.",
+      "fix": "Remove the bold rank headline. Add the italic 'more' after the truncated cast list."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline plus icon in a circle, HD badge box, subtitle icon, X close button in a dark circle and mute speaker icon all match. The rate button uses a filled thumbs-up glyph, while the reference uses an outline thumb. The dropdown caret icon is missing because the selector is absent. The hero crop and aspect match.",
+      "fix": "Use an outline thumbs-up icon in the rate button, matching the stroke weight of the plus icon. Add the ▾ caret in the season selector."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "'Play', 'Cast:', 'Genres:', 'Episodes', 'HD' and the 'N Seasons/Episodes' pattern all match. The right column adds 'Original Language:' and 'Rating:' and omits 'This Show Is:'. The Episodes header shows the show name instead of 'Season 1'. The '#2 in TV Shows Today' label is not in the reference modal.",
+      "fix": "Label the selector 'Season 1'. Replace the extra rows with 'This Show Is: <tags>'. Drop the rank label."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: reference has a bordered 'Season 1 ▾' dropdown; implementation shows the plain text 'Overdo'",
+    "Below the Episodes header: reference has a 'Season 1: [TV-14] substances, language' sub-line; implementation has none",
+    "Right metadata column: implementation adds 'Original Language:' and 'Rating: 9.0 / 10' rows and lacks the reference's 'This Show Is:' row",
+    "Left column above the synopsis: implementation adds a TOP 10 badge with the '#2 in TV Shows Today' row, which the reference modal does not have",
+    "Right metadata column, Cast: implementation shows the placeholder '—'; reference shows a truncated name list ending in an italic 'more' link",
+    "Hero action row: implementation's rate button uses a filled thumb glyph; reference uses an outline thumb",
+    "Hero, right: implementation's mute button has a bright, prominent ring; reference's is faint and semi-transparent"
+  ],
+  "fixes": [
+    "Replace the right side of the Episodes header with a bordered dark dropdown reading 'Season 1' with a ▾ caret (about 180×46px, 1px grey border)",
+    "Add a 'Season N: [rating box] advisories' line under the Episodes header, above the first episode card",
+    "In the right metadata column, remove 'Original Language' and 'Rating', and add a 'This Show Is: <tags>' row",
+    "Remove the TOP 10 '#2 in TV Shows Today' row from the modal body",
+    "Render the cast as a comma list truncated with an italic 'more' link, never an em-dash placeholder",
+    "Swap the filled thumbs-up for an outline thumb icon, and dim the mute button ring and icon to low-opacity grey"
+  ],
+  "summary": "The More Info modal closely matches the reference's structure, hero treatment and two-column metadata. It is missing the season dropdown and season sub-line, and has invented right-column rows plus a TOP 10 rank row."
+}
+```

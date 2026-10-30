@@ -1,0 +1,58 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches. There is a top bar with the wordmark on the left and the language select and Sign In button on the right. Below it is a full-bleed hero with the tilted poster collage, a centered headline, subhead, prompt and email+CTA row, then a curved divider and a promo banner. The section order and centered alignment are the same. The differences are all in the banner row. In the reference, the popcorn icon sits outside the card, to its left, and the card starts at about x=275. In the implementation, the card starts at about x=168 and the popcorn overlaps its left edge inside the card. The hero divider is also flatter in the implementation and only arcs in the middle.",
+      "fix": "Move the popcorn icon out of the banner card so it sits to the card's left. Start the card at about x=275 and end it at about x=1755. Make the hero's bottom edge a full-width shallow convex arc."
+    },
+    "components": {
+      "score": 0.92,
+      "missing": [],
+      "notes": "All the components are present: the NETFLIX wordmark, the language dropdown with a translate icon, the red Sign In button, the headline, subhead, helper prompt, outlined Email address input, red Get Started button with a chevron, curved divider, popcorn illustration, banner title and subtitle, and the grey Learn More button. Nothing is invented. Two components are shown differently. The language dropdown uses a chevron where the reference uses a filled caret. The popcorn icon is placed inside the card instead of beside it.",
+      "fix": "Change the language dropdown's chevron to a small filled down-caret. Place the popcorn outside the card with a soft glow behind it."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "The look is the same: a dark, cinematic marketing page with a rotated poster mosaic, slightly rounded inputs and buttons, and a rounded banner card. In the reference, the dark scrim over the collage is much heavier, so the posters read as a muted, dim backdrop. In the implementation, the posters are noticeably brighter and more saturated, so they compete with the headline. The reference's arc is a glowing red-to-pink line across the full width over a purple-blue glow. The implementation's red line is short and centered, and its glow is weaker.",
+      "fix": "Make the hero overlay darker, around rgba(0,0,0,0.6–0.7), with a radial vignette. Draw the bottom arc across the full width with a red→pink gradient stroke over a blue/purple radial glow."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "The black base, Netflix red CTAs and white text all match. The banner fill differs. The reference uses a deep indigo-to-purple gradient (about #1d1a4a→#2b1a3f). The implementation's fill is darker and navy (about #121a3a→#2a1530). The hero imagery is also brighter overall because of the lighter scrim.",
+      "fix": "Change the banner gradient to the reference's indigo→plum (left #1e1d4f, right #2d1a40). Darken the hero scrim to match."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Both use a bold sans headline of about 56px over two centered lines, a bold subhead, and a regular-weight prompt, and the banner has a bold title with a regular subtitle. The implementation's headline is a little larger and wider, and its prompt and placeholder use slightly wider letter spacing.",
+      "fix": "Set the headline to about 56px / weight 800 with tight tracking, and make the input placeholder about 18px with normal tracking."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Both have the red condensed wordmark and the translate glyph. The popcorn illustration is flatter in the implementation and has no circular dark backdrop or glow. In the reference, the dropdown's caret is filled and the posters are rotated tiles with rounded corners. The implementation matches the tiles.",
+      "fix": "Use a 3D-style popcorn illustration on a soft circular dark backdrop, and change the dropdown arrow to a filled caret."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "The text matches word for word: Sign In, English, the headline, 'Starts at $8.99. Cancel anytime.', the helper prompt, 'Email address', 'Get Started', the banner title and subtitle, and 'Learn More'.",
+      "fix": "None."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Hero background: the implementation's poster collage is much brighter and more saturated. The reference applies a heavy dark scrim, so the posters recede behind the text.",
+    "Bottom of the hero: the reference has a full-width curved arc with a red-to-pink glowing edge. The implementation shows only a short red line in the center over a flat edge.",
+    "Promo banner: in the reference, the popcorn icon is outside the card, to its left, and the card starts further right. In the implementation, the card is wider and starts at about x=168, with the popcorn overlapping its left edge inside the card.",
+    "Promo banner fill: the reference is a lighter indigo/purple gradient. The implementation is darker and navy-toned.",
+    "Language dropdown: the reference uses a filled down-caret. The implementation uses a line chevron."
+  ],
+  "fixes": [
+    "Darken the hero overlay, around rgba(0,0,0,0.65) plus a vignette, so the posters are dimmed like the reference.",
+    "Make the hero's bottom edge a full-width convex arc with a red→pink gradient border and a blue-purple glow beneath it.",
+    "Narrow the promo card to about x=275–1755, place the popcorn illustration outside it on the left with a dark circular glow, and change the card gradient to indigo→plum.",
+    "Change the language dropdown's chevron to a filled caret."
+  ],
+  "summary": "This is a very close copy of the Netflix landing page. The copy and component inventory match exactly. The gaps are a hero scrim that's too light, a weak bottom arc, and the popcorn icon sitting inside the banner card instead of beside it."
+}
+```

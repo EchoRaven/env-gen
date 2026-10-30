@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same skeleton: full-bleed tilted poster mosaic with a dark overlay, logo top-left, language select and Sign In top-right, a centered hero stack (headline, subline, prompt, email + CTA row), a curved red divider, then a promo banner. The differences: the hero block sits about 50px higher; the headline is bigger, so it wraps after 'movies,' where the reference wraps after 'TV'; and the banner spans the full 163–1757px content width with the popcorn inside it. In the reference the popcorn sits outside the banner on the left and the banner starts at about 275px.",
+      "fix": "Move the hero stack down so the headline starts at about y=315 and the email row sits at about y=590. Pull the popcorn icon out of the banner card so it sits to the left at x≈180, and start the banner card at x≈275, ending at about x≈1755."
+    },
+    "components": {
+      "score": 0.92,
+      "missing": [],
+      "notes": "Every component in the reference is present: the NETFLIX wordmark, the language dropdown with a translate icon, the red Sign In button, the H1, the subline, the prompt line, the email input with its placeholder, the red Get Started button with a chevron, the curved divider, and the promo banner with a popcorn illustration, two-line text and a grey Learn More button. The only difference is where the popcorn sits: inside the banner instead of overlapping its left edge from outside.",
+      "fix": "Position the popcorn illustration outside the banner, to its left, at about 80px and slightly overlapping the banner's left edge."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic dark marketing style: tilted poster wall, rounded promo card, slightly rounded buttons and input. The reference mosaic is mostly landscape and wide-format tiles; the implementation uses mostly portrait posters, so the wall reads denser and more vertical. The reference curve is a thin glowing arc over a deep blue-to-black band. The implementation's arc is deeper and its band is purple.",
+      "fix": "Use mixed and landscape tile aspects in the background mosaic. Flatten the curved divider into a shallower arc with a thin red-to-pink glow line over a navy gradient band."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark base, Netflix red for the logo and CTAs, white text and grey Learn More button. The band under the curve differs: the reference fades from navy/indigo to black, while the implementation is magenta-purple. The banner card is a similar purple-indigo in both, with the reference slightly bluer. The hero overlay is a little lighter in the implementation.",
+      "fix": "Change the post-curve gradient to navy (#1b2045-ish) fading to black. Tint the banner card toward indigo (#2a2350→#1f2048). Darken the hero overlay slightly."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a bold sans in white and centered, with the same hierarchy: a large H1, a bold subline, a regular prompt, and a large Get Started label. The implementation's H1 is about 10–15% larger, which changes the line break. The reference banner title is semibold at a moderate size; the implementation's is similar but a bit larger.",
+      "fix": "Reduce the H1 to about 56px (about 60px line height) so it breaks 'Unlimited movies, TV / shows, and more'. Keep the subline bold at about 20px."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The wordmark, the translate icon, the CTA chevron and the popcorn illustration all match. In the reference the language dropdown has a separate small filled caret with space before it; the implementation uses a tight outline chevron. The reference popcorn is larger and sits outside the card.",
+      "fix": "Replace the dropdown chevron with a small filled down-triangle spaced about 16px after 'English'. Enlarge the popcorn to about 80px and position it outside the banner."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The H1, the prompt line, the email placeholder, 'Get Started', 'Sign In', 'English' and 'Learn More' all match. The subline differs: the reference has 'Starts at $8.99. Cancel anytime.' and the implementation has 'Watch on any device. Every profile keeps its own list.' The banner copy differs too: the reference has 'The Netflix you love for just $8.99.' / 'Get our most affordable, ad-supported plan.' and the implementation has '60 real titles…' / 'Create an account to browse…'.",
+      "fix": "Set the subline to a short price-and-cancel line ('Starts at $8.99. Cancel anytime.'). Set the banner to a short plan pitch: a title plus a one-line ad-supported plan description."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "Promo banner: the reference has the popcorn illustration outside the card on the left and the card starting at about x=275. The implementation puts the popcorn inside the card, which spans the full 163–1757px width.",
+    "Hero subline: the reference reads 'Starts at $8.99. Cancel anytime.' The implementation reads 'Watch on any device. Every profile keeps its own list.'",
+    "Hero headline: the implementation is larger and wraps 'Unlimited movies, / TV shows, and more'. The reference wraps 'Unlimited movies, TV / shows, and more', and the whole hero block sits about 50px lower.",
+    "Curved divider band: the reference shows a shallow thin glowing arc over a navy-to-black gradient. The implementation's arc is deeper and its band is purple/magenta.",
+    "Background mosaic: the reference uses mostly landscape and wide tiles. The implementation uses mostly portrait posters.",
+    "Banner copy: the reference has a price/plan pitch ('The Netflix you love for just $8.99.'). The implementation has a catalog pitch ('60 real titles, ready to stream.').",
+    "Language dropdown: the reference has a spaced filled caret. The implementation has a tight outline chevron."
+  ],
+  "fixes": [
+    "Move the popcorn icon outside the promo card, about 80px wide at x≈180, and start the card at x≈275.",
+    "Change the hero subline to 'Starts at $8.99. Cancel anytime.' and the banner text to a plan pitch plus an 'ad-supported plan' line.",
+    "Shrink the H1 to about 56px so it breaks after 'TV', and shift the hero stack down about 50px.",
+    "Restyle the curved divider: a shallower arc, a thin red-pink glow line, and a navy-to-black gradient below.",
+    "Use landscape-heavy tiles in the background mosaic.",
+    "Replace the dropdown chevron with a small filled caret, spaced from the label."
+  ],
+  "summary": "A close recreation of the Netflix logged-out landing page. The remaining gaps are the popcorn and banner positioning, the subline and banner copy, the H1 size and wrap, and the colour of the curve band."
+}
+```

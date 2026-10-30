@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches: a full-bleed tilted poster collage hero, the NETFLIX wordmark top-left, the language selector and Sign In top-right, a centred headline, subline, prompt and inline email+CTA row, a curved divider, then the promo banner on black. Two differences. First, the promo card in the reference starts at about x=275, with the popcorn illustration standing outside the card to its left. The implementation runs the card from about x=168 to 1752 and puts the popcorn inside it, at its left edge. Second, the hero block sits about 15px higher.",
+      "fix": "Move the popcorn icon outside the promo card, to its left (about x=180–260). Start the card at about x=275 and end it at about x=1755. Keep the title and subtitle left-aligned inside the card with about 36px left padding."
+    },
+    "components": {
+      "score": 0.93,
+      "notes": "Every component is present: logo, language dropdown with translate icon, Sign In button, headline, price subline, membership prompt, email input, Get Started button with chevron, curved accent divider, promo banner with popcorn icon, title, subtitle and Learn More button. The implementation adds nothing extra. The only differences are in how the components look: the dropdown caret and the placement of the popcorn icon.",
+      "fix": "Change the language dropdown caret from a chevron to a small filled down-triangle. Move the popcorn illustration outside the banner card.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "The overall character matches: cinematic, a dark overlaid collage, square or slightly rounded controls. The collage differs, though. The reference mixes landscape and portrait tiles at a shallower tilt under a heavier dark vignette, so the posters read as muted texture. The implementation uses only portrait tiles at a steeper angle, with a lighter overlay, so the posters are much more vivid and compete with the headline. The reference's curved divider is a thin glowing arc that runs edge to edge. The implementation's arc only shows red in the centre and fades out toward the sides.",
+      "fix": "Darken the hero overlay to roughly rgba(0,0,0,0.6–0.7), with a radial vignette that is darkest behind the centred text. Mix landscape tiles into the collage and reduce the rotation. Draw the divider as a full-width arc with a pink-red stroke that stays visible to both screen edges."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The palette matches: black base, Netflix red (#E50914) on the CTA and Sign In, white text, a navy-to-purple gradient banner card and a grey Learn More button. The hero, however, is noticeably brighter and more saturated in the implementation because the overlay is lighter. The reference's red buttons read slightly warmer and more orange-red. The divider glow covers less area.",
+      "fix": "Deepen the hero overlay so the poster artwork drops to low luminance. Extend the red/pink arc glow across the full width, with the blue gradient beneath it."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "The hierarchy matches: a very bold centred two-line headline at about 64px, a bold subline at about 22px, a regular prompt at about 18px, a bold CTA at about 26px, and a bold-plus-regular pair in the banner. The implementation uses a generic geometric sans (Inter-like) instead of Netflix Sans, so letterforms are slightly wider and the prompt line is wider than in the reference.",
+      "fix": "Use Netflix Sans, or a closer substitute such as 'Helvetica Neue' bold, with slightly tighter letter-spacing on the headline. Keep the sizes as they are."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The wordmark, translate icon and CTA chevron all match. The dropdown caret is an outline chevron where the reference has a filled triangle. The popcorn illustration in the reference is a 3D, glossy one sitting outside the card. The implementation's popcorn is flatter and sits inside the card. The poster tiles use the same rounded-corner cover crop, but none are landscape.",
+      "fix": "Replace the caret with a filled ▾. Use a glossy, shaded popcorn illustration placed outside the banner card. Add landscape (16:9) tiles to the collage."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All copy is identical: 'English', 'Sign In', 'Unlimited movies, TV shows, and more', 'Starts at $8.99. Cancel anytime.', the membership prompt, the 'Email address' placeholder, 'Get Started', the banner title and subtitle, and 'Learn More'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero background: the implementation's overlay is much lighter, so the posters are vivid and compete with the headline. The reference is heavily darkened and vignetted.",
+    "hero collage: the implementation uses only portrait tiles at a steep tilt. The reference mixes landscape and portrait tiles at a shallower angle.",
+    "promo banner: the popcorn icon sits inside the card's left edge, and the card starts at about x=168. In the reference the popcorn stands outside the card to the left, and the card starts at about x=275.",
+    "curved divider: the red arc shows only in the centre and fades at the sides. The reference's pink-red arc runs visibly edge to edge.",
+    "header language dropdown: the implementation uses an outline chevron where the reference has a filled triangle.",
+    "typography: a generic sans replaces Netflix Sans, making the headline and prompt slightly wider."
+  ],
+  "fixes": [
+    "Increase the hero overlay darkness (about 0.65 black plus a radial vignette) so the posters become muted texture.",
+    "Rebuild the collage with mixed landscape and portrait tiles at a shallower rotation.",
+    "Move the popcorn illustration outside the banner card, to its left, and start the card at about x=275.",
+    "Make the curved divider a full-width pink-red arc that stays visible to both edges.",
+    "Swap the dropdown chevron for a filled ▾ caret.",
+    "Use the Netflix Sans font, or a close substitute, for all text."
+  ],
+  "summary": "A near-faithful Netflix landing clone with identical structure, components and copy. The main gaps are a too-bright, all-portrait poster collage, the popcorn sitting inside the promo card instead of outside it, and a weaker divider arc."
+}
+```

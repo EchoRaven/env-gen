@@ -1,0 +1,66 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "Chrome matches: the top nav has the logo, 7 links with a pill-highlighted active item, and search, bell, Kids and avatar on the right. A page title on the left with 'Select Your Preferences' and two selects on the right. The 6-column grid of 16:9 tiles has the same gutters and roughly the same row spacing. Differences: the reference grid starts lower (about y=305 vs 226 in the implementation) because the reference leaves more space under the header. The header row's vertical rhythm also differs slightly; the selects sit about 5px lower and further left.",
+      "fix": "Increase the space between the header row and the first grid row to about 160px so the grid starts near y≈305. Align the preference selects' right edge with the grid's right edge (x≈1840)."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Nav, title, preference label, both selects, title tiles, TOP 10 badges and 'Recently Added'/'New Season' pills all exist. The reference captures an interactive state that the implementation does not show. Both dropdown menus are open: language mode (Original Language/Dubbing/Subtitles) and a long language list (Arabic…Vietnamese). An expanded hover preview card is shown over the grid, with a video still, title logo, mute button, play/add/like/expand circular buttons, a maturity rating box, a duration and HD badge, and genre tags separated by dots. The reference also has a 'Live Now' pill with a dot.",
+      "missing": [
+        "open Original Language/Dubbing/Subtitles dropdown menu",
+        "open language list dropdown (Arabic … Vietnamese)",
+        "hover/expanded preview card with media still and title logo",
+        "mute toggle button on preview",
+        "play / add-to-list (check) / rate (thumb) / more-info (chevron) circular buttons",
+        "maturity rating box + duration + HD badge row",
+        "genre tag row with dot separators"
+      ],
+      "fix": "Implement the select menus as custom dark dropdowns: a #141414 panel, thin border, a 14px list and no highlight. Implement the hover-expand preview card: about 1.5x tile width, 16:9 media on top with a title logo and a mute circle bottom-right, then a row of circular play (filled white), check, thumb and right-aligned chevron buttons. Below that, a 'TV-MA' outlined box, duration and an 'HD' outlined badge, then genre words separated by gray dots."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark Netflix aesthetic. Tiles have small radii, no shadows and tight gutters. The select boxes are square with thin borders. The pill-shaped active nav item matches. In the implementation every tile carries a heavy condensed text overlay with a shadow, giving it a uniform poster-text look. The reference uses each title's own logo artwork.",
+      "fix": "Render the title treatment as artwork/logo images, or use varied lockups placed bottom-left at a smaller size. Don't use one uniform heavy shadowed Bebas overlay on every tile."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same #141414 dark base, a white select border, red badges and the Netflix red wordmark. A gray pill marks the active nav item. The red TOP 10 and red pill badges match. The reference's dropdown panels are black with a subtle border and can't be compared because they are absent.",
+      "fix": "Make the open dropdown panels rgba(0,0,0,0.9) with a 1px rgba(255,255,255,0.15) border. Give the preview card a #181818 surface."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Sans UI font and nav weights match. The implementation's page title is larger (about 44px vs about 36px in the reference). Its select text is roughly similar. The tile overlay titles are an all-caps condensed font applied uniformly, which differs from the reference's per-title logo typography.",
+      "fix": "Reduce the 'Browse by Languages' heading to about 36px regular weight. Set the select text to about 18px with slight letter-spacing. Drop or soften the uniform condensed all-caps tile titles."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Search, bell, Kids tile avatar, smiley profile avatar with caret, and select carets all match in line style. The TOP 10 badges match. Missing from the implementation: the preview card's circular outline icons (play, check, thumb, chevron, mute) and the 'Live Now' dot pill.",
+      "fix": "Add circular outlined icon buttons, about 52px with a 2px gray border and a filled white play button, inside the preview card."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "Nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English' and the badge texts ('Recently Added', 'New Episodes', TOP 10) match the reference conventions. Menu option copy (Dubbing, Subtitles, the language names) is absent because the menus are closed.",
+      "fix": "Include the dropdown options 'Original Language', 'Dubbing' and 'Subtitles', plus the alphabetical language list from Arabic to Vietnamese."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "right side under the header: the reference shows both preference dropdowns open, with mode options and a long language list overlaying the grid's right column. In the implementation both selects are closed.",
+    "center of the grid: the reference shows an expanded hover preview card with a media still, title logo, mute button, play/check/thumb/chevron circle buttons, a TV-MA/1h 34m/HD metadata row and dot-separated genre tags. The implementation has no preview card.",
+    "grid vertical position: the reference's first tile row starts around y≈305. In the implementation it starts around y≈226, so the gap under the header is tighter.",
+    "tile title treatment: the implementation overlays the same heavy condensed all-caps shadowed text on every tile. The reference uses each title's own logo artwork in varied lockups.",
+    "page heading: the implementation's 'Browse by Languages' is noticeably larger than the reference's.",
+    "the preference selects are offset slightly left and lower compared with the reference, which aligns them with the grid's right edge."
+  ],
+  "fixes": [
+    "Build custom dropdown menus for both selects: a dark panel directly under each box, with options listed at about 15px and 29px row height. Render the reference's open state (mode menu: Original Language/Dubbing/Subtitles; language menu: Arabic…Vietnamese).",
+    "Add a hover-expand preview card over a tile: scale to about 1.5x, a #181818 surface, 16:9 media with a title logo and a mute circle, and a circular play (filled), check, thumb and chevron row. Below it, an outlined maturity box, duration and HD badge, then genre tags separated by dots.",
+    "Push the grid down so the first row starts around y≈305, and right-align the selects to the grid edge.",
+    "Replace the uniform condensed text overlay on tiles with title logo artwork, or a subtler per-title lockup.",
+    "Shrink the page heading to about 36px."
+  ],
+  "summary": "Static chrome, header controls and the title grid match the Netflix design closely. However, the reference's open language dropdowns and expanded hover preview card are absent, and the grid sits higher with a heavier uniform title-text treatment."
+}

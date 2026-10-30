@@ -1,0 +1,30 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.72, "notes": "The top nav matches: wordmark on the left, 7 links with Games in a pill, and utilities on the right. The full-bleed hero takes up about 70% of the viewport, and the dark content rows sit below it. The hero lockup sits higher (title starts around y=355 vs y=515), so the button row is at y=633 instead of y=758. The Party Games row renders no tiles, so a 'Family Movie & Show Night' row the reference doesn't show moves up into view. The reference's mute/maturity controls at the hero's bottom-right are absent.", "fix": "Anchor the hero text block to the lower-left so the metadata sits at about y=670 and the buttons at about y=758. Render Party Games tiles directly under the hero as the first row."},
+    "components": {"score": 0.55, "notes": "Present: nav with 7 items, active pill, search, bell, Kids profile chip, avatar with caret, hero title, metadata row, primary white and secondary grey buttons, row heading, page indicator dashes. Missing: the mute toggle and the 'ALL' maturity tag on the hero's right edge, the info icon in the secondary button, and the Party Games tile carousel (replaced by the text 'No games available'). Added: a paragraph of description text in the hero.", "missing": ["hero mute/volume circular button", "maturity rating tag ('ALL') with left white bar at hero bottom-right", "info (ⓘ) icon in secondary hero button", "Party Games landscape tile carousel"], "fix": "Add a circular outlined mute button and a rating badge with a left border flush to the hero's right edge. Put an ⓘ icon in the secondary button. Render the Party Games row as 16:9 tiles."},
+    "style": {"score": 0.8, "notes": "Same flat Netflix look: full-bleed artwork, bottom gradient into the #141414 page, slightly rounded buttons, and rounded tiles. The family row adds TOP 10 badges, which the reference row doesn't have.", "fix": "Keep the treatment. Drop the extra description paragraph so the hero stays as sparse as the reference."},
+    "color": {"score": 0.88, "notes": "Dark scheme, red wordmark, white primary button, translucent grey secondary button, and a grey active nav pill all match.", "fix": "Make the secondary button translucent dark grey (rgba(109,109,110,0.7)) to match the reference."},
+    "typography": {"score": 0.75, "notes": "The nav and row headings use a matching sans at similar sizes and weights. The hero title is set as huge condensed text, where the reference uses a title-artwork logo lockup. Button text and metadata sizes are close.", "fix": "Render the hero title as a title-art image lockup (game logo plus edition badge) sized about 200x120, not plain condensed text."},
+    "iconography": {"score": 0.6, "notes": "Search, bell, Kids tile and smiley avatar match. The reference's mute icon and info icon are missing. Game tiles are missing (the area is empty), and the visible tiles are 16:9 with small rounding, like the reference.", "fix": "Add the info-circle icon to the More Info button and a mute icon in an outlined circle. Fill Party Games with game key art."},
+    "copy": {"score": 0.5, "notes": "Nav labels and 'Party Games' match. The buttons read 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' / 'More Info'. The metadata reads 'Game • 0 available' instead of 'Game • Genre • Players • Minutes'. Empty-state text is shown.", "fix": "Label the buttons 'Play Game' and 'More Info'. Use the metadata format 'Game • {genre} • {players} • {duration}'."}
+  },
+  "similarity": 0.6,
+  "empty_state": true,
+  "deviations": [
+    "Party Games row: the reference shows a carousel of large 16:9 game tiles; the implementation shows the text '— No games available' with no tiles",
+    "Hero CTAs: the reference has 'Play Game' (white) and 'More Info' with an ⓘ icon; the implementation has 'Browse Family Titles' / 'Back to Home' with no icon",
+    "Hero bottom-right: the reference's circular mute button and 'ALL' maturity badge are missing",
+    "Hero title: the reference uses a game logo-art lockup with an edition badge; the implementation uses a large plain condensed 'GAMES' text title",
+    "Hero metadata: the reference has 4 dot-separated items (type, genre, players, duration); the implementation has 'Game • 0 available' plus an extra description paragraph",
+    "Hero text block sits about 120px higher than in the reference",
+    "Below the hero: a 'Family Movie & Show Night' row with TOP 10 badges appears; the reference shows only the Party Games row"
+  ],
+  "fixes": [
+    "Seed game data so the hero shows a featured game and Party Games renders a row of 16:9 rounded tiles",
+    "Hero: title-art image lockup, metadata 'Game • Genre • N Players • N+ Minutes', buttons 'Play Game' (white) and 'ⓘ More Info' (translucent grey); remove the description paragraph",
+    "Move the hero text block down so the buttons sit about 30px above the hero's bottom fade",
+    "Add a circular outlined mute button and an 'ALL' maturity badge with a left white bar, right-aligned at the button row's height",
+    "Make Party Games the first row directly under the hero"
+  ],
+  "summary": "The Netflix nav, active Games pill, and hero/row shell match. The game data is missing, so the reference's hero lockup, its Play Game / More Info buttons, its mute and rating controls, and the Party Games tile carousel don't render."
+}

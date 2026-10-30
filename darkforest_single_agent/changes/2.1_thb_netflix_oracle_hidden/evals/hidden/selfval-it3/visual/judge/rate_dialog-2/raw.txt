@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Matches the reference: a full-screen blurred, dimmed backdrop of the title-detail page, a centred dialog about 960px wide with a red top rule, the close X at top right, then the centred title, subtitle, three evenly spaced rating columns and a small centred 'Got it!' button. Differences: the reference has a thin hairline divider across the dialog width at about y=802, below the button, and the implementation doesn't. The implementation also adds a caption row between the columns and the button, which pushes the button about 15px lower.",
+      "fix": "Add a 1px hairline divider across the full dialog width (480–1440px) about 45px below the 'Got it!' button. Remove the extra caption row so the button sits about 80px below the column labels."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "All the reference components are present: red progress/accent rule, close X, title, subtitle, thumbs-down, thumbs-up and double-thumbs-up columns with their captions, and the 'Got it!' button. The implementation adds a 'The East Palace is not rated yet.' status caption that the reference doesn't have. It also shows a highlighted grey rounded box behind the thumbs-down column, a selected or hover state the reference doesn't show; all three columns are unhighlighted there. The bottom hairline divider is missing.",
+      "fix": "Remove the 'not rated yet' caption. Render all three rating columns with no background highlight in their resting state. Add the bottom hairline divider.",
+      "missing": ["bottom hairline divider under the Got it! button"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, minimal overlay treatment, with no card surface: content floats over a darkened, blurred page. The small dark 'Got it!' button with slight rounding matches. The grey rounded tile behind the thumbs-down adds a surface treatment the reference doesn't have. The close X stroke is thinner and lighter than the reference's heavier X.",
+      "fix": "Drop the tile background on the rating options. Thicken the close X stroke to about 3px at about 32px size."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Dark scrim, white text, light-grey subtitle, Netflix-red top rule and a dark-grey button with white label all match. The backdrop is very slightly darker and more blurred than the reference's. The extra grey highlight tile adds a surface tone the reference doesn't have.",
+      "fix": "Remove the grey highlight tile. Optionally lighten the scrim slightly (about 70% black) so the backdrop artwork shows through as it does in the reference."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The hierarchy matches: a large bold centred title, a regular grey subtitle, small white two-line column captions and a bold button label. The font is an Inter-like grotesque rather than the reference's Netflix Sans. The title is slightly wider and heavier, and the column captions are larger and wrap differently: 'We won't suggest this / to you again' instead of 'We won't suggest / this to you again', and 'We know you're a true / fan!' instead of 'We know you're a / true fan!'.",
+      "fix": "Use Netflix Sans or a closer geometric sans. Narrow the caption max-width to about 150px at about 16px so the captions break as 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!'."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Filled white thumbs-down, thumbs-up and double-thumbs-up glyphs at a similar size and position. The double-thumbs glyph has slightly different proportions. The close X is a thinner line than the reference's bold X.",
+      "fix": "Use a bolder close X of about the same 30px size. Match the double-thumb glyph so the second thumb overlaps from the upper right as it does in the reference."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "The title, subtitle, three captions and 'Got it!' match word for word. The extra 'The East Palace is not rated yet.' line isn't in the reference.",
+      "fix": "Remove the 'not rated yet' status line."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "rating row: the implementation shows a grey rounded highlight tile behind the thumbs-down option; in the reference all three options are plain with no background",
+    "below the rating row: the implementation adds a 'The East Palace is not rated yet.' caption that the reference doesn't have, which pushes 'Got it!' lower",
+    "dialog bottom: the reference has a thin full-width hairline divider below the 'Got it!' button; the implementation has none",
+    "rating captions: the implementation's text is larger and wraps differently ('We won't suggest this / to you again', 'We know you're a true / fan!')",
+    "close X at top right: the implementation's stroke is thin and light; the reference's is bolder",
+    "font: the implementation uses an Inter-like sans instead of Netflix Sans, and the title renders slightly wider"
+  ],
+  "fixes": [
+    "Remove the background or highlight tile from the rating options in their default state",
+    "Delete the 'X is not rated yet.' caption and put 'Got it!' about 80px below the captions",
+    "Add a 1px rgba(255,255,255,0.2) divider across the dialog width about 45px below the button",
+    "Constrain the caption width to about 150px at 16px so the line breaks match the reference",
+    "Thicken the close X stroke to about 3px",
+    "Switch to Netflix Sans or a close equivalent for the title, subtitle and captions"
+  ],
+  "summary": "A near-faithful rating modal with the same structure, copy and red-rule treatment, let down by an extra 'not rated' caption, a highlighted thumbs-down tile, a missing bottom divider and minor font and wrap differences."
+}
+```

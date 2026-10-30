@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Matches: a dark top nav bar spans the full width, with the logo on the left, nav links next to it and utilities on the right. Below it, content sits in left-aligned stacked rows with a ~67px gutter. Each row is a horizontal carousel of 16:9 tiles, about 5 per row plus a peek tile cut off at the right edge, with a page indicator on the right above the row. Differs: the reference is scrolled into a section made only of rows, starting right under the nav. The implementation shows the bottom of a hero billboard (Play / More Info) above the first row. It also has an expanded hover preview card over the second row and a 'Top 10' row with big numerals, neither of which is in the reference. The vertical spacing between rows is a little looser (~303px vs ~286px).",
+      "fix": "For this state, render the browse page scrolled past the hero so the first carousel row header sits ~30px below the nav. Keep the row pitch at ~286px (header + 197px tile + gap). Don't show a hover card when nothing is hovered."
+    },
+    "components": {
+      "score": 0.7,
+      "missing": [
+        "Section-header badge chip (outlined pill with spaced caps 'BETA' next to the row title)"
+      ],
+      "notes": "Present and correct: nav with 7 items and a pill-highlighted active 'Home', search icon, bell, Kids avatar + label, profile avatar + caret dropdown, row titles, row page indicators, landscape tiles with centred red bottom badges ('Recently Added', 'New Episode(s)'), the TOP 10 corner ribbon, and the right-edge peek tile. The reference also shows a white secondary badge next to the red one ('Watch Now'), which the implementation never shows. Invented/extra compared to the reference: the hero Play / More Info buttons, the expanded hover preview card (play/add/like/expand buttons, rating, seasons, HD, genres), and the numbered Top-10 row.",
+      "fix": "Support the paired badge (red 'New Episode' + white 'Watch Now') at the tile's bottom centre. Support an outlined pill tag next to a row title. Remove the hero remnant and the open hover card from this default view."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, dark, media-forward style. Tiles have slightly rounded corners (~6px), no borders, and the gaps between tiles are tight (~8px). Badges are small and square-ish. The implementation's hover card adds an elevated shadowed layer the reference doesn't have.",
+      "fix": "Remove the elevated hover-card layer from the static state and keep all tiles flat with the ~6px radius and ~8–9px gaps."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Matches: near-black page (#141414) with a black nav, white text, Netflix-red wordmark/badges/TOP 10 ribbon, and grey indicator bars. The only difference is the warm hero imagery at the top of the implementation, which the reference doesn't show at this scroll position.",
+      "fix": "No palette change needed. Removing the hero remnant gets rid of the extra warm band at the top."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Matches: sans-serif nav labels at ~17px, row headers in white at ~26px medium weight, and small bold badge text. In the implementation, titles on tiles are drawn as uniform bold condensed caps text in the lower left. The reference shows each title as its own artwork logo lockup with varied placement. The row header in the implementation is a touch larger and lighter.",
+      "fix": "Set row titles to ~24–26px semibold. Use title-logo artwork on tiles where available instead of a uniform condensed text overlay."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Matches: outline search and bell icons, the Kids gradient square and smiley profile avatar, the red NETFLIX wordmark, the TOP 10 ribbon, and the 16:9 cover-crop tiles. The tile title treatment is a generated text overlay, not baked-in artwork lockups.",
+      "fix": "Use landscape artwork that includes the title treatment, or render the title as a logo image positioned per title, not a fixed bottom-left text label."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "Nav copy is identical: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. Badge wording differs slightly: 'New Episodes' vs the reference's 'New Episode', and 'Watch Now' is missing. Row names differ, but that counts as content.",
+      "fix": "Use the singular 'New Episode' badge label and add the 'Watch Now' companion badge."
+    }
+  },
+  "similarity": 0.76,
+  "empty_state": false,
+  "deviations": [
+    "Middle of screen: the implementation shows an expanded hover preview card (larger artwork, play/+/like/expand buttons, TV-14 / 2 Seasons / HD, genre list) over the second row. The reference has no hover card.",
+    "Top of content area: the implementation shows the bottom of a hero billboard with 'Play' and 'More Info' buttons under the nav. In the reference, a carousel row header sits directly under the nav.",
+    "Bottom row: the implementation renders a 'Top 10' row with giant outlined numerals and portrait posters. The reference shows only uniform landscape-tile rows.",
+    "Row header: the reference has an outlined pill 'BETA' tag next to a row title. The implementation has no such tag.",
+    "Tile badges: the reference pairs a red badge with a white 'Watch Now' badge. The implementation only ever shows a single red badge.",
+    "Tile titles: the implementation overlays a uniform bold condensed text title in the lower left of each tile. The reference uses each title's own artwork logo lockup.",
+    "Row spacing: the implementation's vertical spacing between rows is slightly larger than the reference's."
+  ],
+  "fixes": [
+    "Don't render the hover preview card unless a tile is actually hovered (no open card by default).",
+    "Match the scrolled state: start the view with a row header (~30px below the nav) and no hero visible.",
+    "Make every row a standard 16:9 landscape carousel, with no numbered portrait Top-10 row in this state.",
+    "Add support for an outlined pill tag (spaced caps, e.g. 'BETA') next to a row title.",
+    "Add the paired badge style: red 'New Episode' + white 'Watch Now', centred at the tile bottom.",
+    "Replace the uniform text title overlay with per-title logo artwork, and tighten the row pitch to ~286px."
+  ],
+  "summary": "Same Netflix nav, dark palette and carousel-row skeleton. It loses points for the extra hero remnant, an open hover card, a numbered Top-10 row, and missing badge/tag variants."
+}
+```

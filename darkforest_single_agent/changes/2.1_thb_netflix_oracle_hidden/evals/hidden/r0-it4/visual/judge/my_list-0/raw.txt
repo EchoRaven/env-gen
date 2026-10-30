@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The top nav matches the reference: logo on the left, 7 text links, a pill highlight on My List, and search, bell, Kids and avatar on the right. The 'My List' heading sits at the left gutter in both, and the tiles form a left-aligned 16:9 grid in a single row. Differences: the reference shows a hover-expanded preview card over the third tile, which is wider and taller than the tiles and spills past the row. The implementation shows only static tiles. Its row also starts higher (top edge ~225px vs ~303px in the reference), so there is less space between the heading and the row.",
+      "fix": "Add a hover/focus state to the tile. Scale it to about 1.5× (~440px wide), anchored above the row, and add an info panel under the artwork. Move the grid's top offset down to ~300px so the expanded card has room above the row."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The nav items, search, notification bell, Kids profile switch, avatar with caret, page title and title-art tiles with a red badge are all present. Everything in the reference's expanded preview card is missing: the in-card video preview with an N logo and title lockup, the mute toggle, the round white play button, the grouped rating pill (not for me / I like this / love this) with an 'I like this' tooltip, the round outlined 'more info' chevron button, the maturity-rating box, the runtime, the HD badge, and the dot-separated genre tags.",
+      "fix": "Build the hover preview card. Put the artwork or trailer on top with an N logo at top-left, the title lockup at bottom-left and a round mute button at bottom-right. Below it, add a row with a white circular play button, a dark pill holding three thumb icons (with a tooltip on hover) and a right-aligned outlined circular chevron button. Under that row, add the metadata line: rating box, runtime and HD badge. End with a line of genre tags separated by grey dots.",
+      "missing": [
+        "hover-expanded preview card",
+        "circular white play button",
+        "rating pill (thumbs down / thumbs up / double thumbs up)",
+        "'I like this' tooltip",
+        "outlined circular expand/more-info chevron button",
+        "mute toggle on preview",
+        "N logo badge on preview artwork",
+        "maturity rating box (R)",
+        "runtime + HD badge metadata row",
+        "genre tags row with dot separators"
+      ]
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both use the same flat dark Netflix language: slightly rounded tiles, tight gutters and a pill nav highlight. The reference's elevated card (#181818 surface, soft shadow, rounded corners) and its circular button treatments are absent.",
+      "fix": "Give the hover card a #181818 background, a 4–6px radius and a deep soft shadow (0 3px 10px rgba(0,0,0,.75)). Make the action buttons fully circular, using 2px grey outlines for the secondary ones."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The #141414 base, white text, Netflix red logo and badges, grey nav pill, Kids gradient tile and blue avatar all match. The only missing piece is the raised card surface tone of the hover card.",
+      "fix": "Use #181818/#232323 for the hover card surface and the rating pill. Use a white fill for the play button and light-grey outlines for the round icon buttons."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif nav with semibold on the active item. The large regular-weight 'My List' heading and the condensed title-art lockups match. The metadata typography from the hover card (16px runtime, small boxed HD/R labels, genre tags) is missing.",
+      "fix": "In the hover card, set the runtime and genres at ~16–17px in white or light grey, the R badge in a 1px-bordered box and HD in a small bordered caps label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The outline search and bell icons, Kids icon, avatar and dropdown caret match, and the tiles use 16:9 cover crops with small radii. The outline thumb icons, play triangle, chevron-down and mute speaker icon from the hover card are missing.",
+      "fix": "Add outline-style icons for thumbs down, thumbs up, double thumbs up, chevron-down and muted speaker. Add a filled play triangle, keeping the icons ~24px inside 44–48px circles."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels ('Home', 'Shows', 'Movies', 'Games', 'New & Popular', 'My List', 'Browse by Languages', 'Kids') and the 'My List' heading match exactly. The 'I like this' tooltip and the genre and metadata labels are missing.",
+      "fix": "Add the tooltip copy 'Not for me' / 'I like this' / 'Love this!' to the rating buttons."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "third tile position: the reference shows a hover-expanded preview card (artwork with title lockup, mute button, play button, rating pill, chevron, metadata, genres). The implementation shows only static tiles with no expanded state.",
+    "preview card action row: the reference has a white circular play button, a dark rating pill with three thumb icons and an 'I like this' tooltip, and a right-aligned outlined chevron button. None of these exist in the implementation.",
+    "preview card info: the reference shows a boxed 'R' rating, '1h 49m', an 'HD' badge and dot-separated genre tags. The implementation has none.",
+    "row vertical position: the reference tile row starts ~303px from the top, leaving room for the expanded card. The implementation's row starts at ~225px."
+  ],
+  "fixes": [
+    "Add a hover/focus expanded card on My List tiles. Scale it to about 1.5× and give it a #181818 surface, rounded corners and a deep shadow.",
+    "In the card's top artwork, add an N logo at top-left, the title lockup at bottom-left and a circular muted-speaker button at bottom-right.",
+    "Add the action row: a white circular play button, a dark pill with thumbs down / thumbs up / double thumbs up (tooltip 'I like this' on hover) and a right-aligned outlined circular chevron-down button.",
+    "Add the metadata row (boxed maturity rating, runtime, HD badge) and a genre tag line separated by grey dots.",
+    "Move the tile grid down to ~300px from the top so the expanded card fits above the row, matching the reference."
+  ],
+  "summary": "The nav chrome, heading and tile styling match closely, but the reference's hover-expanded preview card with play, rating and more-info controls and its metadata is missing entirely."
+}
+```

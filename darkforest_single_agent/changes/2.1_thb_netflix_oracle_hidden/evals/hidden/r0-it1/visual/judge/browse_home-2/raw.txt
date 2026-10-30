@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Structure matches: a horizontal top nav with the logo, the pill-highlighted Home tab and the nav links on the left, and the search, bell, Kids and avatar controls on the right. Below it is a large rounded hero card inset at the same ~67px gutters and nearly the same height (~97–913px), with the title lockup, rank/live line, metadata, CTAs and a sound button at top-right. A titled horizontal carousel row with a page indicator on the right follows. Card widths and the peek of the next card match. Gaps between row cards are slightly tighter than in the reference (~6px vs ~10px).",
+      "fix": "Increase the gap between row tiles to ~10px. Keep everything else as is."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "The full nav inventory is present (7 links, search, bell, Kids profile, avatar with caret), and so are the hero sound toggle, the badge line, the metadata row with bullet separators, the Play and More Info buttons, the row heading, the segmented page indicator and the carousel tiles. The reference hero's bottom-right 'New Episode' pill (megaphone icon + label) is absent. The implementation adds Top 10 corner badges on every row tile; the reference shows one only on a single tile, which is data-driven.",
+      "missing": ["Hero bottom-right status pill ('New Episode' with icon)"],
+      "fix": "Render a status pill (icon + 'New Episode' label, white semibold ~14px) at the bottom-right of the hero, level with the CTA row, ~50px from the right edge."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The same flat, cinematic, dark design language: rounded hero card (~16px radius), pill CTAs, a pill active-nav state and a circular translucent sound button. The reference hero card has a soft drop shadow lifting it off a lighter warm-gray page, which the implementation lacks. Its row tiles also appear slightly more rounded.",
+      "fix": "Add a soft diffuse shadow to the hero card (e.g. 0 8px 30px rgba(0,0,0,.5)) and give row tiles an ~8px radius."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use a dark scheme with Netflix red accents, a white Play button and a translucent gray More Info button. The reference header and page background use a warm gray-brown gradient (≈#4a4642 at the top, fading to ≈#1c1c1c), which makes the header lighter than the hero. The implementation's header and page are flat near-black (#141414), so it loses that warm, lifted tone.",
+      "fix": "Give the page/body a vertical gradient from warm gray (~#4b4744) behind the nav to ~#1a1a1a below the hero, and keep the nav transparent over it."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "The same sans family, nav sizes and weights, bold active tab, semibold badge line (~24px), regular metadata row and semibold CTA labels. The reference row heading 'TV Action & Adventure' is semibold and somewhat heavier than the implementation's lighter-weight row title. The hero title in the implementation is typeset condensed text rather than a logo-art lockup, but it sits at a similar position and scale.",
+      "fix": "Set the row heading to font-weight 600, ~28px. Where title art exists, render the hero title as an image logo instead of text."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Line icons for search and bell match, as do the rounded-square Kids and avatar tiles, the play triangle in the CTA, the circular sound button, the 16:9 cover-cropped row tiles and the red Top 10 badges. The 'New Episode' megaphone glyph is missing. The sound icon shows a muted state rather than the reference's unmuted state, which is minor.",
+      "fix": "Add the megaphone/notification glyph inside the hero status pill. Default the sound icon to the speaker-with-waves glyph shown in the reference."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, 'Kids', 'Play' and 'More Info' are identical. The metadata format 'Genre • Year • Count • Rating' matches. The row title and badge text differ as content. 'New Episode' is absent.",
+      "fix": "Add the 'New Episode' label in the hero status pill."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-right: the reference shows a 'New Episode' pill with a megaphone icon level with the CTAs; the implementation has nothing there",
+    "page/header background: the reference uses a warm gray-brown gradient behind the nav that fades to dark; the implementation is flat near-black",
+    "hero card: the reference has a soft drop shadow separating it from the page; the implementation's card has no visible elevation",
+    "row heading: the reference row title is semibold and heavier; the implementation's 'Trending Now' is lighter weight",
+    "carousel tiles: the gaps between tiles are tighter in the implementation (~6px) than in the reference (~10px)",
+    "hero title: the implementation uses a typeset text title where the reference uses a logo-art lockup (similar position and scale)"
+  ],
+  "fixes": [
+    "Add a bottom-right hero status pill: megaphone icon + 'New Episode', white semibold ~14px, aligned with the Play/More Info row and ~50px from the right edge",
+    "Replace the flat #141414 page/nav background with a vertical gradient from warm gray (~#4b4744) at the top to ~#1a1a1a below the hero",
+    "Add a soft diffuse shadow to the hero card (0 8px 30px rgba(0,0,0,.5))",
+    "Set the row section heading to font-weight 600 (~28px)",
+    "Widen the carousel tile gap to ~10px and use an ~8px tile corner radius",
+    "Render the hero title as logo artwork when available; default the sound toggle to the unmuted speaker icon"
+  ],
+  "summary": "Close replica of the Netflix browse home with matching nav, hero card, CTAs and carousel row; the gaps are the missing 'New Episode' hero pill, the flat black background instead of the warm gradient, no hero shadow, and a lighter row heading."
+}

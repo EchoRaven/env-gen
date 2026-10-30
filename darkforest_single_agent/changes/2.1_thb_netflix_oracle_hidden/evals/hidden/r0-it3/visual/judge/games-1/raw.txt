@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The top nav, the full-bleed hero with a bottom-left title block, and the row below on a dark base all match the reference. Differences: the hero title block sits higher (around y=360–650 instead of y=510–780). The Party Games row shows text where it should show a horizontal carousel of cards. An extra 'Family Movie & Show Night' row has been added to fill space. The right-hand hero cluster (mute button and rating badge) is missing.",
+      "fix": "Move the hero title block down so the buttons sit about 25px above the hero's bottom edge (around y=760). Show Party Games as a carousel of 16:9 cards (~355×200px) starting at y≈880. Remove the extra 'Family Movie & Show Night' row from the space above the fold."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "All 7 nav items, the active Games pill, search, the bell, the Kids profile, the avatar with its caret, the hero logo lockup, the metadata row and the two hero buttons are present. Missing: the circular mute button and the 'ALL' maturity-rating badge on the hero's right edge, the 'More Info' button with its ⓘ icon, and the Party Games game tiles. Added that the reference doesn't have: an explanatory paragraph in the hero, a 'Back to Home' button, a '— No games available' placeholder, and the Family row with TOP 10 badges.",
+      "missing": ["hero mute/volume circular button", "'ALL' maturity rating badge with left accent bar", "'More Info' button with info icon", "Party Games horizontal tile carousel", "row pagination indicator next to Party Games"],
+      "fix": "Add a 42px circular outlined mute icon and a flush-right 'ALL' badge (left white bar on a translucent grey background) at the hero's right edge. Change the hero buttons to 'Play Game' (white) and 'ⓘ More Info' (translucent grey). Fill Party Games with game cards and remove the description paragraph."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same Netflix look: a flat dark interface, a full-bleed hero with a bottom fade, slightly rounded buttons, a pill highlight for the active nav item, and rounded card thumbnails. The empty-state paragraph and placeholder text make the hero look wordier than the reference's minimal one.",
+      "fix": "Keep the hero to three pieces only: logo lockup, a one-line metadata row and the buttons. Remove any body copy."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Matching dark #141414 base, red NETFLIX wordmark, white primary button, translucent grey secondary button and white nav text. The hero bottom gradient is close. Nothing significant differs.",
+      "fix": "Give the secondary button the reference's translucent grey (rgba(109,109,110,0.7)) and add the translucent dark background to the rating badge."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "The nav font, the bold active item, the row heading size and the metadata size all match. The hero title is plain condensed text ('GAMES') where the reference uses a stylized title-art logo lockup. The paragraph text adds a type level the reference doesn't have.",
+      "fix": "Replace the text title with a title-artwork image (NETFLIX tag above the game logo) about 200px wide, and remove the paragraph style."
+    },
+    "iconography": {
+      "score": 0.55,
+      "notes": "Line-style search and bell icons, the Kids badge and the blue smiley avatar all match. Missing: the mute-speaker icon in its circle and the ⓘ icon on More Info. The game tiles in the row are absent, and the TOP 10 badges that do appear belong to an invented row.",
+      "fix": "Add an outline speaker-with-x icon inside a 1px white circle, and an outline ⓘ icon before 'More Info'. Show 16:9 rounded game key-art tiles in Party Games."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "Nav labels and the 'Party Games' heading match exactly. The hero buttons read 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' / 'More Info'. The metadata reads 'Game • 0 available' instead of the Game • genre • players • duration pattern. There is an extra empty-state sentence and a 'No games available' line.",
+      "fix": "Change the button labels to 'Play Game' and 'More Info'. Change the metadata to 'Game • {Genre} • {N} Players • {N}+ Minutes'. Remove the empty-state copy."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": true,
+  "deviations": [
+    "Party Games row: the implementation shows '— No games available' where the reference shows a horizontal carousel of 16:9 game key-art tiles",
+    "Hero: an empty-state treatment (plain 'GAMES' title, '0 available', explanatory paragraph) replaces the featured-game presentation (title-art lockup, genre/players/duration metadata)",
+    "Hero buttons: 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' and 'ⓘ More Info'",
+    "Hero right edge: the circular mute button and the 'ALL' maturity-rating badge from the reference are absent",
+    "Below the hero: an extra 'Family Movie & Show Night' row with TOP 10 badges that the reference doesn't have",
+    "Hero title block sits about 150px higher than the reference's bottom-anchored placement"
+  ],
+  "fixes": [
+    "Load game data so the hero features a game and Party Games renders a carousel of ~355×200 rounded game tiles with a pagination indicator on the right",
+    "Hero: use a title-artwork logo lockup with the small red NETFLIX tag above it, and a metadata row 'Game • Genre • 1-4 Players • 10+ Minutes'",
+    "Hero buttons: white 'Play Game' and translucent grey 'ⓘ More Info'; remove the paragraph and 'Back to Home'",
+    "Add a circular mute icon button and a flush-right 'ALL' rating badge with a white left bar, both aligned with the buttons near the hero's bottom",
+    "Anchor the hero text block at the bottom-left, with the buttons about 25px above the hero's bottom edge",
+    "Remove the 'Family Movie & Show Night' row from the view above the fold"
+  ],
+  "summary": "The nav chrome and dark Netflix styling match, but the games data never loaded, so the hero and Party Games row show empty placeholders. The mute button, rating badge and More Info button are also missing."
+}
+```

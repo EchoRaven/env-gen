@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top nav matches: logo on the left, 7 nav items with the active pill on 'Browse by Languages', and search, bell, Kids and avatar on the right. The page title is on the left with the preference selectors on the right, followed by a 6-column 16:9 tile grid with matching gutters. One difference: the reference starts the grid at ~y=304, while the implementation starts it at ~y=226. That leaves much less space under the header. The reference shows a transient state (both dropdowns open plus a hover preview card overlaying the grid), and the implementation does not reproduce it.",
+      "fix": "Increase the space between the header row and the first grid row to ~150px (grid top ≈ y=304). Render the open-dropdown and hover-preview states as overlays above the grid."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Nav, Kids profile, avatar caret, bell, search, title, 'Select Your Preferences' label, both select boxes and the tile grid with TOP 10 and red status badges are all present. Missing: the expanded mode dropdown list (Original Language / Dubbing / Subtitles), the expanded language list (Arabic … Vietnamese), and the enlarged hover preview card. That card has a video still, a red N logo, a title-artwork lockup and a mute button. Below the still it has a play / add (check) / thumbs-up / expand-chevron button row, a TV-MA, duration and HD metadata row, and mood tags separated by dots. The reference also shows a 'Live Now' badge variant with a red dot.",
+      "missing": [
+        "open preference dropdown list (Original Language / Dubbing / Subtitles)",
+        "open language dropdown list (scrollable list of languages)",
+        "hover preview card (video still, N logo, title lockup, mute button)",
+        "preview card action row (play, check, thumbs-up, expand chevron)",
+        "preview card metadata row (maturity rating box, duration, HD badge)",
+        "preview card mood/genre tags row with dot separators",
+        "'Live Now' red-dot badge variant"
+      ],
+      "fix": "Make both selects render the reference's dark dropdown panels when opened. Add a hover-scale preview card (~430px wide) with the media still, N logo, title lockup, mute icon, a circular button row (white filled play, outlined check, like, chevron), a rating/duration/HD row and dot-separated tags."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both are flat, dark and cinematic, with square-cornered tiles, tight gutters and small rectangular red badges. The select boxes match: square corners, thin border and a caret. The implementation's tiles all use the same uppercase condensed text overlay as the title. The reference uses each show's own title-artwork lockup in varying styles and positions.",
+      "fix": "Show title artwork (logo images) on the tiles instead of a uniform bottom-left condensed text overlay. Where no logo is available, vary placement and size to match each tile's lockup."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both use the same near-black page (#141414), white nav text with a grey active pill, Netflix red for the logo and badges, and white select borders. The reference's dropdown panels and preview card use a slightly lighter dark surface (#181818/#1f1f1f) that the implementation never renders.",
+      "fix": "Use #181818-ish surfaces with subtle shadows for the dropdown panels and the preview card."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use the same sans-serif across nav, title and selects. The page title is slightly larger and bolder in the implementation (~40px versus ~36px in the reference). The red badge text style matches. Dropdown list items (~16px regular white) and preview metadata typography are absent.",
+      "fix": "Reduce the 'Browse by Languages' heading to ~36px regular weight. Add 16px regular list-item text in the dropdowns and 18px metadata/tag text in the preview card."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "Search, bell, Kids tile, smiley avatar and caret match, as do the TOP 10 corner badge and 16:9 cover-cropped tiles. The reference's circular outlined action icons (play, check, thumbs-up, chevron), the mute icon and the red N mark are missing because the preview card is absent.",
+      "fix": "Add circular 2px-outlined icon buttons (~52px) and the N logo mark on the preview card."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English', 'Recently Added' and 'New Season'-style badges all match in wording and casing. The dropdown option copy (Dubbing, Subtitles, the language names) and the preview card copy (TV-MA, HD) are not visible.",
+      "fix": "Include the options 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language list Arabic…Vietnamese."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Center of grid: the reference shows an enlarged hover preview card overlapping rows 1–3 (still, title lockup, mute, action buttons, rating/duration/HD, mood tags); the implementation has no preview card",
+    "Top right: the reference shows both preference dropdowns expanded (mode list under 'Original Language', long language list under 'English' overlaying the grid's right column); the implementation shows them collapsed",
+    "Grid top: the reference leaves ~160px of empty space between the header and the first tile row; the implementation starts the grid right under the header (~80px)",
+    "Tiles: the implementation draws every title as an identical uppercase condensed text overlay at bottom-left; the reference uses varied title-artwork lockups",
+    "Page heading: the implementation's 'Browse by Languages' is slightly larger and bolder than the reference's"
+  ],
+  "fixes": [
+    "Build the hover preview card: ~430px wide, scales up over the hovered tile, has the media still with N logo, title lockup and mute button, then a circular play (white filled) / check / thumbs-up / chevron row, a 'TV-MA | 1h 34m | HD' metadata row and dot-separated tags",
+    "Implement the open states of both selects as dark (#181818) dropdown panels: options Original Language/Dubbing/Subtitles, and an alphabetical language list Arabic→Vietnamese that overlays the grid",
+    "Push the tile grid down so its first row starts at ~y=304 (≈150px below the header row)",
+    "Replace the uniform text-overlay titles with logo/title-art images, keeping the TOP 10 and red status badges",
+    "Reduce the page heading to ~36px regular weight"
+  ],
+  "summary": "The chrome, header row and 6-column badge grid closely match. The implementation does not show the reference's transient state (both dropdowns open plus the hover preview card), and its grid sits higher and uses generic text titles."
+}
+```

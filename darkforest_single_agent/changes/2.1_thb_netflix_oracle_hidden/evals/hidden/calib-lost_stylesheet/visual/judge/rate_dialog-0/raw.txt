@@ -1,0 +1,31 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.05, "notes": "The reference is a centered modal (about 960px wide) over a darkened, blurred title-detail page. It has a red top rule, an X at top-right, a centered title and subtitle, a 3-column row of rating options, a centered 'Got it!' button, and a hairline bottom divider. The implementation shows no modal or overlay at all. It renders an unstyled title-detail page in document flow, with a left-aligned hero image, stacked metadata and an episodes list, and no dark backdrop.", "fix": "Render the rate dialog as a fixed full-viewport overlay: a dark scrim over a blurred page, and a centered panel about 960px wide with 3px of red rule on top. Inside, place a close X at top-right, centered heading and subtitle, a 3-column grid of rating options and a centered 'Got it!' button."},
+    "components": {"score": 0.05, "notes": "None of the dialog's components render. The implementation shows only the underlying detail page, with a native Play, add and thumb button row and native select dropdowns.", "fix": "Build the RateDialog component and open it on this route. It needs the close button, heading, subtitle, three icon+caption rating options and a 'Got it!' dismiss button.", "missing": ["modal overlay/backdrop scrim", "red top accent rule", "close (X) button", "dialog heading", "dialog subtitle", "thumbs-down option with caption", "thumbs-up option with caption", "double-thumbs-up option with caption", "'Got it!' button", "bottom hairline divider"]},
+    "style": {"score": 0.05, "notes": "The reference is a cinematic dark modal with blur and dim, an airy centered layout, a flat panel with a red accent line, and a small rounded dark button. The implementation is raw, unstyled HTML: browser-default buttons, blue underlined links, no spacing system and no radius language.", "fix": "Apply the app stylesheet. Add a backdrop blur and dim, use generous vertical spacing inside the dialog, style 'Got it!' as a dark gray button with a ~4px radius, and use a 1px dark-gray divider."},
+    "color": {"score": 0.05, "notes": "The reference has a dark scheme: near-black scrim, white text, light-gray subtitle, Netflix red rule, and a dark-gray button. The implementation has a white page background, black text and default blue links.", "fix": "Use a page/scrim of rgba(0,0,0,0.7) over a blurred background, white heading and icons, #ccc subtitle, a #e50914 top rule, and a #2a2a2a button with white text."},
+    "typography": {"score": 0.05, "notes": "The reference uses a geometric sans (Netflix Sans), a large bold centered heading (~44px), a regular ~20px gray subtitle, ~17px centered two-line captions, and a bold button label. The implementation uses default Times serif with no hierarchy for the dialog.", "fix": "Set the font-family to a Netflix Sans/Helvetica stack. Use a bold ~44px centered heading, ~20px regular subtitle, ~17px centered captions and a bold ~16px button label."},
+    "iconography": {"score": 0.1, "notes": "The reference has filled white thumbs-down, thumbs-up and double-thumbs-up icons at ~56px, plus a thin white X. The implementation shows only a small thumb inside a native button on the page; there are no dialog icons.", "fix": "Render three ~56px filled white icons (thumbs-down, thumbs-up, double thumbs-up) above their captions, and a ~32px thin-stroke white X close icon."},
+    "copy": {"score": 0.0, "notes": "None of the dialog's copy is present.", "fix": "Add the heading 'Rate for better recommendations', the subtitle 'Your feedback helps us show you more of what you like (and love!).', the captions 'We won't suggest this to you again' / 'We'll show you more like this' / 'We know you're a true fan!', and the button label 'Got it!'."}
+  },
+  "similarity": 0.04,
+  "empty_state": false,
+  "deviations": [
+    "whole screen: the reference shows a centered rate dialog over a dimmed, blurred page; the implementation renders no dialog, only the underlying detail page",
+    "background: the reference has a dark blurred scrim over the page; the implementation has a white unstyled page with no overlay",
+    "dialog center: the 3-column row of thumbs-down / thumbs-up / double-thumbs-up icons with two-line captions is absent",
+    "dialog top: the red horizontal accent rule and the X close button at top-right are absent",
+    "dialog heading area: the bold centered heading and gray subtitle are absent",
+    "dialog bottom: the centered dark 'Got it!' button and the hairline divider are absent",
+    "global: the implementation uses browser-default serif text, native buttons and blue underlined links instead of a dark Netflix-styled theme"
+  ],
+  "fixes": [
+    "Make the 'rate control' route open a RateDialog, rendered as a fixed overlay with a dark scrim and a backdrop blur over the title page",
+    "Center a panel about 960px wide, with a 3px #e50914 rule at its top edge and a white X close button at top-right",
+    "Add the bold, white, ~44px centered heading 'Rate for better recommendations' and the ~20px gray subtitle below it",
+    "Add a 3-column grid of filled white ~56px icons (thumbs-down, thumbs-up, double thumbs-up), each with a centered two-line caption",
+    "Add a centered dark-gray 'Got it!' button with a ~4px radius and bold white text, followed by a 1px divider",
+    "Load the global dark theme and sans-serif font so that no browser-default styles remain"
+  ],
+  "summary": "The implementation never renders the rate dialog. It shows an unstyled white detail page instead of a dark centered modal with three thumb-rating options and a 'Got it!' button."
+}

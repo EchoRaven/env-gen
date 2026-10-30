@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "Top nav, breadcrumb/title row, and 'Your Next Watch' carousel with peeking tiles all match the reference. The full-bleed hero billboard is missing, and it takes up about 75% of the reference viewport. The implementation goes straight from the header into stacked rows, so the carousels dominate instead of the hero. The header sits on an opaque black band (~175px) rather than overlaying the hero image transparently. The first row appears at y≈250 instead of y≈840.",
+      "fix": "Add a full-bleed hero billboard behind the transparent nav and breadcrumb, filling the viewport down to ~y=830. Overlay the 'Your Next Watch' row on the bottom edge of the hero and remove the solid black header band."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: logo, 7 nav links, search, bell, Kids avatar and label, profile avatar with caret, breadcrumb plus page title, row heading, landscape tiles with TOP 10 badges and red bottom-centre pill badges, page indicator dashes. Missing: hero title-art logo, synopsis paragraph, Play and More Info buttons, mute toggle, TV-14 maturity flag, the small caption chip next to the synopsis, and the active-state pill on the current nav item. The implementation also shows an expanded hover preview card that is not in the reference.",
+      "missing": [
+        "hero billboard with title-art lockup",
+        "hero synopsis text",
+        "Play button (white, filled)",
+        "More Info button (translucent gray with info icon)",
+        "mute/replay circular toggle",
+        "maturity-rating flag (TV-14) at right edge",
+        "active nav pill highlight on current section"
+      ]
+    },
+    "style": {
+      "score": 0.6,
+      "notes": "Uses the same Netflix design language: slightly rounded tiles, tight gutters, and red pill badges. The cinematic depth from the large hero and its gradient scrims is gone. The page reads as a flat grid of tiles.",
+      "fix": "Add the hero with a left-side and bottom dark gradient scrim. Use slightly rounded rectangular buttons (~4px radius) for Play and More Info."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Dark scheme, Netflix red accents, white text and red badges all match. The header is solid black where the reference has a transparent nav over imagery. White Play and gray translucent More Info contrast are absent. The background behind the rows is a blurred warm wash, while the reference rows sit on a dark base below the hero.",
+      "fix": "Make the nav background transparent with a top gradient over the hero. Give the active nav item a translucent gray pill. Put the rows below the hero on a near-black #141414 base."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Sans-serif nav, large page title, gray breadcrumb and medium row headings match. Missing type levels: the large hero synopsis (~22px regular) and the button labels. The title size is close. The breadcrumb separator is '›' where the reference uses '>'.",
+      "fix": "Add hero synopsis text at ~22px white, regular weight, max ~3 lines, and ~22px button labels."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Line-style search and bell icons, the avatar treatments, landscape 16:9 tile crops and TOP 10 badges match. The filled play triangle, circled-i info icon and circular mute icon in the hero are missing.",
+      "fix": "Add a filled play icon in the Play button, an outlined circle-i in More Info, and an outlined circular mute button at the right of the hero."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Nav labels and the 'Your Next Watch' heading match. 'Play' and 'More Info' CTAs are absent. The breadcrumb parent reads 'Home' where the reference uses the section name ('TV Shows'), which is reasonable for this genre, but the active section is not reflected.",
+      "fix": "Add 'Play' and 'More Info' button labels. Make the breadcrumb parent the section name and highlight the matching nav item."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "Upper ~75% of viewport: the reference shows a full-bleed hero billboard with a title-art lockup, synopsis, Play and More Info buttons; the implementation has no hero and starts the carousels right under the header.",
+    "Header: the reference nav and breadcrumb float transparently over the hero image; the implementation puts them on a solid black band.",
+    "Hero right edge: the reference shows a circular mute toggle and a TV-14 maturity flag; the implementation has none.",
+    "Nav: the reference highlights the active section ('Shows') with a rounded gray pill; the implementation highlights no item.",
+    "Middle of the implementation: an expanded hover preview card (play/add/like buttons, metadata) is open over the rows; the reference shows no such overlay.",
+    "Row placement: the reference 'Your Next Watch' row overlaps the bottom of the hero at y≈840; the implementation's rows begin at y≈250 and stack three deep."
+  ],
+  "fixes": [
+    "Add a full-bleed hero billboard (100vw, ~85vh) behind the nav, with left and bottom dark gradient scrims.",
+    "Inside the hero, bottom-left: add a title-art logo (~140px tall), a 3-line synopsis (~22px white), then a white 'Play' button with a filled triangle and a translucent gray 'More Info' button with an outlined circle-i.",
+    "At the hero's right edge: add an outlined circular mute button and a TV-14 flag on a translucent gray tab with a left border.",
+    "Make the nav and breadcrumb background transparent so they overlay the hero.",
+    "Pull the first carousel up so it overlaps the bottom of the hero.",
+    "Add a rounded translucent-gray pill to the active nav item.",
+    "Make sure no hover preview card is open in the default state."
+  ],
+  "summary": "Netflix nav, breadcrumb title and tile carousels are reproduced faithfully, but the hero billboard that dominates the reference (title art, synopsis, Play and More Info, maturity flag) is missing entirely, so the page reads as a plain row grid."
+}

@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top bar matches: wordmark on the left, 7 nav items, search, bell, Kids and avatar on the right. The page title sits top-left with the preferences row on the right, and the poster grid is 6 columns at matching tile widths and gutters. Differences: in the reference the grid starts at about y=305 because both open dropdown panels push it down; in the implementation it starts at about y=226. The vertical gap between rows is also slightly smaller than in the reference (about 245px row pitch there vs about 235px here). The reference also shows a raised hover preview card sitting over rows 1 to 3, and the implementation has none.",
+      "fix": "Render the two dropdowns in their open state, with each listbox panel drawn as an overlay directly under its trigger. Keep about 150px between the header row and the first grid row so the grid starts near y=305. Add the hover preview card overlay on one tile."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: all 7 nav items with 'Browse by Languages' in an active pill, search, bell, Kids profile chip, avatar with caret, title, 'Select Your Preferences' label, both select triggers, a 6-column poster grid, TOP 10 corner badges, and red 'Recently Added'/'New Season' pill badges. Missing compared with the reference state: the open 'Original Language' menu (Original Language / Dubbing / Subtitles), the open language menu (Arabic through Vietnamese, about 28 entries), and the expanded hover preview card. That card has a video frame with an N logo and title lockup, a mute button, play/add/rate circle buttons, an expand chevron, a maturity rating box, the runtime and an HD badge, and a dot-separated genre tag row.",
+      "missing": [
+        "open Original Language / Dubbing / Subtitles dropdown menu panel",
+        "open language list dropdown panel (Arabic…Vietnamese)",
+        "hover preview card (video still with N logo + title lockup)",
+        "mute toggle circle button on preview",
+        "play / add-to-list (check) / rate (thumb) circular buttons",
+        "expand-details chevron circle button",
+        "maturity rating box + runtime + HD badge row",
+        "genre tags row with dot separators"
+      ],
+      "fix": "Open both select menus: render a dark #141414 panel with a 1px gray border and left-aligned options at 15–16px. Mount a preview card about 435px wide over a tile in rows 1 to 2, with a 16:9 image on top and a #181818 bottom section that holds the control row, metadata row and genre row."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The design language matches: flat dark surfaces, slightly rounded 16:9 tiles, small red label pills, square-cornered select boxes with a white border, and an active nav pill. The elevated, shadowed preview card and the bordered menu panels are absent, so the implementation shows none of the reference's layering depth.",
+      "fix": "Add the elevated preview card with a soft large shadow and about 6px radius. Style the menu panels flat and dark with a hairline border."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The near-black #141414 base, Netflix red wordmark and badges, white text and gray active nav pill all match. Only the colours specific to the missing overlays are absent: the #181818 card surface, white-filled play button and gray outlined circles.",
+      "fix": "Use #181818 for the preview card's lower panel, a white filled play circle and outlined gray circles. Use a dark #000/#141414 background for the menu panels."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The sans-serif nav, title and selects broadly match. The page title is noticeably larger and bolder in the implementation (about 44px vs about 36px), and the select text is slightly larger. The menu option typography and the preview card's metadata and genre text are absent.",
+      "fix": "Reduce the 'Browse by Languages' heading to about 36px regular weight. Set the select labels to about 18px. Render menu options at about 15px regular white, and the genre row at about 17px with gray dot separators."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The search, bell, Kids tile and smiley avatar with caret match. Tiles use landscape artwork with cover crop, the title over the artwork, and TOP 10 badges in the top-right corner, which matches. The circular outline control icons (play, check, thumb, chevron, mute) are missing, as is the N logo on the preview card.",
+      "fix": "Add circular 2px-outline icon buttons for check, thumbs-up, chevron-down and mute, plus a filled white play circle and a red N mark top-left of the preview image."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English', 'Recently Added' and 'New Season' all match. The menu option labels Dubbing and Subtitles and the language names are not visible because the menus are closed.",
+      "fix": "Expose the option labels 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language list (Arabic … Vietnamese) in the open menus."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Center-left over rows 1–3: the reference shows an expanded hover preview card (video still, N logo, title lockup, mute, play/check/thumb/chevron buttons, TV-MA/runtime/HD row, genre tags). The implementation has no preview card.",
+    "Top-right under the language select: the reference shows the language list open as a tall dark panel (Arabic…Vietnamese) overlaying the right grid column. The implementation's select is closed.",
+    "Top-right under the 'Original Language' select: the reference shows an open menu with Original Language / Dubbing / Subtitles. The implementation's select is closed.",
+    "Grid top: in the reference the first row starts at about y=305 with a large gap below the header. In the implementation it starts at about y=226.",
+    "Page title: the implementation's 'Browse by Languages' heading is larger and heavier than the reference's lighter heading of about 36px.",
+    "Preferences row: the implementation's selects are taller and more widely spaced, and the 'Original Language' box sits further left than in the reference."
+  ],
+  "fixes": [
+    "Render both preference selects in their open state, each with a dark bordered dropdown panel listing its options ('Original Language/Dubbing/Subtitles' and the full alphabetical language list).",
+    "Add a hover preview card about 435px wide, raised over a row-1/row-2 tile: a 16:9 still with the N logo, title lockup and mute circle, then a #181818 section with a white play circle, outlined check and thumb circles, a right-aligned chevron circle, a 'TV-MA | 1h 34m | HD' metadata row and a dot-separated genre row.",
+    "Push the poster grid down so the first row starts at about y=305, and match the row pitch of about 245px.",
+    "Reduce the page title to about 36px regular weight and align the select boxes to about 240px wide (left) and about 265px wide (right), with about 12px between them."
+  ],
+  "summary": "The chrome, grid, badges and colour system match closely, but the reference's transient state (both dropdown menus open and an expanded hover preview card) is not rendered."
+}
+```

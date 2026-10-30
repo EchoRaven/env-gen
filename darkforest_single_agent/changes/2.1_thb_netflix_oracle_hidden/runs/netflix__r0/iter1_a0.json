@@ -1,0 +1,107 @@
+{
+ "duration_api_ms": 953492,
+ "stop_reason": "end_turn",
+ "session_id": "bdf44f07-3267-40db-bdd6-e0c724b9a9ff",
+ "total_cost_usd": 6.6983545999999965,
+ "usage": {
+  "input_tokens": 4,
+  "cache_creation_input_tokens": 1824,
+  "cache_read_input_tokens": 260086,
+  "output_tokens": 209,
+  "output_tokens_details": {
+   "thinking_tokens": 37
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 1824,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 4,
+    "output_tokens": 209,
+    "cache_read_input_tokens": 260086,
+    "cache_creation_input_tokens": 1824,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1824
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-opus-5-5": {
+   "inputTokens": 142,
+   "outputTokens": 118208,
+   "cacheReadInputTokens": 11191733,
+   "cacheCreationInputTokens": 261910,
+   "webSearchRequests": 0,
+   "costUSD": 6.6983545999999965,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "thinkingTokens": 17843,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "origin": {
+  "kind": "task-notification",
+  "producer": "session-task",
+  "runId": "0mvuc0849-fd0b2e0b"
+ },
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 1,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "The background job that was stopped was only the watcher waiting on the earlier crawler run; I had already read that run's results. It doesn't need restarting. The later crawls ran in the foreground: the player and the controls inside the title modal had no dead controls.\n\nThat crawler run itself ended on its timeout before reaching `/shows`, which an earlier full-page run had already covered. The one fix since then, re-crawling the page you're on when you click its nav link, I didn't re-check on `/shows` itself. The submission summary above is unchanged.",
+ "ttft_ms": 1701,
+ "type": "result",
+ "duration_ms": 3611,
+ "uuid": "a94426bb-9b2d-49fd-9a1c-42c46cbbfa81",
+ "ttft_stream_ms": 1348,
+ "time_to_request_ms": 26,
+ "first_content_frame_ms": 1349,
+ "queued_turn_count": 0,
+ "result_index": 1,
+ "_rc": 0,
+ "_timed_out": false,
+ "_wall_s": 3788.7
+}

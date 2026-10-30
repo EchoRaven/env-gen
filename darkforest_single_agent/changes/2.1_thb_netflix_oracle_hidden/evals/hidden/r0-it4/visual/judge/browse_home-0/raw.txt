@@ -1,0 +1,26 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.93, "notes": "The skeleton matches. The top nav has the logo on the left, a row of 7 text links, and search/bell/Kids/avatar on the right. Below it is a large rounded hero card that sits inset from the page edges, with the title lockup, status line, metadata and CTAs in the bottom-left and a sound button in the top-right. Under the hero is a titled horizontal row with a page indicator on the right and about 5.2 tiles showing, cut off at the right edge. Gutters (~67px) and the hero bounds match. The one difference is that the bottom-right corner of the hero is empty, where the reference shows a badge.", "fix": "Add a right-aligned badge slot in the bottom-right corner of the hero, on the same baseline as the CTAs (~45px inset)."},
+    "components": {"score": 0.86, "notes": "Present: logo, 7 nav items with a pill-shaped active state on Home, search, bell, Kids profile, avatar with caret, hero sound toggle, title lockup, status line with a red badge, dot-separated metadata row, white Play pill with icon, translucent grey More Info pill, row heading, row page indicator and poster tiles. Missing: the 'New Episode' tag with its icon in the bottom-right of the hero. The TOP 10 tile badges and the TOP 10 status badge are data-driven variants that the reference also uses (its last tile has one), so they aren't counted as invented.", "fix": "Render a hero corner tag (small red/magenta megaphone icon + white 'New Episode' label) at the bottom-right of the hero whenever the title has a new-episode flag.", "missing": ["Hero bottom-right 'New Episode' tag with icon"]},
+    "style": {"score": 0.88, "notes": "Same flat dark streaming look: a hero card with rounded corners (~16px), pill buttons, rounded tiles and airy spacing. The reference hero card has a soft drop shadow over a lighter warm-grey backdrop. The implementation sits flat on near-black, so the card loses its sense of elevation.", "fix": "Give the hero card a soft diffuse shadow (e.g. 0 10px 40px rgba(0,0,0,.6)) and put it on a lighter page backdrop so the elevation shows."},
+    "color": {"score": 0.8, "notes": "The accents match: Netflix red, the white Play button, the translucent grey More Info button, red badges and the blue avatar. In the reference, the page/header background is a warm grey-brown gradient (~#4a4540 at the top, fading to ~#1f1d1c around the row area). The implementation uses flat near-black (#141414) throughout, so the header area is noticeably darker and cooler.", "fix": "Set the page background to a vertical gradient from warm grey (~#47423d) at the top to ~#1c1b1a by the first row, so the header sits on that warm tint instead of black."},
+    "typography": {"score": 0.88, "notes": "Same sans family and hierarchy: regular-weight nav at ~18px with a bold active item, a bold ~22px status line, a ~18px metadata row and bold CTA labels. The row heading 'Trending Now' is regular/medium weight, while the reference heading is semibold. The status line also renders slightly larger than the reference's.", "fix": "Make row headings semibold (600) at ~26px, and bring the hero status line down to ~22px semibold."},
+    "iconography": {"score": 0.88, "notes": "Line icons for search and bell, a gradient Kids tile, the blue smiley avatar and a circular sound button all match. Tiles keep the same ~16:9 cover crop with rounded corners and small gaps. The 'New Episode' megaphone glyph is missing. The muted vs unmuted speaker icon is just a state difference.", "fix": "Add the small megaphone/new-episode glyph to the hero corner tag."},
+    "copy": {"score": 0.95, "notes": "Nav labels, 'Kids', 'Play' and 'More Info' match exactly, as does the metadata format. The only chrome string missing is the 'New Episode' tag label.", "fix": "Use the label 'New Episode' (sentence case) for the hero corner tag."}
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-right: reference shows a 'New Episode' tag with a megaphone icon; the implementation leaves this corner empty",
+    "page/header background: reference has a warm grey-brown gradient behind the nav and around the hero; the implementation is flat near-black",
+    "hero card: reference has a visible soft drop shadow that lifts it off the backdrop; the implementation sits flat",
+    "row heading: reference's 'TV Action & Adventure' is semibold; the implementation's 'Trending Now' is a lighter weight"
+  ],
+  "fixes": [
+    "Add a hero corner tag in the bottom-right (megaphone icon + white 'New Episode' label, ~15px semibold), aligned with the CTA row",
+    "Replace the flat #141414 page background with a warm grey gradient (~#47423d at the top → ~#1c1b1a by the first row)",
+    "Add a soft diffuse shadow to the hero card",
+    "Set row headings to semibold (600) at ~26px"
+  ],
+  "summary": "This is a near-faithful recreation of the Netflix browse home; it falls short only on the hero's 'New Episode' corner tag, the warm-grey gradient backdrop, the hero shadow and the row-heading weight."
+}

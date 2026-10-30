@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The top-nav chrome matches: NETFLIX wordmark on the left, seven text nav links, and search, bell, Kids and avatar on the right. The 'My List' heading is left-aligned at the same gutter, and the 16:9 tiles sit in a left-aligned grid with narrow gaps. The reference, though, is caught mid-hover. An enlarged preview card about 440px wide covers the third tile slot and runs from about y=170 to y=600, and it is the dominant region on the screen. The implementation has no expanded card, so all tiles stay the same size in a flat row. The tile row also starts higher (about y=225 vs about y=303), because the reference row is placed to leave room for the expanded card above it.",
+      "fix": "Add the hover-expand behaviour. On hover, scale the tile into a card about 1.5x as wide, centred on the tile and rising above the row, so it overlaps its neighbours. Push the grid down so tiles start around y≈300, leaving headroom for the expanded card."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Present: the nav bar with all 7 items and the 'My List' pill active, the search icon, bell, Kids profile, avatar with caret, the page heading, and landscape tiles with a title lockup and a red badge. Missing: the whole expanded preview card shown in the reference. That card has a video/still area with a small red 'N' mark, a title lockup and a circular mute button; a white circular Play button; a pill holding three rating buttons (dislike, like, love) with an 'I like this' tooltip; a circular chevron 'more info' button; a metadata row with a boxed maturity rating, runtime and an outlined HD badge; and a mood/genre tag line with dot separators.",
+      "missing": [
+        "hover-expanded preview card",
+        "preview media area with red N mark and title lockup",
+        "circular mute/volume button on preview",
+        "white circular Play button",
+        "rating pill (thumbs down / thumbs up / double thumbs up)",
+        "'I like this' tooltip on rating button",
+        "circular chevron 'more info' button",
+        "metadata row: boxed maturity rating, runtime, outlined HD badge",
+        "genre/mood tag row with bullet separators"
+      ],
+      "fix": "Build a TitlePreviewCard that renders on tile hover. It needs a media area on top (image or video, with a mute button bottom-right), then a control row (Play circle, rating pill with 3 thumb icons and a hover tooltip, chevron circle right-aligned), then a metadata row (rating box, runtime, HD outline badge), then a tag row ('Violent • Exciting • Sci-Fi' style)."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both use the same flat dark Netflix language: tiles with slightly rounded corners, no borders, and a compact grid with a pill for the active nav item. The reference adds an elevated card with a soft shadow, a dark #181818 surface and rounded bottom corners, plus outlined circular buttons. The implementation has no elevated layer at all.",
+      "fix": "Style the preview card with a #181818 background, ~6px radius, a soft drop shadow, 2px-outlined circular icon buttons, and a rounded dark pill (#2a2a2a) behind the rating buttons."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The palette matches: #141414 page, black-to-transparent header, red wordmark and badges, white text and grey pill for the active nav item. The implementation lacks the slightly lighter card surface and the light-grey tooltip that the reference shows.",
+      "fix": "Use #181818 for the preview card surface and an off-white (#e5e5e5) tooltip with dark text."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "The sans-serif nav, the large regular-weight 'My List' heading and the condensed bold title lockups on tiles all match. The implementation's heading is slightly larger. It also lacks the card's text levels: the medium-size runtime and tags, and the small HD badge text.",
+      "fix": "Reduce the heading slightly (~34px). In the card, set metadata at ~16px light grey and tags at ~16px white with grey bullet separators."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "Nav icons match: outline search, outline bell, a gradient Kids tile and a blue smiley avatar. The tiles are 16:9 cover crops with small radius and match. Missing are the card's icon set: a filled play triangle in a white circle, line-style thumbs-down, thumbs-up and double-thumbs icons, a chevron-down in an outlined circle, a muted-speaker icon, and the small red N logo on the media.",
+      "fix": "Add line-style thumb icons (down, up, double-up), a filled play icon, a chevron-down and a speaker-muted icon, all in circular buttons of about 48px, plus a red N mark at the top-left of the preview media."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "Nav labels, 'Kids' and the 'My List' heading are identical. Missing: the 'I like this' tooltip text and the card's metadata label style (rating letter, 'HD'). The badge wording on tiles is content and is acceptable.",
+      "fix": "Add the tooltip labels 'Not for me', 'I like this' and 'Love this!' to the rating buttons, and the 'HD' badge text in the metadata row."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "Centre of the tile row: the reference shows a large hover-expanded preview card (media, Play, rating pill, chevron, metadata and tags) over the third tile. The implementation shows only flat, same-size tiles with no expanded state.",
+    "Preview card controls: the white Play circle, the rating pill with three thumb buttons and its 'I like this' tooltip, and the circular chevron button are absent.",
+    "Preview card info: the metadata row (boxed 'R', runtime, outlined HD) and the bullet-separated genre tags are absent.",
+    "Preview media: the circular mute button and the red N corner mark on the media are absent.",
+    "Tile row vertical position: the implementation starts tiles at about y=225, while the reference starts them at about y=303 to leave headroom for the expanded card.",
+    "Page heading: the implementation's 'My List' is slightly larger than the reference's."
+  ],
+  "fixes": [
+    "Add a tile hover state: after a short delay, replace the tile with a ~440px-wide elevated #181818 card centred on it, with its media area rising above the row.",
+    "In the card's media area, show the title image with the title lockup bottom-left, a red N mark top-left and an outlined circular mute button bottom-right.",
+    "Add a control row under the media: a white filled Play circle, a dark rounded pill holding thumbs-down, thumbs-up and double-thumbs line icons (with tooltips such as 'I like this'), and an outlined chevron-down circle aligned right.",
+    "Add a metadata row (outlined maturity-rating box, runtime, small outlined 'HD' badge) and a tag row of three mood/genre words separated by grey bullets.",
+    "Shift the grid down to start at about y≈300 and reduce the 'My List' heading slightly."
+  ],
+  "summary": "The chrome, heading and tile grid match the reference, but the reference's main element, the hover-expanded preview card with Play, ratings, chevron, metadata and tags, is completely absent."
+}
+```

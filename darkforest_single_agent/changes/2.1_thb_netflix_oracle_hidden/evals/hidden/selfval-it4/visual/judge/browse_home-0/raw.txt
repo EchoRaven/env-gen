@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.95,
+      "notes": "The layout matches the reference. Both have a top nav with the logo on the left, pill-highlighted nav links and right-side utilities, then an inset rounded hero card with matching margins, then a row heading with a pagination indicator on the right, then a horizontal carousel of 16:9 tiles with a peek of the next tile at the right edge. The order of sections, the gutters (~67px) and the proportions all match.",
+      "fix": "No structural change needed. Keep the hero card inset at ~67px gutters and the carousel peek as they are."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "Every component in the reference is present: the NETFLIX wordmark, 7 nav items with the Home pill active, search, bell, the Kids avatar and label, the profile avatar with caret, the circular audio button at the top right of the hero, the left-aligned title, the dot-separated metadata row, the white Play and translucent grey More Info pill buttons, the bottom-right badge with the megaphone-style icon, the row title, the dashed page indicator and the carousel tiles. Differences: the reference's red '• LIVE' badge and status line has no equivalent. The implementation adds a 2-line synopsis paragraph the reference doesn't show. The audio button shows a muted outline state instead of the reference's filled grey sound-on chip. A TOP 10 badge sits on every tile, where the reference uses it sparingly.",
+      "fix": "Remove the synopsis paragraph under the hero metadata, or hide it in this state. Render the audio control as a filled translucent grey circle with a sound-on icon. Support a status line above the metadata (red rounded 'LIVE' chip plus bold text) when it applies. Show TOP 10 badges only on qualifying titles.",
+      "missing": ["LIVE status badge + status line above hero metadata"]
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The design language is the same: a large rounded hero card (~16px radius), pill buttons, rounded tiles and a flat, cinematic, airy feel. In the reference the hero card sits elevated, with a soft drop shadow against a lighter, warm grey gradient page. In the implementation it sits flat on near-black. The audio button differs too: an outlined ring in the implementation versus a filled chip in the reference.",
+      "fix": "Add a soft diffuse shadow under the hero card (e.g. 0 20px 60px rgba(0,0,0,.5)). Make the audio button a filled rgba(255,255,255,.15) circle with no border."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a dark scheme, a red brand wordmark, a white Play pill, a translucent grey More Info pill and white text. The reference page and header background is a warm brownish-grey gradient (~#3a3734 at the top fading to ~#1c1c1c). The implementation is a flat, cooler near-black (#141414), so the header area reads noticeably darker and colder.",
+      "fix": "Give the page and header background a warm grey vertical gradient: ~#45413c at the top through ~#2a2826 behind the header to ~#181818 below the hero."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "The sans-serif UI font, the nav sizes and weights, the bold row heading, the metadata row (white, medium, with bullet separators) and the bold button labels all match. The hero title is set as condensed display type rather than a title-artwork lockup image. The implementation also adds body-size synopsis text, which creates a typographic level the reference doesn't have.",
+      "fix": "Render the hero title as a logo/artwork image (the title treatment PNG) at ~450px wide, and fall back to condensed display text only when no artwork exists. Drop the synopsis text level."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Matches the reference: outline search and bell icons, the rounded-square Kids and profile avatars, the filled play triangle, the megaphone badge icon, 16:9 tile crops with rounded corners and the TOP 10 corner badge style. The audio icon differs: muted with an outline ring in the implementation, sound-on in a filled chip in the reference. The reference tiles also show small network logo marks in the top-right corner, which the implementation lacks.",
+      "fix": "Change the hero audio icon to the sound-on glyph inside a filled grey circle. Allow a small network logo overlay at the top-right of tiles where it applies."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels match exactly (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), as do 'Kids', 'Play' and 'More Info'. The row heading and the badge text ('#1 in TV Shows Today' vs 'New Episode') are content variants of the same pattern.",
+      "fix": "None required."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero text block: implementation adds a 2-line synopsis paragraph under the metadata row; reference shows no synopsis",
+    "hero above metadata: reference has a red rounded '• LIVE' chip + bold status line; implementation has no status-line slot",
+    "hero title: implementation uses typeset condensed text; reference uses a title-artwork logo lockup image",
+    "page/header background: reference is a warm grey gradient (lighter at top); implementation is flat cool near-black",
+    "hero card: reference has a visible soft drop shadow / elevation; implementation is flat",
+    "hero top-right audio button: reference is a filled grey circle with sound-on icon; implementation is an outlined ring with muted icon",
+    "carousel tiles: implementation puts a TOP 10 badge on every tile; reference uses it on one tile and shows network logo marks on others"
+  ],
+  "fixes": [
+    "Remove the synopsis paragraph from the hero overlay",
+    "Render the hero title as a title-artwork image lockup (~450px wide), left-aligned above the metadata",
+    "Add an optional status row above the metadata: red rounded 'LIVE' chip plus bold white text",
+    "Change the page background to a warm grey top-down gradient (#45413c → #181818) so the header area reads lighter and warmer",
+    "Add a soft diffuse shadow under the hero card",
+    "Restyle the audio button as a filled rgba(255,255,255,.15) circle with no border and a sound-on icon",
+    "Show TOP 10 badges only on qualifying tiles and support small network logo overlays at the top-right"
+  ],
+  "summary": "The implementation closely matches the reference's layout, nav, hero card, buttons and carousel. The gaps are a cooler, flatter background, no hero shadow, a typeset title instead of title artwork, an extra synopsis line, and the audio button styled differently."
+}
+```

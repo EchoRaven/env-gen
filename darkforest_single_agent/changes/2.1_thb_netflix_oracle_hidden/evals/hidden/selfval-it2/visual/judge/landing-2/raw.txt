@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Both screens use the same skeleton: a full-bleed tilted poster-wall hero, logo top-left and language select plus Sign In top-right in a ~1600px container, a centered headline block with an email form, a curved glowing divider, and a promo banner at the bottom. Differences: the implementation's headline block sits about 50px higher, and the gap between subtitle and CTA prompt is tighter. In the banner, the popcorn icon sits inside the card at the left edge, which runs the full container width (~163–1757px). In the reference, the icon sits outside the card and overlaps its left edge, and the card starts at ~275px.",
+      "fix": "Move the hero text block down so the headline's first line is centered near y≈345 and the form near y≈618. Take the popcorn icon out of the banner card and place it to the left of the card, overlapping it slightly. Start the card at ~275px so it is inset from the container."
+    },
+    "components": {
+      "score": 0.92,
+      "missing": [],
+      "notes": "Everything in the reference is present: Netflix wordmark, language select with translate icon and caret, red Sign In button, H1, subtitle, CTA prompt, email input with placeholder, red Get Started button with chevron, curved divider, and promo banner with popcorn icon, two-line text and a grey Learn More button. Nothing extra has been added. The popcorn icon is placed inside the card instead of outside it.",
+      "fix": "Move the popcorn graphic outside the banner card, to its left."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same dark cinematic look with a vignette over the angled poster wall, slightly rounded controls and a rounded banner card. The implementation's divider arc is more curved: it drops further at the edges and reaches the bottom corners. The reference's arc is shallower, with a blue-indigo glow under it. The language select in the implementation is more compact, with the caret tight against the label.",
+      "fix": "Flatten the divider arc (smaller vertical sag, edges ending around y≈935). Add more horizontal padding to the language select and leave a gap before the caret."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark base, Netflix red CTAs, white text and a grey Learn More button all match. The glow under the arc is magenta-purple in the implementation but deep blue/indigo in the reference. The implementation's banner card is a more saturated purple, while the reference's is a muted navy-purple gradient. The implementation's Sign In red is slightly brighter.",
+      "fix": "Change the arc glow and banner gradient to deep indigo/navy-purple (#1b1f4a → #2a1e4f). Keep the pink-red arc stroke. Change the CTA red to ~#e50914 / #d6271f."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same bold geometric sans for the H1, with a white bold subtitle, a regular CTA prompt and large semibold Get Started text. The implementation's H1 is slightly larger and wraps as 'Unlimited movies, / TV shows, and more'. The reference wraps as 'Unlimited movies, TV / shows, and more' because its text block is narrower.",
+      "fix": "Constrain the H1 to ~640px max-width at ~56–64px so it wraps after 'TV', matching the reference."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Red NETFLIX wordmark, translate glyph, dropdown caret, Get Started chevron and popcorn bucket illustration all match. The reference's popcorn bucket is larger, a 3D illustration with a star emblem, and sits outside the card. The implementation uses a smaller emoji-style bucket inside the card. The poster tiles have matching rounded corners and tilt.",
+      "fix": "Use a larger (~80px) 3D popcorn illustration, positioned outside the banner card on its left."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The H1, CTA prompt, 'Email address' placeholder, Get Started, Sign In, English and Learn More all match. The hero subtitle reads 'Watch on any device. Every profile keeps its own list.' instead of the reference's 'Starts at $8.99. Cancel anytime.' (a pricing line). The banner text is a catalog pitch instead of the ad-supported plan pricing pitch.",
+      "fix": "Change the subtitle to a short pricing/cancel line ('Starts at $X. Cancel anytime.'). Change the banner to a two-line pricing pitch ('The Netflix you love for just $X.' / 'Get our most affordable, ad-supported plan.')."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "bottom banner: popcorn icon is inside the card at the left; in the reference it sits outside the card and overlaps its left edge, with the card inset to ~275px",
+    "hero: headline block sits ~50px higher, and the H1 wraps as 'Unlimited movies, / TV shows, and more' instead of 'Unlimited movies, TV / shows, and more'",
+    "hero subtitle: 'Watch on any device. Every profile keeps its own list.' instead of the pricing line 'Starts at $8.99. Cancel anytime.'",
+    "divider: arc is more curved and reaches the bottom corners, with a magenta glow; the reference arc is flatter with an indigo/blue glow",
+    "banner card: more saturated purple fill than the reference's muted navy-purple",
+    "header language select: compact, with the caret tight against 'English'; the reference has wider padding and a separated caret"
+  ],
+  "fixes": [
+    "Move the popcorn illustration outside the banner card to its left, enlarge it to ~80px, and inset the card to start at ~275px",
+    "Constrain the H1 width so it wraps after 'TV', and move the hero block down ~50px",
+    "Replace the hero subtitle with a pricing/cancel-anytime line and the banner copy with the ad-supported plan pricing pitch",
+    "Flatten the divider arc and change the glow below it plus the banner gradient to deep indigo/navy",
+    "Widen the language select's padding and space the caret away from the label"
+  ],
+  "summary": "A close replica of the Netflix landing hero, off only in the popcorn icon placement, headline wrap and position, subtitle and banner copy, and the divider's curve and glow colour."
+}
+```

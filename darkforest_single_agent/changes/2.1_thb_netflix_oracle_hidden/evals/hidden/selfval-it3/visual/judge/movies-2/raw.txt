@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Same skeleton: transparent top nav over a full-bleed hero, 'Movies' heading with a Genres dropdown below the nav, hero copy block on the left, mute button and TV-14 rating tab on the right, then a 'Gems for You' horizontal row with page indicator dashes. The difference is vertical rhythm. The hero title block starts lower (~y480 vs ~y200), and the row heading sits at ~y920 vs ~y843. That pushes the row cards below the fold and hides the next row heading ('Comedy Movies') that peeks in at the bottom of the reference.",
+      "fix": "Start the hero copy block higher, with the title lockup at ~18% of viewport height. Move the 'Gems for You' row up so its heading sits at ~76% of the viewport height, the full 16:9 cards show, and the next row's heading peeks in at the bottom."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "These match: nav with 7 items and a pill-highlighted active 'Movies', search, bell, Kids profile chip, avatar with caret, Genres dropdown, Play/More Info buttons, mute button, rating tab, row title, cards with TOP 10 corner badges and 'Recently Added' red tags, and pagination dashes. Missing: the small red NETFLIX series badge above the title, and the Top 10 badge + '#3 in Movies Today' ranking row. Added: a genre · year · type · rating metadata row the reference doesn't have.",
+      "missing": ["NETFLIX original wordmark badge above hero title", "TOP 10 badge + '#N in Movies Today' ranking line in hero"],
+      "fix": "Add the red NETFLIX wordmark badge above the hero title. Replace the metadata row with a red TOP 10 square badge followed by '#N in Movies Today' in ~28px medium white text."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same cinematic, flat, dark-overlay treatment: square-ish buttons (white Play, translucent gray More Info), a thin-bordered Genres select, slightly rounded cards, and a bottom fade into the dark page. The description text is a bit lighter and denser than the reference's larger, airier paragraph.",
+      "fix": "Make the hero description larger (~22px) with ~1.35 line-height and a max width of ~680px, wrapped to three lines like the reference."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same dark scheme with Netflix red for the wordmark and badges, white primary button, translucent gray secondary button, and gradient vignette at the bottom and left. Contrast and accent use match.",
+      "fix": "Keep as is. Make sure the left-side scrim is strong enough to match the reference's text legibility."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The sans-serif UI font, nav weights, 'Movies' heading size and row title match. The hero title is plain heavy condensed text, where the reference uses a two-level title-art lockup (a large main title over a smaller italic subtitle). The description is smaller (~17px vs ~22px), and the metadata row adds a typographic level the reference doesn't have.",
+      "fix": "Render the hero title as title artwork, or as a styled lockup with the reference's scale. Enlarge the description to ~22px and remove the extra metadata line."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Outline search and bell icons, Kids gradient chip, blue smiley avatar, filled play triangle, circled-i info icon, circled mute icon and TOP 10 badges all match. Row cards use plain text title overlays instead of title-art logos, and every card carries a 'Recently Added' tag, where the reference uses it selectively.",
+      "fix": "Use title-art logos on the cards, and show the 'Recently Added' tag only on titles that qualify."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "Nav labels, 'Movies', 'Genres', 'Play', 'More Info', 'Gems for You', 'Recently Added' and 'TV-14' match exactly. The only copy difference is the added genre/year/type line and the missing '#N in Movies Today' phrasing.",
+      "fix": "Add the '#N in Movies Today' ranking line and drop the 'Science Fiction · 2026 · Movie · TV-14' line."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Hero, under the title: the reference shows a red TOP 10 badge + '#3 in Movies Today'. The implementation shows a 'Science Fiction · 2026 · Movie · TV-14' metadata row instead.",
+    "Hero, above the title: the reference has a small red NETFLIX series wordmark badge. The implementation has none.",
+    "Hero title: the reference uses a title-artwork lockup (large main title with a smaller italic subtitle line). The implementation renders a single line of plain condensed text.",
+    "Vertical rhythm: the hero copy block and the 'Gems for You' row sit ~80px lower in the implementation. The row cards get cropped at the bottom and the next row heading peeking in at the bottom of the reference doesn't appear.",
+    "Hero description: the implementation's text is smaller and lighter than the reference's larger paragraph.",
+    "Row cards: the implementation puts a 'Recently Added' tag on every card and uses text overlays for titles. The reference tags only some cards and uses title-art logos."
+  ],
+  "fixes": [
+    "Replace the hero metadata row with a red TOP 10 square badge + '#N in Movies Today' (~28px, medium weight, white).",
+    "Add a small red NETFLIX wordmark badge above the hero title.",
+    "Render the hero title as title artwork, or as a two-tier lockup at the reference's scale.",
+    "Move the hero copy block and the 'Gems for You' row up (~80px) so the full cards show and the next row heading peeks in at the bottom.",
+    "Enlarge the hero description to ~22px with a max width of ~680px.",
+    "Show the 'Recently Added' tag only on qualifying cards and use title-art logos on cards."
+  ],
+  "summary": "Nav, Genres header, hero buttons, rating tab and the row all match the reference closely. The gaps are in the hero: there's no NETFLIX badge or TOP 10 ranking line, it has an extra metadata row the reference doesn't show, the title is plain text instead of title art, and the content sits too low on the page."
+}
+```

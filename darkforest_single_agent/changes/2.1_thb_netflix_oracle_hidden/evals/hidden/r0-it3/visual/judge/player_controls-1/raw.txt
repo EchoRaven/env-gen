@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Overall structure matches. There is a back arrow in the top-left, a full-width scrubber near the bottom with the time on the right, and a bottom control row with four controls on the left, a centered title and four controls on the right. The implementation adds two things the reference doesn't have: a large left-aligned 'You're watching' block with a synopsis in the middle of the frame, and a centered error toast at the top. The top-right flag icon is missing. The scrubber and control row also sit slightly lower than in the reference.",
+      "fix": "Remove the mid-screen 'You're watching' block and the error toast so the middle of the frame is empty video. Add the flag icon top-right at the same inset as the back arrow. Raise the scrubber to about 87% of the height and the control row to about 94%."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "Present: back arrow, scrubber with red thumb, remaining-time label, play/pause, back 10, forward 10, volume, centered title + episode label, next episode, episodes, subtitles, fullscreen. Missing: the top-right flag (report a problem) icon, plus the scrubber's buffered segment and chapter markers. Different state: the reference shows a pause icon because the video is playing; the implementation shows a play icon. Invented: the error toast and the 'You're watching' overlay with title, season/episode line and synopsis.",
+      "fix": "Add the flag icon button top-right. Draw a lighter buffered segment on the scrubber after the red played portion, plus small amber chapter tick marks. Show the pause icon in the playing state. Drop the toast and the synopsis overlay from this controls state.",
+      "missing": ["top-right flag / report-problem icon", "scrubber buffered-progress segment", "scrubber chapter markers", "pause icon (playing state)"]
+    },
+    "style": {
+      "score": 0.65,
+      "notes": "Both use flat, minimal white-on-dark controls with no chrome boxes. The implementation's dimmed poster backdrop and large text overlay make it a busy, cinematic info view. The reference is a sparse, utilitarian controls layer over a black frame. The toast also brings in a boxed surface with a red accent bar.",
+      "fix": "Show a plain black video area behind the controls, with no dimmed poster art or text blocks. Keep the controls as bare, unboxed white glyphs."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "The palette matches: black base, white icons and text, and a red played track and thumb. The implementation has no light-grey buffered segment and no amber chapter ticks. The warm, red-tinted poster backdrop changes the overall feel, which is pure black in the reference.",
+      "fix": "Use a pure black background. Scrubber: red played portion, light grey buffered portion, darker grey remainder, amber chapter ticks."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The centered title lockup matches: show name in bold, episode code and episode name in regular, same sans-serif. The time label is a similar small white sans. The overlay adds extra type levels the reference doesn't have: a small grey label, a large bold display title, a semibold subtitle and body paragraphs.",
+      "fix": "Remove the overlay's type levels. Keep only the bottom title lockup and the small time label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The outline icon set matches in style: arrow, 10-second skip circles, speaker with waves, next episode, stacked episodes, subtitle bubble, fullscreen corners. The skip-10 icons are noticeably smaller than in the reference. The play glyph is filled where the reference shows a pause. The flag icon is missing.",
+      "fix": "Scale the skip-back and skip-forward icons up to match the volume and next-episode icons (about 48px). Use a filled two-bar pause glyph while playing. Add an outline flag icon top-right."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The title lockup follows the same pattern ('Show E1 Episode name'), and the time label sits at the right of the scrubber. The implementation adds copy the reference doesn't have: 'You're watching', a season/episode line, the synopsis and the error message.",
+      "fix": "Remove the 'You're watching' label, the season/episode line, the synopsis and the error-toast text from the controls view."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Center-left of frame: the implementation shows a large 'You're watching' overlay with title, season/episode line and synopsis. The reference shows only empty black video here.",
+    "Background: the implementation shows dimmed poster artwork. The reference's video area is plain black.",
+    "Top center: the implementation shows an invented error toast with a red left accent. The reference has nothing here.",
+    "Top right: the reference has a flag (report-problem) icon. The implementation has none.",
+    "Bottom left: the reference shows a pause icon (playing state). The implementation shows a play icon.",
+    "Scrubber: the reference shows a light grey buffered segment and small amber chapter markers. The implementation shows only a uniform grey track.",
+    "Bottom control row: the implementation's skip-10 icons are smaller than its other icons. In the reference they are equal in size.",
+    "Vertical position: the implementation's scrubber and control row sit about 20px lower than in the reference."
+  ],
+  "fixes": [
+    "Remove the 'You're watching' title/synopsis overlay from the controls state.",
+    "Render a black video area instead of dimmed poster art, and suppress the error toast.",
+    "Add an outline flag icon button in the top-right corner, aligned with the back arrow.",
+    "Show the pause icon when the video is playing.",
+    "Add a buffered segment (light grey) and amber chapter tick marks to the scrubber.",
+    "Enlarge the skip-back and skip-forward 10 icons to match the other control icons.",
+    "Raise the scrubber and control row slightly to match the reference spacing."
+  ],
+  "summary": "The bottom control bar closely matches the reference, but the implementation adds a 'You're watching' overlay, a poster backdrop and an error toast, and is missing the top-right flag icon and the scrubber's buffered segment and chapter markers."
+}

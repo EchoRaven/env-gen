@@ -1,0 +1,121 @@
+{
+ "checks": [
+  {
+   "name": "landing renders with Sign In and an email field",
+   "ok": true,
+   "detail": "\u6587a\nenglish\nsign in\nunlimited movies, tv shows, and more\n\nwatch on any device. ev"
+  },
+  {
+   "name": "Sign In leads to /login",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/login"
+  },
+  {
+   "name": "signing in leaves the login page",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/profiles"
+  },
+  {
+   "name": "the profile picker shows the account's profiles",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/browse"
+  },
+  {
+   "name": "browse home has a hero billboard (>=60% wide)",
+   "ok": true,
+   "detail": "1339.21875"
+  },
+  {
+   "name": "browse home shows poster rails (>=10 images loaded)",
+   "ok": true,
+   "detail": "114"
+  },
+  {
+   "name": "nav 'Home' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/browse"
+  },
+  {
+   "name": "nav 'Shows' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/shows"
+  },
+  {
+   "name": "nav 'Movies' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/movies"
+  },
+  {
+   "name": "nav 'Games' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/games"
+  },
+  {
+   "name": "nav 'New & Popular' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/new"
+  },
+  {
+   "name": "nav 'My List' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/my-list"
+  },
+  {
+   "name": "nav 'Browse by Languages' opens its screen",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/browse/languages"
+  },
+  {
+   "name": "clicking a poster opens the title detail with Play",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/browse?title=1"
+  },
+  {
+   "name": "+ My List from the detail shows up on My List",
+   "ok": true,
+   "detail": "1 -> 2"
+  },
+  {
+   "name": "another profile's My List does not show it",
+   "ok": true,
+   "detail": "2 vs 1"
+  },
+  {
+   "name": "search finds a title by name",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/search?q=avengers"
+  },
+  {
+   "name": "Play opens /watch/:id with a loadable video",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/watch/21 http://127.0.0.1:23000/assets/video/clip_27152549.mp4"
+  },
+  {
+   "name": "the player's back returns to the browse page",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/browse"
+  },
+  {
+   "name": "the account menu offers Sign out",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "after Sign out, /browse is no longer reachable",
+   "ok": true,
+   "detail": "http://127.0.0.1:23000/login"
+  },
+  {
+   "name": "no broken images on visited pages",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "name": "no console errors during the walk",
+   "ok": true,
+   "detail": "[]"
+  }
+ ],
+ "passed": 23,
+ "total": 23
+}

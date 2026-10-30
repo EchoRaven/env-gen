@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The modal matches closely: a centered ~1085px modal sits over a dimmed browse page with the top nav still showing. The full-bleed hero has a bottom fade, with the title lockup bottom-left, the action row under it and mute on the far right. Below that is a two-column details block (left ~65% metadata and synopsis, right ~35% credits), then an Episodes header with the season dropdown right-aligned and episode rows. Differences: the implementation puts an extra Top-10 row between the rating and the synopsis, which pushes the Episodes section down about 50px. Its episode list also opens with a full-width hairline divider rather than a highlighted card row.",
+      "fix": "Remove the Top-10 row between the rating line and the synopsis so the synopsis sits right under the TV-14 line. Start the episode list with the first row rendered as a highlighted card instead of a divider line."
+    },
+    "components": {
+      "score": 0.75,
+      "notes": "Present: close X (dark circle, top-right), title-art lockup, white Play button, circular + and thumbs buttons, circular mute button, year/seasons/HD/subtitle badges, boxed TV-14 rating, synopsis, right-column labeled credits, Episodes heading, outlined Season dropdown, 'Season 1: [TV-14]' line, episode row (index, thumbnail, title, duration, description). Differences: the right column has no 'Cast: … more' entry and no 'This Show Is:' entry. Instead it shows invented 'Original language', 'Audience score' and 'Your rating' rows. An extra '#1 in TV Shows Today' Top-10 badge row has been added. The content-warning descriptors next to the TV-14 box (in both the metadata line and the season line) are missing. The episode row has no raised/highlighted card surface.",
+      "missing": [
+        "Cast: entry with italic 'more' link in right column",
+        "'This Show Is:' entry in right column",
+        "content-warning descriptors next to TV-14 rating badge",
+        "content-warning descriptors next to TV-14 in 'Season 1:' line",
+        "highlighted (lighter grey, rounded) card behind first episode row"
+      ],
+      "fix": "Make the right column Cast (with italic 'more'), Genres and This Show Is, in that order, and remove Original language, Audience score and Your rating. Remove the Top-10 '#1 in TV Shows Today' row. Show descriptor text after the TV-14 boxes. Wrap the first episode row in a #2f2f2f card with ~4px radius."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The design language matches: dark, cinematic and flat. The modal has slightly rounded corners, the circular outlined icon buttons match, Play is a square-cornered white button, and the Season dropdown is outlined. Differences: the implementation separates the episode list with a hairline divider, where the reference uses a filled, slightly rounded card for the active episode. The thumbs button looks filled/solid compared with the reference's outline glyph.",
+      "fix": "Replace the divider above the episodes with a raised #2f2f2f rounded card on the current episode row. Keep the separation between rows whitespace-based."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same palette: near-black #181818 modal surface, white primary text, mid-grey labels in the right column, white Play button with black text, red title art, dimmed backdrop. The extra red Top-10 badge adds an accent colour the reference's details block doesn't have. The episode card's lighter grey surface is missing.",
+      "fix": "Remove the red Top-10 badge from the details block. Add the lighter grey (#2f2f2f) surface behind the active episode row."
+    },
+    "typography": {
+      "score": 0.87,
+      "notes": "Same sans-serif and the same hierarchy: condensed display title art, ~24px 'Play', ~17px metadata, ~17px synopsis with generous line height, grey-label/white-value credits at ~15px, ~26px 'Episodes' heading. The extra ~20px bold Top-10 line adds a hierarchy level the reference doesn't have. The italic 'more' styling in the credits isn't there. The implementation's episode title is bolder than the reference's medium weight.",
+      "fix": "Remove the bold Top-10 line. Add an italic white 'more' at the end of the Cast line. Set the episode title to regular/medium weight, ~17px."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The close X, plus and mute icons, the HD box and the subtitle glyph all match. The hero image is a full-bleed cover crop with a bottom gradient, and the episode thumbnail is 16:9 with a small radius. Differences: the thumbs-up is a filled glyph where the reference uses a thin outline. There's also an extra Top-10 badge icon.",
+      "fix": "Switch the thumbs-up icon to the thin-stroke outline version, the same weight as the + icon. Remove the Top-10 badge icon from the modal body."
+    },
+    "copy": {
+      "score": 0.82,
+      "notes": "'Play', 'Episodes', 'Season 1', 'Season 1:', 'Genres:' and 'N Seasons' all match. The implementation's right column uses labels the reference doesn't have ('Original language:', 'Audience score:', 'Your rating: Not rated'). It's also missing the reference's 'Cast:' and 'This Show Is:' labels, and adds '#1 in TV Shows Today'.",
+      "fix": "Use the labels 'Cast:', 'Genres:' and 'This Show Is:' only. Remove 'Original language:', 'Audience score:', 'Your rating:' and '#1 in TV Shows Today'."
+    }
+  },
+  "similarity": 0.83,
+  "empty_state": false,
+  "deviations": [
+    "Details right column: the implementation shows Genres / Original language / Audience score / Your rating, but the reference shows Cast (with italic 'more') / Genres / This Show Is",
+    "Details left column: the implementation adds a red Top-10 badge with '#1 in TV Shows Today' between the TV-14 rating and the synopsis. The reference has no such row.",
+    "Episode list: the reference's first episode sits on a lighter grey, rounded card. The implementation uses a hairline divider and has no card surface.",
+    "Rating lines: the reference puts content-warning descriptors after the TV-14 box, in both the metadata line and the 'Season 1:' line. The implementation shows only the box.",
+    "Action row: the thumbs-up icon is filled in the implementation and outlined in the reference",
+    "Episode row title: the implementation uses a bold weight; the reference's is medium/regular"
+  ],
+  "fixes": [
+    "Remove the Top-10 '#1 in TV Shows Today' row from the modal details block",
+    "Rebuild the right credits column as 'Cast: <names>, more' (italic 'more'), 'Genres: …' and 'This Show Is: …', with grey labels and white values. Remove the Original language, Audience score and Your rating rows.",
+    "Render descriptor text (e.g. 'violence, language') after the TV-14 box in the metadata line and in the 'Season 1:' line",
+    "Style the current or first episode row as a #2f2f2f card with ~4px radius and inner padding, and drop the hairline divider above the list",
+    "Swap the thumbs-up for the thin outline glyph, and set the episode titles to medium weight"
+  ],
+  "summary": "The modal structure, hero treatment, action row and Episodes section match the reference closely, but the credits column has different fields, there's an extra Top-10 row, and the highlighted episode card and rating descriptors are missing."
+}
+```

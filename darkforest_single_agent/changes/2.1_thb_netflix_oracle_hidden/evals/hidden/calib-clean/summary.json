@@ -1,0 +1,71 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter5/workspace",
+ "tag": "calib-clean",
+ "parts": [
+  "api",
+  "static",
+  "ui"
+ ],
+ "errors": {},
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ }
+}

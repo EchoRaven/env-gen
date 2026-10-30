@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Same skeleton: a top bar with the logo and pill nav on the left and utilities on the right, then a large rounded inset hero card (~67px gutters, roughly 97–915px tall), then a titled horizontal row of 16:9 tiles that runs off the right edge, with a segmented page indicator on the right of the row header. The order and proportions match. The hero text block sits a little differently because the implementation adds a synopsis paragraph and has no badge/status line above the metadata.",
+      "fix": "Keep the structure. Drop the synopsis paragraph so the stack in the hero's lower-left reads title art → status line → metadata row → buttons, with the same vertical spacing as the reference."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "All 7 nav items, the active Home pill, search, the bell, the Kids profile chip, the avatar with caret, the speaker toggle on the hero, Play and More Info, the bottom-right megaphone badge, the row title, the page indicator and the tiles are all present. Differences: the reference's red '• LIVE' pill with its status line ('Started at 5 PM PT') under the title art does not appear. The implementation adds a synopsis paragraph that the reference does not have. The reference's row tiles carry title-art lockups over the artwork, and the implementation's tiles show bare images.",
+      "missing": [
+        "status line under the hero title (red pill badge + bold status text)",
+        "title-art lockup overlaid on row tiles"
+      ],
+      "fix": "Under the hero title, render a small red rounded badge with a bullet and caps label, followed by a bold ~22px status text line. Remove the synopsis paragraph. Overlay each row tile's title logo in its lower-left."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The design language matches: flat dark surfaces, a heavily rounded hero card, pill buttons (white Play, translucent gray More Info), slightly rounded tiles and airy spacing. The speaker control differs. The reference uses a filled dark translucent circle with no ring, while the implementation uses an outlined circle with a white ring.",
+      "fix": "Restyle the hero speaker button as a ~36px filled rgba(255,255,255,0.15–0.2) circle with no border."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a dark scheme, the red Netflix wordmark, a white Play pill, a gray translucent secondary pill and white text. The reference page background has a warm brownish-gray gradient behind the header and around the hero, fading to near-black. The implementation uses a flat cool near-black, so the header area loses that warm ambient tint. The reference's red LIVE accent is absent.",
+      "fix": "Set the page background to a gradient from about #4a4540 at the top to #181818 by ~1000px, giving warm ambient light behind the nav and hero. Use Netflix red (#E50914) for the live badge."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The nav, metadata row (with bullet separators), buttons and row heading use a matching sans at similar sizes and weights. The hero title is presented differently. The reference shows a show-logo image lockup, and the implementation sets the title as large condensed bold text (Bebas-like), which reads like a typographic headline rather than title art. The implementation also adds a regular-weight body paragraph level that the reference does not have.",
+      "fix": "Render the hero title from a title-logo image (max ~460px wide, ~240px tall). Use the condensed text only as a fallback when no logo exists. Remove the synopsis text level."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The search, bell, Kids tile, smiley avatar, caret, play triangle, megaphone badge and TOP 10 corner badges all match in style. The speaker glyph state differs (muted with an X versus sound on). Row tiles lack the title-logo overlays seen in the reference.",
+      "fix": "Default the speaker icon to the sound-on glyph inside a filled circle. Overlay the title-logo PNG on each tile."
+    },
+    "copy": {
+      "score": 0.93,
+      "notes": "The nav labels, 'Play', 'More Info' and 'Kids' match exactly. The badge and row-title strings differ ('#1 in TV Shows Today' / 'Trending Now' versus 'New Episode' / 'TV Action & Adventure'), but these are content-driven and appear in the same place.",
+      "fix": "No chrome copy changes needed beyond the status line ('LIVE', 'Started at …') when the item has one."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "hero lower-left: implementation sets the title as large condensed text, while the reference uses a show-logo image lockup",
+    "hero lower-left: implementation adds a 2-line synopsis paragraph below the metadata row that the reference does not have",
+    "hero lower-left: reference has a red '• LIVE' pill plus a bold status line between the title art and the metadata; implementation has no badge/status line",
+    "page background: reference has a warm brownish-gray gradient behind the nav and around the hero card; implementation is flat cool near-black",
+    "hero top-right: implementation's speaker button is an outlined ring with a muted glyph; reference's is a filled translucent dark circle with a sound-on glyph",
+    "row tiles: reference tiles carry title-logo overlays on the artwork; implementation tiles are bare images"
+  ],
+  "fixes": [
+    "Replace the hero's text title with the title-logo image lockup (fall back to condensed text only when no logo is available)",
+    "Remove the synopsis paragraph from the hero",
+    "Add the status line under the hero title: a small red rounded '• LIVE' badge followed by bold ~22px status text",
+    "Change the page background to a warm gradient (#4a4540 at the top fading to #181818) behind the header and hero",
+    "Restyle the speaker button as a filled translucent circle with no border, using the sound-on icon",
+    "Overlay title-logo art in the lower-left of each row tile"
+  ],
+  "summary": "A near-faithful Netflix browse home with the same chrome, hero card, buttons and row structure. It differs mainly in the hero title treatment (text instead of logo art), the added synopsis, the missing live/status badge line, and a flat background without the warm gradient."
+}

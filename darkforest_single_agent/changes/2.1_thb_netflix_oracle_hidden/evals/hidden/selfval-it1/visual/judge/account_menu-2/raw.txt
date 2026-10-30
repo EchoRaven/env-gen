@@ -1,0 +1,58 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The header chrome matches: wordmark on the left, inline text nav, and search, bell, Kids chip, avatar and caret on the right. The dropdown is anchored at the top right under the avatar, about 275px wide, with a list of rows, a divider and a sign-out row. The page behind the menu is different. The reference has the 'Browse by Languages' grid with a hover preview card, and the implementation has the Home hero. That is the host route, not the menu itself. The implementation's dropdown sits slightly lower and has 6 rows instead of 6 with a different mix.",
+      "fix": "Keep the dropdown anchored under the avatar, right edge aligned with the content gutter, top at ~72px. To compare like for like, capture the menu on the same host page as the reference."
+    },
+    "components": {
+      "score": 0.6,
+      "notes": "Present: other-profile row (Kids), Manage Profiles, Account, a divider and 'Sign out of Netflix'. Missing: the 'Transfer Profile' and 'Help Center' rows. The implementation adds a row for the current profile ('Visual Checker'). The reference does not list the active profile; it only lists other profiles.",
+      "fix": "Insert 'Transfer Profile' between Manage Profiles and Account, and 'Help Center' after Account. Remove the active profile from the profile list.",
+      "missing": ["Transfer Profile menu item", "Help Center menu item"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use a dark elevated panel with slightly rounded corners, a hairline border, a soft shadow, a full-width hairline divider above sign-out and airy row padding. The reference rows are a little taller (~58px) than the implementation's (~48–52px) for the action items.",
+      "fix": "Raise the dropdown row height to ~58px and use the same left padding for icon rows."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both are dark: near-black panel, white text, grey hairline border and divider. The palette and contrast match.",
+      "fix": "No change needed. Optionally match the panel background to the reference's #141414-ish with a #333 border."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans at about 17px regular weight in white, with sign-out set the same as the other rows. Sizes and weights match closely.",
+      "fix": "Keep as is. Make sure the row label's left edge sits ~40px right of the icon column, as in the reference."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use outline line icons: a pencil for Manage Profiles and a person for Account. The reference icons are larger (~26px) with a thicker stroke. The implementation's are smaller (~20px) and thinner. The Transfer Profile and Help Center (circled ?) icons are absent. Profile avatars are rounded squares in both.",
+      "fix": "Enlarge the menu icons to ~26px with a 1.75–2px stroke. Add a transfer-profile icon (person inside a rounded square with an arrow) and a circled-question-mark Help Center icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Transfer Profile' and 'Help Center' are missing.",
+      "fix": "Add the 'Transfer Profile' and 'Help Center' labels, using the same title-case wording."
+    }
+  },
+  "similarity": 0.74,
+  "empty_state": false,
+  "deviations": [
+    "account dropdown: 'Transfer Profile' row (between Manage Profiles and Account in the reference) is absent in the implementation",
+    "account dropdown: 'Help Center' row with a circled-? icon (after Account in the reference) is absent in the implementation",
+    "account dropdown top: implementation lists the active profile ('Visual Checker' with the blue smiley) as the first row; the reference lists only other profiles (Kids)",
+    "account dropdown icons: implementation's pencil and person icons are smaller and thinner than the reference's ~26px outline icons",
+    "page behind menu: reference shows the menu over the Browse by Languages grid; implementation shows it over the Home hero (host route differs, menu design unaffected)"
+  ],
+  "fixes": [
+    "Add a 'Transfer Profile' menu row with a transfer icon between 'Manage Profiles' and 'Account'",
+    "Add a 'Help Center' menu row with a circled-question-mark icon after 'Account', before the divider",
+    "Filter the active profile out of the dropdown's profile list so it shows only other profiles",
+    "Increase the menu icon size to ~26px with a slightly heavier stroke, and the row height to ~58px"
+  ],
+  "summary": "The dropdown's placement, dark styling and type match closely, but it lacks the Transfer Profile and Help Center rows and also lists the active profile, which the reference omits."
+}
+```

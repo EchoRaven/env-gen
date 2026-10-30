@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.86,
+      "notes": "The chrome matches the reference: a transparent top bar over a full-bleed hero, with the logo, 7 nav links (Movies selected) and right-side utilities in the same places. The 'Movies' heading and Genres dropdown sit top-left, followed by the left-aligned hero stack, the mute + rating tab at bottom-right, and a 'Gems for You' carousel peeking from the bottom. The difference is vertical rhythm. The implementation's hero runs about 90px taller, so the carousel row starts at y≈965 instead of y≈870 and its tiles are cut off at the viewport bottom. The reference shows the full tile row plus the top of the next section heading.",
+      "fix": "Shorten the hero (or remove the extra metadata row) so 'Gems for You' sits at about 78% of viewport height and the full 16:9 tile row, plus the start of the next row heading, is visible above the fold."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Every reference component is present: logo, 7 nav items with a pill active state, search, bell, Kids profile chip, avatar with caret, page title, Genres select, NETFLIX-branded title lockup, Top 10 badge with rank text, synopsis, Play and More Info buttons, mute circle, TV-14 maturity tab, row heading, tile carousel, and the page-indicator dashes. The implementation adds a metadata row (genre • year • runtime • rating) under the rank line, which the reference does not have. The synopsis is also clamped with an ellipsis, while the reference shows it in full across 3 lines.",
+      "fix": "Remove the 'Science Fiction • 2026 • 2h 19m • TV-14' metadata row from the hero. Let the synopsis wrap naturally to about 3 lines at a max-width of roughly 680px, with no truncation.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The design language is the same: flat, cinematic, full-bleed imagery with a dark left and bottom vignette, square-ish buttons with slight radius, a pill nav highlight, a thin-bordered Genres select, and edge-to-edge tiles with small gaps. Proportions are slightly off. The Play button is narrower (about 136px vs 157px) and the hero text block is more spread out.",
+      "fix": "Widen the Play and More Info buttons to the reference proportions (about 157×58 and 214×58, with icon-to-label spacing of about 16px) and tighten the hero's vertical spacing."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The colour system matches: a dark scheme with Netflix red for the logo, title-brand mark and Top 10 badges, a white Play button with black text, a translucent grey More Info button, a dark grey nav pill, and white and light-grey text over a gradient scrim. The bottom fade into the near-black page is comparable.",
+      "fix": "Keep as is. Optionally strengthen the bottom gradient so the carousel area reads as a darker band, as in the reference."
+    },
+    "typography": {
+      "score": 0.86,
+      "notes": "Both use a sans UI font with a condensed display title lockup, a large 'Movies' heading, a medium-weight '#N in Movies Today', regular-weight synopsis and nav text, and 'Gems for You' at about 26px. Nav labels in the implementation are slightly brighter and heavier. The reference's grey inactive nav items are dimmer.",
+      "fix": "Dim the inactive nav links to about #b3b3b3 at regular weight, and match the synopsis size and line-height (about 22px / 1.35)."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The outline search and bell, colourful Kids tile, blue smiley avatar, outline play triangle, circled-i info icon, circled mute icon and red TOP 10 badges all match. Tiles are 16:9 cover crops with title art bottom-left, as in the reference. Because of the overall layout shift, the tiles are vertically cropped in the screenshot. The reference also shows red 'Recently Added' bottom-centre pills on some tiles, which the implementation hints at but cuts off.",
+      "fix": "Make sure the full 16:9 tile renders above the fold, with the 'Recently Added' red pill centred on the bottom edge and the TOP 10 badge top-right only where applicable."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), 'Kids', 'Movies', 'Genres', 'Play', 'More Info', 'TV-14', '#N in Movies Today' and 'Gems for You' all match exactly.",
+      "fix": "No change needed."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "hero, below the rank line: the implementation adds a metadata row ('Science Fiction • 2026 • 2h 19m • TV-14') that the reference does not have",
+    "bottom of page: the 'Gems for You' row starts about 95px lower, so the tiles are cut off at the viewport bottom; the reference shows full tiles plus the start of the next row heading",
+    "hero synopsis: the implementation truncates with an ellipsis after 3 lines at a wider measure; the reference shows the complete synopsis at about 680px width",
+    "hero buttons: Play and More Info are slightly narrower and smaller than in the reference",
+    "top nav: inactive links look brighter and heavier than the reference's dimmer grey"
+  ],
+  "fixes": [
+    "Delete the genre/year/runtime/rating metadata row from the hero",
+    "Reduce the hero height and spacing so the carousel heading sits at y≈840 on a 1110px viewport and the full tile row is visible",
+    "Remove the synopsis line-clamp and set its max-width to about 680px",
+    "Enlarge Play and More Info to about 58px tall with the reference widths",
+    "Set inactive nav link color to about #b3b3b3, regular weight"
+  ],
+  "summary": "This is a near-faithful Netflix Movies page; the remaining gaps are an extra metadata row in the hero and a taller hero that pushes the carousel below the fold."
+}
+```

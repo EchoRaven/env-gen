@@ -1,0 +1,66 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The top nav matches: logo at left, then 7 nav items with My List highlighted as a pill, then search, bell, Kids and avatar on the right. The 'My List' heading sits top-left with the same left gutter (~67px). The tiles are a left-aligned horizontal grid of 16:9 thumbnails with small gaps, as in the reference. Differences: the reference grid starts lower (~y=303, with an empty band under the heading where the hover card expands), while the implementation's starts at ~y=211. The reference shows a hover preview card overlapping the third tile, and the implementation has no hover state rendered. The implementation also adds a footer attribution line that the reference doesn't have.",
+      "fix": "Add top padding so the tile row starts ~160px below the heading baseline (or reserve space for the hover expansion). Remove the bottom footer caption."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: nav bar with all 7 links and the active pill, search, notifications, Kids profile, avatar with caret, page heading, and thumbnail tiles with a title lockup and a red pill badge. Missing: the reference's expanded hover preview card. That card has a larger 16:9 artwork with the N logo corner mark and title treatment, a mute toggle, a round white play button, a rating group (thumbs down / thumbs up / double thumbs up) in a dark pill with an 'I like this' tooltip, a circular 'more info' chevron button, a metadata row (maturity rating box, runtime, HD badge) and a genre tags row with dot separators. The implementation adds 'TOP 10' corner badges and a footer caption, neither of which appears in the reference.",
+      "missing": [
+        "hover/expanded preview card",
+        "round white play button",
+        "rating pill (thumbs down / thumbs up / love) with 'I like this' tooltip",
+        "circular more-info chevron button",
+        "mute/volume toggle on preview",
+        "maturity rating box + runtime + HD badge metadata row",
+        "genre tags row with dot separators",
+        "Netflix 'N' corner logo on artwork"
+      ],
+      "fix": "Build the tile hover card: on hover, scale the tile to ~440px wide, showing artwork with the N mark and a mute button, and below it a dark #181818 panel. In that panel: a white circular play button, a dark pill holding three rating icons with a tooltip, a right-aligned outlined circular chevron, a row of rating box + runtime + HD outline badge, and a genre row with grey dot separators. Drop the TOP 10 corner badges unless the reference shows them."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat, dark streaming look: slightly rounded tile corners, no borders, a red pill badge at the tile's bottom centre, and the same nav pill highlight. The implementation is missing the elevated hover card's soft shadow and rounded panel, and the repeated TOP 10 badges add visual noise.",
+      "fix": "Give the hover card a rounded ~6px radius and a soft drop shadow over #181818. Remove the extra TOP 10 corner badges."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same near-black #141414 page, black-to-transparent nav, Netflix red logo and badges, white text, and grey active pill. Only the hover card surface (#181818) and its white/grey control colours can't be checked.",
+      "fix": "Use #181818 for the hover card panel, white fill for the play button, and grey outlines for the circular buttons."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Sans UI font in both, with similar nav sizes and weights. The 'My List' heading is larger and bolder in the implementation (~44px semibold) than the reference (~36px regular/medium). Title lockups on the tiles are a condensed display face, matching the reference's treatment.",
+      "fix": "Reduce the 'My List' heading to ~36px at regular/medium weight."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Nav icons match: outline search, outline bell, Kids gradient tile, blue smiley avatar square and caret. The artwork crop is the same 16:9 cover. The implementation has none of the hover card's outline icons (play, thumbs, double thumb, chevron, mute) and adds TOP 10 badge graphics.",
+      "fix": "Add outline icons for the thumbs-down, thumbs-up and love rating buttons, the chevron-down, and the muted speaker, plus a filled play triangle."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels and the 'My List' heading match exactly. 'Recently Added' plays the same role as 'New Season'. The implementation adds a footer line ('Catalog data and artwork from TMDB...') not in the reference, and lacks the 'I like this' tooltip and the metadata labels (R, 1h 49m, HD, genre tags).",
+      "fix": "Remove the footer caption. Add the 'I like this' tooltip text on the rating button and the metadata/genre labels in the hover card."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "Third tile: the reference shows an expanded hover preview card (artwork, play button, rating pill with 'I like this' tooltip, chevron, metadata row, genre tags); the implementation shows no hover/expanded state",
+    "Tiles: the implementation adds a red 'TOP 10' badge in the top-right corner of every tile; the reference tiles have none",
+    "Page bottom: the implementation adds a grey footer caption ('Catalog data and artwork from TMDB...') that the reference does not have",
+    "Grid vertical position: the reference tile row starts ~y=303 with an empty band below the heading; the implementation's starts ~y=211, right under the heading",
+    "Heading: the implementation's 'My List' is larger and heavier than the reference's"
+  ],
+  "fixes": [
+    "Implement the tile hover card: scaled artwork with N mark and mute button; a #181818 panel with a white circular play button, a dark pill holding 3 rating icons plus an 'I like this' tooltip, a right-aligned outlined chevron, a rating box + runtime + HD badge row, and a genre row with dot separators; rounded corners and a soft shadow",
+    "Remove the TOP 10 corner badges from the My List tiles",
+    "Remove the footer attribution caption",
+    "Push the tile grid down ~90px so it starts ~160px below the heading",
+    "Reduce the 'My List' heading to ~36px at regular/medium weight"
+  ],
+  "summary": "The nav chrome, heading, dark palette and 16:9 tile grid match well, but the reference's hover preview card (play, ratings, metadata, genres) is missing, and the implementation adds TOP 10 badges and a footer line."
+}

@@ -1,0 +1,22 @@
+{
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "iters": 5,
+  "extend_iters": {"bax/SecretStorage": 20},
+  "runs": 3,
+  "max_parallel": 6,
+  "claude_bin": "/home/user/.local/share/claude/versions/2.1.304",
+  "disallowed_tools": ["WebFetch", "WebSearch"],
+  "iter_timeout_s": {"bax": 5400, "nl2": 14400},
+  "max_attempts_per_iter": 8,
+  "bax": {
+    "env": "Python-Flask",
+    "scenarios": ["SecretStorage", "ImageTransfer", "Calculator"],
+    "spec_type": "openapi",
+    "safety_prompt": "none",
+    "temperature_label": 0.2
+  },
+  "nl2": {
+    "tasks": ["cerberus", "asteval", "tenacity"]
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same structure: a centered overlay over the blurred, dimmed title-detail modal, with a full-width red top rule (~960px wide), the close X top-right, a centered title and subtitle, three evenly spaced rating columns, and a centered 'Got it!' button. The implementation adds an extra centered status line between the columns and the button, which pushes the button down about 15px. The reference has a faint hairline divider spanning the modal width under the button (~y=800); the implementation has none.",
+      "fix": "Remove the status line between the rating columns and 'Got it!'. Put the button about 80px below the labels and add the faint full-width hairline divider below it at the red rule's width."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Both have the red top accent rule, close X, title, subtitle, three icon+label rating options (thumbs down, thumbs up, double thumbs up) and the 'Got it!' button. Extra element: the 'X is not rated yet.' status text. The first option sits on a highlighted rounded grey tile that the reference doesn't show; in the reference all three options are bare. The hairline divider below the button is missing.",
+      "fix": "Delete the rating-status caption. Render the three options with no background tile in their default state. Add the hairline divider under the button.",
+      "missing": ["faint horizontal hairline divider below the 'Got it!' button"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat, minimal treatment directly on a dimmed backdrop with no card surface. The button is a small dark-grey slightly-rounded rectangle in both. The implementation adds a rounded, filled highlight panel around the first option (a different surface treatment), and its red rule is a little thicker. The backdrop blur and dimming are heavier than the reference.",
+      "fix": "Remove the highlight panel on the thumbs-down option. Make the red rule thinner (~3px). Lighten the backdrop dim slightly so the underlying detail modal shows through about as much as in the reference."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Same palette: dark scrim, white title and icons, light-grey subtitle, Netflix-red rule, dark-grey button with white text. The implementation's scrim is slightly darker and more uniformly black. The extra grey highlight tile adds a surface colour the reference doesn't have.",
+      "fix": "Lower the scrim opacity a little (~0.7 black) and remove the grey highlight fill on the first option."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Hierarchy matches: a large bold centered title, a regular lighter-grey subtitle, small white centered option labels, and a bold button label. The implementation uses an Inter-style face rather than the reference's Netflix Sans-like geometric sans, so the title runs wider and heavier. The option labels are slightly larger and wrap differently ('We won't suggest this / to you again' vs 'We won't suggest / this to you again').",
+      "fix": "Use a Netflix Sans-like geometric sans (or a closer fallback). Reduce the option labels to ~16px and narrow the label width (~150px) so they wrap as in the reference."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Same filled white thumbs-down, thumbs-up and double-thumbs-up glyphs at similar sizes, and the same thin-stroke X close icon. The icon shapes differ slightly; the reference's thumbs are rounder and chunkier.",
+      "fix": "Use the filled Netflix-style thumb glyphs at ~48px, with the double-thumb icon slightly larger than the single ones."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "The title, subtitle, the three option labels and 'Got it!' match the reference exactly. The implementation adds the line 'The East Palace is not rated yet.', which the reference doesn't have.",
+      "fix": "Remove the 'not rated yet' copy."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Center, between the rating columns and the button: the implementation adds a small grey caption 'The East Palace is not rated yet.'; the reference has no text there.",
+    "Left rating option: the implementation wraps the thumbs-down icon and label in a rounded grey highlight tile; in the reference all three options are bare on the scrim.",
+    "Below 'Got it!': the reference shows a faint full-width hairline divider (~y=800); the implementation has none.",
+    "Typography: the implementation's Inter-like face makes the title wider and heavier, and the option labels wrap differently from the reference's geometric sans.",
+    "Backdrop: the implementation's scrim is darker and more heavily blurred, so the underlying detail modal is less visible than in the reference.",
+    "Top red rule: slightly thicker in the implementation."
+  ],
+  "fixes": [
+    "Remove the 'X is not rated yet.' status line and move 'Got it!' up to ~80px below the option labels.",
+    "Remove the default highlight/background tile from the thumbs-down option; keep all three options transparent.",
+    "Add a faint 1px hairline divider (rgba(255,255,255,0.15)) under the button, spanning the red rule's width.",
+    "Switch to a Netflix Sans-like font. Set option labels to ~16px with a ~150px max-width so they wrap as 'We won't suggest / this to you again'.",
+    "Reduce the scrim opacity and blur slightly, and thin the red top rule to ~3px."
+  ],
+  "summary": "A near-faithful match to the rating dialog. The implementation adds a 'not rated yet' caption and a highlighted first option, is missing the hairline divider below the button, and uses a different font face."
+}

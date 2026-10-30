@@ -1,0 +1,19 @@
+{
+  "base_experiment": "0_baxbench_nl2_tests",
+  "selfval_experiment": "2_thb_netflix_selfval",
+  "task": "netflix",
+  "iters": 5,
+  "runs": 1,
+  "iter_timeout_s": 14400,
+  "node_dir": "/home/user/.nvm/versions/node/v22.22.1",
+  "bash_timeout_ms": {"default": 600000, "max": 1800000},
+  "hidden": {
+    "port_offset": 20000,
+    "judge_model": "claude-opus-5-5",
+    "judge_effort": "medium",
+    "judge_repeats": 3,
+    "judge_parallel": 4,
+    "judge_timeout_s": 900
+  },
+  "view_port_base": 11000
+}

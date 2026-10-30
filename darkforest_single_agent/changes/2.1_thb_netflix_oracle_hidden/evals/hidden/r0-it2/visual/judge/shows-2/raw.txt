@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. The transparent top nav overlays a full-bleed hero, the 'TV Shows' heading and Genres dropdown sit top-left, the hero copy block is left-aligned, the mute/maturity-rating badge sits at the right edge, and a horizontal carousel peeks in at the bottom. The difference is vertical rhythm. In the reference the 'Today's Top Picks' row header sits at about y=837 and the whole tile row is visible above the fold, with the next row's heading peeking in. In the implementation the row header is at about y=935, so the tiles are cut off at the bottom of the viewport. The hero copy block also sits slightly lower.",
+      "fix": "Shorten the hero, or pull the first row up with a larger negative margin, so the row title lands at about 76% of viewport height and the full tile row (about 165px tall) plus the next row's heading are visible above the fold."
+    },
+    "components": {
+      "score": 0.82,
+      "missing": [
+        "Bottom-edge status badges on carousel tiles ('New Season', 'Recently Added', 'New Episode' / 'Watch Now' red pill labels)"
+      ],
+      "notes": "All the nav items are present: 7 links, with Shows active as a pill. Search, the bell, the Kids profile and the avatar with its caret are all there, as are the TV Shows title, Genres dropdown, Netflix N-series tag over the hero title, TOP 10 badge with '#1 in TV Shows Today', synopsis, Play and More Info buttons, mute button, maturity-rating flag, row title, page indicator dashes and TOP 10 corner badges on tiles. The implementation adds a metadata row ('Comedy · 2026 · 4 Episodes · TV-14') between the ranking line and the synopsis, which the reference does not have. The red bottom badges on the tiles are not visible, either because they are absent or because they are clipped by the fold.",
+      "fix": "Remove the genre/year/episodes/rating metadata line from the hero. Render the red status pills centered on the bottom edge of the carousel tiles and make sure they are visible."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The cinematic dark-overlay hero, flat square-cornered buttons, square tiles, pill-shaped active nav item and minimal decoration all match. The carousel tiles in the implementation have tighter gaps (about 4px against the reference's roughly 8px). The Play and More Info buttons are slightly smaller and tighter than in the reference.",
+      "fix": "Set the gap between carousel tiles to about 8px. Size the Play button to about 158×58 and the More Info button to about 214×58, with the same padding as the reference."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The color system matches: dark scheme, Netflix red for the logo, TOP 10 badges and N-series tag, a white Play button, a translucent gray More Info button and a gray pill for the active nav item. The left and bottom gradient vignettes are present. The Genres dropdown in the reference is a black-filled box with a white border; the implementation's dropdown looks more transparent.",
+      "fix": "Give the Genres dropdown a solid black background (#000) with a 1px white border."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Sans UI type, title sizes, nav weights and the '#1 in TV Shows Today' styling are similar. The hero title is a condensed display typeface rather than a title-artwork image, but it treats the lockup reasonably. The carousel tiles show uniform condensed text overlaid at the bottom-left of each tile. The reference has tile-specific title artwork placed inside the art. The 'TV Shows' heading in the implementation is slightly bolder.",
+      "fix": "Use title-logo artwork for tile titles where available, or at least vary the placement so it sits inside the art. Match the 'TV Shows' heading to a regular weight at about 44px."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The outline search and bell icons, play triangle, circled-i info icon, mute icon in a circle, Kids badge and smiley avatar match. The tiles use a 16:9-ish cover crop like the reference. The TOP 10 corner badges match in style.",
+      "fix": "Keep the current icons. Check that the tile aspect ratio is about 1.78:1 and fully visible."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "The nav labels, 'TV Shows', 'Genres', '#1 in TV Shows Today', 'Play', 'More Info' and 'Today's Top Picks for You' are all identical to the reference. The only addition is the metadata line.",
+      "fix": "Drop the extra metadata copy line under the ranking."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Hero: the implementation inserts a metadata row ('Comedy · 2026 · 4 Episodes · TV-14') between the TOP 10 ranking line and the synopsis. The reference goes straight from the ranking line to the synopsis.",
+    "First carousel row: it sits about 100px lower than in the reference, so the tiles are cut off by the viewport bottom. In the reference the full tile row and the next row's heading are visible.",
+    "Carousel tiles: the red status pills on the bottom edge ('New Season', 'Recently Added', 'New Episode'/'Watch Now') shown in the reference are not visible in the implementation.",
+    "Carousel tiles: the titles are rendered as uniform condensed text at the bottom-left of every tile. The reference uses title artwork integrated into each tile.",
+    "Carousel tiles: the gaps between tiles are narrower than the reference's roughly 8px spacing.",
+    "Hero buttons: Play and More Info are slightly smaller and more compact than in the reference.",
+    "Genres dropdown: the reference shows a solid black box with a white border; the implementation's dropdown looks lighter and more transparent."
+  ],
+  "fixes": [
+    "Remove the genre/year/episodes/rating metadata line from the hero copy block.",
+    "Reduce the hero height, or raise the first row, so 'Today's Top Picks for You' sits at about y=837 at 1104px viewport height and the whole tile row is visible above the fold.",
+    "Add red status pills centered on the bottom edge of each tile ('New Season', 'Recently Added', 'New Episode' + white 'Watch Now').",
+    "Increase the gap between carousel tiles to about 8px.",
+    "Enlarge the Play and More Info buttons to about 58px tall, with padding matching the reference.",
+    "Give the Genres dropdown a solid black fill with a 1px white border."
+  ],
+  "summary": "The implementation closely reproduces the Netflix TV Shows hero and nav. The gaps are an invented metadata row, a first carousel row pushed below the fold and missing tile status badges."
+}
+```

@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Matches the reference: a centred dark modal about 1085px wide over a dimmed Netflix home page (top nav, hero, row heading below). Inside the modal the order is the same: synopsis and a right-hand metadata column, then the Episodes heading, then a vertical episode list. Each row has a large number, a 16:9 thumbnail, a title and duration on one line and the synopsis below. Differences: the implementation adds a 'Season 1: TV-14' sub-row under the Episodes heading and a divider above the first episode. The reference goes straight from the heading to the first row, which has no top rule. Rows without a synopsis collapse to a vertically centred single line, while the reference rows put the title at the top with two lines of synopsis below.",
+      "fix": "Remove the 'Season 1: TV-14' sub-row and the divider above the first episode. Keep the episode title anchored to the top of the row, level with the top of the thumbnail, followed by the synopsis block, so row height and rhythm match the reference."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Present: episode number, thumbnail, hover play overlay, title, duration, synopsis (row 1 only), dividers, highlighted current row and Episodes heading. The reference's right side of the Episodes header is plain text (the series/season name 'The Hawk'). The implementation uses a bordered 'Season 1' dropdown and adds a season-rating sub-row, neither of which the reference shows. In the reference the play overlay is a circled play button; the implementation shows a bare triangle. The implementation also highlights the hovered row (2), while the reference highlights row 1 as the current episode and shows the play overlay on a different, unhighlighted row. Synopsis text is missing on rows 2–5.",
+      "missing": [
+        "plain-text season/series label on the right of the Episodes header (replaced by a dropdown)",
+        "circular outlined play button overlay on the hovered thumbnail",
+        "episode synopsis text under titles on rows 2+"
+      ],
+      "fix": "Replace the bordered Season dropdown with a right-aligned plain white label (about 20px, regular weight) when there is one season. Remove the 'Season 1: TV-14' line. Draw the hover play icon as a white triangle inside a roughly 52px circle with a 2px white outline on a translucent dark fill. Keep the grey highlight on the current episode (row 1), separate from hover. Render a synopsis for every episode."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat dark modal, hairline grey dividers between rows, a lighter grey fill on the active row with a slight corner radius, and square-ish thumbnails. Density is close. The bordered dropdown box adds a framed control the reference doesn't have.",
+      "fix": "Remove the bordered dropdown frame. Keep the active-row fill at about #333 with a roughly 4px radius, and apply it to the current episode only."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Matches: #181818 modal over a darkened page, white titles, light-grey synopsis, grey large numerals, lighter-grey active row and red Top 10 badge. Differences are negligible.",
+      "fix": "No major change. Make sure the active-row fill and divider grey match the reference (#333 fill, #404040 dividers)."
+    },
+    "typography": {
+      "score": 0.87,
+      "notes": "Same Netflix-Sans-style sans serif. Bold 'Episodes' heading at about 26px, large light episode numerals, bold episode titles at about 17px, regular synopsis at about 15px and regular durations. The synopsis in the implementation is slightly smaller and tighter than the reference (about 15–16px with about 22px line height). The right header label is set in a dropdown rather than as plain 20px text.",
+      "fix": "Increase the episode synopsis to about 15–16px with about 1.45 line height. Set the right-hand header label as plain 20px regular white text."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "Thumbnails match the reference's 16:9 crop, roughly 170×96, with small radii. The Top 10 badge is rendered correctly. The hover play glyph is a bare filled triangle instead of the reference's circled play button.",
+      "fix": "Wrap the play triangle in a circular outline (2px white stroke, about 50px diameter, translucent black fill) centred on the thumbnail."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The 'Episodes' heading matches, as do the duration format ('34m'-style units) and the numbering. The reference's header label is the season/series name; the implementation shows 'Season 1' with a dropdown caret and adds a 'Season 1: TV-14' caption the reference does not have.",
+      "fix": "Show only the season/series title text on the right of the Episodes header and drop the 'Season 1: <rating>' caption."
+    }
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header, right side: the implementation shows a bordered 'Season 1' dropdown with a caret; the reference shows plain right-aligned text with no box",
+    "Below the Episodes heading: the implementation adds a 'Season 1: TV-14' caption row and a divider above episode 1; the reference has neither",
+    "Episode rows 2–5: the implementation has no synopsis, so the title is vertically centred; the reference puts the title at the top and two lines of synopsis below it in every row",
+    "Hovered thumbnail: the implementation's play overlay is a bare triangle; the reference uses a white-outlined circular play button",
+    "Active-row highlight: the implementation highlights the hovered row (2); the reference highlights the current episode (row 1), while the play overlay appears on another row"
+  ],
+  "fixes": [
+    "Replace the Season dropdown in the Episodes header with plain right-aligned 20px white text (the series/season name)",
+    "Remove the 'Season 1: TV-14' sub-row and the top divider above the first episode",
+    "Render the synopsis for every episode and top-align title and duration with the thumbnail",
+    "Change the hover play overlay to a circled play button (white 2px ring, translucent dark fill)",
+    "Keep the grey active-row fill on the current episode (row 1), separate from the hover overlay"
+  ],
+  "summary": "The More Info modal's episode list is a close match in structure, colour and type. The main gaps are the Season dropdown and extra season-rating caption in the header, missing synopses on later rows, and a bare play glyph instead of the circled play button."
+}
+```

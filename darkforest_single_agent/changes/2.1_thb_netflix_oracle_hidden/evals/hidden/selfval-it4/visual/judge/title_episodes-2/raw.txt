@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Matches the reference: a centered dark modal about 1085px wide over a dimmed home page, the synopsis and metadata block above, an 'Episodes' heading row, then full-width episode rows (number, 16:9 thumbnail, title/description column, runtime on the right) separated by hairline dividers. Differences: the implementation adds a 'Season 1: TV-14' sub-row under the heading, a divider above the first row, and its descriptions are missing on most rows, so rows 2–5 lose their two-line text block and look emptier.",
+      "fix": "Remove the 'Season 1: TV-14' sub-row and the top divider so the first episode row sits right under the 'Episodes' heading, as in the reference."
+    },
+    "components": {
+      "score": 0.75,
+      "missing": [
+        "episode synopsis text on rows 2–5",
+        "plain-text series/season label at the right of the Episodes heading (the implementation uses a boxed dropdown instead)"
+      ],
+      "notes": "The episode list, number column, thumbnails, titles, runtimes, the play overlay on hover, and the highlighted row all exist. The reference shows a plain-text label 'The Hawk' at the right of the heading, while the implementation shows a bordered 'Season 1 ▾' dropdown, which is a different component. The implementation also adds a 'Season 1: TV-14' maturity badge line the reference doesn't have. Rows 2–5 have no description, while every reference row has a two-line synopsis.",
+      "fix": "Show a plain right-aligned text label (series or season name) instead of the bordered dropdown when only that label is needed, drop the extra rating sub-line, and render the two-line description in every episode row."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark modal, hairline row dividers, square-cornered highlighted row with a lighter grey fill, and similar row height and padding. The dropdown's bordered box and the rating badge add chrome the reference doesn't have.",
+      "fix": "Drop the boxed dropdown border and the rating badge chrome so the heading row stays unadorned."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same #181818-style modal surface, a lighter grey highlight row (#333-ish), white titles, light grey descriptions, and the dimmed backdrop. Close match.",
+      "fix": "No significant change needed. Keep the highlight fill on the first or active row as in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family, a bold large 'Episodes' heading, bold episode titles, regular grey descriptions, and large light episode numbers. In the implementation, single-line rows center the title vertically instead of top-aligning it, and the descriptions sit slightly tighter and smaller.",
+      "fix": "Top-align episode titles with the runtime at the top of the thumbnail and keep the description at about 15px with about 22px line height under the title."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Thumbnails match the reference's size and 16:9 cover crop. The reference's hover play icon is a white triangle inside a circular outline ring. The implementation shows a bare triangle.",
+      "fix": "Render the thumbnail play overlay as a white triangle inside a circular white-outlined ring of about 56px with a translucent dark fill."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The 'Episodes' heading matches. The right-hand label reads 'Season 1' with a caret, where the reference shows a plain series/season name, and the 'Season 1:' prefix line is extra copy.",
+      "fix": "Use a plain label with no caret and remove the 'Season 1:' prefix line."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Episode rows 2–5: the implementation has no description text under the title, so rows look empty. Every reference row shows a two-line synopsis.",
+    "Right of the Episodes heading: the implementation shows a bordered 'Season 1 ▾' dropdown box. The reference shows plain unboxed text ('The Hawk').",
+    "Under the Episodes heading: the implementation adds a 'Season 1: TV-14' line with a rating badge and a divider above the first row. The reference goes straight into the first, highlighted row.",
+    "Thumbnail play overlay: the implementation shows a bare triangle. The reference shows a triangle inside a circular outlined ring.",
+    "Single-line rows: the implementation centers the title and runtime vertically against the thumbnail. The reference top-aligns them."
+  ],
+  "fixes": [
+    "Render the episode synopsis (two lines, grey, about 15px) under the title in every row.",
+    "Replace the bordered season dropdown with plain right-aligned label text when only that label is needed.",
+    "Remove the 'Season 1: TV-14' sub-line and the divider above the first episode row.",
+    "Top-align the episode title and runtime with the top of the thumbnail.",
+    "Wrap the thumbnail play icon in a circular white outline ring with a translucent dark fill."
+  ],
+  "summary": "The modal and episode list structure is a close match, but descriptions are missing on most rows, the season control is a bordered dropdown instead of plain text, and an extra rating sub-row is added."
+}

@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.95,
+      "notes": "Same skeleton: a dark top nav with the wordmark on the left, 7 nav links, and search, bell, Kids and avatar on the right. Below it are full-bleed horizontal carousels in the same order: a landscape 'New on' row, a Top 10 TV row with numerals, a Top 10 Movies row with numerals, then a fourth landscape row. Gutters, tile proportions, the clipped tile at the right edge and the page-indicator dashes at the top right of each row all match. The rows start about 15px higher than in the reference.",
+      "fix": "Raise the top padding above the first row heading by about 15px to match the reference spacing."
+    },
+    "components": {
+      "score": 0.88,
+      "missing": [],
+      "notes": "Every component is there: the nav with the 'New & Popular' pill shown active, search, bell, Kids profile chip, avatar with caret, row headings, page-indicator dashes, TOP 10 corner badges, red 'Recently Added' bottom badges and ranked numeral tiles. The implementation adds a right chevron over the Top 10 TV row, which the reference doesn't show at rest. One movie tile (rank 3) falls back to plain grey 'Backrooms' text on a cropped landscape image instead of poster art with a title treatment.",
+      "fix": "Show the row's next chevron only on hover. Give the rank-3 movie tile a proper portrait poster with a title lockup instead of the plain-text fallback."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The flat, dark, dense streaming look matches: square-cornered tiles, tight gaps, no shadows, and small square red badges. The main difference is the rank numerals. In the reference they are solid black-filled glyphs with a thin grey outline that sit behind the poster. In the implementation they are hollow, outline-only glyphs, so they read as wireframe digits.",
+      "fix": "Render the rank numerals with a near-black fill (#000 or #141414) and a ~3px #595959 stroke, sized to the full tile height and tucked behind the left edge of the poster."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "The colour system matches: #141414 page background, darker header, the Netflix red for the wordmark and badges, white text, and a grey pill for the active nav item. The only colour difference is in the numerals: the reference fills them black against the background, while the implementation leaves the inside the page colour and outlines it in grey.",
+      "fix": "Fill the numeral glyphs with black so they stand out darker than the page background, as in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans-serif UI font with the same nav sizes and badge text styling. The section headings in the implementation are semibold and slightly larger, while the reference uses regular or medium weight at about 26px. The titles overlaid on the landscape tiles are generic condensed caps rather than per-title logo lockups, which is acceptable as content.",
+      "fix": "Set the row headings to font-weight 400–500 at about 26px with the reference's letter spacing."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The outline search and bell icons, the Kids gradient tile, the blue smiley avatar with caret and the TOP 10 badge all match. Tile aspect ratios match: landscape 16:9 in the 'New on' rows and 2:3 posters in the ranked rows. The outline-only numeral glyphs and the plain-text image fallback are the two visual weak spots.",
+      "fix": "Use solid-filled numeral glyphs and make sure every ranked tile shows poster art, never a text fallback."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels and badge copy match. The ranked row headings drop 'in the U.S.' ('Top 10 TV Shows Today' and 'Top 10 Movies Today' instead of '… in the U.S. Today'). The fourth row is titled 'Worth the Wait' where the reference has 'Coming This Week'.",
+      "fix": "Rename the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: the rank numerals are hollow outline-only glyphs. In the reference they are solid black-filled glyphs with a thin grey stroke behind each poster.",
+    "Top 10 rows: the headings read 'Top 10 TV Shows Today' and 'Top 10 Movies Today' instead of 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today'.",
+    "Fourth row: the heading reads 'Worth the Wait'. The reference reads 'Coming This Week'.",
+    "Top 10 Movies, rank 3: the tile shows a cropped landscape image with plain grey 'Backrooms' text instead of portrait poster art with a title treatment.",
+    "Top 10 TV row, right edge: a next chevron is showing that the reference doesn't display at rest.",
+    "Row headings: semibold weight in the implementation, regular or medium in the reference.",
+    "Vertical spacing: the first row starts about 15px higher than in the reference."
+  ],
+  "fixes": [
+    "Restyle the rank numerals with a black fill, a ~3px grey (#595959) stroke and full tile height, overlapping behind the poster's left edge.",
+    "Rename the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'.",
+    "Replace the text-only fallback on the rank-3 movie tile with portrait poster art.",
+    "Show the carousel chevron only on row hover.",
+    "Set the row heading weight to 400–500 and add about 15px of top padding above the first row."
+  ],
+  "summary": "A near-faithful match to the Netflix New & Popular layout and chrome; the main gaps are hollow rank numerals instead of filled ones, shortened row headings and one tile showing text instead of poster art."
+}
+```

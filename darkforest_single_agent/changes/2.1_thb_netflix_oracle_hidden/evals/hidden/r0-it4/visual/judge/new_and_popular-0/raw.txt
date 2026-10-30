@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.86,
+      "notes": "Same skeleton. There's a top nav bar with the wordmark on the left, nav links, and utilities on the right. Below it are horizontal carousel rows in the same order: New on Netflix (landscape tiles), Top 10 TV Shows (ranked), Top 10 Movies (ranked), then Coming This Week. The left gutter (~67px) matches, the last tile bleeds off the right edge, and page indicators sit top-right of each row. Differences: vertical rhythm is tighter (first row heading at y≈137 vs ≈164, Coming This Week at ≈1055 vs ≈1063). Landscape tiles are slightly shorter (~160px vs ~163px). In the ranked rows, numeral and poster pairs are a bit narrower and more widely spaced. A hover preview card covers the middle of rows 2–3, slots 3–4, which hides ranked items. The reference has nothing in that state.",
+      "fix": "Close any hover/preview card in the default state. Add ~25px of top padding above the first row heading. Match ranked-item width (numeral ~150px plus poster ~147×207) so six items fill the row up to the right gutter."
+    },
+    "components": {
+      "score": 0.8,
+      "notes": "Inventory matches the reference. The nav has 7 links with New & Popular pill-highlighted, plus search, bell, Kids profile chip, avatar and caret. Each row has a heading and page indicator dashes. Tiles have TOP 10 red corner badges and red bottom-center status badges ('New Episodes', 'Recently Added'). The ranked rows use large numerals beside posters. Extra: an expanded hover preview card (N logo, title, mute button, play/+/thumb/chevron buttons, TV-14 / 2 Seasons / HD metadata, genre list) is open over the Top 10 rows. The reference shows no open preview. Reference tiles also carry a secondary white 'Watch Now' badge next to the red one; the implementation never uses it.",
+      "missing": [
+        "white 'Watch Now' secondary badge paired with the red status badge (New on Netflix row)"
+      ],
+      "fix": "Render the page with no hover preview open. Support a white secondary badge (black text) shown alongside the red status badge on landscape tiles."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Same flat dark streaming look: square-ish tiles with ~2px radius, no shadows on tiles, a solid pill highlight for the active nav item, and small sharp-cornered red badges. The hover card adds a big elevated rounded surface with a shadow that the reference doesn't have. Landscape tiles use one condensed white title treatment, bottom-left, on every tile. The reference uses each title's own artwork lockup, placed differently per tile.",
+      "fix": "Remove the elevated preview card from the default view. On landscape tiles, use the title-logo artwork (or vary placement and size per asset) instead of one uniform bottom-left condensed text overlay."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Same near-black base (#141414) with a slightly lighter header band. Netflix red is used for the wordmark and badges, the active pill is grey with white text, and inactive nav links are light grey. Ranked numerals in both are dark-filled with grey outlines. The hover card brings in a dark-grey elevated surface that isn't in the reference.",
+      "fix": "Leave colours as they are. Removing the hover card gets rid of the extra surface tone."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Sans-serif throughout, with matching nav weights (active item semibold). Row headings in the implementation are a bit larger and heavier (~30px medium vs ~28px regular). Badge text style matches (small bold white on red). Tile title overlays use a uniform condensed bold face where the reference shows varied logo typography.",
+      "fix": "Set row headings to ~28px regular/medium weight, white, with matching letter spacing."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Line icons for search and bell, the rainbow Kids avatar, a blue smiley avatar with a caret, and the Netflix wordmark all match. TOP 10 badges match. Ranked numerals are large dark-filled with grey stroke in both, with the poster overlapping the numeral's right side. Implementation numerals are slightly smaller and lighter in stroke. Images use cover crops at the right aspects: 16:9 landscape and 2:3 posters.",
+      "fix": "Scale ranked numerals so they span the full poster height (~210px) and slightly widen the grey outline stroke."
+    },
+    "copy": {
+      "score": 0.97,
+      "notes": "Nav labels, row headings ('New on Netflix', 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today', 'Coming This Week') and badge wording ('Recently Added', 'New Episodes'/'New Season') all match in casing and tone. The 'Watch Now' secondary badge copy is never shown.",
+      "fix": "Add the 'Watch Now' secondary badge label where applicable."
+    }
+  },
+  "similarity": 0.85,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 TV / Top 10 Movies rows, center (x≈880–1305, y≈385–820): an expanded hover preview card (artwork, mute button, play/add/rate/expand buttons, maturity/seasons/HD metadata, genres) covers ranked items 3–4. The reference shows no preview open.",
+    "New on Netflix landscape tiles: every title is rendered as the same condensed white text, bottom-left. The reference uses varied title-artwork lockups placed per asset.",
+    "New on Netflix tiles: the reference pairs a red status badge with a white 'Watch Now' badge (3rd tile). The implementation only ever shows the single red badge.",
+    "Vertical rhythm: the first row heading starts ~27px higher in the implementation (y≈137 vs 164) and landscape tiles are slightly shorter. Overall spacing is a bit tighter.",
+    "Row headings: slightly larger and heavier in the implementation than the reference's regular-weight ~28px titles.",
+    "Ranked rows: numeral and poster pairs are slightly smaller with wider gaps between items than in the reference."
+  ],
+  "fixes": [
+    "Make sure no hover/preview card is open on initial render of /new (only open it on real pointer hover, and not while a screenshot is being taken).",
+    "Add ~25px top padding above the 'New on Netflix' heading and set landscape tile height to ~163px.",
+    "Set row heading typography to ~28px, regular/medium weight.",
+    "Support an optional white 'Watch Now' badge next to the red status badge on landscape tiles.",
+    "Use title-logo artwork, or vary title overlay placement and size, instead of one uniform bottom-left condensed text treatment.",
+    "Size ranked numerals to the full poster height (~210px) and tighten item spacing so six items reach the right gutter."
+  ],
+  "summary": "A close structural and visual match to the Netflix New & Popular page, but an open hover preview card over the Top 10 rows covers the ranked items, and title overlays use one uniform text treatment."
+}
+```

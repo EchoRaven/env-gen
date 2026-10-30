@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The skeleton matches. Both have a full-bleed tilted poster-collage hero with a dark overlay, the NETFLIX wordmark top-left, the language select and Sign In at top-right, a centered headline, subline, prompt and email+CTA row, a curved arc separator, and a promo banner strip below. Differences: in the reference, the popcorn icon sits outside the banner to its left and the banner starts at about x=275. In the implementation, the popcorn sits inside the banner's left edge and the banner starts at about x=168. The implementation's banner also sits about 25px lower.",
+      "fix": "Move the popcorn icon outside the banner card, to its left (about x=175–260). Start the banner card at about x=275 and end it at about x=1755. Vertically center the strip at about y=1013."
+    },
+    "components": {
+      "score": 0.93,
+      "missing": [],
+      "notes": "Every component in the reference is present: wordmark, language dropdown with translate icon and caret, red Sign In button, headline, price subline, email prompt, Email address input, red Get Started button with chevron, curved arc divider, and a promo banner with popcorn icon, title, subtitle and a grey Learn More button. The only difference is where the popcorn icon sits relative to the banner card.",
+      "fix": "Pull the popcorn icon out of the banner container so it sits as a standalone element to the left of the rounded card."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "Same cinematic marketing style: tilted poster wall, slightly rounded tiles, rounded inputs and buttons, and a rounded banner card. Differences: the reference's curved arc is a full-width glowing pink-red line that sweeps from edge to edge with a blue-purple glow beneath it. The implementation shows only a short red segment in the center. The reference poster wall is also darker, with a heavier vignette, so the posters recede. The implementation's posters are brighter and more saturated.",
+      "fix": "Draw the arc as a full-width curved border (for example, an ellipse with border-top 2–3px in a #e50914→pink gradient) that spans the whole viewport and reaches the edges at about y=935. Increase the hero overlay to about rgba(0,0,0,0.6–0.7) with a radial vignette."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same dark scheme. Both use Netflix red (#e50914) for the CTA and Sign In, a navy-to-purple banner gradient, and a grey Learn More button. In the implementation, the hero imagery is noticeably brighter and more colorful (reds, yellows) because the overlay is lighter. The reference dims the collage strongly, so the white headline is the dominant element. The implementation's input placeholder is dimmer grey than the reference's light grey.",
+      "fix": "Darken the hero overlay, and add a top and bottom black gradient. Lighten the email placeholder to about rgba(255,255,255,0.7)."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans-serif hierarchy: a heavy, roughly 56px two-line centered headline, a medium subline, a regular prompt, and a bold banner title. The reference's 'Starts at $8.99. Cancel anytime.' line is bold (700). In the implementation it reads as medium or regular weight. The implementation's headline is slightly wider and larger.",
+      "fix": "Set the price subline to font-weight 700 at about 20px. Reduce the headline to about 56px and weight 900 so it wraps after 'TV' at the reference width (about 620px)."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Matches the reference: red NETFLIX wordmark, translate icon, caret, chevron in the CTA, a popcorn bucket illustration, and tilted rounded poster tiles. The reference tiles mix landscape and portrait shapes at a shallower tilt. The implementation uses mostly tall portrait tiles at a steeper angle. The implementation's popcorn icon is clipped by the banner edge, while the reference shows it whole with a soft shadow.",
+      "fix": "Use mixed-aspect tiles at a shallower rotation (about -15° skew). Render the popcorn icon as a free-standing element with a drop shadow."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All copy is identical: English, Sign In, the headline, 'Starts at $8.99. Cancel anytime.', the email prompt, Email address, Get Started, the banner title and subtitle, and Learn More.",
+      "fix": "None."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "bottom of hero: the reference's curved red-pink arc runs across the full width, edge to edge; the implementation shows only a short red line segment in the center",
+    "promo strip: in the reference, the popcorn icon sits outside and to the left of the banner card, which starts at about x=275; in the implementation, the popcorn is inside, clipped at the card's left edge, and the card starts at about x=168",
+    "hero background: the implementation's poster collage is much brighter and more saturated; the reference dims it heavily so the text dominates",
+    "hero subline: the reference sets 'Starts at $8.99...' in bold; the implementation uses a lighter weight",
+    "poster tiles: the reference mixes landscape and portrait tiles at a shallower tilt; the implementation uses steeper, mostly portrait tiles",
+    "email input: the implementation's placeholder text is dimmer than the reference's"
+  ],
+  "fixes": [
+    "Make the arc divider a full-viewport-width curved line (pink-red gradient border-top on a wide ellipse) with a blue-purple glow below it",
+    "Move the popcorn icon outside the banner card to its left, and set the card to start at about x=275 and end at about x=1755",
+    "Darken the hero overlay to about 0.65 opacity black plus a vignette",
+    "Set the price subline to font-weight 700",
+    "Lighten the email placeholder color, and reduce the tile rotation and mix in landscape tiles"
+  ],
+  "summary": "A near-faithful copy of the Netflix landing hero. The main gaps are the short arc divider (the reference spans the full width), the popcorn icon sitting inside the banner instead of beside it, and a brighter, less-dimmed poster background."
+}
+```

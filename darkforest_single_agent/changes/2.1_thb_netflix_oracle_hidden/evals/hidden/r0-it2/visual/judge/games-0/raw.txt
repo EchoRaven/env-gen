@@ -1,0 +1,66 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The top nav (logo left, links, right-side utilities over the hero) matches, and so does the full-bleed hero with left-aligned content and a dark band below it holding the 'Party Games' row. Differences: the hero text block sits higher and is centred vertically (~y350–650 vs the reference's ~y510–780 bottom-anchored block). The Party Games row is empty instead of a horizontal carousel. There is an extra 'Family Movie & Show Night' row that the reference does not show above the fold.",
+      "fix": "Anchor the hero lockup, metadata and buttons to the bottom-left of the hero (buttons ~y760). Render 'Party Games' as a horizontal tile carousel directly under the hero, peeking at the right edge, and drop or push down the extra row."
+    },
+    "components": {
+      "score": 0.45,
+      "notes": "Nav items (7), the active 'Games' pill, search, bell, Kids profile, avatar and caret all match. The hero has a NETFLIX label, a title and a metadata row, but it shows an empty-state description paragraph and different CTAs. The mute toggle and the 'ALL' maturity-rating flag on the hero's right edge are missing. The Party Games carousel tiles and the row pagination indicator are missing. The 'TOP 10' badges sit in an invented row.",
+      "missing": [
+        "Hero 'Play Game' primary button",
+        "Hero 'More Info' secondary button with info icon",
+        "Hero mute/volume toggle (circular, bottom-right)",
+        "Maturity rating flag 'ALL' with left border bar (bottom-right of hero)",
+        "Party Games horizontal carousel of game tiles",
+        "Row page indicator dashes on Party Games"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat, cinematic dark Netflix style, with a pill-shaped active nav, slightly rounded buttons and bottom gradients on the hero. Reference tiles are large, wide and have small radii. Implementation tiles in the extra row are narrower and smaller. The empty-state paragraph adds text density the reference doesn't have.",
+      "fix": "Use ~355×200 (16:9) game tiles with ~4px radius and ~8px gaps. Remove the explanatory paragraph from the hero."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark #141414 base, Netflix red wordmark, a white primary button and a translucent grey secondary button all match. The hero gradient fade to the bottom-left is similar.",
+      "fix": "Keep as is. Make the secondary hero button a semi-transparent grey (rgba(109,109,110,0.7)) with a white icon and label."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Sans-serif nav, row headings and metadata match in size and weight. The hero title is a generic condensed 'GAMES' text lockup, not a title-artwork logo with sub-lockup. The metadata row uses fewer items. The body paragraph is an extra text level.",
+      "fix": "Render the hero title as a logo image lockup about 200px wide, with a small red NETFLIX label above. Use a metadata row of 4 bullet-separated items in ~17px white."
+    },
+    "iconography": {
+      "score": 0.6,
+      "notes": "Nav icons (outline search and bell, Kids tile, smiley avatar) match. The info-circle icon in the More Info button and the speaker-mute icon are absent. The game tile artwork with title-art treatment is absent. The visible tiles are video thumbnails with TOP 10 badges the reference row doesn't have.",
+      "fix": "Add an outline info-circle icon to the secondary CTA and a circular outlined mute icon button at the bottom right of the hero. Populate Party Games with 16:9 key-art tiles."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "Nav labels and the 'Party Games' heading match. The CTAs say 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' / 'More Info'. The metadata reads 'Game • 0 available' instead of a genre/players/duration format. There is an extra empty-state sentence and the line '— No games available'.",
+      "fix": "Change the CTAs to 'Play Game' and 'More Info'. Use metadata in the form 'Game • <Genre> • <N> Players • <N>+ Minutes'. Remove the empty-state copy."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": true,
+  "deviations": [
+    "Party Games row: reference shows a horizontal carousel of large 16:9 game tiles; implementation shows only '— No games available'",
+    "Hero CTAs: reference has white 'Play Game' and grey 'More Info' (with info icon); implementation has 'Browse Family Titles' and 'Back to Home'",
+    "Hero bottom-right: reference shows a circular mute toggle and an 'ALL' maturity-rating flag; implementation has neither",
+    "Hero left: implementation adds an empty-state description paragraph absent from the reference",
+    "Hero title: reference uses a game-logo artwork lockup; implementation uses a plain 'GAMES' text lockup",
+    "Hero metadata: reference shows 4 bullet items (type/genre/players/duration); implementation shows 'Game • 0 available'",
+    "Hero content block: positioned higher (around mid-hero) instead of bottom-anchored like the reference",
+    "Below the hero: implementation adds a 'Family Movie & Show Night' row with TOP 10 badges, which the reference doesn't show"
+  ],
+  "fixes": [
+    "Seed game data so the 'Party Games' row renders a horizontal carousel of ~355×200 key-art tiles with a right-edge peek and page-indicator dashes",
+    "Feature a game in the hero: logo-art title lockup, metadata 'Game • Genre • X Players • N+ Minutes', and buttons 'Play Game' (white) and 'More Info' (grey, info-circle icon)",
+    "Add the circular mute button and the 'ALL' maturity flag (left white bar, grey translucent bg) at the bottom right of the hero",
+    "Remove the empty-state paragraph and bottom-anchor the hero content block",
+    "Remove or move the 'Family Movie & Show Night' row below the game rows"
+  ],
+  "summary": "The nav chrome and dark Netflix styling match, but the games data never loaded: the empty state replaces the featured-game hero CTAs, the mute and rating controls, and the Party Games tile carousel."
+}

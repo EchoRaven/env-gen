@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "Both use the same top nav and stacked horizontal rails, with a hover popover that overlaps the next rail. The reference is a genre sub-page: under the nav it has a black band with a 'TV Shows > Sports TV Shows' breadcrumb title, then rails over a dim full-bleed backdrop image. The implementation shows the Home layout instead: a large rounded hero banner with a title lockup and Play/More Info, which the reference does not have. Its rails have no visible row headings above them. The reference fits about 6.3 tiles of roughly 290px per row; the implementation fits about 5.3 larger tiles of roughly 344px. The reference popover sits centred over the hovered tile and grows out from it. The implementation popover is pushed against the left edge at x≈16, outside the 67px gutter.",
+      "fix": "Render the hover state on the genre page layout: drop the hero and add a black header band with a grey 'TV Shows >' breadcrumb and a large white page title, put a dim backdrop image behind the rails, and add a heading above every rail. Size tiles to about 290px so roughly 6.3 show per row. Anchor the popover centred on the hovered tile and clamp it inside the 67px page gutter."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "The popover matches the reference's parts: artwork with a title lockup, a round mute button bottom-right on the art, a white filled play circle, outlined + and thumbs-up circles, a right-aligned chevron-down circle, a boxed TV-14 rating, an 'N Seasons' label, an HD badge, and genre tags separated by dots. The rail tiles keep their 'TOP 10' and red 'Recently Added' badges, and the rails show page-indicator dashes. Missing: the breadcrumb and page title, and the row heading labels. Extra: the hero banner with Play/More Info, and an 'N' brand badge at the popover's top-left that the reference popover does not have.",
+      "fix": "Add the breadcrumb and page title header and a heading for each rail. Remove the hero banner and the 'N' corner badge on the popover.",
+      "missing": ["breadcrumb 'TV Shows > Sports TV Shows' header", "row section headings (e.g. 'Your Next Watch', 'TV Comedies')", "full-bleed backdrop image behind the rails"]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "The dark flat Netflix style matches. The popover has a slightly rounded dark card with a soft shadow, and the tiles have small radii. The implementation's tiles look a bit more rounded, and the hero adds a large rounded panel the reference does not have. The reference's dim backdrop texture behind the rails is absent.",
+      "fix": "Use a radius of about 4px on tiles and the popover, remove the rounded hero panel, and add the dimmed backdrop art behind the rails."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Black and near-black surfaces, white text, the red NETFLIX wordmark, and red 'Recently Added' and 'TOP 10' badges all match. The popover body is dark grey (#181818-ish) in both. The reference's nav and header band are pure black over a muted backdrop. The implementation's nav is dark grey (#141414) and the page has no backdrop.",
+      "fix": "Make the nav and header band pure black, and add a dimmed backdrop image behind the rail area."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The nav sans font, the white pill on the active item, and the popover metadata sizes and weights all match. Missing type levels: the roughly 44px page title, the grey breadcrumb, and the roughly 26px row headings. The extra hero typography adds a display level the reference lacks.",
+      "fix": "Add the large white page title and grey breadcrumb text, add row headings at about 26px in regular weight, and remove the hero display type."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The popover icons match: outline circles for + and thumbs-up, a filled white play circle, a chevron-down, and the mute icon. Search, bell, and Kids icons in the nav match. Tile crop and aspect are close to the reference, with title lockups baked into the art. The profile avatar uses the Kids art instead of a separate blue smiley avatar. The 'N' badge on the popover art is extra.",
+      "fix": "Use a separate profile avatar (blue smiley square) instead of reusing the Kids tile, and remove the 'N' badge from the popover artwork."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Nav labels match exactly, as do 'Recently Added', 'TV-14', 'Seasons', and 'HD'. Missing chrome copy: the 'TV Shows >' breadcrumb and the row headings. The active nav item is 'Home' where the reference highlights 'Shows'. The implementation adds 'Play' and 'More Info' hero buttons.",
+      "fix": "Highlight 'Shows' as the active nav item, add the breadcrumb and page title, and give every rail a visible heading."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "top of page: implementation shows a large hero banner (title lockup, metadata, Play/More Info) where the reference has a black band with a 'TV Shows > Sports TV Shows' breadcrumb title",
+    "rails: implementation rails have no heading labels; the reference shows a heading above each rail ('Your Next Watch', 'TV Comedies', 'Today's Top Picks for You', 'New on Netflix')",
+    "nav: implementation highlights 'Home'; the reference highlights 'Shows' with the pill",
+    "popover position: reference centres the expanded card over the hovered tile within the page gutter; implementation pins it to the far left edge (x≈16), outside the 67px gutter",
+    "background: reference shows a dimmed full-bleed backdrop image behind the rails; implementation has a plain dark background",
+    "tile size: implementation tiles are about 344px wide, about 5.3 per row; reference tiles are about 290px, about 6.3 per row",
+    "popover artwork: implementation adds a red 'N' badge at the top-left that the reference does not have",
+    "nav profile: implementation reuses the Kids art for the profile avatar instead of a distinct avatar"
+  ],
+  "fixes": [
+    "Render this hover state on the Shows genre page: remove the hero and add a black header band with a grey 'TV Shows >' breadcrumb and a large white page title",
+    "Add a heading above every rail at about 26px in regular-weight white",
+    "Make 'Shows' the active nav pill",
+    "Position the hover popover centred on the hovered tile, scaled up about 1.5x, and clamped inside the 67px gutter",
+    "Shrink tiles to about 290px wide with roughly 8px gaps so about 6.3 show per row",
+    "Add a dimmed full-bleed backdrop image behind the rails",
+    "Remove the 'N' badge from the popover artwork and use a distinct profile avatar in the nav"
+  ],
+  "summary": "The hover popover closely matches the reference, but the surrounding page is the Home layout with a hero and unlabeled rails instead of the Shows genre page with its breadcrumb, row headings and backdrop."
+}
+```

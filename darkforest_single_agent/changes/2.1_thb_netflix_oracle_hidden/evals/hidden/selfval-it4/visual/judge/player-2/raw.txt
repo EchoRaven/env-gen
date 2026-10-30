@@ -1,0 +1,62 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "Both are full-bleed dark video players with no app chrome. Each has a back arrow at top-left, a flag icon at top-right and a bottom control bar with left controls, a centered caption and fullscreen at the right. The implementation adds a full-width progress scrubber above the bottom bar. It also places a large 'You're watching' paused-info block at mid-left over the video. The reference shows neither; its video area is unobstructed apart from the corner controls.",
+      "fix": "Remove the mid-left 'You're watching' overlay block and the progress scrubber so the frame stays clean. Keep only the top corners (back arrow; flag plus Ad badge) and a single bottom row (pause, volume | centered caption | fullscreen)."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "Present and matching: back arrow, flag/report icon, play-pause toggle, volume icon, centered caption text and fullscreen. Missing: the 'Ad 12' countdown badge at top-right with its yellow left accent bar. Extra components not in the reference: progress scrubber with a red thumb and '0:00' timestamp, rewind-10 and forward-10 buttons, next-episode, episodes, and subtitles buttons, the 'You're watching' title/season/synopsis block, and a red error message. The reference shows a pause icon (playing); the implementation shows a play icon (paused).",
+      "fix": "Add an 'Ad N' countdown chip to the right of the flag (dark translucent box with a yellow vertical accent bar on its left). Drop the scrubber, ±10 skip buttons, next-episode, episodes and subtitles buttons, and the paused-info overlay while the ad is showing. Show the pause icon so the player reads as playing.",
+      "missing": [
+        "Ad countdown badge ('Ad 12') with yellow accent bar, top-right"
+      ]
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use a minimal, flat, cinematic overlay: white glyphs straight on the video, no panels or borders. The implementation has more visual weight because of the large text block, the scrubber and its extra controls.",
+      "fix": "Reduce the overlay to the reference's sparse set of controls. Use a subtle dark gradient only at the top and bottom edges."
+    },
+    "color": {
+      "score": 0.75,
+      "notes": "Both have a dark scheme with white icons and text. The reference's only accent is the yellow bar on the Ad badge. The implementation adds a red scrubber thumb and red-pink error text, and lacks the yellow accent.",
+      "fix": "Add the yellow/gold accent bar on the Ad badge. Remove the red scrubber and the red error text from this state."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use a sans-serif. The reference's bottom caption is one regular-weight, centered line of about 20px. The implementation's caption mixes a bold title with regular episode text, and it adds a large bold 48px title plus subtitle and body sizes that the reference does not have.",
+      "fix": "Render the bottom caption as a single regular-weight line, '<Title> begins after ads'. Remove the large title hierarchy."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The back arrow, flag, speaker-with-waves and corner-bracket fullscreen icons match the reference's outline style and weight. The play icon is filled, where the reference shows a filled pause. The extra skip-10, next, episodes and subtitles icons are not in the reference.",
+      "fix": "Switch to the filled pause glyph and remove the extra control icons."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference caption reads '<Title> begins after ads', and the reference badge reads 'Ad 12'. The implementation's caption reads '<Title> E1 Episode 1'. It adds 'You're watching' and a browser-codec error message, and it has no 'Ad' label.",
+      "fix": "Change the bottom caption to '<Title> begins after ads'. Add the 'Ad <seconds>' badge text. Remove the 'You're watching' label and the error message."
+    }
+  },
+  "similarity": 0.6,
+  "empty_state": false,
+  "deviations": [
+    "top-right: the reference has an 'Ad 12' countdown chip with a yellow left accent bar next to the flag; the implementation shows only the flag",
+    "mid-left over the video: the implementation adds a 'You're watching' block with a large title, a season/episode line, a synopsis and a red error line; the reference video area is clean",
+    "bottom: the implementation adds a full-width progress scrubber with a red thumb and a '0:00' time; the reference has no scrubber",
+    "bottom-left: the implementation adds rewind-10 and forward-10 buttons between play and volume; the reference shows only pause and volume",
+    "bottom-right: the implementation adds next-episode, episodes and subtitles buttons before fullscreen; the reference shows only fullscreen",
+    "bottom-center caption: the implementation reads 'Title E1 Episode 1' with a bold title; the reference reads '<Title> begins after ads' in regular weight",
+    "bottom-left: the implementation shows a play icon (paused state); the reference shows a pause icon (playing)"
+  ],
+  "fixes": [
+    "Add an 'Ad N' countdown badge at top-right, to the right of the flag: dark translucent rectangle, yellow vertical accent bar on the left, white 'Ad 12' text",
+    "Change the bottom-center caption to a single regular-weight line, '<Title> begins after ads'",
+    "Hide the progress scrubber and time label during the ad state",
+    "Remove the rewind-10, forward-10, next-episode, episodes and subtitles buttons from the bottom bar; keep pause, volume and fullscreen",
+    "Remove the 'You're watching' title/synopsis overlay and the error message from over the video",
+    "Show the pause glyph (playing state) instead of play"
+  ],
+  "summary": "The implementation is the standard paused player with a full control set; the reference is the minimal ad-playback state, so it lacks the Ad countdown badge and the 'begins after ads' caption and adds a scrubber, skip, episode and subtitle controls and an info overlay."
+}

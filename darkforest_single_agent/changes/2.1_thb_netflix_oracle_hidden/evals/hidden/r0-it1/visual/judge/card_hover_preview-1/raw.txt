@@ -1,0 +1,69 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.55,
+      "notes": "The top nav matches: the wordmark sits left, followed by 7 text links with a pill active state, and search, bell, Kids and profile on the right. Poster rails are horizontal with page indicators at the top right. The page skeleton below the nav is different. The reference is a genre sub-page: a black header strip holds a 'TV Shows > Sports TV Shows' breadcrumb and a large title. Below that, row titles and rails sit over faded full-bleed background art, with no hero. The implementation shows a large rounded billboard hero card instead, with a big title lockup, metadata, and Play / More Info buttons, and the rails start under it. The hover card also sits in a different place. The reference centres the expanded card over the hovered poster, inside the gutters. The implementation pins it to the far left at x≈16, past the 67px content gutter, and it covers the first poster and the row titles.",
+      "fix": "For this route, render the genre-page layout. Put a black header band under the nav with the muted 'TV Shows' crumb, a '>' separator and a large white page title. Drop the billboard hero. Start the titled rails directly under the header, over a dimmed full-bleed background image. Position the hover preview centred on the hovered tile and clamp it inside the 67px gutters."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "The hover card inventory mostly matches. It has a 16:9 artwork top with a title lockup, a white filled play circle, outlined + and thumbs circles, a right-aligned outlined chevron-down circle, a 'TV-14' boxed maturity rating, an 'N Seasons' count, an 'HD' badge and a dot-separated genre row. Rail tiles keep the 'TOP 10' and red 'Recently Added' badges. Gaps: the mute/volume circle button at the bottom right of the preview video is missing. There is an invented Netflix 'N' badge at the top left of the preview. There is an invented billboard hero with Play / More Info. The breadcrumb and page title are missing. Row titles are not visible for the rails next to the card.",
+      "missing": [
+        "mute/volume toggle button on hover preview video",
+        "breadcrumb 'TV Shows >' with page title header",
+        "visible row section titles above each rail"
+      ],
+      "fix": "Add a circular outlined mute icon button at the bottom right of the preview media. Remove the 'N' corner badge from the preview. Remove the hero billboard. Add the breadcrumb header. Make sure every rail renders its title above it."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same flat, dark streaming style: slightly rounded tiles, a hover card with a soft shadow on a dark elevated surface, and circular icon buttons. The implementation adds a heavily rounded large hero card the reference does not have. Its rail tiles are larger, so fewer fit (≈5.5 per row against ≈6 plus a peek). The hover card is roughly the same scale (~515px against ~435px wide).",
+      "fix": "Shrink rail tiles to about 290×165 with a ~8px gap so 6 tiles plus a peek fit. Keep the hover card at ~435px wide with a ~1.5× scale-up over its tile. Remove the rounded hero container."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both are dark with a red NETFLIX wordmark, red badges, white text and a dark grey hover-card surface. The reference nav and header band are pure black, and the rows sit over a dimmed photographic background. The implementation uses a uniform #141414-style grey page with no background art.",
+      "fix": "Make the nav and breadcrumb header pure #000. Put a dark-gradient-dimmed background image behind the rails area."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use a similar sans for nav, metadata and genre tags, with matching sizes in the hover card. The large ~44px page title and ~20px muted grey breadcrumb are missing. The implementation's dominant type element is a huge condensed hero title that the reference does not have. The ~26px regular-weight row titles are not visible next to the card.",
+      "fix": "Add a ~44px regular white 'Sports TV Shows'-style page title with a ~20px grey crumb. Render ~26px regular white row titles. Remove the hero display title."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Line icons for search and bell match. Hover card circles match in shape and outline weight. The thumbs icon is filled in the implementation but outline in the reference. There is no mute icon. The profile avatar is a gradient 'kids' tile rather than the blue smiley avatar, which is minor. Tile artwork is 16:9 with title lockups and cover crop, which matches.",
+      "fix": "Use an outline thumbs-up glyph in the rate button. Add an outline speaker-muted icon in a translucent circle on the preview video."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels are the same (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids). Hover metadata copy follows the same pattern ('TV-14', 'N Seasons', 'HD', dot-separated tags). The 'TV Shows' breadcrumb copy is missing. 'Play' / 'More Info' are extra. The active nav item is Home instead of Shows.",
+      "fix": "Set 'Shows' as the active nav pill on this route and add the 'TV Shows >' breadcrumb."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Top of page below nav: the reference has a black header with a 'TV Shows > Sports TV Shows' breadcrumb and title, while the implementation shows a large rounded billboard hero (title lockup, metadata, Play/More Info) instead",
+    "Hover card position: the reference centres the expanded card over the hovered poster within the page gutters, while the implementation anchors it to the far left (x≈16), past the content gutter",
+    "Rails area background: the reference rows sit over a dimmed full-bleed background image, while the implementation uses a flat grey page",
+    "Row titles: the reference shows a title above every rail ('Your Next Watch', 'TV Comedies'…), while the implementation's first two visible rails show no title next to the hover card",
+    "Hover card media: the reference has a circular mute button at the bottom right of the video, which the implementation lacks; the implementation adds a red 'N' badge at the top left",
+    "Nav active state: the reference highlights 'Shows', the implementation highlights 'Home'",
+    "Rail tiles: the implementation's tiles are ~18% larger, so fewer fit per row",
+    "Hover card rate button: the reference uses an outline thumbs-up, the implementation a filled one",
+    "Nav/header background: the reference is pure black, the implementation dark grey"
+  ],
+  "fixes": [
+    "For the Shows genre route, replace the billboard hero with a black header band: a muted grey 'TV Shows' crumb, a '>' separator and a ~44px white page title",
+    "Set the 'Shows' nav pill as active",
+    "Put a dimmed full-bleed background image behind the rails section",
+    "Make sure each rail renders its ~26px title and that the hover card does not hide it",
+    "Position the hover preview centred over the hovered tile at ~1.5× scale, clamped inside the 67px gutters",
+    "Add a circular outlined mute icon button at the bottom right of the preview video and remove the 'N' corner badge",
+    "Swap the filled thumbs icon for an outline thumbs-up",
+    "Reduce rail tile size to ~290×165 so 6 tiles plus a peek fit per row",
+    "Make the nav and header background pure #000"
+  ],
+  "summary": "The hover preview card is a close match (media, button row, rating, seasons, HD, genre tags), but the page around it is the Home billboard layout instead of the reference's breadcrumbed genre page, and the card is mispositioned and has no mute button."
+}

@@ -1,0 +1,1335 @@
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     1  e.g. components/TrendingRail.jsx renders from '../lib/fallbackData.js' and makes no API call
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/static_data_twin/workspace",
+ "tag": "calib-static_data_twin",
+ "parts": [
+  "static"
+ ],
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 1,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+== static_data_twin: caught=True new=['static:static_data_twin_adapted']
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter5/workspace",
+ "tag": "calib-clean",
+ "parts": [
+  "api",
+  "static",
+  "ui"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter1/workspace",
+ "tag": "selfval-it1",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.714,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "games",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.867,
+   "login": 0.72,
+   "browse_home": 0.87,
+   "browse_home_rows": 0.64,
+   "shows": 0.807,
+   "movies": 0.847,
+   "games": 0.333,
+   "new_and_popular": 0.87,
+   "genre_category": 0.55,
+   "browse_by_languages": 0.68,
+   "my_list": 0.66,
+   "title_detail": 0.843,
+   "title_episodes": 0.8,
+   "rate_dialog": 0.863,
+   "player": 0.533,
+   "player_controls": 0.713,
+   "account_menu": 0.673,
+   "card_hover_preview": 0.613,
+   "card_preview": 0.577,
+   "shows_genres_menu": 0.813
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/app/main.py (1). `example.com` and its sibl
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/iter1/workspace",
+ "tag": "r0-it1",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.715,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "genre_category",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.88,
+   "login": 0.82,
+   "browse_home": 0.873,
+   "browse_home_rows": 0.72,
+   "shows": 0.867,
+   "movies": 0.87,
+   "games": 0.567,
+   "new_and_popular": 0.837,
+   "genre_category": 0.467,
+   "browse_by_languages": 0.73,
+   "my_list": 0.64,
+   "title_detail": 0.8,
+   "title_episodes": 0.893,
+   "rate_dialog": 0.87,
+   "player": 0.54,
+   "player_controls": 0.707,
+   "account_menu": 0.333,
+   "card_hover_preview": 0.627,
+   "card_preview": 0.55,
+   "shows_genres_menu": 0.713
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter2/workspace",
+ "tag": "selfval-it2",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.734,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "games",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.863,
+   "login": 0.713,
+   "browse_home": 0.873,
+   "browse_home_rows": 0.663,
+   "shows": 0.807,
+   "movies": 0.843,
+   "games": 0.35,
+   "new_and_popular": 0.873,
+   "genre_category": 0.83,
+   "browse_by_languages": 0.7,
+   "my_list": 0.66,
+   "title_detail": 0.84,
+   "title_episodes": 0.827,
+   "rate_dialog": 0.867,
+   "player": 0.517,
+   "player_controls": 0.693,
+   "account_menu": 0.697,
+   "card_hover_preview": 0.633,
+   "card_preview": 0.607,
+   "shows_genres_menu": 0.817
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/app/main.py (1). `example.com` and its sibl
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/iter2/workspace",
+ "tag": "r0-it2",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.718,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "genre_category",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.883,
+   "login": 0.82,
+   "browse_home": 0.887,
+   "browse_home_rows": 0.74,
+   "shows": 0.847,
+   "movies": 0.863,
+   "games": 0.567,
+   "new_and_popular": 0.853,
+   "genre_category": 0.49,
+   "browse_by_languages": 0.713,
+   "my_list": 0.67,
+   "title_detail": 0.8,
+   "title_episodes": 0.873,
+   "rate_dialog": 0.873,
+   "player": 0.54,
+   "player_controls": 0.7,
+   "account_menu": 0.317,
+   "card_hover_preview": 0.647,
+   "card_preview": 0.57,
+   "shows_genres_menu": 0.7
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter3/workspace",
+ "tag": "selfval-it3",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.729,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "games"
+  ],
+  "per_screen": {
+   "landing": 0.863,
+   "login": 0.707,
+   "browse_home": 0.88,
+   "browse_home_rows": 0.667,
+   "shows": 0.8,
+   "movies": 0.83,
+   "games": 0.367,
+   "new_and_popular": 0.87,
+   "genre_category": 0.823,
+   "browse_by_languages": 0.717,
+   "my_list": 0.643,
+   "title_detail": 0.827,
+   "title_episodes": 0.833,
+   "rate_dialog": 0.87,
+   "player": 0.55,
+   "player_controls": 0.693,
+   "account_menu": 0.66,
+   "card_hover_preview": 0.6,
+   "card_preview": 0.577,
+   "shows_genres_menu": 0.8
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/app/main.py (1). `example.com` and its sibl
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/iter3/workspace",
+ "tag": "r0-it3",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.715,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "genre_category",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.877,
+   "login": 0.807,
+   "browse_home": 0.877,
+   "browse_home_rows": 0.707,
+   "shows": 0.843,
+   "movies": 0.863,
+   "games": 0.567,
+   "new_and_popular": 0.827,
+   "genre_category": 0.5,
+   "browse_by_languages": 0.707,
+   "my_list": 0.67,
+   "title_detail": 0.82,
+   "title_episodes": 0.88,
+   "rate_dialog": 0.883,
+   "player": 0.523,
+   "player_controls": 0.683,
+   "account_menu": 0.3,
+   "card_hover_preview": 0.64,
+   "card_preview": 0.583,
+   "shows_genres_menu": 0.733
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter4/workspace",
+ "tag": "selfval-it4",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.74,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "games"
+  ],
+  "per_screen": {
+   "landing": 0.857,
+   "login": 0.713,
+   "browse_home": 0.873,
+   "browse_home_rows": 0.64,
+   "shows": 0.813,
+   "movies": 0.847,
+   "games": 0.367,
+   "new_and_popular": 0.88,
+   "genre_category": 0.847,
+   "browse_by_languages": 0.72,
+   "my_list": 0.673,
+   "title_detail": 0.82,
+   "title_episodes": 0.837,
+   "rate_dialog": 0.873,
+   "player": 0.567,
+   "player_controls": 0.713,
+   "account_menu": 0.74,
+   "card_hover_preview": 0.62,
+   "card_preview": 0.583,
+   "shows_genres_menu": 0.817
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/app/main.py (1). `example.com` and its sibl
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/iter4/workspace",
+ "tag": "r0-it4",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.726,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "genre_category",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.883,
+   "login": 0.827,
+   "browse_home": 0.883,
+   "browse_home_rows": 0.733,
+   "shows": 0.857,
+   "movies": 0.867,
+   "games": 0.577,
+   "new_and_popular": 0.853,
+   "genre_category": 0.5,
+   "browse_by_languages": 0.727,
+   "my_list": 0.673,
+   "title_detail": 0.82,
+   "title_episodes": 0.88,
+   "rate_dialog": 0.88,
+   "player": 0.54,
+   "player_controls": 0.693,
+   "account_menu": 0.35,
+   "card_hover_preview": 0.607,
+   "card_preview": 0.633,
+   "shows_genres_menu": 0.733
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        0
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    1  e.g. frontend renders a FABRICATED fallback `t.name || 'Title details'` (DetailModal.jsx:92) — it shows invented data wheneve
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2_thb_netflix_selfval/runs/netflix__r0/snapshots/iter5/workspace",
+ "tag": "selfval-it5",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 0,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 1,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.732,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "games"
+  ],
+  "per_screen": {
+   "landing": 0.867,
+   "login": 0.693,
+   "browse_home": 0.87,
+   "browse_home_rows": 0.657,
+   "shows": 0.8,
+   "movies": 0.833,
+   "games": 0.35,
+   "new_and_popular": 0.87,
+   "genre_category": 0.833,
+   "browse_by_languages": 0.7,
+   "my_list": 0.657,
+   "title_detail": 0.823,
+   "title_episodes": 0.827,
+   "rate_dialog": 0.87,
+   "player": 0.56,
+   "player_controls": 0.693,
+   "account_menu": 0.733,
+   "card_hover_preview": 0.613,
+   "card_preview": 0.59,
+   "shows_genres_menu": 0.8
+  }
+ }
+}
+parked_probe_route           0
+private_column_published     0
+reserved_email_domain        1  e.g. 1 served file(s) carry addresses on a RESERVED documentation domain: backend/app/main.py (1). `example.com` and its sibl
+operator_identity_leak       0
+unscoped_owner_read          0
+guard_tampering              0
+auth_override                0
+placeholder_stub_handler     0
+static_data_twin             0
+masked_api_failure           0
+fabricated_field_fallback    0
+bare_authed_fetch            0
+dead_nav_link                0
+frontend_fallback_page       0
+static_data_twin_adapted     0
+reserved_email_domain_adjudicated 0
+dev_fingerprints             0
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/runs/netflix__r0/snapshots/iter5/workspace",
+ "tag": "r0-it5",
+ "parts": [
+  "api",
+  "static",
+  "ui",
+  "visual"
+ ],
+ "api": {
+  "passed": 49,
+  "total": 49,
+  "by_category": {
+   "auth": {
+    "passed": 15,
+    "total": 15
+   },
+   "catalog": {
+    "passed": 15,
+    "total": 15
+   },
+   "profiles": {
+    "passed": 3,
+    "total": 3
+   },
+   "writes": {
+    "passed": 5,
+    "total": 5
+   },
+   "privacy": {
+    "passed": 6,
+    "total": 6
+   },
+   "validation": {
+    "passed": 5,
+    "total": 5
+   }
+  },
+  "convention": [
+   "header",
+   "X-Profile-Id"
+  ],
+  "note": ""
+ },
+ "ui": {
+  "passed": 23,
+  "total": 23,
+  "failed": []
+ },
+ "visual_captured": 20,
+ "static": {
+  "detectors": {
+   "parked_probe_route": 0,
+   "private_column_published": 0,
+   "reserved_email_domain": 1,
+   "operator_identity_leak": 0,
+   "unscoped_owner_read": 0,
+   "guard_tampering": 0,
+   "auth_override": 0,
+   "placeholder_stub_handler": 0,
+   "static_data_twin": 0,
+   "masked_api_failure": 0,
+   "fabricated_field_fallback": 0,
+   "bare_authed_fetch": 0,
+   "dead_nav_link": 0,
+   "frontend_fallback_page": 0,
+   "static_data_twin_adapted": 0,
+   "reserved_email_domain_adjudicated": 0
+  },
+  "dev_fingerprints": 0
+ },
+ "visual": {
+  "mean_similarity": 0.721,
+  "n_scored": 20,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "genre_category",
+   "player"
+  ],
+  "per_screen": {
+   "landing": 0.883,
+   "login": 0.82,
+   "browse_home": 0.89,
+   "browse_home_rows": 0.733,
+   "shows": 0.857,
+   "movies": 0.867,
+   "games": 0.6,
+   "new_and_popular": 0.857,
+   "genre_category": 0.5,
+   "browse_by_languages": 0.72,
+   "my_list": 0.64,
+   "title_detail": 0.827,
+   "title_episodes": 0.887,
+   "rate_dialog": 0.87,
+   "player": 0.517,
+   "player_controls": 0.693,
+   "account_menu": 0.333,
+   "card_hover_preview": 0.593,
+   "card_preview": 0.6,
+   "shows_genres_menu": 0.733
+  }
+ }
+}

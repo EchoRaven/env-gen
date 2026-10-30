@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.65,
+      "notes": "The overall structure matches: a full-bleed media frame on a black letterbox, a back arrow at top-left, a bottom control strip with left controls, a centred caption and fullscreen at bottom-right. There is no app chrome in either image, which is correct. The differences: the implementation adds a large left-aligned 'You're watching' info block in the middle-left of the frame, and a full-width scrubber row above the controls. The reference has neither. The reference's top-right cluster (flag icon plus Ad badge) is absent.",
+      "fix": "Remove the mid-frame 'You're watching' title/synopsis overlay and the progress bar row. Add a top-right cluster at about 55px from the top: a flag icon, then an 'Ad 12' badge. Keep the bottom strip as a single row: play/pause and volume on the left, caption centred, fullscreen on the right."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present and matching: back arrow, play/pause, volume, centred caption text, fullscreen. Missing: the report/flag icon and the 'Ad 12' countdown badge with its yellow left accent bar. Invented here, not shown in the reference: progress scrubber with red thumb and time label, rewind-10 and forward-10 buttons, next-episode, episodes, and subtitles buttons, the 'You're watching' metadata overlay, and an error message. The play button shows the paused state, while the reference shows a pause icon because the ad is playing.",
+      "missing": ["Report/flag icon (top-right)", "'Ad 12' countdown badge with yellow accent bar (top-right)", "'begins after ads' ad-state caption"],
+      "fix": "Render the ad-playback state: add the flag icon and the 'Ad NN' badge (dark translucent box, 4px yellow left bar, white text). Hide skip ±10, next-episode, episodes, subtitles, scrubber and time label while the ad plays. Show the pause icon while playing."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use a minimal, flat, cinematic overlay with no cards or borders and white glyphs over video. The implementation is busier because of the extra control icons, the synopsis block and the red error text. The reference is very sparse.",
+      "fix": "Remove the overlay text block and the extra controls so the frame stays clean, with only the four bottom elements and the top-right cluster."
+    },
+    "color": {
+      "score": 0.7,
+      "notes": "Both are dark with white icons and text. The implementation adds a red scrubber thumb and pink/red error text. The reference's only accent is the yellow bar on the Ad badge, which is missing.",
+      "fix": "Remove the red scrubber and the pink error text in the ad state. Add the yellow (#F5B700-ish) accent bar to the Ad badge on a semi-transparent black background."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "Both use a clean sans for the bottom caption. The reference caption is regular weight, about 22px, as a single sentence. The implementation uses a bold title plus a regular episode label. The large bold title and synopsis typography overlay is extra. The Ad badge's small regular text is absent.",
+      "fix": "Make the centre caption a single regular-weight white line (e.g. '<Title> begins after ads'). Drop the large title/subtitle/body hierarchy from the frame."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "The back arrow, volume with waves, and corner-bracket fullscreen icons are a close match in white line style. The play icon is filled, which is consistent. The flag outline icon is missing. Extra icons (replay10, forward10, next, episodes, subtitles) are present.",
+      "fix": "Add a white outline flag icon at about 40px, left of the Ad badge. Remove the extra control icons in the ad state."
+    },
+    "copy": {
+      "score": 0.4,
+      "notes": "The reference's chrome copy is 'Ad 12' and '<Title> begins after ads'. The implementation shows '<Title> E1 Episode 1', 'You're watching' and a codec error message. None of the ad wording is present.",
+      "fix": "Change the centre caption to '<Title> begins after ads'. Add an 'Ad <seconds>' label. Remove 'You're watching' and the error string."
+    }
+  },
+  "similarity": 0.5,
+  "empty_state": false,
+  "deviations": [
+    "Top-right: the reference shows a flag/report icon and an 'Ad 12' badge with a yellow left bar; the implementation has nothing there",
+    "Mid-left of frame: the implementation overlays a large 'You're watching' / title / episode / synopsis block, which is not in the reference",
+    "Bottom: the implementation adds a full-width scrubber with a red thumb and a '0:00' time label; the reference has no progress bar",
+    "Bottom-left: the implementation adds rewind-10 and forward-10 buttons; the reference has only pause and volume",
+    "Bottom-right: the implementation adds next-episode, episodes and subtitles icons; the reference has only fullscreen",
+    "Bottom-centre caption: the implementation shows a bold title + 'E1 Episode 1'; the reference shows the single regular-weight sentence 'All American begins after ads'",
+    "Mid-frame: pink/red codec error text appears in the implementation; the reference has none",
+    "Bottom-left: the implementation shows a play icon (paused); the reference shows a pause icon (playing)"
+  ],
+  "fixes": [
+    "Implement the ad-playback state for /watch/:id: top-right flag icon plus an 'Ad NN' countdown badge (dark box, yellow left accent bar, white text)",
+    "Remove the 'You're watching' title/synopsis overlay and the error text from the frame",
+    "Hide the scrubber/time label and the skip ±10, next-episode, episodes and subtitles buttons during the ad state",
+    "Set the centre caption to a single regular-weight line '<Title> begins after ads'",
+    "Show the pause icon while media is playing"
+  ],
+  "summary": "The implementation renders a standard paused-player overlay with extra controls and an info block, while the reference is a sparse ad-playback state; the shared skeleton matches but the ad badge and flag icon are missing and many controls are invented."
+}
+```

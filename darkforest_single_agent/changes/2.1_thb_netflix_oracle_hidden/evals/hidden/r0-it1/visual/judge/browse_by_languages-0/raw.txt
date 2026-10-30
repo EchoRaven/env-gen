@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The overall structure matches. Both have a top nav with the NETFLIX wordmark on the left, 7 nav items with the active one in a pill, and search, bell, Kids and avatar on the right. Below that sit the page title on the left with the preferences label and two dropdowns on the right, then a 6-column grid of 16:9 tiles with the same gutters and large vertical gaps between rows. Differences: the reference grid starts lower (~y=304) and leaves a tall gap under the header. The implementation starts at ~y=226. The reference also has larger row spacing (~243px pitch) than the implementation (~235px). The dropdowns sit further left and further apart in the implementation (~1267/1553) than in the reference (~1325/1575, tightly paired).",
+      "fix": "Raise the space between the header row and the first tile row to ~160px so the grid starts at ~y=304. Increase the row pitch to ~243px. Right-align the two dropdowns so the language select ends at ~1842px, with a ~12px gap between the selects."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present: nav, active pill, search, bell, Kids profile, avatar with caret, title, 'Select Your Preferences' label, two select boxes, 6-column tile grid, TOP 10 corner badges, red 'Recently Added'/'New Episodes' tag pills. Missing for the captured state: (1) the open Original Language menu listing Original Language / Dubbing / Subtitles; (2) the open language menu with the long scrollable list (Arabic…Vietnamese) overlaying the grid; (3) the expanded hover preview card over a tile. That card has a video-still header with title art, a mute toggle, a row of circular play/add (check)/rate (thumb) buttons, an expand chevron, a maturity rating box + runtime + HD badge, and mood tags separated by dots. A 'Live Now' red pill with a dot is also shown in the reference.",
+      "fix": "Render both select menus in their open state as dark (#141414-ish) dropdown panels with a thin border, directly under each select. Implement the tile hover preview card, scaled ~1.5x, with a media header, a play/check/thumb circular button row, a chevron button, rating/runtime/HD metadata and dot-separated genre tags.",
+      "missing": [
+        "open Original Language dropdown menu (Original Language / Dubbing / Subtitles)",
+        "open language dropdown list (Arabic … Vietnamese) overlaying grid",
+        "expanded tile hover preview card",
+        "preview card circular action buttons (play, added-check, thumbs rating)",
+        "preview card expand chevron button",
+        "preview card mute toggle",
+        "preview card metadata row (maturity rating box, runtime, HD badge)",
+        "preview card dot-separated mood/genre tags"
+      ]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same flat, dark streaming aesthetic: tiles with small radii, square-edged select boxes with a white 1px border, a pill-shaped active nav item, and red tag pills centered at the bottom of tiles. The reference uses elevation (a floating preview card with a shadow, overlaid menus), which the implementation does not show.",
+      "fix": "Add the elevated preview card with a soft drop shadow and ~6px radius. Use flat dark menu panels for the opened selects."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same near-black #141414 base, white text, Netflix red wordmark and tag pills, grey active-nav pill and white-bordered black selects. The reference also has a dark grey (#181818) surface on the preview card and a black dropdown panel, neither of which appears in the implementation.",
+      "fix": "Use #181818 for the preview card body and a black/90% background with a grey border for the dropdown panels."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family (Netflix Sans-like) and the same nav and label sizes. The implementation's page title is slightly larger (~44px vs ~38px). The select text is similar. The dropdown item text (~16px regular) and the preview card's metadata/tag text are absent.",
+      "fix": "Reduce the 'Browse by Languages' heading to ~38px regular. Use ~16px regular white text for the dropdown items, and ~18px for the preview card tags with grey bullet separators."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The outline search and bell icons, Kids gradient avatar, blue smiley avatar with caret, TOP 10 red badges and 16:9 cover-cropped tiles all match. Missing: the preview card's outline circular icons (play filled, check, thumb, chevron, muted speaker) and the red N mark on the preview media.",
+      "fix": "Add 1.5px-stroke circular outline icon buttons (check, thumb-up, chevron-down, mute) and a filled white play circle in the preview card."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English', 'Recently Added' and 'New Season'-style tags all match. The option labels Dubbing/Subtitles and the language list do not appear because the menus are closed.",
+      "fix": "Make sure the dropdown option labels are exactly 'Original Language', 'Dubbing', 'Subtitles', with language names in alphabetical title case."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Right side, below the language select: the reference shows the language dropdown expanded as a tall dark list (Arabic…Vietnamese) overlaying the grid's right columns. The implementation has the select closed.",
+    "Below the Original Language select: the reference shows its menu open (Original Language / Dubbing / Subtitles). The implementation shows it closed.",
+    "Center of the grid (rows 1–3, column 2–3): the reference shows an enlarged hover preview card with a media header, title art, mute button, play/check/thumb circular buttons, an expand chevron, a TV-MA/runtime/HD row and dot-separated mood tags. The implementation has no preview card.",
+    "Vertical spacing: the reference grid starts ~78px lower (~y=304 vs ~y=226), leaving a tall empty band under the title row.",
+    "Header row: the implementation places the two selects further left and with a wider gap between them. The reference pairs them tightly at the right edge.",
+    "Page title is slightly larger in the implementation than in the reference."
+  ],
+  "fixes": [
+    "Render the language select in its open state: a dark panel under the 'English' select, full select width, listing all languages in ~16px white text, overlaying the grid.",
+    "Render the Original Language select open with options Original Language, Dubbing and Subtitles in a dark bordered panel.",
+    "Add a tile hover preview card (scaled ~1.5x, #181818, rounded, shadow) with a media header and title art, a mute toggle, a filled play circle plus outline check and thumb circles, a right-aligned chevron circle, a TV-MA box + runtime + HD badge row, and dot-separated tags.",
+    "Push the tile grid down to start at ~y=304 and increase the row pitch to ~243px.",
+    "Move the selects right so they end at the grid's right edge with ~12px between them, and shrink the page heading to ~38px."
+  ],
+  "summary": "Chrome, header row and tile grid match closely, but the open dropdown menus and the hover preview card from the reference's state are missing, and the grid sits too high."
+}
+```

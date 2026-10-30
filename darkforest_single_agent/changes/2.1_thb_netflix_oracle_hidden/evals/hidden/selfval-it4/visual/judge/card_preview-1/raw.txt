@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The global top nav matches: logo, 7 links, search, bell, Kids and avatar on the right. The page skeleton below it does not. The reference is the 'Browse by Languages' page: an H1 at the left, a 'Select Your Preferences' label with two dropdowns at the right, then a static 6-column poster grid inside the page gutters, with no hero. The implementation is the Home page instead: a large billboard hero followed by horizontal carousels that bleed off the right edge, with pagination dashes. The hover card is in the right paradigm, scaled up over the hovered tile and overlapping the rows around it. But it is pinned at x≈16, outside the 67px gutter, while the reference card starts inside the grid and extends left and up from the tile.",
+      "fix": "Render the held hover card on the Browse by Languages grid route: H1 'Browse by Languages' at the left gutter, preference dropdowns right-aligned on the same baseline, then a 6-column grid with equal gaps and no hero or carousels. Clamp the card's left edge to the page gutter (~67px)."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "The hover card inventory matches: artwork with title lockup, a round mute button bottom-right, a white filled play button, outlined check and thumbs-up circles, a right-aligned chevron-down circle, a maturity rating box with length text and an HD badge, and genre tags separated by dots. The page around the card is missing the reference's page heading and both dropdown selects. It adds a hero billboard (Play / More Info, '#1 in TV Shows Today'), carousel pagination indicators and a 'Top 10 TV Shows Today' row header, none of which appear in the reference. The active nav pill is on Home, while the reference highlights 'Browse by Languages'. The reference card also has a small red N badge at the top-left of its artwork, which the implementation lacks.",
+      "missing": [
+        "'Browse by Languages' page title",
+        "'Select Your Preferences' label",
+        "'Original Language' dropdown select",
+        "'English' language dropdown select",
+        "Active pill on the 'Browse by Languages' nav item",
+        "Netflix 'N' badge at the top-left of the hover-card artwork"
+      ]
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both use the same dark, flat, minimal Netflix language: a #181818 card surface with a subtle drop shadow, circular outlined action buttons, slightly rounded posters, and red 'Recently Added' / TOP 10 badges. The implementation's hero has heavily rounded corners and a dramatic gradient, which the reference page has none of. The implementation's hover card is also larger with tighter internal spacing; the reference card's buttons are bigger (~52px) relative to the card.",
+      "fix": "Remove the hero. Shrink the card to about 1.5× the tile width (~435px) and make the action circles ~48–52px with ~12px spacing, as in the reference."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same near-black base, dark grey card surface, white primary play button, grey outlined circles, Netflix red badges and logo, and a grey nav active pill. The only differences come from the hero imagery, which the reference doesn't have.",
+      "fix": "No palette change needed. Removing the hero restores the reference's flat black page."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Both use Netflix Sans-like typefaces with matching nav weights. The reference's large regular-weight page H1 is missing, and the hero's giant condensed title is extra. On the card, the reference genre row is larger (~18px, white) and the rating, seasons and HD row is ~17px. The implementation uses ~15–16px for both.",
+      "fix": "Add a ~34px regular-weight white H1 'Browse by Languages'. Increase the hover-card metadata to ~17px and the genre tags to ~18px."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The line-style icons match: check, thumbs-up, chevron, mute with an x, search and bell. The play triangle is filled, and the posters are 16:9 landscape crops with small radii. The thumbs-up in the implementation looks slightly filled rather than outlined. The red N mark on the card artwork is missing.",
+      "fix": "Use an outlined thumbs-up glyph and overlay the red 'N' badge at the top-left of the hover-card artwork."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "The nav labels match exactly, as do 'Recently Added' and 'HD'. The reference's 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English' are missing. The hero adds 'Play', 'More Info' and '#1 in TV Shows Today', and the page adds a 'Top 10 TV Shows Today' header.",
+      "fix": "Add the page heading and the preference label and dropdown values. Drop the hero and row-header copy on this route."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "Top of the page below the nav: the implementation shows a full-width rounded billboard hero (title, synopsis, Play / More Info, '#1 in TV Shows Today'). The reference shows a 'Browse by Languages' H1 with preference dropdowns and no hero.",
+    "Top-right under the nav: the reference's 'Select Your Preferences' label and the 'Original Language' and 'English' dropdowns are missing from the implementation.",
+    "Content area: the reference is a static 6-column poster grid inside the gutters. The implementation uses horizontal carousels that bleed past the right edge, with pagination dashes and a 'Top 10 TV Shows Today' row header.",
+    "Nav: the active pill is on 'Home' in the implementation, but on 'Browse by Languages' in the reference.",
+    "Hover card position: the implementation pins it at x≈16, outside the page gutter. The reference card sits inside the grid at the hovered tile and extends upward above the row.",
+    "Hover card size and type: the implementation's card is wider (~525px) with smaller action buttons and smaller metadata and genre text than the reference (~435px card, ~52px buttons, ~18px genres).",
+    "Hover card artwork: the reference has a red 'N' badge at the top-left, which the implementation lacks."
+  ],
+  "fixes": [
+    "Show the held hover-card state on the Browse by Languages route: set the nav active pill on 'Browse by Languages' and remove the hero billboard.",
+    "Add a header row with the H1 'Browse by Languages' on the left and, on the right, a 'Select Your Preferences' label plus two bordered dropdowns ('Original Language', 'English').",
+    "Replace the carousels with a static 6-column 16:9 poster grid inside the 67px gutters: no row headers, no pagination dashes, no overflow past the right edge.",
+    "Clamp the hover card inside the gutters, anchored at the hovered tile, at ~1.5× tile width (~435px), extending upward over the row above.",
+    "Inside the card, make the action circles ~48–52px, the rating/length/HD row ~17px and the genre row ~18px, use an outlined thumbs-up icon, and add a red 'N' badge at the top-left of the artwork."
+  ],
+  "summary": "The hover card is built faithfully, but it sits on the Home page (hero plus carousels) instead of the reference's Browse by Languages grid with its title and preference dropdowns."
+}
+```

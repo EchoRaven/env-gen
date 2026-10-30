@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "Same structure: a dark scrim over the blurred title-detail modal, and a centred rating overlay about 960px wide with a full-width red top rule, a close X top-right, a centred title and subtitle, three evenly spaced rating columns and a centred 'Got it!' button. Small differences: the red rule sits about 15px lower (y≈318 vs 302), the title block is slightly tighter to the rule, and the icon row and 'Got it!' sit about 15px lower than in the reference.",
+      "fix": "Move the red rule up to y≈302. Keep about 75px between the rule and the title baseline. Tighten the gap between the label rows and 'Got it!' so the button sits about 80px below the labels."
+    },
+    "components": {
+      "score": 0.85,
+      "missing": [],
+      "notes": "Every reference component is present: the red accent rule, the close X, the title, the subtitle, three rating options (thumbs down, thumbs up, double thumbs up) each with a two-line caption, and the dark 'Got it!' button. However, the implementation adds a grey rounded highlight panel behind the first (thumbs-down) option. The reference shows no such selected or hover container, so all three options there look identical.",
+      "fix": "Remove the default background panel on the thumbs-down option so all three options render as plain icon and caption stacks on the scrim. If it is a hover style, make sure it is not applied when the dialog first renders."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The flat, minimal overlay is the same, with no card surface, just content on the scrim, a thin red rule and a small, slightly rounded dark button. The extra rounded grey tile on option 1 adds a surface treatment the reference doesn't have. The close X looks thinner and lighter than the reference's bolder X.",
+      "fix": "Drop the option tile. Draw the close X at about 2.5–3px stroke and about 30px size, to match the reference's heavier X."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "The palette matches: a dark scrim, white text, a light grey subtitle, a Netflix-red rule and a near-black 'Got it!' button with white text. The grey option tile (#2a2a2a-ish) is an extra surface colour. The scrim looks slightly darker and more opaque in the implementation.",
+      "fix": "Remove the option tile background. Lighten the scrim slightly (about 0.7 opacity black) so the blurred page behind shows through at reference strength."
+    },
+    "typography": {
+      "score": 0.78,
+      "notes": "The hierarchy and centring match. The title is larger and heavier in the implementation (it spans about 775px vs about 720px). The font is Inter rather than the reference's Netflix Sans-like humanist sans. Caption wrapping also differs: the reference wraps into narrow two-line blocks ('We won't suggest / this to you again', 'We'll show you / more like this', 'We know you're a / true fan!'), while the implementation's wider captions break differently ('…this to / you again', '…more like / this', '…a true / fan!').",
+      "fix": "Use a Netflix Sans-like font (or a Helvetica/Arial fallback). Set the title to about 44px, weight 600–700. Constrain each caption to about 150px max-width so the lines break as in the reference."
+    },
+    "iconography": {
+      "score": 0.93,
+      "notes": "The same filled white thumbs-down, thumbs-up and double-thumbs icons appear in the same positions and at the same size (about 50px). The close X is thinner in the implementation.",
+      "fix": "Thicken the close X stroke to match the reference's bold X."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All copy matches exactly: the title, the subtitle '(and love!)', the three captions and 'Got it!'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Rating row, left option: the implementation draws a grey rounded highlight tile behind the thumbs-down option and its caption; in the reference all three options have no background",
+    "Rating captions: the implementation's captions are wider and wrap differently ('We won't suggest this to / you again', 'We'll show you more like / this', 'We know you're a true / fan!'); the reference uses narrow blocks ('We won't suggest / this to you again', etc.)",
+    "Title: the implementation's 'Rate for better recommendations' is larger and bolder, in Inter rather than the reference's Netflix Sans-style face",
+    "Close X (top-right of dialog): the implementation's X is thinner and lighter than the reference's heavier X",
+    "Vertical rhythm: in the implementation the red rule, the icon row and the 'Got it!' button each sit about 15px lower than in the reference"
+  ],
+  "fixes": [
+    "Remove the default grey background tile from the thumbs-down rating option (or apply it only on real hover)",
+    "Set max-width to about 150px on each rating caption so the lines wrap as in the reference",
+    "Reduce the title to about 44px, weight 600–700, and use a Netflix Sans-like font across the dialog",
+    "Thicken the close X stroke to about 3px",
+    "Move the red rule up to y≈302 and tighten the spacing between the captions and the 'Got it!' button"
+  ],
+  "summary": "A near-faithful rate dialog with identical copy, icons and structure; it falls short only on an invented highlight tile behind the first option, the caption wrapping, the title size and font, and a thinner close X."
+}
+```

@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "The top nav matches the reference closely: logo on the left, a pill around the active Home item, seven text links, and search, bell, Kids and avatar with a caret on the right. The page uses the same 67px left gutter, stacked titled rows and horizontal carousels whose last tile is cut off at the right edge. Differences: the reference shows only content rows under the nav, but the implementation shows the bottom of a rounded, inset hero card with Play and More Info buttons. Row sizing is inconsistent. 'Trending Now' uses the reference's ~350x197 tiles, five and a bit across, but 'TV Action & Adventure' shrinks to ~291x164, six and a bit across. The vertical rhythm is also looser, with about 60–80px between rows compared with the reference's roughly even ~50px.",
+      "fix": "Render the browse rows with no hero showing at this scroll state, or start the rows straight under the nav. Make every standard row use the same 16:9 ~350x197 tile with an ~8px gap, so five full tiles plus a peek fit at 1920px. Keep row title-to-row spacing at ~286px per row, as in the reference."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Present and correct: the nav with its active pill, the search, bell, Kids and avatar controls, row headings, the segmented page-indicator bars on the right of each row, the red 'Recently Added' tab centred on the bottom edge of a tile, and the 'TOP 10' corner badge. Missing: the 'Games' row with its outlined 'BETA' pill next to the heading, the two-part 'New Episode | Watch Now' badge (red plus white segments), and the 'New Season' badge style. Invented: an expanded hover preview card with play, check and thumbs buttons, an expand chevron, a TV-14/HD metadata row and genre dots; a large-numeral 'Top 10' ranked row; and the end of the hero with its CTAs and the '#1 in TV Shows Today' label. None of these appear in the reference.",
+      "missing": [
+        "Games row heading with outlined 'BETA' pill badge",
+        "Two-segment 'New Episode' (red) + 'Watch Now' (white) tile badge",
+        "'New Season' red tile badge variant"
+      ],
+      "fix": "Add a Games row whose heading is followed by a small rounded-rect 'BETA' badge: purple/magenta 1px border, letter-spaced caps. Add the two-segment red/white 'New Episode | Watch Now' badge variant. Don't open the hover preview card by default. Swap the numbered Top 10 row for a standard 16:9 row, as in 'Top Searches'."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "The dark, flat, media-led look matches. Tiles have the same slightly rounded corners (~4–6px), the badges sit on the tile edge in the same way, and there are no shadows on tiles. Departures: the hover card adds an elevated, layered surface, the rounded hero card adds a framed panel, and the large outlined numerals add decoration the reference doesn't have.",
+      "fix": "Keep the screen as plain flat tile rows. Remove the elevated popover and the outlined-numeral decoration from this state."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Same near-black page (#141414) with a slightly darker nav bar, white headings, Netflix red on the logo and badges, and a white active-nav pill on grey. The implementation adds a red/magenta gradient icon next to '#1 in TV Shows Today', which isn't in the reference. The white segment of the badge is missing.",
+      "fix": "Add the white 'Watch Now' badge segment with black text. Drop the extra hero accent icon."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same geometric sans for the nav and row headings, at a similar heading size and weight (~26px semibold). Nav weights and sizes match. Each tile carries a uniform condensed all-caps title text overlay at the bottom left. The reference relies on the title artwork baked into each image, with no uniform text lockup. 'BETA' in letter-spaced caps is absent.",
+      "fix": "Remove the generated uniform title overlay, or fall back to it only when the artwork has no title art. Add the letter-spaced uppercase 'BETA' label."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The outline search and bell icons, the Kids gradient tile, the blue smiley avatar with its caret and the red NETFLIX wordmark all match. Tile imagery is cover-cropped at 16:9 in the first row but at a smaller crop in the second row. The Top 10 row uses portrait posters, which the reference doesn't show. The hover card's circular outline action icons are extra.",
+      "fix": "Use consistent 16:9 cover-cropped landscape artwork in every row on this screen. Remove the portrait poster tiles."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids. The badge copy 'Recently Added' matches. Missing: the 'BETA', 'New Episode', 'Watch Now' and 'New Season' labels. Extra: 'Play', 'More Info', '#1 in TV Shows Today' and 'Top 10 TV Shows Today'.",
+      "fix": "Add the 'BETA' label and the 'New Episode'/'Watch Now'/'New Season' badge labels. Leave the hero CTAs out of this view."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Centre of the screen: the implementation shows an expanded hover preview card (large still, play, check and thumbs buttons, chevron, TV-14 Movie HD row, genre line) over the rows. The reference has no popover.",
+    "Top of the content area: the implementation shows the bottom of a rounded hero card with 'Play' and 'More Info' buttons and a '#1 in TV Shows Today' label. In the reference, the rows start directly under the nav.",
+    "Bottom row: the implementation renders a 'Top 10' row with huge outlined numerals and portrait posters. The reference's bottom row ('Top Searches') uses standard 16:9 landscape tiles with TOP 10 corner badges.",
+    "Second row in the reference: the Games row with its outlined 'BETA' pill beside the heading has no counterpart in the implementation.",
+    "'TV Action & Adventure' row: the implementation tiles are smaller (~291px wide, six and a bit visible) than the reference's ~350px tiles (five and a bit visible).",
+    "Tile badges: the reference uses a two-segment red 'New Episode' + white 'Watch Now' badge and a red 'New Season' badge. The implementation only uses the single red 'Recently Added' badge style.",
+    "Tile titles: the implementation overlays a uniform condensed white all-caps title at the bottom left of every tile. The reference uses each show's own title artwork with no generic text lockup.",
+    "Row spacing: the gaps between rows in the implementation are larger and uneven compared with the reference's tight, even rhythm."
+  ],
+  "fixes": [
+    "Don't render the hover preview card in the default state. Only show it on actual pointer hover.",
+    "Scroll past or remove the hero remnant so the rows start immediately below the nav, as in the reference.",
+    "Make every row a standard 16:9 tile carousel (~350x197, ~8px gap, five tiles plus a peek). Replace the numbered Top 10 poster row with a plain row such as 'Top Searches'.",
+    "Add a Games row whose heading is followed by an outlined, rounded 'BETA' badge in spaced caps.",
+    "Add the two-segment 'New Episode' (red) | 'Watch Now' (white, dark text) badge and the 'New Season' badge variants, centred on the bottom edge of the tile.",
+    "Drop the generic title-text overlay on tiles and let the artwork's own title treatment show.",
+    "Even out the vertical spacing between rows to about 50px between a tile row's bottom and the next heading."
+  ],
+  "summary": "The nav, colour system and 16:9 tile carousels match the reference, but the implementation adds a hero remnant, an open hover preview card and a numbered Top 10 poster row. It is also missing the Games/BETA row and the two-part tile badges, and its row tile sizes are inconsistent."
+}
+```

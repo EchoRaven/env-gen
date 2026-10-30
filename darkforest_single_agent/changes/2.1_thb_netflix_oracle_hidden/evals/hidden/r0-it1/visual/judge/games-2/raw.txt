@@ -1,0 +1,67 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.7,
+      "notes": "The top nav matches closely: wordmark on the left, 7 links with a pill on the active one, and search, bell, Kids and avatar on the right. The full-bleed hero with a lockup at bottom-left, then a dark row section below, also matches. The differences: the hero lockup sits higher (it starts around y≈350 vs ≈510), the 'Party Games' row is collapsed into an empty-state line, and an extra 'Family Movie & Show Night' row with 2:3-ish tiles is visible where the reference shows a wide 16:9 game tile row right under the heading.",
+      "fix": "Anchor the hero lockup block to the bottom-left so the buttons sit around y≈760. Render the Party Games row directly under the heading as a horizontal carousel of ~355×200 landscape tiles that bleeds off the right edge."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The nav, active pill, icons, Kids profile, avatar dropdown, primary white button, secondary grey button and row page indicator are all present. Missing: a game title-art logo lockup (replaced by plain 'GAMES' text), the metadata row with genre/players/duration, the 'Play Game' and 'More Info' (with ⓘ icon) buttons, the mute toggle and the 'ALL' maturity/filter tab at the hero bottom-right, and the Party Games tile carousel. Invented: a descriptive empty-state paragraph, a 'Back to Home' button, and TOP 10 badges on a non-game row.",
+      "missing": [
+        "Game title-art logo lockup in hero",
+        "Hero metadata row (Game • Genre • Players • Duration)",
+        "'More Info' button with info icon",
+        "Hero mute/volume circular toggle (bottom-right)",
+        "'ALL' tab with left divider bar (bottom-right of hero)",
+        "Party Games landscape tile carousel"
+      ],
+      "fix": "Feature a game in the hero: logo image, dot-separated metadata, a 'Play Game' white button and a translucent grey 'More Info' button with an ⓘ icon. Add a round outlined mute button and an 'ALL' label with a white left bar at the hero's bottom-right. Fill the Party Games row with game tiles."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same Netflix flat, cinematic, full-bleed style: slightly rounded buttons, rounded tiles and a pill nav highlight. The reference hero buttons are larger and squarer. The implementation adds a paragraph that makes the hero text-heavy.",
+      "fix": "Remove the description paragraph. Make the buttons about 44px tall with a ~4px radius, and use a ~6px radius on game tiles."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Dark #141414 base, white nav text, red wordmark, white primary button, translucent grey secondary button and a bottom/left scrim on the hero all match. The pink hero tone is content, not design.",
+      "fix": "Keep the colours. Make the secondary button semi-transparent grey (rgba(109,109,110,0.7)) like the reference's 'More Info'."
+    },
+    "typography": {
+      "score": 0.7,
+      "notes": "Sans-serif nav, active item bold, row heading size similar. The hero uses a huge condensed 'GAMES' text title where the reference uses a logo image. There is an extra body paragraph level, and the metadata row has fewer items.",
+      "fix": "Replace the text title with an image-based logo about 200px wide. Use ~18px white metadata with bullet separators and drop the body paragraph."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Outline search and bell icons, the Kids gradient tile and the blue smiley avatar with caret all match. Missing: the ⓘ icon on the secondary button and the circular mute icon. The visible tiles are wrong: there are no 16:9 game artwork tiles, and the implementation tiles carry TOP 10 badges.",
+      "fix": "Add an outline ⓘ icon inside 'More Info' and a muted-speaker icon in a 42px outlined circle. Render game tiles at 16:9 with cover crop and rounded corners."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "Nav labels and the 'Party Games' heading match. The buttons read 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' / 'More Info'. The implementation adds 'There are no games…', '0 available', '— No games available' and an extra row title. 'ALL' is missing.",
+      "fix": "Label the buttons 'Play Game' and 'More Info', add the 'ALL' label, and remove the empty-state copy."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": true,
+  "deviations": [
+    "Party Games row: the implementation shows '— No games available' text where the reference shows a carousel of landscape game artwork tiles",
+    "Hero: plain 'NETFLIX GAMES' text title with an empty-state paragraph instead of a featured game logo lockup",
+    "Hero CTAs: 'Browse Family Titles' / 'Back to Home' instead of 'Play Game' / 'More Info' with an ⓘ icon",
+    "Hero bottom-right: the mute toggle and 'ALL' tab with white divider bar are missing",
+    "Hero metadata: 'Game • 0 available' instead of a 4-item row (type, genre, players, duration)",
+    "Hero lockup is positioned ~160px higher than the reference's bottom-anchored lockup",
+    "Below the fold: an extra 'Family Movie & Show Night' row with TOP 10 badges is visible that the reference doesn't show at this position"
+  ],
+  "fixes": [
+    "Seed game data so the Party Games row renders a horizontal carousel of 16:9 rounded game tiles directly under the heading",
+    "Make the hero feature a game: title-art logo image, metadata 'Game • Genre • N Players • Duration', 'Play Game' white button and translucent grey 'More Info' with an ⓘ icon",
+    "Add the hero bottom-right controls: a circular outlined mute button and an 'ALL' label with a white left border bar flush to the right edge",
+    "Remove the empty-state paragraph and the 'Back to Home' / 'Browse Family Titles' buttons",
+    "Bottom-anchor the hero lockup so the buttons sit about 40px above the hero's bottom edge",
+    "Don't show non-game rows like 'Family Movie & Show Night' as the first row below the hero"
+  ],
+  "summary": "The nav and overall Netflix shell match, but the Games data is missing: the hero is an empty-state text lockup without the game logo, Play Game/More Info buttons or mute/ALL controls, and the Party Games carousel didn't render."
+}

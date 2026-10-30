@@ -1,0 +1,57 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches. Both have a full-bleed tilted poster-collage hero, a transparent header with the logo top-left and the language select plus Sign In top-right, a centered headline, subline, prompt and email+CTA row, a curved divider, then a promo banner on black. The banner geometry differs. In the reference the popcorn icon sits outside the card on the left (~x180) and the card starts at ~x275. In the implementation the card starts at ~x168 and the icon sits inside its left edge. The hero text block also sits about 15–20px higher.",
+      "fix": "Pull the popcorn icon out of the banner card so it sits to the left of it. Start the card about 100px further right (~x275, still ending ~x1755), with the icon vertically centered and overlapping the card's left edge."
+    },
+    "components": {
+      "score": 0.92,
+      "notes": "Every component in the reference is present and works the same way: wordmark, language dropdown with translate glyph and caret, red Sign In button, H1, price subline, prompt copy, email input with placeholder, red Get Started button with chevron, curved hero divider, promo card with icon, two-line copy and grey Learn More button. Nothing is invented. The only gap is the curved divider: the reference's glowing arc runs edge to edge, while the implementation's red line is a short center segment.",
+      "missing": ["full-width glowing curved arc divider (only a short center segment rendered)"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The design language matches: cinematic, flat controls, slightly rounded buttons and inputs, a rounded promo card, dark overlay on the collage. Two differences. The reference collage is more heavily dimmed and vignetted, so the hero text dominates; the implementation's posters are brighter and more saturated. The reference arc is a thick, glowing, full-width curve with a soft indigo glow beneath it; the implementation's glow is weaker and its line is short.",
+      "fix": "Raise the dark overlay on the collage to about 60–65% black, with a stronger radial vignette toward the center and top. Render the divider as a full-width elliptical arc with a 2–3px pink-to-red gradient stroke and a soft indigo glow below it."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The palette matches: Netflix red for the logo and both CTAs, a black base, an indigo-to-purple gradient on the promo card and a grey Learn More button. The implementation's hero background is noticeably brighter, with more vivid poster colors. Its arc is plain red over only part of the width, where the reference arc is magenta-pink spanning the full width.",
+      "fix": "Darken the hero overlay. Color the arc stroke with a magenta/pink (#e50914→#c11a5a) gradient across the full viewport width."
+    },
+    "typography": {
+      "score": 0.92,
+      "notes": "The type matches closely: a heavy sans H1 on two centered lines, a bold ~20px subline, a regular ~17px prompt, a large semibold CTA label, and a bold title over a regular subline in the banner. The implementation's subline and prompt look slightly lighter in weight and a touch more widely spaced.",
+      "fix": "Set 'Starts at $8.99. Cancel anytime.' to weight 700, and tighten the letter-spacing on the prompt and subline slightly."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "The wordmark, translate glyph, caret and CTA chevron all match. The popcorn illustration differs. The reference uses a glossy, shaded 3D bucket with a soft shadow, sitting outside the card. The implementation uses a flatter red-and-white striped bucket, cropped inside the card edge. The collage tiles match in tilt and rounded corners.",
+      "fix": "Replace the popcorn icon with a shaded, 3D-style bucket (~80px) with a drop shadow, placed outside the card on its left."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All UI copy is identical: 'English', 'Sign In', the headline, the subline, the prompt, 'Email address', 'Get Started', the banner title and subline, and 'Learn More'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.89,
+  "empty_state": false,
+  "deviations": [
+    "Bottom promo banner: the reference places the popcorn icon outside the card on the left, with the card starting ~100px further right. The implementation puts the icon inside a card that starts at x≈168.",
+    "Hero/banner boundary: the reference has a full-width glowing pink curved arc from edge to edge. The implementation shows only a short red line segment in the center (~x700–1200).",
+    "Hero background: the implementation's poster collage is much brighter and more saturated than the reference's heavily dimmed, vignetted collage, which weakens text contrast.",
+    "Popcorn icon: the reference uses a glossy, shaded 3D illustration. The implementation uses a flatter graphic that is cropped by the card.",
+    "Hero text block: the implementation sits about 15–20px higher than the reference (headline at ~y330 vs ~y345)."
+  ],
+  "fixes": [
+    "Draw the hero-bottom divider as a full-viewport-width elliptical arc with a pink/magenta gradient stroke and a soft indigo glow underneath.",
+    "Darken the collage overlay to about 60–65% black and add a radial vignette, so the posters read as a muted backdrop.",
+    "Restructure the promo banner: place the popcorn icon (~80px, shaded 3D style) outside the card on its left, and start the card at ~x275 so it aligns with the reference.",
+    "Nudge the hero text block down about 15px, and make the price subline bold (700)."
+  ],
+  "summary": "The implementation is a near-faithful Netflix landing hero. The remaining gaps are the full-width glowing arc divider, the darker collage overlay, and the popcorn icon's placement outside the promo card."
+}
+```

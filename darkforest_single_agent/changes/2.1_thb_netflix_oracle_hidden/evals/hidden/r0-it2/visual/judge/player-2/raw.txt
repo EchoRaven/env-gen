@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.6,
+      "notes": "Both are full-bleed video with no app chrome. Both have a back arrow top-left and a bottom control row with left cluster, centred text and fullscreen at bottom-right. The reference has an ad-state top-right cluster (flag + Ad countdown); the implementation has nothing there. The implementation adds a full-width scrubber row above the controls, a large left-aligned 'You're watching' info block in mid-left, and a centred error toast near the top. None of these appear in the reference. The bottom row is also wider in the implementation, with 4 left icons and 4 right icons against 2 and 1.",
+      "fix": "Render the ad-playing state: keep the full-bleed video with the back arrow top-left. Add a top-right cluster with a flag icon and an 'Ad 12' countdown box. Remove the progress bar row and the paused info overlay. Make the bottom row just pause + volume on the left, a centred status line and fullscreen on the right."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Present in both: back arrow, play/pause, volume, centred title text, fullscreen. Missing: the report/flag icon and the 'Ad 12' countdown badge with its yellow left accent. Added by the implementation: a red progress scrubber with a time readout, ±10s skip buttons, next-episode, episodes, subtitles/audio, the 'You're watching' synopsis overlay and the error toast. The play/pause button shows the play glyph; the reference shows the pause state.",
+      "missing": ["report/flag icon (top-right)", "Ad countdown badge 'Ad 12' with yellow accent bar (top-right)"],
+      "fix": "Add the flag icon button and the 'Ad N' countdown chip top-right. In ad state, hide the scrubber, skip-10 buttons, next-episode, episodes and subtitles controls, plus the paused info overlay. Show the pause icon while playing."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are minimal, flat, white icons on video with no surfaces. The implementation adds a dark scrim over the whole frame and a toast box with a red left accent. The reference shows the video undimmed, and its only boxed element is the dark Ad chip with a yellow accent.",
+      "fix": "Remove the full-frame dimming scrim in ad/playing state. Use a single small dark chip with a yellow left accent for the ad counter."
+    },
+    "color": {
+      "score": 0.65,
+      "notes": "Both are dark with white controls. The implementation introduces red accents (scrubber thumb, toast bar) that the reference doesn't show. It also lacks the reference's yellow/amber accent on the Ad badge. Its heavy darkening makes the frame much murkier than the reference.",
+      "fix": "Drop the red scrubber in this state. Add the amber/yellow accent bar on the Ad chip. Don't dim the video."
+    },
+    "typography": {
+      "score": 0.65,
+      "notes": "The bottom-centre line uses the same sans style at a similar size in both. The reference's line is all regular weight; the implementation mixes a bold title with regular text. The implementation adds a large bold title, a subtitle and a paragraph block, so its typographic hierarchy doesn't exist in the reference.",
+      "fix": "Make the bottom-centre line a single regular-weight white line of ~20px. Remove the large title, episode line and synopsis typography."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use outlined white icons for back, volume and fullscreen corners, at similar stroke weight and size. The reference shows a filled pause glyph and a flag outline. The implementation shows a play triangle, has no flag, and adds replay-10, forward-10, next, episodes and subtitles icons.",
+      "fix": "Use the pause glyph while playing. Add an outline flag icon top-right. Remove the extra transport icons."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "The reference's centre copy is the status line '<Title> begins after ads', and it has an 'Ad 12' label. The implementation's centre copy is '<Title> E1 Episode 1'. It adds 'You're watching', a 'Season 1: Ep. 1' line and an error message.",
+      "fix": "Change the centre text to '{title} begins after ads'. Add the 'Ad {seconds}' label. Remove 'You're watching' and the error toast copy."
+    }
+  },
+  "similarity": 0.55,
+  "empty_state": false,
+  "deviations": [
+    "top-right: reference shows a flag/report icon and an 'Ad 12' countdown chip with a yellow left bar; implementation has nothing there",
+    "mid-left: implementation shows a large 'You're watching' title/episode/synopsis overlay, which is absent from the reference",
+    "bottom: implementation adds a full-width red progress scrubber with a '0:00' time readout; reference has no scrubber",
+    "bottom-left: implementation adds replay-10 and forward-10 buttons and shows a play glyph; reference has only pause + volume",
+    "bottom-right: implementation adds next-episode, episodes and subtitles icons; reference has only fullscreen",
+    "bottom-centre: copy reads '<Title> E1 Episode 1' (bold title) instead of the regular-weight '<Title> begins after ads'",
+    "top-centre: implementation shows an error toast with a red accent, absent from the reference",
+    "whole frame: implementation dims the video with a heavy scrim; reference video is undimmed"
+  ],
+  "fixes": [
+    "Add a top-right cluster: an outline flag icon plus a dark 'Ad 12' countdown chip with a yellow left accent bar",
+    "Remove the 'You're watching' title/episode/synopsis overlay and the full-frame dark scrim",
+    "Hide the progress scrubber and time readout in this state",
+    "Reduce the bottom-left controls to pause (pause glyph) + volume, and the bottom-right to fullscreen only",
+    "Change the bottom-centre text to a single regular-weight line: '{title} begins after ads'",
+    "Suppress or relocate the top-centre error toast"
+  ],
+  "summary": "The full-bleed player skeleton and core icons match, but the implementation shows a paused episode overlay with full transport controls instead of the reference's minimal ad-playing state, which has a flag icon and an Ad countdown chip."
+}

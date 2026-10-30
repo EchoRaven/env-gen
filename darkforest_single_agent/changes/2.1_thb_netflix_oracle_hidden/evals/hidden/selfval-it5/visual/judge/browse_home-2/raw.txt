@@ -1,0 +1,62 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.95,
+      "notes": "The skeleton matches. Both have a top nav with the wordmark on the left, seven nav links and the search/bell/Kids/avatar cluster on the right. Below it is a large rounded hero card with the same inset gutters, the title, metadata and CTAs in the bottom-left, and a badge in the bottom-right. A titled horizontal row follows, with a segmented page indicator on the right and five 16:9 tiles plus a peeking sixth. In the implementation the title block sits a little lower and is taller because a synopsis paragraph was added.",
+      "fix": "Drop the synopsis so the title/metadata/CTA stack has the same vertical rhythm as the reference: logo, then badge line, then metadata, then a gap, then the buttons."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Present: nav pills (Home is active), all seven nav labels, search, bell, the Kids profile chip, the avatar with its caret, the audio toggle in the top-right of the hero, the Play (white pill) and More Info (grey pill) buttons, the bottom-right status badge with the megaphone icon, the row heading, the page indicator and the tiles. Differences: the reference has a red '• LIVE' badge plus a 'Started at …' status line between the title logo and the metadata, and the implementation has nothing in that slot. The implementation also adds a two-line synopsis paragraph that the reference does not show. The audio control is in its muted state with an outlined ring, while the reference shows a filled dark circle with a speaker icon.",
+      "missing": [
+        "LIVE badge + start-time status line under the hero title"
+      ],
+      "fix": "Add a status line under the title: a small red rounded 'LIVE' chip followed by a bold ~22px 'Started at 5 PM PT'-style text (or the equivalent status for the seeded title). Remove the synopsis paragraph. Render the audio toggle as a filled translucent dark circle with no outline."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat dark streaming style, with a ~20px radius on the hero card, pill buttons, a pill-shaped active nav item and slightly rounded tiles. The reference hero has a soft drop shadow and sits on a warm grey, vignetted page. The implementation's hero is flatter and sits on a uniform near-black.",
+      "fix": "Give the hero card a soft diffuse shadow (e.g. 0 10px 40px rgba(0,0,0,.6)). Use a subtle radial or warm-grey gradient on the page background behind the header and hero."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a dark scheme with Netflix red on the wordmark and badges, white primary and grey secondary CTAs, and the same blue avatar and gradient Kids icon. The reference header and page background are a warmer, lighter brownish grey (#3a3734 fading to #1c1c1c), while the implementation is a flat cool near-black (#141414). The reference also has a red LIVE chip that the implementation lacks.",
+      "fix": "Change the page and header background to a warm dark-grey gradient (about #3b3835 at the top fading to #1a1a1a). Add the red (#e50914) LIVE chip."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use the same Netflix Sans-style sans for nav, metadata, buttons and row titles, with matching sizes and weights and '•' separators in the metadata. In the reference the hero title is rendered title-logo artwork. In the implementation it is typeset in a condensed display font, which reads as type rather than as a logo lockup. The implementation adds a regular-weight body paragraph, a text level the reference doesn't have.",
+      "fix": "Render the hero title as a title-treatment image (logo PNG/SVG, ~450px wide), using typeset text only as a fallback. Remove the synopsis text level."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "Outline search and bell icons, the gradient Kids tile, the blue smiley avatar with its caret, the solid play triangle, the megaphone badge icon and the red TOP 10 corner badges all match. The audio icon differs: the reference shows a speaker with sound waves on a filled grey circle, while the implementation shows a muted speaker (×) inside an outlined circle.",
+      "fix": "Make the audio button a filled rgba(255,255,255,0.15) circle with no border, defaulting to the speaker-with-waves glyph."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "Nav labels match exactly: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages. The Kids label and the 'Play' / 'More Info' button text also match. The bottom-right badge text and row title are content-driven and acceptable. The 'LIVE' / 'Started at …' status copy is missing.",
+      "fix": "Add the status-line copy (LIVE chip plus a 'Started at {time}' string) where the data supports it."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Hero, below the title: the reference shows a red '• LIVE' chip plus a bold 'Started at 5 PM PT' line; the implementation has nothing in this slot.",
+    "Hero, below the metadata: the implementation adds a two-line synopsis paragraph that the reference doesn't have.",
+    "Hero title: the reference uses rendered logo artwork; the implementation uses typeset condensed text instead of a title-art lockup.",
+    "Page and header background: the reference is a warm, lighter grey gradient behind the nav and around the hero; the implementation is flat near-black.",
+    "Hero top-right audio control: the reference has a filled dark circle with a speaker-and-waves icon; the implementation has an outlined ring with a muted (×) icon.",
+    "Hero card: the reference has a soft drop shadow lifting it off the page; the implementation is flatter."
+  ],
+  "fixes": [
+    "Remove the synopsis paragraph from the hero info block.",
+    "Insert a status row under the hero title: a small red rounded 'LIVE' chip with a dot, then bold ~22px white 'Started at {time}' text.",
+    "Render the hero title as a logo image (title-treatment artwork, ~450px wide) instead of display-font text.",
+    "Change the page and header background to a warm dark-grey gradient (~#3b3835 at the top to #1a1a1a), and add a soft shadow under the hero card.",
+    "Restyle the audio toggle as a borderless filled translucent circle showing the unmuted speaker icon."
+  ],
+  "summary": "The implementation closely reproduces the Netflix browse layout, nav, hero card, CTAs and row. The gaps are the missing LIVE/status line, an extra synopsis, a typeset rather than artwork title, a flatter near-black background and the audio-button styling."
+}
+```

@@ -1,0 +1,21 @@
+// End-to-end UI flow: signup -> profile -> modal add/rate -> my list -> add profile
+import { chromium } from 'playwright';
+const B='http://localhost:5173';
+const b=await chromium.launch(); const p=await b.newPage({viewport:{width:1920,height:1080}});
+const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+await p.goto(B+'/signup'); const em=`ui${Date.now()}@x.com`;
+await p.fill('input[name=email]',em); await p.fill('input[name=password]','secret123'); await p.click('button[type=submit]');
+await p.waitForURL('**/profiles'); await p.waitForTimeout(800);
+console.log('profiles:', await p.locator('.pt-name').allInnerTexts());
+await p.locator('.profile-tile').first().click(); await p.waitForURL('**/browse'); await p.waitForTimeout(2000);
+console.log('rows:', (await p.locator('.row-title').allInnerTexts()).length);
+await p.goto(B+'/browse?title=36'); await p.waitForTimeout(1500);
+await p.click('.tm-buttons button[aria-label="Add to My List"]'); await p.waitForTimeout(600);
+await p.click('.tm-buttons button[aria-label="Rate this title"]'); await p.click('.rd-opt[aria-label="Love this!"]'); await p.waitForTimeout(500); await p.click('.rd-got');
+await p.goto(B+'/my-list'); await p.waitForTimeout(1200);
+console.log('mylist cards:', await p.locator('.title-card').count());
+await p.goto(B+'/profiles/manage'); await p.waitForTimeout(800);
+await p.click('.profile-tile.add'); await p.fill('input[aria-label="Profile name"]','Sam'); await p.click('button[type=submit]'); await p.waitForTimeout(800);
+console.log('after add:', await p.locator('.pt-name').allInnerTexts());
+console.log('errors', errs);
+await b.close();

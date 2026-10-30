@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Same skeleton: full-bleed tilted poster collage hero, NETFLIX wordmark top-left, language selector and Sign In top-right, hero copy centered with an email+CTA row, curved divider, then the promo banner. Region proportions and order match. Difference: the reference's popcorn icon sits OUTSIDE the banner card to its left, and the card starts at ~x=276. In the implementation the card starts at ~x=168 and the popcorn sits inside its left edge. Hero text block sits ~15px higher.",
+      "fix": "Move the popcorn illustration out of the banner card so it sits to the card's left. Start the card at ~276px and end it at ~1755px, keeping the icon at ~180–255px."
+    },
+    "components": {
+      "score": 0.92,
+      "notes": "Everything is there: wordmark, language dropdown with translate icon and caret, red Sign In button, headline, price subline, prompt line, email input, Get Started button with chevron, curved divider, promo banner with popcorn icon, title and subtitle, and a Learn More button. Nothing is invented. Only the popcorn's placement relative to the card differs.",
+      "missing": []
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Same flat, cinematic marketing style with rotated rounded poster tiles, slightly rounded buttons and a rounded banner card. In the reference the collage mixes landscape and portrait tiles under a heavy dark overlay. The implementation uses portrait-only tiles under a much lighter overlay, so the collage competes with the headline. The reference divider is a full-width arc with a glowing red-pink edge that is visible to the far edges. In the implementation the red line shows only in the middle third and fades out.",
+      "fix": "Darken the hero overlay (about rgba(0,0,0,0.6–0.7) plus a vignette) and mix landscape tiles into the collage. Make the curved divider a full-width arc with a solid red-to-pink stroke that reaches both edges."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "Dark scheme, Netflix red CTAs, white text, a navy/purple glow under the arc and a purple-tinted banner all match. The implementation's hero is noticeably brighter and more saturated (its reds and yellows read strongly). The reference banner is a more uniform blue-violet; the implementation's banner shifts toward maroon on the right.",
+      "fix": "Raise the hero scrim opacity so the posters read as muted background. Make the banner fill a flat blue-violet gradient (#1e1f4a → #2a1f4f) without the warm maroon shift."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Hierarchy, weights, centering and sizes match: heavy ~56px two-line headline, bold ~20px subline, regular ~17px prompt, bold banner title. The implementation's face is a generic geometric sans (Inter-like) instead of Netflix Sans's tighter, rounder letterforms, and its subline is regular-weight where the reference is bold.",
+      "fix": "Use a Netflix Sans-like face (e.g. 'Netflix Sans', fallback Helvetica Neue/Arial) and set 'Starts at $8.99. Cancel anytime.' to font-weight 700."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Red NETFLIX wordmark, translate glyph, caret, chevron on the CTA and the popcorn illustration all match in style. The reference popcorn is a glossy 3D bucket with a soft shadow. The implementation's popcorn is flatter and is clipped and placed inside the card edge. The collage tiles lack the landscape-format posters seen in the reference.",
+      "fix": "Use a glossy 3D-style popcorn bucket (~80px) outside the card on the left, and add landscape tiles to the rotated collage."
+    },
+    "copy": {
+      "score": 1.0,
+      "notes": "All chrome copy matches exactly: 'English', 'Sign In', headline, 'Starts at $8.99. Cancel anytime.', the email prompt, 'Email address', 'Get Started', banner title and subtitle, and 'Learn More'.",
+      "fix": "None needed."
+    }
+  },
+  "similarity": 0.87,
+  "empty_state": false,
+  "deviations": [
+    "hero background: implementation's poster collage is far brighter and more saturated; reference uses a heavy dark scrim so the posters recede behind the headline",
+    "curved divider at hero bottom: reference shows a full-width red/pink glowing arc reaching both screen edges; implementation's red line is visible only in the center and fades out",
+    "promo banner: reference places the popcorn icon outside the card to its left, with the card starting ~276px from the left; implementation puts the popcorn inside the card's left edge and starts the card at ~168px",
+    "hero collage: reference mixes landscape and portrait rotated tiles; implementation uses only portrait tiles",
+    "typography: implementation uses a generic Inter-like sans instead of Netflix Sans; price subline is not bold as in the reference",
+    "banner fill: implementation's gradient drifts toward maroon on the right; reference is a more uniform blue-violet"
+  ],
+  "fixes": [
+    "Increase the hero overlay darkness (≈60–70% black plus a radial vignette) so the posters are muted behind the text",
+    "Render the bottom divider as a full-width curved arc with a solid red→pink stroke and navy glow underneath, visible edge to edge",
+    "Move the popcorn icon outside the promo card to its left and narrow the card to start at ~276px and end at ~1755px",
+    "Set 'Starts at $8.99. Cancel anytime.' to bold and use a Netflix Sans-like font stack",
+    "Make the banner gradient a uniform blue-violet and add landscape tiles to the collage"
+  ],
+  "summary": "A near-faithful recreation of the Netflix landing hero and promo banner. The main gaps are a too-bright poster collage, a weak or partial curved divider, and the popcorn placed inside the banner instead of beside it."
+}
+```

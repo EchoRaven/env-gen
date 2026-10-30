@@ -1,0 +1,31 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.92, "notes": "Same structure in both: a top bar with the logo on the left above a hairline divider, a centered column about 490px wide (heading, subtitle, input, CTA, Get Help, small print), a gradient body and a dark footer with a 4-column link grid. The header is slightly shorter (~90px vs ~100px). The extra password field pushes everything below it down about 60px. The footer has 3 links in one row where the reference has 2 rows of 4.", "fix": "Raise the header height to ~100px. Remove the password row so the CTA sits ~14px below the email field. Fill the footer grid with 2 rows × 4 columns."},
+    "components": {"score": 0.75, "notes": "Logo, heading, subtitle, floating-label email input, full-width red Continue button, Get Help dropdown, small-print note and footer link grid are all present. The implementation adds a Password input that the reference's email-first step does not have. The footer link grid is 3 items in one row; the reference has 8 items in 2 rows.", "missing": ["footer second row of links (4 columns × 2 rows grid)", "fourth footer link column"], "fix": "Make the screen a single email step (email input → Continue) and show the password on a later step. Expand the footer to 8 links in a 4-column, 2-row grid."},
+    "style": {"score": 0.92, "notes": "Flat, minimal Netflix style: input with a slightly rounded hairline border, button with a small radius, no shadows, and a dark-red to black vertical gradient. The CTA is a little taller (~54px vs ~53px) and the input borders look slightly brighter.", "fix": "Keep the CTA at ~52px tall with a 4px radius. Use a subtle input border, about rgba(128,128,128,0.7)."},
+    "color": {"score": 0.88, "notes": "Dark scheme with a maroon gradient and a #161616-ish footer in both. The CTA red is more saturated (#E50914) than the reference's warmer, softer red (~#D6312A). The text grays are similar.", "fix": "Change the Continue background to ~#D32F2A (a slightly desaturated, warmer red)."},
+    "typography": {"score": 0.85, "notes": "Both use a sans font with a bold ~36px heading, a ~20px gray subtitle, a ~13px floating label, a semibold CTA label and small gray fine print. The implementation font is Inter-like; the reference uses Netflix Sans, which is slightly rounder and more geometric. Sizes and weights match closely.", "fix": "Use Netflix Sans or a closer geometric fallback (e.g. 'Netflix Sans', 'Helvetica Neue', Arial), with the heading at 36px/700."},
+    "iconography": {"score": 0.9, "notes": "The red NETFLIX wordmark is rendered correctly at the same size and position. The Get Help chevron is smaller and thinner than the reference's ~14px outline chevron.", "fix": "Enlarge the Get Help chevron to ~14px with a 2px stroke, aligned to the text midline."},
+    "copy": {"score": 0.7, "notes": "Heading, subtitle, 'Email or mobile number' label, 'Continue' and 'Get Help' match. The fine print says 'Passwords are verified server-side and stored as salted PBKDF2 hashes.' where the reference has the reCAPTCHA notice. The footer heading says 'Questions? Use “Get Help” on the sign-in page.' instead of the 'Questions? Call 1-844-…' phone line. The footer links (Home / Sign In / Create Account) differ from the reference's FAQ / Help Center / Netflix House / Netflix Shop / Terms of Use / Privacy / Cookie Preferences / Corporate Information.", "fix": "Change the fine print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Change the footer heading to 'Questions? Call <number> (Toll-Free)'. Use the 8 reference footer link labels."}
+  },
+  "similarity": 0.84,
+  "empty_state": false,
+  "deviations": [
+    "form: the implementation adds a Password input between the email field and Continue; the reference shows an email-only step",
+    "footer: the implementation has 3 links in one row (Home, Sign In, Create Account); the reference has a 4-column × 2-row grid of 8 links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)",
+    "footer heading: 'Questions? Use “Get Help”…' replaces the 'Questions? Call 1-844-… (Toll-Free)' phone line",
+    "fine print under Get Help: PBKDF2 password text replaces the reCAPTCHA protection notice",
+    "Continue button: the red is more saturated (#E50914-like); the reference uses a warmer, softer red",
+    "header: slightly shorter bar (~90px vs ~100px) and the logo sits a few px higher",
+    "Get Help chevron: smaller and thinner than the reference's"
+  ],
+  "fixes": [
+    "Remove the Password field from /login so the screen is email input → Continue (move the password to the next step)",
+    "Rebuild the footer as a 4-column grid with 2 rows of underlined links: FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information",
+    "Change the footer heading to 'Questions? Call 1-844-569-7700 (Toll-Free)'",
+    "Change the fine print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Change the Continue background to ~#D32F2A",
+    "Raise the header height to ~100px with the logo vertically centered; enlarge the Get Help chevron to ~14px"
+  ],
+  "summary": "The implementation closely matches the reference's Netflix sign-in layout and styling, but adds a password field, uses a smaller and different footer link set, and changes the fine-print and footer copy."
+}

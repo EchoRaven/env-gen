@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The dropdown sits in the right place: it hangs from the profile avatar and caret at the top right, below the header, about 275px wide, and its right edge lines up with the content gutter. Both screens have the same header bar. The rows follow the same order: profile entries first, then the settings links, then a divider, then 'Sign out of Netflix'. Rows in the reference are about 58px apart, which feels roomy. The implementation's profile rows are about 56px apart but its link rows are only about 50px apart. The page behind the menu is different. The reference shows the Browse by Languages tile grid with its title and a language select. The implementation shows the Home hero. That is a route or context difference and is weighted lightly.",
+      "fix": "Space every menu row evenly at about 58px apart (about 16px padding above and below). Keep the panel anchored under the avatar at about 275px wide. To match the reference exactly, open the menu over the Browse by Languages page."
+    },
+    "components": {
+      "score": 0.6,
+      "missing": ["'Transfer Profile' menu item with its transfer icon", "'Help Center' menu item with its circled question-mark icon"],
+      "notes": "Present: profile row with Kids avatar, Manage Profiles (pencil icon), Account (person icon), divider, and Sign out of Netflix. Missing: Transfer Profile and Help Center. Added without a reference counterpart: a 'Switch Profile' row with a monitor icon, and a row for the active profile ('Visual Checker') at the top of the list. The reference lists only the other profiles, not the current one. Extra profile rows like 'Vis Two' are just seeded data and are not penalized.",
+      "fix": "Change the link group to: Manage Profiles, Transfer Profile, Account, Help Center. Remove 'Switch Profile'. Leave the currently active profile out of the profile list."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use a dark panel with slightly rounded corners, a hairline border, and a full-width hairline divider above Sign out. The overall look is flat. The implementation's panel looks a little more translucent and blends into the hero, and its link rows are packed more tightly than the reference's airy spacing.",
+      "fix": "Make the panel an opaque near-black (#141414 or a little lighter) with a subtle 1px border. Give every row the same roomy spacing."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both menus use white text on a dark background, a grey hairline divider, and a colorful Kids avatar. Contrast and palette match. The implementation's panel background reads as slightly transparent over the hero image.",
+      "fix": "Use a solid, non-translucent panel background so the content behind it doesn't show through."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans font at about 17px, regular weight, sentence case, left-aligned. Sign out has the same size and weight as the other items in both. The sizes match closely. The implementation's font is a slightly narrower grotesque.",
+      "fix": "Keep labels at about 17–18px regular in Netflix Sans or a similar font. Use the same left text inset for all rows (about 58px from the panel edge)."
+    },
+    "iconography": {
+      "score": 0.7,
+      "notes": "Both use outline icons: pencil, person, and the colorful square Kids avatar. The reference icons are bigger, about 26px, with a slightly thicker stroke. The implementation's icons are about 20px. The reference's Transfer Profile icon and circled-? Help Center icon are missing. The implementation has a monitor icon for Switch Profile that the reference doesn't have. Profile avatars are rounded squares about 34px in both.",
+      "fix": "Increase the outline icons to about 26px with a 1.5–2px stroke. Add a transfer icon (a profile card with an arrow) and a circled question mark. Remove the monitor icon."
+    },
+    "copy": {
+      "score": 0.65,
+      "notes": "'Manage Profiles', 'Account', and 'Sign out of Netflix' match the reference exactly. The reference's 'Transfer Profile' and 'Help Center' are missing. The implementation has a 'Switch Profile' label that isn't in the reference.",
+      "fix": "Change the labels to: Manage Profiles / Transfer Profile / Account / Help Center / Sign out of Netflix."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown, link group: the reference's 'Transfer Profile' row (third item) is missing",
+    "Account dropdown, link group: the reference's 'Help Center' row (above the divider) is missing",
+    "Account dropdown: there is an extra 'Switch Profile' row with a monitor icon that the reference doesn't have",
+    "Account dropdown, top: the implementation lists the active profile ('Visual Checker'); the reference lists only the other profiles (Kids)",
+    "Account dropdown icons: the implementation's outline icons are about 20px; the reference's are about 26px with a heavier stroke",
+    "Account dropdown spacing: the implementation's link rows are about 50px apart; the reference's are about 58px",
+    "Page behind the menu: the reference opens the menu over the Browse by Languages grid (title plus 'Original Language' select); the implementation opens it over the Home hero"
+  ],
+  "fixes": [
+    "Replace the dropdown's link list with: Manage Profiles (pencil), Transfer Profile (transfer icon), Account (person), Help Center (circled ?), then the divider and 'Sign out of Netflix'",
+    "Remove the 'Switch Profile' item",
+    "Leave the currently active profile out of the profile rows at the top of the menu",
+    "Increase the menu icons to about 26px outline and space all rows about 58px apart",
+    "Make the dropdown panel background opaque"
+  ],
+  "summary": "The account dropdown matches in placement, look, and Sign out treatment, but the link set is wrong: Transfer Profile and Help Center are missing, Switch Profile is extra, and the current profile is listed when it shouldn't be."
+}
+```

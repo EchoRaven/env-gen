@@ -1,0 +1,5 @@
+services:
+  backend:
+    build: ../app/backend
+    ports:
+      - "18081:8000"

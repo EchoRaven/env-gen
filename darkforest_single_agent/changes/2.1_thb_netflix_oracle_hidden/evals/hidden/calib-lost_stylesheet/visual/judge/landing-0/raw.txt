@@ -1,0 +1,73 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.05,
+      "notes": "Reference: full-bleed hero with a tilted poster-collage background under a dark overlay. Header: logo on the left, language select and Sign In on the right. Headline, subtitle and email form sit centred over the hero, then a curved red/purple divider, then an ad-plan promo banner. Implementation: an unstyled 3-column grid of large upright posters, about 1500px wide and left-aligned, with white space on the right. There is no header, no hero overlay, no centred content, no divider and no banner. It looks like the hero's background layer rendered as plain page flow with no absolute positioning.",
+      "fix": "Make the hero a full-viewport (~100vh) relative container. Put the poster collage in an absolutely positioned background layer (inset:0, overflow:hidden, rotated/skewed grid of small tiles) with a dark gradient overlay on top. Overlay a header (logo left, language select + Sign In right, ~160px side gutters) and a centred content stack. Below the hero, add a curved gradient divider and the promo banner."
+    },
+    "components": {
+      "score": 0.05,
+      "notes": "The only element present is poster artwork, and it doesn't use the reference's collage treatment. Every chrome and interactive component is absent.",
+      "missing": [
+        "NETFLIX wordmark logo (top-left)",
+        "Language selector dropdown with translate icon ('English')",
+        "Sign In button (top-right)",
+        "Hero headline",
+        "Price/cancel subtitle",
+        "Email prompt text",
+        "Email address input",
+        "Get Started CTA button with chevron",
+        "Curved red/purple gradient divider arc",
+        "Promo banner card with popcorn icon, title, subtitle and Learn More button"
+      ],
+      "fix": "Add the header (logo, language select, Sign In), the hero text stack, an email input plus a red Get Started button with a chevron, the curved divider, and the rounded purple promo banner with the popcorn icon and Learn More button."
+    },
+    "style": {
+      "score": 0.1,
+      "notes": "Reference: cinematic and moody, with a dense collage of small tilted, rounded posters dimmed under a heavy overlay, a glowing curved divider and a rounded banner card. Implementation: flat, undimmed, square-cornered poster tiles at huge size, no perspective tilt, white page.",
+      "fix": "Shrink the tiles to ~200–300px, give them a ~4–8px radius and gaps, rotate the collage about -15° to -20°, add a black overlay (~60–70% plus a vignette), round the input, CTA and banner corners (~4px on controls, ~16px on the banner), and add the glowing curved divider."
+    },
+    "color": {
+      "score": 0.05,
+      "notes": "Reference: dark scheme on a black base, Netflix red (#E50914) for the logo, Sign In and Get Started, a deep purple/navy gradient banner, a red-to-purple divider and white text. Implementation: white page background, full-saturation posters, no red accent and no dark overlay.",
+      "fix": "Set the body background to #000, put a rgba(0,0,0,0.6) gradient overlay over the collage, use #E50914 for the logo and CTAs, and give the banner a purple/navy gradient (#1f1b4a→#2a1d4f range)."
+    },
+    "typography": {
+      "score": 0.0,
+      "notes": "The implementation renders no UI text at all. The reference uses a heavy (~800–900 weight) sans headline at ~56–64px, centred over two lines, a bold ~20px subtitle, a ~16px regular prompt, a bold 24px CTA label and a condensed red NETFLIX wordmark.",
+      "fix": "Use Netflix Sans or Helvetica/Inter: headline ~60px weight 900 centred, subtitle 20px bold, prompt 16px regular, CTA 24px semibold, banner title 20px bold over 16px regular body."
+    },
+    "iconography": {
+      "score": 0.1,
+      "notes": "Poster artwork is present, but at the wrong scale, aspect and crop: huge upright tiles instead of small landscape/portrait tiles in a tilted collage. The translate icon, dropdown caret, CTA chevron, popcorn illustration and NETFLIX logo are all missing.",
+      "fix": "Render the posters as small rounded tiles in a rotated collage. Add the translate icon + caret in the language select, a right chevron in Get Started, the popcorn illustration left of the banner, and a red condensed NETFLIX wordmark logo."
+    },
+    "copy": {
+      "score": 0.0,
+      "notes": "None of the reference's UI copy is present.",
+      "fix": "Add the copy: 'English', 'Sign In', 'Unlimited movies, TV shows, and more', 'Starts at $8.99. Cancel anytime.', 'Ready to watch? Enter your email to create or restart your membership.', placeholder 'Email address', 'Get Started', 'The Netflix you love for just $8.99.', 'Get our most affordable, ad-supported plan.', 'Learn More'."
+    }
+  },
+  "similarity": 0.05,
+  "empty_state": false,
+  "deviations": [
+    "Whole screen: the implementation shows only a raw 3-column grid of large upright posters on a white page. The reference is a dark hero with a dimmed, tilted collage of small posters as its background.",
+    "Header: the reference's NETFLIX logo (top-left), English language dropdown and red Sign In button (top-right) are all absent.",
+    "Hero centre: the headline, '$8.99' subtitle, email prompt, Email address input and red Get Started button are all absent.",
+    "Background treatment: posters aren't rotated, shrunk, rounded or dimmed under a dark overlay. They render full-brightness, square-cornered, and fill the viewport.",
+    "Page colour: the implementation has a white background, and white space on the right (~400px) where the grid stops. The reference is full-bleed black.",
+    "Lower section: the curved red/purple glowing divider arc is missing.",
+    "Bottom: the rounded purple promo banner with popcorn icon, '$8.99 ad-supported plan' text and grey Learn More button is missing."
+  ],
+  "fixes": [
+    "Set the page background to black and make the hero a relative, full-viewport container with overflow hidden.",
+    "Move the poster grid into an absolutely positioned background layer: small (~220px) tiles with ~6px radius and gaps, the whole grid rotated about -15° and scaled to overflow the viewport, under a dark gradient overlay (~60–70% black plus edge vignette).",
+    "Add a header over the hero: red NETFLIX wordmark on the left; on the right, an outlined dark 'English' select with translate icon and caret, plus a small red 'Sign In' button.",
+    "Add a centred hero stack: 'Unlimited movies, TV shows, and more' (~60px, weight 900, white), 'Starts at $8.99. Cancel anytime.' (20px bold), the email prompt (16px), then a row with a translucent dark bordered 'Email address' input (~400×60px) and a red #E50914 'Get Started >' button (~24px text).",
+    "Below the hero, add a curved arc divider with a red-to-purple gradient glow.",
+    "Add the promo banner: a rounded (~16px) purple/navy gradient card at about the same width as the header content, with a popcorn illustration on the left, title 'The Netflix you love for just $8.99.' plus subtitle, and a grey 'Learn More' button on the right."
+  ],
+  "summary": "The implementation renders only an unstyled, full-brightness poster grid on white: no header, hero text, email signup, divider or promo banner. It bears almost no resemblance to the dark Netflix landing reference."
+}
+```

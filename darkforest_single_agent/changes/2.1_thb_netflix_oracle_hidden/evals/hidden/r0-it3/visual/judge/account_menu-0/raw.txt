@@ -1,0 +1,58 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The header chrome matches the reference: NETFLIX wordmark on the left, the nav row, and search, bell, Kids and avatar with a caret on the right. The dropdown is in the same place, anchored under the avatar on the right edge, at about the same width (~275px) and with the same top offset. The page behind the menu differs: the reference sits over a Browse by Languages grid, and the implementation sits over the Home hero. The menu is the subject here, so this is minor. Menu rows are a little tighter in the implementation (~50px pitch vs ~58px in the reference).",
+      "fix": "Increase the menu row height to ~58px with ~18px horizontal padding. Optionally render the menu over the Browse by Languages page to match the reference's backdrop."
+    },
+    "components": {
+      "score": 0.65,
+      "notes": "Both menus have the same skeleton: profile rows, then utility rows, then a divider, then 'Sign out of Netflix'. Manage Profiles, Account and Sign out are all present. The extra profile rows (Visual Checker, Vis Two) are user data and are acceptable. The utility list differs: the reference's 'Transfer Profile' and 'Help Center' rows are missing, and the implementation adds a 'Switch Profile' row that the reference does not show.",
+      "fix": "Make the utility rows, in order: Manage Profiles, Transfer Profile, Account, Help Center. Remove 'Switch Profile'. Keep the divider and 'Sign out of Netflix'.",
+      "missing": ["Transfer Profile menu item", "Help Center menu item"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both menus use a dark elevated panel with slightly rounded corners, a hairline border, a full-width divider above sign-out, and a flat look. The implementation is a bit denser, and its panel border is slightly more visible.",
+      "fix": "Loosen the row padding to match the reference's airier rhythm. Keep the radius at ~6px and the border as a hairline."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use a near-black menu surface (#1f1f1f-ish) on a dark page with white item text and a gray divider. They match.",
+      "fix": "No significant change. Make sure the panel is slightly lighter than the header background, as in the reference."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a white sans-serif in regular weight at the same size for menu items and for the sign-out label. The reference's item text is slightly larger (~18px vs ~17px).",
+      "fix": "Set menu item text to ~18px regular, white."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Both use outline icons (pencil, person) and the same Kids avatar treatment as a rounded-square tile. The reference's icons are larger (~26px) with a slightly heavier stroke. The implementation's icons are ~20px. The implementation also uses a monitor icon for 'Switch Profile', and that row is not in the reference. The reference's transfer-profile and question-mark-in-circle icons are absent.",
+      "fix": "Enlarge the outline icons to ~26px with a ~1.75px stroke. Add the transfer-profile icon (a profile card with an arrow) and a circled '?' icon for Help Center."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "'Manage Profiles', 'Account' and 'Sign out of Netflix' match exactly. 'Transfer Profile' and 'Help Center' are missing, and 'Switch Profile' is an invented label.",
+      "fix": "Use exactly these labels: 'Manage Profiles', 'Transfer Profile', 'Account', 'Help Center', 'Sign out of Netflix'."
+    }
+  },
+  "similarity": 0.78,
+  "empty_state": false,
+  "deviations": [
+    "Account dropdown utility section: the 'Transfer Profile' row (between Manage Profiles and Account) is missing.",
+    "Account dropdown utility section: the 'Help Center' row (circled-? icon, between Account and the divider) is missing.",
+    "Account dropdown: there is an extra 'Switch Profile' row with a monitor icon that the reference does not have.",
+    "Account dropdown rows: the icons are smaller (~20px vs ~26px) and the rows are tighter (~50px vs ~58px pitch) than in the reference.",
+    "Backdrop page: the menu sits over the Home hero (with 'Home' as the active nav pill), while the reference shows it over the Browse by Languages grid (with that nav pill active)."
+  ],
+  "fixes": [
+    "Replace the dropdown's utility rows with: Manage Profiles (pencil), Transfer Profile (profile-transfer icon), Account (person), Help Center (circled ?).",
+    "Remove the 'Switch Profile' row.",
+    "Increase menu icons to ~26px outline and row height to ~58px, with item text at ~18px.",
+    "Optionally capture or open the menu on the Browse by Languages route so the backdrop and active nav pill match the reference."
+  ],
+  "summary": "The header and the dropdown's placement, surface and typography closely match the reference, but the menu is missing Transfer Profile and Help Center, has an extra Switch Profile row, and uses slightly smaller icons and tighter rows."
+}
+```

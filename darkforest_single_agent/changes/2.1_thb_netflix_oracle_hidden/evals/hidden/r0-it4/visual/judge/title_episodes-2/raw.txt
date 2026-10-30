@@ -1,0 +1,60 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "Same structure: a centred ~1085px modal over the dimmed Home page, with the header (logo, pill nav, search, bell, Kids, avatar) still visible at both sides. Inside the modal the order matches: synopsis paragraph, then the 'Episodes' header with the series name right-aligned, then the episode list. Each row has the same columns: large index number, 16:9 thumbnail of about 170x95, title and duration on one line, description below, and duration right-aligned at about x=1350. The implementation's rows are a little taller (~157px pitch vs ~145px), and its scroll position shows more of the metadata block.",
+      "fix": "Tighten the episode rows to a ~145px pitch (about 24px top and bottom padding) so the thumbnail and text block sit as compactly as in the reference."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "All the reference's components are present: the Episodes heading, the series label on the right, numbered episode rows with thumbnails, the play-icon overlay on the hovered thumbnail, the duration, the description, hairline dividers, and the highlighted current-episode row. The state handling differs. In the reference only row 1 (the current episode) has the grey card background, and the hovered row 2 shows only the play circle. In the implementation rows 1 and 2 both get the grey fill, so the hover state wrongly paints the background and the divider between rows 1, 2 and 3 disappears.",
+      "missing": [
+        "hairline dividers between rows 1/2 and 2/3 (hidden by the hover fill)"
+      ],
+      "fix": "On hover, show only the play-circle overlay on the thumbnail. Keep the grey #333 background for the current episode (row 1) only, and keep the bottom divider visible under every non-current row."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat dark modal and slightly rounded current-row card, with whitespace plus hairline dividers between rows. The doubled grey rows make the implementation look heavier than the reference's single highlighted card.",
+      "fix": "Limit the filled card treatment to the current episode and leave the other rows on a transparent background separated by 1px #404040 dividers."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Dark #181818 modal, #333 highlighted row, white titles and durations: all match. Episode descriptions are mid-grey (#bcbcbc-ish) in the implementation but near-white (#d2d2d2 to white) in the reference. The extra grey hover fill changes the tonal rhythm.",
+      "fix": "Raise the episode description text colour to about #d2d2d2 and remove the hover background fill."
+    },
+    "typography": {
+      "score": 0.9,
+      "notes": "Same Netflix-style sans throughout. Large light index numerals, bold ~18px episode titles, ~16px regular durations and descriptions, and a ~28px bold 'Episodes' heading with a regular-weight series name on the right all match. The descriptions run to one short line in the implementation versus two lines in the reference; that is a content difference.",
+      "fix": "Keep the sizes. Make sure descriptions wrap at about 600px wide with ~1.4 line-height, as in the reference."
+    },
+    "iconography": {
+      "score": 0.92,
+      "notes": "Same 16:9 cover-cropped thumbnails with tiny rounding and the same circular outlined play icon centred on the hovered thumbnail. Every row reuses one image, but that is seeded data. The Top 10 badge sits above the synopsis, consistent with the product.",
+      "fix": "None required beyond per-episode thumbnails if data is available."
+    },
+    "copy": {
+      "score": 0.9,
+      "notes": "The 'Episodes' heading, the series name label and the 'NNm' durations match. Episode titles and descriptions are generic placeholders ('Episode 1' / 'Season 1, episode 1 of Overdo.'). That is content, but it reads as filler rather than real synopses.",
+      "fix": "Seed real episode titles and one- to two-sentence synopses so the rows read like the reference."
+    }
+  },
+  "similarity": 0.89,
+  "empty_state": false,
+  "deviations": [
+    "episode list row 2: the implementation fills the hovered row with the grey card background, so rows 1 and 2 both look selected; in the reference only row 1 is filled and the hovered row 2 shows just the play circle on its thumbnail",
+    "episode list: the hairline dividers between rows 1, 2 and 3 are missing in the implementation because the grey fills replace them; the reference shows a divider under every non-current row",
+    "episode rows: the implementation's row pitch (~157px) is taller than the reference's (~145px)",
+    "episode descriptions: the implementation renders them in a dimmer grey than the reference's near-white body text"
+  ],
+  "fixes": [
+    "Remove the background fill from the hover state on episode rows and keep only the play-circle overlay on the thumbnail",
+    "Apply the #333 rounded card background only to the current episode row",
+    "Render a 1px #404040 bottom divider under every non-current episode row",
+    "Reduce the vertical padding on episode rows to reach a ~145px row pitch",
+    "Lighten the episode description text to about #d2d2d2"
+  ],
+  "summary": "The More Info modal's Episodes section closely matches the reference in layout, components and type. The main miss is that the hover state paints a second grey card row and hides the dividers."
+}
+```

@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "The top nav bar matches: wordmark on the left, a row of text links, and search, bell, Kids and avatar on the right. The page below it does not. The reference is a genre sub-page. It has a black band holding a 'TV Shows > Sports TV Shows' breadcrumb and title. Below that sits a faint full-bleed backdrop image with stacked titled rows, about 6 tiles per row. The implementation instead shows a large rounded hero billboard inset within the gutters, with a title lockup, a metadata line and Play/More Info. Its rows hold about 5 larger tiles. The middle row is an empty strip with stray 'here.' text. In the reference the hover card is centred over the tile it expands from and stays inside the page. In the implementation it grows out past the left gutter to x≈16.",
+      "fix": "Drop the hero billboard on this route. Below the nav, render a black band with a grey 'TV Shows >' breadcrumb and a large white genre title, then a full-bleed dimmed backdrop behind the rows. Size tiles so about 6.2 fit per row. Anchor the hover card centred on the hovered tile and clamp it inside the 67px page gutters."
+    },
+    "components": {
+      "score": 0.62,
+      "missing": [
+        "breadcrumb ('TV Shows >' + genre page title)",
+        "row section headings above each rail",
+        "Shows nav item active-state pill (the implementation highlights Home)",
+        "populated middle rail (it renders an empty placeholder strip)"
+      ],
+      "notes": "The hover preview card matches closely. It has a 16:9 still with the title lockup at bottom-left, a circular mute button on the right of the media, and a white filled Play circle. Next to it are outlined + and thumbs-up circles, with an outlined chevron-down circle on the right. Below that are a boxed maturity rating, a seasons count and an HD badge, then a genre/mood line separated by dots. Rail tiles carry 'TOP 10' corner badges and red 'Recently Added' pills, and the rails have page-indicator dashes at the top right. Extra elements not in the reference: the hero billboard with Play and More Info buttons, and a small Netflix 'N' badge on the preview media. Rail headings are not visible, and one rail is empty.",
+      "fix": "Add the breadcrumb and title header. Render a visible heading above every rail. Fill the empty rail with tiles. Remove the hero billboard. Put the active pill on 'Shows'."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Both use the same flat, dark streaming style. Tiles have small radii, nav items are pill-highlighted, and buttons are circular outlined icons. The preview card is a dark elevated surface with rounded corners. The implementation adds a heavily rounded, inset hero card that the reference doesn't have. The reference rows sit over a subtle full-bleed backdrop image, while the implementation rows sit on a flat background.",
+      "fix": "Remove the rounded hero container. Place a darkened, full-bleed backdrop image behind the rail area, starting under the header band."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "Both are dark themes with a red wordmark, red badges and pills, white primary text, a grey nav pill and a dark grey preview card. The reference header and title band are pure black. The implementation's header is a slightly lifted #141414-style grey that matches the page.",
+      "fix": "Make the header and breadcrumb band pure #000. Keep the rail area dark, with the dimmed backdrop beneath it."
+    },
+    "typography": {
+      "score": 0.72,
+      "notes": "The nav labels, card metadata, rating box and genre line all use the same sans in similar sizes and weights. The reference has a large page title of about 40px in regular weight next to a grey breadcrumb, plus medium rail headings of about 26px. Both are absent in the implementation. The implementation's largest type is the display hero title, which the reference doesn't have.",
+      "fix": "Add the ~40px white genre title with the grey ~20px breadcrumb, and ~26px regular-weight white rail headings. Remove the display-size hero title."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The line icons for search and bell match, as do the circular button set (play, +, thumbs-up, chevron, mute). Tiles use 16:9 cover crops with title-artwork lockups, and the corner badges match. The implementation's thumbs-up icon renders filled and small, where the reference's is an outline. The implementation also adds an 'N' badge to the preview media. Its tiles are larger.",
+      "fix": "Use an outlined thumbs-up glyph sized like the + icon. Remove the 'N' corner badge from the preview media."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels are identical: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, plus Kids. The card metadata format matches ('TV-14', 'N Seasons', 'HD'), and so do the 'Recently Added' pill labels. The breadcrumb copy and rail headings are missing. The implementation adds 'Play' and 'More Info' hero labels and a stray empty-state fragment ('…here.').",
+      "fix": "Render the 'TV Shows >' breadcrumb, the genre title and the rail headings. Remove the hero CTA labels and the empty-state text."
+    }
+  },
+  "similarity": 0.62,
+  "empty_state": false,
+  "deviations": [
+    "Below the nav: the implementation shows a large rounded hero billboard with a title lockup, metadata and Play/More Info. The reference has a black band with a 'TV Shows > Sports TV Shows' breadcrumb and title, followed directly by the rails.",
+    "Rails: the reference has a heading above every row ('Your Next Watch', 'TV Comedies', etc.). The implementation shows no visible row headings.",
+    "Middle of the implementation: one rail is an empty strip with stray 'here.' placeholder text. The reference rows are all populated with tiles.",
+    "Nav: the implementation highlights 'Home' with the active pill, but the reference highlights 'Shows'.",
+    "Hover card position: in the implementation it expands past the left page gutter to the screen edge. In the reference it's centred over its tile, inside the content area.",
+    "Rail backdrop: the reference has a dimmed full-bleed key-art image behind the rows. The implementation's background is flat.",
+    "Tile density: the reference shows about 6.2 tiles per row, the implementation about 5.2 larger tiles.",
+    "Preview card: the implementation adds a Netflix 'N' badge at the top left of the media, and its thumbs-up glyph is filled rather than outlined."
+  ],
+  "fixes": [
+    "On this route, replace the hero billboard with a black header band holding a grey 'TV Shows >' breadcrumb and a ~40px white genre title.",
+    "Render a ~26px white heading above every rail.",
+    "Populate every rail. Never render the empty 'here.' placeholder strip.",
+    "Set the nav active pill on 'Shows'.",
+    "Add a dimmed full-bleed backdrop image behind the rail area.",
+    "Shrink tiles so about 6.2 fit per row at 1920px with ~8px gaps.",
+    "Centre the hover card on the hovered tile and clamp it within the page gutters.",
+    "Remove the 'N' badge from the preview media and use an outlined thumbs-up icon."
+  ],
+  "summary": "The hover preview card itself matches the reference closely. The page around it is a Home layout with a hero billboard instead of the Sports TV Shows genre page with a breadcrumb, and it has no rail headings and one empty rail."
+}
+```

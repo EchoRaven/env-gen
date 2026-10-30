@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "Both are full-bleed players with no app chrome: a back arrow at top-left, a scrubber running the full width near the bottom with the time on the right, and a control row below it (left cluster, centred title, right cluster). The main problem is the large left-aligned 'You're watching' info block in the middle of the implementation. The reference has nothing in the frame area. The implementation also adds a centred error toast near the top. Its scrubber and control row sit slightly lower, and the left icons are spaced a little differently.",
+      "fix": "Remove the mid-screen 'You're watching' info block and the top error toast so the frame area is empty apart from the video. Keep the scrubber at about y=87% and the control row at about y=94%."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "Present: back arrow, red progress bar with thumb, remaining time, play/pause, back 10, forward 10, volume, centred title/episode label, next episode, episodes, subtitles/audio and fullscreen. Missing: the flag-shaped 'report a problem' icon at top-right. The scrubber lacks the lighter grey buffered segment and the small yellow chapter/marker ticks. The left play/pause button shows a play triangle where the reference shows the pause glyph (active playback). Not in the reference: the 'You're watching' synopsis overlay and the error banner with a red left bar.",
+      "missing": ["report-a-problem flag icon (top-right)", "buffered-progress segment on scrubber", "marker ticks on scrubber", "pause state of play/pause button"],
+      "fix": "Add a white outline flag icon about 44px wide, inset about 48px from the top-right corner. Render a light-grey buffered segment ahead of the red played segment, plus small yellow marker ticks. Show the pause glyph while playing. Delete the synopsis overlay and the error toast."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "The minimal, flat, chrome-free player style matches: thin hairline scrubber, round red thumb, white glyphs and no cards. The darkened artwork with a heavy text overlay makes the implementation feel busier than the reference's stark, empty frame.",
+      "fix": "Keep the overlay-free, flat treatment. Don't add a dimming scrim or text over the frame in the controls state."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "Both use white icons and text on a dark background with a red accent on the played track and thumb. The implementation lacks the light-grey buffered segment and the yellow markers, and its unplayed track is a bit darker.",
+      "fix": "Use mid-grey (#808080) for the unplayed track, light grey (#c8c8c8) for the buffered range and Netflix red (#e50914) for the played range and thumb. Add yellow marker dots."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The centred title line matches: the show name is bold, followed by a regular-weight 'E1' and episode name in a medium sans at about 22px. The time label is a small regular white sans in both. The overlay adds extra type levels (a grey caption, a large bold title, a semibold subtitle and body text) that the reference does not have.",
+      "fix": "Remove the overlay's type levels. Keep just the centred bold-title + regular-episode line and the small time label."
+    },
+    "iconography": {
+      "score": 0.72,
+      "notes": "The icons use the same Netflix outline set: back arrow, circular ±10 arrows, speaker with waves, next-episode, stacked episodes, subtitle bubble and fullscreen corners. The ±10 icons are noticeably smaller and thinner than in the reference, where they are about the same size as the other controls. The play/pause glyph shows play instead of pause, and the flag icon is absent.",
+      "fix": "Scale the back-10 and forward-10 icons to about 50px so they match the volume and right-cluster icons. Show the filled pause bars while playing. Add the top-right flag icon."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The title-line format '<Show> E1 <Episode>' matches. The implementation adds UI copy that the reference does not have: 'You're watching', 'Season 1: Ep. 1 \"Episode 1\"' and 'This clip could not be loaded in this browser (H.264/MP4).'",
+      "fix": "Remove the extra 'You're watching' heading, season/episode line and error message text from the controls state."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Centre-left of the frame: the implementation shows a 'You're watching' block (caption, large title, season/episode line, synopsis paragraph) over darkened artwork. The reference's frame area is empty.",
+    "Top centre: the implementation shows an error toast with a red left accent ('This clip could not be loaded…'), which the reference does not have.",
+    "Top-right: the reference has a flag-shaped report-a-problem icon. It is absent in the implementation.",
+    "Bottom-left: the reference shows the pause glyph (playing state). The implementation shows a play triangle.",
+    "Scrubber: the reference has a light-grey buffered segment and small yellow marker ticks. The implementation shows only a plain grey track with the red thumb.",
+    "Bottom-left cluster: the back-10 and forward-10 icons are smaller and thinner than the reference's, which match the other controls in size."
+  ],
+  "fixes": [
+    "Remove the 'You're watching' synopsis overlay and the dimming scrim from the controls state.",
+    "Remove the error toast (or keep it out of the controls view).",
+    "Add a white outline flag icon at top-right, mirroring the back arrow's inset.",
+    "Render the pause glyph while playing.",
+    "Add a light-grey buffered segment and yellow marker ticks to the scrubber.",
+    "Enlarge the ±10 skip icons to match the size and stroke of the volume and right-cluster icons."
+  ],
+  "summary": "The player controls bar and back arrow closely match the reference, but the implementation adds a 'You're watching' overlay and an error toast, lacks the top-right flag icon and the buffered and marker detail on the scrubber, and shows the play state instead of pause."
+}
+```

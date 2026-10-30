@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "Layout matches: a borderless overlay about 960px wide, centred over a blurred title-detail page, with a red top rule, the X in the top-right corner, a centred title and subtitle, three evenly spaced rating columns and a centred 'Got it!' button. There are two differences. The implementation adds a caption line between the options and the button, which pushes the button down by about 15px. It also drops the hairline divider that runs across the modal width at about y=800 in the reference.",
+      "fix": "Remove the caption so 'Got it!' sits about 75px below the option labels (top near y=722). Add a 1px low-contrast grey hairline across the modal width (x 480–1440) about 55px below the button."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "Most components are present: the red accent rule, the close X, the heading, the subtitle, three icon-and-label rating options and the 'Got it!' button. The implementation adds a 'not rated yet' status caption that the reference doesn't have. It also shows the first option inside a filled, rounded grey tile, which looks like a selected or hover state. In the reference all three options are shown equally with no tile background. The bottom hairline divider is missing.",
+      "missing": ["bottom hairline divider under the Got it! button"],
+      "fix": "Remove the '<title> is not rated yet.' caption. Remove the default background tile from the thumbs-down option so all three options render flat with no fill. Add the bottom divider."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The style is the same: flat, minimal and borderless over a blurred backdrop, with a small dark rounded button and a thin red rule. The implementation's backdrop is darker and more heavily blurred, so the page behind is almost unreadable. In the reference the hero image is still clearly visible through a lighter dim. The implementation's red rule is slightly thicker, the X has a thinner stroke, and the extra rounded tile adds visual weight.",
+      "fix": "Lighten the scrim to about rgba(0,0,0,0.55) and reduce the blur radius so the hero artwork stays recognisable. Make the red rule about 3px thick. Draw the X with a heavier stroke of about 3px."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The colour system matches: white text and icons on a dark scrim, a red accent rule, a dark charcoal 'Got it!' button and a light grey subtitle. The overall backdrop is noticeably darker and closer to black than the reference's muted, lighter dim. The implementation's red is a little more saturated than the reference's softer red (#E50914 at slightly lower brightness). The grey selected tile adds a surface colour that the reference doesn't have.",
+      "fix": "Reduce the overlay opacity. Set the rule to the Netflix red at about #D2302A to match the reference tone. Remove the grey option tile."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The size and weight hierarchy matches: a bold title of about 46px, a regular subtitle of about 20px in light grey, centred labels of about 17px and a bold button label. The typeface differs. The implementation uses an Inter-like grotesque, while the reference uses Netflix Sans, which is slightly narrower and rounder. The labels also wrap differently: the reference wraps at about 150px ('We won't suggest / this to you again', 'We'll show you / more like this', 'We know you're a / true fan!'), while the implementation's wider label boxes give different breaks.",
+      "fix": "Use Netflix Sans or a close humanist substitute. Constrain the option labels to a max width of about 150px so they break at the same words as the reference."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The filled white icons match: thumbs-down, thumbs-up and double thumbs-up at about 50px. The implementation's double-thumbs glyph is slightly larger and bolder. The X is thinner.",
+      "fix": "Match the double-thumbs size to the single-thumb icons (about 50px) and thicken the X stroke."
+    },
+    "copy": {
+      "score": 0.88,
+      "notes": "The heading, subtitle, all three option labels and 'Got it!' match the reference word for word. The only difference is the added caption '<title> is not rated yet.', which the reference doesn't show.",
+      "fix": "Remove the 'is not rated yet.' caption."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Thumbs-down option: the implementation wraps it in a filled, rounded grey tile (a selected or hover look). The reference shows all three options unselected with no background.",
+    "Between the options and the button: the implementation adds an extra small grey caption, 'The East Palace is not rated yet.', which isn't in the reference. It also pushes 'Got it!' down.",
+    "Bottom of the modal: the reference has a full-width hairline divider about 55px below 'Got it!'. The implementation doesn't have it.",
+    "Backdrop: the implementation's scrim is much darker and more heavily blurred. In the reference the hero still and page are visible through a lighter dim.",
+    "Typeface: the implementation uses an Inter-like sans instead of Netflix Sans, and the option labels wrap at different words because their boxes are wider.",
+    "Close X: thinner stroke in the implementation. Red top rule: slightly thicker and more saturated."
+  ],
+  "fixes": [
+    "Remove the default background tile from the first rating option and render all three options flat.",
+    "Delete the '<title> is not rated yet.' caption and move 'Got it!' up to about 75px below the labels.",
+    "Add a 1px subtle grey divider spanning the modal width about 55px below the 'Got it!' button.",
+    "Lighten the backdrop scrim to about 55% black with a gentler blur so the underlying page is visible.",
+    "Cap the option label width at about 150px so the lines break as in the reference, and use Netflix Sans or a close substitute.",
+    "Thicken the close X stroke and tone the red rule to match the reference."
+  ],
+  "summary": "This is a close copy of the Netflix rating modal, with the same structure, copy and icons. It's let down by an invented selected-state tile, an extra 'not rated yet' caption, the missing bottom divider and a darker backdrop."
+}
+```

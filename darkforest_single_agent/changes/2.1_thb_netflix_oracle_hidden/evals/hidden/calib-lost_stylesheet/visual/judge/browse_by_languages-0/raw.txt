@@ -1,0 +1,66 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.1,
+      "notes": "The reference has a single horizontal top bar: the logo on the left, inline nav links next to it, and icons on the right. Below it, the page title sits on the left with the preference dropdowns on the right, then comes a 6-column grid of 16:9 tiles with a hover-expanded card. The implementation is an unstyled HTML flow where everything stacks vertically at the left edge: the logo, a stray dropdown, run-together links, then the search, bell, Kids and profile controls on separate lines. The title and the controls are stacked too. Below them, one huge image fills most of the viewport instead of a grid. The implementation also adds a 'Sort by' control that the reference does not show.",
+      "fix": "Apply the stylesheet. Make the header a flex row about 70px high with ~60px side padding: logo left, nav links inline with ~40px gaps, and search/bell/Kids/avatar right-aligned. Put the h1 on the left and the 'Select Your Preferences' label plus two dropdowns on the right of the same row. Render titles as a 6-column grid of 16:9 tiles with ~8px gaps and ~80px vertical spacing between rows."
+    },
+    "components": {
+      "score": 0.4,
+      "notes": "Most elements exist in the DOM: nav links (6 plus the active one), search, bell, Kids, profile avatar with caret, the h1, the preference label and both dropdowns, and one image. Missing: the active-state pill on 'Browse by Languages', the dropdown menus shown open (the type list and the long language list), the tile grid, badges ('Recently Added', 'New Season', 'Live Now', TOP 10), and the hover preview card with play, add, rate and expand buttons, rating/duration/HD metadata and genre tags. A duplicate 'Browse by Languages' dropdown button and a 'Sort by' select have been added.",
+      "missing": ["active-nav pill highlight", "open Original Language dropdown menu", "open language list dropdown", "6-column title tile grid", "tile badges (Recently Added / New Season / Live Now)", "TOP 10 corner badges", "hover preview card with play/add/rate/expand buttons", "preview metadata row (maturity rating, duration, HD)", "genre tag row", "mute button on preview"],
+      "fix": "Render the multi-row tile grid with badge overlays. Style 'Browse by Languages' as the active nav pill. Remove the extra nav dropdown and the 'Sort by' select. Build the hover preview card: a video/still with title art, a mute button, a circular play/check/thumb/chevron button row, a TV-MA/duration/HD line and a genre list."
+    },
+    "style": {
+      "score": 0.05,
+      "notes": "The reference is a polished dark streaming UI: flat tiles with slight rounding, an elevated preview card with a shadow, square dropdowns with thin white borders, and generous spacing. The implementation shows default browser styling: grey bordered buttons, underlined links, no spacing system.",
+      "fix": "Style the dropdowns as black boxes with a 1px white border, white text and a caret. Give tiles ~4px corner radius, and give the preview card a dark #181818 surface with a soft shadow and 6px radius."
+    },
+    "color": {
+      "score": 0.05,
+      "notes": "The reference uses a near-black #141414 background, white and grey text, Netflix red for the logo and badges, and a grey translucent pill for the active nav item. The implementation is a white page with black and blue default link colours. Only the red logo matches.",
+      "fix": "Set the body background to #141414 and text to white. Use #e5e5e5 for nav links and white for the active one. Use red #e50914 for badges and a black background for the dropdowns."
+    },
+    "typography": {
+      "score": 0.1,
+      "notes": "The reference uses a clean sans-serif (Netflix Sans/Helvetica): nav at ~14–16px regular, the h1 at ~36px regular weight, and dropdown text at ~18px. The implementation uses default Times serif with a bold h1, and the logo is rendered huge (~100px high).",
+      "fix": "Set font-family to 'Netflix Sans', Helvetica, Arial, sans-serif. Make the h1 ~36px regular weight and nav links 14px with no underline. Reduce the logo wordmark to ~25px high."
+    },
+    "iconography": {
+      "score": 0.3,
+      "notes": "The search, bell, Kids tile and smiley avatar icons exist and are similar in style. However, they sit inside bordered grey buttons, and the logo is oversized. Imagery should be cropped 16:9 tiles with title art. Instead, one huge uncropped image appears in a bordered box with a grey filler. The circular outline action buttons from the preview card are absent.",
+      "fix": "Remove the button chrome around the header icons and size them at ~24px in white. Size the avatar at a 32px rounded square. Render tiles with object-fit: cover at 16:9, ~290px wide."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "These labels match: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids, 'Select Your Preferences', 'Original Language' and 'English'. 'Sort by' / 'Suggestions For You' were added and do not appear in the reference. The open menu items (Dubbing, Subtitles, the language list) and the badge text are not rendered.",
+      "fix": "Remove 'Sort by'. Render the dropdown options (Original Language/Dubbing/Subtitles and the language list) and the badge labels."
+    }
+  },
+  "similarity": 0.12,
+  "empty_state": false,
+  "deviations": [
+    "Whole page: the implementation renders unstyled HTML on a white background, while the reference is a dark #141414 Netflix UI.",
+    "Header: the reference has a single horizontal bar with logo, inline nav and right-aligned icons. In the implementation these elements are stacked vertically, the logo is huge, and the links are run-together and underlined.",
+    "Content area: the reference shows a 6-column grid of 16:9 title tiles. The implementation shows one giant image in a bordered box with grey filler.",
+    "Center: the reference's hover preview card (title art, play/add/rate/expand circles, TV-MA · 1h 34m · HD, genre tags) is absent.",
+    "Preferences row: the reference has the dropdowns right-aligned on the title row and both menus open. In the implementation they are stacked under the h1 as small default buttons.",
+    "Nav: the active 'Browse by Languages' grey pill is missing, and an extra 'Browse by Languages' dropdown button appears under the logo.",
+    "Below the preferences: the implementation adds a 'Sort by / Suggestions For You' control that the reference does not show.",
+    "Tiles: the 'Recently Added', 'New Season' and 'Live Now' red badges and the TOP 10 corner badges are missing.",
+    "Typography: the implementation uses serif Times with a bold h1, while the reference uses a regular-weight sans-serif."
+  ],
+  "fixes": [
+    "Make sure the global CSS is loaded and applied. The page currently renders with no styles at all.",
+    "Set the body to background #141414, color #fff, font-family Helvetica/Arial sans-serif.",
+    "Build the header as a flex row (~68px, padding 0 60px): a ~92px-wide red wordmark, inline nav links (14px, #e5e5e5, gap ~40px), an active grey pill on 'Browse by Languages', and right-side search, bell, Kids tile and avatar with caret, with no button borders.",
+    "Remove the duplicate nav dropdown button and the 'Sort by' control.",
+    "Make the title row a flex with space-between: h1 at 36px regular on the left, and on the right the 'Select Your Preferences' label plus two ~240px black dropdowns with 1px white borders and carets.",
+    "Render the titles as a 6-column grid of 16:9 cover-cropped tiles with ~4px radius, ~8px column gaps and ~80px row gaps.",
+    "Overlay red pill badges at the bottom center of tiles and TOP 10 badges at the top-right corner.",
+    "Implement the hover preview card: scaled card on #181818 with a shadow, video/still with title art, a mute button, a circular play (filled white)/check/thumb/chevron row, a bordered TV-MA + duration + HD badge line, and genre tags separated by dots."
+  ],
+  "summary": "The implementation renders as unstyled HTML on a white page. Labels and a few icons exist, but the dark Netflix layout, the tile grid, the active nav pill, the open dropdowns and the hover preview card are all missing."
+}
+```

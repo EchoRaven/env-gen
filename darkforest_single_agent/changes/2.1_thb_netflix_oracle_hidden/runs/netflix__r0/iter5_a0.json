@@ -1,0 +1,102 @@
+{
+ "duration_api_ms": 1157312,
+ "stop_reason": "end_turn",
+ "session_id": "bdf44f07-3267-40db-bdd6-e0c724b9a9ff",
+ "total_cost_usd": 9.456604199999997,
+ "usage": {
+  "input_tokens": 4,
+  "cache_creation_input_tokens": 3429,
+  "cache_read_input_tokens": 610647,
+  "output_tokens": 976,
+  "output_tokens_details": {
+   "thinking_tokens": 61
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 3429,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 2,
+    "output_tokens": 729,
+    "cache_read_input_tokens": 306865,
+    "cache_creation_input_tokens": 346,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 346
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-opus-5-5": {
+   "inputTokens": 210,
+   "outputTokens": 141622,
+   "thinkingTokens": 21572,
+   "cacheReadInputTokens": 20828181,
+   "cacheCreationInputTokens": 307211,
+   "webSearchRequests": 0,
+   "costUSD": 9.456604199999997,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 128000,
+   "canonicalModel": "claude-opus-5-5",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 2,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "I'm submitting the round-4 version unchanged: the last report passed all 14 checks, including the full 8-step contract chain, and this is the final round. Before submitting, the frontend production build succeeded, the backend source parsed cleanly, and the compose file and seed SQL are where the evaluator expects them. I did not re-run the API, browser or dead-control tests this round, and I still haven't booted the Docker stack, since there's no Docker here.\n\n**What's delivered**\n- All 17 contract endpoints, with JWT auth, 401 on every `/api/*` route without a token, and passwords checked on login.\n- My List, ratings and Continue Watching are separate for each profile, and another account's profile gets a 403.\n- The catalog is seeded from `titles.json` with the real posters, backdrops and trailer clips.\n- Every screen in the spec is built: landing, login, profiles, home, shows, movies, games, new & popular, genre, title pop-up with episodes, player, My List and browse by languages.\n- Every control on the pages I crawled responds when clicked, matching the evaluator's dead-controls check.\n- Empty lists show a \"\u2014\" message instead of disappearing.\n\n**Known limitations**\n- **Trailer playback:** I never saw a clip actually play, because the headless Chromium I tested with can't decode the MP4s. In that case the player shows an error message. Real Chrome should play them.\n- **Generated data:** the dataset has no runtimes or top-10 ranks, so I generated them. Episodes are named \"Episode N\", and cast shows \"\u2014\".\n- **Games:** the catalog has no games, and the Games page says so.\n- **Browse by languages:** \"Dubbing\" and \"Subtitles\" show an empty state, because the dataset only records each title's original language.\n- **Kids profile:** every title is rated TV-14, so Kids sees only the Family and Animation genres instead of being filtered by rating.\n- **Security:** the JWT secret is hardcoded in `docker/docker-compose.yml`, which is fine for a demo but not for production.\n\nThe demo login is `demo@netflix.local` / `netflix123`. `README.md` covers the API conventions, and the local test scripts are in `tools/tests/`.",
+ "ttft_ms": 1698,
+ "type": "result",
+ "duration_ms": 10960,
+ "uuid": "17bfdde4-9b9d-465f-8ab6-615b5a2b6cdc",
+ "ttft_stream_ms": 1084,
+ "time_to_request_ms": 244,
+ "first_content_frame_ms": 1084,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_rc": 0,
+ "_timed_out": false,
+ "_wall_s": 11.6
+}

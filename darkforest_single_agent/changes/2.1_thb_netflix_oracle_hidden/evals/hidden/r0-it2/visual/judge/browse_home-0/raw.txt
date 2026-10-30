@@ -1,0 +1,59 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Same skeleton in both. A top nav bar with the logo and links on the left and utilities on the right. A large rounded hero card, inset with the same gutters, shown above a titled horizontal row of landscape tiles with a page indicator on the right. Region proportions and alignment match closely. One difference: in the reference, the hero's metadata row sits higher and leaves a larger gap above the Play/More Info buttons. In the implementation, the title block is packed tight against the buttons.",
+      "fix": "In the hero text block, add about 50px of space between the metadata row and the button row so the title, badge and metadata sit higher, as in the reference."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "Nav links (Home pill active, Shows, Movies, Games, New & Popular, My List, Browse by Languages), search, bell, Kids avatar with label, profile avatar with caret, sound toggle in the hero, badge plus status line, metadata row with dot separators, the white Play and grey More Info pills, row heading, page indicator dashes and tiles with TOP 10 badges are all there. The reference's 'New Episode' tag in the bottom-right corner of the hero is missing.",
+      "missing": ["'New Episode' status tag (icon + label) in the bottom-right of the hero"],
+      "fix": "Put a small 'New Episode' tag (a small megaphone-style icon plus white semibold label) in the bottom-right of the hero, level with the Play/More Info buttons."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat, cinematic, dark style: heavily rounded hero card, pill-shaped buttons and active nav pill, rounded tiles, no borders. Tile gaps look slightly tighter in the implementation. The reference header has a soft, lighter backdrop; the implementation's is flat black.",
+      "fix": "Set the gap between row tiles to about 10–12px. Give the header area a soft, slightly lighter gradient behind the nav."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same dark base, white text, red Netflix wordmark and red badges, grey translucent secondary button, white primary button. The reference's page background has a warm grey glow at the top (lighter around the header). The implementation's top area is uniform near-black.",
+      "fix": "Add a subtle warm-grey radial or linear gradient (about #3a3936 fading to #141414) behind the header and the top of the page."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Sans-serif UI in both, with matching nav sizes, the bold active Home label, the semibold status line, metadata text, button labels and row heading. The hero title in the implementation is set in a condensed display font. That stands in for the reference's title-artwork logo lockup and works acceptably, but it reads as typeset text rather than artwork.",
+      "fix": "When title artwork is available, render it as an image logo above the badge row. Otherwise keep the condensed display title but cap its width at about 450px, as the reference lockup does."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Outline search and bell icons, a rounded-square Kids avatar and profile avatar, a circular sound button, a red TOP 10 badges and 16:9 rounded tile artwork all match. The sound icon shows a muted state where the reference shows it on. The 'New Episode' icon is absent.",
+      "fix": "Show the speaker-on icon by default, as in the reference, and add the 'New Episode' tag icon."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, 'Kids', 'Play' and 'More Info' are identical. The row heading and status line differ only in content. The 'New Episode' label is absent.",
+      "fix": "Add the 'New Episode' label to the hero."
+    }
+  },
+  "similarity": 0.9,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-right: the reference has a 'New Episode' tag (icon + label) level with the buttons; the implementation has nothing there",
+    "hero left text block: the reference leaves a large gap between the metadata row and the Play/More Info buttons; the implementation packs the title, badge, metadata and buttons tightly together",
+    "hero title: the reference uses a title-artwork logo lockup; the implementation uses plain condensed display text",
+    "page/header background: the reference has a warm grey gradient glow behind the nav; the implementation is flat near-black",
+    "hero top-right sound button: the reference shows the speaker on; the implementation shows it muted",
+    "row tiles: the implementation's gaps between tiles are slightly narrower than the reference's"
+  ],
+  "fixes": [
+    "Add a 'New Episode' tag with an icon to the bottom-right of the hero, aligned with the button row",
+    "Increase the vertical gap between the hero metadata row and the buttons to about 50px, moving the title block up",
+    "Render the hero title as a logo image when artwork exists, max width about 450px",
+    "Add a subtle warm-grey gradient behind the header/top of the page",
+    "Default the sound toggle icon to speaker-on",
+    "Set the gap between row tiles to about 10–12px"
+  ],
+  "summary": "Close match on nav, hero card, buttons and row structure; the gaps are the missing 'New Episode' hero tag, tighter hero text spacing, a typeset title instead of title artwork, and a flat background with no warm glow behind the header."
+}

@@ -1,0 +1,57 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.86,
+      "notes": "The skeleton matches: a transparent top nav over a full-bleed hero, the 'Movies' heading with the Genres dropdown under it, a left-aligned hero lockup, the mute button and TV-14 rating tab on the right, and a 'Gems for You' carousel that bleeds off the right edge. The proportions differ. The implementation's hero is taller, so the row heading starts at about y=935 instead of about y=843, and the tiles are cut off at the bottom of the viewport. The next row's heading ('Comedy Movies…'), which peeks in at the bottom of the reference, is not visible.",
+      "fix": "Shorten the hero, or the gap between the hero CTAs and the first row, by about 90px. That puts 'Gems for You' at about 76% of viewport height, shows the full tile row, and lets the next row's heading peek in."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Everything in the reference is present: the 7 nav items with a pill on Movies, search, bell, the Kids badge, the profile avatar with caret, the Movies heading, the Genres dropdown, the hero lockup with a 'NETFLIX' eyebrow, the TOP 10 badge with '#N in Movies Today', the synopsis, the white Play and grey More Info buttons, the mute circle, the TV-14 tab, the row heading, the page-indicator dashes and the tiles. The implementation adds a metadata row (Science Fiction · 2026 · 2h 19m · TV-14) that the reference does not have. Every tile has a TOP 10 badge, while the reference mixes badges with 'Recently Added' red pills and unbadged tiles.",
+      "missing": [],
+      "fix": "Remove the genre/year/runtime/rating metadata line under the TOP 10 rank. Show TOP 10 badges only on the qualifying tiles, and render the 'Recently Added' red pill at the bottom centre of a tile where it applies."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "It is the same cinematic, flat, dark style: square-cornered buttons, square tiles, no shadows, and a dark left/bottom vignette on the hero. The tile artwork has a heavier bottom gradient with large title text, while the reference shows the title lockups as art inside each thumbnail. The difference is minor.",
+      "fix": "Keep the tile artwork without an extra bottom gradient overlay, and let the boxart carry its own title treatment."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The colours match: a near-black base, the Netflix red for the logo and badges, a white Play button, a translucent grey More Info button, and a white/grey nav with the active item on a grey pill. The hero vignette is comparable.",
+      "fix": "No significant change. Keep the hero's left gradient strong enough that the synopsis contrast stays as high as in the reference."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "Both use a sans UI font, and the size hierarchy is similar: a large 'Movies' heading, a medium rank line and body-size synopsis. The implementation's hero title is set as condensed bold text across two lines rather than custom title artwork, and it lacks the reference's two-style lockup (bold title plus an italic subtitle line). The synopsis is truncated with an ellipsis, while the reference shows the full text. The metadata row adds a typographic level the reference does not have.",
+      "fix": "Render the hero title as a title-art image, or a closer custom lockup, at about 600px wide. Show the synopsis untruncated at the reference width (about 680px). Remove the extra metadata text level."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The icons match: line-style search, bell and info-circle icons, a filled play triangle, the mute speaker in a circle, the TOP 10 red square badge, the Kids gradient badge, and the blue smiley avatar square. The tiles have the same 16:9 landscape aspect with no corner radius and small gaps.",
+      "fix": "Show the 'Recently Added' pill badges on tiles where applicable, matching the reference's mix of badges."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "The nav labels, 'Movies', 'Genres', 'Play', 'More Info', '#N in Movies Today', 'Gems for You', 'Kids' and 'TV-14' all match. The only addition is the metadata line.",
+      "fix": "Drop the metadata line. Everything else matches."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Hero, under the '#1 in Movies Today' line: the implementation adds a metadata row (genre · year · runtime · TV-14) that the reference does not have",
+    "Vertical rhythm: the implementation's hero is taller, so 'Gems for You' starts about 90px lower, the tile row is clipped at the bottom, and the next row's heading peeking in the reference is not visible",
+    "Hero title: the implementation shows plain condensed bold text across two lines; the reference uses title artwork with a bold main line and an italic subtitle line",
+    "Gems for You tiles: every tile has a TOP 10 badge and a heavy bottom gradient with text titles; the reference mixes TOP 10 badges, 'Recently Added' red pills and unbadged boxart",
+    "Hero synopsis: the implementation truncates it with an ellipsis; the reference shows the full text"
+  ],
+  "fixes": [
+    "Remove the genre/year/runtime/rating metadata row from the hero",
+    "Reduce the hero height and spacing so 'Gems for You' sits at about y=843 of 1110, with the full tile row and the next row's heading visible",
+    "Render the hero title as title artwork, or a closer lockup, instead of plain condensed text",
+    "Show tile badges per item (TOP 10 top-right, 'Recently Added' red pill bottom-centre) instead of TOP 10 on every tile, and remove the extra bottom gradient on tiles",
+    "Show the full synopsis without ellipsis truncation"
+  ],
+  "summary": "A very close copy of the Netflix Movies browse layout. The gaps are an invented metadata row, a taller hero that pushes the first row down, a plain-text title lockup and uniform tile badges."
+}

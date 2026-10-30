@@ -1,0 +1,76 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.05,
+      "notes": "The reference is a centred modal about 1085px wide on a dimmed page. The modal has a full-bleed hero with a title lockup and controls, then a two-column info section (metadata and synopsis on the left, Cast/Genres/This Show Is on the right), then an Episodes section with a season dropdown and episode rows. The implementation renders no modal and no overlay. It shows the unstyled browse page: a raw hero image, then the title, metadata, buttons and a 'Trending Now' row, all flowing down the left edge. There are no columns and no container.",
+      "fix": "When More Info is clicked, render a fixed overlay (rgba(0,0,0,0.7)) over the browse page. Centre a modal about 850–1100px wide and 8px from the top, with rounded corners and a #181818 background. Inside it, from top to bottom: a 16:9 hero with a bottom gradient, a two-column info grid (about 2fr/1fr), and an Episodes section."
+    },
+    "components": {
+      "score": 0.08,
+      "notes": "No modal components render. The page has Play and More Info buttons, but they belong to the browse hero and are browser-default buttons. The implementation adds things the modal doesn't show here: a More Info button, a '#1 in TV Shows Today' badge and a 'Trending Now' row.",
+      "fix": "Build the modal component inventory: a circular close X at top right, the title artwork over the hero, a white Play button, a circular + (My List) button, a circular thumbs/rate button and a circular mute button at bottom right of the hero. Add a metadata row (year, seasons, HD badge, subtitles icon), a maturity rating box with content descriptors, the synopsis, the Cast/Genres/This Show Is list, an 'Episodes' heading, a Season dropdown, a season rating line and episode rows (number, thumbnail, title, runtime, description).",
+      "missing": [
+        "modal container with dimmed backdrop",
+        "close (X) button",
+        "hero title-artwork lockup",
+        "circular add-to-list button",
+        "circular rate (thumb) button",
+        "mute button in hero corner",
+        "HD badge and subtitles icon in metadata row",
+        "maturity rating box with content descriptors",
+        "Cast / Genres / This Show Is right column",
+        "Episodes section heading",
+        "Season dropdown selector",
+        "season rating line",
+        "episode list rows (index, thumbnail, title, runtime, synopsis)"
+      ]
+    },
+    "style": {
+      "score": 0.05,
+      "notes": "The reference uses a polished, flat dark cinematic style: rounded modal, circular outline icon buttons, a gradient over the hero, and an elevated episode card. The implementation is raw, unstyled HTML with browser-default button bevels and a grey bordered box around the row.",
+      "fix": "Add the stylesheet: modal radius about 6px, a gradient from transparent to #181818 at the bottom of the hero, 2px grey circular outline icon buttons (about 42px), a white Play button with 4px radius, and episode rows with a #333 highlight and 4px radius."
+    },
+    "color": {
+      "score": 0.05,
+      "notes": "The reference is dark: a #181818 modal, a black dimmed backdrop, white and light-grey text, and grey (#777) labels. The implementation has a white page with black text.",
+      "fix": "Set the modal background to #181818, primary text to #fff, labels such as 'Cast:', 'Genres:' and 'This Show Is:' to #777, and the backdrop to rgba(0,0,0,0.7). Use a white Play button with black text."
+    },
+    "typography": {
+      "score": 0.1,
+      "notes": "The reference uses a Netflix Sans-style sans-serif: a 24px Episodes heading, about 16–18px body text, and about 14px grey labels. The implementation uses the default serif font (Times), and the metadata runs together with no spacing ('Mystery20262 SeasonsTV-14').",
+      "fix": "Apply the sans font family (Netflix Sans/Helvetica) everywhere. Use a gap or separators in the metadata row, set the synopsis at about 18px with 1.5 line height, the Episodes heading at about 24px bold, and the side-column labels at about 14px in grey."
+    },
+    "iconography": {
+      "score": 0.15,
+      "notes": "Play and mute icons exist but sit unstyled inside default buttons. The reference has no title-artwork image over the hero, and there are no circular outline icons for +, thumb or close. There is no episode thumbnail at a 16:9 rounded crop and no HD/subtitle badges.",
+      "fix": "Overlay the title logo image on the lower-left of the hero. Render the +, thumb, mute and close icons as line icons in circular buttons. Use 16:9 episode thumbnails at about 130px wide with 4px radius."
+    },
+    "copy": {
+      "score": 0.3,
+      "notes": "'Play' matches. The reference copy is missing: 'Episodes', 'Season 1', 'Cast:', 'Genres:', 'This Show Is:', 'more'. The implementation shows 'More Info', '#1 in TV Shows Today' and 'Trending Now', none of which appear in the modal state.",
+      "fix": "Add the 'Episodes' heading, the 'Season N' dropdown label, the 'Season 1:' rating line, the 'Cast:', 'Genres:' and 'This Show Is:' labels, and a 'more' link."
+    }
+  },
+  "similarity": 0.06,
+  "empty_state": false,
+  "deviations": [
+    "Whole screen: the reference shows a centred dark modal over a dimmed browse page. The implementation shows no modal at all, only the unstyled browse page.",
+    "Global: the implementation is unstyled (white background, serif font, default buttons). The reference is a dark Netflix-styled UI.",
+    "Hero: the reference has a cropped 16:9 hero inside the modal, a title-artwork lockup, a white Play button and circular + and thumb buttons. The implementation has a raw image with no overlay or controls.",
+    "Hero top-right: the reference's circular close X is missing.",
+    "Below the hero: the reference has a two-column info area (metadata with HD/subtitle badges and a rating box on the left, Cast/Genres/This Show Is on the right). The implementation has a single run-on metadata line.",
+    "Lower modal: the reference's Episodes heading, Season dropdown and episode row with thumbnail, title, runtime and description are entirely missing.",
+    "Implementation extras: the More Info button, the '#1 in TV Shows Today' badge and the 'Trending Now' row with a grey bordered box are not part of the reference modal state."
+  ],
+  "fixes": [
+    "Make the 'More Info' click open a modal: a fixed backdrop rgba(0,0,0,0.7) and a centred #181818 container about 850–1100px wide, rounded, scrollable, with a circular X at top right.",
+    "Load the app's global CSS on this route: sans-serif font, dark theme, white text.",
+    "Hero: a 16:9 image with a bottom gradient into #181818, the title logo at lower left, then a white Play button, circular outlined + and thumb buttons, and a circular mute button at right.",
+    "Info grid: on the left, 'year · N Seasons · [HD] · [CC]', a maturity box with descriptors and the synopsis. On the right, grey labels for Cast, Genres and This Show Is, with white values.",
+    "Episodes section: an 'Episodes' heading, a right-aligned 'Season 1 ▾' dropdown with a dark bordered box, a 'Season 1: [TV-14] descriptors' line, and rows of number, 16:9 thumbnail, title, runtime and description, with the active row highlighted #333.",
+    "Remove the browse-hero elements and the Trending row from the modal view."
+  ],
+  "summary": "The More Info modal never renders: the implementation shows an unstyled white browse page with none of the reference's dark modal, hero controls, info columns or episode list."
+}
+```

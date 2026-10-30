@@ -1,0 +1,31 @@
+{
+  "dimensions": {
+    "layout": {"score": 0.9, "notes": "The skeleton matches the reference. The NETFLIX wordmark sits top-left with a hairline divider under the header. The form column is centred and about 490px wide, with a dark footer band below it. The footer has the same four-column link grid. The implementation's header is slightly shorter (divider at about 89px vs 100px). The extra password field pushes Continue, Get Help and the notice about 60px lower.", "fix": "Remove the password field so Continue sits directly under the email field. Raise the header height to about 100px."},
+    "components": {"score": 0.72, "notes": "Present: the logo, the heading and subheading, an email input with a floating label, the full-width red Continue button, the Get Help disclosure with a chevron, a small gray notice line and the footer link grid. The implementation adds a Password input that the reference's email-first step does not show. The footer has 3 links in one row, where the reference has 8 links across 2 rows in 4 columns.", "fix": "Make this an email-only step with the password on a later step. Fill the footer grid with 4 columns × 2 rows of links.", "missing": ["footer links: second row and fourth column (reference shows 8 links in a 4×2 grid; implementation shows 3)"]},
+    "style": {"score": 0.92, "notes": "Same flat, minimal, dark treatment. Both use slightly rounded corners on the input and button and hairline input borders. The spacing rhythm is comparable.", "fix": "Keep the button and input radius at about 4px. Tighten the gap between the subheading and the input slightly."},
+    "color": {"score": 0.88, "notes": "The dark-maroon-to-black vertical gradient and the #141414-style footer match. The Continue button is a more saturated Netflix red (#E50914), while the reference uses a slightly softer, orange-leaning red (about #D3302A). The inputs and gray text are similar.", "fix": "Change the Continue background to about #D6312A."},
+    "typography": {"score": 0.85, "notes": "Both use a sans-serif with the same size hierarchy. The reference uses Netflix Sans, which is slightly rounder and geometric. The implementation's Inter-like face is a close match. The heading weight and size are similar, and the label and notice sizes are comparable.", "fix": "Use Netflix Sans, or a closer geometric fallback such as 'Helvetica Neue'/'Arial' at the same weights. Keep the heading at about 36px bold."},
+    "iconography": {"score": 0.93, "notes": "The red condensed NETFLIX wordmark matches. The Get Help chevron is smaller and heavier than the reference's thin, larger chevron.", "fix": "Enlarge the Get Help chevron to about 14px and use a thin outline stroke."},
+    "copy": {"score": 0.72, "notes": "These match: the heading, subheading, the 'Email or mobile number' label, 'Continue' and 'Get Help'. These differ: the reference's reCAPTCHA notice is replaced with 'Passwords are verified server-side…', and the footer question line says 'Use \"Get Help\"…' instead of 'Questions? Call <number>'. The footer link labels also differ: the reference has FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences and Corporate Information.", "fix": "Change the notice to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Change the footer line to 'Questions? Call 1-844-…' and use the reference's 8 footer link labels."}
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "form: the implementation has an extra Password input between the email field and Continue, which the reference (email-only step) does not have, so all content below shifts down",
+    "footer link grid: the implementation shows 3 links (Home / Sign In / Create Account) in one row; the reference shows 8 links in 4 columns × 2 rows (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)",
+    "under Get Help: the notice text is about PBKDF2 password hashing instead of the reCAPTCHA notice",
+    "footer heading: says 'Questions? Use \"Get Help\" on the sign-in page.' instead of 'Questions? Call <phone> (Toll-Free)'",
+    "Continue button: the implementation's red is more saturated than the reference's slightly muted, orange-leaning red",
+    "header: slightly shorter (divider at about 89px vs about 100px in the reference)",
+    "Get Help chevron: smaller and heavier than the reference's thin chevron"
+  ],
+  "fixes": [
+    "Remove the Password input from the /login first step so the email field is followed directly by Continue",
+    "Rebuild the footer link grid as 4 columns × 2 rows with labels FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information",
+    "Change the small notice text to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Change the footer question line to 'Questions? Call 1-844-569-7700 (Toll-Free)'",
+    "Shift the Continue button colour to about #D6312A",
+    "Increase the header height to about 100px and use a larger, thin-stroke chevron for Get Help"
+  ],
+  "summary": "The structure and visual treatment closely match the reference. The main gaps are an extra password field, a sparse 3-link footer instead of the 4×2 grid, and changed notice and footer copy."
+}

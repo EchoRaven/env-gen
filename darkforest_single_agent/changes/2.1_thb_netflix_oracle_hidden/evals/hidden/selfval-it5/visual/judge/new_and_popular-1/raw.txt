@@ -1,0 +1,64 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Both have the same skeleton: a sticky dark top nav with the logo on the left, 7 nav links and a right cluster (search, bell, Kids, avatar), then full-bleed horizontal carousels. Each row has a left-aligned heading at the same ~67px gutter and a page-indicator dash at its top right. Row order matches: landscape row, Top-10 TV rank row, Top-10 Movies rank row, then a fourth landscape row cut off at the bottom. The last tile in each row bleeds off the right edge in both. The implementation's first row starts about 18px higher, and its row headings sit slightly closer to the tiles.",
+      "fix": "Add about 18px of top padding before the first row heading (heading baseline at about y=165) and keep about 14px between each heading and its tiles."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Present in both: nav items (7, with 'New & Popular' as an active pill), search, bell, the Kids profile, the avatar with caret, the row titles, the pagination dashes, the TOP 10 corner badges, red status badges centered at the bottom of each tile, and the large rank numerals behind posters. Differences: (1) the implementation shows a right-arrow chevron on the Top 10 TV row (y≈550), which the reference does not have. (2) The reference pairs a second white 'Watch Now' pill with the red 'New Episode' badge on one tile; the implementation only ever shows a single red pill. (3) One poster in the Top 10 Movies row (#3) falls back to plain grey 'Backrooms' text over the artwork instead of a title lockup.",
+      "missing": [
+        "paired red+white badge variant ('New Episode' + 'Watch Now') on landscape tiles"
+      ],
+      "fix": "Hide the row chevron unless the row is hovered. Support a two-part badge (red status pill plus a white 'Watch Now' pill). Make sure every poster renders a title lockup instead of plain fallback text."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both are flat and dark with slightly rounded tiles (~4px), no shadows, tight 8px gaps between tiles and a pill-shaped active nav item. The main difference is the rank numerals. In the reference they are heavy, solid near-black glyphs with a thin grey outline, so they read as dense, weighty shapes. In the implementation they are thin grey outlines with no fill, which looks lighter and more wireframe-like.",
+      "fix": "Render the rank numerals in a heavy weight (~900) with fill #141414/black and a 3–4px #595959 stroke, so they appear as solid dark shapes behind the posters."
+    },
+    "color": {
+      "score": 0.93,
+      "notes": "Both use the same #141414-style page base, the Netflix red for the logo and badges, white headings, a grey active nav pill, and a blue avatar with a gradient Kids icon. The only difference is in the rank numerals: the reference's dark fill against a lighter outline gives more depth than the implementation's grey outline on the page background.",
+      "fix": "Fill the numerals with black/#141414 and use a mid-grey (#595959) outline."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a sans font in a similar size hierarchy. The reference row headings are a regular/book weight (Netflix Sans, ~28px). The implementation's headings look medium/semibold and slightly heavier. Nav link weights match, with the active item bold in both. The rank numerals are a heavy black weight in the reference and a light outline style in the implementation.",
+      "fix": "Set row headings to font-weight 400–500 at ~28px with the same tracking, and set the rank numerals to a 900 weight."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Search and bell are line icons in both, with a square Kids icon and a rounded-square blue smiley avatar plus caret. Landscape tiles are 16:9 and posters 2:3, both cover-cropped with small radius. TOP 10 badges sit at the top right in red with matching proportions. The implementation adds a chevron icon on the row that the reference does not show.",
+      "fix": "Remove the always-visible carousel chevron (show it on hover only)."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The nav labels match exactly, and so does 'New on Netflix'. The rank-row headings differ: the reference says 'Top 10 TV Shows in the U.S. Today' and 'Top 10 Movies in the U.S. Today', while the implementation says 'Top 10 TV Shows Today' and 'Top 10 Movies Today'. The fourth row heading is 'Coming This Week' in the reference and 'Worth the Wait' in the implementation. The badge wording also differs: the reference uses a mix of 'New Season', 'New Episode', 'Recently Added' and 'Watch Now', while every badge in the implementation says 'Recently Added'.",
+      "fix": "Rename the rows to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week', and drive the badge text from item status ('New Season', 'New Episode', 'Recently Added')."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: rank numerals are thin grey outline-only glyphs; the reference uses heavy, solid dark-filled numerals with a grey stroke",
+    "Row headings: 'Top 10 TV Shows Today' / 'Top 10 Movies Today' instead of the reference's 'Top 10 TV Shows in the U.S. Today' / 'Top 10 Movies in the U.S. Today'",
+    "Fourth row heading: 'Worth the Wait' instead of the reference's 'Coming This Week'",
+    "Top 10 TV row, right edge (y≈550): extra right chevron arrow that the reference does not show",
+    "Landscape tiles: every tile has the same single 'Recently Added' pill; the reference varies the status badges ('New Season', 'New Episode') and pairs one with a white 'Watch Now' pill",
+    "Row headings render in a heavier weight than the reference's regular-weight titles",
+    "Top 10 Movies tile #3: plain grey fallback title text instead of a title lockup on the poster",
+    "First row sits about 18px higher than in the reference"
+  ],
+  "fixes": [
+    "Restyle the rank numerals: font-weight 900, fill #141414, ~4px #595959 stroke, same size and overlap behind the poster",
+    "Change the row titles to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'",
+    "Hide the carousel chevron unless the row is hovered",
+    "Map the badge text to item status ('New Season', 'New Episode', 'Recently Added') and support a secondary white 'Watch Now' pill",
+    "Set the row heading weight to 400–500",
+    "Make sure posters always render a title lockup instead of plain fallback text",
+    "Add ~18px of top padding above the first row"
+  ],
+  "summary": "Very close Netflix New & Popular clone with matching nav, row structure and badges; the main gaps are hollow outline rank numerals instead of solid dark ones, shortened or renamed row headings, uniform badge text, and an extra always-visible carousel chevron."
+}

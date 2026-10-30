@@ -1,0 +1,64 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. The NETFLIX wordmark sits top-left at about x=210, with a hairline divider under the header. The form is a single centred column about 490px wide. A dark-red to black gradient fills the body, and a #141414 footer band sits below it. The footer starts lower (y≈955 instead of y≈907), and its 4-column link grid is absent, so the footer is only one text line.",
+      "fix": "Add the 4-column footer link grid aligned to the logo's left edge, columns at roughly x=213/590/967/1343. Move the footer top to y≈907 by trimming the body's min-height."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The heading, subheading, floating-label input, full-width red CTA and footer band are all present. The reference shows an email-first flow: one input, then Continue. The implementation adds a Password field, a 'New to Netflix? Sign up now.' line and a demo-account hint, none of which appear in the reference. The 'Get Help' disclosure with its chevron, the reCAPTCHA note and the footer link grid are missing.",
+      "fix": "Remove the password field, sign-up line and demo-account hint. Keep a single 'Email or mobile number' input above the CTA. Under the CTA, add a 'Get Help ⌄' disclosure toggle and a small grey reCAPTCHA line. Add the footer link grid.",
+      "missing": ["'Get Help' dropdown toggle with chevron", "reCAPTCHA protection note", "footer link grid (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information)"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same flat, minimal dark style. Inputs have a hairline grey border and slight rounding, and the CTA is a slightly rounded rectangle with no shadows. The implementation's CTA is a little shorter (about 48px against about 53px). The reference also has more vertical space between the CTA, Get Help and the reCAPTCHA text.",
+      "fix": "Make the CTA about 53px tall. Put about 60px between the CTA and Get Help, and about 50px between Get Help and the reCAPTCHA note."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The palette matches: a maroon to black vertical gradient, a #141414 footer, white headings and a light-grey subheading. The reference CTA is a slightly muted, more orange red (about #D6312A). The implementation uses a pure Netflix red (#E50914), which looks more saturated.",
+      "fix": "Change the CTA background to about #D32F27. Set the reCAPTCHA and footer link text to mid-grey (#A0A0A0 or similar), with links underlined."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Both use a sans-serif font, a bold heading of about 36px, a regular subheading of about 20px and small floating labels. The reference uses Netflix Sans, which has rounder, more geometric letterforms. The implementation uses Inter, so the heading looks slightly wider and heavier. The CTA label weight is semibold in the reference and medium in the implementation.",
+      "fix": "Use a Netflix Sans–like geometric sans, or fall back to a rounder font family. Set the CTA label to about 20px semibold."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The red condensed NETFLIX wordmark is rendered correctly in the same position. The reference has a thin-stroke chevron-down icon next to 'Get Help'. The implementation has no icons.",
+      "fix": "Add a thin-stroke chevron-down icon after 'Get Help'."
+    },
+    "copy": {
+      "score": 0.55,
+      "notes": "The heading 'Enter your info to sign in' and the subheading 'Or get started with a new account.' match exactly. The input label is 'Email address' instead of 'Email or mobile number'. The CTA says 'Sign In' instead of 'Continue'. The implementation adds 'New to Netflix? Sign up now.' and a demo-account hint. The footer reads 'Questions? This is a local Netflix clone…' where the reference has 'Questions? Call <number>' followed by link labels.",
+      "fix": "Change the input label to 'Email or mobile number' and the CTA to 'Continue'. Remove the sign-up line and demo hint. Add 'Get Help' and the line 'This page is protected by Google reCAPTCHA to ensure you're not a bot.' Use the 'Questions? Call …' footer pattern with the 8 link labels."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "form: the implementation adds a Password input between the email field and the CTA; the reference shows a single-input, email-first step",
+    "CTA: the button says 'Sign In'; the reference says 'Continue'",
+    "below the CTA: the reference has a 'Get Help ⌄' disclosure toggle, which the implementation lacks",
+    "below the CTA: the implementation adds 'New to Netflix? Sign up now.' and a 'Demo account: …' hint; neither appears in the reference",
+    "below Get Help: the reference has a small grey reCAPTCHA notice, which the implementation lacks",
+    "footer: the reference has a 4-column grid of underlined links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information); the implementation has only one line of text",
+    "input label: 'Email address' instead of 'Email or mobile number'",
+    "CTA color: the implementation uses saturated #E50914; the reference uses a softer orange-red (about #D6312A)",
+    "footer starts about 50px lower in the implementation (y≈955 vs y≈907)"
+  ],
+  "fixes": [
+    "Remove the Password input; render one floating-label input labeled 'Email or mobile number'",
+    "Rename the CTA to 'Continue', make it about 53px tall and change its background to about #D32F27",
+    "Remove the 'New to Netflix? Sign up now.' and demo-account lines",
+    "About 60px below the CTA, add a 'Get Help' text button with a thin chevron-down icon that toggles a help dropdown",
+    "Below that, add a 13px grey line: 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Rebuild the footer with 'Questions? Call …' followed by a 4-column grid of underlined grey links (FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information), and start it at y≈907"
+  ],
+  "summary": "The shell, gradient, header, heading copy and centred form column match. The implementation shows a two-field 'Sign In' form with extra sign-up and demo text instead of the reference's email-first 'Continue' step, and it lacks Get Help, the reCAPTCHA note and the footer link grid."
+}
+```

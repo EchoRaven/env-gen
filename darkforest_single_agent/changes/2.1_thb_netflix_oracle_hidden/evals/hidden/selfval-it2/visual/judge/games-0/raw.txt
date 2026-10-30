@@ -1,0 +1,74 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.4,
+      "notes": "The top nav matches closely: the logo sits left, the links run inline with a pill on the active item, and the utilities sit on the right over a transparent background. The reference then shows a full-bleed hero with artwork that fills about 70% of the viewport. The title lockup, metadata, CTAs and the mute/rating cluster sit in its lower third, with a 'Party Games' carousel row below. The implementation has no hero image. It shows a flat purple-to-dark gradient with a text title, a 'Party Games' heading, and then a large empty centered block where the carousel should be. It also adds a footer attribution line that the reference doesn't show.",
+      "fix": "Render a full-bleed hero (about 100vw × 72vh) with cover-cropped game artwork and a bottom/left dark vignette. Put the title lockup, metadata and buttons at bottom-left, about 53px from the left edge. Place the 'Party Games' row directly under the hero as a horizontal carousel that bleeds off the right edge."
+    },
+    "components": {
+      "score": 0.3,
+      "missing": [
+        "hero background artwork",
+        "title-artwork logo lockup in hero (brand mark + game logo image)",
+        "'More Info' secondary button with info icon",
+        "primary 'Play Game' button",
+        "mute/sound toggle circular button at hero bottom-right",
+        "maturity rating badge with left border at hero right edge",
+        "horizontal carousel of landscape game tiles",
+        "carousel pagination indicator (dashes) at row top-right",
+        "peeking partial tile at right edge of row"
+      ],
+      "notes": "The nav inventory matches: 7 links, active pill on Games, search, bell, Kids avatar, profile avatar and caret. The metadata row exists but has fewer items. The hero CTAs, mute button, rating badge, tile row and pagination dashes are all absent. The 'BETA' chip, the empty-state block with 'Browse TV Shows'/'Browse Movies' buttons, and the footer attribution are invented.",
+      "fix": "Add the hero 'Play Game' (white) and 'More Info' (translucent gray with ⓘ icon) buttons, the circular mute button, and the rating badge at the right edge. Seed games data so the Party Games row renders at least 5 landscape tiles with a peek tile and the pagination dashes. Remove the BETA chip, the empty-state block and the footer text."
+    },
+    "style": {
+      "score": 0.5,
+      "notes": "The design language is the same: slightly rounded buttons, a flat dark UI and a pill nav highlight. The reference's look comes from cinematic imagery with vignette gradients and rounded image tiles. The implementation is a sparse text page with a decorative purple gradient and lots of empty whitespace.",
+      "fix": "Replace the purple header gradient with hero artwork under a black left/bottom vignette. Give the tiles a ~4px radius and a ~8px gap."
+    },
+    "color": {
+      "score": 0.55,
+      "notes": "Both use a dark #141414 base, a red Netflix wordmark, white primary and gray secondary buttons, and a translucent gray active nav pill. The implementation adds a purple tint at the top and a purple BETA outline, neither of which the reference has. The reference's colour comes entirely from artwork.",
+      "fix": "Remove the purple gradient and the purple chip. Keep a neutral black/#141414 base and let artwork carry the colour."
+    },
+    "typography": {
+      "score": 0.55,
+      "notes": "Nav, metadata and row-heading fonts and sizes are comparable: a sans face with a ~26px medium row title. The reference's hero title is an image logo lockup. The implementation uses a huge condensed all-caps text 'GAMES' heading. The empty-state copy adds an extra centered text hierarchy.",
+      "fix": "Replace the text 'GAMES' with an image title lockup about 200px wide with a small red brand mark above it. Keep the metadata at about 18px white with bullet separators."
+    },
+    "iconography": {
+      "score": 0.45,
+      "notes": "Nav icons match: outline search, outline bell, Kids gradient tile, and a blue smiley profile avatar with caret. The ⓘ info icon, the speaker-mute icon and all artwork tiles are missing. Imagery is completely absent.",
+      "fix": "Add an outline ⓘ icon inside 'More Info' and a muted-speaker outline icon in a 40px circular bordered button. Render 16:9 cover-cropped tile artwork with rounded corners."
+    },
+    "copy": {
+      "score": 0.5,
+      "notes": "Nav labels and 'Party Games' match exactly. The metadata reads 'Game • Play on any device' where the reference shows category, players and duration. The 'Play Game' and 'More Info' labels are missing. The invented copy includes 'BETA', 'No games in the catalog yet', 'Browse TV Shows/Movies' and the TMDB footer line.",
+      "fix": "Use metadata in the format 'Game • <Genre> • <N> Players • <N>+ Minutes'. Add the 'Play Game' and 'More Info' labels and drop the invented empty-state and footer copy."
+    }
+  },
+  "similarity": 0.35,
+  "empty_state": true,
+  "deviations": [
+    "hero: the reference has full-bleed game artwork covering about 70% of the viewport; the implementation shows only a flat purple-to-black gradient with no image",
+    "Party Games row: the reference shows a horizontal carousel of 5+ landscape artwork tiles plus a peek tile; the implementation shows an empty-state message ('No games in the catalog yet') with Browse TV Shows/Browse Movies buttons",
+    "hero bottom-left: the reference has 'Play Game' (white) and 'More Info' (gray with ⓘ icon) buttons; the implementation has neither",
+    "hero bottom-right: the reference has a circular mute button and a rating badge with a left border; both are missing in the implementation",
+    "hero title: the reference uses an image logo lockup with a small red brand mark; the implementation uses giant condensed text 'GAMES'",
+    "Party Games heading: the implementation adds a purple 'BETA' outlined chip that the reference doesn't have",
+    "row top-right: the reference's pagination dash indicator is missing",
+    "page bottom: the implementation adds a TMDB attribution footer line that the reference doesn't show",
+    "hero metadata: the implementation shows 2 items ('Game • Play on any device'); the reference shows 4 bullet-separated attributes"
+  ],
+  "fixes": [
+    "Seed games data so the hero and the Party Games row render real content instead of the empty state",
+    "Build a full-bleed hero with cover-cropped artwork and a left/bottom black vignette; remove the purple gradient",
+    "Replace the 'GAMES' text heading with a game title-logo image plus a small red brand mark above it",
+    "Add 'Play Game' (white, dark text) and 'More Info' (translucent gray, ⓘ icon) buttons under the metadata row",
+    "Add a circular outlined mute button and a rating badge (white left border, translucent dark fill) at the hero's bottom-right",
+    "Render the Party Games row as a horizontal carousel of 16:9 rounded tiles (~355px wide, ~8px gap) with a peek tile and pagination dashes at top-right",
+    "Remove the BETA chip, the empty-state block with Browse buttons, and the footer attribution text",
+    "Expand the hero metadata to 'Game • Genre • Players • Minutes'"
+  ],
+  "summary": "The nav chrome matches the reference almost exactly, but the page renders an empty state, so the hero artwork, its CTAs and controls, and the game tile carousel are all missing, and it adds a purple gradient, a BETA chip and a footer the reference doesn't have."
+}

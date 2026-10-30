@@ -1,0 +1,415 @@
+{
+ "passed": true,
+ "summary": "all api_smoke checks passed",
+ "checks": [
+  {
+   "name": "frontend_navigable",
+   "status": "pass",
+   "detail": "28 page component(s), 19 route(s)",
+   "sec": 0.0
+  },
+  {
+   "name": "frontend_fallback_pages",
+   "status": "pass",
+   "detail": "0/16 pages are framework fallback ()",
+   "sec": 0.0
+  },
+  {
+   "name": "docker_up",
+   "status": "pass",
+   "detail": "",
+   "sec": 22.14,
+   "steps": [
+    {
+     "name": "lease_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "lock_wait",
+     "sec": 0.0
+    },
+    {
+     "name": "stage_assets",
+     "sec": 0.02
+    },
+    {
+     "name": "repair_params",
+     "sec": 0.0
+    },
+    {
+     "name": "localize_seed",
+     "sec": 0.0
+    },
+    {
+     "name": "down_v",
+     "sec": 0.03
+    },
+    {
+     "name": "build",
+     "sec": 15.62
+    },
+    {
+     "name": "prune_orphans_1203gw",
+     "sec": 0.0
+    },
+    {
+     "name": "up",
+     "sec": 6.37
+    }
+   ]
+  },
+  {
+   "name": "backend_health",
+   "status": "pass",
+   "detail": "",
+   "sec": 3.05
+  },
+  {
+   "name": "auth_register_login",
+   "status": "pass",
+   "detail": "",
+   "sec": 0.32
+  },
+  {
+   "name": "business_endpoints_reachable",
+   "status": "pass",
+   "detail": "15 endpoint(s) reachable",
+   "sec": 0.2
+  },
+  {
+   "name": "business_endpoints_implemented",
+   "status": "pass",
+   "detail": "15 registered-implemented endpoint(s) serve their route",
+   "sec": 0.0
+  },
+  {
+   "name": "business_endpoints_correct_shape",
+   "status": "pass",
+   "detail": "15 endpoint(s) match the item/items contract",
+   "sec": 0.0
+  },
+  {
+   "name": "business_writes_persist",
+   "status": "pass",
+   "detail": "POST /api/profiles \u2192 id=6; GET readback contains it",
+   "sec": 0.04
+  },
+  {
+   "name": "auth_enforced_401",
+   "status": "pass",
+   "detail": "",
+   "sec": 0.0
+  },
+  {
+   "name": "auth_password_is_checked",
+   "status": "pass",
+   "detail": "",
+   "sec": 0.05
+  },
+  {
+   "name": "business_chain",
+   "status": "pass",
+   "detail": "8 step(s) across 1 verifier-authored chain(s) pass",
+   "sec": 0.21
+  },
+  {
+   "name": "frontend_dead_controls",
+   "status": "pass",
+   "detail": "all interactive pages bind their controls",
+   "sec": 0.0
+  },
+  {
+   "name": "frontend_reachable",
+   "status": "pass",
+   "detail": "GET :3000/ \u2192 200",
+   "sec": 0.04
+  }
+ ],
+ "backend_port": 8000,
+ "endpoints": [
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/profiles",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/profiles -> 200"
+  },
+  {
+   "id": null,
+   "method": "POST",
+   "path": "/api/profiles",
+   "status_code": 422,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "POST http://localhost:8000/api/profiles -> 422"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/titles",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/titles -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/titles/{id}",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/titles/1 -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/titles/{id}/episodes",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/titles/1/episodes -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/titles/trending",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/titles/trending -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/titles/top10",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/titles/top10 -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/genres",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/genres -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/genres/{id}/titles",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/genres/1/titles -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/search",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/search -> 200"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/my-list",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/my-list -> 200"
+  },
+  {
+   "id": null,
+   "method": "POST",
+   "path": "/api/my-list",
+   "status_code": 422,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "POST http://localhost:8000/api/my-list -> 422"
+  },
+  {
+   "id": null,
+   "method": "DELETE",
+   "path": "/api/my-list/{id}",
+   "status_code": 404,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "DELETE http://localhost:8000/api/my-list/1 -> 404"
+  },
+  {
+   "id": null,
+   "method": "POST",
+   "path": "/api/titles/{id}/rating",
+   "status_code": 422,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "POST http://localhost:8000/api/titles/1/rating -> 422"
+  },
+  {
+   "id": null,
+   "method": "GET",
+   "path": "/api/continue-watching",
+   "status_code": 200,
+   "reachable": true,
+   "passed": true,
+   "error": null,
+   "trace": "GET http://localhost:8000/api/continue-watching -> 200"
+  }
+ ],
+ "chains": [
+  {
+   "name": "framework_default_crud",
+   "steps": [
+    {
+     "action": "/auth/register",
+     "method": "POST",
+     "path": "/auth/register",
+     "status": 201,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200,
+      201,
+      409
+     ]
+    },
+    {
+     "action": "register",
+     "method": "POST",
+     "path": "/auth/register",
+     "status": 201,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200,
+      201,
+      409
+     ]
+    },
+    {
+     "action": "create /api/my-list",
+     "method": "POST",
+     "path": "/api/my-list",
+     "status": 201,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200,
+      201
+     ],
+     "auth": "token"
+    },
+    {
+     "action": "list /api/my-list",
+     "method": "GET",
+     "path": "/api/my-list",
+     "status": 200,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200
+     ],
+     "auth": "token"
+    },
+    {
+     "action": "delete /api/my-list/id",
+     "method": "DELETE",
+     "path": "/api/my-list/1",
+     "status": 200,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200,
+      204
+     ],
+     "auth": "token"
+    },
+    {
+     "action": "create /api/profiles",
+     "method": "POST",
+     "path": "/api/profiles",
+     "status": 201,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200,
+      201
+     ],
+     "auth": "token"
+    },
+    {
+     "action": "list /api/profiles",
+     "method": "GET",
+     "path": "/api/profiles",
+     "status": 200,
+     "ok": true,
+     "kind": "ok",
+     "note": "",
+     "expect": [
+      200
+     ],
+     "auth": "token"
+    },
+    {
+     "action": "framework_isolation_probe_my-list",
+     "method": "PUT",
+     "path": "/api/my-list/1",
+     "status": 405,
+     "ok": false,
+     "kind": "missing",
+     "note": "{\"detail\":\"Method Not Allowed\"}",
+     "expect": [
+      401,
+      403,
+      404
+     ],
+     "auth": "__chain_intruder_token",
+     "sent_body": null
+    }
+   ],
+   "broken": [],
+   "framework_defects": [],
+   "environment_1202od": []
+  }
+ ],
+ "_wrapper": {
+  "framework_modified_files": [],
+  "wall_s": 27.9,
+  "metrics": {
+   "checks_passed": 14,
+   "checks_total": 14,
+   "endpoints_2xx": 11,
+   "endpoints_total": 15,
+   "chain_steps_ok": 7,
+   "chain_steps_total": 8
+  }
+ }
+}

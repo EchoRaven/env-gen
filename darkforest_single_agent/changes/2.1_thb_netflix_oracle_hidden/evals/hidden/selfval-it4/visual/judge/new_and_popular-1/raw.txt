@@ -1,0 +1,65 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "Matches the reference: a top nav bar with the logo on the left, a 7-item menu and utilities on the right; full-bleed horizontal rows with a ~67px left gutter; the same section order (New row, Top 10 TV ranked row, Top 10 Movies ranked row, then a fourth row peeking in at the bottom); 6 cards per row with a 7th cut off at the right edge; page-indicator dashes on the right above each row. Each row sits about 15–20px higher than in the reference.",
+      "fix": "Add about 15px of top padding above the first row heading so 'New on Netflix' sits at y≈165, as in the reference."
+    },
+    "components": {
+      "score": 0.88,
+      "notes": "Everything in the reference is present: the nav pill on 'New & Popular', search, bell, Kids avatar and label, profile avatar with caret, row headings, page-indicator dashes, landscape cards with TOP 10 corner badges and red bottom tag pills, ranked rows with large numerals behind portrait posters. The implementation adds a right-chevron scroll arrow on the Top 10 TV row, which the reference never shows. Tags are all 'Recently Added'. The reference also has 'New Episode' with a white 'Watch Now' companion pill, and 'New Season' tags. One poster (Movies #3) falls back to plain 'Backrooms' text instead of artwork.",
+      "missing": [
+        "White 'Watch Now' secondary pill next to the red tag",
+        "Tag variants ('New Season', 'New Episode') beyond 'Recently Added'"
+      ],
+      "fix": "Hide the row chevron until the row is hovered. Let tags render 'New Season' / 'New Episode' and the white 'Watch Now' companion pill. Never show a text-only poster fallback."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The same flat, minimal dark streaming style with small radii on cards and pills, no shadows and tight 8px gaps. The big difference is the ranked numerals. The reference draws them as heavy, solid black-filled glyphs with a thin grey outline that blend into the background. The implementation uses thin, hollow, outline-only glyphs in a lighter, narrower font, so they read as wireframe.",
+      "fix": "Render the rank numerals as heavy, bold glyphs filled with #141414 and a ~3px #595959 stroke, so they look solid and dark rather than hollow."
+    },
+    "color": {
+      "score": 0.94,
+      "notes": "Same #141414 background, red wordmark, red tag pills with white text, red TOP 10 badges, grey active nav pill, white headings. The numeral outlines are a lighter grey than the reference's dark-filled numerals.",
+      "fix": "Fill the numerals with the page background and darken their stroke to about #555."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans-serif family and nav sizing. Row headings are semibold in the implementation but closer to regular/medium weight in the reference. Numeral glyphs are a lighter, condensed weight where the reference uses a heavy, wide weight. Title lockups over cards use one condensed caps style left-aligned at the bottom left, where the reference has varied artwork lockups. That's acceptable, but it's uniform.",
+      "fix": "Set row headings to font-weight 500 at about 26px. Use a bold/black, wide face for the rank numerals."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Line-style search and bell icons match, as do the square Kids and smiley profile avatars, the caret, the TOP 10 badge and the 16:9 and 2:3 card crops with small radii. The extra chevron icon on the TV row and the text-only poster fallback are the only differences.",
+      "fix": "Remove the always-visible row chevron. Make sure every poster tile renders artwork."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels match exactly. The headings differ: the reference has 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'. The implementation has 'Top 10 TV Shows Today', 'Top 10 Movies Today' and 'Worth the Wait'.",
+      "fix": "Rename the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "Top 10 rows: the rank numerals are thin hollow outlines in a light condensed weight. The reference uses heavy, solid black-filled numerals with a subtle grey stroke.",
+    "Row headings: the implementation reads 'Top 10 TV Shows Today' / 'Top 10 Movies Today' / 'Worth the Wait'. The reference reads 'Top 10 TV Shows in the U.S. Today' / 'Top 10 Movies in the U.S. Today' / 'Coming This Week'.",
+    "Top 10 TV row, right edge: the implementation shows a white chevron scroll arrow that isn't in the reference.",
+    "Card tags: every tag is 'Recently Added'. The reference also shows 'New Season' and 'New Episode', plus a white 'Watch Now' companion pill.",
+    "Row headings are semibold and heavier than the reference's medium-weight headings.",
+    "Top 10 Movies #3: the poster shows plain 'Backrooms' fallback text instead of rendered artwork.",
+    "Vertical rhythm: every row sits about 15–20px higher than in the reference."
+  ],
+  "fixes": [
+    "Restyle the rank numerals: a heavy/black wide font, fill #141414, stroke ~3px #595959, sized so they span the poster height.",
+    "Rename the headings to 'Top 10 TV Shows in the U.S. Today', 'Top 10 Movies in the U.S. Today' and 'Coming This Week'.",
+    "Show the row scroll chevron only while the row is hovered.",
+    "Support the 'New Season' and 'New Episode' tag variants and the white 'Watch Now' secondary pill.",
+    "Drop the row heading weight to 500 and add about 15px of top padding above the first row.",
+    "Replace the text-only poster fallback with real artwork."
+  ],
+  "summary": "The structure, chrome, colours and card treatments are almost identical to the reference. The gaps are the hollow, thin rank numerals (the reference's are solid and heavy), shortened row headings, an extra chevron, and less variety in the tags."
+}
+```

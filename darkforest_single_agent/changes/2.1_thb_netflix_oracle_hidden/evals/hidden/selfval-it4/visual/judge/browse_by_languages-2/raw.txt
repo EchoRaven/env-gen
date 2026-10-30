@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.78,
+      "notes": "Top nav, page title row with the preference controls on the right, and a 6-column 16:9 tile grid with large vertical gaps between rows all match the reference. Differences: the grid starts at about y=200, while the reference leaves a much bigger gap and starts it at about y=304. The preference row has three dropdowns instead of two, which pushes the controls further left; in the reference they start at about x=1140. The reference also shows a transient state (both dropdowns open and a hover preview card floating over the grid), and the implementation does not reproduce it.",
+      "fix": "Raise the space between the title row and the grid so the first tile row starts at about 300px from the top. Remove the Sort-by control so 'Select Your Preferences' and the two dropdowns sit right-aligned from about x=1140 to the 1840 gutter."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "Nav items (7, including the active 'Browse by Languages' pill), search, bell, Kids avatar, profile avatar with caret, page title, two preference dropdowns, TOP 10 badges and red 'Recently Added' tag ribbons are all present. Missing: the expanded Original Language menu (Original Language / Dubbing / Subtitles), the expanded language list (Arabic…Vietnamese), and the enlarged hover preview card. That card has hero media, a title logo, a mute button, a play/add-to-list/like/expand button row, a TV-MA·runtime·HD metadata row and a genre-tag row. Invented: a 'Sort by / Suggestions For You' dropdown that the reference does not show.",
+      "missing": [
+        "open Original Language dropdown menu (Original Language / Dubbing / Subtitles)",
+        "open language list dropdown (Arabic … Vietnamese, scrolling list)",
+        "hover preview/mini-modal card over the grid",
+        "preview card action row: circular play, add-to-list check, thumbs-up, expand chevron",
+        "preview card mute toggle",
+        "preview card maturity rating / runtime / HD badge row",
+        "preview card genre tags row (dot-separated)"
+      ],
+      "fix": "Render the transient state: open both dropdown menus as black, hairline-bordered lists under their triggers, with the language list running down over the grid's right column. Add an enlarged preview card about 435px wide anchored over the 2nd–3rd column, with these parts: a 16:9 hero with an N logo and title art, a circular mute button, a white filled play circle plus outlined check, thumbs-up and chevron circles, a 'TV-MA 1h 34m HD' row and a 'Riveting • Provocative • True Crime' row. Delete the Sort-by dropdown."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "Flat, dark Netflix language. Tiles are square-ish with a tiny radius and use the same red ribbon tags and TOP 10 badges, and the nav has a pill-shaped active state. Dropdown triggers are square, hairline-bordered black boxes as in the reference. The implementation lacks the elevated, shadowed, rounded preview card and the black menu surfaces that give the reference its layering.",
+      "fix": "Add the elevated preview card (dark #181818 surface, about 6px radius, deep shadow) and black dropdown menu panels with a 1px gray border."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "Matches the reference: near-black #141414 base, Netflix red wordmark, red tag ribbons, white text and a gray active-nav pill. Missing: the darker menu surfaces and the #181818 card surface from the transient state.",
+      "fix": "Use #000 with 90% opacity for the open menus and #181818 for the preview card body, with white outlined circle buttons."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Same sans family and size hierarchy for nav, title and labels. The page title in the implementation is noticeably larger (about 44px against about 36px in the reference). Dropdown trigger text is slightly larger than in the reference and the dropdowns are shorter. Menu item text (about 16px regular) and preview metadata text are absent.",
+      "fix": "Reduce 'Browse by Languages' to about 36px regular. Match the dropdown labels at about 18px with letter-spacing, and add menu items at about 16px regular white."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "Line search and bell icons, Kids and smiley profile avatars as rounded squares, filled-triangle carets and TOP 10 badges all match. Tile artwork uses 16:9 cover crops. Missing: the preview card's circular outline icons (check, thumbs-up, chevron), the filled play circle and the mute icon.",
+      "fix": "Add the circular 2px-outline icon buttons (check, thumbs-up, chevron-down, mute) and the white filled play button inside the preview card."
+    },
+    "copy": {
+      "score": 0.82,
+      "notes": "'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English', the nav labels, 'Recently Added' and 'TOP 10' all match. Extra copy 'Sort by' / 'Suggestions For You' is not in the reference. The menu options 'Dubbing', 'Subtitles' and the language names are not visible.",
+      "fix": "Remove the 'Sort by / Suggestions For You' label and control. Show the menu option labels 'Original Language', 'Dubbing', 'Subtitles' and the alphabetical language list."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "right side of the screen: the reference shows the language dropdown expanded into a long black list (Arabic…Vietnamese) overlaying the grid's right column; the implementation keeps it closed",
+    "center of the grid (cols 2–3, rows 1–3): the reference shows an enlarged hover preview card with hero media, title art, a mute button, a play/check/like/chevron row, a TV-MA·1h 34m·HD row and genre tags; the implementation has no preview card",
+    "preference row: the reference shows the Original Language menu open with Original Language / Dubbing / Subtitles; the implementation keeps it closed",
+    "preference row: the implementation adds a third 'Sort by: Suggestions For You' dropdown that the reference does not have, which shifts the controls left",
+    "vertical spacing: the reference's first tile row starts at about y=304, leaving a tall gap under the title; the implementation starts the grid at about y=200",
+    "page title: the implementation's 'Browse by Languages' is noticeably larger than in the reference"
+  ],
+  "fixes": [
+    "Remove the 'Sort by / Suggestions For You' dropdown and right-align 'Select Your Preferences' plus the two dropdowns to the page gutter",
+    "Render the Original Language dropdown open: a black panel with Original Language / Dubbing / Subtitles items at about 16px",
+    "Render the language dropdown open: a tall black panel listing Arabic…Vietnamese, overlaying the grid down to about y=965",
+    "Add a hover preview card (about 435×430px, #181818, rounded, shadowed) over cols 2–3. Give it a 16:9 hero with title art and a mute button, a play/check/thumbs-up/chevron circle-button row, a 'TV-MA 1h 34m HD' row and a dot-separated genre-tag row",
+    "Increase the gap so the first grid row starts at about 300px from the top",
+    "Reduce the page title to about 36px"
+  ],
+  "summary": "Netflix chrome, title row and the 6-column tile grid are faithfully reproduced. The implementation lacks the reference's transient state (both dropdowns expanded and the hover preview card), adds a Sort-by control the reference doesn't show, and starts the grid too high."
+}
+```

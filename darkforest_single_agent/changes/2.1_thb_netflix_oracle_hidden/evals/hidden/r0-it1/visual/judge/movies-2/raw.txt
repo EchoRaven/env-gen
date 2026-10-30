@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches. There is a full-bleed hero with a transparent top nav over it, the 'Movies' heading and Genres dropdown sit below the nav, and the hero block is left-aligned with the logo, title, Top 10 line, synopsis and buttons. The mute and rating controls are on the right edge, and a 'Gems for You' carousel overlaps the bottom of the hero. The page gutter of about 67px matches. The hero runs taller in the implementation: the row heading is at about y=935 against about y=843 in the reference, so the carousel tiles are cut off at the fold and the next row ('Comedy Movies' heading peeking in the reference) never appears.",
+      "fix": "Cut the hero height by about 90px so the 'Gems for You' heading sits at about 76% of the viewport. The full tile row should show, with the next row's heading just peeking at the bottom."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Every reference component is present. That covers 7 nav links with a pill active state on Movies, search, bell, the Kids avatar and label, the profile avatar with caret, and the Movies heading with the outlined Genres select. The hero has the NETFLIX tag, title lockup, Top 10 badge with rank text, synopsis, Play and More Info, the mute circle, and the TV-14 rating tab with its left bar. The carousel has a heading, tiles and a page indicator. There is one invented component: a metadata row ('Genre · Year · Runtime · Rating') that the reference does not have. The tile badges also differ. The reference shows a TOP 10 corner badge on only some tiles and red 'Recently Added' pills at the bottom-centre of others. The implementation puts a TOP 10 badge on every tile, and no 'Recently Added' pill is visible.",
+      "missing": [
+        "'Recently Added' red pill badge at bottom-centre of carousel tiles"
+      ],
+      "fix": "Remove the genre/year/runtime/rating metadata row under the Top 10 line. Show the TOP 10 corner badge only on qualifying tiles, and render a red 'Recently Added' pill at bottom-centre of tiles flagged as new."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "The cinematic dark style matches. Buttons are slightly rounded rectangles, tiles are lightly rounded, there are no shadows, and the left gradient scrim sits over the hero art. The implementation's synopsis is truncated with an ellipsis at 3 lines and runs slightly wider than in the reference.",
+      "fix": "Cap the synopsis width at about 680px so it wraps like the reference, without a mid-sentence ellipsis if possible."
+    },
+    "color": {
+      "score": 0.92,
+      "notes": "Both use a near-black base, Netflix red for the logo, NETFLIX tag and Top 10 badges, a white Play button with black text, and a translucent grey More Info button. The left and bottom scrims and the white text are the same in both. The only difference is that the implementation adds a little more red through its all-tile Top 10 badges.",
+      "fix": "Cut the red badge noise in the carousel by showing badges only on qualifying tiles."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Both use a sans UI font: nav at about 17px regular, the Movies heading large and regular, the Top 10 rank text at medium-large, and body-size synopsis. The hero title is a condensed, heavy, all-caps display lockup like the reference's title art. The reference's lockup mixes a heavy line with a lighter italic subtitle, while the implementation uses one uniform heavy style; this is acceptable for typeset fallback art. The Play and More Info labels are slightly smaller in the implementation.",
+      "fix": "Make the Play and More Info labels about 22px medium, and give the buttons about 58px height and about 30px horizontal padding to match the reference proportions."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The outline search and bell icons, the Kids gradient tile, the blue smiley avatar, the play triangle, the outlined info circle, and the circled mute speaker all match. Tiles are 16:9 with cover crop and title art overlaid on the image. The Top 10 badge treatment matches.",
+      "fix": "Keep tile badges per the reference: a corner TOP 10 badge only where applicable, plus a 'Recently Added' bottom pill."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "Nav labels, 'Movies', 'Genres', '#N in Movies Today', 'Play', 'More Info', 'Gems for You', 'TV-14' and 'Kids' all match in wording and casing.",
+      "fix": "Remove the extra metadata row copy, which is not in the reference."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero, under the '#1 in Movies Today' line: implementation adds a 'Science Fiction · 2026 · 2h 19m · TV-14' metadata row that the reference does not have",
+    "carousel tiles: implementation shows a TOP 10 corner badge on every tile; reference badges only some tiles and uses red 'Recently Added' bottom-centre pills on others, which are absent in the implementation",
+    "vertical rhythm: implementation hero is about 90px taller, pushing the 'Gems for You' row down so tiles are cropped at the fold and the next row heading is not visible",
+    "hero synopsis: implementation wraps wider and truncates with an ellipsis; reference shows a shorter, complete 3-line paragraph",
+    "hero buttons: Play and More Info are slightly smaller and lower-profile than in the reference"
+  ],
+  "fixes": [
+    "Delete the genre/year/runtime/rating metadata row from the hero block",
+    "Reduce hero height so 'Gems for You' starts at about y=843 of 1110 and full tiles show, with the next row heading peeking",
+    "Render the TOP 10 tile badge only for top-10 items and add a red 'Recently Added' pill at bottom-centre for new items",
+    "Limit synopsis width to about 680px and avoid mid-sentence truncation",
+    "Enlarge the Play and More Info buttons to about 58px tall with about 22px labels"
+  ],
+  "summary": "Near-faithful Netflix Movies screen. The main gaps are an extra metadata row in the hero, a taller hero that pushes the carousel down, and a uniform TOP 10 badge on every tile instead of mixed TOP 10 and 'Recently Added' badges."
+}
+```

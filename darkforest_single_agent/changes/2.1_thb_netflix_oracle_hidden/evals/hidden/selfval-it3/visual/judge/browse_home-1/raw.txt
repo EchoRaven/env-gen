@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.95,
+      "notes": "Same skeleton: a top nav with the logo on the left, the nav links next to it and the utility icons on the right. Below it is an inset, rounded hero card with the same margins (~67px), the same height and the same position, followed by a titled horizontal row with tiles peeking off the right edge and a segmented page indicator on the right of the row header. The hero's text block, buttons and bottom-right badge sit in the same places. The only difference is that the implementation's text block sits slightly higher because it adds a synopsis.",
+      "fix": "Remove the synopsis paragraph from the hero so the metadata row sits just above the Play/More Info buttons, as in the reference."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "Everything in the reference is present: the NETFLIX wordmark, 7 nav items with a pill-highlighted Home, search, the bell, the Kids avatar and label, the profile avatar with a caret, the speaker button top-right on the hero, the title lockup, the metadata row with dot separators, the white Play pill with an icon, the grey More Info pill, the bottom-right badge with a megaphone icon, the row title, the segmented progress indicator and the 16:9 tiles with TOP 10 badges. Differences: the implementation adds a synopsis paragraph the reference doesn't show, it has no status line (LIVE badge plus a start-time line) under the title, and the speaker icon shows a muted state with an outline ring instead of a filled grey circle.",
+      "missing": ["status line under the title lockup (red LIVE pill + start-time text)"],
+      "fix": "Add an optional status line under the title (a small red rounded pill reading '• LIVE' plus bold white text) and drop the synopsis paragraph. Render the sound toggle as a filled translucent-grey circle with no outline."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same minimal, cinematic dark style: a heavily rounded hero card, pill buttons and Home pill, rounded tiles and whitespace-separated sections. The reference's hero card has a soft drop shadow and sits on a warm gradient page; the implementation's card is flatter on a flat background. The sound button's outlined ring is a slightly different treatment.",
+      "fix": "Give the hero card a soft, large-blur drop shadow, and style the sound button as a filled rgba(255,255,255,0.15) circle without a border."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use a dark scheme with Netflix-red accents (logo, TOP 10, a gradient megaphone), a white Play button, a translucent grey More Info button and white text. The reference's page background is a warm brown-grey gradient (lighter at the top behind the nav, fading to ~#1a1a1a). The implementation uses a flat cool near-black (#141414) across the page and nav.",
+      "fix": "Apply a warm vertical gradient to the page/nav background (from about #4a4440 at the top to #181818 by the row section) instead of flat #141414."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Same sans family for the nav, metadata, buttons and row title, with matching sizes and weights (bold Home, medium metadata, semibold buttons, bold row heading). The hero title is set as condensed display type, whereas the reference uses image artwork for the title. That works as an approximation, but the implementation has an extra body-text level (the synopsis) that the reference doesn't have.",
+      "fix": "Remove the synopsis text level. Where title-logo artwork exists, render it as an image instead of display type."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "Line-style search and bell icons, a Kids gradient tile, a blue smiley profile avatar in a rounded square, a solid play triangle, the megaphone badge icon, TOP 10 corner badges and 16:9 rounded tiles all match. The hero title is typeset text, not title-art image treatment. The sound icon shows a muted 'x' inside an outlined circle; the reference shows a filled grey disc with a volume-wave icon.",
+      "fix": "Use a title-logo image for the hero when available, and render the sound toggle as a filled grey disc with a speaker-waves glyph."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The nav labels (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages), Kids, Play and More Info all match exactly. The badge wording and row title are content-driven and acceptable.",
+      "fix": "None required beyond optionally supporting the 'LIVE' / 'Started at …' status copy."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero text block: the implementation adds a two-line synopsis paragraph between the metadata row and the buttons, which the reference doesn't have",
+    "hero under title: the reference shows a status line (red '• LIVE' pill + 'Started at…' text), which is absent in the implementation",
+    "page/nav background: the reference has a warm brown-grey gradient behind the nav and around the hero card; the implementation is flat cool near-black",
+    "hero top-right sound button: the reference is a filled grey disc with a volume-wave icon; the implementation is an outlined ring with a muted icon",
+    "hero title: the reference uses logo artwork; the implementation uses typeset condensed display text",
+    "hero card: the reference has a soft drop shadow lifting it off the page; the implementation's card looks flatter"
+  ],
+  "fixes": [
+    "Remove the synopsis paragraph from the hero overlay",
+    "Add an optional status line under the title: a red rounded '• LIVE' pill and bold white status text",
+    "Change the page background to a warm vertical gradient (≈#4a4440 → #181818) behind the nav and hero",
+    "Restyle the sound toggle as a filled translucent-grey circle with no border and a speaker-waves icon",
+    "Add a soft large-blur shadow to the hero card",
+    "Render the hero title as a logo image when artwork is available"
+  ],
+  "summary": "A near-faithful Netflix browse home with the same nav, inset rounded hero, button pills and row structure. The gaps are an extra synopsis, a missing status line, flat instead of warm-gradient background, and a different sound-button treatment."
+}
+```

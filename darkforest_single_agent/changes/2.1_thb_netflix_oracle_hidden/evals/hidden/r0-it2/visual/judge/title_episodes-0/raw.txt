@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "The skeleton matches. The centered dark modal is about 1085px wide over a dimmed home page with the Netflix top bar still visible. Inside the modal the order is the same: synopsis on the left, metadata column on the right, an 'Episodes' header with the series name right-aligned, then a vertical episode list. Each row has the number, a 16:9 thumbnail, the title and description, and a right-aligned runtime. The implementation is scrolled less, so the synopsis block takes about 260px at the top where the reference shows only its last two lines. Episode rows are about 157px tall versus about 146px in the reference.",
+      "fix": "Tighten the episode row vertical padding so each row is about 146px tall, with the thumbnail about 96px high and 24px top and bottom padding."
+    },
+    "components": {
+      "score": 0.82,
+      "missing": [
+        "hairline divider between episode rows 1 and 2 (the implementation shows two adjacent filled rows instead)"
+      ],
+      "notes": "Present: the modal, synopsis, metadata column, Episodes heading, season/series label, numbered episode rows, thumbnails, a play-circle hover overlay on the thumbnail, runtimes, and hairline dividers. In the reference, row 1 (the current episode) has a solid grey highlight and the hovered row 2 shows only the play overlay on a transparent background. The implementation gives both row 1 and row 2 the grey background, so the hover state is rendered as a full-row fill. On the background hero, the right edge shows a mute icon where the reference shows 'Recently Added' and '#1 in TV Shows' chips.",
+      "fix": "Keep the hovered row's background transparent and show only the play-circle overlay on the thumbnail. Reserve the #2a2a2a fill for the current/first episode, and keep the divider line below each non-highlighted row."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "The language matches: flat dark surfaces, slightly rounded (about 4px) highlighted row, thin dividers, and sharp-cornered thumbnails. The double highlighted block makes the list look heavier than the reference's single highlighted row.",
+      "fix": "Use a single highlighted row and transparent rows elsewhere, separated by 1px #404040 dividers."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The modal surface (#181818), the highlighted row grey, white titles, light-grey descriptions, and the red TOP 10 accent all match. The page behind is dimmed the same way.",
+      "fix": "No colour change needed beyond removing the grey fill from the hovered row."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a Netflix-Sans-like sans-serif. The large semibold 'Episodes' heading, bold episode titles, regular runtimes, and large light episode numbers all match. Descriptions in the implementation are smaller and a lighter grey, and run to one line instead of the reference's two-line paragraphs at about 15px in near-white grey.",
+      "fix": "Set episode descriptions to about 15px, colour #d2d2d2, line-height about 1.45, and let them wrap to two lines."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The thumbnail aspect ratio and crop match, and the outlined play circle and red TOP 10 badge are present. Every thumbnail in the implementation repeats the same still, where the reference has a distinct still per episode. That is mostly data, but it reads as placeholder imagery.",
+      "fix": "Give each episode its own still frame, or vary the crop per episode, so the thumbnails don't all look identical."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "'Episodes', the series name on the right, and the 'NNm' runtime format all match. The descriptions are boilerplate ('Season 1, episode 1 of Overdo.') rather than the reference's synopsis-style descriptions. The right-hand metadata uses 'Original Language:' and 'Rating:' labels; the reference shows 'This Show Is:' in that column.",
+      "fix": "Show real one- or two-sentence episode synopses, and include the 'This Show Is:' tag line in the right-hand metadata column."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "episode list, row 2: the implementation fills the hovered row with the grey highlight (two stacked grey rows). In the reference only row 1 is grey, and hovered row 2 stays transparent with just the play overlay.",
+    "episode list: no divider between rows 1 and 2 in the implementation, and rows are about 10px taller than the reference's",
+    "episode descriptions: the implementation shows a single short line in smaller, dimmer text; the reference uses two-line paragraph descriptions in brighter grey",
+    "background hero, right edge: the implementation shows a mute icon where the reference shows 'Recently Added' and '#1 in TV Shows' chips",
+    "right metadata column: the implementation shows 'Original Language' and 'Rating'; the reference shows a 'This Show Is:' tag line"
+  ],
+  "fixes": [
+    "Remove the background fill from hovered episode rows. Show only the centered play-circle overlay on the thumbnail and keep the grey fill for the current episode only.",
+    "Render a 1px divider under every non-highlighted episode row and reduce the row height to about 146px.",
+    "Style episode descriptions at about 15px, #d2d2d2, allowing two-line wrap, and populate them with real synopses.",
+    "Add the 'This Show Is:' tag line to the modal's right metadata column.",
+    "Optionally, add the 'Recently Added' and '#1 in TV Shows' chips at the bottom-right of the background hero."
+  ],
+  "summary": "A close recreation of the More Info modal's episode list. The gaps are the hovered row getting a grey fill instead of only the play overlay, a missing divider between rows 1 and 2, slightly taller rows, and thinner one-line descriptions."
+}
+```

@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "The skeleton matches. A transparent top nav sits over a full-bleed hero, with the 'TV Shows' heading and Genres dropdown on the left. The hero block is left-aligned (brand mark, title lockup, Top 10 line, synopsis, buttons), and the mute/rating pill is on the right edge. A horizontal 'Today's Top Picks for You' carousel peeks from the right edge, with a page indicator above it. The difference is vertical rhythm. The reference puts the row heading at about y=837, so the full row of tiles and its badge strip show, and the next row heading ('Only on Netflix') peeks in at the bottom. The implementation pushes the row heading down to about y=935, so the tiles are cut off at the bottom of the viewport and the next row can't be seen. The hero copy block also sits slightly lower and the hero is taller.",
+      "fix": "Cut the hero height (or pull the row up with a negative margin) so 'Today's Top Picks for You' starts about 75% of the way down the viewport (~y=837 at 1104px tall). The full tile row should then be visible, with the next row's heading peeking in below."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "These are all present: the nav with 7 items and a pill-highlighted active 'Shows', search, bell, the Kids profile entry, the avatar with caret, the 'TV Shows' title, the bordered Genres select, the red brand mark above the title, the Top 10 badge with '#1 in TV Shows Today', the synopsis, the white Play button with the translucent grey More Info, the circular mute button, the maturity-rating pill with a left bar, the row heading, the page-indicator dashes, and the TOP 10 corner badges on tiles. The implementation adds a metadata row ('Comedy • 2026 • 4 Episodes • TV-14') between the Top 10 line and the synopsis, which the reference doesn't have. The red/white status labels at the bottom of the tiles ('New Season', 'Recently Added', 'New Episode | Watch Now') can't be seen because the tiles are cropped, and only slivers of red show.",
+      "missing": [
+        "visible bottom-centre status labels on carousel tiles (e.g. red 'Recently Added' / split 'New Episode | Watch Now' tag)",
+        "next row heading peeking at the bottom of the viewport"
+      ],
+      "fix": "Remove the invented genre/year/episodes/rating metadata row under the Top 10 line. Make sure each tile's bottom-centre status tag renders fully inside the tile and is visible in the first viewport."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same cinematic, flat, dark-overlay style. The left and bottom vignettes over the hero match, the buttons are only slightly rounded, the tiles are lightly rounded with tight gaps, and the Genres select is square with a hairline border. The hero image in the implementation is a bit darker and more evenly dimmed overall, where the reference has a brighter centre and right side.",
+      "fix": "Keep the gradient to a left-side fade plus a bottom fade, and leave the centre and right of the hero art closer to full brightness."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same palette: a near-black base, white text, Netflix red for the logo, brand mark and Top 10 badges, a white Play button, a translucent grey More Info button, a grey pill for the active nav item, and a blue avatar. Contrast and accent placement match.",
+      "fix": "Lighten the global overlay on the hero so the artwork looks as vivid as in the reference."
+    },
+    "typography": {
+      "score": 0.82,
+      "notes": "The sans-serif UI type and hierarchy match: the large 'TV Shows' heading, the medium '#1 in TV Shows Today', the regular synopsis and the medium button labels. The implementation's 'TV Shows' and nav text are a little heavier and larger. In the reference the hero title is custom title-logo artwork (script/italic logo treatment). The implementation renders it as plain condensed all-caps text, which is a reasonable stand-in but looks flatter. Tile titles in the implementation are uniform condensed caps overlays at the bottom left. In the reference each tile has its own title-logo artwork in varied positions.",
+      "fix": "Use title-logo images for the hero lockup and tile titles where they're available, and fall back to the condensed caps text otherwise. Bring the 'TV Shows' heading down to roughly the reference's weight and size."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The outline search and bell icons, the Kids gradient tile, the blue smiley avatar with caret, the filled play triangle, the circled-i info icon, the circled mute icon and the red TOP 10 badges all match in style. The tiles use a 16:9 cover crop like the reference, but they're cut off by the viewport.",
+      "fix": "Show the full 16:9 tile height in the first viewport. No icon changes are needed."
+    },
+    "copy": {
+      "score": 0.92,
+      "notes": "The nav labels, 'TV Shows', 'Genres', '#1 in TV Shows Today', 'Play', 'More Info' and 'Today's Top Picks for You' are identical. The only extra copy is the invented metadata line.",
+      "fix": "Drop the 'Comedy • 2026 • 4 Episodes • TV-14' line."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Bottom carousel: in the implementation the 'Today's Top Picks for You' row starts about 100px lower, so the tiles are cut off at the bottom edge, and the next row heading that peeks in at the bottom of the reference can't be seen.",
+    "Hero copy block: the implementation inserts a metadata row ('Comedy • 2026 • 4 Episodes • TV-14') between the Top 10 line and the synopsis. The reference goes straight from '#1 in TV Shows Today' to the synopsis.",
+    "Carousel tiles: the reference's red bottom-centre status tags ('Recently Added', 'New Season', 'New Episode | Watch Now') aren't visible in the implementation, where only red slivers show at the cropped edge.",
+    "Hero title: the reference uses title-logo artwork for the show name. The implementation uses plain condensed all-caps text.",
+    "Tile titles: the reference shows each show's own logo artwork placed per tile. The implementation uses a uniform condensed-caps text overlay at the bottom left.",
+    "Hero imagery: the implementation applies a heavier overall darkening, where the reference keeps the centre and right of the art bright."
+  ],
+  "fixes": [
+    "Shorten the hero and move the 'Today's Top Picks for You' row up so the full tile row, including the bottom status tags, fits in the first viewport and the next row heading peeks in below it.",
+    "Remove the genre/year/episodes/rating metadata line from the hero.",
+    "Render each tile's bottom-centre status tag (a red label, or a split red/white label) fully inside the tile.",
+    "Use title-logo images for the hero and tile titles where they're available.",
+    "Ease the hero overlay to a left gradient plus a bottom gradient only, so the art stays bright on the right."
+  ],
+  "summary": "The implementation is a near-faithful copy of the Netflix Shows hero and carousel layout. The visible gaps are the carousel sitting too low (tiles and status tags cut off), an extra metadata row in the hero, and plain-text titles where the reference uses title-logo artwork."
+}
+```

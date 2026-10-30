@@ -1,0 +1,133 @@
+{
+ "_clean": {
+  "failures": [
+   "static:fabricated_field_fallback"
+  ]
+ },
+ "privacy_unscoped_my_list": {
+  "expect": "api:My List is private to the profile",
+  "caught": true,
+  "new_failures": [
+   "api:My List is private to the profile",
+   "api:a rating is private to the profile",
+   "api:another account cannot read this profile's My List",
+   "api:some profile-selection convention isolates two profiles"
+  ],
+  "errors": []
+ },
+ "auth_override_any_password": {
+  "expect": "api:wrong password is rejected (401/403)",
+  "caught": true,
+  "new_failures": [
+   "api:wrong password is rejected (401/403)"
+  ],
+  "errors": []
+ },
+ "stub_search_handler": {
+  "expect": "api:search by a word of a title's name finds it",
+  "caught": true,
+  "new_failures": [
+   "api:search by a word of a title's name finds it",
+   "api:search by genre name returns that genre's titles"
+  ],
+  "errors": []
+ },
+ "parked_probe_route": {
+  "expect": "static:parked_probe_route",
+  "caught": true,
+  "new_failures": [
+   "static:parked_probe_route"
+  ],
+  "errors": []
+ },
+ "dev_evaluator_special_case": {
+  "expect": "static:dev_fingerprints",
+  "caught": true,
+  "new_failures": [
+   "static:dev_fingerprints",
+   "static:reserved_email_domain"
+  ],
+  "errors": []
+ },
+ "static_data_twin": {
+  "expect": "static:static_data_twin_adapted",
+  "caught": true,
+  "new_failures": [
+   "static:static_data_twin_adapted"
+  ],
+  "errors": []
+ },
+ "masked_api_failure": {
+  "expect": "static:masked_api_failure",
+  "caught": true,
+  "new_failures": [
+   "static:masked_api_failure"
+  ],
+  "errors": []
+ },
+ "broken_artwork": {
+  "expect": "api:poster and backdrop images load",
+  "caught": true,
+  "new_failures": [
+   "api:poster and backdrop images load",
+   "ui:+ My List from the detail shows up on My List",
+   "ui:another profile's My List does not show it",
+   "ui:browse home shows poster rails (>=10 images loaded)",
+   "ui:no broken images on visited pages",
+   "ui:no console errors during the walk"
+  ],
+  "errors": []
+ },
+ "lost_stylesheet": {
+  "expect": "visual:mean_similarity drops",
+  "caught": null,
+  "new_failures": {
+   "mean_similarity": 0.104,
+   "n_scored": 18,
+   "n_screens": 20,
+   "below_0.55": [
+    "account_menu",
+    "browse_by_languages",
+    "browse_home",
+    "browse_home_rows",
+    "games",
+    "genre_category",
+    "landing",
+    "login",
+    "movies",
+    "my_list",
+    "new_and_popular",
+    "player",
+    "player_controls",
+    "rate_dialog",
+    "shows",
+    "shows_genres_menu",
+    "title_detail",
+    "title_episodes"
+   ],
+   "per_screen": {
+    "landing": 0.05,
+    "login": 0.12,
+    "browse_home": 0.12,
+    "browse_home_rows": 0.07,
+    "shows": 0.12,
+    "movies": 0.12,
+    "games": 0.08,
+    "new_and_popular": 0.12,
+    "genre_category": 0.15,
+    "browse_by_languages": 0.12,
+    "my_list": 0.12,
+    "title_detail": 0.06,
+    "title_episodes": 0.03,
+    "rate_dialog": 0.04,
+    "player": 0.15,
+    "player_controls": 0.15,
+    "account_menu": 0.15,
+    "card_hover_preview": null,
+    "card_preview": null,
+    "shows_genres_menu": 0.1
+   }
+  },
+  "errors": []
+ }
+}

@@ -1,0 +1,702 @@
+    *,
+    up_timeout: int = _DOCKER_UP_TIMEOUT,
+    health_timeout: int = 90,
+    teardown: bool = True,
+) -> Dict[str, Any]:
+    """Run the deterministic api_smoke. Returns a structured report:
+
+        {"passed": bool, "summary": str, "checks": [{name, status, detail}],
+         "backend_port": int|None}
+
+    ``business_endpoints`` is a list of ``{method, path}`` (business only — the
+    caller filters via ``lifecycle.business_endpoints``)."""
+    project_dir = Path(project_dir).resolve()  # absolute → -f path can't double against cwd
+    compose_file = project_dir / "docker" / "docker-compose.yml"
+    cwd = project_dir / "docker"
+    checks: List[Dict[str, Any]] = []
+    _phase_timings_1203g8: List[tuple] = []     # #1203g8
+    endpoint_results: List[Dict[str, Any]] = []
+    chain_results: List[Dict[str, Any]] = []
+
+    # #1203g8: the clock each phase is measured against. The work for a phase happens BETWEEN
+    # two `_add` calls, so the delta from the previous one is that phase's own cost.
+    _phase_t0_1203g8 = [time.perf_counter()]
+    _phase_start_1203g8 = time.perf_counter()
+
+    # #1203gf: docker_up is 94% of this function and was one undivided number.
+    # Measured over r165's 29 validations: docker_up = 5998s of run_validation's 6383s, median
+    # 79s, max 992s, six calls at or past 300s. `#1203g8` made that visible and stopped there --
+    # the phase does THREE things (`down -v`, build, `up`), and which of them spends the time
+    # decides what to do about it. `down -v` destroys the volume every time for a clean boot, so
+    # the `up` that follows re-initialises postgres and reloads the seed; a build is skipped when
+    # the source fingerprint is unchanged (#566l). Those have completely different remedies and
+    # the single total cannot tell them apart. Sub-steps, not extra `_add` calls: a phantom
+    # verdict among the 26 checks would be read as a check that can pass or fail.
+    _du_steps_1203gf: list = []
+
+    def _timed_1203gf(label: str, fn):
+        _t0 = time.perf_counter()
+        try:
+            return fn()
+        finally:
+            try:
+                _du_steps_1203gf.append((label, max(0.0, time.perf_counter() - _t0)))
+            except Exception:
+                pass
+
+    def _add(name: str, ok: bool, detail: str = "", kind: str = "") -> None:
+        # #1203e5: `kind` carries a STRUCTURED verdict about whose failure this is, beside the
+        # prose. `chain_executor` already computes `kind == "environment_1202od"` -- "the steps
+        # never reached the app ... not the lanes' failure -- say which it is, SO THE RETRY IS
+        # THE REMEDY" -- and the branch below flattened it into an English sentence exactly
+        # where the component that decides whether to retry would have read it.
+        _rec = {"name": name, "status": "pass" if ok else "fail", "detail": detail}
+        if kind:
+            _rec["kind"] = kind
+        # #1203g8: seconds since the previous phase ended. On the record too, so a caller that
+        # already reads `checks` gets it without reaching for the artifact.
+        try:
+            _now1203g8 = time.perf_counter()
+            _sec1203g8 = max(0.0, _now1203g8 - _phase_t0_1203g8[0])
+            _phase_t0_1203g8[0] = _now1203g8
+            _rec["sec"] = round(_sec1203g8, 2)
+            _steps1203gf = None
+            if name == "docker_up" and _du_steps_1203gf:
+                # #1203gf: attached on the FAILING record too -- a validation that bails at
+                # docker_up is the case that matters most, and that is where the 992s sat.
+                _steps1203gf = [{"name": _n, "sec": round(_v, 2)} for _n, _v in _du_steps_1203gf]
+                _rec["steps"] = _steps1203gf
+            _phase_timings_1203g8.append((name, _sec1203g8, _steps1203gf))
+        except Exception:
+            pass
+        checks.append(_rec)
+
+    if not compose_file.exists():
+        return {"passed": False, "summary": f"no compose file at {compose_file}",
+                "checks": [{"name": "compose_present", "status": "fail", "detail": str(compose_file)}],
+                "backend_port": None, "endpoints": []}
+
+    # FRONTEND GATE — a release must ship a NAVIGABLE UI, not a blank shell. The
+    # backend has 6 checks below; the frontend previously had ZERO, so an app whose
+    # frontend lane authored nothing (0 pages, 0 routes) sailed through api_smoke and
+    # released a blank page (instagram 1.0.0, 2026-06-09 — "打不开"). Static + cheap.
+    _fe_ok, _fe_detail = _frontend_navigable(project_dir)
+    _add("frontend_navigable", _fe_ok, _fe_detail)
+
+    # VISIBILITY (informational): how much of the UI is framework FALLBACK vs lane-authored.
+    # The HARD enforcement of "a page the references DEPICT must ship REAL, not the fallback"
+    # lives in the reference-aware page_build_gate (pages_release_decision: referenced-unbuilt
+    # never escapes), so this check stays informational to avoid double-gating a page that
+    # legitimately has no reference to match (its fallback is acceptable).
+    try:
+        if not backend_port:
+            _add("backend_port", False, "could not resolve backend published port")
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
+
+        base = f"http://localhost:{backend_port}"
+
+        # 2. /health (backend actually serves — catches boot crashes).
+        healthy = False
+        deadline = time.monotonic() + health_timeout
+        while time.monotonic() < deadline:
+            h = _http("GET", f"{base}/health", timeout=5)
+            if h["status"] == 200:
+                healthy = True
+                break
+            time.sleep(3)
+        if not healthy:
+            logs = _compose(compose_file, "logs", "--tail", "30", "backend", cwd=cwd, timeout=30)
+            _add("backend_health", False, "/health not 200 within timeout. logs:\n" + (logs.stdout or logs.stderr)[-1200:])
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
+        _add("backend_health", True)
+        # #1202qe: the freshly seeded state, before any check writes to it; restored in
+        # _finalize so the next capture sees the seed, not this validation's test accounts.
+        try:
+            from .verification_isolation import isolated_verification_1202qe
+            _scope = isolated_verification_1202qe(compose_file.parent.parent, "validation", _LOG)
+            _scope.__enter__()
+            _VALIDATION_SCOPE_1202QE.append(_scope)
+        except Exception as _e1202qe:
+            from .message_format import warn_once_1201
+            warn_once_1201("validation_db_snapshot_1202qe", "#1202qe validation data snapshot",
+                           _e1202qe)
+
+        # #1202dj: THE one moment the database is provably up. `live_row_counts_1039` works
+        # — proven against a live stack — but it is called from gate evaluation, and the
+        # stack is cycled (`down -v`, `up`) around each validation, so by then the container
+        # is usually gone: 2728 of 2728 corpus attempts reported "DID NOT RUN". The audit
+        # then falls back to the `status == "defined"` filter, which examines 0 tables in 145
+        # of 147 runs, and `is_clean` cannot tell that from "found nothing wrong" (#1023d).
+        # Record what is true here so the seed gate finally has a number to read.
+        try:
+            from .seed_audit import live_row_counts_1039, record_live_counts_1202dj
+            _counts1202dj = live_row_counts_1039(project_dir)
+            if _counts1202dj:
+                record_live_counts_1202dj(project_dir, _counts1202dj)
+                _LOG.info("#1202dj live seed row counts captured at backend_health: %s",
+                          dict(list(_counts1202dj.items())[:12]))
+        except Exception as _e1202dj:
+            # #1201: a silent `pass` here would leave the seed gate blind for the whole run
+            # with nothing saying so — which is the exact failure #1202dj exists to end.
+            from .message_format import warn_once_1201
+            warn_once_1201("live_row_counts_1039_at_backend_health",
+                           "#1202dj live seed row-count capture", _e1202dj)
+
+        # 3. Register via the embedded AS → token. FIX #33: send a COMPLETE
+        #    common registration payload. username-based auth is the dominant web
+        #    convention (social apps, etc.), and Pydantic ignores extra fields
+        #    while accepting the ones the app's model requires — so a single
+        #    superset payload satisfies both email-only and username-requiring
+        #    register models. The old {email,password,name}-only body made the
+        #    gate 422 ("missing username") on any app whose register needs a
+        #    username, blocking delivery of an otherwise-working app.
+        def _tok(txt: str) -> Optional[str]:
+            try:
+                d = json.loads(txt)
+            except Exception:
+                return None
+            if not isinstance(d, dict):
+                return None
+            return d.get("access_token") or d.get("token") or d.get("accessToken")
+
+        _cred = {
+            "username": "smoke_user", "email": "smoke@smoke-test.local",
+            "password": "smoke-pw-12345", "name": "Smoke", "full_name": "Smoke User",
+        }
+        reg = _http("POST", f"{base}/auth/register", body=_cred)
+        token = _tok(reg["body_text"]) if reg["status"] in (200, 201) else None
+        login = None
+        if not token:
+            # register may not mint a token, or the user already exists → login.
+            # Send username + email both so username- or email-login both resolve.
+            login = _http("POST", f"{base}/auth/login",
+                          body={"username": "smoke_user", "email": "smoke@smoke-test.local",
+                                "password": "smoke-pw-12345"})
+            token = _tok(login["body_text"])
+        # #1203d7: SAY WHAT FAILED. This reported `reg["body_text"]` -- the REGISTER response --
+        # while the thing that failed is the LOGIN, whose status and body were computed on the
+        # line above and then discarded. Measured over every run directory: 99 records of this
+        # failure across 49 runs, and in 30 of them (30%) the register body only says the user
+        # already exists ("duplicate key value violates unique constraint"), which is the
+        # EXPECTED answer -- so the only evidence kept for a delivery-blocking failure was a
+        # harmless message, and why login refused was written down nowhere. r149's 1.1.0 was
+        # held by this and its reason is unrecoverable from disk.
+        #
+        # The register body is NOT dropped: in the other 69 it carries the real cause (55
+        # `relation "tenants" does not exist`, 5 `'OAuthStore' object has no attribute 'db'`,
+        # 4 bad request body, 4 database unreachable). Both are reported, login first, each
+        # capped at 130 so the pair plus its labels fits the 300-character budget #1203d5 gave
+        # this line (2x140 came to 309 -- the labels are not free).
+        if not token:
+            _d7 = "login=%s (%s)" % (
+                (login or {}).get("status"), str((login or {}).get("body_text") or "")[:130])
+            _d7 += "; register=%s (%s)" % (reg["status"], str(reg["body_text"] or "")[:130])
+        _add("auth_register_login", bool(token), "" if token else _d7)
+        if not token:
+            return _finalize(checks, backend_port, endpoint_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
+
+        # 4. Every business endpoint reachable (status < 500 = no crash) AND —
+        #    GATE-C1 — actually implemented when its registration claims so:
+        #    a 404/405 from a status=implemented endpoint fails the smoke (see
+        #    _unimplemented_route for the round47-calibrated exemptions).
+        #    Collect a per-endpoint result so the caller can emit one
+        #    contract-test record per endpoint (the delivery-gate evidence) —
+        #    ``reachable`` stays the transport fact (<500); ``passed`` is the
+        #    verdict the probe/contract-test records consume.
+        unreachable: List[str] = []
+        unimplemented: List[str] = []
+        shape_violations: List[str] = []
+        _unreachable_totals_1202w0: List[str] = []
+        _item_denied_1202wg: List[str] = []
+        for ep in business_endpoints or []:
+            method = str(ep.get("method") or "GET").upper()
+            path = str(ep.get("path") or "")
+            if not path:
+                continue
+            url = base + _path_with_params(path)
+            body = {} if method in ("POST", "PUT", "PATCH") else None
+            res = _http(method, url, token=token, body=body)
+            reachable = res["status"] is not None and res["status"] < 500
+            _ur = _unimplemented_route(method, path, ep.get("status"), res["status"],
+                                       res.get("body_text"))
+            endpoint_results.append({
+                "id": ep.get("id"),
+                "method": method,
+                "path": path,
+                "status_code": res["status"],
+                "reachable": reachable,
+                "passed": reachable and not _ur,
+                "error": res["error"],
+                "trace": f"{method} {url} -> {res['status'] or res['error']}",
+            })
+            if not reachable:
+                # #1003: a 405 says WHY in its own headers. `Allow:` names the methods the
+                # running app bound for this path — the fact that makes the difference
+                # between "reproduce this" and "look at the route declaration". r162 spent 17
+                # tasks on `POST /api/continue-watching → 405` because this line emitted the
+                # number alone. Appended only for 405 and capped hard, since
+                # compose_unreachable_detail budgets the first 300 chars for the traceback.
+                _extra1003 = ""
+                if res["status"] == 405:
+                    for _k, _v in (res.get("headers") or {}).items():
+                        if str(_k).lower() == "allow":
+                            _extra1003 = f" (app accepts: {str(_v)[:48]})"
+                            break
+                unreachable.append(
+                    f"{method} {path} → {res['status'] or res['error']}{_extra1003}")
+            if _ur:
+                unimplemented.append(_ur)
+            # gate C — behavioral COMPLETENESS: a 2xx response MUST match the contract
+            # shape for its path-type (catches the real instagram bug where GET
+            # /api/users/me returned {"items":[all users]} — reachable but semantically
+            # wrong). Conservative: only a clear single↔collection mismatch is flagged.
+            _sv = _shape_violation(method, path, res["status"], res["body_text"],
+                                   ep_status=ep.get("status"))
+            if _sv:
+                shape_violations.append(_sv)
+            # #1202w0: and, on the same 2xx, whether a client following this endpoint's own
+            # pagination can reach the count the same response advertises. Reported, not
+            # blocked (see the note on the helper).
+            if method == "GET" and res.get("status") == 200:
+                _pw = _list_total_unreachable_1202w0(base, path, token, res.get("body_text"))
+                if _pw:
+                    _unreachable_totals_1202w0.append(_pw)
+                # #1202wg: and whether this list's OWN item endpoint will hand back the ids
+                # it just served. Same 2xx, same bargain: reported, never blocking.
+                _wg = _list_ids_the_item_denies_1202wg(
+                    base, path, token, res.get("body_text"), business_endpoints)
+                if _wg:
+                    _item_denied_1202wg.append(_wg)
+        # FIX #157: on a 5xx (backend crash-in-handler, not a mere 404), pull the
+        # backend log tail and attach the salient traceback line — the remediation
+        # task then carries the ROOT CAUSE (file:line + exception), not just "→ 500"
+        # (gmrun5: the bare 500 sent the lane down a wrong guess → 50min wedge).
+        _salient = ""
+        if unreachable and any(
+                (r.get("status_code") or 0) >= 500 for r in endpoint_results):
+            _salient = extract_salient_traceback(_backend_logs_tail(compose_file, cwd))
+        if _item_denied_1202wg:
+            record_list_ids_the_item_denies_1202wg(project_dir, _item_denied_1202wg)
+            _LOG.warning(
+                "#1202wg %d list endpoint(s) serve ids their OWN item endpoint denies: %s. "
+                "The list and the item disagree about what exists, so a client that opens "
+                "anything from the list gets a 404 -- r137's three failing business chains "
+                "were all this shape, from an owner-scoped item read over a column no "
+                "dataset row filled.",
+                len(_item_denied_1202wg),
+                join_capped(_item_denied_1202wg, len(_item_denied_1202wg), cap=4))
+        if _unreachable_totals_1202w0:
+            record_list_total_unreachable_1202w0(project_dir, _unreachable_totals_1202w0)
+            _LOG.warning(
+                "#1202w0 %d list endpoint(s) advertise a `total` their OWN pagination cannot "
+                "reach: %s. A client that follows `next_cursor` stops early and the rest of "
+                "the data is unreachable through the app -- tiktok-r135 shipped its front "
+                "page serving 8 of 39, tiktok-r126 shipped 20 of 92. Either the handler "
+                "drops rows the count includes (a join over a column the seed left NULL is "
+                "the usual cause, see #1202vz) or the cursor never advances. Reported, not "
+                "blocking.",
+                len(_unreachable_totals_1202w0),
+                join_capped(_unreachable_totals_1202w0, len(_unreachable_totals_1202w0), cap=6))
+        _add("business_endpoints_reachable", not unreachable,
+             compose_unreachable_detail(unreachable, _salient) if unreachable
+             else f"{len(business_endpoints or [])} endpoint(s) reachable")
+        _add("business_endpoints_implemented", not unimplemented,
+             # #1034: was a [:800] cut on the JOINED string — this detail is what a lane reads
+             # to know WHICH endpoints to implement, so a silent cut costs a repair round.
+             join_capped(unimplemented, len(unimplemented), cap=12) if unimplemented
+             else f"{len(business_endpoints or [])} registered-implemented endpoint(s) serve their route")
+        _add("business_endpoints_correct_shape", not shape_violations,
+             join_capped(shape_violations, len(shape_violations), cap=12)
+             if shape_violations
+             else f"{len(business_endpoints or [])} endpoint(s) match the item/items contract")
+
+        # gate C (persistence): a parameterless POST collection endpoint must REALLY
+        # persist — POST it, then GET the same path and require the new id to appear.
+        # "201 but nothing stored" (in-memory handler, dropped txn) passed every
+        # earlier gate. Conservative: only asserted for the first POST /api/<col>
+        # whose POST returned 2xx with an {item:{id}} and whose GET returns a list.
+        # §2 gate-hardening: the FIRST verifiable POST still drives the BLOCKING gate exactly
+        # as before (no new hard blocks). Additionally, probe the OTHER parameterless POSTs and
+        # surface non-blocking WARNINGS — a 2xx create whose collection GET is EMPTY or doesn't
+        # contain the new id (the "201 but nothing stored" / 200-but-empty class), or a skip
+        # that used to pass silently — so they're visible in the report instead of invisible.
+        post_eps = [e for e in (business_endpoints or [])
+                    if str(e.get("method", "")).upper() == "POST" and "{" not in str(e.get("path", ""))]
+        persist_detail = "no parameterless POST endpoint to probe"
+        persist_ok = True
+        persist_warnings: list = []
+        _first_scored = False
+        for post_ep in post_eps[:8]:  # cap to bound probe time
+            ppath = str(post_ep["path"])
+            pres = _http("POST", base + ppath, token=token, body=_probe_body(post_ep))
+            if not (pres["status"] and 200 <= pres["status"] < 300):
+                persist_warnings.append(f"POST {ppath} → {pres['status'] or pres['error']} — write not verified")
+                continue
+            try:
+                new_id = (json.loads(pres["body_text"]) or {}).get("item", {}).get("id")
+            except Exception:
+                new_id = None
+            back = _http("GET", base + ppath, token=token)
+            try:
+                payload = json.loads(back["body_text"] or "{}")
+                rows = payload.get("items") if isinstance(payload, dict) else None
+            except Exception:
+                rows = None
+            if not isinstance(rows, list):
+                persist_warnings.append(f"POST {ppath} ok but GET readback is not an items[] list — persistence not verifiable")
+                continue
+            if new_id is not None:
+                contains = _id_in_rows(new_id, rows)   # FIX #122: type-tolerant
+                if not _first_scored:
+                    # FIRST verifiable POST = the blocking gate (byte-identical to prior behavior).
+                    persist_ok = contains
+                    persist_detail = (
+                        f"POST {ppath} → id={new_id}; GET readback "
+                        + ("contains it" if contains else
+                           f"does NOT contain it ({len(rows)} row(s)) — write not persisted"))
+                    _first_scored = True
+                elif not contains:
+                    persist_warnings.append(
+                        f"POST {ppath} → id={new_id} NOT in readback ({len(rows)} row(s)) — possible non-persist")
+            else:
+                if len(rows) == 0:
+                    persist_warnings.append(
+                        f"POST {ppath} returned 2xx but the collection GET is EMPTY — possible non-persisting write")
+                elif not _first_scored:
+                    persist_detail = f"POST {ppath} 2xx ({len(rows)} row(s)); no item.id to match — skipped"
+        if persist_warnings:
+            persist_detail += " | warnings: " + "; ".join(persist_warnings)
+        _add("business_writes_persist", persist_ok, persist_detail)
+
+        # 5. Auth enforced: a business endpoint without a token → 401.
+        #
+        # #1202ih: IT MUST BE AN ENDPOINT THE CONTRACT SAYS NEEDS AUTH.
+        #
+        # This took the FIRST GET in the list and demanded 401 from it, whatever the
+        # contract said. On tiktok the first GET is `/api/videos`, which the backend lane
+        # declared PUBLIC (`schema.auth_required=false`) and which the projector therefore
+        # built with no guard — so the framework demanded a denial from a route it had
+        # itself constructed to answer 200. No lane can satisfy both halves.
+        #
+        # r107 resume2, live: this wedged the run for four post-cap validation cycles and
+        # then killed it. The debugger lane — awake since #1202dr — diagnosed it exactly:
+        # "run_validation auth_enforced_401 uses stale metadata for public GET
+        # /api/videos ... schema.auth_required=false but metadata.auth_required=true ...
+        # Registered public_video_metadata_drift_guard chain and diagnostic contract test
+        # passed, but run_validation still fails auth_enforced_401." The lane did
+        # everything right and could not clear a check that reads a copy it cannot reach.
+        #
+        # Pick through `_stated_auth_1202hi`, the projector's own single reader, so the
+        # endpoint probed for a denial is the same one the handler was built to deny.
+        # When NO GET requires auth, there is nothing here to prove — an app whose reads
+        # are all public is a legitimate contract (the logged-out surface #320 exists to
+        # keep open), and asserting a denial anyway invents a failure.
+        _gets_1202ih = [e for e in (business_endpoints or [])
+                        if str(e.get("method", "GET")).upper() == "GET"]
+        get_ep = pick_auth_probe_endpoint_1202ih(_gets_1202ih)
+        if get_ep:
+            url = base + _path_with_params(str(get_ep.get("path")))
+            noauth = _http("GET", url)
+            _add("auth_enforced_401", noauth["status"] == 401,
+                 "" if noauth["status"] == 401 else f"GET {get_ep.get('path')} no-token → {noauth['status']} (expected 401)")
+        elif _gets_1202ih:
+            _LOG.info("#1202ih auth_enforced_401 skipped: none of the %d GET endpoint(s) "
+                      "states auth_required=true, so there is no declared denial to "
+                      "verify. Probing a contract-public read for a 401 is the wedge this "
+                      "replaced.", len(_gets_1202ih))
+
+        # 5.4b #1202vb: does /auth/login CHECK the password at all? `auth_enforced_401`
+        # above proves a business GET refuses a request carrying NO token -- it says
+        # nothing about who the token is handed to. Over the wire, with an account this
+        # probe itself creates, so it is domain-agnostic and needs no seed user.
+        _pw_probe_email = f"pwcheck_1202vb_{int(time.time() * 1000) % 100000000}@example.com"
+        _pw_good = "Pwcheck-1202vb-Good"
+        # #1202wu: IN ITS OWN TENANT. This probe creates an account because that is what
+        # makes it domain-agnostic -- it needs no seeded user and no knowledge of the app's
+        # cast. The account then SHIPPED: #1202w7 measured the delivered r132 and r135 at 12
+        # users, 9 seeded and 3 added by the run, and this is one of the three. A person
+        # opening the app finds `pwcheck_1202vb_...@example.com` among its people.
+        #
+        # `/auth/register` and `/auth/login` both take `tenant_id` in the body, and the body
+        # wins over the X-Tenant-Id header, so the whole exchange can happen in a tenant the
+        # app never reads. The verification path is identical -- `verify_user_password(email,
+        # password, tenant_id=...)` -- so the probe still tests exactly what it tested: does
+        # login check the password at all. What changes is that the row lands beside the
+        # app's users instead of among them.
+        _pw_tenant = "fw_pwcheck_1202vb"
+        _pw_reg = _http("POST", base + "/auth/register",
+                        body={"email": _pw_probe_email, "password": _pw_good,
+                              "name": "Password Check Probe", "tenant_id": _pw_tenant,
+                              "username": _pw_probe_email.split("@", 1)[0]})
+        _pw_ok = _http("POST", base + "/auth/login",
+                       body={"email": _pw_probe_email, "password": _pw_good,
+                             "tenant_id": _pw_tenant})
+        _pw_wrong = _http("POST", base + "/auth/login",
+                          body={"email": _pw_probe_email, "tenant_id": _pw_tenant,
+                                "password": _pw_good + "-NOT-THE-PASSWORD"})
+        _pw_ghost = _http("POST", base + "/auth/login",
+                          body={"email": f"never_registered_1202vb_{_pw_probe_email}",
+                                "tenant_id": _pw_tenant, "password": _pw_good})
+        _pw_verdict, _pw_detail = wrong_password_verdict_1202vb(
+            _pw_reg["status"], _pw_ok["status"], _pw_wrong["status"], _pw_ghost["status"])
+        if _pw_verdict == "skip":
+            # Logged, never silent: a skipped guard that leaves no trace is a guard whose
+            # absence nobody can audit afterwards.
+            _LOG.info("#1202vb auth_password_is_checked skipped: %s", _pw_detail)
+        else:
+            _add("auth_password_is_checked", _pw_verdict == "pass", _pw_detail)
+
+        # 5.5 VERIFIER CHAIN TEST (user decision 2026-06-11): real API-chain
+        # coverage belongs to the VERIFIER's validation, not post-release
+        # reporting — register → login → authed me → create → read-back →
+        # cross-user interactions, driven by the registered contract. Any
+        # step that is BROKEN (5xx / auth failure / wrong data) fails the
+        # gate; "missing" (404/405 — later-milestone endpoints) stays soft.
+        try:
+            from .chain_executor import run_chains
+            _chain = run_chains(base, project_dir, list(business_endpoints or []))
+            # Surface the PER-CHAIN results so the run_validation tool can sync each
+            # chain's verdict back through the LIVE registryhub (record_chain_result)
+            # to the MAIN registry the delivery gate reads. run_chains' own status
+            # write-back goes to project_dir's hub file — which, when validation runs
+            # inside a lane WORKTREE, is NOT the registry the gate audits (run v20:
+            # chains pass live but the gate sees stale 'registered' → deadlock).
+            chain_results = _chain.get("chains") or []
+            if _chain["broken"]:
+                # #300: on a chain 5xx, attach the backend traceback (file:line
+                # root cause) — else the lane fixes blind (r81 M2 STUCK 95min on
+                # POST /replies → 500 shown only as 'Internal Server Error').
+                _chain_salient = ""
+                if _chain_broken_has_5xx(_chain["broken"]):
+                    try:
+                        _chain_salient = extract_salient_traceback(
+                            _backend_logs_tail(compose_file, cwd))
+                    except Exception:
+                        _chain_salient = ""
+                # #1203ik: SAY THAT THESE STEPS MAY HAVE JUDGED THE OLD CODE.
+                #
+                # SCOPE, corrected after reading the other half (2026-10-13): the DELIVERY
+                # GATE already says this. `_build_currency_caveat_1202vn` appends the same
+                # fact to the `business_chain_failing` blocker detail, and #1202vn exists for
+                # the identical reason — "tiktok-r136, live: the warning fired 36 times into
+                # the log while 43 gate snapshots carried a `business_chain_failing` detail
+                # and NOT ONE of them mentioned it". So the lane reading a remediation task
+                # was NOT in the dark; I overestimated this patch before checking.
+                #
+                # CORRECTED TWICE. The first correction found the gate's copy
+                # (`_build_currency_caveat_1202vn`). r187 then showed a THIRD: `test_api`'s
+                # own 401 hint carries `_stale_image_note_1202qs`, which says the same thing
+                # in the same words —
+                #     "NOTE: app/ has changed since the running image was built, so this
+                #      response may come from the OLD code. Re-run validation (it rebuilds)
+                #      and re-check before filing this as a defect"
+                # So this fact already had TWO emitters before #1203ik, not one, and the
+                # agent hitting a stale endpoint was being told directly. Twice I assumed a
+                # gap and twice the framework had it covered; the honest scope of #1203ik is
+                # therefore narrow.
+                #
+                # What this adds is a THIRD exit: the validation report's own
+                # `business_chain` check, which `framework_validation` and the run log read
+                # and which carries no caveat of its own. One fact, two emitters, and the
+                # gate's copy does not reach this one — so both say it, in their own words.
+                # If a future reader is deciding whether this is redundant: the test
+                # `test_the_stale_kind_is_not_mistaken_for_an_exoneration` pins the part that
+                # is NOT duplicated (the structured kind), and #1202vn owns the blocker copy.
+                #
+                # `build_currency_1202ex` already compares the source on disk against the
+                # image the stack is running, and `chain_executor` logs the answer one line
+                # before it runs the chains:
+                #
+                #   #1202ex: chains are about to judge an app whose image may not be the
+                #   source on disk -- app/ has changed since the image was built (source
+                #   fa236080a838, built 593a8566a717) -- the container may predate the
+                #   handler under test; rebuild AND recreate the stack before trusting
+                #   these results
+                #
+                # It says the results cannot be trusted and then hands them to the gate
+                # anyway: 31-47 times per run across r182-r185. Both directions cost. A
+                # chain that fails on stale code sends remediation to fix a defect the new
+                # source may no longer have; a chain that passes on stale code clears the
+                # gate for code nobody tested.
+                #
+                # Same shape as #1202od one branch down -- "not a pass (nothing was
+                # verified) and not the lanes' failure -- say which it is, so the retry is
+                # the remedy" -- but a DIFFERENT remedy, so a different kind: a transport
+                # failure is retried, a stale image has to be rebuilt and recreated. Reusing
+                # `environment_1202od` would tell the agent to retry against the same old
+                # container forever.
+                #
+                # Still `False`: the steps did fail, and this does not whitewash them. What
+                # changes is that the failure now names the stack as a suspect before the
+                # code, in the detail the remediation task is built from.
+                _stale1203ik = ""
+                try:
+                    from .chain_executor import build_currency_1202ex as _bc1203ik
+                    _cur1203ik = _bc1203ik(project_dir) or {}
+                    if str(_cur1203ik.get("verdict") or "") == "changed":
+                        _stale1203ik = str(_cur1203ik.get("detail") or "").strip()
+                except Exception as _e1203ik:
+                    from .message_format import warn_once_1201
+                    warn_once_1201(
+                        "chain_stale_image_1203ik",
+                        "the #1202ex image-currency check on the chain verdict — a failure "
+                        "judged on a stale container will read as the code's",
+                        _e1203ik)
+                _detail1203ik = _business_chain_detail(
+                    _unmounted_lines_1202rc(_chain) + _chain["broken"], _chain_salient)
+                if _stale1203ik:
+                    # The owner's `detail` ALREADY says what changed, with both
+                    # fingerprints, and already ends in "rebuild AND recreate the stack
+                    # before trusting these results". Driving this with a real run's
+                    # verdict (tiktok-web-r186) showed my first wording repeating all of
+                    # that ahead of it — "app/ has changed..." twice and "rebuild and
+                    # recreate" three times — which is #1202vx's rule (the explanation must
+                    # not spend the evidence budget) broken by my own note. The unit tests
+                    # used a short fixture, so only real data showed it. So: quote the
+                    # owner once and add ONLY the conclusion it does not draw.
+                    # The owner's sentence ends "...before trusting these results" with no
+                    # terminator, so quoting it inline ran two sentences together —
+                    # "...these results Until that is done...". Found by rendering it with a
+                    # real run's verdict; the fixture in the unit test ended in a period and
+                    # hid it.
+                    _lead1203ik = (_stale1203ik if _stale1203ik.endswith((".", "!", "?"))
+                                   else _stale1203ik + ".")
+                    _detail1203ik = (
+                        "STACK FIRST, THEN CODE — %s Until that is done this verdict is not "
+                        "about the source on disk, so do not edit code to satisfy it "
+                        "(#1203ik).\n\n%s" % (_lead1203ik, _detail1203ik))
+                # The kind is DELIBERATELY not one `_not_the_apps_1203e5` exonerates.
+                # That helper clears a whole failing tick when every failure is "not the
+                # app's", and it recognises `environment_1202od` — the chains never REACHED
+                # the app, so nothing was judged. A stale image is different in kind: the
+                # chains did reach the app and did judge code, just an older copy of it. A
+                # failure on the old handler may well still be present in the new source, so
+                # exonerating it wholesale would whitewash real defects, which is the
+                # opposite of what #1023 warns about in the other direction.
+                #
+                # So this field carries the verdict's SHAPE (#1203e5: "say it in a field, not
+                # only in English") and has no programmatic consumer yet, on purpose. The
+                # right consumer, when one is built, is a rebuild+recreate before the next
+                # validation — NOT an exoneration and NOT a retry (which is
+                # `environment_1202od`'s remedy and would re-run against the same old
+                # container). That decision changes what the orchestrator does on a failing
+                # tick, so it needs a run to validate and is not being taken blind here.
+                _add("business_chain", False, _detail1203ik,
+                     kind="stale_image_1203ik" if _stale1203ik else "")
+            elif _chain.get("environment_1202od"):
+                # #1202od: the steps never reached the app. Not a pass (nothing was verified)
+                # and not the lanes' failure — say which it is, so the retry is the remedy.
+                _env1202od = _chain["environment_1202od"]
+                _add("business_chain", False,
+                     "NOT VERIFIED — the app was unreachable while the chains ran, so these "
+                     "steps got no answer at all (%d step(s), e.g. %s). This is the stack, "
+                     "not the code: no lane edit can change it. Re-run the validation once "
+                     "the stack is up." % (len(_env1202od), str(_env1202od[0])[:160]),
+                     kind="environment_1202od")   # #1203e5: and say it in a field, not only in English
+            else:
+                # #1202rc: a `missing` step leaves the chain PASSING (#927), so a handler
+                # nobody can reach is invisible on exactly the branch that reports success.
+                # r129 shipped v1.0.0 with 78 unmounted reports for PATCH /api/videos/{id}
+                # and business_chain green throughout.
+                _unm1202rc = _unmounted_lines_1202rc(_chain)
+                _add("business_chain", True,
+                     f"{_chain['total_steps']} step(s) across "
+                     f"{len(_chain['chains'])} verifier-authored chain(s) pass"
+                     + (("\n" + _unm1202rc[0]) if _unm1202rc else ""))
+        except Exception as _chain_exc:
+            _add("business_chain", False, f"chain runner crashed: {_chain_exc}")
+
+        # 5.6 DEAD-CONTROL RULE (user decision 2026-06-11): page-type-agnostic
+        # — a page that renders interactive markup (<form>, submit buttons)
+        # must BIND it somewhere in the file (onSubmit/onClick/fetch/api use).
+        # The 1.4.0 signup page was a pixel-perfect <form> with zero handlers;
+        # every HTTP probe passed while no human could use it. Conservative
+        # rules to avoid false positives: only flag files that have a <form>
+        # or a submit-typed button AND contain NO handler/API token at all.
+        try:
+            _src_dir = Path(project_dir) / "app" / "frontend" / "src"
+            _dead: list = []
+            # F6 (2026-07-21): use the SAME handler-token set as the delivery-time audit
+            # (frontend_audit._HANDLER_TOKENS) so a page wired via the default `api` client
+            # (`api.get(...)` / `await api`) is not flagged dead here while frontend_audit —
+            # which DOES recognize those tokens — clears it. The two gates were giving opposite
+            # verdicts on the exact React shape the prompts tell pages to use.
+            try:
+                from .frontend_audit import _HANDLER_TOKENS as _HANDLER_TOK
+            except Exception:
+                _HANDLER_TOK = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
+                                "apiPut", "apiDelete", "axios", "api.", "await api")
+            if _src_dir.is_dir():
+                for _pf in sorted(_src_dir.rglob("*.jsx")):
+                    try:
+                        _txt = _pf.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    _interactive = ("<form" in _txt) or ('type="submit"' in _txt)
+                    _bound = any(tok in _txt for tok in _HANDLER_TOK)
+                    if _interactive and not _bound:
+                        _dead.append(_pf.name)
+            _add("frontend_dead_controls", not _dead,
+                 ("interactive markup with NO bound handler/API call — a user "
+                  "clicking these gets nothing: " + ", ".join(_dead))[:800]
+                 if _dead else "all interactive pages bind their controls")
+        except Exception as _dc_exc:
+            _add("frontend_dead_controls", True, f"scan skipped: {_dc_exc}")
+
+        # 6. Frontend HTTP reachable: the UI container must actually SERVE. docker_up
+        #    passes even when the frontend container crashes right after start (the
+        #    nginx env-var crash shipped exactly that way), and frontend_navigable is
+        #    a static file check — this closes the runtime gap.
+        fe_port = _service_host_port(compose_file, cwd, "frontend")
+        if fe_port:
+            fe = _http("GET", f"http://localhost:{fe_port}/", timeout=20)
+            ok = fe["status"] is not None and 200 <= fe["status"] < 400
+            _add("frontend_reachable", ok,
+                 f"GET :{fe_port}/ → {fe['status'] or fe['error']}"
+                 + ("" if ok else " — the frontend container is not serving (crashed after start?)"))
+        else:
+            _add("frontend_reachable", False,
+                 "could not resolve the frontend service's published port "
+                 "(container not running?)")
+
+        return _finalize(checks, backend_port, endpoint_results, chain_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
+    except Exception as exc:
+        _add("runner_error", False, f"{type(exc).__name__}: {exc}")
+        return _finalize(checks, backend_port, endpoint_results, chain_results, phases_1203g8=_phase_timings_1203g8,
+                             project_dir_1203g8=project_dir,
+                             started_1203g8=_phase_start_1203g8)
+    finally:
+        if teardown:
+            try:
+                from .compose_mutex import wait_for_stack_leases_1202nx   # #1202nx
+                # capped below the 600s other validations wait for the lock this one holds
+                wait_for_stack_leases_1202nx(project_dir, "api_smoke validation (teardown)",
+                                             timeout_s=min(300.0, float(os.environ.get(
+                                                 "ENVGEN_STACK_LEASE_WAIT_SEC") or 300)),
+                                             logger=_LOG)
+                _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
+            except Exception:
+                pass
+        # FIX #36: release the validation lock so the next validator can boot.
+        if _lock_fh is not None:
+            try:
+                _fcntl.flock(_lock_fh.fileno(), _fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                _lock_fh.close()
+            except Exception:
+                pass
+
+
+_VALIDATION_SCOPE_1202QE: List[Any] = []
+
+

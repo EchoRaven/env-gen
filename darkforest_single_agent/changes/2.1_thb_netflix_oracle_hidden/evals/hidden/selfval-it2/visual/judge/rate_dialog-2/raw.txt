@@ -1,0 +1,63 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.9,
+      "notes": "The overlay structure matches the reference: a blurred title-detail modal sits behind a centered dialog about 960px wide. A full-width red top rule runs at about y=295, the close X is top-right, the title and subtitle are centered, the three rating options sit in one row with matching column centers (about 690/960/1230), and a centered 'Got it!' button follows. Differences: the implementation adds a caption row between the options and the button, so the button drops about 14px. The thin hairline divider the reference shows at about y=800 under the button is missing.",
+      "fix": "Remove the extra caption row so 'Got it!' sits about 80px under the option labels (y≈745). Add a 1px low-opacity grey hairline spanning the dialog width (480–1440px) at about y=800."
+    },
+    "components": {
+      "score": 0.82,
+      "notes": "Every component in the reference is present: the red accent rule, close X, title, subtitle, thumbs-down, thumbs-up and two-thumbs-up options with captions, and the 'Got it!' button. Two things are invented: a filled rounded highlight box behind the thumbs-down option (the reference shows all three options unhighlighted), and an extra status line, 'The East Palace is not rated yet.'. The bottom hairline divider is missing.",
+      "fix": "Show the dialog with no option highlighted (hover or selected background only on real interaction). Delete the 'not rated yet' status text. Add the bottom hairline divider.",
+      "missing": ["bottom hairline divider under the 'Got it!' button"]
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "The flat, minimal, transparent dialog over a dimmed and blurred backdrop matches, and so do the small, slightly rounded dark 'Got it!' button and the thin red rule. The highlight card behind the dislike option adds an elevated surface that the reference doesn't have. The implementation's backdrop is dimmed and blurred more heavily, so less of the underlying page shows through.",
+      "fix": "Remove the dislike option's card background. Ease the backdrop blur and dim slightly so the underlying hero artwork stays more visible, as in the reference."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The dark scheme, the Netflix red rule, white title, light grey subtitle and dark grey button with white bold text all match. The implementation's red rule is slightly brighter and more saturated. Its overall backdrop is darker and closer to black, while the reference keeps more of the scene's warmth.",
+      "fix": "Use #E50914 at about 80% opacity or a slightly muted red for the rule, and lower the backdrop overlay opacity by about 10–15%."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "The size hierarchy matches: a large bold title (about 48px), a medium regular light-grey subtitle, small white option captions and a bold button label. The implementation uses a generic geometric sans (Inter-like) where the reference uses Netflix Sans, and its title looks slightly heavier and wider. Caption wrapping differs: the reference breaks lines as 'We won't suggest / this to you again', 'We'll show you / more like this' and 'We know you're a / true fan!', using a narrower column (about 160px) and a slightly smaller font.",
+      "fix": "Use the Netflix Sans or Helvetica Neue stack. Cap caption width at about 160px and caption size at about 16px so they wrap the way the reference does."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The filled white thumbs-down, thumbs-up and double-thumbs icons match in style and size. The implementation's close X uses a thinner stroke than the reference's bolder X.",
+      "fix": "Raise the close X stroke to about 3px at the same 32px size."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The title, subtitle, all three option captions and 'Got it!' match the reference word for word. The implementation adds a status line, 'The East Palace is not rated yet.', that the reference doesn't have.",
+      "fix": "Remove the 'not rated yet' status line."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Rating row, left option: the implementation draws a filled rounded grey card behind the thumbs-down option and its caption. In the reference all three options are unhighlighted.",
+    "Between the options and the button: the implementation adds a small grey status line, 'The East Palace is not rated yet.', which the reference doesn't have, and it pushes 'Got it!' down.",
+    "Bottom of dialog: the reference has a thin grey hairline divider spanning the dialog width at about y=800, below the button. The implementation has none.",
+    "Option captions: in the implementation they wrap wider and break differently ('We won't suggest this / to you again', 'We know you're a true / fan!'). The reference uses a narrower column ('We won't suggest / this to you again', 'We know you're a / true fan!').",
+    "Typeface: the implementation uses an Inter-like sans in place of Netflix Sans, and the title is slightly heavier and wider.",
+    "Close X (top-right): the implementation's stroke is thinner than the reference's bolder X.",
+    "Backdrop: the implementation is dimmed and blurred more heavily, while the reference lets more of the hero image show through. The red rule is also slightly more saturated."
+  ],
+  "fixes": [
+    "Render the rating options with no default highlight or selected background.",
+    "Delete the '<title> is not rated yet.' status text.",
+    "Add a full-width 1px rgba(255,255,255,0.15) hairline divider at about 55px below the 'Got it!' button.",
+    "Constrain option captions to about 160px max width at about 16px so they wrap as in the reference.",
+    "Switch to the Netflix Sans or Helvetica Neue font stack and match the title weight.",
+    "Thicken the close X stroke to about 3px.",
+    "Lighten the backdrop overlay and blur slightly, and mute the red rule a little."
+  ],
+  "summary": "The rate dialog is a close match in layout, copy and icons; the gaps are an invented highlight on the dislike option, an extra 'not rated yet' line, the missing bottom divider, and differences in font and caption wrapping."
+}
+```

@@ -1,0 +1,61 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.5,
+      "notes": "The global top nav matches: NETFLIX wordmark on the left, 7 text links, then search, bell, Kids and avatar on the right. The page behind the card does not. The reference is a 'Browse by Languages' page with a page title, a row of preference dropdowns and a dense 6-column grid of landscape tiles. The implementation is the Home page, with a large hero billboard and horizontally scrolling rails that bleed off the right edge. The expanded card is also placed differently. In the reference it grows out of the second tile, stays inside the 67px page gutter and rises above the row. In the implementation it is pinned to x≈16px, past the left gutter, and covers the first tile and part of the hero.",
+      "fix": "Show the held preview on a layout that matches the reference: a 'Browse by Languages' heading, dropdowns on the right and a 6-up grid. Anchor the expanded card to the hovered tile's centre, scaled about 1.5x, and clamp its left edge to the 67px page gutter."
+    },
+    "components": {
+      "score": 0.68,
+      "notes": "The preview card has the right parts: artwork with a title overlay and a mute button, round Play (filled white), Add (check), Rate (thumb) and a right-aligned expand chevron, a maturity rating in an outlined box with a format label and an HD badge, and a row of genre tags separated by dots. Missing: the small red Netflix 'N' badge at the top-left of the card artwork. Also missing from the page: the 'Browse by Languages' page title and the 'Select Your Preferences' label with the 'Original Language' and 'English' dropdowns. The implementation adds a hero billboard (Play / More Info, synopsis, '#1 in TV Shows Today') and row page-indicator dashes, none of which appear in the reference.",
+      "missing": ["Netflix 'N' badge on card artwork (top-left)", "'Browse by Languages' page heading", "'Select Your Preferences' label + 'Original Language' / 'English' dropdowns", "active pill on 'Browse by Languages' nav item"],
+      "fix": "Add the red 'N' badge to the top-left of the preview artwork. Render the page heading and the two outlined dropdowns. Drop the hero billboard and the rail indicators for this screen."
+    },
+    "style": {
+      "score": 0.78,
+      "notes": "The card treatment matches: a dark elevated surface with a slightly rounded top, a soft shadow, the artwork taking the top ~55%, then the controls area. The implementation's round buttons are smaller (~42px against ~50px), so the card looks less airy. The hero and the bleeding rails make the page busier than the calm grid in the reference.",
+      "fix": "Make the circular action buttons ~50px with a 2px grey ring and add more vertical padding between the button row, the metadata row and the genre row."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same near-black page (#141414), a slightly lighter card surface (#181818/#1f1f1f), the white Play disc, grey-ringed secondary buttons, red 'Recently Added' and TOP 10 badges, and white and light-grey text. The hero adds a large colourful block that the reference doesn't have.",
+      "fix": "Remove the hero so the screen stays a dark grid with colour coming only from the tiles."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Same sans family and the same hierarchy (rating box, seasons/format, small HD badge, genre row). In the implementation the metadata and genre text is smaller (~16px against ~18px in the reference). On the card artwork, the title is large bold condensed white text. The reference uses a small stylised title-logo lockup.",
+      "fix": "Increase the card's metadata and genre text to ~18px regular. Render the card title as a smaller logo-style lockup in the bottom-left of the artwork, not a large condensed headline."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The line-style check, chevron and mute icons match, and the Play triangle is filled. The thumb icon is filled in the implementation but outlined in the reference. The 'N' brand badge is missing. Both use a 16:9 cover crop for the artwork.",
+      "fix": "Switch the Rate icon to an outlined thumbs-up and add the red 'N' badge to the top-left of the card artwork."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels match exactly, as do the card's rating/HD/genre conventions. The page-level copy differs: the reference has 'Browse by Languages', 'Select Your Preferences', 'Original Language' and 'English'. The implementation instead shows hero copy and a 'Top 10 TV Shows Today' heading.",
+      "fix": "Use the reference's heading and preference labels on this screen."
+    }
+  },
+  "similarity": 0.66,
+  "empty_state": false,
+  "deviations": [
+    "page context: the reference shows the card over the 'Browse by Languages' grid (page heading, preference dropdowns, 6-column tile grid); the implementation shows it over the Home hero billboard and horizontal rails",
+    "card placement: the reference card stays within the left page gutter, centred on the hovered second tile and rising above the row; the implementation card is pinned near the screen edge (x≈16), past the gutter, and overlaps the hero",
+    "card artwork top-left: the red Netflix 'N' badge in the reference is missing from the implementation",
+    "card action row: the implementation's circular buttons are smaller (~42px against ~50px) and the thumb icon is filled, where the reference uses an outlined thumb",
+    "card title overlay: the reference uses a small logo-style title lockup; the implementation uses a large condensed bold headline",
+    "header right / below nav: the 'Select Your Preferences' label and the 'Original Language' / 'English' outlined dropdowns are missing",
+    "nav: the active pill sits on 'Home' rather than on 'Browse by Languages'",
+    "card metadata/genre text is smaller and tighter than in the reference"
+  ],
+  "fixes": [
+    "Render the held-preview state on a Browse by Languages layout: 'Browse by Languages' title on the left, 'Select Your Preferences' with 'Original Language' and 'English' dropdowns on the right, and a 6-column grid of 16:9 tiles",
+    "Anchor the expanded card to the hovered tile (scale ~1.5x from the tile centre), clamping its left edge to the 67px page gutter",
+    "Add a red 'N' badge to the top-left of the card artwork",
+    "Increase the circular action buttons to ~50px and use an outlined thumbs-up icon",
+    "Increase the card's metadata and genre text to ~18px and add vertical spacing between the rows",
+    "Highlight 'Browse by Languages' with the grey pill in the nav"
+  ],
+  "summary": "The preview card itself is close (same controls, metadata row and dark treatment) but has no 'N' badge, uses smaller buttons and is placed at the screen edge. It also sits over a Home hero and rails, not the reference's Browse by Languages grid with preference dropdowns."
+}

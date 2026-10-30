@@ -1,0 +1,68 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Both screens have the same skeleton: a dark maroon-to-black gradient page, the wordmark top-left at x≈213 with a hairline divider under the header, a centered ~490px form column, and a dark-grey footer band starting near y≈910 with a left-aligned question line and a 4-column link grid. The extra Password field pushes Continue, Get Help and the fine print about 60px lower. The footer grid has only one row of 3 links, where the reference has 2 rows filling all 4 columns. The header is slightly shorter (divider at ~89px vs ~100px).",
+      "fix": "Remove the Password field so Continue sits directly under the email input. Fill the footer grid to 4 columns × 2+ rows. Set header height to ~100px."
+    },
+    "components": {
+      "score": 0.72,
+      "notes": "Present: wordmark, heading, subheading, floating-label email input, full-width red Continue button, 'Get Help' disclosure with chevron, small grey fine-print line, footer question line, underlined footer links. Extra: a Password input that the reference's email-first step doesn't show. Footer: 3 links in one row vs 8 links in two rows of 4 in the reference.",
+      "missing": [
+        "footer link grid second row (4 columns × 2 rows of underlined links)",
+        "fourth footer link column"
+      ],
+      "fix": "Delete the Password input (collect it on a later step if needed). Render 8 underlined footer links in a 4-column, 2-row grid."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both use the same flat, minimal dark treatment, hairline-bordered inputs with floating labels, and whitespace-separated sections. The reference's Continue button and input are slightly rounded (~4px). The implementation's button looks nearly square-cornered.",
+      "fix": "Give the Continue button and inputs a 4px border-radius and match input height (~62px) and the button height (~53px)."
+    },
+    "color": {
+      "score": 0.82,
+      "notes": "The background gradient, dark footer (#161616-ish), white heading, light-grey subtext and grey fine print all match. The Continue button is saturated #E50914 in the implementation, while the reference uses a softer, slightly orange red (~#D6342B). The input fill and border tones are close.",
+      "fix": "Change the Continue button background to ~#D6342B (softer red) and keep white bold text."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a bold sans heading (~36px), a regular subhead (~20px), a tiny input label, and small grey fine print at the same levels and left alignment. The implementation uses Inter, which is more neutral and condensed than the reference's rounded Netflix-Sans-like face. Heading weight and size are close.",
+      "fix": "Use a rounder geometric sans (e.g. 'Netflix Sans' fallback to 'Helvetica Neue'/'Manrope') at the same sizes, and keep the heading at weight 700."
+    },
+    "iconography": {
+      "score": 0.88,
+      "notes": "The red condensed NETFLIX wordmark renders correctly. The 'Get Help' chevron is a noticeably smaller, thinner caret than the reference's larger line chevron.",
+      "fix": "Increase the Get Help chevron to ~16px, line style with ~2px stroke, vertically centered with the label."
+    },
+    "copy": {
+      "score": 0.7,
+      "notes": "Heading, subheading, input label, 'Continue' and 'Get Help' match exactly. Differences: the fine print reads 'Passwords are verified server-side…' instead of the reCAPTCHA-style protection notice. The footer question line reads 'Questions? Use \"Get Help\"…' instead of 'Questions? Call <phone>'. Footer link labels (Home/Sign In/Create Account) differ from the reference's FAQ/Help Center/Netflix House/Netflix Shop/Terms of Use/Privacy/Cookie Preferences/Corporate Information. The Password label is extra.",
+      "fix": "Change the fine print to 'This page is protected by Google reCAPTCHA to ensure you're not a bot.', the footer line to 'Questions? Call 1-844-…', and footer links to FAQ, Help Center, Netflix House, Netflix Shop, Terms of Use, Privacy, Cookie Preferences, Corporate Information."
+    }
+  },
+  "similarity": 0.82,
+  "empty_state": false,
+  "deviations": [
+    "form: the implementation adds a 'Password' input below the email field; the reference shows only the email field before Continue, so everything below shifts down ~60px",
+    "footer: the implementation shows 3 links in a single row (3 of 4 columns); the reference shows a 4-column grid with 2 rows of links",
+    "footer: the question line reads 'Questions? Use \"Get Help\" on the sign-in page.' instead of 'Questions? Call <phone> (Toll-Free)'",
+    "fine print under Get Help: PBKDF2 password text instead of the reCAPTCHA protection notice",
+    "Continue button: saturated #E50914 with near-square corners vs the reference's softer ~#D6342B red with ~4px radius",
+    "Get Help chevron is smaller and thinner than the reference's line chevron",
+    "header: the divider sits at ~89px vs ~100px in the reference",
+    "font face: Inter vs the reference's rounder Netflix-Sans-style face"
+  ],
+  "fixes": [
+    "Remove the Password input from the first step so the form is: heading, subhead, email input, Continue",
+    "Rebuild the footer link area as a 4-column grid with 2 rows of 8 underlined links (FAQ, Help Center, Netflix House, Netflix Shop / Terms of Use, Privacy, Cookie Preferences, Corporate Information)",
+    "Change the footer lead line to 'Questions? Call 1-844-569-7700 (Toll-Free)'",
+    "Replace the fine print with 'This page is protected by Google reCAPTCHA to ensure you're not a bot.'",
+    "Set the Continue button background to ~#D6342B and border-radius to 4px; give inputs a 4px radius too",
+    "Enlarge the Get Help chevron to ~16px line icon",
+    "Increase header height to ~100px so the divider aligns with the reference",
+    "Swap Inter for a rounder sans (Netflix Sans / Helvetica Neue fallback)"
+  ],
+  "summary": "A close match of the Netflix email-first sign-in: same gradient, centered form and footer band, but it adds an extra Password field, has a sparse footer link grid with different copy, and uses a harsher red button."
+}
+```

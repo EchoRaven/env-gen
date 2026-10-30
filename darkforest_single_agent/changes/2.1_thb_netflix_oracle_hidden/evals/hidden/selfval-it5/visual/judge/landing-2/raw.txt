@@ -1,0 +1,61 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.88,
+      "notes": "Same skeleton: full-bleed tilted poster-wall hero, Netflix wordmark top-left, language select + Sign In top-right, centered headline/subhead/prompt/email+CTA stack, red curved arc divider, promo banner below. Differences: the hero text block sits about 50px higher in the implementation. The headline wraps as 'Unlimited movies, / TV shows, and more' where the reference has 'Unlimited movies, TV / shows, and more'. The promo banner spans x≈163–1757 with the popcorn inside it; the reference banner starts at x≈276, with the popcorn sitting outside it on the left.",
+      "fix": "Move the hero text stack down so the headline starts near y≈315. Constrain the headline width so it breaks after 'TV'. Pull the popcorn icon out of the banner card, place it to its left, and start the card at ~276px."
+    },
+    "components": {
+      "score": 0.9,
+      "missing": [],
+      "notes": "Every reference component is present: wordmark, language dropdown with translate icon, red Sign In button, headline, subhead, helper line, email input, red Get Started button with chevron, curved red arc, promo card with popcorn icon, title + subtitle and Learn More button. The only placement difference is the popcorn: it is inside the card here, while the reference has a larger 3D popcorn outside the card.",
+      "fix": "Render the popcorn as a separate, larger element left of the promo card, overlapping its left edge, instead of inside the card padding."
+    },
+    "style": {
+      "score": 0.82,
+      "notes": "Dark cinematic mood, dark overlay on the poster wall, and the radii on buttons, input and card all match. The poster wall differs: the reference uses mostly landscape/square rounded tiles in a steep perspective tilt, while the implementation uses tall portrait posters in a gentler rotation. The arc glow is more purple/magenta here; the reference glow is navy-blue under a pink-red line.",
+      "fix": "Switch the background wall to landscape (~16:10) rounded tiles in a stronger perspective rotation. Tint the glow under the arc deep navy-blue (#1b1d4a-ish) instead of purple."
+    },
+    "color": {
+      "score": 0.86,
+      "notes": "Black base, Netflix red CTAs and wordmark, white text, translucent-bordered language select all match. The promo card is a little more saturated violet than the reference's muted indigo. The region under the arc leans purple rather than blue.",
+      "fix": "Shift the promo card background to a muted indigo-violet gradient (~#2a2350→#3a2a66) and the under-arc glow to blue."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Bold sans headline, medium-weight subhead and regular helper text: the hierarchy matches. The headline renders a bit larger (~68px vs ~60px) and wraps differently. The promo title/subtitle sizes are close.",
+      "fix": "Set the headline to ~56–60px, weight 800, with a max-width (~640px) so it wraps after 'TV'."
+    },
+    "iconography": {
+      "score": 0.78,
+      "notes": "The wordmark is faithful, and the chevron in Get Started matches. The popcorn is a flat emoji-style icon inside the card, where the reference has a large glossy 3D popcorn bucket illustration outside it. The language select caret is an inline chevron rather than the reference's small solid triangle. The background artwork is portrait posters rather than landscape tiles.",
+      "fix": "Replace the emoji popcorn with a ~90px 3D popcorn illustration. Use a solid down-triangle caret in the language select. Crop the background tiles landscape."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "These match: 'Sign In', 'English', 'Ready to watch? Enter your email to create or restart your membership.', 'Email address', 'Get Started', 'Learn More' and the headline. These differ: the subhead reads 'Watch on any device. Every profile keeps its own list.' instead of a price/cancel-anytime line, and the promo card copy is about the catalog rather than an affordable-plan pitch.",
+      "fix": "Change the subhead to a short pricing tagline like 'Starts at $X.XX. Cancel anytime.' Phrase the promo card as a plan pitch (e.g. 'The Netflix you love for just $X.XX.' / 'Get our most affordable, ad-supported plan.')."
+    }
+  },
+  "similarity": 0.86,
+  "empty_state": false,
+  "deviations": [
+    "Promo banner (bottom): the reference places a large 3D popcorn illustration outside the card on the left, with the card starting at ~276px. The implementation puts a small emoji popcorn inside a wider card that starts at ~163px.",
+    "Hero background: the reference wall uses landscape, rounded tiles in steep perspective. The implementation uses tall portrait posters at a gentler tilt.",
+    "Hero headline: the implementation wraps it as 'Unlimited movies, / TV shows, and more' at a larger size, and the whole stack sits ~50px higher. The reference wraps after 'TV' and sits lower.",
+    "Hero subhead: the reference shows a price/'Cancel anytime' tagline. The implementation shows 'Watch on any device. Every profile keeps its own list.'",
+    "Under the arc: the reference glow is navy-blue. The implementation's is purple/magenta.",
+    "Language select: the reference uses a solid triangle caret. The implementation uses a chevron."
+  ],
+  "fixes": [
+    "Move the popcorn out of the promo card as a ~90px 3D illustration to its left, and shrink the card to start at ~276px.",
+    "Render the background wall with landscape rounded tiles in a stronger perspective rotation.",
+    "Reduce the headline to ~60px, add a max-width so it breaks after 'TV', and shift the hero stack down ~50px.",
+    "Change the subhead to the pricing tagline format 'Starts at $X.XX. Cancel anytime.'",
+    "Tint the under-arc glow navy-blue and mute the promo card to indigo.",
+    "Swap the language-select chevron for a small solid down-triangle."
+  ],
+  "summary": "A close Netflix landing clone with the right structure and components. The main gaps are the popcorn placement in the promo card, the portrait vs landscape tiles in the poster wall, the headline wrap and position, and the subhead copy."
+}
+```

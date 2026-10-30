@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.75,
+      "notes": "The overall structure matches the reference. The video is full-bleed. A back arrow sits top-left and a flag (report) icon top-right. A full-width scrubber runs near the bottom with the time on the right. Below it is one control row: playback controls on the left, a centered title, and episode/subtitle/fullscreen controls on the right. The implementation adds a large left-aligned 'You're watching' info block in the upper-middle of the frame, which the reference does not have. It also shows a thin black strip across the top edge. The control row sits slightly lower and the controls are packed more tightly than in the reference.",
+      "fix": "Remove the mid-screen 'You're watching' title/synopsis block so the frame is clear between the top icons and the bottom control bar. Remove the top black strip. Space the left-hand control group at about 90px centers, as the reference does."
+    },
+    "components": {
+      "score": 0.75,
+      "missing": [],
+      "notes": "Every control in the reference is present and in the right place: back arrow, report flag, red progress bar with scrubber dot, remaining-time label, play/pause, back 10, forward 10, volume, centered title + episode label, next episode, episodes stack, subtitles/audio, and fullscreen. The play icon instead of pause just reflects playback state. Added components the reference does not have: the 'You're watching' overlay (eyebrow, large title, season/episode subtitle, synopsis) and a red/pink inline error message about the browser codec. The progress bar has no lighter buffered segment, which the reference shows.",
+      "fix": "Delete the info overlay and the codec error text from this view, or show the error only in a non-overlay fallback. Render the buffered portion of the track as a lighter gray segment ahead of the red played portion."
+    },
+    "style": {
+      "score": 0.7,
+      "notes": "Both are minimal, flat Netflix-player chrome: white outline icons with no containers or backgrounds. The reference shows the controls state over an unobstructed dark frame. The implementation's heavy text overlay makes the screen look like the paused 'You're watching' state rather than the controls state.",
+      "fix": "Keep the overlay to the chrome only: icons, scrubber and title row over the video, with at most a subtle bottom/top scrim."
+    },
+    "color": {
+      "score": 0.8,
+      "notes": "The palette matches: Netflix red for the played track and scrubber dot, a gray unplayed track, and white icons and text. The backdrop artwork counts as video content. The added pink/red error text adds an accent hue that the reference does not have.",
+      "fix": "Remove the pink error text. Add a light-gray buffered segment to the track so it has the reference's three tones (red / light gray / dark gray)."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "The bottom title row matches: bold series name, regular 'E1' and episode name, white sans, centered. The time label is a small white sans, as in the reference. The extra overlay adds large display-size and subtitle type levels that the reference does not have.",
+      "fix": "Remove the large title, subtitle and body text levels of the overlay. Keep only the bottom title row (about 20px, bold name plus regular episode text) and the small time label."
+    },
+    "iconography": {
+      "score": 0.8,
+      "notes": "The icon set matches the reference: outline arrow, flag, circular rewind/forward-10, speaker with waves, next-episode, stacked episodes, speech-bubble subtitles, and corner-bracket fullscreen. The implementation's bottom icons are noticeably smaller (about 36px against about 48px), and the stroke weight is lighter. The play icon is filled, consistent with the paused state.",
+      "fix": "Make the bottom-bar icons about 48px with a heavier stroke, matching the reference's weight. Space the left group about 90px apart and the right group about 90–120px apart."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "The title row format ('<Series> E1 <Episode name>') and the time label match. The added copy 'You're watching', the 'Season 1: Ep. 1 \"Episode 1\"' line, the synopsis and 'This clip can't be played in this browser…' do not appear in the reference.",
+      "fix": "Remove the eyebrow, subtitle, synopsis and error copy from the controls state."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Center-left of the frame: the implementation overlays a 'You're watching' block (eyebrow, large title, season/episode line, synopsis). The reference shows a clear frame with only the edge chrome.",
+    "Below the synopsis: the implementation shows a pink/red codec error line ('This clip can't be played in this browser…'), which is absent from the reference.",
+    "Bottom control bar: the icons are about 25% smaller and lighter in stroke than the reference, and the left group is spaced more tightly.",
+    "Progress bar: the reference shows a light-gray buffered segment ahead of the red played portion. The implementation's track is one uniform gray.",
+    "Top edge: the implementation shows a thin black strip above the video. The reference's frame runs edge to edge."
+  ],
+  "fixes": [
+    "Remove the 'You're watching' title/subtitle/synopsis overlay from the controls state.",
+    "Remove or relocate the inline codec error message so it does not show over the player.",
+    "Make the bottom-bar icons about 48px with a heavier stroke, and widen the gaps between them to match the reference.",
+    "Add a light-gray buffered segment to the scrubber track between the played (red) and unplayed (dark gray) portions.",
+    "Remove the black strip at the top so the video runs full-bleed to the top edge."
+  ],
+  "summary": "The player chrome matches the reference closely: every control is present and in the right place. However, an extra 'You're watching' info overlay and an error message clutter the frame, and the bottom icons are smaller than the reference's."
+}
+```

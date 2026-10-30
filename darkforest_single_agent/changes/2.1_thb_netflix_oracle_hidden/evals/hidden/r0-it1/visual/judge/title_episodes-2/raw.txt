@@ -1,0 +1,56 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "Both show the same structure: a centred dark modal about 1085px wide over a dimmed home page, with the top nav still visible at both sides. Inside the modal, the description column sits left and the metadata column right, then an 'Episodes' header with the series name right-aligned, then a full-width list of episode rows (number, 16:9 thumbnail, title, duration on the right, description below). The implementation's rows are slightly taller (about 157px against 146px), and the modal is scrolled less far, so the synopsis block takes more room. That is only a scroll-state difference.",
+      "fix": "Tighten the episode row's vertical padding so each row is about 146px tall (thumbnail about 170x96 with about 24px padding above and below)."
+    },
+    "components": {
+      "score": 0.9,
+      "notes": "Everything in the reference is present: the 'Episodes' heading with the season/series label, the numbered rows, thumbnails with a circular play overlay on hover, the bold title, duration on the right, the description, hairline dividers between rows, and a lighter background on the first (current) row. The implementation also lightens row 2 while it is hovered, which the reference does not do. The reference's hovered row 2 keeps the base background and only shows the play overlay. The implementation also shows a mute icon on the background hero, which the reference does not show.",
+      "missing": [],
+      "fix": "Keep the lighter background only on the current or first episode. On hover, show just the play overlay with no row background change."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "The design language matches: flat dark surfaces, a lighter grey panel for the active row, hairline dividers between rows, square thumbnails with very slight rounding, and generous padding. The extra hover background makes the implementation feel a little heavier.",
+      "fix": "Drop the hover background fill. Keep the 1px #404040 dividers under every row that is not active."
+    },
+    "color": {
+      "score": 0.88,
+      "notes": "The palette matches: modal around #181818, active row around #333, white titles, red Top 10 badge. Episode descriptions are a mid grey in the implementation, while the reference uses a light grey close to white (about #d2d2d2).",
+      "fix": "Lighten the episode description text to about #d2d2d2."
+    },
+    "typography": {
+      "score": 0.88,
+      "notes": "Both use the same sans-serif hierarchy: 'Episodes' heading at about 26px regular, bold episode titles at about 17px, large light episode numbers, and durations in regular weight. The implementation's description text is a little smaller and dimmer than the reference's two-line body at about 15px with about 1.5 line height.",
+      "fix": "Set episode descriptions to 15px with about 22px line height, in a colour close to white."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "Matches: 16:9 cover-cropped thumbnails, a circular outlined play icon centred on the hovered thumbnail, and a red TOP 10 badge. The implementation adds a mute toggle on the background hero that is not visible in the reference.",
+      "fix": "Hide the hero mute control while the modal is open, or match the reference, which shows none."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The chrome copy matches: 'Episodes', the series label on the right, and durations formatted as 'NNm'. Episode descriptions are filler text ('Season 1, episode 1 of Overdo.') instead of real synopses, so the reference's two-line description rhythm never shows.",
+      "fix": "Seed real one- or two-sentence episode synopses so each description wraps onto two lines as in the reference."
+    }
+  },
+  "similarity": 0.89,
+  "empty_state": false,
+  "deviations": [
+    "episode list row 2: the implementation fills the hovered row with the lighter active background; the reference's hovered row 2 keeps the base background and only shows the play overlay",
+    "episode descriptions: the implementation uses dimmer grey, slightly smaller one-line filler text; the reference uses light near-white two-line synopses",
+    "episode rows: the implementation's rows are about 10px taller than the reference's",
+    "background hero, right side: the implementation shows a mute icon button that is not visible in the reference"
+  ],
+  "fixes": [
+    "Apply the lighter row background only to the current or first episode, not on hover; on hover show only the thumbnail play overlay",
+    "Set episode description text to 15px/22px in a colour around #d2d2d2",
+    "Reduce episode row vertical padding so each row is about 146px tall",
+    "Seed realistic two-line episode synopses",
+    "Hide the hero mute control behind the modal"
+  ],
+  "summary": "The implementation closely matches the reference More Info episodes modal; the gaps are the hover row highlight, dimmer and shorter episode descriptions, and slightly taller rows."
+}

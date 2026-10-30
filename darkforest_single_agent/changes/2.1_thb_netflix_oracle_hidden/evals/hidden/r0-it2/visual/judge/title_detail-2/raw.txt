@@ -1,0 +1,70 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.85,
+      "notes": "Matches the reference: a centred modal (~1085px wide, x≈418–1502) over a dimmed browse page, with the top nav still showing behind it, a full-bleed hero, the title lockup and action row bottom-left, the mute button bottom-right, a two-column metadata block (about 60/40) and an Episodes section below. Differences: the hero is slightly taller, so the content sits about 30px lower. An extra Top-10 row sits between the metadata and the synopsis. The episode list starts below the fold, so no full episode row is visible in the first viewport.",
+      "fix": "Cut the hero height to about 580px so the action row sits at y≈545. Remove the Top-10 row between the metadata and the synopsis so the synopsis follows straight after the maturity line and Episodes plus the first episode row come into view."
+    },
+    "components": {
+      "score": 0.7,
+      "notes": "Present: close button, Play button, add-to-list (+) button, rate (thumb) button, mute toggle, year/count/HD/subtitle-icon row, maturity badge with descriptors, synopsis, right-column labelled metadata (Cast, Genres) and the Episodes heading. Missing or different: the bordered 'Season 1 ▾' dropdown at the right of the Episodes header is replaced by plain text ('Overdo'). The 'Season 1: [TV-14] descriptors' sub-line under the Episodes header is missing. The 'This Show Is:' row is replaced by invented 'Original Language' and 'Rating' rows. A Top-10 badge row ('#2 in TV Shows Today') was added that the reference does not have. The 'more' link after the cast list is missing. The thumb icon is filled where the reference uses an outline.",
+      "missing": [
+        "Season selector dropdown (bordered box, 'Season 1' + caret) in the Episodes header",
+        "Season sub-line 'Season 1: [TV-14] descriptors' under the Episodes header",
+        "'This Show Is:' metadata row",
+        "'more' link after the cast list",
+        "Visible episode row (number, 16:9 thumbnail, title, duration, description) in the first viewport"
+      ],
+      "fix": "Replace the 'Overdo' text with a bordered dropdown button (~180×46, 1px grey border, dark fill, 'Season 1' + ▼). Add a 'Season 1: [TV-14] descriptors' line under the heading. Swap the 'Original Language' and 'Rating' rows for 'This Show Is: <tags>'. End the cast list with an italic 'more' link. Delete the Top-10 row."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Same flat dark design: square-ish modal and Play button with small radius, thin-ring circular icon buttons, bottom-fade gradient on the hero, a dark grey (#2f2f2f-like) episode card, airy padding. The filled thumb and the invented Top-10 badge add slight extra decoration.",
+      "fix": "Keep the rounded-rectangle episode card at #2f2f2f with about 4px radius. Use outline-only icons in the ringed buttons."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Same system: near-black page under a dark scrim, #181818 modal surface, a white Play button with black text, white primary text, grey labels (Cast:/Genres:) with white values. The Top-10 red badge adds an accent the reference modal lacks.",
+      "fix": "Remove the red Top-10 badge from the modal so the only colour comes from the hero artwork."
+    },
+    "typography": {
+      "score": 0.8,
+      "notes": "Sans UI font with matching hierarchy: ~24px Episodes heading, ~17px body synopsis, small grey label/white value pairs, small boxed HD and TV-14 badges. The title lockup is plain white condensed sans text, while the reference uses a coloured, distressed title-artwork logo. The synopsis runs long (7 lines vs 2), but that comes from the content.",
+      "fix": "Show the title as a logo image lockup (or a styled display treatment with brand colour and texture) at about 430px wide, instead of plain white text."
+    },
+    "iconography": {
+      "score": 0.82,
+      "notes": "Matches on the play triangle, + and thumb in 1.5px-ring circles, the outline mute icon in a ring, the HD box and subtitle icon, and the X in a dark circle. The thumb is filled where the reference uses an outline. The hero is a cover crop at the same aspect. The episode thumbnail is cut off below the fold.",
+      "fix": "Use the outline thumbs-up glyph. Make sure the episode row thumbnail (~170×96, 16:9, small radius) shows in the viewport."
+    },
+    "copy": {
+      "score": 0.75,
+      "notes": "Matches: 'Play', 'Episodes', 'Cast:', 'Genres:', and the 'YEAR N Seasons/Episodes' format. Differs: 'Original Language:' and 'Rating:' replace 'This Show Is:'. The header shows the series name instead of 'Season 1'. The added '#2 in TV Shows Today' line is not in the reference. 'Cast: —' shows an empty value.",
+      "fix": "Use the labels Cast / Genres / This Show Is. Label the dropdown 'Season 1'. Drop the Top-10 sentence. Fill in cast names."
+    }
+  },
+  "similarity": 0.8,
+  "empty_state": false,
+  "deviations": [
+    "Episodes header right: the reference has a bordered 'Season 1 ▾' dropdown; the implementation shows plain text 'Overdo'",
+    "Below the Episodes heading: the reference's 'Season 1: [TV-14] substances, language' sub-line is missing",
+    "Between the metadata and the synopsis: the implementation adds a red TOP 10 badge + '#2 in TV Shows Today' row that the reference does not have, pushing everything down",
+    "Right metadata column: the reference's 'This Show Is:' row is replaced by 'Original Language:' and 'Rating:'; Cast shows '—' with no 'more' link",
+    "Hero title: the reference uses a coloured title-artwork logo; the implementation uses plain white condensed text",
+    "Bottom of the modal: the reference shows a full episode row (number, thumbnail, title, 42m, description) in the viewport; the implementation shows only the top edge of the card",
+    "Action row: the thumb button glyph is filled; the reference uses an outline thumb",
+    "Hero is slightly taller in the implementation (action row at y≈574 vs y≈545)"
+  ],
+  "fixes": [
+    "Replace the Episodes header's right-side text with a bordered dropdown button labelled 'Season 1' with a ▼ caret",
+    "Add a 'Season 1: [TV-14 badge] descriptors' line directly under the Episodes heading",
+    "Remove the Top-10 badge row from the modal body",
+    "Change the right-column rows to Cast (ending in an italic 'more' link), Genres and 'This Show Is:'; drop Original Language and Rating",
+    "Render the title as a logo or styled artwork lockup instead of plain white text",
+    "Reduce the hero height by about 30px so the first episode row (number, 16:9 thumbnail, title + duration, 2-line description) shows in the viewport",
+    "Switch the thumbs-up icon to the outline style"
+  ],
+  "summary": "Netflix-style More Info modal is close in structure, colour and controls, but it lacks the Season dropdown and season sub-line, adds a Top-10 row, swaps out the 'This Show Is' row, and uses a plain-text title lockup."
+}
+```

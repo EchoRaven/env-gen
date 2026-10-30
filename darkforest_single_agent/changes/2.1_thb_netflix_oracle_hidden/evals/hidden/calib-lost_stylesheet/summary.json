@@ -1,0 +1,56 @@
+{
+ "snapshot": "/home/user/project/shabi_forest/changes/2.1_thb_netflix_oracle_hidden/evals/calibration/lost_stylesheet/workspace",
+ "tag": "calib-lost_stylesheet",
+ "parts": [
+  "visual"
+ ],
+ "errors": {},
+ "visual_captured": 18,
+ "visual": {
+  "mean_similarity": 0.104,
+  "n_scored": 18,
+  "n_screens": 20,
+  "below_0.55": [
+   "account_menu",
+   "browse_by_languages",
+   "browse_home",
+   "browse_home_rows",
+   "games",
+   "genre_category",
+   "landing",
+   "login",
+   "movies",
+   "my_list",
+   "new_and_popular",
+   "player",
+   "player_controls",
+   "rate_dialog",
+   "shows",
+   "shows_genres_menu",
+   "title_detail",
+   "title_episodes"
+  ],
+  "per_screen": {
+   "landing": 0.05,
+   "login": 0.12,
+   "browse_home": 0.12,
+   "browse_home_rows": 0.07,
+   "shows": 0.12,
+   "movies": 0.12,
+   "games": 0.08,
+   "new_and_popular": 0.12,
+   "genre_category": 0.15,
+   "browse_by_languages": 0.12,
+   "my_list": 0.12,
+   "title_detail": 0.06,
+   "title_episodes": 0.03,
+   "rate_dialog": 0.04,
+   "player": 0.15,
+   "player_controls": 0.15,
+   "account_menu": 0.15,
+   "card_hover_preview": null,
+   "card_preview": null,
+   "shows_genres_menu": 0.1
+  }
+ }
+}

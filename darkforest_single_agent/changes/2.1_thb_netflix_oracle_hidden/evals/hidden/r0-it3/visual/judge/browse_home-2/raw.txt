@@ -1,0 +1,59 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.93,
+      "notes": "The structure matches. Both have a top nav with the logo on the left, a pill-highlighted Home tab, seven nav items, and search, bell, Kids and avatar on the right. Below it is an inset, rounded hero card at the same full-width-minus-gutters size, with the lockup at bottom-left and the mute button top-right. Then comes a row heading with a page indicator on the right, followed by a horizontal tile carousel that bleeds off the right edge. The main difference is the tile gap: it is about 10px in the reference and about 6px in the implementation. Also, the row heading sits slightly higher than in the reference.",
+      "fix": "Widen the carousel tile gap to about 10px so the tiles line up with the reference's grid rhythm."
+    },
+    "components": {
+      "score": 0.85,
+      "notes": "All nav items, header icons, the Kids entry, the avatar with its caret, the hero mute toggle, the Play and More Info buttons, the metadata row, the row title, the page indicator and the carousel are present. The reference's bottom-right hero badge (megaphone icon plus a 'New Episode' label) is absent. The badge beside the title (LIVE vs Top 10) is a content variant of the same slot, so it is fine. The implementation adds Top 10 corner badges to every tile. The reference shows one on a tile too, so this is acceptable.",
+      "missing": ["hero bottom-right status badge (icon + 'New Episode' label)"],
+      "fix": "Add an absolutely positioned badge to the hero, about 40px from the bottom-right corner: a small colored megaphone icon plus a white semibold 'New Episode' label at about 14px."
+    },
+    "style": {
+      "score": 0.88,
+      "notes": "Both use the same dark, cinematic, flat style: a heavily rounded hero card, a pill-shaped white Play button and a translucent gray More Info pill. In the reference, the hero card has a soft drop shadow and the carousel tiles have larger corner radii (about 12px). The implementation's tiles look less rounded, and the hero shadow is weaker.",
+      "fix": "Set the carousel tile radius to about 12px to match the hero. Add a soft diffuse shadow under the hero card."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "Both use the same dark scheme with red accents, white primary text and a gray secondary button. In the reference, the header and page background fade from warm gray to dark. The implementation's header and page are flat, near-black (#141414). The hero gradient behind the lockup is comparable.",
+      "fix": "Apply a warm-gray-to-dark vertical gradient (about #3a3835 → #181818) behind the header and the top of the page, instead of flat near-black."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use the same sans family, nav sizes, metadata row style with dot separators, and a bold label beside the badge. The row heading in the reference is bold (about 26px, weight 700). In the implementation it looks medium or regular weight. The hero title is a styled condensed text lockup rather than logo artwork, which is acceptable as a title treatment. The Play and More Info labels are slightly larger in the implementation.",
+      "fix": "Make the carousel row headings bold (weight 700). Set the hero button label size to about 20px semibold to match."
+    },
+    "iconography": {
+      "score": 0.9,
+      "notes": "The line icons for search, bell and caret match. The Kids tile icon, blue smiley avatar, filled Play triangle and circular mute button all match. Tile imagery uses the same landscape crop. The reference's megaphone icon in the hero badge is absent.",
+      "fix": "Add the colored megaphone glyph to the hero's New Episode badge, and match the tile corner radius to the reference."
+    },
+    "copy": {
+      "score": 0.97,
+      "notes": "The nav labels, Kids, Play and More Info all match. The row title and hero badge text are content and are not scored. The 'New Episode' chrome label is absent.",
+      "fix": "Render the 'New Episode' label in the hero's bottom-right badge."
+    }
+  },
+  "similarity": 0.88,
+  "empty_state": false,
+  "deviations": [
+    "hero bottom-right: the reference shows a megaphone icon with a 'New Episode' badge; the implementation has nothing there",
+    "header/page background: the reference uses a warm-gray gradient behind the nav and top of the page; the implementation is flat near-black",
+    "row heading 'Trending Now': the implementation uses regular or medium weight; the reference's row heading is bold",
+    "carousel tiles: the implementation's gaps are tighter and its corner radius smaller than the reference's (about 10px gaps, about 12px radius)",
+    "hero card: the reference has a visible soft drop shadow around the card; the implementation's is weaker"
+  ],
+  "fixes": [
+    "Add a bottom-right hero badge (megaphone icon plus a 'New Episode' label, white, about 14px semibold)",
+    "Replace the flat header and page background with a warm-gray-to-dark vertical gradient",
+    "Make the carousel row headings bold (700, about 26px)",
+    "Set the carousel tile gap to about 10px and the tile border-radius to about 12px",
+    "Add a soft diffuse shadow under the hero card"
+  ],
+  "summary": "A near-faithful Netflix browse home: the nav, hero card, CTAs and carousel all match. The hero is missing the New Episode badge, and the background gradient and heading weight differ slightly."
+}
+```

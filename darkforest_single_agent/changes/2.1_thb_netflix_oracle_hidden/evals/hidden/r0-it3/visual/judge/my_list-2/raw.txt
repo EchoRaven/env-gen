@@ -1,0 +1,69 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The top nav matches: the NETFLIX wordmark is on the left, followed by 7 nav items, with search, bell, Kids and avatar on the right. The 'My List' heading is left-aligned at the same ~67px gutter and the grid uses 16:9 landscape tiles in a single row. The page is dark and has no footer. The reference, however, is captured in a hover state: an enlarged preview card (~440px wide) floats over the third tile and pushes the row down to y≈303. The implementation shows a static row at y≈225 with no overlay.",
+      "fix": "Add a hover or focus state on My List tiles: scale the tile into a ~440px-wide preview card positioned over the tile (artwork on top, details panel below), keeping the row's top edge at about y≈300 in the captured state."
+    },
+    "components": {
+      "score": 0.5,
+      "notes": "The nav inventory is complete: 7 links, the active 'My List' pill, search, bell, Kids profile and avatar with caret. The title tiles have a title lockup and a red badge. The reference's dominant component is the expanded preview card, and all of its parts are absent in the implementation.",
+      "missing": [
+        "expanded hover preview card",
+        "white circular Play button",
+        "rating pill with three thumbs (thumbs-down / thumbs-up / double thumbs-up)",
+        "'I like this' tooltip over the rating button",
+        "circular 'more info' chevron-down button",
+        "mute/unmute circular icon on the preview artwork",
+        "maturity rating box + runtime + HD badge metadata row",
+        "genre tags row separated by dots",
+        "Netflix 'N' logo corner badge on the preview artwork"
+      ],
+      "fix": "Build a PreviewCard component that renders on tile hover with: artwork (16:9) carrying the title lockup, N badge and mute button; a controls row with a white Play circle, a rounded dark pill holding 3 thumb icons (tooltip on hover) and a right-aligned outlined chevron circle; a metadata row (outlined rating box, runtime, outlined HD chip); and a genre row 'A • B • C'."
+    },
+    "style": {
+      "score": 0.8,
+      "notes": "Both use the same flat, dark, minimal Netflix language: slightly rounded tiles, an active nav pill and tight 8px tile gaps. The reference adds an elevated preview card (#181818 surface, soft shadow, rounded corners) and outlined circular buttons, which the implementation lacks.",
+      "fix": "Style the preview card with a #181818 background, ~4–6px radius and a soft drop shadow. Use 2px grey-outline circles for secondary buttons, and give the rating pill a dark rounded background."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "The palette matches: #141414 base, white text, Netflix red wordmark and badges, a grey active nav pill, and a blue avatar with a gradient Kids icon. The only colour gap is the missing elevated card surface and the white Play button.",
+      "fix": "Use #181818 for the preview card surface, a solid white Play circle with a black glyph, and #bcbcbc for the dot separators."
+    },
+    "typography": {
+      "score": 0.85,
+      "notes": "Both use a similar sans (Netflix Sans vs Inter) for the nav, the large regular-weight 'My List' heading, and condensed bold title lockups on the tiles. The reference's metadata typography (runtime ~18px, genre tags ~18px, small HD chip text) is absent.",
+      "fix": "In the preview card, set runtime and genres at ~17–18px regular in white/light grey, and the HD chip text at ~11px inside an outlined box."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "The nav icons match: line search, bell, Kids tile and smiley avatar. Tiles are 16:9 cover crops with red pill badges. The reference's line-style thumb icons, play glyph, chevron and muted-speaker icon, plus the red N corner logo, do not appear.",
+      "fix": "Add outline-style thumbs-down, thumbs-up and double-thumbs-up icons (~28px), a filled play triangle, a chevron-down and a speaker-mute icon, plus a red 'N' badge at the top-left of the preview artwork."
+    },
+    "copy": {
+      "score": 0.85,
+      "notes": "The nav labels are identical (Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages, Kids), and the heading 'My List' matches. The reference's 'I like this' tooltip copy is absent.",
+      "fix": "Add rating tooltips with the copy 'Not for me' / 'I like this' / 'Love this!'."
+    }
+  },
+  "similarity": 0.68,
+  "empty_state": false,
+  "deviations": [
+    "center of the row: the reference shows an enlarged hover preview card over the third tile (artwork + Play/rating/chevron controls + metadata + genres); the implementation renders only flat tiles with no expanded card",
+    "preview controls row: the reference's white Play circle, 3-thumb rating pill with the 'I like this' tooltip, and outlined chevron-down button are absent",
+    "preview details: the reference's metadata row (R box, '1h 49m', HD chip) and genre row 'Violent • Exciting • Sci-Fi' are missing",
+    "preview artwork: the reference has a mute icon at the bottom-right and a red N logo at the top-left; the implementation has neither",
+    "tile row vertical position: reference tiles sit at y≈303 (aligned under the expanded card); implementation tiles sit at y≈225"
+  ],
+  "fixes": [
+    "Implement a hover/focus PreviewCard on My List tiles: ~1.5x scale, #181818 surface, rounded corners, soft shadow, anchored over the hovered tile",
+    "Card top: 16:9 artwork with the title lockup at bottom-left, a red N badge at top-left, and a circular outlined mute button at bottom-right",
+    "Card controls row: white Play circle, then a dark rounded pill holding thumbs-down / thumbs-up / double-thumbs-up with hover tooltips ('I like this'), then an outlined chevron-down circle aligned right",
+    "Card metadata: outlined maturity box + runtime + outlined 'HD' chip, then a genre row with dot separators",
+    "Capture or render the screen with the card open over the 3rd tile so the row aligns at about y≈300 as in the reference"
+  ],
+  "summary": "The chrome, heading and tile grid match the Netflix My List design, but the reference's defining hover preview card (play, rating thumbs with tooltip, chevron, metadata, genres) is entirely absent."
+}
+```

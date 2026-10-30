@@ -1,0 +1,68 @@
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.8,
+      "notes": "The overall structure matches. Both have a top nav bar with the logo on the left, the nav links, the active 'Browse by Languages' pill and the right-side icons. Both have the page title on the left, preference dropdowns on the right and a 6-column 16:9 tile grid with large vertical gaps between rows. Differences: in the reference the grid starts at about y=304 with a large empty band under the header; in the implementation it starts at about y=200. In the reference the preference controls sit flush right, starting at about x=1140; in the implementation they start at about x=830 because of an extra third control.",
+      "fix": "Move the first grid row down to about y=300 so there is a large empty band under the title row. Right-align the preference group so that only the label and two dropdowns sit at the right edge."
+    },
+    "components": {
+      "score": 0.55,
+      "notes": "The nav items match (6 links plus the active pill), as do search, the bell, the Kids profile, the avatar with caret, the title, the 'Select Your Preferences' label and both dropdowns. The tiles have TOP 10 and red status badges. Missing: the reference shows both dropdown menus expanded, one listing Original Language / Dubbing / Subtitles and one with a long list of languages. It also shows a hover preview card over the grid: video still, title lockup, mute button, play / add-to-list / rate / expand circular buttons, a maturity rating with runtime and HD badge, and a mood-tag row. Extra: the implementation adds a 'Sort by' / 'Suggestions For You' dropdown that the reference does not show.",
+      "missing": [
+        "expanded Original Language dropdown menu (Original Language / Dubbing / Subtitles)",
+        "expanded language list dropdown (Arabic … Vietnamese)",
+        "hover preview card with video still and title lockup",
+        "preview card mute toggle",
+        "preview card circular Play / Add (check) / Rate (thumb) / More (chevron) buttons",
+        "preview card metadata row (maturity rating box, runtime, HD badge)",
+        "preview card mood-tag row with dot separators"
+      ],
+      "fix": "Remove the Sort by dropdown. Render both preference dropdowns in their open state as dark (#141414-ish) panels directly under each select: three options in the first, and the full language list in a tall panel in the second. Add a scaled hover preview card about 430px wide over the second column of rows 1–3. Give it the media still with a title logo, a mute circle at bottom-right, a white Play circle, outlined check / thumb / chevron circles, the 'TV-MA 1h 34m HD' row and the tags row."
+    },
+    "style": {
+      "score": 0.85,
+      "notes": "Both are flat and dark with square-cornered tiles, small gaps, red pill badges and outlined, square-cornered select boxes with white borders. The overlay depth from the reference's elevated preview card and menus is absent.",
+      "fix": "Add the elevated preview card with a soft drop shadow and a slight corner radius. Add dropdown panels in a dark surface with no extra rounding."
+    },
+    "color": {
+      "score": 0.9,
+      "notes": "Both use a near-black background, a white-text nav, a grey active pill, the red NETFLIX wordmark and red badges. The colours match. The black-on-dark dropdown panels and the #181818 preview card surfaces from the reference are absent.",
+      "fix": "Use about rgba(0,0,0,0.9) for the dropdown menus and #181818 for the preview card body."
+    },
+    "typography": {
+      "score": 0.75,
+      "notes": "Both use the same sans-serif family for nav and labels. The page title is larger in the implementation (about 44px versus about 36px). Dropdown text sizes are similar. In the reference, tile titles are each show's own stylised logo art. In the implementation, every tile has a uniform condensed bold white text overlay, which gives a different title treatment.",
+      "fix": "Reduce the 'Browse by Languages' heading to about 36px regular weight. Use per-title logo artwork, or a varied lockup positioned like the reference's logos, instead of the identical bold condensed text overlay on every tile."
+    },
+    "iconography": {
+      "score": 0.85,
+      "notes": "The line-style search and bell icons match, as do the Kids icon, the blue smiley avatar and caret, the TOP 10 badges and the solid-triangle dropdown carets. The tiles are 16:9 with cover crop. The circular outlined action icons of the preview card are missing.",
+      "fix": "Add the preview card icon set: a filled white play circle, outlined check / thumb-up / chevron-down circles, and a muted-speaker circle."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "The nav labels, 'Browse by Languages', 'Select Your Preferences', 'Original Language', 'English' and the badge texts match. The implementation adds 'Sort by' and 'Suggestions For You', which the reference does not show. The reference's menu option copy ('Dubbing', 'Subtitles' and the language names) is not visible.",
+      "fix": "Remove the 'Sort by' / 'Suggestions For You' copy, and show the options 'Original Language', 'Dubbing', 'Subtitles' and the language list."
+    }
+  },
+  "similarity": 0.72,
+  "empty_state": false,
+  "deviations": [
+    "Grid area: the reference shows an expanded hover preview card over column 2 (still image, title lockup, mute button, play/check/thumb/chevron circles, TV-MA · runtime · HD row, mood tags); the implementation has no preview card",
+    "Preferences, right side: the reference shows both dropdowns expanded (a 3-option type menu and a long language list overlaying the grid's right column); in the implementation both are collapsed",
+    "Preferences row: the implementation adds a 'Sort by' / 'Suggestions For You' dropdown that is absent from the reference, which pushes the controls left to about x=830",
+    "Vertical rhythm: the implementation's grid starts at about y=200; the reference's first row starts at about y=304, with a large gap under the header",
+    "Tile titles: the implementation overlays a uniform bold condensed text title on every tile; the reference shows per-title logo artwork",
+    "Page heading: the implementation's 'Browse by Languages' is larger (about 44px) than the reference's (about 36px)"
+  ],
+  "fixes": [
+    "Remove the Sort by dropdown so the preference group is the label plus two selects, right-aligned to the content edge",
+    "Render the Original Language select open, with the options Original Language / Dubbing / Subtitles in a dark panel below it",
+    "Render the language select open, with a tall dark panel listing Arabic through Vietnamese that overlays the right grid column",
+    "Add a hover preview card (about 430px wide, #181818, soft shadow) over row 1–3 column 2. It holds a 16:9 still with a title logo and mute circle; a white play circle plus outlined check / thumb / chevron circles; a 'TV-MA | 1h 34m | HD' row; and a dot-separated mood-tag row",
+    "Shift the grid's first row down to about y=300",
+    "Shrink the page heading to about 36px",
+    "Replace the uniform text title overlay on tiles with per-title logo-style lockups"
+  ],
+  "summary": "The header, grid and colour system closely match. The implementation lacks the reference's open dropdown menus and hover preview card, and it adds a Sort by control the reference doesn't show."
+}

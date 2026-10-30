@@ -1,0 +1,67 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.72,
+      "notes": "The overall structure matches: a transparent top nav over a full-bleed hero, a 'TV Shows' heading with a Genres dropdown to its right, a hero title, Play/More Info buttons, a mute button and maturity-rating tab at the right, and a 'Today's Top Picks for You' row at the bottom. The open genres menu is different. The reference shows a wide 3-column panel (~470px wide, ~9 rows deep). The implementation shows a narrow single-column panel (~235px, 6 rows). The hero text block is also taller because it adds a ranking line, a metadata row and a synopsis. That pushes the Play button down to ~y=728 and the carousel row down to ~y=935 (reference ~y=842). Fewer carousel tiles are visible.",
+      "fix": "Lay out the genres panel as a 3-column grid about 470px wide, anchored under the Genres button. Remove the extra hero text lines so the title art, the buttons and the carousel heading sit at about y=510–740 and y=842, as in the reference."
+    },
+    "components": {
+      "score": 0.62,
+      "missing": [
+        "Multi-column genres mega-menu (3 columns, ~26 entries, with an underlined hover state on one item)",
+        "Hero title-logo artwork (stylized image logo instead of plain text)",
+        "Carousel tile corner badges ('Recently Added' / 'New Season' / 'New Episode' / 'Watch Now' pills) and TOP 10 flags on most tiles",
+        "Carousel page-indicator dashes above the row's right edge (only a faint stub)"
+      ],
+      "notes": "Present: the nav with 7 items and the active pill on Shows, search, the bell, the Kids profile, the avatar with a caret, the 'TV Shows' title, the Genres dropdown button, Play, More Info, the mute button, the rating tab, and the carousel. Invented components the reference does not show: the 'TOP 10 #4 in TV Shows Today' ranking line, the metadata row (genre · year · seasons · rating) and the synopsis paragraph. The genres dropdown shows only 6 items in one column. The reference shows a dense 3-column list with a hover-underlined item. Carousel tiles have no status badges, and only one tile has a TOP 10 flag. The profile avatar reuses the Kids icon instead of a distinct profile avatar.",
+      "fix": "Turn the genres dropdown into a 3-column list of ~26 entries, with an underline on hover. Remove the ranking line, metadata row and synopsis from the hero. Add the red bottom-centered badge pills and the TOP 10 corner flags to the carousel tiles. Use a distinct square profile avatar."
+    },
+    "style": {
+      "score": 0.75,
+      "notes": "Same flat, cinematic Netflix language: a translucent black dropdown panel with a thin white-bordered Genres button, a white solid Play button, a translucent grey More Info button, and slightly rounded tiles. In the implementation the hero copy block overlaps the dropdown and looks crowded. The reference hero is sparse, with only the title art and buttons. The dropdown panel is less opaque, so the title text shows through it.",
+      "fix": "Make the genres panel near-opaque black (~rgba(0,0,0,0.9)) and keep the hero sparse, with only the title art and buttons."
+    },
+    "color": {
+      "score": 0.85,
+      "notes": "The dark scheme matches: Netflix red for the wordmark and badges, a grey pill for the active nav item, white text, and a dark gradient over the hero. The implementation is missing the red badge accents on the tiles. The dropdown panel is more transparent.",
+      "fix": "Add the red badge pills to the tiles and raise the opacity of the dropdown background."
+    },
+    "typography": {
+      "score": 0.72,
+      "notes": "Both use a sans UI font, with the same sizes for nav items, the 'TV Shows' heading and the row heading. The hero title is a condensed all-caps text rendering instead of a stylized logo lockup. The extra 28px ranking line and 22px synopsis add type levels the reference does not have. The Genres button and menu item sizes are close.",
+      "fix": "Replace the text hero title with a title-art image, or a matching display lockup at the reference size (~110px tall). Remove the extra text levels."
+    },
+    "iconography": {
+      "score": 0.75,
+      "notes": "Line icons for search, the bell and mute match, as do the Play triangle and the info circle. The profile avatar duplicates the Kids gradient icon instead of a distinct profile avatar. Tile artwork is landscape at about the same aspect ratio, but titles are rendered as burned-in text overlays rather than artwork. TOP 10 flags are mostly absent.",
+      "fix": "Use a distinct square profile avatar and add the TOP 10 corner flags to the tiles."
+    },
+    "copy": {
+      "score": 0.8,
+      "notes": "Nav labels, 'TV Shows', 'Genres', 'Play', 'More Info' and 'Today's Top Picks for You' all match. The genre list wording differs ('Action & Adventure', 'Animation', 'Comedy', 'Family' vs 'Action', 'Anime', 'Comedies', etc.), and the list is much shorter. The implementation adds '#4 in TV Shows Today'.",
+      "fix": "Use the reference genre labels (Action, AMC Collection, Anime, British, Classic & Cult, Comedies, Crime, Documentaries, Dramas, Emmys®, Horror, International, K-Dramas, Kids, LGBTQ, Mysteries, Reality, Romance, Sci-Fi & Fantasy, Science & Nature, Spanish-Language, Sports, Stand-Up & Talk Shows, Teen, Thriller, USA 250!)."
+    }
+  },
+  "similarity": 0.7,
+  "empty_state": false,
+  "deviations": [
+    "Genres dropdown (top-left, under the 'Genres' button): the implementation shows a narrow single-column list of 6 items. The reference shows a wide 3-column mega-menu of ~26 genres with an underlined hover item.",
+    "Hero left block: the implementation adds a TOP 10 '#4 in TV Shows Today' line, a metadata row and a 3-line synopsis. The reference has only the title art followed by Play/More Info.",
+    "Hero title: the implementation renders plain condensed white text that runs under the dropdown. The reference uses a stylized title-logo artwork with a small NETFLIX tag above it.",
+    "Vertical rhythm: the carousel heading sits at ~y=935 instead of ~y=842, and the Play/More Info row sits at ~y=728 instead of ~y=712, so less of the row is visible.",
+    "Carousel tiles: the red 'Recently Added' / 'New Season' / 'New Episode' + 'Watch Now' badge pills are missing, and only one tile has a TOP 10 flag (the reference shows them on most tiles).",
+    "Dropdown panel: more transparent than the reference's near-opaque black, so the hero title shows through.",
+    "Top-right avatar: the implementation repeats the Kids gradient icon. The reference shows a distinct blue smiley profile avatar."
+  ],
+  "fixes": [
+    "Rebuild the genres dropdown as a ~470px-wide, near-opaque black panel with a 3-column grid of ~26 genre links (reference labels), 14–15px text, ~29px line spacing, and an underline on hover.",
+    "Remove the ranking line, metadata row and synopsis from the hero. Keep only the NETFLIX tag, the title art, and the Play/More Info buttons.",
+    "Render the hero title as a logo/title-art image at ~410×130px instead of large text.",
+    "Move the carousel heading up to ~y=842 so the full tile row is visible above the fold.",
+    "Add bottom-centered red badge pills ('Recently Added', 'New Season', etc.) and top-right TOP 10 flags to the carousel tiles.",
+    "Replace the duplicated Kids icon in the profile slot with a distinct square profile avatar."
+  ],
+  "summary": "Same Netflix TV Shows page with the Genres menu open, but the menu is a short single column instead of the 3-column mega-menu, the hero carries extra ranking, metadata and synopsis text plus a plain-text title, and the tile badges are missing."
+}
+```

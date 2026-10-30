@@ -1,0 +1,55 @@
+```json
+{
+  "dimensions": {
+    "layout": {
+      "score": 0.92,
+      "notes": "Same structure: a centered dark modal about 1085px wide over the dimmed home page (navbar, hero and row still visible behind it). Inside, the synopsis sits in the left column with metadata on the right, then an 'Episodes' heading with the title name right-aligned, then full-width episode rows with number, 16:9 thumbnail, title, duration and description. Rows in the implementation are about 157px tall against about 145px in the reference. The scroll offset also differs, so the synopsis takes more of the top.",
+      "fix": "Cut the episode row's vertical padding so each row is about 145px tall, and keep the number/thumb/text columns at the current x positions."
+    },
+    "components": {
+      "score": 0.88,
+      "missing": [],
+      "notes": "Every component is there: the Episodes header with the title label, numbered episode rows, thumbnails, the circular play overlay on the hovered row, durations, descriptions, the active-row highlight on episode 1, and hairline dividers. The difference is state handling. The implementation fills both row 1 and the hovered row 2 with grey, and there's no divider between them. The reference greys only row 1, and the hovered row 2 shows just the play overlay with no fill.",
+      "fix": "Remove the grey background from hovered rows and keep the play overlay only. Reserve the #2f2f2f fill for the current or selected episode, and draw the bottom divider on every unselected row."
+    },
+    "style": {
+      "score": 0.9,
+      "notes": "Same flat dark surfaces, slightly rounded corners on the highlighted row, hairline grey dividers, and similar density. The extra filled hover row makes the list look heavier than the reference.",
+      "fix": "Use a single highlighted row and hairline dividers between all the others."
+    },
+    "color": {
+      "score": 0.95,
+      "notes": "Same #181818 modal surface on a dimmed black backdrop, the same lighter grey for the selected row, white titles, light grey descriptions and a red TOP 10 badge.",
+      "fix": "No change needed. Just stop applying the selected-row grey to hovered rows."
+    },
+    "typography": {
+      "score": 0.92,
+      "notes": "Same sans-serif hierarchy: the 'Episodes' heading is about 26px semibold, episode titles are bold, the duration is regular and right-aligned, numbers are large and light, and descriptions are about 15px regular grey. The descriptions run to one line here instead of the reference's two-line wrap. That's a content difference.",
+      "fix": "No structural change needed."
+    },
+    "iconography": {
+      "score": 0.93,
+      "notes": "Thumbnails use the same 16:9 cover crop at about 170x95 with slightly rounded corners. The play overlay is the same circular outlined icon. Every thumbnail repeats the same still, which comes from seeded data.",
+      "fix": "If the data has them, use a separate still for each episode."
+    },
+    "copy": {
+      "score": 0.95,
+      "notes": "The 'Episodes' heading and right-aligned show title label are the same, and durations use the same 'NNm' format. Episode titles and descriptions are seeded content.",
+      "fix": "No change needed."
+    }
+  },
+  "similarity": 0.9,
+  "empty_state": false,
+  "deviations": [
+    "episode list row 2: the implementation fills the hovered row with the same grey as selected row 1. The reference shows only the play overlay on the hovered row 2, with no background fill.",
+    "episode list: the implementation has no divider between rows 1 and 2 (both are filled). The reference separates unselected rows with hairline dividers.",
+    "episode rows: the implementation's rows are about 157px tall against about 145px in the reference, so fewer episodes fit in view."
+  ],
+  "fixes": [
+    "Show the grey #2f2f2f row background only on the current or selected episode. On hover, show the circular play overlay on the thumbnail but leave the row background transparent.",
+    "Draw a hairline bottom border on every unselected episode row.",
+    "Reduce the episode row's vertical padding to bring the row height to about 145px."
+  ],
+  "summary": "A near-faithful match to the Episodes modal. The main gap is that hovered rows get the selected-row grey fill and lose their divider, and rows are slightly taller."
+}
+```
